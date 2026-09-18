@@ -18,7 +18,7 @@
         "nok": 18,
         "ok": 257,
         "plan": 275,
-        "secs": 0.26,
+        "secs": 0.56,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -28,7 +28,7 @@
         "nok": 0,
         "ok": 275,
         "plan": 275,
-        "secs": 1.42,
+        "secs": 4.16,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -40,7 +40,7 @@
         "nok": 0,
         "ok": 43,
         "plan": 43,
-        "secs": 0.17,
+        "secs": 0.27,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -50,7 +50,7 @@
         "nok": 0,
         "ok": 43,
         "plan": 43,
-        "secs": 4.87,
+        "secs": 6.91,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -62,7 +62,7 @@
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 0.1,
+        "secs": 0.21,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -72,7 +72,7 @@
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 0.56,
+        "secs": 0.66,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -84,7 +84,7 @@
         "nok": 0,
         "ok": 18,
         "plan": 18,
-        "secs": 0.07,
+        "secs": 0.11,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -94,7 +94,7 @@
         "nok": 0,
         "ok": 18,
         "plan": 18,
-        "secs": 0.84,
+        "secs": 1.3,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -107,7 +107,7 @@
         "nok": 0,
         "ok": 15,
         "plan": null,
-        "secs": 0.33,
+        "secs": 0.27,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -117,7 +117,7 @@
         "nok": 0,
         "ok": 148,
         "plan": 148,
-        "secs": 5.98,
+        "secs": 8.27,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -129,7 +129,7 @@
         "nok": 0,
         "ok": 8,
         "plan": 8,
-        "secs": 0.1,
+        "secs": 0.12,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -139,7 +139,7 @@
         "nok": 0,
         "ok": 8,
         "plan": 8,
-        "secs": 0.52,
+        "secs": 0.84,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -152,7 +152,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.23,
+        "secs": 0.28,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -162,7 +162,7 @@
         "nok": 0,
         "ok": 126,
         "plan": 126,
-        "secs": 0.7,
+        "secs": 0.84,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -175,7 +175,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.2,
+        "secs": 0.3,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -185,7 +185,7 @@
         "nok": 0,
         "ok": 79,
         "plan": 79,
-        "secs": 1.0,
+        "secs": 1.56,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -198,7 +198,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.17,
+        "secs": 0.25,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -208,7 +208,7 @@
         "nok": 0,
         "ok": 82,
         "plan": 82,
-        "secs": 0.72,
+        "secs": 1.05,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -221,7 +221,7 @@
         "nok": 10,
         "ok": 109,
         "plan": 119,
-        "secs": 0.18,
+        "secs": 0.29,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -231,7 +231,7 @@
         "nok": 0,
         "ok": 119,
         "plan": 119,
-        "secs": 0.47,
+        "secs": 0.93,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -264,10 +264,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-17",
+    "date": "2026-09-18",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "bfbdeae",
+    "mutsu_commit": "44c2987",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",

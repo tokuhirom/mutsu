@@ -11,23 +11,22 @@
   "dist": "XML::Entity::HTML",
   "files": [
     {
-      "cmp": "partial",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "decode-html-entities works",
-        "nok": 3,
-        "ok": 1,
+        "nok": 0,
+        "ok": 4,
         "plan": 4,
-        "secs": 0.46,
+        "secs": 0.27,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "pass"
       },
       "path": "t/html-entities.rakutest",
       "raku": {
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 13.21,
+        "secs": 9.55,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -39,10 +38,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-17",
+    "date": "2026-09-18",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "bfbdeae",
+    "mutsu_commit": "44c2987",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -53,13 +52,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/X/ML/XML_ENTITY_HTML/f0f755663e95caa38cd2cf60c6667b0ed16ef373.tar.gz"
   },
-  "status": "red",
+  "status": "green",
   "totals": {
     "baseline_assertions": 4,
     "baseline_files": 1,
-    "mutsu_assertions": 1,
-    "parity_files": 0,
-    "regressed_files": 1
+    "mutsu_assertions": 4,
+    "parity_files": 1,
+    "regressed_files": 0
   },
   "version": "0.1.2"
 }

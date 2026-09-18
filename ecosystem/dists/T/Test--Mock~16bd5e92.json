@@ -11,46 +11,45 @@
   "dist": "Test::Mock",
   "files": [
     {
-      "cmp": "regression",
+      "cmp": "partial",
       "mutsu": {
-        "first_failure": "No such method 'get-all-yaks' for invocant of type 'Any'",
-        "nok": 0,
-        "ok": 0,
+        "first_failure": "called shave 2 times with arguments matching :($), was only called with:",
+        "nok": 1,
+        "ok": 5,
         "plan": 6,
-        "secs": 0.18,
+        "secs": 0.12,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "fail"
       },
       "path": "t/computing.rakutest",
       "raku": {
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 2.06,
+        "secs": 1.9,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "No such method 'mmm' for invocant of type 'Any'",
         "nok": 0,
-        "ok": 0,
+        "ok": 2,
         "plan": 2,
-        "secs": 0.12,
+        "secs": 0.09,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/multi.rakutest",
       "raku": {
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 1.06,
+        "secs": 0.83,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -59,11 +58,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "Default constructor for 'Any' only takes named arguments",
+        "first_failure": "Default constructor for 'Anon' only takes named arguments",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.12,
+        "secs": 0.09,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -73,52 +72,28 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 0.46,
+        "secs": 0.53,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "No such method 'm1' for invocant of type 'Any'",
         "nok": 0,
-        "ok": 0,
+        "ok": 4,
         "plan": 4,
-        "secs": 0.11,
+        "secs": 0.09,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/overriding.rakutest",
       "raku": {
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 0.51,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "No such method 'm' for invocant of type 'Any'",
-        "nok": 0,
-        "ok": 1,
-        "plan": 2,
-        "secs": 0.13,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/required-attrs.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 2,
-        "plan": 2,
         "secs": 0.55,
         "skip": 0,
         "todo": 0,
@@ -126,115 +101,135 @@
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "No such method 'get-all-yaks' for invocant of type 'Any'",
         "nok": 0,
-        "ok": 0,
-        "plan": 3,
-        "secs": 0.12,
+        "ok": 2,
+        "plan": 2,
+        "secs": 0.09,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
+      },
+      "path": "t/required-attrs.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 2,
+        "plan": 2,
+        "secs": 0.4,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "called shave 2 times with arguments matching :($), was only called with:",
+        "nok": 1,
+        "ok": 2,
+        "plan": 3,
+        "secs": 0.1,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
       },
       "path": "t/returning.rakutest",
       "raku": {
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 0.69,
+        "secs": 0.46,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "partial",
       "mutsu": {
-        "first_failure": "No such private method 'mock-log' for invocant of type 'Any'",
-        "nok": 0,
+        "first_failure": "not ok 1 -",
+        "nok": 5,
         "ok": 0,
         "plan": 5,
-        "secs": 0.12,
+        "secs": 0.26,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "fail"
       },
       "path": "t/rw-methods.rakutest",
       "raku": {
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 0.71,
+        "secs": 0.48,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "No such method 'lol' for invocant of type 'Any'",
         "nok": 0,
-        "ok": 0,
+        "ok": 2,
         "plan": 2,
-        "secs": 0.14,
+        "secs": 0.06,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/synopsis.rakutest",
       "raku": {
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 0.6,
+        "secs": 0.4,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "partial",
       "mutsu": {
-        "first_failure": "No such method 'lol' for invocant of type 'Any'",
-        "nok": 0,
+        "first_failure": "called lol 4000 times",
+        "nok": 1,
         "ok": 0,
         "plan": 1,
-        "secs": 0.17,
+        "secs": 0.41,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "fail"
       },
       "path": "t/threads.rakutest",
       "raku": {
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.7,
+        "secs": 0.4,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "No such method 'order_beer' for invocant of type 'Any'",
         "nok": 0,
-        "ok": 0,
+        "ok": 8,
         "plan": 8,
-        "secs": 0.16,
+        "secs": 0.07,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/with.rakutest",
       "raku": {
         "nok": 0,
         "ok": 8,
         "plan": 8,
-        "secs": 0.64,
+        "secs": 0.35,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -246,10 +241,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-17",
+    "date": "2026-09-18",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "bfbdeae",
+    "mutsu_commit": "44c2987",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -260,13 +255,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/T/ES/TEST_MOCK/2f6a23d0be8128e7d932da6a9a120788517b2f95.tar.gz"
   },
-  "status": "red",
+  "status": "partial",
   "totals": {
     "baseline_assertions": 37,
     "baseline_files": 10,
-    "mutsu_assertions": 1,
-    "parity_files": 0,
-    "regressed_files": 10
+    "mutsu_assertions": 25,
+    "parity_files": 5,
+    "regressed_files": 5
   },
   "version": "1.8"
 }

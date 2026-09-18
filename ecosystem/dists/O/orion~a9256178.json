@@ -1,25 +1,28 @@
 {
+  "axis": "pure",
   "deps": {
     "bundled_would_supply": [],
     "mode": "flat-closure",
     "resolved": [
+      "Digest",
       "JSON::Tiny",
       "LWP::Simple",
       "MIME::Base64",
       "URI"
     ],
-    "unresolved": [
-      "Digest::SHA"
-    ]
+    "unresolved": []
   },
   "dist": "orion",
   "files": [],
+  "load": {
+    "Orion::CLI": "raku_also_fails"
+  },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-17",
+    "date": "2026-09-18",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "bfbdeae",
+    "mutsu_commit": "44c2987",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -30,7 +33,7 @@
     "index": "fez",
     "url": "https://360.zef.pm/O/RI/ORION/d92d9de8bef2473a07e06c6c98d60ea112c217d5.tar.gz"
   },
-  "status": "blocked_dep",
+  "status": "no_baseline",
   "totals": {
     "baseline_assertions": 0,
     "baseline_files": 0,

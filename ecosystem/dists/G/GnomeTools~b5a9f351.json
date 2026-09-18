@@ -48,10 +48,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-17",
+    "date": "2026-09-18",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "bfbdeae",
+    "mutsu_commit": "44c2987",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -60,7 +60,7 @@
   "schema": 1,
   "source": {
     "index": "fez",
-    "url": "https://360.zef.pm/G/NO/GNOMETOOLS/61463bdb12cd83c454bf183ba8386db5857bf9b1.tar.gz"
+    "url": "https://360.zef.pm/G/NO/GNOMETOOLS/b0c58128e0ae9ba1870a277cac9f58ad37941941.tar.gz"
   },
   "status": "no_baseline",
   "totals": {
@@ -70,5 +70,5 @@
     "parity_files": 0,
     "regressed_files": 0
   },
-  "version": "0.8.3"
+  "version": "0.8.4"
 }

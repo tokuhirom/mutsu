@@ -24,7 +24,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 2.22,
+        "secs": 1.71,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -37,7 +37,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.05,
+        "secs": 0.04,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -47,7 +47,7 @@
         "nok": 0,
         "ok": 360,
         "plan": 360,
-        "secs": 1.66,
+        "secs": 1.19,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -60,7 +60,7 @@
         "nok": 16,
         "ok": 212,
         "plan": 228,
-        "secs": 0.56,
+        "secs": 0.36,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -70,7 +70,7 @@
         "nok": 0,
         "ok": 228,
         "plan": 228,
-        "secs": 1.74,
+        "secs": 1.38,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -83,7 +83,7 @@
         "nok": 44,
         "ok": 22,
         "plan": 79,
-        "secs": 0.67,
+        "secs": 0.51,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -93,7 +93,7 @@
         "nok": 0,
         "ok": 79,
         "plan": 79,
-        "secs": 1.66,
+        "secs": 1.49,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -106,7 +106,7 @@
         "nok": 26,
         "ok": 0,
         "plan": 26,
-        "secs": 0.38,
+        "secs": 0.29,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -116,7 +116,7 @@
         "nok": 0,
         "ok": 26,
         "plan": 26,
-        "secs": 1.03,
+        "secs": 0.85,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -128,10 +128,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-17",
+    "date": "2026-09-18",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "bfbdeae",
+    "mutsu_commit": "44c2987",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",

@@ -14,7 +14,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 1.78,
+        "secs": 1.63,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -24,7 +24,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 2.02,
+        "secs": 1.78,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -36,7 +36,7 @@
         "nok": 0,
         "ok": 7,
         "plan": 7,
-        "secs": 10.54,
+        "secs": 8.41,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -46,29 +46,30 @@
         "nok": 0,
         "ok": 7,
         "plan": 7,
-        "secs": 4.97,
+        "secs": 4.79,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "parity",
+      "cmp": "partial",
       "mutsu": {
-        "nok": 0,
-        "ok": 9,
+        "first_failure": "RIPEMD('abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomn...')",
+        "nok": 4,
+        "ok": 5,
         "plan": 9,
-        "secs": 234.64,
+        "secs": 181.44,
         "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "fail"
       },
       "path": "t/ripemd.t",
       "raku": {
         "nok": 0,
         "ok": 9,
         "plan": 9,
-        "secs": 92.97,
+        "secs": 77.62,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -80,7 +81,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 2.18,
+        "secs": 1.82,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -90,7 +91,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 2.49,
+        "secs": 1.63,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -107,10 +108,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-17",
+    "date": "2026-09-18",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "bfbdeae",
+    "mutsu_commit": "44c2987",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -121,13 +122,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/D/IG/DIGEST/8f2092538c1c35ea49c3e9d613a82fe2a3ba4708.tar.gz"
   },
-  "status": "green",
+  "status": "partial",
   "totals": {
     "baseline_assertions": 21,
     "baseline_files": 4,
-    "mutsu_assertions": 21,
-    "parity_files": 4,
-    "regressed_files": 0
+    "mutsu_assertions": 17,
+    "parity_files": 3,
+    "regressed_files": 1
   },
   "version": "1.1.0"
 }
