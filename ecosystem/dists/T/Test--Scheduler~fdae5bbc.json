@@ -14,7 +14,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 0.17,
+        "secs": 0.11,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -24,30 +24,30 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 1.84,
+        "secs": 1.55,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "partial",
+      "cmp": "no_baseline",
+      "flaky": true,
       "mutsu": {
-        "first_failure": "one value after 1s",
-        "nok": 2,
-        "ok": 7,
+        "nok": 0,
+        "ok": 9,
         "plan": 9,
-        "secs": 0.16,
+        "secs": 0.11,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "pass"
       },
       "path": "t/synopsis.rakutest",
       "raku": {
         "nok": 0,
         "ok": 9,
         "plan": 9,
-        "secs": 0.74,
+        "secs": 0.56,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -57,10 +57,10 @@
       "cmp": "partial",
       "mutsu": {
         "first_failure": "Certainly scheduling using virtual time",
-        "nok": 5,
-        "ok": 78,
+        "nok": 6,
+        "ok": 77,
         "plan": 83,
-        "secs": 30.97,
+        "secs": 31.1,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -70,7 +70,7 @@
         "nok": 0,
         "ok": 83,
         "plan": 83,
-        "secs": 2.03,
+        "secs": 1.72,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -82,10 +82,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-17",
+    "date": "2026-09-18",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "bfbdeae",
+    "mutsu_commit": "44c2987",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -98,11 +98,11 @@
   },
   "status": "partial",
   "totals": {
-    "baseline_assertions": 95,
-    "baseline_files": 3,
-    "mutsu_assertions": 88,
+    "baseline_assertions": 86,
+    "baseline_files": 2,
+    "mutsu_assertions": 80,
     "parity_files": 1,
-    "regressed_files": 2
+    "regressed_files": 1
   },
   "version": "1.2"
 }
