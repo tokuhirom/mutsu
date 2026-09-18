@@ -73,23 +73,26 @@ pub(super) unsafe extern "C" fn safepoint(_interp: *mut Interpreter) {
 /// armed.  The code pointer is the live compiled chunk received by the JIT
 /// entry, and `site` is the compile-time bytecode ip.
 pub(super) unsafe extern "C" fn profile_safepoint(
-    _interp: *mut Interpreter,
+    interp: *mut Interpreter,
     code: *const CompiledCode,
     site: u32,
 ) {
-    let code = unsafe { &*code };
-    crate::vm::vm_poll::poll_code(crate::gc::SafepointKind::Backedge, site, code);
+    // Same safety contract as every other shim: `interp` is the live
+    // interpreter the JIT entry wrapper received. The sampler only reads its
+    // Raku frame stack.
+    let (interp, code) = unsafe { (&*interp, &*code) };
+    crate::vm::vm_poll::poll_code(crate::gc::SafepointKind::Backedge, site, code, interp);
 }
 
 /// Exact line-entry hook emitted at native basic-block boundaries while the
 /// profiler is armed.  It records counts without becoming another GC poll.
 pub(super) unsafe extern "C" fn profile_line(
-    _interp: *mut Interpreter,
+    interp: *mut Interpreter,
     code: *const CompiledCode,
     site: u32,
 ) {
-    let code = unsafe { &*code };
-    crate::vm::vm_poll::record_line(code, site);
+    let (interp, code) = unsafe { (&*interp, &*code) };
+    crate::vm::vm_poll::record_line(code, site, interp);
 }
 
 /// Mark a `Failure` at the current top of stack as handled. The Tier B

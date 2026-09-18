@@ -1,6 +1,6 @@
 # ADR-0106: The Raku-level profiler — sampled time over the static ip→line table, exact counts at the chokepoints that already exist
 
-- **Status**: Proposed (design complete; Slices 0-1 and 3 shipped, Slices 2 and 4-5 not started — §9)
+- **Status**: Proposed (design complete; Slices 0-3 shipped, Slices 4-5 not started — §9)
 - **Date**: 2026-09-18
 - **Context**: mutsu can measure itself in Rust (callgrind, `MUTSU_ALLOC_STATS`, `MUTSU_VM_STATS`,
   the bench CI) and cannot measure a Raku program at all. Every perf investigation therefore pays a
@@ -257,8 +257,9 @@ Gate: §8 gates 1 and 1c.
   of the report rather than a silent hole.
 - The epoch load happens **inside** the armed branch (Slice 1), so a disarmed run does not pay an
   atomic load per opcode.
-- A poll that observes a new epoch: read the clock once, walk the `RoutineFrame` stack plus the active
-  `(chunk, ip)`, and append a **sample record** to a per-thread, pre-allocated ring buffer. The sample
+- A poll that observes a new epoch: read the clock once, walk the `RoutineFrame` stack plus the
+  `(chunk, ip)` the **previous** poll stood at (§5.1 — the active ip is the start of the *next* region,
+  not the one that ran), and append a **sample record** to a per-thread, pre-allocated ring buffer. The sample
   path performs **no allocation** and takes no lock — it writes fixed-size frames (chunk id, ip,
   routine id, region tag) into reserved space, which keeps the profiler out of its own measurement
   (an allocating sampler would pollute both the GC's candidate buffer and the alloc-stats counters).
@@ -270,6 +271,42 @@ Gate: §8 gates 1 and 1c.
   long region that delays the poll contributes its real duration rather than a fixed tick's worth.
 - Aggregation happens at run end (or when a buffer fills) off the hot path: samples fold into a
   `(file, line) → {self, inclusive}` table and a caller-keyed routine table.
+
+#### 5.1 Three corrections the implementation forced (2026-09-18, [#8702](https://github.com/tokuhirom/mutsu/issues/8702))
+
+**A sample credits the line of the *previous* poll, not the line the poll is standing on.** A
+poll-based sampler never sees where the tick fired; it finds out at the next poll, by which point the
+region that was running has finished and the thread is at the start of the next one. The probability
+of noticing at a given poll site is proportional to the time spent in the region *preceding* it, so
+crediting the site itself shifts a profile one region late — systematically, not on average. On Raku
+code, where a line is a handful of opcodes, "one region late" means a hot line's cost is reported
+against the line below it, which is the same class of plausible-looking wrong answer §6b rejects
+`cur_source_line` for. In the interpreter the polls are per opcode and in JIT-compiled code the
+emitted hooks are per line transition, so in both the previous poll bounds exactly the region that
+delayed this one. It is also what makes the elapsed weighting do its §7 job: a long native region has
+its whole duration charged to the line that entered it rather than to whatever ran next.
+
+**The sampler has to ride the JIT's per-line hook, not only the poll.** Sampling from `poll_code`
+alone gives a native body one sample per entry, carrying the range's first ip — because no Raku loop
+form places a backward jump inside a compiled range (§8.2). A hot loop then reports all of its time
+against its first line and the other body lines are *absent*, not merely under-weighted. This is the
+time half of exactly what [#8713](https://github.com/tokuhirom/mutsu/issues/8713) fixed for the
+counts, and it has the same fix: the sampler rides `helpers::profile_line`, which the JIT already
+emits at every line transition while armed.
+
+**Per-thread tables must be registered, not folded on `Drop` alone.** A worker-pool thread is still
+alive when the process reports, so a fold-on-drop loses everything it collected. This was latent in
+Slice 3's counters too and surfaced the moment a `start` block was profiled: a routine called once on
+the mainline and once on a worker reported `entries=1`. Both halves now register a handle the report
+can drain from another thread; the counters' hot path is unchanged, because the "still on the same
+line" poll reads one `Cell` and takes no lock.
+
+One thing the slice deliberately did **not** do. A chunk's `source_file` is the canonicalized path
+while a `RoutineFrame`'s is `$?FILE` as the user spelled it, so a `line` row and a `callsite` row
+could name one file two ways and could not be joined — the mainline case of the `EVAL` hazard this
+ADR's §7 risk table already ruled on once. The report reconciles them (`src/profile/paths.rs`);
+settling it at the source means deciding what `$?FILE`, `Code.file` and backtraces report, which
+several `t/` tests pin, and is [#8719](https://github.com/tokuhirom/mutsu/issues/8719).
 
 ### Slice 3 — exact counts
 
@@ -436,6 +473,11 @@ memory, and it is not enough to assert it: each of these is measured per slice.
    is that line, and its exact `hits` equals the trip count — asserted in `t/`.
 4. **JIT parity**: the same fixture profiled with `--profile-jit=off` and on produces the same top line
    and the same `hits` (only the times differ). This is the check that the JIT backedge poll works.
+   For the *sampled* half there is no "same number" to compare — a native body and an interpreted one
+   take neither the same polls nor the same time per line — so what is asserted there is that the two
+   runs name the same **set** of lines, routines and caller edges. That is what gate 4 is actually
+   about: whether a profile silently loses resolution the moment a loop gets hot, which is exactly
+   when a profiler is opened.
 
 ### 8.1 Measured results
 
@@ -461,6 +503,49 @@ Everything is inside 0.5%, gate 1c's JIT-on rows included. The bench CI remains 
 for *wall-clock* numbers in documents (`CLAUDE.md`); this table is an instruction count, which is what
 gates 1 and 1c actually specify.
 
+**Gates 1, 1b, 1c and 2, after Slice 2 (2026-09-18).** Gates 1 and 1c re-measured the same way as
+the Slice 1 table above — callgrind `Ir`, which is deterministic and load-independent, against the
+release binary of `528a8d02` (main immediately before Slice 2), `MUTSU_GC=off` throughout:
+
+| workload | JIT | baseline Ir | after Slice 2 | delta |
+|---|---|---:|---:|---:|
+| `bench-fib` | off | 2,714,066,803 | 2,712,869,354 | -0.044% |
+| `bench-tak` | off | 2,610,268,252 | 2,609,518,483 | -0.029% |
+| `bench-mandelbrot` | off | 1,106,672,058 | 1,106,282,683 | -0.035% |
+| `nqp-backedge` | off | 8,502,241,991 | 8,502,242,264 | +0.000% |
+| `bench-fib` | on | 1,508,885,410 | 1,507,687,521 | -0.079% |
+| `bench-tak` | on | 1,750,371,783 | 1,749,622,357 | -0.043% |
+| `bench-mandelbrot` | on | 663,795,911 | 663,411,679 | -0.058% |
+| `nqp-backedge` | on | 8,506,274,145 | 8,506,274,641 | +0.000% |
+
+Everything is inside 0.5% and the sign is negative, i.e. the differences are binary-layout noise
+rather than a cost. That is the expected result and worth saying why: Slice 2 adds **no codegen** —
+the location-carrying shim shapes and the decision to emit them were Slice 1's, and the sampler's
+work is behind the same `t.profiler` branch the exact counters already sit behind.
+
+One caveat on the last two rows. The `nqp-backedge` fixture of §8.2 was not kept in the tree, and the
+reconstruction used here (an `nqp::while` inside a routine called 500 times, so the routine body
+reaches the hotness threshold — a mainline chunk is entered once and never does) gets one range
+compiled but shows no instruction-count difference between JIT on and off, so it is weaker evidence
+for the native backedge than the original row was. The three real benchmarks' JIT-on rows are the
+substantive JIT-side evidence here, and gate 1c's specific hazard — an ip argument emitted
+unconditionally — is Slice 1's, unchanged.
+
+**Gate 1b (disarmed memory): pass.** Peak RSS (`VmHWM`, worst of five runs) on `bench-json-fast`,
+which loads enough of the batteries to multiply any per-chunk or per-thread cost: 40,804 kB baseline
+against 39,224 kB after Slice 2 — within the sampling noise of the measurement, and in the direction
+that is not a regression. This is the gate that would catch a buffer landing on `Interpreter`; the
+sampler's buffers and its tick thread are created by the poll network's arm-time trigger computation
+and by nothing else, so a disarmed run has neither.
+
+**Gate 2 (armed cost): pass, at 1.10x against a budget of 1.30x.** `bench-json-fast`, release, median
+of seven runs: 423 ms disarmed against 464 ms at the 1000 Hz default. At 100 Hz it is 422 ms, i.e.
+free. The armed number covers the exact counters *and* the sampler together, because one environment
+gate arms both. For scale, §2.1's note stands: NYTProf is commonly 2-6x.
+
+These are instruction counts and a local wall-clock ratio, which is what these gates specify; the
+bench CI remains the source of truth for wall-clock numbers quoted in documents (`CLAUDE.md`).
+
 **Gates 3 and 4, after Slice 3 (2026-09-18): pass, and are now asserted.** On a `while` loop whose
 body runs exactly 5,000 times, both body lines report `hits=5000` and the condition line `hits=5001`
 (it is evaluated once more, the time it is false), with every line outside the loop at 1 — the trip
@@ -470,6 +555,12 @@ is gate 4. `tests/profile_counts.rs` holds both, and asserts that the JIT actual
 claiming parity from it. They could not be asserted before that: `flush_at_exit` folded its snapshot
 into a static nothing read, so the counters had no consumer outside the crate
 ([#8713](https://github.com/tokuhirom/mutsu/issues/8713)).
+
+**Gate 4's sampled half, after Slice 2 (2026-09-18): pass.** On the same shape of fixture, a run with
+`MUTSU_JIT=off` and one with `MUTSU_JIT=on MUTSU_JIT_THRESHOLD=1` name the identical set of sampled
+lines, routines and caller edges (`tests/profile_samples.rs`, which also asserts the JIT entered).
+Nothing about the *times* is compared, and nothing could be: a native body and an interpreted one
+take neither the same polls nor the same time per line.
 
 ### 8.2 What gate 1c's fixture had to be, and why
 
@@ -492,12 +583,14 @@ helper's.)
 
 ## 9. Implementation status
 
-**Slices 0, 1, and 3 are shipped** ([#8699](https://github.com/tokuhirom/mutsu/issues/8699),
+**Slices 0-3 are shipped** ([#8699](https://github.com/tokuhirom/mutsu/issues/8699),
 [#8701](https://github.com/tokuhirom/mutsu/issues/8701),
+[#8702](https://github.com/tokuhirom/mutsu/issues/8702),
 [#8703](https://github.com/tokuhirom/mutsu/issues/8703);
-`news/2026-09/a-compiled-chunk-knows-which-file-its-lines-belong-to.md` and
-`news/2026-09/profiler-safepoint-poll-network.md` and
-`news/2026-09/profiler-exact-line-counts.md`): `CompiledCode` carries
+`news/2026-09/a-compiled-chunk-knows-which-file-its-lines-belong-to.md`,
+`news/2026-09/profiler-safepoint-poll-network.md`,
+`news/2026-09/profiler-exact-line-counts.md` and
+`news/2026-09/profiler-sampler.md`): `CompiledCode` carries
 `source_file: Option<Symbol>` and `location_at(ip) -> Option<(Symbol, u32)>`. One deviation from the
 sketch above: rather than threading the unit path through `Compiler::compile` and its ~40 chunk-
 compiler construction sites, the unit's identity is published for the duration of a compile through a
@@ -510,16 +603,30 @@ profiler gate/site ABI ready for Slice 2; the JIT supplies the bytecode ip on na
 when the profiler is armed. `tests/jit_diff.rs` pins that arming the profiler consumer preserves JIT
 execution. Slice 3 adds per-thread exact line-transition counters, routine entries, and callsite
 calls, folding them off the hot path; native code emits line-entry hooks while armed so JIT counts
-are not silently partial. Slices 2 and 4-5 are not started; Slice 6 is explicitly optional. Each
-slice lands as its own PR with its own gate (§8), and Slices 0, 1, and 3 were independently useful,
-as claimed.
+are not silently partial.
+
+Slice 2 adds the sampler: a detached tick thread at `MUTSU_PROFILE_RATE` Hz (1000 by default), a
+thread-local `last_seen` compared inside the armed branch, and per-thread buffers reserved at arm
+time that fold into `(file, line)` and routine tables when they fill or at exit. Three deviations from
+the sketch, all of them things only the implementation showed, are recorded in §5.1: a sample credits
+the *previous* poll's line, the sampler rides the JIT's per-line hook rather than only `poll_code`,
+and per-thread tables are registered rather than folded on `Drop`. Time spent in a GC collect, a
+stop-the-world park or a blocking `sleep`/join/read is discounted from the weighting
+(`profile::exclude_non_raku`). `MUTSU_PROFILE_TICK=every-poll` replaces the timer with "every poll is
+a tick", which is what lets `tests/profile_samples.rs` assert the sampler's *structure* without
+asserting a duration (D5). #8719 records the one thing the slice worked around rather than fixed.
+
+Slices 4-5 are not started; Slice 6 is explicitly optional. Each slice lands as its own PR with its
+own gate (§8), and Slices 0-3 were each independently useful, as claimed.
 
 ## 10. Open questions
 
-- **Rate and clock.** 1000 Hz default is a guess borrowed from stackprof/py-spy; the right default
-  should be measured against gate 2. Which clock (`Instant`, `clock_gettime(CLOCK_MONOTONIC)`,
-  `CLOCK_THREAD_CPUTIME_ID`) — wall is the right default for an interpreter whose costs include I/O
-  and GC, but a CPU-time mode may be worth having for threaded runs.
+- **Rate and clock.** The 1000 Hz default, borrowed from stackprof/py-spy, now has a number against
+  it: 1.10x on `bench-json-fast` (§8.1), where 100 Hz is free. It stays. The clock is `Instant`
+  (wall), which is right for an interpreter whose costs include I/O and GC; whether a
+  `CLOCK_THREAD_CPUTIME_ID` mode is worth having for threaded runs is still open, and is the thing
+  that would make `sampled_ns` comparable to `wall_ns` on a multi-threaded profile instead of
+  summing past it.
 - **Allocation attribution per line.** Cheap to add once `alloc-stats` and the sampler coexist
   (Scalene and MoarVM both do it, and mutsu's costs are allocation-shaped often enough to want it).
   Deliberately out of the first implementation to keep the sample path non-allocating and the scope
