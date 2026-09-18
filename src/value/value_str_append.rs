@@ -7,6 +7,7 @@
 //! when the buffer really is this value's alone, which is what this file's
 //! uniqueness check decides.
 
+use super::value_str_append_nfc::{StrAppendPlan, append_nfc};
 use super::{Value, ValueRepr};
 use std::sync::Arc;
 
@@ -22,36 +23,40 @@ impl Value {
     /// what keeps Raku's value semantics: appending to `$a` must never be
     /// visible through `$b`.
     ///
-    /// **Does not normalize.** `Interpreter::concat_values` runs NFC over the
-    /// whole concatenation, and that pass (like the `is_ascii()` scan that
-    /// gates it) is O(len) per append — the other half of what makes an
-    /// accumulation quadratic. Skipping it is only sound because the caller
-    /// has established that this particular join cannot compose; the sole
-    /// caller, `Interpreter::exec_concat_assign_local_op`, requires an ASCII
-    /// suffix for exactly that reason (an ASCII character is a starter and is
-    /// never a combining mark, so it can neither compose with the character
-    /// before it nor change the normalization of anything earlier).
-    pub(crate) fn str_appended_unnormalized(self, suffix: &str) -> Value {
+    /// **Normalizes in bounded time, not by rescanning the buffer.** The
+    /// result has to stay NFC, but `Interpreter::concat_values` restores that
+    /// by running NFC over the whole concatenation, which is O(len) per append
+    /// and puts the quadratic cost straight back (#8725). `plan` — built by
+    /// [`StrAppendPlan::for_suffix`] from the suffix alone — says whether the
+    /// join can compose at all; when it cannot (every ASCII suffix, and any
+    /// suffix starting at a normalization boundary) nothing but the suffix is
+    /// looked at, and when it can, only a bounded window around the join is
+    /// redone. `self` is assumed already NFC, which every path that produces a
+    /// `Str` guarantees.
+    pub(crate) fn str_appended_nfc(self, plan: &StrAppendPlan<'_>) -> Value {
         let ValueRepr::Str(mut arc) = self.into_repr() else {
             // The caller checks the tag before moving the value out; reaching
             // here would mean it stopped doing so.
-            debug_assert!(false, "str_appended_unnormalized on a non-Str value");
-            return Value::str(suffix.to_string());
+            debug_assert!(false, "str_appended_nfc on a non-Str value");
+            let mut seeded = String::new();
+            append_nfc(&mut seeded, plan);
+            return Value::str(seeded);
         };
         match Arc::get_mut(&mut arc) {
             // Unique: grow the existing allocation in place. `String::push_str`
             // reallocates geometrically, so a whole accumulation is linear —
             // that amortization IS the fix, not the saved copy alone.
             Some(owned) => {
-                owned.push_str(suffix);
+                append_nfc(owned, plan);
                 Value::Str(arc)
             }
-            // Shared: Raku value semantics require a fresh buffer. Sized
-            // exactly, which still beats `format!`'s growth-from-empty.
+            // Shared: Raku value semantics require a fresh buffer. Sized with
+            // the suffix in mind, which still beats `format!`'s growth-from-
+            // empty.
             None => {
-                let mut copied = String::with_capacity(arc.len() + suffix.len());
+                let mut copied = String::with_capacity(arc.len() + plan.suffix_len_hint());
                 copied.push_str(&arc);
-                copied.push_str(suffix);
+                append_nfc(&mut copied, plan);
                 Value::Str(Arc::new(copied))
             }
         }
@@ -62,19 +67,21 @@ impl Value {
 mod tests {
     use super::*;
 
+    fn appended(v: Value, suffix: &str) -> Value {
+        v.str_appended_nfc(&StrAppendPlan::for_suffix(suffix))
+    }
+
     #[test]
     fn appends_in_place_when_unique() {
         let v = Value::str("ab".to_string());
-        let appended = v.str_appended_unnormalized("cd");
-        assert_eq!(appended.to_string_value(), "abcd");
+        assert_eq!(appended(v, "cd").to_string_value(), "abcd");
     }
 
     #[test]
     fn copies_when_shared_so_the_alias_is_untouched() {
         let original = Value::str("ab".to_string());
         let alias = original.clone();
-        let appended = original.str_appended_unnormalized("cd");
-        assert_eq!(appended.to_string_value(), "abcd");
+        assert_eq!(appended(original, "cd").to_string_value(), "abcd");
         // The alias still holds the pre-append text: the shared buffer was
         // copied rather than grown.
         assert_eq!(alias.to_string_value(), "ab");
@@ -84,8 +91,28 @@ mod tests {
     fn repeated_appends_accumulate() {
         let mut v = Value::str(String::new());
         for _ in 0..1000 {
-            v = v.str_appended_unnormalized("x");
+            v = appended(v, "x");
         }
         assert_eq!(v.to_string_value().len(), 1000);
+    }
+
+    #[test]
+    fn a_non_ascii_suffix_appends_and_stays_normalized() {
+        let v = Value::str("ascii".to_string());
+        assert_eq!(appended(v, "\u{2603}").to_string_value(), "ascii\u{2603}");
+    }
+
+    #[test]
+    fn a_composing_suffix_is_normalized_across_the_join() {
+        let v = Value::str("e".to_string());
+        assert_eq!(appended(v, "\u{301}").to_string_value(), "\u{e9}");
+    }
+
+    #[test]
+    fn a_shared_buffer_normalizes_the_join_in_the_copy() {
+        let original = Value::str("e".to_string());
+        let alias = original.clone();
+        assert_eq!(appended(original, "\u{301}").to_string_value(), "\u{e9}");
+        assert_eq!(alias.to_string_value(), "e");
     }
 }

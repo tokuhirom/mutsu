@@ -528,6 +528,8 @@ mod value_methods_b;
 mod value_methods_c;
 mod value_setbagmix;
 mod value_str_append;
+mod value_str_append_nfc;
+pub(crate) use value_str_append_nfc::StrAppendPlan;
 mod view;
 pub(crate) mod waker;
 
