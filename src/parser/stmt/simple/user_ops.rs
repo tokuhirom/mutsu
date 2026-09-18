@@ -184,6 +184,21 @@ pub(crate) fn match_user_declared_infix_symbol_op(input: &str) -> Option<(String
                     continue;
                 }
                 let consumed = op.len();
+                // A user operator ending in `=` must not claim a strict prefix of
+                // a longer `=`-chain token the core parser owns (a declared
+                // `infix:<==>` must not swallow two of `===`'s three `=` and
+                // leave a lone `=` behind, exactly as a declared `infix:<->`
+                // must not swallow the `-` of `->` below). Every core
+                // relational/equality operator in this family (`==`, `===`,
+                // `<=`, `>=`, ...) extends by one more `=`, and nothing in the
+                // language lets a user infix be immediately followed by a bare
+                // `=` with some other meaning. Unlike the `op.len() == 1` block
+                // below, this applies at any operator length: `IP::Addr`'s
+                // `multi infix:<==>(...) is export` broke every later `===` in
+                // the importing file without it (ecosystem `IP::Addr`).
+                if op.ends_with('=') && input[consumed..].starts_with('=') {
+                    continue;
+                }
                 // A single-character symbol op must not be matched when it is
                 // actually the prefix of a longer *reserved* token: the pointy /
                 // return arrow (`->`, `-->`), auto-increment/decrement (`++`,

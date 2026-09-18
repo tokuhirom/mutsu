@@ -756,6 +756,21 @@ impl Interpreter {
         if let Some(ValueView::Package(pkg)) = self.env.get(lookup).map(Value::view) {
             return format!("{}{}", pkg.resolve(), suffix);
         }
+        // A short name a module imported for its OWN scope (`package_type_alias`)
+        // is not necessarily in `env`: a re-`use` of an already-loaded module (the
+        // module's exports were first imported into a *different* importer, e.g. a
+        // transitively-`use`d role's own compunit) takes a short-circuit path that
+        // never writes the bare env binding for THIS importer — see
+        // `use_module_with_tags_inner`'s already-loaded branch. `has_type` (general
+        // type-name validity, consulted by e.g. bareword `.^name` resolution)
+        // already falls back to this alias table; `is`/`does`/`hides` parent
+        // resolution must too, or a `does`-role imported this way is wrongly
+        // rejected as an unknown typename (ecosystem `IP::Addr`'s `IPv4-Basic`).
+        if !lookup.contains("::")
+            && let Some(resolved) = self.package_type_alias(lookup)
+        {
+            return format!("{}{}", resolved, suffix);
+        }
         // Fallback: when a compile-time pre-qualified name like `M::C1` cannot
         // be resolved (e.g. because `C1` lives outside module `M`), try the
         // bare suffix (`C1`).  This handles cross-package parents in classes
