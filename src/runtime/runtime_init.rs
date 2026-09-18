@@ -3423,6 +3423,7 @@ impl Interpreter {
             invocation_id_block_end: 0,
             pos_light_ic_epoch: 1,
             amp_param_shadowed_names: std::collections::HashSet::new(),
+            export_amp_override_names: std::collections::HashSet::new(),
             empty_sig_proto_names: std::collections::HashSet::new(),
             registered_fn_fingerprints: Default::default(),
             registered_stub_decl_sites: Default::default(),

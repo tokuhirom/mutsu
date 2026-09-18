@@ -587,12 +587,21 @@ impl Interpreter {
         // (`runtime/unit_private_routines.rs`) is bypassed for the same reason:
         // its resolution depends on the compilation unit currently executing,
         // which a `(name, package)`-keyed cache cannot represent.
-        let skip_name_caches = if self.amp_param_shadowed_names.is_empty() {
-            self.is_unit_scoped_routine_sym(code.const_sym(name_idx))
+        //
+        // Same treatment for a name `sub EXPORT` installed an `&name` env
+        // override for (`export_amp_override_names`, #8746): the light-call
+        // caches would otherwise dispatch straight to the registered package
+        // sub of the same name forever, never re-checking the installed
+        // override.
+        let name_sym = code.const_sym(name_idx);
+        let skip_name_caches = if self.amp_param_shadowed_names.is_empty()
+            && self.export_amp_override_names.is_empty()
+        {
+            self.is_unit_scoped_routine_sym(name_sym)
         } else {
-            self.amp_param_shadowed_names
-                .contains(&code.const_sym(name_idx))
-                || self.is_unit_scoped_routine_sym(code.const_sym(name_idx))
+            self.amp_param_shadowed_names.contains(&name_sym)
+                || self.export_amp_override_names.contains(&name_sym)
+                || self.is_unit_scoped_routine_sym(name_sym)
         };
         // ADR-0054 Slice 4: whether this call site wrote a `|EXPR` argument,
         // decided once from the compile-time descriptor rather than by
@@ -1040,6 +1049,15 @@ impl Interpreter {
             {
                 None
             } else {
+                // A `sub EXPORT`-installed `&name` override (#8746) is a
+                // lexical import of the WHOLE importing compunit, not a value
+                // inherited from an unrelated caller frame — unlike the
+                // free-var case just below, it must be visible to a bareword
+                // call anywhere within that unit's reach, so it is not gated
+                // by `free_var_syms`.
+                let is_export_override = self
+                    .export_amp_override_names
+                    .contains(&Symbol::intern(name_str));
                 let candidate = dispatch_key::with_amp_name(name_str, |ampname| {
                     // First check local slots (parameter bindings live here).
                     self.locals_get_by_name(code, ampname).or_else(|| {
@@ -1050,8 +1068,7 @@ impl Interpreter {
                         // method with a same-named `&` parameter can recursively
                         // replace the callback's own bare `name(...)` call.
                         let sym = Symbol::intern(ampname);
-                        code.free_var_syms
-                            .contains(&sym)
+                        (is_export_override || code.free_var_syms.contains(&sym))
                             .then(|| self.env().get(ampname).cloned())
                             .flatten()
                     })
