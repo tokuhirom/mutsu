@@ -530,14 +530,13 @@ impl Interpreter {
             // one a Callable *value* (`&e`, `my &c = &e; c()`) takes.
             let pushed_dispatch = !all_candidates.is_empty();
             let def_fp = def.body_fingerprint();
-            let remaining: Vec<std::sync::Arc<FunctionDef>> = all_candidates
-                .into_iter()
+            if pushed_dispatch {
                 // Compare through the memoized fingerprint (plan-seeded for
                 // body-less plan-derived defs, ADR-0019 C6e-3) so the current
-                // candidate is always recognized and excluded.
-                .filter(|c| c.body_fingerprint() != def_fp)
-                .collect();
-            if pushed_dispatch {
+                // candidate is always recognized and excluded. The exclusion is
+                // lazy (#8727): `MultiRemaining` skips it while walking, so the
+                // filtered copy this used to build never has to exist.
+                let remaining = super::MultiRemaining::from_vec(all_candidates, Some(def_fp));
                 let rw_params =
                     super::builtins_dispatch_next::rw_scalar_positional_params(&def.param_defs);
                 let dispatch_token = self.next_dispatch_token();
