@@ -811,6 +811,15 @@ impl Interpreter {
         // into the caller's language version.
         let saved_language_version = crate::parser::current_language_version();
         let (stmts, _precompiled) = self.parse_module_source(module, &source_path)?;
+        // ADR-0106 Slice 0: everything compiled for this module -- its mainline,
+        // its routine bodies, the shared-body capture compile below -- belongs
+        // to the module's own file, not to the script that `use`d it. Published
+        // here rather than only alongside the `?FILE` scoping further down, so
+        // the capture compile (which runs before that) is covered too. Restored
+        // when this load returns, including on the `?` paths below.
+        let _unit_file = crate::unit_source_file::UnitSourceFileGuard::enter(Some(
+            crate::symbol::Symbol::intern(&source_path.to_string_lossy()),
+        ));
         // Track operator subs exported by this module so EVAL can see them.
         for name in Self::extract_module_exported_operator_names(&stmts) {
             crate::runtime::cow_table_mut(&mut self.imported_operator_names).insert(name);

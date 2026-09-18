@@ -33,6 +33,7 @@ pub mod symbol;
 mod token_kind;
 mod trace;
 pub(crate) mod type_id;
+pub(crate) mod unit_source_file;
 mod value;
 mod vm;
 pub(crate) mod whatever_curry;
@@ -95,16 +96,36 @@ pub fn dump_ast(input: &str) -> Result<String, RuntimeError> {
 /// Parse and compile source code, returning a disassembly of the compiled
 /// bytecode: the mainline followed by each compiled function. Used for
 /// compiler/JIT debugging (`--dump-bytecode`).
-pub fn dump_bytecode(input: &str) -> Result<String, RuntimeError> {
+///
+/// `source_file` names the compilation unit the listing belongs to, which is
+/// stamped onto every chunk it produces (ADR-0106 Slice 0) and annotated onto
+/// each instruction whose location differs from the one before it.
+pub fn dump_bytecode(input: &str, source_file: Option<&str>) -> Result<String, RuntimeError> {
     use std::fmt::Write;
     let (stmts, _) = parse_dispatch::parse_source(input)?;
+    let _unit_file = unit_source_file::UnitSourceFileGuard::enter(
+        source_file.map(crate::symbol::Symbol::intern),
+    );
     let mut compiler = compiler::Compiler::new();
     compiler.is_mainline = true;
     let (code, compiled_fns) = compiler.compile(&stmts);
     let mut out = String::new();
     let disasm = |out: &mut String, code: &opcode::CompiledCode| {
+        let mut shown: Option<(crate::symbol::Symbol, u32)> = None;
         for (i, op) in code.ops.iter().enumerate() {
-            let _ = writeln!(out, "  {:4}: {:?}", i, op);
+            // `location_at` answers "where is this instruction" from the chunk
+            // alone -- the static ip -> line table plus the unit the chunk was
+            // compiled for. Only printed when it changes, so a listing stays
+            // readable instead of repeating one path per op.
+            match code.location_at(i) {
+                Some(loc) if Some(loc) != shown => {
+                    shown = Some(loc);
+                    let _ = writeln!(out, "  {:4}: {:?}    ; {}:{}", i, op, loc.0.as_str(), loc.1);
+                }
+                _ => {
+                    let _ = writeln!(out, "  {:4}: {:?}", i, op);
+                }
+            }
         }
         if !code.constants.is_empty() {
             let _ = writeln!(out, "  constants:");
