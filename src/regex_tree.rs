@@ -1210,6 +1210,16 @@ pub(crate) fn expression_source(expr: &crate::ast::Expr) -> Option<String> {
             expression_source(target)?,
             join_args(args)?
         )),
+        // A pointy block used as a named regex argument must be rendered back
+        // as a pointy block rather than as an opaque closure value. The body
+        // remains unevaluated here; the existing regex argument evaluator
+        // invokes it at match time.
+        crate::ast::Expr::Lambda {
+            param,
+            body,
+            is_whatever_code: false,
+            ..
+        } => Some(format!("-> ${param} {}", closure_body_source(body)?)),
         crate::ast::Expr::MethodCall {
             target,
             name,
@@ -1292,6 +1302,21 @@ pub(crate) fn expression_source(expr: &crate::ast::Expr) -> Option<String> {
         crate::ast::Expr::PositionalPair(inner) => Some(format!("({})", expression_source(inner)?)),
         _ => None,
     }
+}
+
+/// Render the expression-only statement subset used by an explicit pointy
+/// block in a constructed regex argument. Compiler line markers are metadata,
+/// not source, and all other statements remain outside this bounded renderer.
+fn closure_body_source(body: &[crate::ast::Stmt]) -> Option<String> {
+    let mut expressions = Vec::new();
+    for stmt in body {
+        match stmt {
+            crate::ast::Stmt::SetLine(_) => {}
+            crate::ast::Stmt::Expr(expr) => expressions.push(expression_source(expr)?),
+            _ => return None,
+        }
+    }
+    Some(format!("{{ {} }}", expressions.join("; ")))
 }
 
 /// Render the interpolated `QuotedString` expression used by a dynamic quoted
@@ -2100,7 +2125,14 @@ impl Parser {
             // fat arrow (`key => value`). Its `>` is not the closing angle of
             // the subrule, even though this scanner is otherwise looking for
             // that delimiter.
-            if *ch == '>' && self.pos > start && self.chars.get(self.pos - 1) == Some(&'=') {
+            if *ch == '>'
+                && self.pos > start
+                && matches!(self.chars.get(self.pos - 1), Some('=') | Some('-'))
+            {
+                // `=>` belongs to a hash-composer entry, while `->` starts
+                // an explicit pointy block signature inside a colonpair
+                // argument. Neither arrow terminates the surrounding
+                // `<subrule(...)>` assertion.
                 self.pos += 1;
                 continue;
             }

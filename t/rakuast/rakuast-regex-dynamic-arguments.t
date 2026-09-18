@@ -6,7 +6,7 @@ use Test;
 # ADR-0088 issue #8033: dynamic expressions in subrule arguments keep their
 # RakuAST expression trees and can be lowered back to the regex parser.
 
-plan 131;
+plan 139;
 
 my $value = 'a';
 my $ast = Q[/<word($value.uc)>/].AST;
@@ -620,3 +620,62 @@ ok GDynamicHashSlurpyPlaceholderColonPairArgument.parse('').defined,
 $value = 'c';
 ok !GDynamicHashSlurpyPlaceholderColonPairArgument.parse('').defined,
     'a hash-slurpy placeholder keeps its outer lexical dynamic';
+
+my $explicit_signature_ast =
+    Q[/<word(:expected(-> $candidate { $candidate eq $value }))>/].AST;
+my $explicit_signature_gist = $explicit_signature_ast.gist;
+ok $explicit_signature_gist.contains('RakuAST::ColonPair::Value'),
+    'an explicit-signature colonpair keeps its value node';
+ok $explicit_signature_gist.contains('value => RakuAST::Circumfix::Parentheses.new('),
+    'an explicit-signature colonpair keeps its parenthesized value';
+ok $explicit_signature_gist.contains('RakuAST::PointyBlock.new('),
+    'an explicit-signature colonpair keeps its pointy block';
+ok $explicit_signature_gist.contains('RakuAST::ParameterTarget::Var.new('),
+    'an explicit-signature colonpair keeps its parameter target';
+ok EVAL($explicit_signature_ast) ~~ Regex,
+    'a source explicit-signature colonpair regex lowers successfully';
+
+my $explicit_parameter = RakuAST::Parameter.new(
+    target => RakuAST::ParameterTarget::Var.new(name => '$candidate'),
+);
+my $explicit_statements = RakuAST::StatementList.new;
+$explicit_statements.add-statement(
+    RakuAST::Statement::Expression.new(
+        expression => RakuAST::Var::Lexical.new('$candidate'),
+    )
+);
+my $explicit_pair = RakuAST::ColonPair::Value.new(
+    key => 'expected',
+    value => RakuAST::Circumfix::Parentheses.new(
+        RakuAST::SemiList.new(
+            RakuAST::Statement::Expression.new(
+                expression => RakuAST::PointyBlock.new(
+                    signature => RakuAST::Signature.new(
+                        parameters => [$explicit_parameter],
+                    ),
+                    body => RakuAST::Blockoid.new($explicit_statements),
+                ),
+            ),
+        ),
+    ),
+);
+my $explicit_constructed_ast = RakuAST::QuotedRegex.new(
+    body => RakuAST::Regex::Assertion::Named::Args.new(
+        name => RakuAST::Name.from-identifier('word'),
+        args => RakuAST::ArgList.new($explicit_pair),
+        capturing => True,
+    ),
+);
+ok EVAL($explicit_constructed_ast) ~~ Regex,
+    'a hand-built explicit-signature regex lowers through the matcher';
+
+grammar GDynamicExplicitSignatureColonPairArgument {
+    token TOP { <word(:expected(-> $candidate { $candidate eq $value }))> }
+    token word(:$expected) { <.alpha> <?{ $expected('a') }> }
+}
+$value = 'a';
+ok GDynamicExplicitSignatureColonPairArgument.parse('a').defined,
+    'an explicit-signature colonpair reaches the named subrule as a callable';
+$value = 'b';
+ok !GDynamicExplicitSignatureColonPairArgument.parse('a').defined,
+    'an explicit-signature colonpair keeps its outer lexical dynamic';

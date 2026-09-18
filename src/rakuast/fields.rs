@@ -106,6 +106,10 @@ pub(super) fn model_fields(class: RakuAstClass) -> &'static [(&'static str, Abse
         PostcircumfixLiteralHashIndex => &[("index", Absent::Required)],
         Postfix => &[("operator", Absent::Required)],
         Block => &[("body", Absent::TypeObject("RakuAST::Blockoid"))],
+        PointyBlock => &[
+            ("signature", Absent::EmptyNode(Signature)),
+            ("body", Absent::TypeObject("RakuAST::Blockoid")),
+        ],
         Blockoid => &[("statement-list", Absent::Required)],
         VarDeclarationPlaceholderPositional => &[("lexical-name", Absent::Required)],
         VarDeclarationPlaceholderSlurpyArray => &[],

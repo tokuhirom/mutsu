@@ -1404,3 +1404,24 @@ The focused regression is
 `t/rakuast/rakuast-regex-dynamic-arguments.t`; it pins the direct block and
 slurpy-placeholder nodes, the no-field constructor, source and hand-built
 regex lowering, named argument binding, and dynamic outer-lexical behavior.
+
+## 57. Explicit pointy-signature block-valued colonpair dynamic argument slice (2026-09-18)
+
+An ordinary explicit pointy block used as a regex colonpair value, such as
+`<word(:expected(-> $candidate { $candidate eq $value }))>`, now retains
+Rakudo's `RakuAST::ColonPair::Value` with a parenthesized value containing a
+`RakuAST::PointyBlock` and its positional `RakuAST::Signature`. The regex
+assertion scanner treats the `>` in `->` as part of the nested argument rather
+than as the end of the surrounding subrule.
+
+The write direction renders the lowered single-parameter pointy closure back
+to the same source form. The existing match-time regex argument evaluator
+continues to invoke the closure, so the pointy parameter and captured outer
+lexicals remain live. The model constructors needed by a hand-built tree
+(`PointyBlock`, `SemiList`, and `Circumfix::Parentheses`) are available on this
+bounded path as well. Multi-parameter, typed, defaulted, slurpy, `is rw`, and
+statement-rich explicit signatures remain separate boundaries.
+
+The focused regression is `t/rakuast/rakuast-regex-dynamic-arguments.t`; it
+pins the colonpair/value/pointy/signature tree, source and hand-built regex
+lowering, named callable binding, and lexical reassignment at match time.
