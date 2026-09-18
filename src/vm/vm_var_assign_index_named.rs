@@ -3231,7 +3231,20 @@ impl Interpreter {
             // todo/tickets/process-dynamic-write-nil-not-decayed-to-any.md.
             self.reset_nil_untyped_scalar(&env_key, stored)
         };
-        self.env_mut().insert(env_key, val.clone());
+        self.env_mut().insert(env_key.clone(), val.clone());
+        // Durable copy: `env_mut()` may be a nested frame's scoped-child
+        // overlay (a bare block, a `module { ... }` body, a sub/closure call
+        // all create one), which is dropped the moment that frame exits. A
+        // `PROCESS::` install is supposed to survive regardless of the
+        // nesting it ran at (#8682), so mirror it into the store that
+        // outlives every frame — `GetGlobal`'s fallback chain and the
+        // `$*name = ...` Proxy write-through lookup both consult it once the
+        // originating frame is gone. Also mark the name as a declared
+        // dynamic so a later `$*name = ...` from ANY frame (including one
+        // that never itself ran `my $*name`) passes `CheckDynamicVarDeclared`
+        // — this is exactly what installing a *process-level* default means.
+        self.set_process_dynamic(env_key.clone(), val.clone());
+        self.set_var_dynamic(&env_key, true);
         Ok(val)
     }
 

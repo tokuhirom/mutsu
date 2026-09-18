@@ -745,6 +745,7 @@ impl Interpreter {
             suppress_cross_eval_class_redeclaration_check: false,
             our_vars: rustc_hash::FxHashMap::default(),
             our_var_unqualified: rustc_hash::FxHashSet::default(),
+            process_dynamics: rustc_hash::FxHashMap::default(),
             package_lexicals: self.package_lexicals.clone(),
             class_body_static_names: self.class_body_static_names.clone(),
             unit_lexicals: self.unit_lexicals.clone(),
