@@ -40,7 +40,11 @@ impl Interpreter {
     /// package, where both writes put back the value that was already there.
     #[inline(never)]
     fn enter_routine_package_outlined(&mut self, cf: &CompiledFunction) -> Option<Symbol> {
-        if crate::runtime::utils::has_routine_scope_marker(&cf.package) {
+        // Memoized on the routine rather than re-scanned per call: with the
+        // redundant `current_package` writes gone, this substring scan over
+        // the declaring package name was all that remained of this function's
+        // cost -- see `CompiledFunction::package_is_routine_scoped`.
+        if cf.package_is_routine_scoped() {
             return None;
         }
         let saved = self.current_package_sym();

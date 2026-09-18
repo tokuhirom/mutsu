@@ -170,13 +170,12 @@ impl Interpreter {
         // Carried as a `(name, symbol)` pair so the package switch below does
         // not re-intern it: `CompiledFunction::package_sym` is interned once per
         // routine, and `fn_package_sym` once per call above (#7736).
-        let (def_package, def_package_sym): (&str, Symbol) = if !cf.package.is_empty()
-            && !crate::runtime::utils::has_routine_scope_marker(&cf.package)
-        {
-            (cf.package.as_str(), cf.package_sym())
-        } else {
-            (fn_package, fn_package_sym)
-        };
+        let (def_package, def_package_sym): (&str, Symbol) =
+            if !cf.package.is_empty() && !cf.package_is_routine_scoped() {
+                (cf.package.as_str(), cf.package_sym())
+            } else {
+                (fn_package, fn_package_sym)
+            };
         // RAII (`CurrentPackageGuard`, `todo/deep/panic-unwind-leaks-side-channel-call-state.md`):
         // restores `current_package` on drop -- including on a Rust panic
         // unwind through the body loop below, or through an early `return`

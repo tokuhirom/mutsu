@@ -9508,6 +9508,8 @@ pub(crate) struct CompiledFunction {
     pub(crate) package_sym_cache: std::sync::OnceLock<Symbol>,
     /// Lazily-interned [`Self::source_file`] — see [`Self::source_file_sym`].
     pub(crate) source_file_sym_cache: std::sync::OnceLock<Option<Symbol>>,
+    /// Memoized [`Self::package_is_routine_scoped`].
+    pub(crate) package_routine_scoped_cache: std::sync::OnceLock<bool>,
 }
 
 impl CompiledFunction {
@@ -9554,6 +9556,24 @@ impl CompiledFunction {
         *self
             .package_sym_cache
             .get_or_init(|| Symbol::intern(&self.package))
+    }
+
+    /// Whether [`Self::package`] is a mangled routine-scope key
+    /// (`Pkg::&sub/arity`, used for a nested sub) rather than a real package
+    /// name, memoized once per compiled function.
+    ///
+    /// The underlying `has_routine_scope_marker` is a substring scan for
+    /// `"::&"`, and the answer is fixed for the routine — but it was being
+    /// re-derived on every call, scanning the whole declaring package name
+    /// (`Bench::Light::Path`, `JSON::Fast`) each time. With the per-call
+    /// `current_package` writes gone (#8686 Phase 1), this scan was what
+    /// remained of `enter_routine_package_outlined`'s cost: 225 Ir per call,
+    /// 3.1% of a 20,000-light-call run, for a boolean that cannot change.
+    /// Mirrors [`Self::package_sym`].
+    pub(crate) fn package_is_routine_scoped(&self) -> bool {
+        *self
+            .package_routine_scoped_cache
+            .get_or_init(|| crate::runtime::utils::has_routine_scope_marker(&self.package))
     }
 
     /// The declaring source file as a `Symbol` (`None` = main script),
@@ -9953,6 +9973,7 @@ mod compiled_fns_identity {
             memo_cache: std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),
             package_sym_cache: std::sync::OnceLock::new(),
             source_file_sym_cache: std::sync::OnceLock::new(),
+            package_routine_scoped_cache: std::sync::OnceLock::new(),
         }
     }
 

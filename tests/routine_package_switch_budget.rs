@@ -69,13 +69,13 @@ fn a_call_into_a_module_sub_does_not_intern_its_package() {
         r#"$hits = M::helper($hits);"#,
     );
     eprintln!("module sub call: {per_call:.3} interns per call");
-    // The package switch contributed exactly 2.0 of this before the change
-    // (one intern of "M" entering, one restoring "GLOBAL"); what remains is
-    // the dispatch-name interning #8686 Phase 1's first bullet still leaves
-    // open, which this file is not measuring and must not freeze. The budget
-    // is therefore set just under the pre-change measurement: it moves only if
-    // the package name starts being re-hashed per call again.
-    let limit = 11.0;
+    // Measured 3.0 before this change and 1.0 after: the package switch was
+    // exactly 2.0 of it (one intern of `"M"` entering, one of `"GLOBAL"`
+    // restoring). The remaining 1.0 is the dispatch-name interning that
+    // #8686 Phase 1's *first* bullet still leaves open --
+    // [#8690](https://github.com/tokuhirom/mutsu/issues/8690) -- so the budget
+    // leaves room for it and tightens when that lands.
+    let limit = 2.0;
     assert!(
         per_call <= limit,
         "a call into a module sub re-interns its declaring package per call \
@@ -99,8 +99,10 @@ fn the_package_intern_budget_does_not_grow_with_the_package_name() {
         r#"$hits = Deeply::Nested::Package::With::A::Long::Name::helper($hits);"#,
     );
     eprintln!("short package: {short:.3}, long package: {long:.3} interns per call");
+    // Both measure 1.0 after the change; both measured 3.0 before it, which is
+    // why the equality rather than the absolute number is the assertion here.
     assert!(
-        long <= short + 1.0,
+        long <= short + 0.5,
         "the per-call intern budget grows with the declaring package's name \
          ({short:.3} -> {long:.3} interns/call), so the package is being \
          re-hashed per call; see #8686"
