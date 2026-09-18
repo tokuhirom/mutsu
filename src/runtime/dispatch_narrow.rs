@@ -66,6 +66,10 @@ impl Interpreter {
         if self.is_unit_scoped_routine_name(name) {
             return false;
         }
+        // The family gate calls this first in the only caller, but this memo is
+        // keyed on the same registry generation as the caches that gate clears,
+        // so it must not depend on the caller's order to be refreshed.
+        self.refresh_func_multi_caches_for_generation();
         let memo_key = (pkg_sym, name_sym, arg_keys.to_vec());
         if let Some(&c) = self.func_multi_argkey_cacheable.get(&memo_key) {
             return c;
