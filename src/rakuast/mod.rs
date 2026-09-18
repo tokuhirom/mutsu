@@ -1163,6 +1163,22 @@ pub fn construct(
                 .collect(),
         }))));
     }
+    if class_name == "RakuAST::SemiList" && method == "new" {
+        for arg in args {
+            require_any_rakuast(arg, "RakuAST::SemiList.new", "arguments")?;
+        }
+        return Ok(Some(Value::rakuast(Box::new(RakuAstNode {
+            class: RakuAstClass::SemiList,
+            fields: args
+                .iter()
+                .cloned()
+                .map(|value| RakuAstField {
+                    name: None,
+                    value: RakuAstFieldValue::Node(value),
+                })
+                .collect(),
+        }))));
+    }
     if class_name == "RakuAST::Pragma" && method == "new" {
         let name = named_arg(args, "name")
             .ok_or_else(|| RuntimeError::new("RakuAST::Pragma.new requires `name`"))?;
@@ -2296,6 +2312,7 @@ fn single_positional_class(class_name: &str, method: &str) -> Option<RakuAstClas
         ("RakuAST::MetaInfix::Assign", "new") => RakuAstClass::MetaInfixAssign,
         ("RakuAST::Prefix", "new") => RakuAstClass::Prefix,
         ("RakuAST::Var::Lexical", "new") => RakuAstClass::VarLexical,
+        ("RakuAST::Circumfix::Parentheses", "new") => RakuAstClass::CircumfixParentheses,
         ("RakuAST::VarDeclaration::Placeholder::Positional", "new") => {
             RakuAstClass::VarDeclarationPlaceholderPositional
         }
@@ -2361,6 +2378,7 @@ fn multi_field_schema(
         }
         ("RakuAST::Postfix", "new") => (RakuAstClass::Postfix, &["operator"][..]),
         ("RakuAST::Block", "new") => (RakuAstClass::Block, &["body"][..]),
+        ("RakuAST::PointyBlock", "new") => (RakuAstClass::PointyBlock, &["signature", "body"][..]),
         ("RakuAST::ParameterTarget::Var", "new") => {
             (RakuAstClass::ParameterTargetVar, &["name"][..])
         }
@@ -2506,6 +2524,7 @@ fn constructor_is_supported(class: RakuAstClass) -> bool {
     matches!(
         class,
         RakuAstClass::ArgList
+            | RakuAstClass::SemiList
             | RakuAstClass::StatementList
             | RakuAstClass::IntLiteral
             | RakuAstClass::RatLiteral
@@ -2522,7 +2541,9 @@ fn constructor_is_supported(class: RakuAstClass) -> bool {
             | RakuAstClass::Postfix
             | RakuAstClass::MetaInfixAssign
             | RakuAstClass::Block
+            | RakuAstClass::PointyBlock
             | RakuAstClass::Blockoid
+            | RakuAstClass::CircumfixParentheses
             | RakuAstClass::VarDeclarationPlaceholderPositional
             | RakuAstClass::VarDeclarationPlaceholderSlurpyArray
             | RakuAstClass::VarDeclarationPlaceholderSlurpyHash
