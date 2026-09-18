@@ -360,7 +360,12 @@ pub(crate) fn try_enter_range(
     // The interpreter loop polls the VM network once per opcode; a native
     // body polls only its own backedges. The enclosing compound loop's
     // per-iteration poll therefore lands here, before each native body run.
-    crate::vm::vm_poll::poll_code(crate::gc::SafepointKind::Backedge, start as u32, code);
+    crate::vm::vm_poll::poll_code(
+        crate::gc::SafepointKind::Backedge,
+        start as u32,
+        code,
+        interp,
+    );
     interp.current_code = code as *const CompiledCode as usize;
     let status = unsafe { f(interp, code, compiled_fns) };
     match status {

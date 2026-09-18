@@ -156,7 +156,12 @@ impl Interpreter {
             // the candidate buffer — and their dead snapshots' memory —
             // unboundedly until the post-join collect.
             if crate::vm::vm_poll::armed() {
-                crate::vm::vm_poll::poll_code(crate::gc::SafepointKind::Backedge, ip as u32, code);
+                crate::vm::vm_poll::poll_code(
+                    crate::gc::SafepointKind::Backedge,
+                    ip as u32,
+                    code,
+                    self,
+                );
             }
             if let Err(e) = self.exec_one(code, &mut ip, compiled_fns) {
                 if e.is_goto()
@@ -477,7 +482,12 @@ impl Interpreter {
             // the candidate buffer — and their dead snapshots' memory —
             // unboundedly until the post-join collect.
             if crate::vm::vm_poll::armed() {
-                crate::vm::vm_poll::poll_code(crate::gc::SafepointKind::Backedge, ip as u32, code);
+                crate::vm::vm_poll::poll_code(
+                    crate::gc::SafepointKind::Backedge,
+                    ip as u32,
+                    code,
+                    self,
+                );
             }
             if let Err(e) = self.exec_one(code, &mut ip, compiled_fns) {
                 if e.is_goto()
@@ -818,7 +828,12 @@ impl Interpreter {
             // argument as the outer site: between instructions no container
             // borrow is live (design doc §1.2).
             if crate::vm::vm_poll::armed() {
-                crate::vm::vm_poll::poll_code(crate::gc::SafepointKind::Backedge, ip as u32, code);
+                crate::vm::vm_poll::poll_code(
+                    crate::gc::SafepointKind::Backedge,
+                    ip as u32,
+                    code,
+                    self,
+                );
             }
             if let Err(e) = self.exec_one(code, &mut ip, compiled_fns) {
                 if e.is_goto()

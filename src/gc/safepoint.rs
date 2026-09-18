@@ -386,7 +386,10 @@ pub(crate) fn gc_safepoint_armed(kind: SafepointKind) {
         || (t.random_rate_bits != 0 && random_fires(t.random_rate_bits))
         || (PENDING.load(Ordering::Relaxed) && PENDING.swap(false, Ordering::Relaxed));
     if fire {
-        collect_cycles_at(kind.name());
+        // Collector time belongs to the collector, not to the Raku line that
+        // happened to reach this poll (ADR-0106 Slice 2; naming the subsystem
+        // it went to instead is #8704).
+        crate::profile::exclude_non_raku(|| collect_cycles_at(kind.name()));
     }
 }
 

@@ -1,11 +1,13 @@
-//! The VM poll network shared by safepoint consumers (ADR-0106 Slice 1).
+//! The VM poll network shared by safepoint consumers (ADR-0106 Slices 1-2).
 //!
-//! GC is the first consumer of the network. The profiler gate is present now
-//! so the sampler can be added without changing the dispatch-loop contract;
-//! Slice 2 will replace the placeholder profiler consumer with the sampler.
+//! GC is the first consumer of the network and the profiler is the second.
+//! Everything the profiler does sits **inside** the armed branch, never before
+//! it: a disarmed run must not pay so much as an atomic load per opcode, which
+//! is what ADR-0106 §8 gate 1 measures.
 
 use crate::gc::SafepointKind;
 use crate::opcode::CompiledCode;
+use crate::runtime::Interpreter;
 
 /// The site carried by a poll is the bytecode instruction pointer that caused
 /// it. A `u32` matches bytecode jump operands and keeps the JIT helper ABI
@@ -24,6 +26,12 @@ fn triggers() -> &'static PollTriggers {
     TRIGGERS.get_or_init(|| {
         let gc = crate::gc::gc_safepoints_armed();
         let profiler = profile_enabled();
+        if profiler {
+            // Everything the sampler allocates -- the tick thread, the
+            // per-thread buffers -- comes into existence here and nowhere
+            // else, so a disarmed run carries none of it (gate 1b).
+            crate::profile::arm();
+        }
         PollTriggers {
             armed: gc || profiler,
             gc,
@@ -65,13 +73,23 @@ pub(crate) fn poll(kind: SafepointKind, site: PollSite) {
     }
 }
 
-/// Poll with the bytecode chunk available for exact line counts.  Non-dispatch
+/// Poll with the bytecode chunk and the running interpreter available, for the
+/// exact line counts and for the sampler's stack walk.  Non-dispatch
 /// boundaries use [`poll`] because they do not own an instruction pointer.
+///
+/// The profiler runs *before* the GC consumer: the line was entered at this ip
+/// whatever the collector then does, and time spent inside a collect is not
+/// time this line was running (`profile::exclude_non_raku` discounts it).
 #[inline]
-pub(crate) fn poll_code(kind: SafepointKind, site: PollSite, code: &CompiledCode) {
+pub(crate) fn poll_code(
+    kind: SafepointKind,
+    site: PollSite,
+    code: &CompiledCode,
+    interp: &Interpreter,
+) {
     let t = triggers();
     if t.profiler || test_profiler_enabled() {
-        record_line(code, site);
+        record_line(code, site, interp);
     }
     if t.gc {
         crate::gc::gc_safepoint_armed(kind);
@@ -81,13 +99,25 @@ pub(crate) fn poll_code(kind: SafepointKind, site: PollSite, code: &CompiledCode
     }
 }
 
-/// Record a native line-entry hook without making it a GC safepoint.  The JIT
-/// emits this only while the profiler is armed, and the helper itself keeps
-/// the gate for test and future callers.
+/// Record a line entry without making it a GC safepoint: the exact count, and
+/// a sample if this thread's tick is due.
+///
+/// The JIT emits a call to this at every line transition inside a compiled
+/// body, and only while the profiler is armed. It is what keeps native code
+/// sampling at line granularity instead of once per native body entry — the
+/// time half of the parity #8713 established for the counts, and ADR-0106 §8
+/// gate 4. The helper keeps the gate for test and future callers.
 #[inline]
-pub(crate) fn record_line(code: &CompiledCode, site: PollSite) {
+pub(crate) fn record_line(code: &CompiledCode, site: PollSite, interp: &Interpreter) {
     if profiler_armed() {
-        crate::profile::record_line(code, site as usize);
+        // Resolved once and handed to both consumers: the exact counter needs
+        // it to spot a line transition and the sampler needs it to know where
+        // this poll stands.
+        let here = code
+            .location_at(site as usize)
+            .map(|(file, line)| crate::profile::LineLocation { file, line });
+        crate::profile::record_line_at(code, here);
+        crate::profile::sample_if_due(interp, here);
     }
 }
 
@@ -106,9 +136,9 @@ fn profile_enabled() -> bool {
     }
 }
 
-/// Placeholder for the sampler consumer. Slice 2 will use `kind` and `site`
-/// to record a sample; keeping the call here makes the poll network's second
-/// consumer and the JIT site ABI testable before that implementation lands.
+/// The poll-network half of the profiler consumer that needs no interpreter:
+/// the test hook that pins the JIT's site ABI. The sampler proper runs beside
+/// it in [`poll_code`], where the interpreter's Raku stack is in hand.
 #[inline]
 fn profiler_poll(_kind: SafepointKind, _site: PollSite) {
     #[cfg(test)]
@@ -163,8 +193,9 @@ mod tests {
         // The helper has the same ABI used by Cranelift. Calling it here pins
         // the value that a generated native backedge supplies to vm_poll.
         let code = crate::opcode::CompiledCode::new();
+        let mut interp = crate::runtime::Interpreter::new();
         unsafe {
-            super::super::vm_jit_helpers::profile_safepoint(std::ptr::null_mut(), &code, 73);
+            super::super::vm_jit_helpers::profile_safepoint(&mut interp, &code, 73);
         }
 
         TEST_PROFILER_ARMED.store(false, std::sync::atomic::Ordering::Relaxed);
