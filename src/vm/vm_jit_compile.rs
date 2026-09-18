@@ -229,6 +229,20 @@ fn build(
         let call = b.ins().call_indirect(sig, callee, args);
         b.inst_results(call).first().copied()
     };
+    // The VM-poll shim every backedge in this body calls, decided once per
+    // process (ADR-0106 §5 step 3). A run with no profiler armed emits the
+    // single-argument form, so generalizing the poll network costs a native
+    // backedge nothing; a profiled run emits the ip as an immediate.
+    let poll_shim = super::vm_jit_tier_b::PollShim::current();
+    let emit_poll = |b: &mut FunctionBuilder, ip: usize| {
+        let callee = b.ins().iconst(ptr, poll_shim.addr as i64);
+        if poll_shim.with_site {
+            let site = b.ins().iconst(types::I32, ip as i64);
+            b.ins().call_indirect(sigs.v1_u32, callee, &[interp, site]);
+        } else {
+            b.ins().call_indirect(sigs.v1, callee, &[interp]);
+        }
+    };
     // status != 0 -> return status; else continue in a fresh block.
     let check_status = |b: &mut FunctionBuilder, status: cranelift_codegen::ir::Value| {
         let err = b.create_block();
@@ -486,15 +500,9 @@ fn build(
                 let t = *t as usize;
                 if t <= i {
                     // Backedge: poll the shared VM network so a native loop
-                    // keeps participating in cooperative STW and future
-                    // profiler consumers (ADR-0004 §2.4, ADR-0106 §5).
-                    let site = b.ins().iconst(types::I32, i as i64);
-                    call_helper(
-                        &mut b,
-                        sigs.v1_u32,
-                        helpers::safepoint as *const () as usize,
-                        &[interp, site],
-                    );
+                    // keeps participating in cooperative STW and the profiler
+                    // (ADR-0004 §2.4, ADR-0106 §5).
+                    emit_poll(&mut b, i);
                 }
                 b.ins().jump(block_at[&t], &[]);
                 open = false;
@@ -506,8 +514,8 @@ fn build(
                     &mut b,
                     block_at[&t],
                     t <= i,
+                    poll_shim,
                     i as u32,
-                    helpers::safepoint as *const () as usize,
                     helpers::mark_failure_top as *const () as usize,
                     helpers::jump_if_false_cond as *const () as usize,
                 );
@@ -519,8 +527,8 @@ fn build(
                     &mut b,
                     block_at[&t],
                     t <= i,
+                    poll_shim,
                     i as u32,
-                    helpers::safepoint as *const () as usize,
                     helpers::jump_if_true_cond as *const () as usize,
                 );
             }
@@ -537,16 +545,10 @@ fn build(
                 let cond = call_helper(&mut b, sigs.s1, cond_fn, &[interp])?;
                 let next = b.create_block();
                 if t <= i {
-                    let poll = b.create_block();
-                    b.ins().brif(cond, poll, &[], next, &[]);
-                    b.switch_to_block(poll);
-                    let site = b.ins().iconst(types::I32, i as i64);
-                    call_helper(
-                        &mut b,
-                        sigs.v1_u32,
-                        helpers::safepoint as *const () as usize,
-                        &[interp, site],
-                    );
+                    let poll_block = b.create_block();
+                    b.ins().brif(cond, poll_block, &[], next, &[]);
+                    b.switch_to_block(poll_block);
+                    emit_poll(&mut b, i);
                     b.ins().jump(block_at[&t], &[]);
                 } else {
                     b.ins().brif(cond, block_at[&t], &[], next, &[]);
@@ -570,16 +572,10 @@ fn build(
                 let t = *jump_to as usize;
                 let next = b.create_block();
                 if t <= i {
-                    let poll = b.create_block();
-                    b.ins().brif(cond, poll, &[], next, &[]);
-                    b.switch_to_block(poll);
-                    let site = b.ins().iconst(types::I32, i as i64);
-                    call_helper(
-                        &mut b,
-                        sigs.v1_u32,
-                        helpers::safepoint as *const () as usize,
-                        &[interp, site],
-                    );
+                    let poll_block = b.create_block();
+                    b.ins().brif(cond, poll_block, &[], next, &[]);
+                    b.switch_to_block(poll_block);
+                    emit_poll(&mut b, i);
                     b.ins().jump(block_at[&t], &[]);
                 } else {
                     b.ins().brif(cond, block_at[&t], &[], next, &[]);

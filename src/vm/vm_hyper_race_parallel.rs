@@ -114,7 +114,10 @@ impl Interpreter {
             });
             batch_results.push(joined);
         }
-        crate::vm::vm_poll::poll(crate::gc::SafepointKind::ThreadJoin, 0);
+        crate::vm::vm_poll::poll(
+            crate::gc::SafepointKind::ThreadJoin,
+            crate::vm::vm_poll::NO_SITE,
+        );
         let mut all_collected = Vec::with_capacity(items.len());
         let mut first_error: Option<RuntimeError> = None;
         for (batch_result, wlocals, output, stderr) in batch_results {
@@ -317,7 +320,10 @@ impl Interpreter {
         }
         // GC safepoint (§9.2a `thread_join`): the hyper/race join-merge
         // boundary — every batch worker has joined, its results are owned here.
-        crate::vm::vm_poll::poll(crate::gc::SafepointKind::ThreadJoin, 0);
+        crate::vm::vm_poll::poll(
+            crate::gc::SafepointKind::ThreadJoin,
+            crate::vm::vm_poll::NO_SITE,
+        );
         // Sync any shared variable updates from threads back to our env
         self.sync_shared_vars_to_env();
         // Roll back this op's ephemeral env->shared migrations (see

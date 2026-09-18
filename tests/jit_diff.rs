@@ -103,6 +103,78 @@ fn jit_backedges_work_with_profiler_consumer_armed() {
     }
 }
 
+/// A loop whose backward jump sits *inside* one JIT-compiled chunk, so the
+/// poll emitted on a native backedge actually runs. Raku's own loops all
+/// compile to compound opcodes (the body is a separate compiled range with no
+/// backedge of its own), so the shape that exercises the native backedge is
+/// `nqp::while`, which emits a plain backward `Jump` into the enclosing chunk.
+const NATIVE_BACKEDGE: &str = "use nqp;\nsub count($n) { my $i = 0; nqp::while($i < $n, $i++); return $i }\nmy $s = 0;\nfor ^200 { $s = count(20) }\nsay $s;";
+
+/// Read `field=<number>` out of the Slice 1 poll report line.
+fn poll_report_field(err: &str, field: &str) -> Option<u64> {
+    let line = err.lines().find(|l| l.starts_with("profiler-poll:"))?;
+    line.split_whitespace()
+        .find_map(|tok| tok.strip_prefix(field)?.parse().ok())
+}
+
+/// ADR-0106 Slice 1 acceptance: a second consumer, armed, observes a poll
+/// raised by a **JIT-compiled** backedge, carrying that backedge's bytecode
+/// ip. With the JIT off the same program raises no native poll at all, which
+/// is what pins the count to native code rather than the interpreter loop.
+#[test]
+fn a_native_backedge_polls_the_second_consumer_with_its_ip() {
+    let (on_out, on_err, on_ok) = run(
+        NATIVE_BACKEDGE,
+        &[
+            ("MUTSU_JIT", "on"),
+            ("MUTSU_JIT_THRESHOLD", "1"),
+            ("MUTSU_PROFILE", "1"),
+        ],
+    );
+    let (off_out, off_err, off_ok) = run(
+        NATIVE_BACKEDGE,
+        &[("MUTSU_JIT", "off"), ("MUTSU_PROFILE", "1")],
+    );
+    assert!(on_ok, "JIT-on profiled run failed: {on_err}");
+    assert!(off_ok, "JIT-off profiled run failed: {off_err}");
+    assert_eq!(on_out, "20\n");
+    assert_eq!(
+        off_out, on_out,
+        "arming the poll consumer changed the result"
+    );
+
+    assert_eq!(
+        poll_report_field(&off_err, "native-polls="),
+        Some(0),
+        "an interpreted run must raise no native poll: {off_err}"
+    );
+    if !cfg!(feature = "jit") {
+        return;
+    }
+    let native = poll_report_field(&on_err, "native-polls=")
+        .unwrap_or_else(|| panic!("no poll report: {on_err}"));
+    assert!(
+        native > 0,
+        "no poll arrived from a native backedge: {on_err}"
+    );
+    let site = on_err
+        .lines()
+        .find(|l| l.starts_with("profiler-poll:"))
+        .and_then(|l| {
+            l.split_whitespace()
+                .find_map(|t| t.strip_prefix("last-native-site="))
+        })
+        .expect("no last-native-site in the poll report")
+        .to_string();
+    let site: u32 = site
+        .parse()
+        .unwrap_or_else(|_| panic!("native backedge reported no ip: {on_err}"));
+    // The backward `Jump` is the last op of `count`'s loop, so the reported ip
+    // is a real instruction inside a small chunk — not the `NO_SITE` sentinel
+    // and not a stale zero.
+    assert!(site > 0 && site < 64, "implausible backedge ip {site}");
+}
+
 /// J2 coverage: a hot METHOD body (the `call_compiled_method*` entry hooks)
 /// built from J2 Tier A opcodes — comparisons (`NumLe`), arith (`Mul`),
 /// string concat (`Concat`), and attribute access via the generic `step` shim

@@ -61,6 +61,7 @@ pub fn arm_stack_guard(stack_size: usize) {
 /// progress on decoupling the bytecode VM from the tree-walking interpreter.
 pub fn dump_vm_stats() {
     vm::vm_stats::dump();
+    vm::vm_poll::dump();
     alloc_stats::dump();
 }
 

@@ -45,7 +45,7 @@ impl Interpreter {
         self.guard_native_stack()?;
         // GC safepoint (§9.2a `call`): the light-call boundary skips
         // push_call_frame, so it emits the call safepoint itself.
-        crate::vm::vm_poll::poll(crate::gc::SafepointKind::Call, 0);
+        crate::vm::vm_poll::poll(crate::gc::SafepointKind::Call, crate::vm::vm_poll::NO_SITE);
         // RAII (`MarkContextGuard`,
         // `todo/deep/mark-context-flags-leak-across-live-call-boundary.md`):
         // isolate the "mark context" one-shot flag family (bind_context et

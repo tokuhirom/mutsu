@@ -3,7 +3,7 @@
 //! purely by file size. See that module's header for the fast-path
 //! correctness contract.
 
-use super::vm_jit_tier_b::TierB;
+use super::vm_jit_tier_b::{PollShim, TierB};
 use crate::value::jit_words as w;
 use cranelift_codegen::ir::condcodes::IntCC;
 use cranelift_codegen::ir::{InstBuilder, types};
@@ -20,8 +20,8 @@ impl TierB {
         b: &mut FunctionBuilder,
         target: cranelift_codegen::ir::Block,
         backedge: bool,
+        poll: PollShim,
         site: u32,
-        safepoint_fn: usize,
         mark_fn: usize,
         cond_fn: usize,
     ) {
@@ -53,7 +53,7 @@ impl TierB {
         // branch is taken; the shim is a cheap top-of-stack check.
         self.call_v1(b, mark_fn);
         if backedge {
-            self.call_safepoint(b, safepoint_fn, site);
+            self.call_poll(b, poll, site);
         }
         b.ins().jump(target, &[]);
 
@@ -62,10 +62,10 @@ impl TierB {
         let call = b.ins().call_indirect(self.s1, callee, &[self.interp]);
         let cond = b.inst_results(call)[0];
         if backedge {
-            let poll = b.create_block();
-            b.ins().brif(cond, poll, &[], fall, &[]);
-            b.switch_to_block(poll);
-            self.call_safepoint(b, safepoint_fn, site);
+            let poll_block = b.create_block();
+            b.ins().brif(cond, poll_block, &[], fall, &[]);
+            b.switch_to_block(poll_block);
+            self.call_poll(b, poll, site);
             b.ins().jump(target, &[]);
         } else {
             b.ins().brif(cond, target, &[], fall, &[]);
@@ -82,8 +82,8 @@ impl TierB {
         b: &mut FunctionBuilder,
         target: cranelift_codegen::ir::Block,
         backedge: bool,
+        poll: PollShim,
         site: u32,
-        safepoint_fn: usize,
         cond_fn: usize,
     ) {
         let ptr = self.stack_ptr(b);
@@ -101,7 +101,7 @@ impl TierB {
 
         b.switch_to_block(take);
         if backedge {
-            self.call_safepoint(b, safepoint_fn, site);
+            self.call_poll(b, poll, site);
         }
         b.ins().jump(target, &[]);
 
@@ -114,10 +114,10 @@ impl TierB {
         let call = b.ins().call_indirect(self.s1, callee, &[self.interp]);
         let cond = b.inst_results(call)[0];
         if backedge {
-            let poll = b.create_block();
-            b.ins().brif(cond, poll, &[], fall, &[]);
-            b.switch_to_block(poll);
-            self.call_safepoint(b, safepoint_fn, site);
+            let poll_block = b.create_block();
+            b.ins().brif(cond, poll_block, &[], fall, &[]);
+            b.switch_to_block(poll_block);
+            self.call_poll(b, poll, site);
             b.ins().jump(target, &[]);
         } else {
             b.ins().brif(cond, target, &[], fall, &[]);
