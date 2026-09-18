@@ -2134,10 +2134,15 @@ impl Interpreter {
         &mut self,
         name: &str,
         variants: &[(String, Option<Expr>)],
-        is_export: bool,
-        export_tags: &[String],
+        // `Some(tags)` for `is export`/`is export(:tag)`, `None` when the enum
+        // is not exported -- folds the old separate `is_export: bool` into
+        // this one slot so adding `is_my` below did not need a
+        // `#[allow(clippy::too_many_arguments)]` (`export_tags` was already
+        // meaningless whenever `is_export` was false).
+        export_tags: Option<&[String]>,
         base_type: Option<&str>,
         roles: &[String],
+        is_my: bool,
     ) -> Result<Value, RuntimeError> {
         // Handle dynamic enum body: `enum Stuff (@variable)`
         let expanded;
@@ -2266,6 +2271,16 @@ impl Interpreter {
         self.registry_mut()
             .enum_types
             .insert(enum_type_name.to_string(), enum_variants.clone());
+        // A `my enum` dies with its enclosing block: `block_declared_vars`
+        // (see the caller) tears down its ENV bindings at block exit, but the
+        // `enum_types` registry entry above is never removed. Mark it
+        // `my`-scoped so an indirect `::('Name')` lookup -- which otherwise
+        // reads the registry directly to survive a returned call frame that
+        // declared a non-`my` type (#8683) -- does not resurrect it once its
+        // block has exited.
+        if is_my && !is_anonymous {
+            self.mark_my_scoped_package_item(name.to_string());
+        }
         // `enum Flags does Weird (...)`: record the composition the same way a
         // class's `does` does, so type checks (`A ~~ Weird`), method dispatch on
         // the enum's values and type object, and the smartmatch `ACCEPTS`
@@ -2318,7 +2333,9 @@ impl Interpreter {
             self.insert_enum_bare_value(key, enum_val);
         }
         // Register exports if `is export`
-        if is_export && !is_anonymous {
+        if let Some(export_tags) = export_tags
+            && !is_anonymous
+        {
             let pkg = self.current_package();
             for (key, _) in &enum_variants {
                 self.register_exported_var(pkg.clone(), key.clone(), export_tags.to_vec());

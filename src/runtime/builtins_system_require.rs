@@ -151,6 +151,10 @@ impl Interpreter {
         let before_env_keys: std::collections::HashSet<Symbol> = self.env.keys().copied().collect();
         let before_class_keys: std::collections::HashSet<String> =
             self.registry().classes.keys().cloned().collect();
+        let before_role_keys: std::collections::HashSet<String> =
+            self.registry().roles.keys().cloned().collect();
+        let before_enum_keys: std::collections::HashSet<String> =
+            self.registry().enum_types.keys().cloned().collect();
         // A required file is a fresh compilation unit, not a continuation of the
         // requiring scope: its top-level declarations must not be qualified with
         // the caller's package (a `require` issued from inside a module's sub —
@@ -200,6 +204,36 @@ impl Interpreter {
         // Invalidate name-keyed resolution caches.
         self.invalidate_fn_resolution();
         run_result?;
+
+        // Record every class/role/enum this required file newly registered
+        // (#8683): `require` installs its symbols into the CURRENT LEXICAL
+        // SCOPE of the `require` statement, not the enclosing package, so a
+        // type it loads must not be resurrected by the registry-backed
+        // fallback `resolve_indirect_type_name` uses to let a PLAIN
+        // `class`/`role`/`enum` declaration survive a returned call frame.
+        // See `require_loaded_type_names`'s doc comment.
+        let new_type_names: Vec<String> = self
+            .registry()
+            .classes
+            .keys()
+            .filter(|k| !before_class_keys.contains(*k))
+            .chain(
+                self.registry()
+                    .roles
+                    .keys()
+                    .filter(|k| !before_role_keys.contains(*k)),
+            )
+            .chain(
+                self.registry()
+                    .enum_types
+                    .keys()
+                    .filter(|k| !before_enum_keys.contains(*k)),
+            )
+            .cloned()
+            .collect();
+        for name in new_type_names {
+            self.mark_require_loaded_type_name(name);
+        }
 
         if let Some(pkg) = package_hint
             && !pkg.is_empty()

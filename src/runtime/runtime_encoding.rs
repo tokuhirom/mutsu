@@ -387,6 +387,19 @@ impl Interpreter {
             && !self.our_scoped_package_items.contains(fq_name)
     }
 
+    /// Mark `name` as registered while loading a foreign compunit via runtime
+    /// `require` (see [`Self::require_loaded_type_names`]'s doc comment).
+    pub(crate) fn mark_require_loaded_type_name(&mut self, name: String) {
+        crate::runtime::cow_table_mut(&mut self.require_loaded_type_names).insert(name);
+    }
+
+    /// Check whether `name` was registered while loading a foreign compunit
+    /// via runtime `require`, and so must not be trusted by a lookup that
+    /// ignores the declaring call frame's lifetime.
+    pub(crate) fn is_require_loaded_type_name(&self, name: &str) -> bool {
+        self.require_loaded_type_names.contains(name)
+    }
+
     /// Check whether `fq_name` is the source-facing name of a lexically scoped
     /// type. Lexical types use an opaque NUL-suffixed registry key, so the
     /// package-item marker cannot be queried with the unmangled spelling that
