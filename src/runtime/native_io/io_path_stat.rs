@@ -36,8 +36,7 @@ impl Interpreter {
         Some(match method {
             "absolute" => {
                 if Self::is_win32_spec(attributes) {
-                    let base = args
-                        .first()
+                    let base = Self::positional_value(args, 0)
                         .map(|v| v.to_string_value())
                         .or_else(|| instance_cwd.clone())
                         .unwrap_or_else(|| Self::stringify_path(&cwd_path));
@@ -54,8 +53,7 @@ impl Interpreter {
                     let cleaned = Self::canonpath_win32(&abs, false);
                     Ok(Value::str(cleaned))
                 } else if Self::is_cygwin_spec(attributes) {
-                    let base = args
-                        .first()
+                    let base = Self::positional_value(args, 0)
                         .map(|v| v.to_string_value())
                         .or_else(|| instance_cwd.clone())
                         .unwrap_or_else(|| Self::stringify_path(&cwd_path));
@@ -72,7 +70,7 @@ impl Interpreter {
                     };
                     Ok(Value::str(Self::canonpath_cygwin(&abs, false)))
                 } else {
-                    let base = args.first().map(|v| v.to_string_value());
+                    let base = Self::positional_value(args, 0).map(|v| v.to_string_value());
                     if let Some(base) = base {
                         if original.is_absolute() {
                             Ok(Value::str(p.clone()))
@@ -88,8 +86,7 @@ impl Interpreter {
             }
             "relative" => {
                 if Self::is_win32_spec(attributes) {
-                    let base = args
-                        .first()
+                    let base = Self::positional_value(args, 0)
                         .map(|v| v.to_string_value())
                         .or_else(|| instance_cwd.clone())
                         .unwrap_or_else(|| Self::stringify_path(&cwd_path));
@@ -101,8 +98,7 @@ impl Interpreter {
                         .unwrap_or(&norm_p);
                     Ok(Value::str(rel.to_string()))
                 } else if Self::is_cygwin_spec(attributes) {
-                    let base = args
-                        .first()
+                    let base = Self::positional_value(args, 0)
                         .map(|v| v.to_string_value())
                         .or_else(|| instance_cwd.clone())
                         .unwrap_or_else(|| Self::stringify_path(&cwd_path));
@@ -131,10 +127,11 @@ impl Interpreter {
                     // `IO::Path.new("b/c", :CWD("/a")).relative` is `../../..a/b/c`
                     // relative to `$*CWD`, not `b/c`. The receiver's `.CWD` is only
                     // used to make the *target* path absolute (`path_buf`, above).
-                    let base_buf = match args.first().map(|v| v.to_string_value()) {
-                        Some(base) => self.resolve_path(&base),
-                        None => cwd_path.clone(),
-                    };
+                    let base_buf =
+                        match Self::positional_value(args, 0).map(|v| v.to_string_value()) {
+                            Some(base) => self.resolve_path(&base),
+                            None => cwd_path.clone(),
+                        };
                     let rel = Self::lexical_abs2rel(&path_buf, &base_buf);
                     Ok(Value::str(rel))
                 }

@@ -499,8 +499,15 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 ValueView::Nil => Some(Ok(Value::seq(Vec::new()))),
                 // Mirror the `.keys` arm: `.values` yields the array's own elements
                 // regardless of itemization, so an itemized array (`$[...]`) does not
-                // collapse to a single element via `value_to_list`.
-                ValueView::Array(items, _) => Some(Ok(Value::seq(items.to_vec()))),
+                // collapse to a single element via `value_to_list`. Decontainerize each
+                // element like the `Hash` arm above: an array slot can hold a
+                // `ContainerRef` (e.g. a `:=`-bound or aliased element), and `.values`
+                // must yield the inner value, not the cell — otherwise a typed
+                // `my SomeRole @x = @a.values` element check sees the raw cell
+                // instead of the instance and rejects it.
+                ValueView::Array(items, _) => Some(Ok(Value::seq(
+                    items.iter().map(|v| v.deref_container()).collect(),
+                ))),
                 ValueView::Set(s, _) => {
                     Some(Ok(Value::seq(s.iter().map(|_| Value::TRUE).collect())))
                 }
