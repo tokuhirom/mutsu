@@ -184,23 +184,72 @@ pub(crate) fn take_counts() -> CountsSnapshot {
     }
 }
 
-/// Fold the calling thread at process shutdown. The report slice can replace
-/// this sink with its document builder without changing the hot path.
+/// How many rows of each table the scaffolding report prints. A fixture small
+/// enough to reason about fits well inside this; a real program does not, and
+/// is Slice 5's problem.
+const REPORT_ROWS: usize = 20;
+
+/// Fold the calling thread at process shutdown and print what was counted.
+///
+/// **This is scaffolding, not the report.** Slice 5 ([#8705]) owns the profile
+/// document — its format, its file, its CLI. What this prints is the minimum
+/// that makes the counters *observable from outside the process*, because
+/// until they are, ADR-0106 §8 gate 3 (the top self line and its exact hit
+/// count) and gate 4 (the same line and hits with the JIT on and off) cannot
+/// be asserted at all: the counts were collected into a static nothing read.
+/// `tests/profile_counts.rs` is the consumer. Slice 5 replaces this body with
+/// its document builder; the counters themselves do not change.
+///
+/// [#8705]: https://github.com/tokuhirom/mutsu/issues/8705
 pub(crate) fn flush_at_exit() {
     if !crate::vm::vm_poll::profiler_armed() {
         return;
     }
-    static LAST_COUNTS: OnceLock<Mutex<Option<CountsSnapshot>>> = OnceLock::new();
-    let last_counts = LAST_COUNTS.get_or_init(|| Mutex::new(None));
     let snapshot = take_counts();
-    let _ = (
-        snapshot.line_hits.len(),
-        snapshot.routine_entries.len(),
-        snapshot.callsite_calls.len(),
-    );
-    *last_counts
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(snapshot);
+    // Hottest first, so "the top self line" is the first row; the location
+    // breaks ties, so two lines with equal hits print in a stable order.
+    let mut line_hits = snapshot.line_hits;
+    line_hits.sort_by_key(|(location, hits)| {
+        (
+            std::cmp::Reverse(*hits),
+            location.file.as_str(),
+            location.line,
+        )
+    });
+    for (location, hits) in line_hits.iter().take(REPORT_ROWS) {
+        eprintln!(
+            "profile: line {}:{} hits={hits}",
+            location.file, location.line
+        );
+    }
+    let mut routine_entries = snapshot.routine_entries;
+    routine_entries.sort_by_key(|(location, entries)| {
+        (
+            std::cmp::Reverse(*entries),
+            location.package.as_str(),
+            location.name.as_str(),
+        )
+    });
+    for (location, entries) in routine_entries.iter().take(REPORT_ROWS) {
+        eprintln!(
+            "profile: routine {}::{} entries={entries}",
+            location.package, location.name
+        );
+    }
+    let mut callsite_calls = snapshot.callsite_calls;
+    callsite_calls.sort_by_key(|(location, calls)| {
+        (
+            std::cmp::Reverse(*calls),
+            location.caller_file.as_str(),
+            location.caller_line,
+        )
+    });
+    for (location, calls) in callsite_calls.iter().take(REPORT_ROWS) {
+        eprintln!(
+            "profile: callsite {}:{} -> {}::{} calls={calls}",
+            location.caller_file, location.caller_line, location.package, location.name
+        );
+    }
 }
 
 #[cfg(test)]
