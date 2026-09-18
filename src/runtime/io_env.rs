@@ -277,6 +277,13 @@ impl Interpreter {
             // `my $*TOLERANCE = ...` still shadows it — the env hit is checked
             // before this fallback.
             "$*TOLERANCE" | "*TOLERANCE" => Value::num(crate::runtime::DEFAULT_TOLERANCE),
+            // `$*DEFAULT-READ-ELEMS` is the setting's default byte count for
+            // `IO::Handle.read` (and for user IO implementations such as
+            // IO::Blob). Keep it lazy like the other process defaults so an
+            // ordinary program that never reads from a handle pays nothing.
+            "$*DEFAULT-READ-ELEMS" | "*DEFAULT-READ-ELEMS" => {
+                Value::int(crate::runtime::DEFAULT_READ_ELEMS)
+            }
             "*USER" => Self::cached_user_instance(),
             "*GROUP" => Self::cached_group_instance(),
             _ => return None,

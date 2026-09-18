@@ -4561,6 +4561,10 @@ pub(crate) const PRELUDE_SUB_TRAIT: &str = "__mutsu_prelude";
 /// caller stack and never the lazy magic table).
 pub(crate) const DEFAULT_TOLERANCE: f64 = 1e-15;
 
+/// Rakudo's default `$*DEFAULT-READ-ELEMS`, used by `IO::Handle.read` and
+/// compatible user-defined handle implementations.
+pub(crate) const DEFAULT_READ_ELEMS: i64 = 65536;
+
 /// Reserved pseudo-unit key mainline's own captured `my` lexicals are stored
 /// under in `Interpreter::unit_lexicals` (ADR-0024). Contains `<`/`>`, which
 /// cannot appear in a real Raku package name, so no user `package`/`module`/
