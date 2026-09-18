@@ -179,6 +179,21 @@ pub(super) unsafe extern "C" fn set_local(
     })
 }
 
+/// `OpCode::ConcatAssignLocal` — the fused `$local ~= rhs` (#8695). Listed so
+/// a hot loop that happens to contain one keeps its JIT body: without a shim
+/// the opcode would reject the whole range.
+pub(super) unsafe extern "C" fn concat_assign_local(
+    interp: *mut Interpreter,
+    code: *const CompiledCode,
+    slot: u32,
+) -> u32 {
+    let (interp, code) = unsafe { (&mut *interp, &*code) };
+    panic_boundary(|| match interp.exec_concat_assign_local_op(code, slot) {
+        Ok(()) => JIT_STATUS_OK,
+        Err(e) => park_err(interp, e),
+    })
+}
+
 /// `OpCode::SetLocalDecl` — the fused `my $x = <expr>` store (ADR-0006 §2.3).
 /// `marks` is 1 when the declaration had an explicit initializer.
 /// See `set_local` above for why the `publish_state_local` call is free.

@@ -2282,6 +2282,12 @@ impl Compiler {
                         self.compile_call_arg(expr);
                     }
                 } else {
+                    // Fuse `$local ~= rhs` into one instruction that reads the
+                    // slot AFTER the RHS and appends in place (#8695). It
+                    // performs its own store, so nothing is left to emit.
+                    if self.try_compile_fused_concat_assign_local(effective_name, execution_expr) {
+                        return;
+                    }
                     // Fuse `$x OP= rhs` (parsed as `$x = $x OP rhs`) into an
                     // atomic RMW for plain env-named scalars (Track C). The fused
                     // op leaves the result on the stack; statement context wants
