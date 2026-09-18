@@ -20,7 +20,142 @@
     "unresolved": []
   },
   "dist": "WebDriver2",
-  "files": [],
+  "files": [
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 48,
+        "plan": 48,
+        "secs": 1.54,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/00-sanity/use.t",
+      "raku": {
+        "nok": 0,
+        "ok": 48,
+        "plan": 48,
+        "secs": 53.39,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 30,
+        "plan": 30,
+        "secs": 0.57,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/01-basic/build-basic.t",
+      "raku": {
+        "nok": 0,
+        "ok": 30,
+        "plan": 30,
+        "secs": 1.74,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "failed parse",
+        "nok": 0,
+        "ok": 0,
+        "plan": 8,
+        "secs": 1.01,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/01-basic/multi-page.t",
+      "raku": {
+        "nok": 0,
+        "ok": 8,
+        "plan": 8,
+        "secs": 1.44,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 14,
+        "plan": 14,
+        "secs": 0.58,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/01-basic/navigator-basic.t",
+      "raku": {
+        "nok": 0,
+        "ok": 14,
+        "plan": 14,
+        "secs": 1.05,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 20,
+        "plan": 20,
+        "secs": 0.44,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/01-basic/tree-basic.t",
+      "raku": {
+        "nok": 0,
+        "ok": 20,
+        "plan": 20,
+        "secs": 0.89,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "failed parse",
+        "nok": 0,
+        "ok": 0,
+        "plan": 8,
+        "secs": 0.98,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/01-basic/visit-tree.t",
+      "raku": {
+        "nok": 0,
+        "ok": 8,
+        "plan": 8,
+        "secs": 1.41,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
   "load": {
     "WebDriver2": "ok",
     "WebDriver2::Command": "ok",
@@ -162,14 +297,14 @@
     "WebDriver2::Model::Context": "raku_also_fails",
     "WebDriver2::Model::Element": "raku_also_fails",
     "WebDriver2::Model::Frame": "raku_also_fails",
-    "WebDriver2::SUT::Build": "No matching candidate found for the parametric role",
-    "WebDriver2::SUT::Build::Page": "No matching candidate found for the parametric role",
-    "WebDriver2::SUT::Navigator": "No matching candidate found for the parametric role",
+    "WebDriver2::SUT::Build": "ok",
+    "WebDriver2::SUT::Build::Page": "ok",
+    "WebDriver2::SUT::Navigator": "ok",
     "WebDriver2::SUT::Navigator::Path": "raku_also_fails",
-    "WebDriver2::SUT::Provider": "No matching candidate found for the parametric role",
-    "WebDriver2::SUT::Service": "No matching candidate found for the parametric role",
-    "WebDriver2::SUT::Service::Loader": "No matching candidate found for the parametric role",
-    "WebDriver2::SUT::Tree": "No matching candidate found for the parametric role",
+    "WebDriver2::SUT::Provider": "ok",
+    "WebDriver2::SUT::Service": "ok",
+    "WebDriver2::SUT::Service::Loader": "ok",
+    "WebDriver2::SUT::Tree": "ok",
     "WebDriver2::SUT::Tree::AFrame": "raku_also_fails",
     "WebDriver2::SUT::Tree::ANode": "raku_also_fails",
     "WebDriver2::SUT::Tree::APage": "raku_also_fails",
@@ -196,8 +331,8 @@
     "WebDriver2::Test::Config-From-File": "ok",
     "WebDriver2::Test::Debugging": "ok",
     "WebDriver2::Test::Locating-Test": "ok",
-    "WebDriver2::Test::PO-Test": "No matching candidate found for the parametric role",
-    "WebDriver2::Test::Service-Test": "No matching candidate found for the parametric role",
+    "WebDriver2::Test::PO-Test": "ok",
+    "WebDriver2::Test::Service-Test": "ok",
     "WebDriver2::Test::Template": "ok",
     "WebDriver2::Until": "ok",
     "WebDriver2::Until::Command": "ok",
@@ -210,7 +345,7 @@
     "WebDriver2::Until::Command::Value-Not-Empty": "raku_also_fails",
     "WebDriver2::Until::Command::Value-To-Be": "raku_also_fails",
     "WebDriver2::Until::No-Throw": "raku_also_fails",
-    "WebDriver2::Until::SUT": "No matching candidate found for the parametric role",
+    "WebDriver2::Until::SUT": "ok",
     "WebDriver2::Until::SUT::Present": "raku_also_fails",
     "WebDriver2::Until::Throwable": "raku_also_fails",
     "WebDriver2::Until::Throws": "raku_also_fails",
@@ -219,10 +354,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-17",
+    "date": "2026-09-18",
     "harness": 2,
-    "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "bfbdeae",
+    "host": "linux-x86_64",
+    "mutsu_commit": "390f51dd",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -233,13 +368,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/W/EB/WEBDRIVER2/ea2aaa957a701768f91ddeb88d2ab535d3c71a54.tar.gz"
   },
-  "status": "blocked_load",
+  "status": "partial",
   "totals": {
-    "baseline_assertions": 0,
-    "baseline_files": 0,
-    "mutsu_assertions": 0,
-    "parity_files": 0,
-    "regressed_files": 0
+    "baseline_assertions": 128,
+    "baseline_files": 6,
+    "mutsu_assertions": 112,
+    "parity_files": 4,
+    "regressed_files": 2
   },
   "version": "0.1.12"
 }
