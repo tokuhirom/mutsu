@@ -26,7 +26,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.61,
+        "secs": 0.52,
         "skip": 1,
         "todo": 0,
         "verdict": "pass"
@@ -35,11 +35,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "No such method 'BIND-POS' for invocant of type 'Any'",
+        "first_failure": "P6opaque: no such attribute '$!elems' on type BinaryHeap in a BinaryHeap when trying to get a value",
         "nok": 0,
         "ok": 1,
         "plan": 10,
-        "secs": 0.13,
+        "secs": 0.37,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -49,7 +49,7 @@
         "nok": 0,
         "ok": 10,
         "plan": 10,
-        "secs": 3.38,
+        "secs": 4.33,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -62,7 +62,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 5,
-        "secs": 0.07,
+        "secs": 0.19,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -72,7 +72,7 @@
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 0.52,
+        "secs": 1.0,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -85,7 +85,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 5,
-        "secs": 0.07,
+        "secs": 0.2,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -95,7 +95,7 @@
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 0.39,
+        "secs": 0.9,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -107,10 +107,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-18",
+    "date": "2026-09-19",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "44c2987",
+    "mutsu_commit": "5d2e9a2",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",

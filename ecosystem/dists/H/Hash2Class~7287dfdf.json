@@ -11,11 +11,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "No such method 'foo' for invocant of type 'A'",
+        "first_failure": "Could not instantiate role 'Hash2Class' because it died with X::Method::NotFound; exception details:",
         "nok": 0,
-        "ok": 1,
+        "ok": 0,
         "plan": null,
-        "secs": 0.27,
+        "secs": 0.13,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -25,7 +25,7 @@
         "nok": 0,
         "ok": 42,
         "plan": 42,
-        "secs": 3.16,
+        "secs": 1.9,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -37,10 +37,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-18",
+    "date": "2026-09-19",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "44c2987",
+    "mutsu_commit": "5d2e9a2",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -55,7 +55,7 @@
   "totals": {
     "baseline_assertions": 42,
     "baseline_files": 1,
-    "mutsu_assertions": 1,
+    "mutsu_assertions": 0,
     "parity_files": 0,
     "regressed_files": 1
   },

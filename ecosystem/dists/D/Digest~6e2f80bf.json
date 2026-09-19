@@ -14,7 +14,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 1.63,
+        "secs": 2.21,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -24,7 +24,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 1.78,
+        "secs": 1.7,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -36,7 +36,7 @@
         "nok": 0,
         "ok": 7,
         "plan": 7,
-        "secs": 8.41,
+        "secs": 10.45,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -46,30 +46,30 @@
         "nok": 0,
         "ok": 7,
         "plan": 7,
-        "secs": 4.79,
+        "secs": 5.3,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "partial",
+      "cmp": "regression",
       "mutsu": {
-        "first_failure": "RIPEMD('abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomn...')",
-        "nok": 4,
-        "ok": 5,
-        "plan": 9,
-        "secs": 181.44,
+        "first_failure": "SWEEP-TIMEOUT",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 240.08,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "timeout"
       },
       "path": "t/ripemd.t",
       "raku": {
         "nok": 0,
         "ok": 9,
         "plan": 9,
-        "secs": 77.62,
+        "secs": 86.74,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -81,7 +81,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 1.82,
+        "secs": 2.06,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -91,7 +91,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 1.63,
+        "secs": 1.78,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -108,10 +108,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-18",
+    "date": "2026-09-19",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "44c2987",
+    "mutsu_commit": "5d2e9a2",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -126,7 +126,7 @@
   "totals": {
     "baseline_assertions": 21,
     "baseline_files": 4,
-    "mutsu_assertions": 17,
+    "mutsu_assertions": 12,
     "parity_files": 3,
     "regressed_files": 1
   },

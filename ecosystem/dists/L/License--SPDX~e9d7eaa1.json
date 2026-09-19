@@ -31,7 +31,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 11.58,
+        "secs": 11.38,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -41,9 +41,9 @@
       "cmp": "parity",
       "mutsu": {
         "nok": 0,
-        "ok": 728,
-        "plan": 728,
-        "secs": 19.78,
+        "ok": 741,
+        "plan": 741,
+        "secs": 19.46,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -51,9 +51,9 @@
       "path": "t/020-methods.t",
       "raku": {
         "nok": 0,
-        "ok": 728,
-        "plan": 728,
-        "secs": 1.24,
+        "ok": 741,
+        "plan": 741,
+        "secs": 1.45,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -65,10 +65,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-18",
+    "date": "2026-09-19",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "44c2987",
+    "mutsu_commit": "5d2e9a2",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -77,15 +77,15 @@
   "schema": 1,
   "source": {
     "index": "fez",
-    "url": "https://360.zef.pm/L/IC/LICENSE_SPDX/d444ebea64ed9d26318fe8b982f3a0b865f58678.tar.gz"
+    "url": "https://360.zef.pm/L/IC/LICENSE_SPDX/f705b94b535d8dd106b6592a1ab13c04bd84a452.tar.gz"
   },
   "status": "green",
   "totals": {
-    "baseline_assertions": 729,
+    "baseline_assertions": 742,
     "baseline_files": 2,
-    "mutsu_assertions": 729,
+    "mutsu_assertions": 742,
     "parity_files": 2,
     "regressed_files": 0
   },
-  "version": "3.28.0"
+  "version": "3.29.0"
 }

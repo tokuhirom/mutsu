@@ -23,7 +23,7 @@
   "dist": "Async::Workers",
   "files": [],
   "load": {
-    "Async::Workers": "Unsupported nqp:: op: nqp::istrue",
+    "Async::Workers": "No such method 'setup-attr-helpers' for invocant of type 'Perl6::Metamodel::PackageHOW'",
     "Async::Workers::CX": "ok",
     "Async::Workers::Job": "ok",
     "Async::Workers::Msg": "ok",
@@ -32,10 +32,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-18",
+    "date": "2026-09-19",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "44c2987",
+    "mutsu_commit": "5d2e9a2",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",

@@ -35,23 +35,22 @@
   "dist": "ML::FindTextualAnswer",
   "files": [
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Odd number of elements found where hash initializer expected: found 1 element(s); last element seen: Lived where?\tAustrian Empire, United States Worked where?\tContinental Edison, Edison Machine Works ",
         "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 1.47,
+        "ok": 4,
+        "plan": 4,
+        "secs": 1.76,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/01-llm-results-post-processing.rakutest",
       "raku": {
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 80.87,
+        "secs": 99.35,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -64,10 +63,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-18",
+    "date": "2026-09-19",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "44c2987",
+    "mutsu_commit": "5d2e9a2",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -78,13 +77,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/M/L_/ML_FINDTEXTUALANSWER/ad9e56e9bba51d6af429e5e4021991f3cc9577e7.tar.gz"
   },
-  "status": "red",
+  "status": "green",
   "totals": {
     "baseline_assertions": 4,
     "baseline_files": 1,
-    "mutsu_assertions": 0,
-    "parity_files": 0,
-    "regressed_files": 1
+    "mutsu_assertions": 4,
+    "parity_files": 1,
+    "regressed_files": 0
   },
   "version": "0.2.8"
 }

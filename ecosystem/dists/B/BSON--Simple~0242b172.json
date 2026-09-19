@@ -26,7 +26,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.38,
+        "secs": 0.36,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -36,30 +36,30 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 11.34,
+        "secs": 14.7,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "partial",
+      "cmp": "regression",
       "mutsu": {
-        "first_failure": "Hash::Ordered handled correctly",
-        "nok": 55,
-        "ok": 37,
+        "first_failure": "Ambiguous call to 'raku(Hash::Ordered: )'; these signatures all match:",
+        "nok": 0,
+        "ok": 0,
         "plan": 92,
-        "secs": 4.52,
+        "secs": 0.34,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "die"
       },
       "path": "t/01-basic.rakutest",
       "raku": {
         "nok": 0,
         "ok": 92,
         "plan": 92,
-        "secs": 31.4,
+        "secs": 54.04,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -73,7 +73,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 101,
-        "secs": 33.55,
+        "secs": 53.06,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -85,10 +85,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-18",
+    "date": "2026-09-19",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "44c2987",
+    "mutsu_commit": "5d2e9a2",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -103,7 +103,7 @@
   "totals": {
     "baseline_assertions": 93,
     "baseline_files": 2,
-    "mutsu_assertions": 38,
+    "mutsu_assertions": 1,
     "parity_files": 1,
     "regressed_files": 1
   },
