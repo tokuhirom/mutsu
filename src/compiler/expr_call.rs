@@ -313,10 +313,16 @@ impl Compiler {
     ) {
         // nqp:: control-flow ops (`nqp::if`/`nqp::while`/`nqp::stmts`/...) are
         // special forms whose operands must not be eagerly evaluated as call
-        // arguments — see nqp_forms.rs. Value ops fall through to the normal
-        // call path (dispatched in runtime/nqp_ops.rs).
-        if name.with_str(|n| n.starts_with("nqp::"))
-            && name.with_str(|n| self.try_compile_nqp_form(n, args))
+        // arguments — see nqp_forms.rs. The VALUE ops (`nqp::add_i`, ...) are
+        // ordinary eager-operand primitives and compile to `OpCode::NqpOp`
+        // right after, with the op resolved to a dense id here. Anything the
+        // two decline (a named/`|EXPR` argument, an unregistered name) falls
+        // through to the normal call path, which reaches the same dispatch
+        // chain in runtime/nqp_ops.rs.
+        if name.with_str(|n| n.starts_with(crate::symbol::NQP_OP_PREFIX))
+            && name.with_str(|n| {
+                self.try_compile_nqp_form(n, args) || self.try_compile_nqp_value_op(n, args)
+            })
         {
             return;
         }

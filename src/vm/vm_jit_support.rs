@@ -105,6 +105,13 @@ pub(super) fn step_supported(op: &OpCode) -> bool {
             // Calls through a code variable (re-entrant, like CallMethod)
             | OpCode::CallOnCodeVar { .. }
             | OpCode::ExecCallPairs { .. }
+            // An `nqp::` value op. Re-entrant like a call (an op can reach an
+            // `AT-KEY` override), straight-line like one: its `exec_one` arm
+            // only ever advances `ip` by one. It has to be here rather than
+            // bail the chunk out, because `CallFunc` — what these ops were
+            // before they had an opcode — is JIT-supported, and an nqp-heavy
+            // loop is exactly the kind of chunk the JIT is for.
+            | OpCode::NqpOp { .. }
             // In-place container mutation
             | OpCode::ArrayPush { .. }
             | OpCode::TagContainerRef(..)

@@ -276,6 +276,19 @@ impl Compiler {
                     self.code.emit(OpCode::LoadConst(idx));
                     return;
                 }
+                // The no-paren 0-arg `nqp::` op term (`my $t = nqp::time;`,
+                // written that way throughout rakudo's own Test.rakumod) is the
+                // same primitive as the parenthesized call, so it compiles to
+                // the same opcode with the op resolved here. `exec_get_bare_word_op`
+                // otherwise re-stripped the prefix and re-walked the dispatch
+                // chain by name on every read.
+                if let Some(id) = name
+                    .strip_prefix(crate::symbol::NQP_OP_PREFIX)
+                    .and_then(crate::runtime::nqp_op_ids::nqp_op_id)
+                {
+                    self.code.emit(OpCode::NqpOp { id, arity: 0 });
+                    return;
+                }
                 // An in-scope `constant` with a compile-time scalar value is read
                 // straight from the constant pool (ADR-0006 §2.2) instead of a
                 // GetLocal / GetBareWord package lookup.

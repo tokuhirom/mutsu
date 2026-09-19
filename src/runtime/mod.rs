@@ -605,6 +605,7 @@ mod compunit_scope;
 mod container_element_proxy;
 mod ctor_phase_plan;
 mod nqp_char_cache;
+pub(crate) mod nqp_op_ids;
 mod nqp_ops;
 mod nqp_ops_builtin;
 mod nqp_ops_list;
@@ -2317,6 +2318,16 @@ pub struct Interpreter {
     /// nested frame with a same-named local cannot consume the pending writeback.
     pub(crate) pending_rw_writeback_slots: std::collections::HashMap<String, (u32, usize)>,
     test_pending_callsite_line: Option<i64>,
+    /// Operand buffer reused by every `OpCode::NqpOp` execution.
+    ///
+    /// An nqp op's operand list is statically shaped and dies with the op, so
+    /// it needs a buffer, not an allocation: the old `CallFunc` path built up
+    /// to four `Vec`s per op (drain, `VarRef` unwrap, callsite-line sanitize,
+    /// `Proxy` fetch) for ops as small as `nqp::add_i`. An op that re-enters
+    /// the VM (`nqp::atkey` reaching an `AT-KEY` method) finds this empty and
+    /// allocates its own, which is simply dropped when the outer op restores
+    /// its buffer — nesting costs an allocation, it does not corrupt anything.
+    pub(crate) nqp_arg_scratch: Vec<Value>,
     /// Current source line of the executing statement (`$?LINE` for internal
     /// consumers: backtraces, warn/die locations, callframe records). Lives as
     /// a plain field — NOT an env entry — so refreshing it is a scalar store

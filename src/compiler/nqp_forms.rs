@@ -146,4 +146,59 @@ impl Compiler {
             _ => false,
         }
     }
+
+    /// Compile an `nqp::` VALUE op (`nqp::add_i`, `nqp::ordat`, ...) to the
+    /// dedicated [`OpCode::NqpOp`], resolving WHICH op it is here rather than
+    /// once per execution.
+    ///
+    /// `nqp::` is a reserved namespace of compiler-known primitives — no user
+    /// routine can be declared there, and the ops bind no parameters — so a
+    /// call site's op is a compile-time constant and its operands are plain
+    /// values. The `CallFunc` this replaces re-established both per execution:
+    /// it rebuilt the operand list through the generic call protocol
+    /// (`|EXPR` spreading, `VarRef` unwrapping, callsite-line sanitizing,
+    /// `Proxy` auto-FETCH), then stripped `nqp::` off the callee string and
+    /// walked up to six chained `match op` tables to find the implementation.
+    ///
+    /// Returns true when the call was compiled here. Everything else falls
+    /// through to the ordinary call path, which is what keeps the two shapes
+    /// this deliberately does not take working, and keeps an unknown op name
+    /// failing loudly:
+    ///
+    /// * a **named argument or a `|EXPR` spread** — no nqp op takes either,
+    ///   but the operand count then is not a compile-time fact, so the general
+    ///   path (which alone can spread) keeps them;
+    /// * an **op name the registry does not know**, including every
+    ///   `nqp::`-namespaced name that is not an op at all: `CallFunc` reaches
+    ///   the same dispatch chain and raises the same `Unsupported nqp:: op`
+    ///   error (`runtime/nqp_ops.rs`'s module doc explains why that guard
+    ///   matters — `nqp::index` answers -1 where Raku's `index` answers Nil,
+    ///   and nqp code branches on exactly that).
+    ///
+    /// Operands compile as ORDINARY EXPRESSIONS (`compile_expr`), not through
+    /// `compile_call_arg`: that helper's job is to hand a callee's `is rw` /
+    /// `\raw` parameter a container to bind, which it does by wrapping the
+    /// argument in a `VarRef` — and the nqp path then unwrapped every one of
+    /// them again before dispatch, because the `nqp::` layer has no notion of
+    /// a Raku container (see the decontainerizing preamble of `call_nqp_op`).
+    /// Building those wrappers to discard them was pure per-operand waste.
+    pub(super) fn try_compile_nqp_value_op(&mut self, name: &str, args: &[Expr]) -> bool {
+        let Some(op) = name.strip_prefix(crate::symbol::NQP_OP_PREFIX) else {
+            return false;
+        };
+        if args.len() > u8::MAX as usize || args.iter().any(Self::is_named_arg_expr) {
+            return false;
+        }
+        let Some(id) = crate::runtime::nqp_op_ids::nqp_op_id(op) else {
+            return false;
+        };
+        for arg in args {
+            self.compile_expr(arg);
+        }
+        self.code.emit(OpCode::NqpOp {
+            id,
+            arity: args.len() as u8,
+        });
+        true
+    }
 }
