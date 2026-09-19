@@ -4,7 +4,7 @@
 # "Unknown function: Array" (S02-types/array.t aborted on `Array(1,2,3)`).
 use Test;
 
-plan 10;
+plan 12;
 
 is Array(1, 2, 3).WHAT.gist, '(Array)', 'Array(...) makes an Array';
 ok Array(1, 2, 3) eqv [1, 2, 3], 'Array(1,2,3) makes the correct array';
@@ -16,6 +16,9 @@ ok List(1, 2, 3) eqv (1, 2, 3), 'List(1,2,3) makes the correct list';
 
 is Hash('a', 1, 'b', 2).WHAT.gist, '(Hash)', 'Hash(...) makes a Hash';
 is Hash('a', 1, 'b', 2)<a>, 1, 'Hash(...) pairs up args into entries';
+my @pairs = a => 1, b => 2;
+is Hash(@pairs)<a>, 1, 'Hash(...) flattens a list of Pair arguments';
+is Hash(@pairs)<b>, 2, 'Hash(...) keeps every flattened Pair argument';
 
 # A lone type-object argument is a parametric type request, not a value list.
 is Array(Int).gist, '(Array(Int))', 'Array(Int) renders as a parametric type';

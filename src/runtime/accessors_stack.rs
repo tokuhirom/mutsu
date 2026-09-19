@@ -600,6 +600,8 @@ impl Interpreter {
     }
 
     pub(crate) fn take_value(&mut self, val: Value) -> Result<(), RuntimeError> {
+        let call_depth = self.call_frames.len();
+        let routine_depth = self.routine_stack_len();
         if let Some(items) = self.gather_items.last_mut() {
             // `take` of a Slip flattens it into the gather (`take Empty` /
             // `take slip(1,2)` add zero / two elements — Rakudo semantics);
@@ -617,8 +619,9 @@ impl Interpreter {
                 // driver cannot suspend soundly AT THE TAKE (the driver
                 // snapshots only its own frame; the signal would unwind the
                 // callee and corrupt the saved ip/stack — see
-                // `lazy_pull_entry_call_depth`). It can still suspend at the
-                // next iteration boundary of a condition-driven loop that
+                // `lazy_pull_entry_call_depth` or
+                // `lazy_pull_entry_routine_depth`). It can still suspend at
+                // the next iteration boundary of a condition-driven loop that
                 // lives in the driver's OWN frame, which is reached only after
                 // the callee has returned: park the deferred-suspension flag
                 // and let that boundary consume it (the consumption sites
@@ -626,10 +629,13 @@ impl Interpreter {
                 // collected eagerly and forever whenever the gather body's
                 // only takes came from a nested call under an infinite loop
                 // (`gather { loop { self!bitmap(...) } }`, EuclideanRhythm).
-                if self
+                let nested_vm_call = self
                     .lazy_pull_entry_call_depth
-                    .is_some_and(|entry| self.call_frames.len() > entry)
-                {
+                    .is_some_and(|entry| call_depth > entry);
+                let nested_interpreter_call = self
+                    .lazy_pull_entry_routine_depth
+                    .is_some_and(|entry| routine_depth > entry);
+                if nested_vm_call || nested_interpreter_call {
                     self.gather_suspend_pending = true;
                     return Ok(());
                 }
@@ -661,15 +667,22 @@ impl Interpreter {
     /// be taken at the iteration boundary the caller has just reached.
     ///
     /// The pull driver can only snapshot and resume its OWN frame, so only a
-    /// loop running at (or above) the driver's entry call depth is a sound
-    /// suspension point. A loop inside a routine the gather body called must
-    /// leave the flag set and keep running: the flag survives the callee's
-    /// return and the gather body's own loop consumes it one boundary later.
+    /// loop running at (or above) the driver's entry VM/routine depth is a
+    /// sound suspension point. A loop inside a routine the gather body called
+    /// must leave the flag set and keep running: the flag survives the
+    /// callee's return and the gather body's own loop consumes it one boundary
+    /// later.
     pub(crate) fn gather_suspend_boundary_reached(&self) -> bool {
-        self.gather_suspend_pending
-            && self
-                .lazy_pull_entry_call_depth
-                .is_none_or(|entry| self.call_frames.len() <= entry)
+        if !self.gather_suspend_pending {
+            return false;
+        }
+        let outside_vm_call = self
+            .lazy_pull_entry_call_depth
+            .is_none_or(|entry| self.call_frames.len() <= entry);
+        let outside_interpreter_call = self
+            .lazy_pull_entry_routine_depth
+            .is_none_or(|entry| self.routine_stack_len() <= entry);
+        outside_vm_call && outside_interpreter_call
     }
 
     pub(crate) fn gather_items_len(&self) -> usize {
