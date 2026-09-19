@@ -200,6 +200,16 @@ impl Interpreter {
                 return format!("{}[{}]", base, resolved_inner);
             }
         }
+        // Nested types declared with a compound name are referenced by their
+        // leaf inside the declaring package (`Position` for
+        // `Data::StaticTable::Position`).  The package alias is the scoped
+        // equivalent of the ordinary env alias used by a simple declaration;
+        // resolve it before dispatch/binding compares the constraint.
+        if !constraint.contains("::")
+            && let Some(resolved) = self.package_type_alias(constraint)
+        {
+            return resolved;
+        }
         constraint.to_string()
     }
 
@@ -394,6 +404,15 @@ impl Interpreter {
     }
 
     pub(crate) fn type_matches_value(&mut self, constraint: &str, value: &Value) -> bool {
+        // A nested type declared with a compound name is referenced by its
+        // leaf inside the declaring package. Resolve that package-scoped alias
+        // before the fast tag checks and subset lookup; assignment/type-check
+        // opcodes pass the declaration spelling directly, unlike method
+        // dispatch which resolves it while selecting a candidate.
+        let resolved_constraint = self.resolved_type_capture_name(constraint);
+        if resolved_constraint != constraint {
+            return self.type_matches_value(&resolved_constraint, value);
+        }
         // Hot-path fast accept (ADR-0004 J3): a concrete value whose exact tag /
         // class matches the bare constraint name. Sound unless a user `subset`
         // shadows the name (then the full checker below must run its predicate),
@@ -683,16 +702,30 @@ impl Interpreter {
             && let Some((rhs_base, rhs_inner)) = Self::parse_generic_constraint(constraint)
             && Self::type_matches(rhs_base, lhs_base)
         {
-            let (lhs_inner_base, lhs_inner_smiley) = strip_type_smiley(lhs_inner);
-            let (rhs_inner_base, rhs_inner_smiley) = strip_type_smiley(rhs_inner);
-            if !Self::type_matches(rhs_inner_base, lhs_inner_base) {
+            let lhs_args = Self::split_generic_args(lhs_inner);
+            let rhs_args = Self::split_generic_args(rhs_inner);
+            if lhs_args.len() != rhs_args.len() {
                 return false;
             }
-            return match rhs_inner_smiley {
-                Some(":D") => lhs_inner_smiley == Some(":D"),
-                Some(":U") => lhs_inner_smiley != Some(":D"),
-                _ => true,
-            };
+            if lhs_args.len() == 1 {
+                let (lhs_inner_base, lhs_inner_smiley) = strip_type_smiley(lhs_args[0]);
+                let (rhs_inner_base, rhs_inner_smiley) = strip_type_smiley(rhs_args[0]);
+                if !Self::type_matches(rhs_inner_base, lhs_inner_base) {
+                    return false;
+                }
+                return match rhs_inner_smiley {
+                    Some(":D") => lhs_inner_smiley == Some(":D"),
+                    Some(":U") => lhs_inner_smiley != Some(":D"),
+                    _ => true,
+                };
+            }
+            // Multi-parameter type objects are invariant in their arguments;
+            // trim declaration-time whitespace so `Hash[A,B]` and
+            // `Hash[A, B]` have the same spelling.
+            return lhs_args
+                .iter()
+                .zip(rhs_args.iter())
+                .all(|(lhs, rhs)| lhs == rhs);
         }
         if let ValueView::Package(package_name) = value.view()
             && let Some((pkg_target, pkg_source)) = parse_coercion_type(&package_name.resolve())
@@ -1793,5 +1826,24 @@ impl Interpreter {
         self.dispatch_mro(value)
             .iter()
             .any(|t| Self::type_matches(constraint, t.as_str()))
+    }
+
+    fn split_generic_args(inner: &str) -> Vec<&str> {
+        let mut args = Vec::new();
+        let mut start = 0;
+        let mut depth: usize = 0;
+        for (index, byte) in inner.bytes().enumerate() {
+            match byte {
+                b'[' => depth += 1,
+                b']' => depth = depth.saturating_sub(1),
+                b',' if depth == 0 => {
+                    args.push(inner[start..index].trim());
+                    start = index + 1;
+                }
+                _ => {}
+            }
+        }
+        args.push(inner[start..].trim());
+        args
     }
 }

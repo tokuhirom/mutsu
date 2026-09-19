@@ -122,6 +122,7 @@ impl Interpreter {
             let target = match target.view() {
                 ValueView::HashEntryRef { .. } => target.hash_entry_read(),
                 ValueView::Scalar(inner) => inner.clone(),
+                ValueView::ContainerRef(_) => target.deref_container(),
                 _ => target,
             };
             // A nested single-dim slice (`@a[(3, (30, (5,)))]:exists`) preserves

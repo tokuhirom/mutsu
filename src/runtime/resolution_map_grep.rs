@@ -450,6 +450,7 @@ impl Interpreter {
                     positional.len().saturating_sub(assumed).max(1)
                 };
                 let mut result = Vec::new();
+                let mut last_call_args: Option<Vec<Value>> = None;
                 let mut i = 0usize;
                 while i < list_items.len() {
                     let end = (i + batch).min(list_items.len());
@@ -457,6 +458,7 @@ impl Interpreter {
                     // A short final chunk of a required-arity block raises
                     // "Too few positionals" (matching raku); an optional trailing
                     // parameter binds the missing slot to its default / `Any`.
+                    last_call_args = Some(chunk.clone());
                     let value =
                         self.call_sub_value(Value::sub_value(data.clone()), chunk, false)?;
                     let value = self.reify_finite_pipe_value(value)?;
@@ -465,6 +467,32 @@ impl Interpreter {
                         _ => result.push(value),
                     }
                     i = end;
+                }
+                // A LAST phaser in a signature-bearing map block cannot use the
+                // inline map loop's direct parameter bindings: this branch calls
+                // the full binder once per chunk, and that call-local environment
+                // is restored before the next chunk. Re-run each LAST body as a
+                // one-shot block with the final chunk so its signature (including
+                // a destructuring sub-signature) binds the final values while
+                // captured lexicals retain their normal closure semantics.
+                if let Some(last_args) = last_call_args {
+                    for stmt in data.body.iter() {
+                        let crate::ast::Stmt::Phaser {
+                            kind: crate::ast::PhaserKind::Last,
+                            body,
+                            ..
+                        } = stmt
+                        else {
+                            continue;
+                        };
+                        let mut phaser_data = data.as_ref().clone();
+                        phaser_data.body = std::sync::Arc::new(body.clone());
+                        phaser_data.compiled_code = None;
+                        phaser_data.compiled_fns = None;
+                        phaser_data.compiled_routine = None;
+                        let phaser = Value::sub_value(crate::gc::Gc::new(phaser_data));
+                        self.call_sub_value(phaser, last_args.clone(), false)?;
+                    }
                 }
                 return Ok(Value::array(result));
             }

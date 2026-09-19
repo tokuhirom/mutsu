@@ -31,6 +31,13 @@ impl Interpreter {
         // rollback is dropping a tier.
         let saved_env = self.env.clone();
         self.env = crate::env::Env::scoped_child(std::mem::take(&mut self.env));
+        // Candidate matching happens before the method frame is installed.
+        // Anchor package-local aliases to the receiver's class for this
+        // speculative window so a nested subset such as
+        // `Data::StaticTable::Position` can be written as `Position` in the
+        // declaring class's signature.
+        let saved_package = self.current_package();
+        self.set_current_package(class_name.to_string());
         // The passed-in class-level map goes first (it also carries nested
         // generic-class rename entries, not just type-param bindings — see
         // the identical comment in `call_compiled_method`,
@@ -106,6 +113,7 @@ impl Interpreter {
                     let is_type_capture = resolved.starts_with("::");
                     if !is_type_capture && !self.type_matches_value(&resolved, inv) {
                         self.env = saved_env;
+                        self.set_current_package(saved_package);
                         return false;
                     }
                 }
@@ -121,6 +129,7 @@ impl Interpreter {
         } else {
             self.env = saved_env;
         }
+        self.set_current_package(saved_package);
         args_match
     }
 
