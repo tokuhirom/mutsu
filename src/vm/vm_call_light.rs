@@ -66,6 +66,7 @@ impl Interpreter {
         compiled_fns: &CompiledFns,
         func_name: &str,
         func_name_sym: Symbol,
+        caller_code: Option<&CompiledCode>,
     ) -> Result<Value, RuntimeError> {
         let args_base = self.stack.len();
         // Drop the synthetic callsite-line marker (see the `_at` form's
@@ -82,6 +83,7 @@ impl Interpreter {
             compiled_fns,
             func_name,
             func_name_sym,
+            caller_code,
         )
     }
 
@@ -102,6 +104,16 @@ impl Interpreter {
         compiled_fns: &CompiledFns,
         func_name: &str,
         func_name_sym: Symbol,
+        // ADR-0109 (#8686 Phase 2): the CALLER's own `CompiledCode` -- needed
+        // only when `cf.has_rw_positional_param`, to promote a caller-lexical
+        // argument to a shared `ContainerRef` cell via `capture_var_cell`,
+        // which indexes the CALLER's locals by the slot its own `WrapVarRef`
+        // site resolved. `None` at the one call site with no such code in
+        // scope (`compile_and_call_function_def`); every dispatch site that
+        // can reach a `has_rw_positional_param` routine at all is required to
+        // have already refused it via `positional_light_rw_args_admitted`
+        // when `caller_code` is `None` (see `is_positional_light_call_eligible`).
+        caller_code: Option<&CompiledCode>,
     ) -> Result<Value, RuntimeError> {
         // ADR-0100: refuse the call while there is still stack left to raise
         // with, so deep recursion becomes a catchable exception instead of a
@@ -158,6 +170,14 @@ impl Interpreter {
             "a light_full_arity_only routine reached the light bind at {actual_count} of \
              {positional_count} positionals: its dispatch site did not gate on arity"
         );
+        // ADR-0109 (#8686 Phase 2): every dispatch site is required to have
+        // already refused a `has_rw_positional_param` routine when it has no
+        // caller code to alias with (see `caller_code`'s own doc comment).
+        debug_assert!(
+            !cf.has_rw_positional_param || caller_code.is_some(),
+            "a has_rw_positional_param routine reached the light bind with no caller_code: \
+             its dispatch site did not gate on positional_light_rw_args_admitted"
+        );
 
         // A positional-light-eligible signature is either all-mandatory or a
         // mandatory prefix followed by parameters the precompute reduced to a
@@ -199,10 +219,79 @@ impl Interpreter {
             }
         }
 
+        // ADR-0109 (#8686 Phase 2): promote every `is rw` positional
+        // argument to a shared `ContainerRef` cell HERE, while `self.locals`
+        // still denotes the CALLER's frame -- `capture_var_cell` resolves
+        // its `name`/`slot_hint` against `caller_code.locals`, which are the
+        // CALLER's own local slots. Running this after the frame push below
+        // would index the wrong frame entirely (the callee's, just opened).
+        // `positional_light_rw_args_admitted` (checked by every dispatch
+        // site before this function is ever called) already guarantees:
+        // every `is rw` parameter's argument is present, is either a plain
+        // lexical/assignment `VarRef` with a resolvable caller slot or an
+        // already-boxed cell relayed from an outer `is rw` parameter, and --
+        // for a native `int` parameter -- needs no `Bool`/`BigInt` coercion.
+        // So this loop only ever promotes; it never has to reject or coerce.
+        if cf.has_rw_positional_param {
+            // Every dispatch site is required to have already refused a
+            // `has_rw_positional_param` routine when it has no caller code
+            // to alias with (see `caller_code`'s own doc comment and the
+            // `debug_assert!` above) -- this is an internal dispatch-site
+            // invariant, not a value a Raku program can trigger, so a
+            // violation is reported rather than panicked on (#8186).
+            let Some(caller_code) = caller_code else {
+                self.current_unit = saved_unit;
+                self.stack.truncate(args_base);
+                return Err(RuntimeError::new(format!(
+                    "internal error: '{func_name}' has an is rw positional parameter \
+                     but no caller_code was supplied for aliasing"
+                )));
+            };
+            for (param_idx, pd) in cf.param_defs.iter().enumerate().take(actual_count) {
+                if pd.named || !pd.traits.iter().any(|t| t == "rw") {
+                    continue;
+                }
+                let slot_hint = self.stack[args_base + param_idx].varref_slot();
+                if let ValueView::VarRef { name, value, .. } =
+                    self.stack[args_base + param_idx].view()
+                {
+                    let name = name.resolve();
+                    let inner = value.clone();
+                    // `_boxing_type_objects`, not plain `capture_var_cell`:
+                    // an uninitialized `my $var;` still holds a real,
+                    // writable Scalar container in raku -- it just happens
+                    // to currently hold the `Any` type object. Plain
+                    // `capture_var_cell` declines to box a bare type object
+                    // (that guard exists for a DIFFERENT case: keeping four
+                    // uninitialized `my` scalars four distinct containers is
+                    // `_boxing_type_objects`'s own job, not this one's), so
+                    // it would have handed back `Any` itself with no cell at
+                    // all -- the callee's `$x = 5` would then write only its
+                    // own detached param slot, leaving the caller's variable
+                    // permanently `Any` (roast's own
+                    // `integration/advent2011-day16.t` pins exactly this
+                    // shape: `sub set_five($x is rw) { $x = 5 } my $var;
+                    // set_five $var`).
+                    let cell = self.capture_var_cell_boxing_type_objects(
+                        caller_code,
+                        &name,
+                        inner,
+                        slot_hint,
+                    );
+                    self.stack[args_base + param_idx] = cell;
+                }
+                // Else: already a shared cell (`ContainerRef`/`HashEntryRef`)
+                // relayed from an outer `is rw` parameter -- admission
+                // guaranteed this shape, so hand it out unchanged.
+            }
+        }
+
         // Open the callee's frame at its real size in one step: sizing it later
         // (an empty `push_frame` plus a `refill_slots`) cost a second
         // out-of-line `Vec::resize` per call. Nothing between here and the
-        // parameter bind reads `self.locals`.
+        // parameter bind (aside from the `is rw` alias pre-pass just above,
+        // which runs before this point precisely because it still needs the
+        // CALLER's frame) reads `self.locals`.
         //
         // Unless the parameters *are* the frame (`params_fill_frame`), in which
         // case open it empty and let the bind loop push them in order: filling
@@ -347,6 +436,19 @@ impl Interpreter {
         // `type_failure` below.
         let mut native_coerce_err: Option<RuntimeError> = None;
         for param_idx in 0..positional_count.min(actual_count) {
+            // ADR-0109 (#8686 Phase 2): an `is rw` parameter's stack slot was
+            // already promoted to a shared `ContainerRef` cell by the alias
+            // pre-pass above -- it is no longer the `VarRef`-wrapped
+            // original value this loop's checks expect to unwrap, and
+            // `positional_light_rw_args_admitted` already validated whatever
+            // this parameter's declared type requires (including, for a
+            // native `int`, that no coercion is needed). Nothing left here
+            // to check.
+            if cf.has_rw_positional_param
+                && cf.param_defs[param_idx].traits.iter().any(|t| t == "rw")
+            {
+                continue;
+            }
             // `param_fast_types` classified every constraint at registration
             // time; `None` means the precompute never ran (a hand-built chunk),
             // which falls back to matching the constraint string per call.
@@ -432,7 +534,17 @@ impl Interpreter {
             return Err(err);
         }
         for (param_idx, slot) in param_slots.iter().enumerate() {
-            let val = if param_idx < actual_count {
+            let is_rw_param = cf.has_rw_positional_param
+                && param_idx < actual_count
+                && cf.param_defs[param_idx].traits.iter().any(|t| t == "rw");
+            let val = if is_rw_param {
+                // Already promoted to a shared `ContainerRef` cell by the
+                // alias pre-pass above (ADR-0109) -- take it verbatim. No
+                // itemization (a cell IS the lvalue location already) and no
+                // native coercion (declined by admission for any argument
+                // that would have needed one).
+                std::mem::replace(&mut self.stack[args_base + param_idx], Value::NIL)
+            } else if param_idx < actual_count {
                 // Move the argument out of its stack slot (the slots are
                 // discarded by the `truncate` below, so nothing observes the
                 // `Nil` left behind) rather than cloning it and dropping the
@@ -532,8 +644,26 @@ impl Interpreter {
                     );
                 }
             }
+            // An `is rw` parameter must stay writable -- the body assigns
+            // through it by design (`$pos = $pos + 1`) -- mirroring the
+            // general binder's own "readonly unless is rw/is copy/is raw"
+            // rule (`binding_signature.rs`). It is not enough to simply skip
+            // marking it here: the readonly set is keyed by bare NAME and
+            // shared across frames, so an outer routine's own same-named
+            // readonly parameter (`sub bump($x is rw) {...}` called from
+            // `sub via($x) { ... bump($y) }` when `$y` happens to be named
+            // `$x` in a DIFFERENT frame further up the call chain -- or, as
+            // pinned by `t/io/copy-param-shadows-caller-readonly.t`, `via`'s
+            // OWN readonly `$x` leaking into `bump`'s writable `$x` of the
+            // same name) would otherwise still be marked when this frame's
+            // own mark is merely withheld. Explicitly unmark it instead, the
+            // same way the general binder's `check_and_bind_signature` does;
+            // the surrounding call path restores whatever was marked before
+            // this call once it returns.
             match cf.param_name_syms.get(param_idx) {
+                Some(sym) if is_rw_param => self.unmark_readonly_sym(*sym),
                 Some(sym) => self.mark_readonly_sym(*sym),
+                None if is_rw_param => self.unmark_readonly(&cf.param_defs[param_idx].name),
                 None => self.mark_readonly(&cf.param_defs[param_idx].name),
             }
         }

@@ -1,6 +1,6 @@
 # ADR-0109: A native `is rw` scalar parameter reaches the light-call fast paths by reusing the existing `WrapVarRef`/`ContainerRef` transport, restricted to plain-lexical arguments
 
-- Status: Proposed
+- Status: Accepted (implemented — see "Implementation status")
 - Date: 2026-09-19
 - Related: [ADR-0067](0067-a-routine-hands-back-the-container-it-was-given.md)
   (the general binder's container-transport machinery for `is rw`/`is raw`
@@ -290,3 +290,62 @@ and applies unchanged.
    opposed to a `:=`-bound one) can skip that lookup entirely — worth
    measuring, since #8686's whole premise is that this call shape is
    extremely hot and every unnecessary lookup shows up in the profile.
+
+## Implementation status
+
+Implemented. Resolutions to the three open questions above:
+
+1. **Bind-time behavior for an incompatible source value**: measured against `raku`
+   2026.07 first, as required — `sub f(int $x is rw) {}; my $s = "5"; f($s)` (and
+   every other non-`my int`-declared caller shape tried, including a plain `my
+   $n = 41`) aborts real Rakudo itself with `Internal error: inconsistent bind
+   result`, not a graceful type error; there is no upstream behavior to match. The
+   admission check (Decision §2) therefore declines coercion outright for a
+   native `int` parameter — it admits only an argument whose value is *already*
+   an exact `Int` — rather than attempting to replicate a coercion Rakudo cannot
+   itself exercise for this shape. A `Bool`/`BigInt` argument (needing
+   `wrap_native_int_for_binding`'s coercion) still reaches the general binder and
+   gets mutsu's own pre-existing (more permissive than Rakudo's) coerce-and-alias
+   behavior, unchanged by this ADR.
+2. **Where the runtime shape check lives relative to `pos_light_call_cache`**:
+   re-checked on every cached dispatch, exactly like `light_full_arity_only`/
+   `positional_light_full_arity_call` — the precedent this question named turned
+   out to be the right answer, not just the closest one. `positional_light_rw_args_admitted`
+   is called from all three cold eligibility sites and inlined into the hot
+   name-keyed cached dispatch in `vm_call_func_ops.rs`.
+3. **Whether `capture_var_cell`'s alias-chain-root resolution needs to run for
+   this slice's restricted shapes**: left running unconditionally.
+   `capture_var_cell` is called verbatim (Decision §3's own "no new storage
+   mechanism, no reimplementation" requirement), and the alias-chain lookup is
+   one `env` read for the (rare, in this slice's shapes) case where the argument
+   is itself a `:=`-bound name; not worth a bespoke skip path.
+
+One additional decision the implementation needed, not anticipated by the
+"Open questions": **a non-native boxed type constraint (`Int $x is rw`, `Str $x
+is rw`, ...) is out of scope entirely**, not just the native/untyped shapes
+Decision §1 names. `positional_light_rw_args_admitted` declines every call to
+such a routine, permanently — it would need the general binder's
+type-check-then-box ordering (check the original value's declared-type
+conformance, THEN promote to a cell), which the pre-pass structure (turn a
+tagged `VarRef` straight into a `ContainerRef`, once, before the frame push,
+with the earlier type-check loop skipped for anything already promoted) does
+not reproduce. `JSON::Fast`'s own helpers never declare one, so this did not
+narrow the ADR's actual target.
+
+Two more implementation-time findings, both caught by `make test`/`make roast`
+(not by the new regression file's own first draft) and both now pinned in it:
+the bind loop must call `unmark_readonly_sym`, not merely withhold its own
+`mark_readonly_sym` call, because the readonly set is keyed by bare name and
+shared across frames (an outer routine's own same-named readonly parameter
+otherwise leaks in); and the alias-capture pre-pass must call
+`capture_var_cell_boxing_type_objects`, not plain `capture_var_cell`, because
+an uninitialized `my $var;` is still a real container even though it currently
+holds the `Any` type object — plain `capture_var_cell`'s decline-to-box-a-type-
+object guard exists for a different case (keeping distinct uninitialized `my`
+scalars in a `Capture`/`\(...)` literal as distinct containers) and silently
+produced a detached, un-aliased parameter otherwise.
+
+See `news/2026-09/native-is-rw-scalar-params-reach-the-light-call-fast-paths.md`
+for the full writeup, measurements, and the `rust-gdb`-confirmed evidence that
+real `JSON::Fast` helpers (`parse-thing`, `parse-string`, `parse-numeric`) now
+take this path.

@@ -9585,6 +9585,13 @@ pub(crate) struct CompiledFunction {
     /// declaration's body is still in hand; a compiled routine keeps no body
     /// AST to re-derive it from.
     pub(crate) uses_return_rw: bool,
+    /// True when at least one positional `param_defs` entry carries exactly
+    /// the `rw` trait (ADR-0109). Gates the positional-light call path's
+    /// per-call alias-capture pre-pass (`capture_var_cell` promotion of a
+    /// caller-lexical argument to a shared `ContainerRef`) so a routine with
+    /// no `is rw` parameter — the overwhelming majority — pays no per-call
+    /// scan for one. Computed once in `precompute_param_name_syms`.
+    pub(crate) has_rw_positional_param: bool,
     /// Pre-computed mapping from positional parameter index to locals slot index.
     /// Used by the positional light call fast path to avoid name-based lookup per call.
     pub(crate) param_local_slots: Option<Vec<usize>>,
@@ -10078,6 +10085,10 @@ impl CompiledFunction {
         // weaker "nobody computed it" — see the field's doc comment.
         self.light_full_arity_only =
             self.light_required_positionals.is_none() && !self.param_defs.is_empty();
+        self.has_rw_positional_param = self
+            .param_defs
+            .iter()
+            .any(|pd| !pd.named && pd.traits.iter().any(|t| t == "rw"));
     }
 
     /// True if `sym` names a *callee-local* of this function — a parameter, a
@@ -10168,6 +10179,7 @@ mod compiled_fns_identity {
             is_cached: false,
             is_raw: false,
             uses_return_rw: false,
+            has_rw_positional_param: false,
             param_local_slots: None,
             params_fill_frame: false,
             has_inner_subs: false,
