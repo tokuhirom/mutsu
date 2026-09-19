@@ -154,7 +154,12 @@ impl Interpreter {
             is_test_assertion: false,
             is_rw: false,
             is_raw: false,
-            declarator: crate::ast::RoutineDeclarator::Sub,
+            // The importable function form still reports as a Method in Raku
+            // (`&greet.WHAT` is Method), even though it is stored in the
+            // function registry so `import` can expose it as a callable.
+            // Keeping that identity also lets a same-named plain `sub` in the
+            // class body coexist with this synthetic export candidate.
+            declarator: crate::ast::RoutineDeclarator::Method,
             empty_sig: false,
             is_stub: false,
             return_type: None,

@@ -622,6 +622,15 @@ impl Interpreter {
             // the actual routine regardless of whether the short name used
             // to capture it is still lexically visible).
             let candidates = self.resolve_all_multi_candidates(lookup_name);
+            // A lone exported-method bridge is a first-class Method, not a
+            // synthetic Sub dispatcher.  It is stored under an arity key so
+            // ordinary calls can dispatch it, but `&name` must preserve the
+            // callable identity that Rakudo exposes to introspection.
+            if candidates.len() == 1
+                && candidates[0].declarator == crate::ast::RoutineDeclarator::Method
+            {
+                return self.sub_value_from_function_def((*candidates[0]).clone());
+            }
             self.sub_value_from_multi_candidates(lookup_name, candidates)
         } else if self.has_proto(lookup_name)
             || self.resolve_token_defs(lookup_name).is_some()

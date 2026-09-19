@@ -1454,10 +1454,29 @@ impl Registry {
         packages: &[Symbol],
         name: &str,
     ) -> bool {
+        // An exported method is represented in the function registry by a
+        // synthetic arity-qualified candidate so it can be imported as a
+        // callable.  If the same package also has a plain sub of that name,
+        // the plain sub is the ordinary bare-name declaration and the
+        // synthetic bridge must not turn the lookup into multi dispatch.  In
+        // an importing package there is no exact key, so the bridge remains a
+        // real candidate and is still visible through `has_multi_candidates`.
+        let has_plain_declaration = packages.iter().any(|package| {
+            dispatch_key::qualified_lookup(package.as_str(), name)
+                .is_some_and(|key| self.functions.contains_key(&key))
+        });
         let matches = |ks: &str| {
-            packages
-                .iter()
-                .any(|p| dispatch_key::key_is_candidate_of(ks, p.as_str(), name))
+            packages.iter().any(|p| {
+                if !dispatch_key::key_is_candidate_of(ks, p.as_str(), name) {
+                    return false;
+                }
+                if !has_plain_declaration {
+                    return true;
+                }
+                Symbol::lookup(ks)
+                    .and_then(|key| self.functions.get(&key))
+                    .is_none_or(|def| def.declarator != crate::ast::RoutineDeclarator::Method)
+            })
         };
         let full_scan = || self.functions.keys().any(|k| matches(k.as_str()));
         let Some(base_keys) = base_keys else {

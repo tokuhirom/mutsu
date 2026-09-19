@@ -887,6 +887,21 @@ impl Interpreter {
             let target_single = format!("{target_pkg}::{name}");
             let target_prefix = format!("{target_pkg}::{name}/");
             let module_export_prefix = format!("{module}::EXPORT::ALL::{name}/");
+            // An exported method is represented by synthetic arity-qualified
+            // candidates.  A class may also contain a same-named plain sub;
+            // that plain sub occupies `source_single` but is not the method's
+            // export.  Prefer the method candidates when rebuilding the
+            // importing scope, otherwise the exact plain sub steals the
+            // export simply because it sorts first in this lookup.
+            let exported_method_candidates = self
+                .registry()
+                .functions
+                .get(&Symbol::intern(&source_single))
+                .is_some_and(|def| def.declarator != crate::ast::RoutineDeclarator::Method)
+                && self.registry().functions.iter().any(|(key, def)| {
+                    key.resolve().starts_with(&source_prefix)
+                        && def.declarator == crate::ast::RoutineDeclarator::Method
+                });
             let bare_file_multi = bare_file_module
                 && self
                     .registry()
@@ -925,7 +940,7 @@ impl Interpreter {
                 .iter()
                 .filter_map(|(k, v)| {
                     let ks = k.resolve();
-                    if ks == source_single {
+                    if ks == source_single && !exported_method_candidates {
                         Some((Symbol::intern(&target_single), v.clone()))
                     } else if ks.starts_with(&source_prefix) {
                         Some((

@@ -53,7 +53,11 @@ pub(crate) fn to_set(target: Value, what: &str) -> Result<Value, RuntimeError> {
         item: &Value,
         flatten: bool,
     ) {
-        let item = crate::runtime::utils::strip_quanthash_mixin_elem(item);
+        // List elements can arrive through a Scalar/ContainerRef after a
+        // scalar binding. Read through that cell before applying the
+        // list-context flattening rule.
+        let deref_item = item.deref_container();
+        let item = crate::runtime::utils::strip_quanthash_mixin_elem(&deref_item);
         match item.view() {
             ValueView::Pair(k, v) => {
                 if v.truthy() {

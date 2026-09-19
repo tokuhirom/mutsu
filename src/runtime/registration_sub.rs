@@ -1163,11 +1163,16 @@ impl Interpreter {
         let multi_prefix = format!("{}::{}/", self.current_package(), name);
         let single_key_sym = Symbol::intern(&single_key);
         let has_single = self.registry().functions.contains_key(&single_key_sym);
-        let has_multi = self
-            .registry()
-            .functions
-            .keys()
-            .any(|k| k.resolve().starts_with(&multi_prefix));
+        // `method foo is export` installs a synthetic, arity-qualified
+        // function candidate so `import Class` can expose `foo($obj)`.  It is
+        // not a package-level multi declaration, and Raku permits a later
+        // same-named plain `sub foo(...)` in the class body.  Do not let that
+        // export bridge trigger the ordinary sub-vs-multi redeclaration rule;
+        // real multi candidates remain part of the check.
+        let has_multi = self.registry().functions.iter().any(|(k, def)| {
+            k.resolve().starts_with(&multi_prefix)
+                && def.declarator != crate::ast::RoutineDeclarator::Method
+        });
         let has_proto = self.registry().proto_subs_contains(&single_key);
         let allow_lexical_shadow = (self.block_scope_depth > 0 || is_lexical_hoist)
             && !matches!(

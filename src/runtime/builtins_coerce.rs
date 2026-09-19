@@ -23,7 +23,16 @@ impl Interpreter {
                 sym.resolve()
             ))));
         }
-        let items: Vec<Value> = args.to_vec();
+        // `Hash(...)` consumes its arguments in list context, so an Array or
+        // List supplied as the sole argument contributes its elements. This
+        // is what makes `Hash(@pairs)` and `Hash(do for ...)` useful for the
+        // common list-of-Pairs construction. `Array(...)` and `List(...)`
+        // intentionally keep each call argument as one element.
+        let items: Vec<Value> = if name == "Hash" {
+            args.iter().flat_map(Self::value_to_list).collect()
+        } else {
+            args.to_vec()
+        };
         Ok(match name {
             "Array" => Value::real_array(items),
             "List" => Value::array(items),

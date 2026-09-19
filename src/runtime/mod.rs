@@ -4404,6 +4404,13 @@ pub struct Interpreter {
     /// collected forever. Saved/restored around each pull, so nested pulls
     /// compare against their own entry.
     pub(crate) lazy_pull_entry_call_depth: Option<usize>,
+    /// Interpreter-path counterpart to `lazy_pull_entry_call_depth`. Some
+    /// callbacks are invoked through `call_sub_value`, which records a
+    /// `RoutineFrame` but not a VM `call_frames` entry. A take reached through
+    /// such a callback is nested just the same and cannot suspend at the take
+    /// instruction, because the bounded-pull driver can only resume its own
+    /// compiled frame.
+    pub(crate) lazy_pull_entry_routine_depth: Option<usize>,
     pub(crate) rw_map_topic_capture: Option<Value>,
     /// Next routine-invocation id this interpreter will hand out, and one past
     /// the end of the block it was claimed from (see `NEXT_INVOCATION_ID_BLOCK`).
