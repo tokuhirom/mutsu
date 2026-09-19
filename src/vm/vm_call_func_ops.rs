@@ -1371,6 +1371,7 @@ impl Interpreter {
         let result = match self.dispatch_func_call_inner(
             code,
             &name,
+            name_sym,
             args,
             arg_sources,
             call_has_named,
@@ -1600,11 +1601,17 @@ impl Interpreter {
 
     /// Inner dispatch for function calls. Handles CALL-ME override, compiled functions,
     /// native functions, and interpreter fallback. Returns the result value.
+    ///
+    /// `name_sym` is the callsite name's pre-interned `Symbol`; both callers
+    /// already hold it (one via `CompiledCode::const_sym`, the other interning
+    /// it once itself on its own rare junction-autothreading path), so this no
+    /// longer re-hashes its own name on entry ([#8690](https://github.com/tokuhirom/mutsu/issues/8690)).
     #[allow(clippy::too_many_arguments)]
     pub(super) fn dispatch_func_call_inner(
         &mut self,
         code: &CompiledCode,
         name: &str,
+        name_sym: Symbol,
         args: Vec<Value>,
         arg_sources: Option<Vec<Option<String>>>,
         call_has_named: bool,
@@ -1660,10 +1667,6 @@ impl Interpreter {
             // The multi winner this resolves on the way, so the multi branch
             // below does not resolve the identical call a second time (#7573).
             let mut multi_def_memo: Option<Arc<crate::ast::FunctionDef>> = None;
-            // Interned once for the whole branch: the resolution probe below,
-            // the light path's cache key and the named entry all want it, and
-            // each used to re-hash the same name (#7766 unit 2).
-            let name_sym = Symbol::intern(name);
             let compiled = if !self.has_proto_cached_sym(name, name_sym) {
                 self.find_compiled_function_memo(
                     compiled_fns,

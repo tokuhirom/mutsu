@@ -152,7 +152,11 @@ impl Interpreter {
             std::option::Option::None => return Ok(None),
         };
 
-        // Thread over the chosen junction: call the function for each eigenstate
+        // Thread over the chosen junction: call the function for each eigenstate.
+        // Interned once for the whole thread rather than per eigenstate, since
+        // `dispatch_func_call_inner` now takes the callsite name's `Symbol`
+        // as a parameter instead of re-hashing it on entry (#8690).
+        let name_sym = Symbol::intern(name);
         let mut results = Vec::with_capacity(values.len());
         // Slice F (env<->locals coherence): each eigenstate call dispatches the
         // function afresh, and each dispatch *clears* `pending_rw_writeback_sources`
@@ -192,6 +196,7 @@ impl Interpreter {
                 let result = self.dispatch_func_call_inner(
                     code,
                     name,
+                    name_sym,
                     threaded_args,
                     arg_sources.clone(),
                     call_has_named,

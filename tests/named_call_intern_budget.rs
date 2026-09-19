@@ -87,11 +87,14 @@ fn interns_per_call(preamble: &str, body: &str) -> f64 {
 fn where_constrained_sub_call_does_not_intern_its_own_name() {
     let per_call = interns_per_call("sub w($a where * > 0) { $a }", r#"$hits = w(1);"#);
     eprintln!("where-constrained sub call: {per_call:.3} interns per call");
-    // Measured 53.0 in both configurations (release 63 -> 61 -> 53, debug
-    // 72 -> 70 -> 53). The budget sits close to the measurement because the
-    // rest is the `where`-constraint machinery, which these changes do not
-    // touch; it moves only when the call *name* starts being re-hashed again.
-    let limit = 55.0;
+    // Measured 53.0 before [#8690](https://github.com/tokuhirom/mutsu/issues/8690)
+    // (release 63 -> 61 -> 53, debug 72 -> 70 -> 53), 46.0 after: this path
+    // falls through to `dispatch_func_call_inner`'s general branch, whose
+    // `has_proto_cached`/`has_multi_candidates_cached` calls and its own
+    // entry `Symbol::intern` no longer re-hash the callsite name. The budget
+    // sits close to the new measurement because the rest is the
+    // `where`-constraint machinery, which #8690 does not touch.
+    let limit = 48.0;
     assert!(
         per_call <= limit,
         "a by-name call to a compiled sub re-interns its name/package per call \
@@ -108,9 +111,10 @@ fn named_multi_call_does_not_intern_its_own_name() {
         r#"$hits = m(2, 3);"#,
     );
     eprintln!("named multi call: {per_call:.3} interns per call");
-    // Measured 15.0 in both configurations (release 25 -> 23 -> 15, debug
-    // 38 -> 36 -> 15).
-    let limit = 17.0;
+    // Measured 15.0 before [#8690](https://github.com/tokuhirom/mutsu/issues/8690)
+    // (release 25 -> 23 -> 15, debug 38 -> 36 -> 15), 3.0 after: same cause
+    // as the where-constrained case above.
+    let limit = 5.0;
     assert!(
         per_call <= limit,
         "a by-name call to a compiled multi re-interns its name/package per call \
