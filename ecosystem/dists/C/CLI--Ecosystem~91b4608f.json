@@ -23,14 +23,14 @@
   "dist": "CLI::Ecosystem",
   "files": [],
   "load": {
-    "CLI::Ecosystem": "Redeclaration of routine 'MAIN'. Did you mean to declare a multi-sub?"
+    "CLI::Ecosystem": "An exception occurred while evaluating a CHECK"
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-18",
+    "date": "2026-09-19",
     "harness": 2,
-    "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "44c2987",
+    "host": "linux-x86_64",
+    "mutsu_commit": "aba7e426b",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",

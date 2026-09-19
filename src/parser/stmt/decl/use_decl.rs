@@ -169,42 +169,47 @@ pub(in crate::parser::stmt) fn use_stmt(input: &str) -> PResult<'_, Stmt> {
     }
 
     // Optional argument
-    let (rest, arg) = if rest.starts_with(';') || rest.is_empty() || rest.starts_with('}') {
-        (rest, None)
-    } else if rest.starts_with('<') {
-        // Angle-bracket import list
-        let (r, expr) = super::super::super::primary::primary(rest)?;
-        (r, Some(expr))
-    } else {
-        // A `use` may carry a comma-separated argument list
-        // (`use RakudoPrereq v2021.04, 'too old', 'rakudo-only'`); each element
-        // is a separate positional argument to the module's `sub EXPORT`.
-        // `expression` stops at the comma (it is a statement-level list op), so
-        // collect the elements here and hand them on as an `ArrayLiteral`, which
-        // the compiler already flattens into positional `use` arguments.
-        let (mut r, first) = expression(rest)?;
-        let mut items = vec![first];
-        loop {
-            let (after_ws, _) = ws(r)?;
-            let Some(after_comma) = after_ws.strip_prefix(',') else {
-                break;
-            };
-            let (next, _) = ws(after_comma)?;
-            // A trailing comma (`use Foo 1, ;`) ends the list.
-            if next.is_empty() || next.starts_with(';') || next.starts_with('}') {
-                r = next;
-                break;
-            }
-            let (after_expr, expr) = expression(next)?;
-            items.push(expr);
-            r = after_expr;
-        }
-        if items.len() == 1 {
-            (r, items.pop())
+    let (rest, arg, inline_proto) =
+        if rest.starts_with(';') || rest.is_empty() || rest.starts_with('}') {
+            (rest, None, None)
+        } else if rest.starts_with('<') {
+            // Angle-bracket import list
+            let (r, expr) = super::super::super::primary::primary(rest)?;
+            (r, Some(expr), None)
         } else {
-            (r, Some(Expr::ArrayLiteral(items)))
-        }
-    };
+            // A `use` may carry a comma-separated argument list
+            // (`use RakudoPrereq v2021.04, 'too old', 'rakudo-only'`); each element
+            // is a separate positional argument to the module's `sub EXPORT`.
+            // `expression` stops at the comma (it is a statement-level list op), so
+            // collect the elements here and hand them on as an `ArrayLiteral`, which
+            // the compiler already flattens into positional `use` arguments.
+            let (mut r, (first, first_proto)) = parse_use_argument(rest)?;
+            let mut items = vec![first];
+            let mut inline_proto = first_proto;
+            loop {
+                let (after_ws, _) = ws(r)?;
+                let Some(after_comma) = after_ws.strip_prefix(',') else {
+                    break;
+                };
+                let (next, _) = ws(after_comma)?;
+                // A trailing comma (`use Foo 1, ;`) ends the list.
+                if next.is_empty() || next.starts_with(';') || next.starts_with('}') {
+                    r = next;
+                    break;
+                }
+                let (after_expr, (expr, proto)) = parse_use_argument(next)?;
+                items.push(expr);
+                if inline_proto.is_none() {
+                    inline_proto = proto;
+                }
+                r = after_expr;
+            }
+            if items.len() == 1 {
+                (r, items.pop(), inline_proto)
+            } else {
+                (r, Some(Expr::ArrayLiteral(items)), inline_proto)
+            }
+        };
     let (rest, _) = ws(rest)?;
     let (rest, _) = opt_char(rest, ';');
     // Handle `use lib "path"` or `use lib $*PROGRAM.parent(N).add("path")` at
@@ -238,15 +243,46 @@ pub(in crate::parser::stmt) fn use_stmt(input: &str) -> PResult<'_, Stmt> {
     } else {
         format!("{}{}", module, dist_selectors)
     };
-    Ok((
-        rest,
-        Stmt::Use {
-            module,
-            arg,
-            tags: use_tags,
-            condition,
-        },
-    ))
+    let use_stmt = Stmt::Use {
+        module,
+        arg,
+        tags: use_tags,
+        condition,
+    };
+    // `use Foo ..., proto sub MAIN(|) {*}` passes the proto object to Foo's
+    // EXPORT routine. The proto declaration is part of the use argument's
+    // syntax, so keep it ahead of the UseModule operation in a transparent
+    // wrapper. Parsing it here (rather than recovering a `sub MAIN` later in
+    // stmt-list parsing) also keeps an unrelated `use Foo proto; sub MAIN`
+    // pair from being mistaken for this construct.
+    let stmt = if let Some(proto) = inline_proto {
+        Stmt::SyntheticBlock(vec![proto, use_stmt])
+    } else {
+        use_stmt
+    };
+    Ok((rest, stmt))
+}
+
+/// Parse one positional `use` argument. Raku's CLI modules commonly put a
+/// proto declaration in the argument list, for example:
+///
+/// ```raku
+/// use CLI::Version $distribution, proto sub MAIN(|) is export {*}
+/// ```
+///
+/// The ordinary expression parser intentionally treats `proto` as a bare word
+/// because declarators are statement syntax. This small context-sensitive
+/// exception recognizes the declaration while the `use` parser still owns the
+/// complete argument list, and passes the resulting proto object as a CodeVar.
+fn parse_use_argument<'a>(input: &'a str) -> PResult<'a, (Expr, Option<Stmt>)> {
+    if keyword("proto", input).is_some()
+        && let Ok((rest, stmt @ Stmt::ProtoDecl { name, .. })) =
+            super::super::class::proto_decl(input)
+    {
+        return Ok((rest, (Expr::CodeVar(name.resolve()), Some(stmt))));
+    }
+    let (rest, expr) = expression(input)?;
+    Ok((rest, (expr, None)))
 }
 
 /// Parse `use <pragma_name> :D/:U/:_` pragma.
