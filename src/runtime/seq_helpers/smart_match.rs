@@ -1950,6 +1950,13 @@ impl Interpreter {
             {
                 left.to_string_value() == right.to_string_value()
             }
+            // Date/DateTime ~~ Str: Str.ACCEPTS(Date/DateTime) compares the
+            // temporal value's string representation with the matcher.
+            (ValueView::Instance { class_name: cn, .. }, ValueView::Str(_))
+                if matches!(cn.resolve().as_ref(), "Date" | "DateTime") =>
+            {
+                left.to_string_value() == right.to_string_value()
+            }
             // Instance ~~ Type or other: identity check (false)
             (ValueView::Instance { .. }, _) | (_, ValueView::Instance { .. }) => false,
             // Range ~~ Range: LHS is subset of RHS.

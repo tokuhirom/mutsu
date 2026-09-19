@@ -1236,4 +1236,30 @@ impl Interpreter {
             self.wrap_name_to_sub.remove(&name);
         }
     }
+
+    /// Drop named wrap state when a new declaration replaces the routine.
+    ///
+    /// `&name` creates a fresh `Sub` value, while named calls find the wrap
+    /// chain through these name-keyed tables. A later lexical declaration of
+    /// the same name (notably one compiled by `EVAL`) therefore has to retire
+    /// the old chain before it becomes the current registry entry; otherwise
+    /// calls to the new routine can still dispatch the old wrapper.
+    pub(crate) fn clear_wrap_chains_for_name(&mut self, name: &str) {
+        let sub_ids: Vec<u64> = self
+            .wrap_sub_names
+            .iter()
+            .filter_map(|(sub_id, sub_name)| (sub_name == name).then_some(*sub_id))
+            .collect();
+        if sub_ids.is_empty() {
+            return;
+        }
+        let wrap_chains = crate::runtime::cow_table_mut(&mut self.wrap_chains);
+        for sub_id in sub_ids {
+            wrap_chains.remove(&sub_id);
+            self.wrap_sub_names.remove(&sub_id);
+        }
+        self.wrap_name_to_sub.remove(name);
+        crate::runtime::cow_table_mut(&mut self.wrap_callable_ids).remove(name);
+        self.invalidate_fn_resolution();
+    }
 }
