@@ -324,7 +324,28 @@ impl Interpreter {
                 snapshot.shadowed_proto_functions.insert(proto_key, def);
             }
         } else {
-            // There is no enclosing registry snapshot to restore at top level.
+            // There is no enclosing registry snapshot to restore at top level:
+            // `shadowed_functions` (and `shadowed_proto`) are being thrown away
+            // for good, replaced by whatever this import installs instead.
+            //
+            // `module_registered_functions` is a flat, un-scoped set of
+            // registry keys "protected" from `pop_import_scope`'s cleanup
+            // because some loaded module's own body once installed them
+            // (`load_module_inner`'s `module_funcs` diff, keyed by symbol only
+            // — see its comment). It has no notion of a key being reassigned
+            // to a different owner. Once shadowed away here, the name no
+            // longer names that module's definition — a later, LEXICALLY
+            // SCOPED import that happens to reuse the exact same `GLOBAL::`
+            // key (e.g. a same-named proto/multi family re-imported inside an
+            // exported wrapper whose own name collided with it at load time)
+            // must not inherit this now-stale protection, or its call-scoped
+            // installs leak past `pop_import_scope` forever (#8798).
+            if !shadowed_functions.is_empty() {
+                let table = crate::runtime::cow_table_mut(&mut self.module_registered_functions);
+                for key in shadowed_functions.keys() {
+                    table.remove(key);
+                }
+            }
             // Replace the old proto marker along with its candidate family.
             self.registry_mut()
                 .proto_subs_retain(|key| key != target_single);
