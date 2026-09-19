@@ -266,6 +266,7 @@ impl Interpreter {
                 attributes: Vec::new(),
                 native_methods: [
                     "emit",
+                    "share",
                     "tap",
                     "act",
                     "encode",

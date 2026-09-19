@@ -1627,6 +1627,7 @@ impl Interpreter {
                 }
                 if *k != underscore_sym
                     && *k != at_underscore_sym
+                    && *k != crate::symbol::wk::block_var()
                     && *k != self_sym
                     && !rw_sources.contains(k)
                     && !param_names.contains(k)

@@ -121,6 +121,36 @@ impl Interpreter {
             }
             return Ok(false);
         }
+        // A shared on-demand Supply completes its output when the source's
+        // whenever done-group reaches zero. Mark that output done before
+        // invoking the first subscriber's callback so later subscribers are
+        // notified through the same completion edge.
+        if let ValueView::Instance {
+            class_name,
+            attributes,
+            ..
+        } = done_cb.view()
+            && class_name == "__SupplySharedDone"
+        {
+            let attrs = attributes.as_map();
+            let Some(ValueView::Int(supplier_id)) = attrs.get("supplier_id").map(Value::view)
+            else {
+                return Ok(false);
+            };
+            let supplier_id = supplier_id as u64;
+            supplier_done(supplier_id);
+            for subscriber_done in take_supplier_done_callbacks(supplier_id) {
+                if self.invoke_done_callback(subscriber_done)? {
+                    break;
+                }
+            }
+            if let Some(done_cb) = attrs.get("done_cb")
+                && Self::supply_has_active_callback(done_cb)
+            {
+                self.call_sub_value(done_cb.clone(), vec![], true)?;
+            }
+            return Ok(false);
+        }
         // A plain callback here is typically a `whenever`'s LAST phaser (or a
         // downstream `done => ...` handler). A LAST body may itself contain
         // `done` — the `LAST done;` idiom Cro::HTTP2::GeneralParser uses to
@@ -315,6 +345,13 @@ impl Interpreter {
             attrs.insert("upstream_taps".to_string(), Value::array(upstream_taps));
         }
         Value::make_instance(Symbol::intern("__SupplyOnDemandComplete"), attrs)
+    }
+
+    pub(super) fn make_shared_supply_done_marker(supplier_id: u64, done_cb: Value) -> Value {
+        let mut attrs = HashMap::new();
+        attrs.insert("supplier_id".to_string(), Value::int(supplier_id as i64));
+        attrs.insert("done_cb".to_string(), done_cb);
+        Value::make_instance(Symbol::intern("__SupplySharedDone"), attrs)
     }
 
     /// Env key through which a whenever body learns the done group of its

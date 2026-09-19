@@ -14,6 +14,74 @@ impl Interpreter {
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
         match method {
+            "share" => {
+                // `Supply.share` turns a cold supply block into one shared
+                // live source: the block is run once, and every tap on the
+                // returned Supply observes the same emissions. A
+                // Supplier-backed source can use the existing forward-tap
+                // pipeline directly; an on-demand source carries a marker so
+                // `native_supply_mut` runs its callback once on the shared
+                // supplier and registers later taps on that same supplier.
+                if attributes.contains_key("shared_on_demand") {
+                    return Ok(Value::make_instance_with_id(
+                        Symbol::intern("Supply"),
+                        attributes.clone(),
+                        0,
+                    ));
+                }
+
+                if let Some(callback) = attributes.get("on_demand_callback") {
+                    let supplier_id = crate::runtime::native_methods::next_supplier_id();
+                    let mut shared_attrs = HashMap::new();
+                    shared_attrs.insert("values".to_string(), Value::array(Vec::new()));
+                    shared_attrs.insert("taps".to_string(), Value::array(Vec::new()));
+                    shared_attrs.insert("live".to_string(), Value::TRUE);
+                    shared_attrs.insert("supplier_id".to_string(), Value::int(supplier_id as i64));
+                    shared_attrs.insert("shared_on_demand".to_string(), Value::TRUE);
+                    shared_attrs.insert("shared_started".to_string(), Value::FALSE);
+                    shared_attrs.insert("on_demand_callback".to_string(), callback.clone());
+                    if let Some(on_close) = attributes.get("on_close_callbacks") {
+                        shared_attrs.insert("on_close_callbacks".to_string(), on_close.clone());
+                    }
+                    return Ok(Value::make_instance(Symbol::intern("Supply"), shared_attrs));
+                }
+
+                if let Some(source_id) =
+                    crate::runtime::native_methods::supplier_id_from_attrs(attributes)
+                {
+                    let downstream_id = crate::runtime::native_methods::next_supplier_id();
+                    crate::runtime::native_methods::register_supplier_forward_tap(
+                        source_id,
+                        downstream_id,
+                    );
+                    crate::runtime::native_methods::register_supplier_share_output(
+                        source_id,
+                        downstream_id,
+                    );
+                    let (_, done, quit_reason) =
+                        crate::runtime::native_methods::supplier_snapshot(source_id);
+                    let mut shared_attrs = HashMap::new();
+                    shared_attrs.insert("values".to_string(), Value::array(Vec::new()));
+                    shared_attrs.insert("taps".to_string(), Value::array(Vec::new()));
+                    shared_attrs.insert("live".to_string(), Value::truth(!done));
+                    shared_attrs
+                        .insert("supplier_id".to_string(), Value::int(downstream_id as i64));
+                    shared_attrs.insert("supplier_done".to_string(), Value::truth(done));
+                    if let Some(reason) = quit_reason {
+                        shared_attrs.insert("quit_reason".to_string(), reason);
+                    }
+                    return Ok(Value::make_instance(Symbol::intern("Supply"), shared_attrs));
+                }
+
+                // A materialized Supply has no producer to share. Preserve
+                // its ordinary replay behavior rather than inventing a live
+                // source that could never complete.
+                Ok(Value::make_instance_with_id(
+                    Symbol::intern("Supply"),
+                    attributes.clone(),
+                    0,
+                ))
+            }
             // `live` is a real method (`method live(Supply:D: --> Bool:D)`), not
             // an attribute accessor: every Supply answers it, including the ones
             // a combinator builds without carrying the attribute forward
