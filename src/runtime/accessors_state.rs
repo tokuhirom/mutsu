@@ -313,6 +313,38 @@ impl Interpreter {
         self.process_dynamics.insert(key, value);
     }
 
+    /// `nqp::gethllsym($hll, $name)` — see [`Interpreter::hll_syms`]. Absent
+    /// on real MoarVM means the native-null sentinel; mutsu has no separate
+    /// representation from `Nil`, matching `nqp::ifnull`'s own simplification.
+    pub(crate) fn get_hll_sym(&self, hll: &str, name: &str) -> Value {
+        self.hll_syms
+            .get(&(hll.to_string(), name.to_string()))
+            .cloned()
+            .unwrap_or(Value::NIL)
+    }
+
+    /// `nqp::bindhllsym($hll, $name, $value)`.
+    pub(crate) fn set_hll_sym(&mut self, hll: String, name: String, value: Value) {
+        self.hll_syms.insert((hll, name), value);
+    }
+
+    /// Seeds the one HLL symbol mutsu itself relies on: Rakudo's core setting
+    /// reads `nqp::gethllsym("default", "SysConfig")` from a `BEGIN` block in
+    /// several bootstrap-adjacent modules (e.g. `Rakudo::CORE::META`, see
+    /// issue #8775) to get at `.rakudo-build-config`. Real Rakudo installs
+    /// this via `nqp::bindhllsym('default', 'SysConfig', Perl6::SysConfig)`
+    /// during its own compiler bootstrap; mutsu has no such bootstrap phase,
+    /// so it installs the same binding here, once per interpreter
+    /// construction (see the call sites in `runtime_init.rs` /
+    /// `runtime_thread.rs`).
+    pub(crate) fn bootstrap_hll_syms(&mut self) {
+        self.set_hll_sym(
+            "default".to_string(),
+            "SysConfig".to_string(),
+            Value::make_instance(Symbol::intern("Perl6::SysConfig"), HashMap::new()),
+        );
+    }
+
     /// The unqualified spelling of an `our_vars` key: its sigil (if any) plus
     /// the segment after the last `::`. `"@Foo::Bar::words"` -> `"@words"`,
     /// `"x"` -> `"x"`. See [`Interpreter::our_var_unqualified`].

@@ -122,6 +122,35 @@ impl Interpreter {
             // nqp::gethostname(): the system hostname as a native str. Used by
             // Sys::Hostname's `hostname` sub (`nqp::gethostname.subst(...)`).
             "gethostname" => Ok(Value::str(Self::hostname())),
+            // nqp::gethllsym($hll, $name) / nqp::bindhllsym($hll, $name, $value):
+            // MoarVM's per-HLL symbol table, a global name -> value registry
+            // each high-level language (here just "default", NQP's own HLL)
+            // populates for the others to read. Rakudo's core setting reaches
+            // for it during BEGIN-time bootstrap -- e.g.
+            // `nqp::gethllsym("default","SysConfig").rakudo-build-config<version>`
+            // in `Rakudo::CORE::META` (issue #8775) -- to get at compiler
+            // build info before any Raku-level class is composed. mutsu seeds
+            // the one binding it needs (`bootstrap_hll_syms`) and otherwise
+            // treats this as a genuinely general get/set pair backed by
+            // [`Interpreter::hll_syms`], not a special case for that one key.
+            "gethllsym" => {
+                let hll = args
+                    .first()
+                    .map(|v| v.to_string_value())
+                    .unwrap_or_default();
+                let name = args.get(1).map(|v| v.to_string_value()).unwrap_or_default();
+                Ok(self.get_hll_sym(&hll, &name))
+            }
+            "bindhllsym" => {
+                let hll = args
+                    .first()
+                    .map(|v| v.to_string_value())
+                    .unwrap_or_default();
+                let name = args.get(1).map(|v| v.to_string_value()).unwrap_or_default();
+                let value = args.get(2).cloned().unwrap_or(Value::NIL);
+                self.set_hll_sym(hll, name, value.clone());
+                Ok(value)
+            }
             // nqp::getlexdyn($name): resolve a dynamic variable by a
             // runtime-computed name, the same way a compiled `%*NAME`/`$*NAME`
             // read would (`get_env_with_main_alias` is the chokepoint every

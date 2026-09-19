@@ -449,6 +449,7 @@ impl Interpreter {
                 | "Perl"
                 | "Raku"
                 | "Compiler"
+                | "Perl6::SysConfig"
                 | "Promise"
                 | "Promise::Vow"
                 | "Channel"
@@ -493,6 +494,7 @@ impl Interpreter {
                             | "Perl"
                             | "Raku"
                             | "Compiler"
+                            | "Perl6::SysConfig"
                             | "Promise"
                             | "Promise::Vow"
                             | "Channel"
@@ -547,6 +549,7 @@ impl Interpreter {
             "Kernel" => self.native_kernel(attributes, method, args),
             "Perl" | "Raku" => Ok(self.native_perl(attributes, method)),
             "Compiler" => self.native_compiler(attributes, method),
+            "Perl6::SysConfig" => Self::native_sys_config(method),
             "Promise" => self.native_promise(attributes, method, args),
             "Promise::Vow" => self.native_promise_vow(attributes, method, args),
             "Channel" => Ok(self.native_channel(attributes, method)),

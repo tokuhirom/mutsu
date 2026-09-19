@@ -230,6 +230,12 @@ impl Interpreter {
         {
             return true;
         }
+        // Perl6::SysConfig -- the object `nqp::gethllsym("default",
+        // "SysConfig")` hands back (see `Interpreter::bootstrap_hll_syms`
+        // and `native_sys_config`).
+        if class_name == "Perl6::SysConfig" && method_name == "rakudo-build-config" {
+            return true;
+        }
         // VM native methods
         if class_name == "VM"
             && matches!(
