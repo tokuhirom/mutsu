@@ -96,6 +96,27 @@ an allomorph satisfies a native constraint in exactly the same cases it satisfie
 (raku: `sub f(str $x){}; f(<42>)` binds the `IntStr`'s string half). Regression coverage added to
 `t/nativecall/light-call-native-scalar-params.t`.
 
+## A second regression caught by CI's battery gate
+
+An Int/Str-valued enum constant hit the same class of bug from a different angle: the `Mixin`/enum
+arms of `fast_type_check_tagged`/`fast_type_check` special-cased `(T::Int, EnumValue::Int(_))` and
+`(T::Str, EnumValue::Str(_))`, but not the `NativeInt`/`NativeStr` counterparts, so an enum whose
+values carry a plain Int/Str — the `enum CBORMajorType (CBOR_UInt => 0, ...)` shape the vendored
+`CBOR::Simple` module uses to name its wire-format tags — was wrongly rejected by a native `int`/`str`
+parameter. This one did not surface in `make test`; it surfaced in CI's `scripts/battery-testsuite.sh`
+gate, which regressed `CBOR::Simple`'s own upstream suite (`01-basic.rakutest`, `04-tags.rakutest`)
+below its recorded baseline. Root-caused with a temporary `MUTSU_DEBUG_NATIVE` eprintln at the check
+site (`write-medium-uint(CBOR_UInt, $value)` binds the enum constant to a native `int $major-type`
+parameter) — removed before landing. Fixed by adding `NativeInt`/`NativeStr` to the same enum arms.
+Regression coverage added; the battery gate went from 305/326 to 307/326 passing files (net gain, no
+new regressions) after this fix.
+
+mutsu does not yet unbox an accepted enum value to a plain `Int` at the native-int bind site — a
+pre-existing gap shared with the general binder (`sub f(int $x is rw)` forces that path and shows the
+same non-unboxed result), not a regression this PR introduces and not in scope to fix here.
+`CBOR::Simple`'s own code only depends on the value's arithmetic behaving correctly, which the full
+upstream suite (74/74, 39/39 on the two previously-regressed files) confirms it does.
+
 ## Still open on #8686
 
 Phase 1's first bullet (dispatch-chain `Symbol::intern` re-derivations) is
