@@ -123,6 +123,21 @@ impl Interpreter {
     }
 
     pub(crate) fn resolved_type_capture_name(&self, constraint: &str) -> String {
+        self.try_resolved_type_capture_name(constraint)
+            .unwrap_or_else(|| constraint.to_string())
+    }
+
+    /// Core of [`Self::resolved_type_capture_name`], returning `None` instead
+    /// of an owned passthrough copy of `constraint` when nothing needs
+    /// resolving. `type_matches_value` calls this directly: it runs on every
+    /// type check in the interpreter, so the overwhelmingly common case (a
+    /// plain constraint like `Any` or `Int` with no capture, generic, or
+    /// package alias to resolve) must not pay for a heap allocation just to
+    /// immediately compare-and-drop it (#8815 -- adding the package-alias
+    /// branch below without this split cost bench-array ~16% of its
+    /// instruction count, almost entirely `String` alloc/free churn, even
+    /// though the benchmark never uses a package-scoped nested type).
+    fn try_resolved_type_capture_name(&self, constraint: &str) -> Option<String> {
         if let Some(inner) = constraint
             .strip_prefix("::(")
             .and_then(|s| s.strip_suffix(')'))
@@ -132,13 +147,13 @@ impl Interpreter {
             // Preserve the general form for later evaluation, while resolving
             // literal word quotes without re-entering the VM from this helper.
             if let Some(name) = inner.strip_prefix("q<").and_then(|s| s.strip_suffix('>')) {
-                return name.to_string();
+                return Some(name.to_string());
             }
         }
         if self.has_type_capture_binding(constraint)
             && let Some(value) = self.env.get(constraint)
         {
-            return match value.view() {
+            return Some(match value.view() {
                 ValueView::Package(name) => name.resolve(),
                 ValueView::ParametricRole {
                     base_name,
@@ -156,7 +171,7 @@ impl Interpreter {
                         .join(",")
                 ),
                 _ => value.to_string_value(),
-            };
+            });
         }
         // Handle composite type specs where the base name is a type capture
         // but has suffixes like `:D`, `:U`, `()`, `:D()`, etc.
@@ -170,7 +185,7 @@ impl Interpreter {
                 ValueView::Package(name) => name.resolve(),
                 _ => value.to_string_value(),
             };
-            return format!("{}{}", resolved_base, suffix);
+            return Some(format!("{}{}", resolved_base, suffix));
         }
         // Handle a type capture that appears inside a parameterization's type
         // arguments (`Associative[T]`, `Positional[T]`, `Hash[T,U]`): resolve
@@ -197,7 +212,7 @@ impl Interpreter {
                 .collect();
             let resolved_inner = resolved_args.join(",");
             if resolved_inner != inner {
-                return format!("{}[{}]", base, resolved_inner);
+                return Some(format!("{}[{}]", base, resolved_inner));
             }
         }
         // Nested types declared with a compound name are referenced by their
@@ -208,9 +223,9 @@ impl Interpreter {
         if !constraint.contains("::")
             && let Some(resolved) = self.package_type_alias(constraint)
         {
-            return resolved;
+            return Some(resolved);
         }
-        constraint.to_string()
+        None
     }
 
     pub(in crate::runtime) fn typed_container_param_expected(
@@ -415,8 +430,28 @@ impl Interpreter {
         // before the fast tag checks and subset lookup; assignment/type-check
         // opcodes pass the declaration spelling directly, unlike method
         // dispatch which resolves it while selecting a candidate.
-        let resolved_constraint = self.resolved_type_capture_name(constraint);
-        if resolved_constraint != constraint {
+        //
+        // Calls the `Option`-returning core directly (not
+        // `resolved_type_capture_name`) so the ubiquitous case -- a plain
+        // constraint like `Any` or `Int` that needs no resolution at all --
+        // skips the `String` allocation this function would otherwise pay on
+        // every single type check in the interpreter.
+        //
+        // The cheap disjunction below mirrors `try_resolved_type_capture_name`'s
+        // own early-outs (type-capture bindings, gated by the process-global
+        // `any_type_capture_seen`; package aliases, gated by
+        // `package_type_aliases` being non-empty; a `[...]` parameterization or
+        // a `::(...)` indirect spelling, which its generic-args/`q<...>` branches
+        // always inspect regardless of either flag) so a program using neither
+        // feature -- the overwhelming majority of type checks -- skips the call
+        // (and its internal string scans) entirely instead of re-deriving the
+        // same "nothing to do" verdict on every invocation.
+        if (constraint.starts_with("::(")
+            || constraint.contains('[')
+            || Self::any_type_capture_seen()
+            || !self.package_type_aliases.is_empty())
+            && let Some(resolved_constraint) = self.try_resolved_type_capture_name(constraint)
+        {
             return self.type_matches_value(&resolved_constraint, value);
         }
         // Hot-path fast accept (ADR-0004 J3): a concrete value whose exact tag /
