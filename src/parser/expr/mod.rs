@@ -500,6 +500,20 @@ pub(in crate::parser) fn call_arg_expr(input: &str) -> PResult<'_, Expr> {
 /// `"x" ~ * => *`), in which case Raku makes the whole pair a `WhateverCode` that
 /// yields the `Pair` when called (see [`fat_arrow_curries`]).
 fn fat_arrow_result(is_bareword: bool, pair: Expr) -> Expr {
+    // The normal expression parser consumes loose word-logicals before this
+    // layer sees the trailing `=>`.  Re-associate the arrow into the rightmost
+    // loose-logical operand so `condition or $x = $x => 1` becomes
+    // `condition or ($x = ($x => 1))`, matching Raku's precedence.
+    let pair = reassociate_fat_arrow(pair);
+    if !matches!(
+        &pair,
+        Expr::Binary {
+            op: TokenKind::FatArrow,
+            ..
+        }
+    ) {
+        return pair;
+    }
     if is_bareword {
         return pair;
     }
@@ -509,6 +523,92 @@ fn fat_arrow_result(is_bareword: bool, pair: Expr) -> Expr {
         return Expr::WhateverCurry(Box::new(pair));
     }
     Expr::PositionalPair(Box::new(pair))
+}
+
+fn is_loose_word_logical(op: &TokenKind) -> bool {
+    matches!(
+        op,
+        TokenKind::AndWord
+            | TokenKind::AndThen
+            | TokenKind::NotAndThen
+            | TokenKind::OrWord
+            | TokenKind::OrElse
+            | TokenKind::XorXor
+    )
+}
+
+/// Move a fat arrow through the loose word-logical and assignment nodes that
+/// were parsed before it. Parenthesized logical expressions are kept intact by
+/// `Expr::Grouped`, so an explicit grouping still wins over this precedence
+/// repair.
+fn reassociate_fat_arrow(pair: Expr) -> Expr {
+    let Expr::Binary {
+        left,
+        op: TokenKind::FatArrow,
+        right,
+    } = pair
+    else {
+        return pair;
+    };
+
+    // The caller has already classified and, for plain bareword keys, possibly
+    // auto-quoted a simple pair.  Only rebuild pairs whose left side actually
+    // contains the loose expression shape that needs repair; otherwise this
+    // would turn an already auto-quoted `V => 1` (or the deliberately
+    // positional `::V => 1`) back into a fresh, misclassified pair.
+    if !matches!(&*left, Expr::AssignExpr { .. })
+        && !matches!(&*left, Expr::Binary { op, .. } if is_loose_word_logical(op))
+    {
+        return Expr::Binary {
+            left,
+            op: TokenKind::FatArrow,
+            right,
+        };
+    }
+
+    reassociate_fat_arrow_operand(*left, *right)
+}
+
+fn reassociate_fat_arrow_operand(left: Expr, value: Expr) -> Expr {
+    match left {
+        Expr::Binary { left, op, right } if is_loose_word_logical(&op) => Expr::Binary {
+            left,
+            op,
+            right: Box::new(reassociate_fat_arrow_operand(*right, value)),
+        },
+        Expr::AssignExpr {
+            name,
+            expr,
+            is_bind,
+        } => Expr::AssignExpr {
+            name,
+            expr: Box::new(reassociate_fat_arrow_operand(*expr, value)),
+            is_bind,
+        },
+        left => reassociated_fat_arrow_pair(left, value),
+    }
+}
+
+fn reassociated_fat_arrow_pair(left: Expr, value: Expr) -> Expr {
+    let is_bareword = matches!(&left, Expr::BareWord(name) if !name.contains("::"));
+    let left = match left {
+        Expr::BareWord(name) if !name.contains("::") => Expr::Literal(Value::str(name)),
+        left => left,
+    };
+    let pair = Expr::Binary {
+        left: Box::new(left),
+        op: TokenKind::FatArrow,
+        right: Box::new(value),
+    };
+    if is_bareword {
+        pair
+    } else if let Expr::Binary { left, right, .. } = &pair
+        && fat_arrow_curries(left, right)
+    {
+        Expr::WhateverCurry(Box::new(pair))
+    } else {
+        Expr::PositionalPair(Box::new(pair))
+    }
 }
 
 pub(in crate::parser) fn parse_fat_arrow_value(input: &str) -> PResult<'_, Expr> {

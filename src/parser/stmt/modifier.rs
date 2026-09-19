@@ -192,6 +192,22 @@ fn try_split_decl_modifier(stmt: &Stmt, effective_cond: &Expr) -> Option<Stmt> {
     Some(Stmt::SyntheticBlock(vec![decl, init]))
 }
 
+/// A compound-assignment declaration is represented as a scopeless synthetic
+/// block containing its declaration and assignment. For a postfix `for`, the
+/// declaration belongs outside the loop while the assignment runs once per
+/// item; otherwise the synthetic block would redeclare and reset the variable
+/// on every iteration (`my $product *= $_ for @values`).
+fn split_compound_decl_for_modifier(stmt: Stmt) -> (Option<Stmt>, Stmt) {
+    let Stmt::SyntheticBlock(mut stmts) = stmt else {
+        return (None, stmt);
+    };
+    if stmts.len() < 2 || !matches!(stmts.first(), Some(Stmt::VarDecl { .. })) {
+        return (None, Stmt::SyntheticBlock(stmts));
+    }
+    let declaration = stmts.remove(0);
+    (Some(declaration), Stmt::SyntheticBlock(stmts))
+}
+
 fn rewrite_placeholder_block_modifier_stmt(stmt: Stmt, cond: &Expr) -> Stmt {
     if let Stmt::Block(body) = &stmt
         && let placeholders = crate::ast::collect_placeholders_shallow(body)
@@ -615,6 +631,7 @@ fn parse_single_modifier(rest: &str, stmt: Stmt) -> Result<Option<(&str, Stmt)>,
                 Some(rest.len()),
             ));
         }
+        let (hoisted_decl, stmt) = split_compound_decl_for_modifier(stmt);
         let (r, _) = ws1(r)?;
         // Sequence operators absorb a comma-separated seed list on their left:
         // `for 1, { $_ + 1 } ... 3` iterates one sequence, not an array whose
@@ -766,23 +783,26 @@ fn parse_single_modifier(rest: &str, stmt: Stmt) -> Result<Option<(&str, Stmt)>,
                 }
                 other => (None, Box::new(None), Vec::new(), Vec::new(), false, false, vec![other]),
             };
-        return Ok(Some((
-            r,
-            Stmt::For {
-                iterable,
-                param,
-                param_def,
-                params,
-                params_def,
-                body,
-                label: None,
-                mode: crate::ast::ForMode::Normal,
-                rw_block,
-                explicit_zero_params,
-                is_statement_modifier: true,
-                uses_block_magic: false,
-            },
-        )));
+        let loop_stmt = Stmt::For {
+            iterable,
+            param,
+            param_def,
+            params,
+            params_def,
+            body,
+            label: None,
+            mode: crate::ast::ForMode::Normal,
+            rw_block,
+            explicit_zero_params,
+            is_statement_modifier: true,
+            uses_block_magic: false,
+        };
+        let stmt = if let Some(declaration) = hoisted_decl {
+            Stmt::SyntheticBlock(vec![declaration, loop_stmt])
+        } else {
+            loop_stmt
+        };
+        return Ok(Some((r, stmt)));
     }
     if let Some(r) = keyword("while", rest) {
         let (r, _) = ws1(r)?;
