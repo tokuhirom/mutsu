@@ -127,5 +127,5 @@ is the register/unboxed-IR half of
 [#8673](https://github.com/tokuhirom/mutsu/issues/8673), tracked as
 [#8831](https://github.com/tokuhirom/mutsu/issues/8831), which needs an ADR.
 
-Pinned by `t/routines/dispatch/nqp-value-ops-compile-to-opcode.t`, alongside
-the existing `t/routines/dispatch/nqp-dispatch-fast-path.t`.
+Pinned by `t/vm/codegen/nqp-value-ops-compile-to-opcode.t`, alongside the
+existing `t/routines/dispatch/nqp-dispatch-fast-path.t`.
