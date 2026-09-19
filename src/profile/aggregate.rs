@@ -114,14 +114,13 @@ impl ThreadSamples {
             pending.frames.push(SampleFrame {
                 package: frame.package,
                 name: frame.name,
-                // Both files are copied **raw**, and `def_file: None` ("the
-                // same file as the caller", see `RoutineFrame`) is resolved in
-                // the fold: it is the fold that has the whole stack, and the
-                // resolution needs it twice over -- once to keep ONE routine
-                // from becoming two rows (a worker's frames do not always carry
-                // the declaring file), and once to name the file a *call site*
-                // is in, which is the enclosing body's file and not this
-                // frame's dynamically-scoped `?FILE`.
+                // `call_file` is already the call site's lexical file — a
+                // `RoutineFrame` push resolves it that way, not from the
+                // dynamically-scoped `?FILE` (#8743). `def_file: None` ("the
+                // same file as the caller", see `RoutineFrame`) is still
+                // resolved in the fold (`routine_of`): a worker's frames do
+                // not always carry the declaring file, and one routine must
+                // not become two rows depending on which thread sampled it.
                 def_file: frame.def_file,
                 call_file: frame.file,
                 call_line: frame.line,
@@ -175,8 +174,6 @@ struct FoldScratch {
     lines: FxHashSet<LineLocation>,
     routines: FxHashSet<RoutineLocation>,
     callsites: FxHashSet<CallsiteLocation>,
-    /// Per-frame call-site file, filled by one outward pass per sample.
-    caller_files: Vec<Option<Symbol>>,
 }
 
 fn fold_handle(handle: &BufferHandle) {
@@ -243,12 +240,15 @@ fn fold_one(
     scratch.lines.clear();
     scratch.routines.clear();
     scratch.callsites.clear();
-    resolve_caller_files(&mut scratch.caller_files, frames);
     if let Some(top) = header.top {
         scratch.lines.insert(top);
     }
-    for (index, frame) in frames.iter().enumerate() {
-        if let (Some(file), Some(line)) = (scratch.caller_files[index], frame.call_line) {
+    for frame in frames.iter() {
+        // `call_file` is already the call site's lexical file, resolved when
+        // the live `RoutineFrame` was pushed (`Interpreter::
+        // executing_source_file_sym`, #8743) — no reconciliation pass needed
+        // here any more.
+        if let (Some(file), Some(line)) = (frame.call_file, frame.call_line) {
             scratch.lines.insert(LineLocation { file, line });
             scratch.callsites.insert(CallsiteLocation {
                 caller_file: file,
@@ -277,40 +277,6 @@ fn routine_of(frame: &SampleFrame) -> RoutineLocation {
         // `None` means "the same file as the caller", so resolve it rather than
         // let one routine become two rows.
         file: frame.def_file.or(frame.call_file),
-    }
-}
-
-/// Which file each frame's **call site** is in.
-///
-/// A frame records the call that created it as `(file, line)`, but that `file`
-/// is the dynamically-scoped `?FILE` — which still names the mainline while a
-/// `use`d module's routine is running ([#8743]). Taking it at face value put
-/// module line numbers under the script's path: a caller row reading
-/// `bench-json-fast.raku:275` for a file 84 lines long.
-///
-/// The call site is in the body of the *enclosing* routine, so its file is that
-/// routine's declaring file. One outward pass computes it for every frame:
-/// walking from the outermost inward, `enclosing` is the body the next call is
-/// made from, and a frame with no declaring file inherits it — which is exactly
-/// what `def_file: None` means. The outermost frame's call site is in the
-/// mainline, where the frame's own `?FILE` is the right answer.
-///
-/// This is a profiler-side reconciliation: it changes no Raku-visible file,
-/// only which file the profile's own tables are keyed by. Settling it at the
-/// source means changing what a backtrace and `CallFrame.file` report, which is
-/// [#8743]. (The *other* divergence this pass used to sit beside -- one file
-/// carrying both a canonicalized and a spelled name -- is gone: #8719 made the
-/// unit stamp and `?FILE` one string, which is why there is no longer a
-/// `super::paths` reconciliation next to this one.)
-///
-/// [#8743]: https://github.com/tokuhirom/mutsu/issues/8743
-fn resolve_caller_files(out: &mut Vec<Option<Symbol>>, frames: &[SampleFrame]) {
-    out.clear();
-    out.resize(frames.len(), None);
-    let mut enclosing: Option<Symbol> = None;
-    for (index, frame) in frames.iter().enumerate().rev() {
-        out[index] = enclosing.or(frame.call_file);
-        enclosing = frame.def_file.or(enclosing);
     }
 }
 
@@ -389,71 +355,80 @@ mod tests {
         assert_eq!(snapshot.sampled_ns, 1000);
     }
 
-    /// A call site is in the body of the routine that made the call, so its
-    /// file is that routine's declaring file -- not the frame's own `?FILE`,
-    /// which still names the mainline while a `use`d module's routine runs
-    /// (#8743). Before this, a module's callsites were filed under the script's
-    /// path *with the module's line numbers*.
+    /// A frame's `call_file` is trusted as-is: it is copied raw from the live
+    /// `RoutineFrame.file` (`ThreadSamples::record`), which is itself already
+    /// the call site's lexical file as of #8743 -- resolved once, at push
+    /// time (`Interpreter::executing_source_file_sym`), not reconstructed
+    /// here on every fold. A module's own internal call (`outer` calling
+    /// `leaf`, both declared in the module) must key its `CallsiteLocation`
+    /// under the module, even though every sampled frame's `call_file`
+    /// happens to equal the *script* here -- the shape a stale reconciliation
+    /// pass would have masked by "correcting" it via `def_file`.
     #[test]
-    fn a_call_site_is_in_the_file_of_the_body_that_made_the_call() {
+    fn a_callsite_row_is_keyed_by_the_frames_own_call_file() {
+        let _lock = test_lock();
+        let _ = take_samples();
+        let buffer = ThreadSamples::with_capacity(8, 8);
         let script = Symbol::intern("script.raku");
         let module = Symbol::intern("Module.rakumod");
         // Innermost first, as the sample path stores them: the mainline calls
-        // `outer` (declared in the module), which calls `leaf`. Every frame
-        // spells its `?FILE` as the script, which is the bug being defended
-        // against.
-        let frames = [
-            SampleFrame {
+        // `outer` (declared in the module), which calls `leaf`.
+        let stack = [
+            RoutineFrame {
                 package: Symbol::intern("Module"),
+                lexical_package: None,
+                name: Symbol::intern("outer"),
+                line: Some(3),
+                file: Some(script),
+                is_method: false,
+                is_submethod: false,
+                is_block: false,
+                def_file: Some(module),
+                invocation_id: 1,
+            },
+            RoutineFrame {
+                package: Symbol::intern("Module"),
+                lexical_package: None,
                 name: Symbol::intern("leaf"),
+                line: Some(5),
+                // The call site a fixed #8743 records: `leaf` was called from
+                // inside `outer`'s own body, so its call site is the module.
+                file: Some(module),
+                is_method: false,
+                is_submethod: false,
+                is_block: false,
                 def_file: Some(module),
-                call_file: Some(script),
-                call_line: Some(5),
-            },
-            SampleFrame {
-                package: Symbol::intern("Module"),
-                name: Symbol::intern("outer"),
-                def_file: Some(module),
-                call_file: Some(script),
-                call_line: Some(3),
+                invocation_id: 2,
             },
         ];
-        let mut caller_files = Vec::new();
-        resolve_caller_files(&mut caller_files, &frames);
-        assert_eq!(
-            caller_files,
-            vec![Some(module), Some(script)],
-            "`leaf` was called from the module's body; `outer` from the mainline"
-        );
-    }
+        buffer.record(1000, at("Module.rakumod", 5), Region::Interp, &stack);
+        buffer.fold();
+        let snapshot = take_samples();
 
-    /// `def_file: None` means "the same file as the caller", so a frame that
-    /// does not name a file must not break the chain -- the call it makes is
-    /// still in the nearest enclosing body that does name one.
-    #[test]
-    fn a_frame_with_no_declaring_file_inherits_the_one_outside_it() {
-        let script = Symbol::intern("script.raku");
-        let module = Symbol::intern("Module.rakumod");
-        let unnamed = |line: u32| SampleFrame {
+        let leaf_callsite = CallsiteLocation {
+            caller_file: module,
+            caller_line: 5,
             package: Symbol::intern("Module"),
-            name: Symbol::intern("block"),
-            def_file: None,
-            call_file: Some(script),
-            call_line: Some(line),
+            name: Symbol::intern("leaf"),
         };
-        let frames = [
-            unnamed(7),
-            SampleFrame {
-                package: Symbol::intern("Module"),
-                name: Symbol::intern("outer"),
-                def_file: Some(module),
-                call_file: Some(script),
-                call_line: Some(3),
-            },
-        ];
-        let mut caller_files = Vec::new();
-        resolve_caller_files(&mut caller_files, &frames);
-        assert_eq!(caller_files, vec![Some(module), Some(script)]);
+        assert!(
+            snapshot
+                .callsite_incl_ns
+                .iter()
+                .any(|(location, _)| *location == leaf_callsite),
+            "leaf's call site should be keyed under the module, not the script"
+        );
+        let script_callsite = CallsiteLocation {
+            caller_file: script,
+            ..leaf_callsite
+        };
+        assert!(
+            !snapshot
+                .callsite_incl_ns
+                .iter()
+                .any(|(location, _)| *location == script_callsite),
+            "leaf's call site must not be attributed to the script"
+        );
     }
 
     #[test]

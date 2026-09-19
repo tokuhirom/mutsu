@@ -323,6 +323,11 @@ impl Interpreter {
         let stack = self.routine_stack();
         let current_line = self.current_source_line();
         let current_file = self.current_source_file();
+        // The innermost frame's OWN file — see the matching comment on
+        // `build_backtrace_value_with_leading` (#8743): `current_file`'s
+        // dynamically-scoped `?FILE` had already reverted to the importer's
+        // path by the time a `use`d module's own def_file-less frame ran.
+        let executing_file = self.executing_source_file();
         // Build reversed list: stack[last] is innermost, stack[0] is outermost
         let reversed: Vec<_> = stack.iter().rev().collect();
         let mut lines = Vec::new();
@@ -335,8 +340,9 @@ impl Interpreter {
                 continue;
             }
             let (line, file) = if i == 0 {
-                // Innermost frame: use current ?LINE/?FILE
-                (current_line, current_file.clone())
+                // Innermost frame: use current ?LINE, and the frame's own
+                // lexical file for ?FILE.
+                (current_line, executing_file.clone())
             } else {
                 // Outer frame: the line where this frame called the next inner frame.
                 // That info is stored in the next-inner frame's call-site.
@@ -414,6 +420,14 @@ impl Interpreter {
         let stack = self.routine_stack();
         let current_line = self.current_source_line();
         let current_file = self.current_source_file();
+        // The innermost frame's OWN file — not `current_file`'s dynamically-
+        // scoped `?FILE`, which had already reverted to the importer's path by
+        // the time a `use`d module's own bare block (an inlined `{ ... }`/
+        // `try { ... }`, `def_file: None`) ran (#8743). `executing_source_file`
+        // resolves it the same way `def_file.or(file)` below does for every
+        // OTHER frame in the walk, just starting from the frame this loop has
+        // not reached yet.
+        let executing_file = self.executing_source_file();
         let reversed: Vec<_> = stack.iter().rev().collect();
 
         let mut frames = Vec::new();
@@ -446,7 +460,7 @@ impl Interpreter {
 
         for (i, frame) in reversed.iter().enumerate() {
             let (line, file) = if i == 0 {
-                (current_line, current_file.clone())
+                (current_line, executing_file.clone())
             } else {
                 let inner_frame = reversed[i - 1];
                 (inner_frame.line, inner_frame.file.map(|s| s.resolve()))

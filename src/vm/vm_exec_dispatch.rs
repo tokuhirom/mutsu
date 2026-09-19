@@ -3486,7 +3486,7 @@ impl Interpreter {
             }
             OpCode::PushBlockFrame => {
                 let call_line = self.current_source_line();
-                let call_file = self.current_source_file_sym();
+                let call_file = self.executing_source_file_sym();
                 self.push_block_routine_with_location(
                     self.current_package_sym(),
                     Symbol::intern(""),

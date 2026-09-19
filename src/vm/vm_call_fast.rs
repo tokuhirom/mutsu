@@ -202,12 +202,16 @@ impl Interpreter {
         // (`die`/`fail`/type errors), `&?ROUTINE`, `CALLER::`, and `callframe`
         // see this call — see the doc comment above and `RoutineFrame`'s own.
         // `line`/`file` are the CALLER's current position (the call-site);
-        // `def_file` is where this routine's body was declared.
+        // `def_file` is where this routine's body was declared. `file` is
+        // `executing_source_file_sym()`, NOT `current_source_file_sym()`'s
+        // dynamically-scoped `?FILE` (#8743) — the call site is in the
+        // CALLER's own lexical file, which once a module has finished
+        // loading `?FILE` no longer names.
         self.push_routine_with_location(
             cf.package_sym(),
             fn_name_sym,
             self.current_source_line(),
-            self.current_source_file_sym(),
+            self.executing_source_file_sym(),
             cf.source_file_sym(),
         );
         let let_mark = self.let_saves_len();

@@ -297,24 +297,14 @@ impl Interpreter {
     /// Record the exact routine entry only when the profiler consumer is
     /// armed.  Keeping this at the common frame-push boundary covers the fast,
     /// light, method, and closure dispatch paths with one implementation.
+    ///
+    /// `frame.file` is already the call site's lexical file
+    /// (`Self::executing_source_file_sym`, resolved at push time by every
+    /// `push_*_routine_with_location`), so this no longer needs its own
+    /// outward walk over `routine_stack` to reconstruct it (#8743).
     pub(crate) fn record_profile_routine_frame(&self, frame: &super::RoutineFrame) {
         if crate::vm::vm_poll::profiler_armed() {
-            // Called *before* the push, so the stack's top is the caller: the
-            // call site is in its body, and therefore in its declaring file.
-            // The frame's own `file` is the dynamically-scoped `?FILE`, which
-            // still names the mainline while a `use`d module's routine runs
-            // (#8719), so using it would file the module's callsites under the
-            // script's path. Walking outward resolves a `def_file: None`
-            // ("the same file as the caller") the way its contract says; it
-            // stops at the first frame that names a file, which all but
-            // synthetic and inlined-block frames do.
-            let caller_file = self
-                .routine_stack
-                .iter()
-                .rev()
-                .find_map(|caller| caller.def_file)
-                .or(frame.file);
-            crate::profile::record_routine_frame(frame, caller_file);
+            crate::profile::record_routine_frame(frame);
         }
     }
 
@@ -451,6 +441,30 @@ impl Interpreter {
             }
         }
         self.current_source_file()
+    }
+
+    /// `Symbol` form of [`Self::executing_source_file`] — allocation-free,
+    /// like [`Self::current_source_file_sym`] is for [`Self::current_source_file`].
+    ///
+    /// This is the file a `RoutineFrame` push records as its CALL SITE
+    /// (`push_routine_with_location` and its method/block siblings): the site
+    /// is in the body of whichever frame is on top of `routine_stack` right
+    /// now (the caller, before the new frame is pushed), so it is the same
+    /// walk `executing_source_file` does for "what file is running", not
+    /// [`Self::current_source_file_sym`]'s dynamically-scoped `?FILE`. `?FILE`
+    /// only tracks the unit currently *loading*, so it had already reverted to
+    /// the importer's path by the time a `use`d module's own routine called
+    /// another — filing the callee's call site under the script instead of the
+    /// module that actually made the call ([#8743](https://github.com/tokuhirom/mutsu/issues/8743)).
+    pub(crate) fn executing_source_file_sym(&self) -> Option<Symbol> {
+        for frame in self.routine_stack.iter().rev() {
+            match frame.def_file {
+                Some(file) => return Some(file),
+                None if frame.is_block => continue,
+                None => break,
+            }
+        }
+        self.current_source_file_sym()
     }
 
     /// [`Self::executing_source_file`], corrected for code running directly in
@@ -1008,5 +1022,71 @@ impl Drop for CurrentPackageGuard {
             *self.pkg_lock.write().unwrap() =
                 Symbol::from_id(self.saved_sym_id).as_str().to_owned();
         }
+    }
+}
+
+#[cfg(test)]
+mod call_site_file_tests {
+    use super::*;
+    use crate::runtime::Interpreter;
+
+    fn frame(name: &str, def_file: Option<Symbol>, is_block: bool) -> super::super::RoutineFrame {
+        super::super::RoutineFrame {
+            package: Symbol::intern("Module"),
+            lexical_package: None,
+            name: Symbol::intern(name),
+            line: Some(1),
+            file: None,
+            is_method: false,
+            is_submethod: false,
+            is_block,
+            def_file,
+            invocation_id: 1,
+        }
+    }
+
+    /// The call site of a routine invoked from inside a `use`d module's own
+    /// body is that module's file -- not the dynamically-scoped `?FILE`,
+    /// which has already reverted to whatever script `use`d the module by
+    /// the time one of the module's OWN routines calls another (#8743).
+    /// `executing_source_file_sym` is what every `push_*_routine_with_location`
+    /// call site now uses instead of `current_source_file_sym` for exactly
+    /// this reason.
+    #[test]
+    fn call_site_is_the_lexical_file_of_the_calling_routine() {
+        let mut interp = Interpreter::new();
+        let module = Symbol::intern("Module.rakumod");
+        interp
+            .routine_stack
+            .push(frame("outer", Some(module), false));
+        assert_eq!(interp.executing_source_file_sym(), Some(module));
+    }
+
+    /// A block frame with no `def_file` of its own (an inlined bare block)
+    /// belongs to whichever routine lexically encloses it, so a call made
+    /// from inside it is still attributed to that routine's file.
+    #[test]
+    fn an_inlined_block_inherits_its_enclosing_routines_file() {
+        let mut interp = Interpreter::new();
+        let module = Symbol::intern("Module.rakumod");
+        interp
+            .routine_stack
+            .push(frame("outer", Some(module), false));
+        interp.routine_stack.push(frame("", None, true));
+        assert_eq!(interp.executing_source_file_sym(), Some(module));
+    }
+
+    /// With no enclosing routine at all, the call site is whatever mainline
+    /// is currently running -- exactly what the dynamically-scoped `?FILE`
+    /// tracks correctly (module loading scopes it for the duration of that
+    /// module's own mainline), so the walk falls back to it.
+    #[test]
+    fn with_no_enclosing_routine_the_call_site_is_the_running_mainline() {
+        let interp = Interpreter::new();
+        assert!(interp.routine_stack().is_empty());
+        assert_eq!(
+            interp.executing_source_file_sym(),
+            interp.current_source_file_sym()
+        );
     }
 }

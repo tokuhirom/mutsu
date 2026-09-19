@@ -18,7 +18,6 @@
 use super::{CallsiteLocation, LineLocation, RoutineLocation};
 use crate::opcode::CompiledCode;
 use crate::runtime::RoutineFrame;
-use crate::symbol::Symbol;
 use rustc_hash::FxHashMap;
 use std::cell::{Cell, RefCell};
 use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
@@ -118,14 +117,15 @@ pub(crate) fn record_line_at(code: &CompiledCode, here: Option<LineLocation>) {
 /// the exact routine entry and its call site when that site has a source
 /// location.
 ///
-/// `caller_file` is the file the *call site* is in, resolved by the caller from
-/// the frame stack (`Interpreter::record_profile_routine_frame`): the frame's
-/// own `file` is the dynamically-scoped `?FILE`, which still names the mainline
-/// while a `use`d module's routine is running ([#8743]), so trusting it files
-/// a module's callsites under the script's path.
+/// `frame.file` is the file the *call site* is in — a `RoutineFrame` push
+/// resolves it as the caller's own lexical file
+/// (`Interpreter::executing_source_file_sym`), not the dynamically-scoped
+/// `?FILE`, so it already names the file a `use`d module's routine was
+/// actually called from rather than the script `?FILE` reverted to once the
+/// module finished loading ([#8743]).
 ///
 /// [#8743]: https://github.com/tokuhirom/mutsu/issues/8743
-pub(crate) fn record_routine_frame(frame: &RoutineFrame, caller_file: Option<Symbol>) {
+pub(crate) fn record_routine_frame(frame: &RoutineFrame) {
     LAST_LINE.with(|cell| cell.set(None));
     with_tables(|tables| {
         let routine = RoutineLocation {
@@ -136,7 +136,7 @@ pub(crate) fn record_routine_frame(frame: &RoutineFrame, caller_file: Option<Sym
             file: frame.def_file.or(frame.file),
         };
         *tables.routine_entries.entry(routine).or_default() += 1;
-        if let (Some(caller_file), Some(caller_line)) = (caller_file, frame.line) {
+        if let (Some(caller_file), Some(caller_line)) = (frame.file, frame.line) {
             let callsite = CallsiteLocation {
                 caller_file,
                 caller_line,

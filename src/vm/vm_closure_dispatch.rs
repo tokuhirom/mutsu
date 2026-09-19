@@ -639,7 +639,7 @@ impl Interpreter {
         // behind, corrupting later backtraces.
         let routine_base = self.routine_stack_len();
         let call_line = self.current_source_line();
-        let call_file = self.current_source_file_sym();
+        let call_file = self.executing_source_file_sym();
         let def_file = data.source_file_sym();
         if cc.is_pointy_block || data.is_bare_block {
             // Bare blocks and pointy blocks are NOT routine boundaries.
