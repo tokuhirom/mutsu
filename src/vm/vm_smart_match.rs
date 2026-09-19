@@ -624,6 +624,14 @@ pub(crate) fn pure_smart_match(left: &Value, right: &Value) -> Option<bool> {
             Some(left.to_string_value() == s.as_str())
         }
 
+        // Date/DateTime ~~ Str: Str.ACCEPTS(Date/DateTime) compares the
+        // temporal value's string representation with the matcher.
+        (ValueView::Instance { class_name: cn, .. }, ValueView::Str(s))
+            if matches!(cn.resolve().as_ref(), "Date" | "DateTime") =>
+        {
+            Some(left.to_string_value() == s.as_str())
+        }
+
         // Instance ~~ Instance identity check (generic, after all specific instance checks).
         // Exclude Signature (needs special ACCEPTS logic) and X::AdHoc (needs payload delegation).
         (
