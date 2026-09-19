@@ -482,7 +482,30 @@ impl Interpreter {
         } else {
             None
         };
+        // `$*PACKAGE` is bound to the package currently being compiled for
+        // the duration of a BEGIN/CHECK phaser (and any other genuinely
+        // compile-time code, e.g. a custom `trait_mod` handler) inside a
+        // class/role body (#8790). Outside such a phase it stays unbound,
+        // matching rakudo (a bare class-body statement or a method body
+        // sees it undefined too).
+        let saved_package_var = if is_compile_time_phaser {
+            Some(self.env.get("*PACKAGE").cloned())
+        } else {
+            None
+        };
+        if is_compile_time_phaser {
+            self.env.insert(
+                "*PACKAGE".to_string(),
+                Value::package(Symbol::intern(cx.name)),
+            );
+        }
         let result = self.run_class_body_chunk_or_raw(chunk, std::slice::from_ref(stmt));
+        if let Some(saved) = saved_package_var {
+            match saved {
+                Some(v) => self.env.insert("*PACKAGE".to_string(), v),
+                None => self.env.remove("*PACKAGE"),
+            };
+        }
         if let Some(saved) = saved_defining {
             self.defining_class = saved;
         }
