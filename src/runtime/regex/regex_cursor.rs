@@ -222,7 +222,12 @@ impl Interpreter {
     /// Build a cursor `Match` value directly from its NQP-level attributes.
     /// `failed` marks it as a failed match (`.Bool` is `False`), which is what
     /// a cursor whose regex did not match is.
-    fn make_cursor_value(
+    ///
+    /// `pub(crate)`: also used by `methods_grammar_method_start` to build the
+    /// `self` a grammar's method-shaped start rule (`method TOP { ... }`,
+    /// issue #8752) runs with, so a delegating call back into the grammar
+    /// (`self.some-rule`) continues from real parse state.
+    pub(crate) fn make_cursor_value(
         cursor_class: &str,
         orig: &str,
         from: i64,

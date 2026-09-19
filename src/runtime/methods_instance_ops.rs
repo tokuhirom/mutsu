@@ -2968,6 +2968,12 @@ impl Interpreter {
                 // falsy when the token cannot match the empty string. Run
                 // `subparse("", rule => method)`; a failed subparse yields a
                 // falsy value that smartmatches False like a failed cursor.
+                //
+                // When `target` is ITSELF a live cursor bound to a real parse
+                // in progress — a grammar's own `method TOP` delegating to
+                // `self.some-rule` (issue #8752) — restarting on `""` would
+                // throw away the actual text and position. Continue from the
+                // cursor's own `orig`/position instead.
                 if args.is_empty()
                     && let ValueView::Instance { class_name, .. } = target.view()
                 {
@@ -2978,14 +2984,21 @@ impl Interpreter {
                         .map(|d| !d.is_empty())
                         .unwrap_or(false)
                     {
-                        return self.dispatch_package_parse(
-                            &cn,
-                            "subparse",
-                            &[
-                                Value::str_from(""),
-                                Value::pair("rule".to_string(), Value::str(method.to_string())),
+                        let mut call_args = match Interpreter::cursor_call_position(&target) {
+                            Some((orig, pos, anchored)) => vec![
+                                Value::str(orig),
+                                Value::pair(
+                                    if anchored { "pos" } else { "c" }.to_string(),
+                                    Value::int(pos as i64),
+                                ),
                             ],
-                        );
+                            None => vec![Value::str_from("")],
+                        };
+                        call_args.push(Value::pair(
+                            "rule".to_string(),
+                            Value::str(method.to_string()),
+                        ));
+                        return self.dispatch_package_parse(&cn, "subparse", &call_args);
                     }
                 }
                 // ADR-0019 E1b: authoritative TypeId classifier owner (was
