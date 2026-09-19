@@ -89,7 +89,16 @@ impl Compiler {
                 .emit(OpCode::TagContainerRef(name_idx, source_slot));
             return;
         }
-        self.compile_expr(expr);
+        // The RHS value is stored into the target, so a closure literal here
+        // escapes the creating frame exactly like the `Stmt::Assign` sibling
+        // path (`compile_assignment_rhs_for_target`) already accounts for:
+        // force a shared cell for the captured-and-mutated locals it closes
+        // over. Missing this let `($cb = sub {...})` (an assignment used as
+        // an expression, e.g. parenthesized or as an `if` condition) fall
+        // back to a plain-value snapshot that a same-named parameter in
+        // whatever frame later happens to call the closure could shadow
+        // (#8663).
+        self.with_escape(true, |c| c.compile_expr(expr));
         // An `@` target whose RHS is a `$` scalar variable itemizes, exactly as
         // the statement-position store does: `(@j = $c)` must be one element,
         // like `@j = $c` written as a statement.

@@ -645,7 +645,19 @@ impl Compiler {
             self.scalar_bind_autovivify = saved_av;
             self.bind_terminal = saved_term;
         } else {
-            self.compile_expr(value);
+            // A closure literal stored into a container element (`%h<k> = sub
+            // {...}`) escapes the creating frame exactly like a closure literal
+            // handed to a named call argument (see the identical fix at the
+            // `CallArg::Named` site in `stmt.rs`, `todo/deep/closure-capture-
+            // shadowed-by-colliding-callee-parameter.md`). Without this, the
+            // closure compiles as non-escaping, so a captured-and-mutated free
+            // variable (even one mutated only in dead code — the mutation
+            // analysis cannot see it is unreachable) is never boxed into a
+            // shared `ContainerRef` cell. Its capture then falls back to a
+            // plain-value snapshot that a same-named parameter in whatever
+            // frame later happens to call the closure can shadow (#8663).
+            let escaping = Self::is_closure_literal_arg(value);
+            self.with_escape(escaping, |s| s.compile_expr(value));
         }
     }
 
