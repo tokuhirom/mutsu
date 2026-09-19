@@ -237,8 +237,19 @@ impl Interpreter {
     }
 
     /// Dispatch .HOW method
+    ///
+    /// A type's `.HOW` must be identity-stable: Rakudo mints one metaclass
+    /// instance per type and hands out the *same* object on every access, so
+    /// a mutation applied directly to it (`Foo.HOW does R`, or an attribute
+    /// set straight on the instance) is visible on the next access. Every
+    /// branch below that mints a fresh metaobject therefore caches it into
+    /// `class_how_values` (the same store `does`/EXPORTHOW custom-HOW
+    /// installs already persist into — see `eval_does_values` and
+    /// `install_custom_class_how`), keyed by the string that identifies the
+    /// type the HOW describes, so a later `.HOW` call for the same type finds
+    /// it via the lookup below instead of minting again.
     pub(super) fn dispatch_how(
-        &self,
+        &mut self,
         target: &Value,
         args: &[Value],
     ) -> Result<Value, RuntimeError> {
@@ -264,21 +275,60 @@ impl Interpreter {
         } = target.view()
         {
             let full_name = crate::value::parametric_role_name(&base_name.resolve(), type_args);
+            if let Some(how_val) = self.registry().class_how_values.get(&full_name) {
+                return Ok(how_val.clone());
+            }
             let mut attrs = HashMap::new();
-            attrs.insert("name".to_string(), Value::str(full_name));
-            return Ok(Value::make_instance(
-                Symbol::intern("Perl6::Metamodel::CurriedRoleHOW"),
-                attrs,
-            ));
+            attrs.insert("name".to_string(), Value::str(full_name.clone()));
+            let how =
+                Value::make_instance(Symbol::intern("Perl6::Metamodel::CurriedRoleHOW"), attrs);
+            self.registry_mut()
+                .class_how_values
+                .insert(full_name, how.clone());
+            return Ok(how);
         }
-        // Check for persistent HOW values (set by `$c.HOW does Role`)
+        // Check for persistent HOW values (set by `$c.HOW does Role`, an
+        // EXPORTHOW custom-HOW install, or a previous mint by this function).
+        //
+        // A role's bare name is overloaded (ADR-0047: type identity is a
+        // declaration site, not a registry name): `Package("R")` is the role
+        // GROUP's own metaobject (`ParametricRoleGroupHOW`), while an
+        // `Instance` whose `class_name` is that same bare string — a punned
+        // class instance (wrapped in a `Mixin` marker, see
+        // `mark_punned_role_instance`), or one of the candidate objects
+        // `.^candidates` hands out — is a genuinely different metaobject that
+        // merely shares the display name. Give those a disambiguated cache
+        // key so they never collide with the group's own cache entry (or
+        // each other).
         let how_lookup_name = match target.view() {
             ValueView::Package(name) => Some(name.resolve()),
             ValueView::Instance { class_name, .. } => Some(class_name.resolve()),
+            ValueView::Mixin(inner, _) => match inner.as_ref().view() {
+                ValueView::Instance { class_name, .. } => Some(class_name.resolve()),
+                _ => None,
+            },
             _ => None,
         };
-        if let Some(ref name) = how_lookup_name
-            && let Some(how_val) = self.registry().class_how_values.get(name)
+        let how_cache_key = how_lookup_name.as_ref().map(|name| {
+            let is_package = matches!(target.view(), ValueView::Package(_));
+            if !is_package && self.registry().roles.contains_key(name) {
+                match target.view() {
+                    ValueView::Instance { attributes, .. } => {
+                        match attributes.as_map().get("__mutsu_role_candidate_idx") {
+                            Some(idx) => format!("{name}\u{0}candidate{}", idx.to_string_value()),
+                            None => format!("{name}\u{0}punned"),
+                        }
+                    }
+                    // A punned instance (`R.new`): an `Instance` wrapped in a
+                    // `Mixin` marker, never carrying candidate metadata.
+                    _ => format!("{name}\u{0}punned"),
+                }
+            } else {
+                name.clone()
+            }
+        });
+        if let Some(ref key) = how_cache_key
+            && let Some(how_val) = self.registry().class_how_values.get(key)
         {
             return Ok(how_val.clone());
         }
@@ -300,18 +350,46 @@ impl Interpreter {
                 crate::runtime::types::strip_type_smiley(&resolved).1,
                 Some(":D" | ":U")
             ) {
-                return Ok(Self::native_how_instance(
-                    "Perl6::Metamodel::DefiniteHOW",
-                    &resolved,
-                ));
+                let how = Self::native_how_instance("Perl6::Metamodel::DefiniteHOW", &resolved);
+                self.registry_mut()
+                    .class_how_values
+                    .insert(resolved, how.clone());
+                return Ok(how);
             }
         }
         if self.is_individual_role_type_object(target) {
             let display = self.role_type_object_display_name(target);
-            return Ok(Self::native_how_instance(
-                "Perl6::Metamodel::ParametricRoleHOW",
-                &display,
-            ));
+            let mut how =
+                Self::native_how_instance("Perl6::Metamodel::ParametricRoleHOW", &display);
+            // A role-declaration trait (`role Nom is description(...) { }`)
+            // dispatches `trait_mod:<is>` with the role GROUP's own `Package`
+            // as `$c` (mutsu has no other type object to hand it at that
+            // point -- see `vm_typedecl_ops.rs`), so `$c.HOW does Something`
+            // mixes the role into the group's cached HOW, keyed by the bare
+            // group name. rakudo still shows that composition from
+            // `.^candidates[0].HOW` (`roast/S14-traits/package.t`), so carry
+            // over whatever was mixed into the group before minting this
+            // candidate's own (differently-typed) metaobject.
+            let group_key = how_lookup_name
+                .as_ref()
+                .map(|n| self.role_group_name(n))
+                .unwrap_or_else(|| display.clone());
+            if let Some(ValueView::Mixin(_, group_mixins)) = self
+                .registry()
+                .class_how_values
+                .get(&group_key)
+                .map(Value::view)
+            {
+                how = Value::mixin(how, group_mixins.overrides().clone());
+            }
+            // `is_individual_role_type_object` only matches a `Package` or
+            // `Instance` target, so `how_cache_key` is always `Some` here.
+            if let Some(key) = how_cache_key.clone() {
+                self.registry_mut()
+                    .class_how_values
+                    .insert(key, how.clone());
+            }
+            return Ok(how);
         }
         // Return a meta-object (ClassHOW) for any value
         let type_name = match target.view() {
@@ -340,6 +418,17 @@ impl Interpreter {
                 tn.to_string()
             }
         };
+        // The cache key to read/write below: the disambiguated
+        // `how_cache_key` computed above when the target was a `Package` or
+        // `Instance` (so a punned role instance keeps its own slot, distinct
+        // from the role group's), or plain `type_name` otherwise -- which
+        // covers targets `how_cache_key` couldn't (e.g. a raw `Int`/`Str`
+        // value, not a `Package` or `Instance`, but still sharing
+        // `Int`/`Str`'s metaobject).
+        let how_cache_key = how_cache_key.unwrap_or_else(|| type_name.clone());
+        if let Some(how_val) = self.registry().class_how_values.get(&how_cache_key) {
+            return Ok(how_val.clone());
+        }
         // A role name only reports a role metaclass for the *type object*. An
         // INSTANCE of a role is an instance of the class the role was punned
         // into (`R.new` builds an anonymous class that does `R`), and an
@@ -347,53 +436,55 @@ impl Interpreter {
         // lives on the name, not on the values made from it.
         let is_type_object = matches!(target.view(), ValueView::Package(_));
         // Use appropriate HOW metaclass for each type kind
-        let how_name = if let Some(native) = self.registry().declared_native_how.get(&type_name) {
-            // Minted at runtime by `Metamodel::<X>HOW.new_type(...)`; the
-            // metaclass it was minted through is its metaclass.
-            return Ok(Self::native_how_instance(native, &type_name));
-        } else if let Some(kind) = self.registry().package_kinds.get(&type_name) {
-            // A bare `package`/`module`/`grammar` reports its own metaclass
-            // rather than the default `ClassHOW`.
-            match kind {
-                crate::ast::PackageKind::Package => "Perl6::Metamodel::PackageHOW",
-                crate::ast::PackageKind::Module => "Perl6::Metamodel::ModuleHOW",
-                crate::ast::PackageKind::Grammar => "Perl6::Metamodel::GrammarHOW",
-            }
-        } else if is_type_object
-            && !self.registry().classes.contains_key(&type_name)
-            && !self.registry().roles.contains_key(&type_name)
-            && !self.registry().enum_types.contains_key(&type_name)
-            && !self.registry().subsets.contains_key(&type_name)
-            && !crate::runtime::Interpreter::is_builtin_type(&type_name)
-            && self.package_namespace_exists(&type_name)
-        {
-            // A package created implicitly rather than declared: `my $foo::bar
-            // = 1` brings the package `foo` into being with no `package`
-            // statement, so it has no `package_kinds` entry, but it is still a
-            // package and reports `PackageHOW`, not the default `ClassHOW`.
-            "Perl6::Metamodel::PackageHOW"
-        } else if is_type_object
-            && (self.registry().roles.contains_key(&type_name) && !type_name.contains('[')
+        let how_name: String =
+            if let Some(native) = self.registry().declared_native_how.get(&type_name).cloned() {
+                // Minted at runtime by `Metamodel::<X>HOW.new_type(...)`; the
+                // metaclass it was minted through is its metaclass.
+                native
+            } else if let Some(kind) = self.registry().package_kinds.get(&type_name) {
+                // A bare `package`/`module`/`grammar` reports its own metaclass
+                // rather than the default `ClassHOW`.
+                match kind {
+                    crate::ast::PackageKind::Package => "Perl6::Metamodel::PackageHOW",
+                    crate::ast::PackageKind::Module => "Perl6::Metamodel::ModuleHOW",
+                    crate::ast::PackageKind::Grammar => "Perl6::Metamodel::GrammarHOW",
+                }
+                .to_string()
+            } else if is_type_object
+                && !self.registry().classes.contains_key(&type_name)
+                && !self.registry().roles.contains_key(&type_name)
+                && !self.registry().enum_types.contains_key(&type_name)
+                && !self.registry().subsets.contains_key(&type_name)
+                && !crate::runtime::Interpreter::is_builtin_type(&type_name)
+                && self.package_namespace_exists(&type_name)
+            {
+                // A package created implicitly rather than declared: `my $foo::bar
+                // = 1` brings the package `foo` into being with no `package`
+                // statement, so it has no `package_kinds` entry, but it is still a
+                // package and reports `PackageHOW`, not the default `ClassHOW`.
+                "Perl6::Metamodel::PackageHOW".to_string()
+            } else if is_type_object
+                && (self.registry().roles.contains_key(&type_name) && !type_name.contains('[')
                 // The core roles mutsu models natively have no `RoleDef`; ask the
                 // single core-role oracle rather than keeping a private copy of
                 // the list here (which had drifted: it omitted `Blob`/`Buf`/
                 // `Sequence`/`QuantHash`/`Scheduler`, so those reported `ClassHOW`).
                 || crate::runtime::types::is_builtin_role_name(&type_name))
-        {
-            "Perl6::Metamodel::ParametricRoleGroupHOW"
-        } else if self.registry().enum_types.contains_key(&type_name) {
-            "Perl6::Metamodel::EnumHOW"
-        } else if self.registry().subsets.contains_key(&type_name)
-            || matches!(type_name.as_str(), "UInt" | "NativeInt")
-        {
-            "Perl6::Metamodel::SubsetHOW"
-        } else if crate::runtime::types::parse_coercion_type(&type_name).is_some() {
-            "Perl6::Metamodel::CoercionHOW"
-        } else if self.class_is_grammar(&type_name) {
-            "Perl6::Metamodel::GrammarHOW"
-        } else {
-            "Perl6::Metamodel::ClassHOW"
-        };
+            {
+                "Perl6::Metamodel::ParametricRoleGroupHOW".to_string()
+            } else if self.registry().enum_types.contains_key(&type_name) {
+                "Perl6::Metamodel::EnumHOW".to_string()
+            } else if self.registry().subsets.contains_key(&type_name)
+                || matches!(type_name.as_str(), "UInt" | "NativeInt")
+            {
+                "Perl6::Metamodel::SubsetHOW".to_string()
+            } else if crate::runtime::types::parse_coercion_type(&type_name).is_some() {
+                "Perl6::Metamodel::CoercionHOW".to_string()
+            } else if self.class_is_grammar(&type_name) {
+                "Perl6::Metamodel::GrammarHOW".to_string()
+            } else {
+                "Perl6::Metamodel::ClassHOW".to_string()
+            };
         let anonymous_mixin_layers = match type_name.as_str() {
             "Array" => 2,
             "Hash" | "Set" | "Bag" | "Mix" => 1,
@@ -401,8 +492,11 @@ impl Interpreter {
         };
         let mut attrs = HashMap::new();
         attrs.insert("name".to_string(), Value::str(type_name.clone()));
-        attrs.insert("__mutsu_how_target".to_string(), Value::str(type_name));
-        let mut how = Value::make_instance(Symbol::intern(how_name), attrs);
+        attrs.insert(
+            "__mutsu_how_target".to_string(),
+            Value::str(type_name.clone()),
+        );
+        let mut how = Value::make_instance(Symbol::intern(&how_name), attrs);
 
         // Rakudo composes anonymous implementation roles into the metaobjects
         // for the mutable built-in collection classes.  Preserve that actual
@@ -414,6 +508,9 @@ impl Interpreter {
             mixins.insert("__mutsu_role__<anon>".to_string(), Value::TRUE);
             how = Value::mixin(how, mixins);
         }
+        self.registry_mut()
+            .class_how_values
+            .insert(how_cache_key, how.clone());
         Ok(how)
     }
 
