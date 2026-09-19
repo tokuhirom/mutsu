@@ -1811,7 +1811,7 @@ impl Interpreter {
                     let reset_value = Value::package(Symbol::intern(&nominal));
                     return Err(runtime::utils::definite_type_check_assignment_error(
                         name,
-                        &constraint,
+                        constraint,
                         &reset_value,
                     ));
                 }
@@ -1823,7 +1823,7 @@ impl Interpreter {
                     // applied any `use variables` pragma), so `implicit` cannot be
                     // recovered at this site — the TypeCheck opcode path reports it.
                     return Err(RuntimeError::missing_initializer(
-                        &constraint,
+                        constraint,
                         "variable",
                         None,
                     ));
@@ -1851,7 +1851,7 @@ impl Interpreter {
                 if !check_val.is_nil() && !self.type_matches_value(constraint, check_val) {
                     return Err(runtime::utils::type_check_assignment_typed_error(
                         name,
-                        &constraint,
+                        constraint,
                         check_val,
                     ));
                 }
