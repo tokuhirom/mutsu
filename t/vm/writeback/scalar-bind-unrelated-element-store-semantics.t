@@ -12,7 +12,7 @@ use Test;
 # HAS such a binding in scope: if it were too aggressive, one of these would
 # write the wrong container, drop a propagation, or skip a constraint.
 
-plan 38;
+plan 40;
 
 # The binding whose mere existence used to tax every element store in the file.
 my $bind-source = 1;
@@ -58,16 +58,15 @@ is-deeply @slots.List, @backing.List, 'alias and source still name one array';
 is @slots[5], -1, 'a store through the source name is visible through the alias';
 
 # --- 4. an array that a bind pair DOES name -------------------------------
-# A free-variable `@` bind inside a named sub is the one route that records a
-# bind pair on `@` SLOTS (it skips the shared-cell branch and goes through
-# `resolve_pending_alias_binds`), so this is the case the narrowed gate has to
-# keep declining for rather than assume away.
-#
-# mutsu does not yet alias the two names here -- the `SetGlobal` bind hands the
-# target a snapshot instead of the shared cell its `SetLocal` twin builds, so
-# `@paired-dst[1]` reads 2 where rakudo reads 20 (#8759). What this section can
-# pin today is that each store lands in its own array and neither corrupts the
-# other; restore the aliasing assertions when #8759 is fixed.
+# A free-variable `@` bind inside a named sub USED to be the one route that
+# recorded a bind pair on `@` SLOTS: it skipped the shared-cell branch and went
+# through `resolve_pending_alias_binds`, which is also why the two names were
+# not aliased at all (`@paired-dst[1]` read 2 where rakudo reads 20, #8759).
+# Since that bind takes the shared cell like its `SetLocal` twin, it records no
+# pair either -- but the gate still asks the question rather than assuming the
+# answer, so this section keeps exercising the shape, now with the aliasing
+# rakudo actually has. `t/vm/writeback/container-bind-free-var-aliases-source.t`
+# covers the binding itself.
 my @paired-src = 1, 2, 3;
 my @paired-dst;
 sub bind-them() { @paired-dst := @paired-src }
@@ -75,10 +74,12 @@ bind-them();
 is @paired-dst.elems, 3, 'the bound array is populated from the bind source';
 @paired-src[1] = 20;
 is @paired-src[1], 20, 'store through the bind source lands in the bind source';
+is @paired-dst[1], 20, 'and is visible through the bound name';
 @paired-dst[2] = 30;
 is @paired-dst[2], 30, 'store through the paired array lands in the paired array';
-is @paired-src[0], 1, 'the paired store did not disturb the bind source';
-is @paired-dst[0], 1, 'the bind-source store did not disturb the paired array';
+is @paired-src[2], 30, 'and is visible at the bind source';
+is @paired-src[0], 1, 'the untouched element is untouched';
+is @paired-dst.join(','), '1,20,30', 'both names read the one container';
 
 # --- 5. the metadata lanes the fast path stands in for ---------------------
 my Int @typed = 1, 2, 3;

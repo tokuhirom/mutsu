@@ -180,12 +180,15 @@ impl Interpreter {
     /// whose value the lane has not checked. Most pairs cannot be that: a
     /// whole-container `:=` (`my @b := @a`) is served by a shared
     /// `ContainerCell` and returns *before* any pair is recorded, which is why
-    /// the pairs are overwhelmingly scalar-only. They are not exclusively so --
-    /// an `@`/`%`/`&` bind routed through `SetGlobal` (a free-variable `:=`
-    /// inside a named sub) skips the cell branch and reaches
-    /// [`Interpreter::resolve_pending_alias_binds`], which records the pair
-    /// bidirectionally on two `@` slots -- so this asks the question rather than
-    /// assuming the answer.
+    /// the pairs are overwhelmingly scalar-only. The one route that did record
+    /// a pair on two `@` slots -- an `@`/`%` bind routed through `SetGlobal` (a
+    /// free-variable `:=` inside a named sub), which skipped the cell branch and
+    /// reached [`Interpreter::resolve_pending_alias_binds`] -- takes the shared
+    /// cell now too, because the pair never carried the binding in the first
+    /// place ([#8759](https://github.com/tokuhirom/mutsu/issues/8759)). A `&`
+    /// bind still reaches it. This asks the question rather than assuming the
+    /// answer: a name can reach `local_bind_pairs` by more than one route, and
+    /// declining is cheap.
     ///
     /// Matching by NAME, not by slot index, is deliberate: a name can occupy
     /// several `code.locals` slots (a same-named shadow) while the lane's own

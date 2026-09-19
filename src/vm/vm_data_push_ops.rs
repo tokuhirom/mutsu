@@ -306,6 +306,14 @@ impl Interpreter {
                 let guard = cell.lock().unwrap();
                 let inner = guard.clone();
                 drop(guard);
+                // A cell whose content is ITSELF a cell is what a `:=` rebind
+                // of this name leaves behind (the new binding's cell is stored
+                // *through* the old one so the old cell's holders follow it).
+                // Collapse the chain, or the push dispatches on a container
+                // instead of the Array it holds and dies with "No such method
+                // 'push'" (#8759). `into_deref` is a no-op for every other
+                // shape.
+                let inner = inner.into_deref();
                 // Container identity (§3): write through the shared backing
                 // node so by-value holders of the same array observe the push.
                 let mut val_slot = Some(val);
