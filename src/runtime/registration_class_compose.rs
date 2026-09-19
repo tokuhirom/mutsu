@@ -86,7 +86,8 @@ impl Interpreter {
     ) -> Result<(), RuntimeError> {
         const BUILTIN_TYPES: &[&str] = BUILTIN_PARENT_TYPES;
         for (i, parent) in parents.iter().enumerate() {
-            let resolved_parent_name = self.resolve_declared_type_name(parent);
+            let resolved_parent_name =
+                self.resolve_class_header_parent_name(cx.name, parent, does_parents);
             let base_role_name = resolved_parent_name
                 .split_once('[')
                 .map(|(b, _)| b)

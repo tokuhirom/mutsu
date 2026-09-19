@@ -355,129 +355,136 @@ impl Interpreter {
                 saved_role_params.push((name.clone(), self.env.get(name).cloned()));
                 self.env.insert(name.clone(), value.clone());
             }
-            for def in overloads {
-                // For private calls, only match private methods; for public calls, skip private
-                if is_private_call != def.is_private
-                    || !self.method_args_match(&args, &def.param_defs)
-                {
-                    continue;
-                }
-                // Build the attribute set visible to the role method body.
-                // Start with the inner instance's own attributes (e.g. class
-                // attributes like `@.order`) so that `$.attr` accessors inside
-                // the role method see and can mutate the class's state, then
-                // overlay the role's own `__mutsu_attr__` attributes — but only
-                // where the instance does not already carry them. The markers are
-                // construction-time seeds; the cell is the store of record, so
-                // overlaying them unconditionally would resurrect the seed over a
-                // value a role method wrote through `$!attr`.
-                let (inner_cell, mut method_attrs) = match inner.as_ref().view() {
-                    ValueView::Instance { attributes, .. } => {
-                        (Some(attributes.clone()), attributes.to_map())
-                    }
-                    _ => (None, AttrMap::new()),
-                };
-                for attr in &role.attributes {
-                    if let Some(value) = mixins.role_attribute(&role_name, &attr.name) {
-                        method_attrs.insert(attr.name.clone(), value);
-                    }
-                }
-                for (key, value) in mixins.iter() {
-                    if let Some(attr) = key.strip_prefix("__mutsu_attr__") {
-                        let sym = Symbol::intern(attr);
-                        if !method_attrs.contains_key(sym) {
-                            method_attrs.insert(attr, value.clone());
-                        }
-                    }
-                }
-                // Set up a method-dispatch frame so `nextsame`/`callsame` inside
-                // the role method falls through to the mixed-in base object's
-                // method of the same name: `A.new but Role` where the role's
-                // method calls `nextsame` must reach the class's original method.
-                let base_class = match inner.as_ref().view() {
-                    ValueView::Instance { class_name, .. } => {
-                        Some(class_name.resolve().to_string())
-                    }
-                    _ => None,
-                };
-                let base_remaining: Vec<super::DeferralEntry> = if let Some(bc) = &base_class {
-                    self.resolve_all_methods_with_owner(bc, lookup_name, &args)
-                        .into_iter()
-                        .filter(|(_, d)| d.is_private == is_private_call)
-                        .map(|(owner, def)| super::DeferralEntry::Candidate {
-                            owner,
-                            def: Box::new(def),
-                            wraps_spliced: false,
-                        })
-                        .collect()
-                } else {
-                    Vec::new()
-                };
-                let pushed_base_dispatch = !base_remaining.is_empty();
-                if pushed_base_dispatch {
-                    let rw_params =
-                        super::builtins_dispatch_next::rw_scalar_positional_params(&def.param_defs);
-                    self.push_samewith_context(lookup_name, Some(target.clone()), None);
-                    let dispatch_token = self.next_dispatch_token();
-                    self.method_dispatch_stack.push(super::MethodDispatchFrame {
-                        receiver_class: base_class.clone().unwrap_or_default(),
-                        invocant: target.clone(),
-                        args: args.clone(),
-                        remaining: base_remaining,
-                        rw_params,
-                        dispatch_token,
-                        arg_sources: None,
-                        in_wrapper: false,
-                    });
-                }
-                let method_result = self.run_resolved_method_compiled_or_treewalk(
-                    &role_name,
-                    &role_name,
-                    lookup_name,
-                    def,
-                    method_attrs,
-                    args,
-                    Some(target.clone()),
-                );
-                if pushed_base_dispatch {
-                    self.method_dispatch_stack.pop();
-                    self.pop_samewith_context();
-                }
-                for (name, previous) in &saved_role_params {
+            let matching: Vec<(Symbol, MethodDef)> = overloads
+                .into_iter()
+                .filter(|def| {
+                    // For private calls, only match private methods; for public calls, skip private
+                    is_private_call == def.is_private
+                        && self.method_args_match(&args, &def.param_defs)
+                })
+                .map(|def| (Symbol::intern(&role_name), def))
+                .collect();
+            let Some((_, def)) = self.pick_method_winner(
+                &[Symbol::intern(&role_name)],
+                &args,
+                Some(target),
+                matching,
+            ) else {
+                for (name, previous) in saved_role_params {
                     if let Some(prev) = previous {
-                        self.env.insert(name.clone(), prev.clone());
+                        self.env.insert(name, prev);
                     } else {
-                        self.env.remove(name);
+                        self.env.remove(&name);
                     }
                 }
-                let (result, updated) = match method_result {
-                    Ok(v) => v,
-                    Err(e) => return Some(Err(e)),
-                };
-                // Propagate attribute mutations made by the role method to the
-                // owner-selected store. Role attributes go to the Mixin-owned
-                // cell; class attributes go to the wrapped instance cell. This
-                // updates every binding in scope that holds the same store.
-                if self.is_role(&role_name) {
-                    self.commit_mixin_role_method_attrs(
-                        mixins,
-                        &role_name,
-                        &role,
-                        inner_cell.as_ref(),
-                        updated,
-                    );
-                } else if let Some(cell) = &inner_cell {
-                    cell.commit_attrs(updated);
+                continue;
+            };
+            // Build the attribute set visible to the role method body.
+            // Start with the inner instance's own attributes (e.g. class
+            // attributes like `@.order`) so that `$.attr` accessors inside
+            // the role method see and can mutate the class's state, then
+            // overlay the role's own `__mutsu_attr__` attributes — but only
+            // where the instance does not already carry them. The markers are
+            // construction-time seeds; the cell is the store of record, so
+            // overlaying them unconditionally would resurrect the seed over a
+            // value a role method wrote through `$!attr`.
+            let (inner_cell, mut method_attrs) = match inner.as_ref().view() {
+                ValueView::Instance { attributes, .. } => {
+                    (Some(attributes.clone()), attributes.to_map())
                 }
-                return Some(Ok(result));
+                _ => (None, AttrMap::new()),
+            };
+            for attr in &role.attributes {
+                if let Some(value) = mixins.role_attribute(&role_name, &attr.name) {
+                    method_attrs.insert(attr.name.clone(), value);
+                }
             }
-            for (name, previous) in saved_role_params {
+            for (key, value) in mixins.iter() {
+                if let Some(attr) = key.strip_prefix("__mutsu_attr__") {
+                    let sym = Symbol::intern(attr);
+                    if !method_attrs.contains_key(sym) {
+                        method_attrs.insert(attr, value.clone());
+                    }
+                }
+            }
+            // Set up a method-dispatch frame so `nextsame`/`callsame` inside
+            // the role method falls through to the mixed-in base object's
+            // method of the same name: `A.new but Role` where the role's
+            // method calls `nextsame` must reach the class's original method.
+            let base_class = match inner.as_ref().view() {
+                ValueView::Instance { class_name, .. } => Some(class_name.resolve().to_string()),
+                _ => None,
+            };
+            let base_remaining: Vec<super::DeferralEntry> = if let Some(bc) = &base_class {
+                self.resolve_all_methods_with_owner(bc, lookup_name, &args)
+                    .into_iter()
+                    .filter(|(_, d)| d.is_private == is_private_call)
+                    .map(|(owner, def)| super::DeferralEntry::Candidate {
+                        owner,
+                        def: Box::new(def),
+                        wraps_spliced: false,
+                    })
+                    .collect()
+            } else {
+                Vec::new()
+            };
+            let pushed_base_dispatch = !base_remaining.is_empty();
+            if pushed_base_dispatch {
+                let rw_params =
+                    super::builtins_dispatch_next::rw_scalar_positional_params(&def.param_defs);
+                self.push_samewith_context(lookup_name, Some(target.clone()), None);
+                let dispatch_token = self.next_dispatch_token();
+                self.method_dispatch_stack.push(super::MethodDispatchFrame {
+                    receiver_class: base_class.clone().unwrap_or_default(),
+                    invocant: target.clone(),
+                    args: args.clone(),
+                    remaining: base_remaining,
+                    rw_params,
+                    dispatch_token,
+                    arg_sources: None,
+                    in_wrapper: false,
+                });
+            }
+            let method_result = self.run_resolved_method_compiled_or_treewalk(
+                &role_name,
+                &role_name,
+                lookup_name,
+                def,
+                method_attrs,
+                args,
+                Some(target.clone()),
+            );
+            if pushed_base_dispatch {
+                self.method_dispatch_stack.pop();
+                self.pop_samewith_context();
+            }
+            for (name, previous) in &saved_role_params {
                 if let Some(prev) = previous {
-                    self.env.insert(name, prev);
+                    self.env.insert(name.clone(), prev.clone());
                 } else {
-                    self.env.remove(&name);
+                    self.env.remove(name);
                 }
             }
+            let (result, updated) = match method_result {
+                Ok(v) => v,
+                Err(e) => return Some(Err(e)),
+            };
+            // Propagate attribute mutations made by the role method to the
+            // owner-selected store. Role attributes go to the Mixin-owned
+            // cell; class attributes go to the wrapped instance cell. This
+            // updates every binding in scope that holds the same store.
+            if self.is_role(&role_name) {
+                self.commit_mixin_role_method_attrs(
+                    mixins,
+                    &role_name,
+                    &role,
+                    inner_cell.as_ref(),
+                    updated,
+                );
+            } else if let Some(cell) = &inner_cell {
+                cell.commit_attrs(updated);
+            }
+            return Some(Ok(result));
         }
         if role_has_method {
             return Some(Err(

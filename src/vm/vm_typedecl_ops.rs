@@ -289,7 +289,12 @@ impl Interpreter {
                 // `X::` exception namespace). Must run here, where `current_package`
                 // is the enclosing module — the child class name reaches
                 // `register_class_decl` without its module prefix.
-                .map(|(p, pre_args)| (self.qualify_sibling_parent_name(&p), pre_args))
+                .map(|(p, pre_args)| {
+                    (
+                        self.qualify_class_header_parent_name(&qualified_name, &p, does_parents),
+                        pre_args,
+                    )
+                })
                 // Drop the auto-added `Grammar` default parent from a genuine
                 // top-level `grammar Grammar` (qualified name exactly `Grammar`,
                 // which would otherwise list itself as its own parent and loop the
