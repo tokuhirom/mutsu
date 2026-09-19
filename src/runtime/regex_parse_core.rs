@@ -1899,12 +1899,21 @@ impl Interpreter {
                     continue;
                 }
             }
-            // Handle :my, :our, :constant variable declarations in regex
+            // Handle :my, :our, :constant, :let, and :temp variable declarations
+            // in regex.  The structural parser is also used for nested rule
+            // bodies, where match-time dynamic declarations must remain atoms
+            // instead of being mistaken for ordinary pattern text.
             if c == ':' {
                 let remaining: String = chars.clone().collect();
+                let temp_dynamic = remaining
+                    .strip_prefix("temp ")
+                    .and_then(|rest| rest.trim_start().chars().nth(1).map(|twigil| twigil == '*'))
+                    .unwrap_or(false);
                 if remaining.starts_with("my ")
                     || remaining.starts_with("our ")
                     || remaining.starts_with("constant ")
+                    || remaining.starts_with("let ")
+                    || temp_dynamic
                 {
                     // Collect everything up to and including the semicolon
                     let mut decl_code = String::new();

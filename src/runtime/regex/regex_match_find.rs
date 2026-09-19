@@ -605,6 +605,11 @@ impl Interpreter {
             ..self.new_regex_scratch_sharing_io()
         };
         self.copy_decl_registry_into(&mut interp);
+        // The no-capture matcher may recurse through grammar subrules on this
+        // scratch interpreter. Preserve the declaration table established by
+        // the public grammar match so nested `:temp`/`:my $*...` rule frames
+        // are installed there as well.
+        interp.grammar_rule_dynvar_decls = self.grammar_rule_dynvar_decls.clone();
         interp.regex_match_len_at_start(pattern, text)
     }
 }

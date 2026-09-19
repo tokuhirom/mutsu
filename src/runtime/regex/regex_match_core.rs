@@ -767,6 +767,10 @@ impl Interpreter {
                     store.rewind(m);
                     stop
                 };
+                // A grammar dynamic declaration can change whether a nested
+                // subrule candidate remains viable after its first prefix.
+                // Keep the continuation open until those assertions and
+                // sibling alternatives have been checked.
                 self.for_each_atom_candidate(
                     &token.atom,
                     ctx.chars,
@@ -774,7 +778,7 @@ impl Interpreter {
                     store,
                     ctx.pkg,
                     ctx.pattern.ignore_case,
-                    token.ratchet,
+                    token.ratchet && self.grammar_rule_dynvar_decls.is_empty(),
                     &mut descend,
                 )
             }

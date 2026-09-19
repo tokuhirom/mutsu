@@ -519,7 +519,7 @@ impl Interpreter {
             // declaration before this leading prefix is resolved. Do not run
             // the initializer a second time here; the frame's VarDecl path
             // records the value in the rule capture instead.
-            if matches!(decl_name.as_str(), "my" | "our")
+            if matches!(decl_name.as_str(), "my" | "our" | "temp")
                 && Self::dynamic_decl_var_key(&stmt_src)
                     .and_then(|key| Self::grammar_dynvar_env_keys(&key).into_iter().next())
                     .is_some_and(|key| super::regex_helpers::grammar_dynvar_scope_active(&key))

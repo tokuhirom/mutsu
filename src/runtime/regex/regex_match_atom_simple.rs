@@ -211,8 +211,26 @@ impl Interpreter {
         ignore_case: bool,
     ) -> Option<usize> {
         let mut dyn_saved = None;
+        // Ratcheted grammar tokens use this no-capture matcher for their
+        // subrules. Keep the same grammar-rule dynamic-variable frame as the
+        // capture-bearing matchers; otherwise a `:temp $*N = ...` declaration
+        // is absent precisely on the fast path used by ordinary `token`s.
+        let grammar_frame = match atom {
+            RegexAtom::Named(name)
+                if !LTM_DECLARATIVE_MODE.with(std::cell::Cell::get)
+                    && self
+                        .grammar_rule_dynvar_decls
+                        .contains_key(&name.spec().lookup_name) =>
+            {
+                self.enter_grammar_rule_dynvars(&name.spec().lookup_name)
+            }
+            _ => None,
+        };
         let out =
             self.regex_match_atom_in_pkg_inner(atom, chars, pos, pkg, ignore_case, &mut dyn_saved);
+        if let Some(frame) = grammar_frame {
+            let _ = self.exit_grammar_rule_dynvars(frame);
+        }
         if let Some(saved) = dyn_saved {
             self.restore_subrule_dynamic_params(saved);
         }
