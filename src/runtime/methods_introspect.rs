@@ -359,7 +359,25 @@ impl Interpreter {
         }
         if self.is_individual_role_type_object(target) {
             let display = self.role_type_object_display_name(target);
-            let how = Self::native_how_instance("Perl6::Metamodel::ParametricRoleHOW", &display);
+            let mut how = Self::native_how_instance("Perl6::Metamodel::ParametricRoleHOW", &display);
+            // A role-declaration trait (`role Nom is description(...) { }`)
+            // dispatches `trait_mod:<is>` with the role GROUP's own `Package`
+            // as `$c` (mutsu has no other type object to hand it at that
+            // point -- see `vm_typedecl_ops.rs`), so `$c.HOW does Something`
+            // mixes the role into the group's cached HOW, keyed by the bare
+            // group name. rakudo still shows that composition from
+            // `.^candidates[0].HOW` (`roast/S14-traits/package.t`), so carry
+            // over whatever was mixed into the group before minting this
+            // candidate's own (differently-typed) metaobject.
+            let group_key = how_lookup_name
+                .as_ref()
+                .map(|n| self.role_group_name(n))
+                .unwrap_or_else(|| display.clone());
+            if let Some(ValueView::Mixin(_, group_mixins)) =
+                self.registry().class_how_values.get(&group_key).map(Value::view)
+            {
+                how = Value::mixin(how, group_mixins.overrides().clone());
+            }
             // `is_individual_role_type_object` only matches a `Package` or
             // `Instance` target, so `how_cache_key` is always `Some` here.
             if let Some(key) = how_cache_key.clone() {
