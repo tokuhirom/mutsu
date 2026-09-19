@@ -140,19 +140,18 @@ impl Interpreter {
     ) -> Result<Value, RuntimeError> {
         // If the target variable is deep-readonly (e.g. $_ in a for-loop
         // over an immutable type like Mix/Set/Bag), disallow method-based
-        // mutation such as .value = ... on pairs.
-        if let Some(var_name) = target_var {
-            let deep_key = MetaNs::DeepReadonly.owned_key_for_str(var_name);
-            if matches!(
-                self.env.get(&deep_key).map(Value::view),
-                Some(ValueView::Bool(true))
-            ) {
-                let repr = value.to_string_value();
-                return Err(RuntimeError::assignment_ro_typename(
-                    &crate::value::what_type_name(&value),
-                    &repr,
-                ));
-            }
+        // mutation such as .value = ... on pairs. `ImmutableDeep` is the
+        // binding's own readonly-set mark (ADR-0097 slice 4), not a separate
+        // `__mutsu_deep_readonly::<name>` env probe — see `ReadonlyKind`'s
+        // doc comment.
+        if let Some(var_name) = target_var
+            && self.readonly_kind(var_name) == Some(crate::ast::ReadonlyKind::ImmutableDeep)
+        {
+            let repr = value.to_string_value();
+            return Err(RuntimeError::assignment_ro_typename(
+                &crate::value::what_type_name(&value),
+                &repr,
+            ));
         }
         // Lvalue return (ADR-0059) for a TYPE-OBJECT invocant
         // (`Crane::In.in(container, @path) = $v`, a class-method lvalue): run

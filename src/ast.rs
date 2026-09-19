@@ -1286,6 +1286,10 @@ impl PackageKind {
 ///
 /// Recording the kind where the readonly-ness is *decided* keeps the three
 /// apart without any name-based guessing at the (single, shared) check site.
+///
+/// [`ReadonlyKind::ImmutableDeep`] is a fourth, narrower kind layered on top
+/// of the `Immutable` case: not a fresh exception class, but an extra fact
+/// the same binding carries (see its own doc comment).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub(crate) enum ReadonlyKind {
     /// Readonly binding with a container behind it: parameters, `for` aliases.
@@ -1294,6 +1298,20 @@ pub(crate) enum ReadonlyKind {
     Immutable,
     /// The name *is* an immutable value (sigilless term, immutable container).
     ImmutableValue,
+    /// Like [`Self::Immutable`] (same "Cannot assign to an immutable value"
+    /// on `$_ = ...`), plus a second refusal `Immutable` does not carry:
+    /// method-based mutation through the binding is blocked too (`.value =
+    /// ...` on a `Pair`/`Mix`/`Set`/`Bag` item). Used for the implicit `for`
+    /// topic over an immutable `QuantHash` (ADR-0097 §5 slice 4's
+    /// `deep_readonly`, formerly a `__mutsu_deep_readonly::<name>` env
+    /// marker written and probed independently of the readonly-set mark it
+    /// always accompanied): `for $b.values { $_ = 1 }` and `for $b.values {
+    /// .value = 1 }` are refused for the same underlying reason, so they now
+    /// share one mark instead of two side-by-side ones that could drift out
+    /// of sync (see `Interpreter::restore_topic_readonly`, which used to
+    /// restore only the `Alias`/`Immutable`/`ImmutableValue` half and always
+    /// clear the deep half regardless of what the enclosing scope needed).
+    ImmutableDeep,
 }
 
 /// What role a [`Stmt::Given`] plays in a `with`-family desugar.

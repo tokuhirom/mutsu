@@ -46,7 +46,10 @@ impl Interpreter {
 
     /// Put the topic's read-only marking back to what it was before a `for`
     /// loop that decides the marking per item (see the `take-rw` case in
-    /// `vm_for_loop_lazy.rs`).
+    /// `vm_for_loop_lazy.rs`). `saved` is a full `ReadonlyKind` (or `None`),
+    /// so an outer loop's `ReadonlyKind::ImmutableDeep` is restored right
+    /// along with `Immutable`/`ImmutableValue`/`Alias` — there is no second,
+    /// independent "deep" flag to remember to clear or restore separately.
     pub(super) fn restore_topic_readonly(&mut self, saved: Option<crate::ast::ReadonlyKind>) {
         match saved {
             Some(kind) => self.mark_readonly_sym_with(crate::symbol::wk::topic(), kind),
@@ -801,28 +804,27 @@ impl Interpreter {
             if let Some(slot) = spec.param_local {
                 self.locals[slot as usize] = item.clone();
             }
-            // Mark implicit $_ readonly when source is immutable.
-            // Also set a deep-readonly flag so that method-lvalue
-            // assignments like .value = ... are blocked too.
+            // Mark implicit $_ readonly when source is immutable. An
+            // IMMUTABLE QuantHash source (`topic_deep_readonly`) additionally
+            // blocks method-based mutation (`.value = ...`) — carried as
+            // `ReadonlyKind::ImmutableDeep` rather than a second, independent
+            // marker, so the two facts can never drift out of sync (see
+            // `restore_topic_readonly`, which now restores this mark in full).
             if topic_readonly {
                 // The topic aliases an immutable item directly, with no
                 // container of its own: rakudo throws X::AdHoc "Cannot assign
                 // to an immutable value" (not the readonly-*variable* wording
                 // a named `-> $v` alias gets).
-                self.mark_readonly_with("_", crate::ast::ReadonlyKind::Immutable);
-                if topic_deep_readonly {
-                    self.env_mut()
-                        .insert("__mutsu_deep_readonly::_".to_string(), Value::TRUE);
+                let kind = if topic_deep_readonly {
+                    crate::ast::ReadonlyKind::ImmutableDeep
                 } else {
-                    self.env_mut().remove("__mutsu_deep_readonly::_");
-                }
+                    crate::ast::ReadonlyKind::Immutable
+                };
+                self.mark_readonly_with("_", kind);
             } else if binds_implicit_topic {
                 // See `saved_topic_readonly`: this loop's topic is writable, so
-                // an enclosing construct's mark must not carry into the body --
-                // including its deep flag, which would otherwise refuse a
-                // `.value = ...` through THIS loop's own (mutable) topic.
+                // an enclosing construct's mark must not carry into the body.
                 self.unmark_readonly("_");
-                self.env_mut().remove("__mutsu_deep_readonly::_");
             }
             // Mark named params readonly when not in rw mode.
             // Skip @-sigil and %-sigil params: they bind to a mutable
@@ -1219,7 +1221,6 @@ impl Interpreter {
                             });
                         if let Some(saved) = saved_topic_readonly {
                             self.restore_topic_readonly(saved);
-                            self.env_mut().remove("__mutsu_deep_readonly::_");
                         }
                         if !spec.is_rw
                             && let Some(ref name) = param_name
@@ -1237,7 +1238,6 @@ impl Interpreter {
                         // Restore the topic marking before propagating error
                         if let Some(saved) = saved_topic_readonly {
                             self.restore_topic_readonly(saved);
-                            self.env_mut().remove("__mutsu_deep_readonly::_");
                         }
                         if !spec.is_rw
                             && let Some(ref name) = param_name
@@ -1283,7 +1283,6 @@ impl Interpreter {
         // Restore the topic marking after loop completion
         if let Some(saved) = saved_topic_readonly {
             self.restore_topic_readonly(saved);
-            self.env_mut().remove("__mutsu_deep_readonly::_");
         }
         // Unmark readonly params after loop completion
         if !spec.is_rw

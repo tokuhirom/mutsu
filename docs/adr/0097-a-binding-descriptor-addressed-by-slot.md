@@ -261,12 +261,16 @@ revertible.
    key-symbol vectors. No behaviour change, no namespace retired — this is the
    consolidation that makes every later slice a one-site change.
 2. **The declaration-settled properties**: `type`, `hash_key_type`,
-   `shaped_array_dims`, `constant_var`, `deep_readonly`. All are fixed at the
-   declaration, and the first two already have an authoritative home on the
-   container: ADR-0042 slice 3 deleted the `var_type_constraints` side table, but
-   the `__mutsu_type::<name>` env key outlived it and `var_type_constraint_sym`
-   still probes it. So this slice mostly *deletes a second source of truth* that
-   ADR-0042 left behind rather than inventing a new home.
+   `shaped_array_dims`, `constant_var`, ~~`deep_readonly`~~. All were meant to
+   be fixed at the declaration, and the first two already have an
+   authoritative home on the container: ADR-0042 slice 3 deleted the
+   `var_type_constraints` side table, but the `__mutsu_type::<name>` env key
+   outlived it and `var_type_constraint_sym` still probes it. So this slice
+   mostly *deletes a second source of truth* that ADR-0042 left behind rather
+   than inventing a new home. §10 found this grouping is not actually uniform
+   (`deep_readonly`'s hot half and `shaped_array_dims` are dynamic/per-call,
+   not declaration-settled); §12 retired `deep_readonly` on its own, onto
+   `ReadonlyKind` rather than `BindingDesc`.
 3. **The binding-shape properties**: `sigilless_alias`, `sigilless_readonly`,
    `scalar_bind_no_container`, `bound`, `bound_decont`, `var_source_name`,
    `outer`. These are what the scalar store cascade probes on every assignment.
@@ -343,8 +347,10 @@ Stages 1-3 of #8087 (`MetaNs` + the gate + all 48 namespaces funnelled through
 it) are merged and are the prerequisite that makes each later slice a change at
 one site per namespace rather than at twenty-eight.
 
-**Slices 2-5 are not started.** §10 records why slice 2 as written is not a
-uniform next step.
+**Slices 2-5 are not started as written.** §10 records why slice 2 as written
+is not a uniform next step. One of its five properties has since been retired
+on its own: see §12 (`deep_readonly`, folded into `ReadonlyKind` rather than
+onto `BindingDesc` or the still-unbuilt runtime-half array).
 
 ## 10. Slice 2 is five properties of different shapes, not one fold (2026-09-15)
 
@@ -596,3 +602,45 @@ failure mode, both caught only by a pre-existing test, not by review.
   before trusting it to gate anything in release, giving the closure-capture
   gap (and any other unaudited source) a real chance to surface as a debug
   assertion rather than a silent wrong answer.
+
+## 12. `deep_readonly` retired on its own (2026-09-19)
+
+§10 named `deep_readonly` as one of slice 2's five properties and immediately
+disqualified it from that grouping: its hot consumer
+(`vm_for_loop_body.rs`'s `for`-loop topic marker on `$_`) is dynamic,
+per-iteration state, not a fact fixed at a `my` — so it needs "the runtime
+half", the frame-lifetime array parallel to `locals` that §10's own
+conclusion listed as the first of three candidate next steps, alongside
+taking `type`/`hash_key_type` alone or settling `constant_var`'s fate.
+
+Reading the actual call sites before starting that array's design found a
+narrower resolution: `Interpreter::readonly_vars` (`src/runtime/mod.rs`) is
+*already* the general "dynamic, per-frame, `Symbol`-keyed, scope-journaled"
+mechanism the runtime half is reaching for — a `RefCell<ReadonlySet>` with
+proper mark/unmark/restore and undo-on-scope-exit, used for exactly this
+binding's OTHER readonly fact (`ReadonlyKind::Immutable`, marked on the very
+same `"_"` at the very same call sites). The env marker duplicated a
+mechanism that already existed one field away, rather than needing a new one
+built from scratch.
+
+`ReadonlyKind` gained a fourth variant, `ImmutableDeep`: `Immutable`'s
+"Cannot assign to an immutable value" refusal, plus the method-mutation
+refusal (`.value = ...`) the env marker used to carry on its own. This
+retires `MetaNs::DeepReadonly` and the `__mutsu_deep_readonly::` namespace,
+and as a side effect fixes a bug the split representation caused:
+`restore_topic_readonly` could only restore the `ReadonlyKind` half on loop
+exit, so a `for`-loop over an immutable `QuantHash` whose body ran a nested
+`for`-loop lost its own deep-readonly mark the moment the inner loop
+restored `"_"`. Folding the two facts into one mark makes that
+unrepresentable, the same argument §3.2 makes for the slot-addressed
+descriptor proper — a fact split across two independently-updated stores is
+a bug waiting for the update that forgets one of them.
+
+This is deliberately **not** the runtime-half array §10 sketched, and does
+not build it. `shaped_array_dims` still needs that array (or some other
+per-invocation, slot-indexed home) — verified against real `raku` to be
+genuinely per-call, so it cannot move onto `CompiledCode.binding_descs`
+either. What this section adds is one data point: not every property §10
+called "needs the runtime half" turns out to need a *new* one — check
+whether an existing per-frame dynamic mechanism already answers the same
+shape of question before designing another.

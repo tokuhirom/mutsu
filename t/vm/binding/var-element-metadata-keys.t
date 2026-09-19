@@ -105,8 +105,11 @@ plan 16;
     is @acc.join(','), '1,2', 'a gather assigned to an array collects its takes';
 }
 
-# __mutsu_deep_readonly:: -- a binding that refuses method-based mutation too,
-# not just assignment. A readonly `Pair` must reject `.value = ...`.
+# A readonly binding refuses method-based mutation too, not just assignment --
+# a readonly `Pair` must reject `.value = ...`. (The implicit `for` topic's own
+# flavor of this, `ReadonlyKind::ImmutableDeep` -- formerly a separate
+# `__mutsu_deep_readonly::` env marker -- has its own dedicated test,
+# `t/vm/binding/for-loop-topic-deep-readonly-nesting.t`.)
 {
     sub take-pair($p) { $p }
     my $p = take-pair((a => 1));
