@@ -257,12 +257,9 @@ impl Interpreter {
                         // erase most of the fast path's point for a body that
                         // never introspects the parameter).
                         if cf.code.mentions_native_scalar_type_name
-                            && matches!(
-                                cf.param_defs[i].type_constraint.as_deref(),
-                                Some("int" | "str" | "num")
-                            )
+                            && let Some(base @ ("int" | "str" | "num")) =
+                                cf.param_defs[i].type_constraint.as_deref()
                         {
-                            let base = cf.param_defs[i].type_constraint.as_deref().unwrap();
                             let name_sym = match cf.param_name_syms.get(i) {
                                 Some(&sym) => sym,
                                 None => Symbol::intern(&cf.param_defs[i].name),
