@@ -49,6 +49,7 @@ impl Compiler {
             // Tag for container-ref consumers.
             let source_slot = self.local_map.get(name).copied();
             let name_idx = self.code.add_constant(Value::str(name.to_string()));
+            self.code.note_rebind_target(source_slot);
             self.code
                 .emit(OpCode::TagContainerRef(name_idx, source_slot));
             return;
@@ -83,6 +84,7 @@ impl Compiler {
         if self.try_compile_fused_compound_assign(name, expr) {
             let source_slot = self.local_map.get(name).copied();
             let name_idx = self.code.add_constant(Value::str(name.to_string()));
+            self.code.note_rebind_target(source_slot);
             self.code
                 .emit(OpCode::TagContainerRef(name_idx, source_slot));
             return;
@@ -102,6 +104,7 @@ impl Compiler {
         // (e.g. collected postfix `for` results).
         let source_slot = self.local_map.get(name).copied();
         let name_idx = self.code.add_constant(Value::str(name.to_string()));
+        self.code.note_rebind_target(source_slot);
         self.code
             .emit(OpCode::TagContainerRef(name_idx, source_slot));
     }

@@ -21,6 +21,7 @@ impl Compiler {
                 if let Expr::Var(name) = expr {
                     let source_slot = self.local_map.get(name.as_str()).copied();
                     let name_idx = self.code.add_constant(Value::str(name.clone()));
+                    self.code.note_rebind_target(source_slot);
                     self.code
                         .emit(OpCode::TagContainerRef(name_idx, source_slot));
                 }
