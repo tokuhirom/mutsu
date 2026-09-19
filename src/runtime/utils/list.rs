@@ -495,6 +495,20 @@ pub(crate) fn value_to_list(val: &Value) -> Vec<Value> {
             attributes,
             ..
         } => {
+            // A package Stash is Map-like in list context: iterate its symbol
+            // table as key/value pairs. PseudoStashes use the same visible
+            // `symbols` representation; their frame metadata remains hidden.
+            if crate::value::types::is_stash_class_name(&class_name.resolve()) {
+                if let Some(ValueView::Hash(symbols)) =
+                    attributes.as_map().get("symbols").map(Value::view)
+                {
+                    return symbols
+                        .iter()
+                        .map(|(key, value)| symbols.typed_pair(key, value.clone()))
+                        .collect();
+                }
+                return Vec::new();
+            }
             // A WalkList flattens to its candidate closures in list context, so
             // `my @cands = $x.WALK(...)` yields the per-level candidates.
             if class_name.resolve() == "WalkList"
