@@ -843,6 +843,30 @@ impl Interpreter {
                         .method_entry_proto(owner, method_name)
                         .is_some()
                 })
+                // Built-in systemic classes such as Distro and Kernel keep
+                // their native methods in ClassDef rather than in the user
+                // method table. Preserve those entries even when their name
+                // also matches a ClassHOW meta-method (Distro.^can('name')
+                // must describe the instance's native accessor).
+                || mro.iter().any(|owner| {
+                    self.registry()
+                        .classes
+                        .get(owner)
+                        .is_some_and(|class_def| class_def.native_methods.contains(method_name))
+                })
+                // Keep the historical ClassHOW fallback for package and
+                // primitive receivers. An ordinary instance must not inherit
+                // the metaobject API (for example, `Row.new.^can('name')`),
+                // but upstream code such as zef probes a failed `when` value
+                // with `False.^can('name')` before calling the harmless Nil
+                // fallback. The package path also needs ClassHOW's own names.
+                || !matches!(
+                    target.view(),
+                    ValueView::Instance { .. } | ValueView::Mixin(..)
+                ) && {
+                    let pkg = Value::package(Symbol::intern(&class_name));
+                    self.classhow_find_method(&pkg, method_name).is_some()
+                }
                 // `classhow_find_method` also covers native methods whose
                 // catalog row is not available. It intentionally reports
                 // ClassHOW's own methods (including `name`) for package
