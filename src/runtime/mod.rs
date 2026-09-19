@@ -2,11 +2,11 @@ use crate::symbol::Symbol;
 use std::cell::Cell;
 use std::collections::{HashMap, HashSet};
 
-/// A per-package table of per-name entries: `package -> name -> V`. Both
-/// levels are keyed by plain strings but probed on every free-variable read
-/// (`unit_lexical_slot` walks a package chain, two lookups per tier), so they
-/// hash with `FxHash` rather than `SipHash`.
-pub(crate) type PackageKeyed<V> = rustc_hash::FxHashMap<String, rustc_hash::FxHashMap<String, V>>;
+mod package_keyed;
+/// A per-package table of per-name entries: `package -> name -> V`, carrying
+/// the name filter that lets a failed package-chain walk cost one hash probe
+/// instead of one per tier per candidate. See the module.
+pub(crate) use package_keyed::PackageKeyed;
 /// The compunit / package-block lexical stores (`unit_lexicals`,
 /// `package_lexicals`): see [`PackageKeyed`].
 pub(crate) type PackageLexicals = PackageKeyed<Value>;

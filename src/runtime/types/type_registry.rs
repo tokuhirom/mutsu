@@ -478,7 +478,13 @@ impl Interpreter {
     /// imports. Keyed by the package currently executing (a method's class, or the
     /// module itself), walking up the `::` chain like `resolve_type_name_for_owner`.
     pub(crate) fn package_type_alias(&self, name: &str) -> Option<String> {
-        if self.package_type_aliases.is_empty() || name.contains("::") || name.is_empty() {
+        // `contains("::")` builds a `StrSearcher`; `has_double_colon` is the
+        // byte scan #7554 introduced for exactly this test, and this guard runs
+        // on every type check in the program (`try_resolved_type_capture_name`).
+        if self.package_type_aliases.is_empty()
+            || crate::runtime::utils::has_double_colon(name)
+            || name.is_empty()
+        {
             return None;
         }
         // A directly registered name is its own resolution; the module alias is
@@ -500,7 +506,7 @@ impl Interpreter {
         // while its declarations run, but consulting that entry here would
         // make every imported routine's topic read see the stale module value.
         if self.module_scope_lexicals.is_empty()
-            || name.contains("::")
+            || crate::runtime::utils::has_double_colon(name)
             || name.is_empty()
             || matches!(name, "_" | "@_" | "%_")
         {
@@ -515,7 +521,10 @@ impl Interpreter {
     /// the module's own `our $name`, while an imported alias must beat the
     /// caller's same-named env entry.
     pub(crate) fn module_imported_lexical(&self, name: &str) -> Option<&Value> {
-        if self.module_imported_lexical_names.is_empty() || name.is_empty() || name.contains("::") {
+        if self.module_imported_lexical_names.is_empty()
+            || name.is_empty()
+            || crate::runtime::utils::has_double_colon(name)
+        {
             return None;
         }
         let imported = self.lookup_in_running_package(&self.module_imported_lexical_names, name)?;
@@ -536,12 +545,26 @@ impl Interpreter {
         table: &'a crate::runtime::PackageKeyed<V>,
         name: &str,
     ) -> Option<&'a V> {
+        // No package in the table holds an entry under this name, so none of
+        // the candidate walks below can answer. Asked once here rather than
+        // once per `lookup_in_package_chain` call, because the loop runs the
+        // walk up to eight times (four candidates, each also under its
+        // unparameterized base name) and every one of them would decline for
+        // the same reason. See [`crate::runtime::PackageKeyed::contains_name`].
+        if !table.contains_name(name) {
+            return None;
+        }
         for candidate in self.running_package_candidates().into_iter().flatten() {
             // A parameterized class runs with its instantiated display name
             // (`M::C[T]`), while package-owned lexical tables are keyed by the
             // unparameterized class name (`M::C`). Probe that base owner before
             // walking its package ancestors.
-            if let Some((base, _)) = candidate.split_once('[')
+            //
+            // `split_once('[')` builds a `CharSearcher` and drives the generic
+            // `Searcher` protocol; `split_once_bracket` is the byte scan that
+            // already replaced it on the type-matching paths (#7696), and this
+            // loop asks the same question up to four times per lookup.
+            if let Some((base, _)) = crate::runtime::utils::split_once_bracket(candidate)
                 && let Some(found) = Self::lookup_in_package_chain(table, base, name)
             {
                 return Some(found);
@@ -593,6 +616,13 @@ impl Interpreter {
         owner: &str,
         name: &str,
     ) -> Option<&'a V> {
+        // The walk probes `table[pkg][name]` at every tier, so a name no
+        // package in the table holds cannot be found at any of them. One hash
+        // probe replaces the whole chain — see
+        // [`crate::runtime::PackageKeyed::contains_name`].
+        if !table.contains_name(name) {
+            return None;
+        }
         let mut pkg = owner;
         loop {
             if let Some(found) = table.get(pkg).and_then(|entries| entries.get(name)) {
@@ -615,22 +645,32 @@ impl Interpreter {
         owner: &str,
         name: &str,
     ) -> Option<&'a mut V> {
-        let mut pkg = owner.to_string();
-        loop {
+        if !table.contains_name(name) {
+            return None;
+        }
+        // Which tier owns the entry is decided with immutable probes over
+        // subslices of `owner` (which borrows nothing from `table`), so the
+        // walk needs no per-tier `String`. The single mutable borrow is the
+        // `get_value_mut` below — deliberately NOT `get_mut`, which would go
+        // through `DerefMut` and drop the name cache on a path that only ever
+        // overwrites an existing entry's value. This is the container-write
+        // chokepoint (`unit_lexical_slot_mut`), so it runs on every element
+        // assignment; invalidating there would make the read side rebuild the
+        // cache on the very next free-variable read.
+        let mut pkg: &str = owner;
+        let target = loop {
             if table
-                .get(&pkg)
+                .get(pkg)
                 .is_some_and(|entries| entries.contains_key(name))
             {
-                return table
-                    .get_mut(&pkg)
-                    .and_then(|entries| entries.get_mut(name));
+                break Some(pkg);
             }
-            match crate::runtime::utils::rsplit_once_double_colon(&pkg) {
-                Some((parent, _)) => pkg = parent.to_string(),
-                None => break,
+            match crate::runtime::utils::rsplit_once_double_colon(pkg) {
+                Some((parent, _)) => pkg = parent,
+                None => break None,
             }
-        }
-        None
+        };
+        table.get_value_mut(target?, name)
     }
 
     /// [`Self::module_scope_lexical`] anchored at an explicit owner package
