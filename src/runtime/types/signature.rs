@@ -127,7 +127,12 @@ pub(in crate::runtime) fn indexed_varref_from_value(
 /// for function parameter binding.
 /// For full-width native types (int/int64/uint/uint64), out-of-range values
 /// cause an error (cannot unbox too-wide bigint into native integer).
-pub(in crate::runtime) fn wrap_native_int_for_binding(
+///
+/// `pub(crate)`, not `pub(in crate::runtime)`: the light-call fast paths
+/// (`crate::vm::vm_call_light`, `vm_call_light_typed`) reuse this exact
+/// coercion for a `int`-typed parameter (#8686 Phase 0) instead of
+/// re-deriving the Bool-unbox/range-check/wrap logic.
+pub(crate) fn wrap_native_int_for_binding(
     constraint: &str,
     val: Value,
 ) -> Result<Value, crate::value::RuntimeError> {

@@ -229,6 +229,47 @@ impl Interpreter {
                             bind_err = Some(RuntimeError::typed("X::TypeCheck::Argument", attrs));
                             break 'bind;
                         }
+                        // A native `int` param's shape check above already
+                        // admitted only `Int`/`BigInt`/`Bool`; reuse the exact
+                        // Bool-unbox/range-check/wrap the general binder
+                        // applies (#8686 Phase 0). Can still fail on an
+                        // out-of-range `BigInt`.
+                        let val =
+                            if matches!(cf.param_defs[i].type_constraint.as_deref(), Some("int")) {
+                                match crate::runtime::types::wrap_native_int_for_binding("int", val)
+                                {
+                                    Ok(v) => v,
+                                    Err(e) => {
+                                        bind_err = Some(e);
+                                        break 'bind;
+                                    }
+                                }
+                            } else {
+                                val
+                            };
+                        // See the identical native-type env-metadata write in
+                        // `vm_call_light.rs`'s positional-light bind loop for
+                        // why this is needed for `int`/`str`/`num` specifically
+                        // (`~~ int`-style introspection inside the body,
+                        // `t/nativecall/native-value-smartmatch.t`) and why it
+                        // is gated on `mentions_native_scalar_type_name` (the
+                        // env deep-copy this write forces would otherwise
+                        // erase most of the fast path's point for a body that
+                        // never introspects the parameter).
+                        if cf.code.mentions_native_scalar_type_name
+                            && let Some(base @ ("int" | "str" | "num")) =
+                                cf.param_defs[i].type_constraint.as_deref()
+                        {
+                            let name_sym = match cf.param_name_syms.get(i) {
+                                Some(&sym) => sym,
+                                None => Symbol::intern(&cf.param_defs[i].name),
+                            };
+                            self.bind_param_type_constraint_sym(
+                                &cf.param_defs[i].name,
+                                name_sym,
+                                Some(base.to_string()),
+                            );
+                        }
                         let val = Self::bind_itemize_param(cf, i, val);
                         bind_value!(ppb.slot, ppb.needs_env, val);
                     } else if ppb.required {

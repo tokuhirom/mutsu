@@ -23,10 +23,14 @@ pub(in crate::runtime) use signature::{
     bind_named_rename_sub_signature, bind_sub_signature_from_value,
     collect_nested_named_alias_keys, encode_slurpy_rw_param, indexed_varref_from_value,
     sigilless_alias_key, sigilless_readonly_key, sub_signature_matches_value,
-    sub_signature_target_from_remaining_args, varref_from_value, wrap_native_int_for_binding,
+    sub_signature_target_from_remaining_args, varref_from_value,
 };
+// `wrap_native_int_for_binding` is `pub(crate)` (not scoped to `crate::runtime`
+// like the re-exports above): the light-call fast paths in `crate::vm` reuse
+// it directly (#8686 Phase 0).
 pub(crate) use signature::{
     decode_slurpy_rw_param, flatten_into_slurpy, make_varref_value, unwrap_varref_value,
+    wrap_native_int_for_binding,
 };
 pub(crate) use type_registry::{ROLE_PRETENDS_TO_BE, is_builtin_role_name};
 // Internal re-exports used by submodules via `use super::*`
