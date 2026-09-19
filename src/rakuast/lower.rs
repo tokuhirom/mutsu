@@ -1792,9 +1792,9 @@ fn colonpair_value_source(expr: &Expr) -> Option<String> {
 /// Render the deliberately small explicit pointy-signature subset accepted by
 /// the regex colonpair write direction. The source parser already supports all
 /// closure signatures; this helper reconstructs ordinary multiple bare scalar
-/// parameters, one typed scalar parameter, and one defaulted scalar parameter
-/// from a hand-built RakuAST tree. Slurpy, named, and trait-bearing parameters
-/// remain separate boundaries.
+/// parameters, one named scalar parameter, one typed scalar parameter, and one
+/// defaulted scalar parameter from a hand-built RakuAST tree. Slurpy and
+/// trait-bearing parameters remain separate boundaries.
 fn pointy_block_source(
     param_defs: &[crate::ast::ParamDef],
     body: &[crate::ast::Stmt],
@@ -1805,7 +1805,6 @@ fn pointy_block_source(
                 .name
                 .chars()
                 .all(|ch| ch.is_ascii_alphanumeric() || ch == '_')
-            && !param.named
             && !param.slurpy
             && !param.double_slurpy
             && !param.onearg
@@ -1835,30 +1834,39 @@ fn pointy_block_source(
                         .all(|ch| ch.is_ascii_alphanumeric() || ch == '_')
             })
         };
-        match (
-            param.type_constraint.as_deref(),
-            param.default.as_ref(),
-            param.required,
-        ) {
-            (Some(type_name), None, true) if simple_type_name(type_name) => {
-                format!("{type_name} ${}", param.name)
+        if param.named {
+            if param.type_constraint.is_none() && param.default.is_none() && !param.required {
+                format!(":${}", param.name)
+            } else {
+                return None;
             }
-            (Some(type_name), Some(default), false) if simple_type_name(type_name) => format!(
-                "{type_name} ${} = {}",
-                param.name,
-                crate::regex_tree::expression_source(default)?
-            ),
-            (None, Some(default), false) => format!(
-                "${} = {}",
-                param.name,
-                crate::regex_tree::expression_source(default)?
-            ),
-            _ => return None,
+        } else {
+            match (
+                param.type_constraint.as_deref(),
+                param.default.as_ref(),
+                param.required,
+            ) {
+                (Some(type_name), None, true) if simple_type_name(type_name) => {
+                    format!("{type_name} ${}", param.name)
+                }
+                (Some(type_name), Some(default), false) if simple_type_name(type_name) => format!(
+                    "{type_name} ${} = {}",
+                    param.name,
+                    crate::regex_tree::expression_source(default)?
+                ),
+                (None, Some(default), false) => format!(
+                    "${} = {}",
+                    param.name,
+                    crate::regex_tree::expression_source(default)?
+                ),
+                _ => return None,
+            }
         }
     } else {
         if param_defs.len() < 2
             || !param_defs.iter().all(|param| {
                 ordinary_parameter(param)
+                    && !param.named
                     && param.type_constraint.is_none()
                     && param.default.is_none()
                     && param.required
@@ -2436,7 +2444,7 @@ fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
             let body = lower_block(node)?;
             match params.len() {
                 1 if param_defs.first().is_some_and(|param| {
-                    param.type_constraint.is_none() && param.default.is_none()
+                    !param.named && param.type_constraint.is_none() && param.default.is_none()
                 }) =>
                 {
                     Ok(Expr::Lambda {
