@@ -1766,11 +1766,25 @@ impl Interpreter {
         // slot write and before the mirror into `self`'s cell. Skipped for a
         // Nil assignment, which resets the attribute to its own type object via
         // `reset_nil_untyped_scalar` in the `else` arm below.
-        let constraint = loan_env!(self, var_type_constraint_for(name, name_sym)).or_else(|| {
-            (!is_bind && !val.is_nil())
+        //
+        // The declared constraint is read, compared and passed on as a `&str`
+        // and never outlives this block, so it is BORROWED from the env's own
+        // `Str` value rather than copied out of it: the copy was one malloc
+        // and one free on every typed store (`my int $i = nqp::add_i($i, 1)`
+        // paid both per iteration). The attribute fallback still owns its
+        // string — it is built, not stored.
+        let declared = loan_env!(self, var_type_constraint_value_for(name, name_sym));
+        let declared_view = declared.as_ref().map(Value::view);
+        let attr_constraint = match declared_view {
+            Some(_) => None,
+            None => (!is_bind && !val.is_nil())
                 .then(|| self.scalar_attr_type_constraint(name))
-                .flatten()
-        });
+                .flatten(),
+        };
+        let constraint: Option<&str> = match &declared_view {
+            Some(ValueView::Str(tc)) => Some(tc.as_str()),
+            _ => attr_constraint.as_deref(),
+        };
         // A `:=` bind — of a container (`is_bind`) or a plain scalar
         // (`scalar_bind`, e.g. `$x := foo()`) — never coerces. A genuine
         // DECLARED type still type-checks the bound value below (`my Array $x
@@ -1790,10 +1804,10 @@ impl Interpreter {
             && !name.starts_with('%')
             && !name.starts_with('@')
         {
-            if val.is_nil() && self.is_definite_constraint(&constraint) {
+            if val.is_nil() && self.is_definite_constraint(constraint) {
                 if has_explicit_initializer {
                     let nominal =
-                        loan_env!(self, nominal_type_object_name_for_constraint(&constraint));
+                        loan_env!(self, nominal_type_object_name_for_constraint(constraint));
                     let reset_value = Value::package(Symbol::intern(&nominal));
                     return Err(runtime::utils::definite_type_check_assignment_error(
                         name,
@@ -1804,7 +1818,7 @@ impl Interpreter {
                 // A subset (named or anon-from-`where`) whose base is `:D` does not
                 // require an initializer — only an explicit `:D` smiley on the
                 // declared type does. Skip when no initializer is required.
-                if self.constraint_requires_initializer(&constraint) {
+                if self.constraint_requires_initializer(constraint) {
                     // The constraint reached here already stored (the declaration
                     // applied any `use variables` pragma), so `implicit` cannot be
                     // recovered at this site — the TypeCheck opcode path reports it.
@@ -1824,7 +1838,7 @@ impl Interpreter {
             // the type object. Binds keep the Nil (`:=` stores the value as
             // is), and an `is default(...)` value takes over the Nil read.
             if val.is_nil() && !is_bind && constraint != "Nil" && self.var_default(name).is_none() {
-                val = self.typed_scalar_nil_seed_value(name, &constraint);
+                val = self.typed_scalar_nil_seed_value(name, constraint);
             } else {
                 // A `:=` bind stores a `ContainerRef` cell (e.g. `my Offset $o := @a[$i]`
                 // aliases the array element). The type constraint applies to the
@@ -1834,7 +1848,7 @@ impl Interpreter {
                 // `val` directly with no clone.
                 let bind_derefed = is_bind.then(|| val.deref_container());
                 let check_val = bind_derefed.as_ref().unwrap_or(&val);
-                if !check_val.is_nil() && !self.type_matches_value(&constraint, check_val) {
+                if !check_val.is_nil() && !self.type_matches_value(constraint, check_val) {
                     return Err(runtime::utils::type_check_assignment_typed_error(
                         name,
                         &constraint,
@@ -1842,10 +1856,10 @@ impl Interpreter {
                     ));
                 }
                 if !val.is_nil() {
-                    val = loan_env!(self, try_coerce_value_for_constraint(&constraint, val))?;
+                    val = loan_env!(self, try_coerce_value_for_constraint(constraint, val))?;
                 }
                 // Wrap native integer values on assignment (overflow wrapping)
-                val = Self::wrap_native_int_by_constraint(&constraint, val)?;
+                val = Self::wrap_native_int_by_constraint(constraint, val)?;
             }
         } else if !is_bind && (!is_vardecl || has_explicit_initializer) {
             // Untyped scalar: assigning Nil resets it to the default type
