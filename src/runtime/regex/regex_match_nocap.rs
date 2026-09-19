@@ -36,6 +36,9 @@ impl Interpreter {
         start: usize,
         pkg: Symbol,
     ) -> Option<usize> {
+        if pattern.anchor_start && start != 0 {
+            return None;
+        }
         let mut stack = Vec::new();
         stack.push((0usize, start));
         while let Some((idx, pos)) = stack.pop() {

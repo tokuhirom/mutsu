@@ -13,8 +13,29 @@ fn parse_single_handle_spec<'a>(input: &'a str, specs: &mut Vec<HandleSpec>) -> 
         let end = after_open
             .find(quote)
             .ok_or_else(|| PError::expected("closing quote in handles"))?;
-        specs.push(HandleSpec::Name(after_open[..end].to_string()));
-        return Ok((&after_open[end + 1..], ()));
+        let exposed = after_open[..end].to_string();
+        let after_name = &after_open[end + 1..];
+        let (after_name, _) = ws(after_name)?;
+        if let Some(after_arrow) = after_name.strip_prefix("=>") {
+            let (after_arrow, _) = ws(after_arrow)?;
+            let (rest, target) = if after_arrow.starts_with('\'') || after_arrow.starts_with('"') {
+                let quote = after_arrow.as_bytes()[0] as char;
+                let after_quote = &after_arrow[1..];
+                let end = after_quote
+                    .find(quote)
+                    .ok_or_else(|| PError::expected("closing quote in handles pair"))?;
+                (&after_quote[end + 1..], after_quote[..end].to_string())
+            } else {
+                let (rest, target) = take_while1(after_arrow, |c: char| {
+                    c.is_alphanumeric() || c == '_' || c == '-'
+                })?;
+                (rest, target.to_string())
+            };
+            specs.push(HandleSpec::Rename { exposed, target });
+            return Ok((rest, ()));
+        }
+        specs.push(HandleSpec::Name(exposed));
+        return Ok((after_name, ()));
     }
     // Colon-pair: :exposed<target> or :exposed('target')
     if let Some(after_colon) = r.strip_prefix(':') {
