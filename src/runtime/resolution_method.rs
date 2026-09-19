@@ -247,9 +247,21 @@ impl Interpreter {
             // before method_args_match_for_invocant re-enters (&mut self). An
             // `if let` scrutinee would otherwise keep the temporary guard alive
             // across the whole block.
-            let overloads = self
-                .registry()
-                .get_method_overloads(cn.as_str(), method_name);
+            // A bare role's punned class is intentionally removed again after
+            // construction, so an instance retained by an attribute can still
+            // carry the role's class name while the canonical class method
+            // table is absent. In that case the role table is the dispatch
+            // source; ordinary composed roles keep their flattened class rows
+            // and remain on the canonical path.
+            let overloads = if cn.as_str() == class_name
+                && !self.registry().classes.contains_key(cn.as_str())
+            {
+                self.registry()
+                    .get_method_overloads_with_role_fallback(cn.as_str(), method_name)
+            } else {
+                self.registry()
+                    .get_method_overloads(cn.as_str(), method_name)
+            };
             if let Some(overloads) = overloads {
                 let any_multi = overloads.iter().any(|d| d.is_multi);
                 let mut first_visible_non_multi: Option<MethodDef> = None;

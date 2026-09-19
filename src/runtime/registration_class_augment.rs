@@ -585,6 +585,8 @@ impl Interpreter {
                             name: attr_name_str.clone(),
                             is_public: decl.is_public,
                             default: decl.default.clone(),
+                            captured_env: None,
+                            captured_unit: None,
                             is_rw: decl.is_rw,
                             is_required: decl.is_required.clone(),
                             sigil: decl.sigil,
@@ -768,11 +770,13 @@ impl Interpreter {
             }
         }
         // Record the `does` relationship for introspection (`.^roles`, `does`).
-        self.registry_mut()
-            .class_does_only_roles
-            .entry(name.to_string())
-            .or_default()
-            .push(base_role.to_string());
+        if base_role != name {
+            self.registry_mut()
+                .class_does_only_roles
+                .entry(name.to_string())
+                .or_default()
+                .push(base_role.to_string());
+        }
         self.registry_mut()
             .class_composed_roles
             .entry(name.to_string())
@@ -1060,20 +1064,18 @@ impl Interpreter {
         }
         // Only pun what actually resolves to a role candidate; anything else
         // (an unknown name, a parametric *class*) keeps its existing handling.
-        let candidate = self.resolve_role_candidate(&pun_name).ok().flatten();
-        let Some((role, _, resolved_args)) = candidate else {
+        //
+        // Keep the already-evaluated arguments on the value path. Rebuilding
+        // `R[...]` as source text loses named-argument boundaries: a Pair such
+        // as `:lc` is rendered as a tab-separated string and the role binder
+        // can then associate it with the following named value. Passing the
+        // values as literal declaration arguments preserves both their order
+        // and their namedness.
+        let candidate = self.resolve_role_candidate_with_args(base_name, Some(type_args))?;
+        let Some((role, _, _)) = candidate else {
             return Ok(None);
         };
         if role.is_stub_role {
-            return Ok(None);
-        }
-        // Composition is driven by the *name* `R[...]`, so this path is only
-        // sound when the arguments survive the round trip through it. They do
-        // not for a type argument with no faithful spelling — notably the
-        // anonymous role a defaulted parameter can carry (`role R[::T = my role
-        // { ... }]`), which comes back as a plain Str and would bind `T` to a
-        // string. Fall back to the caller's own path for those.
-        if resolved_args != type_args {
             return Ok(None);
         }
         // `^language-revision` on the pun must report the revision of the
@@ -1090,7 +1092,18 @@ impl Interpreter {
                     .map(|c| c.language_version.clone())
             })
             .unwrap_or_else(crate::parser::current_language_version);
+        // Keep the parameterised spelling on the parent itself so the class's
+        // composed-role ledger records `R[Int]` (needed by smartmatch and
+        // introspection). The pre-evaluated arguments still drive candidate
+        // binding, so named/value arguments do not have to survive a source
+        // spelling round-trip.
         let parents = [pun_name.clone()];
+        let parent_args = [type_args
+            .iter()
+            .cloned()
+            .map(crate::opcode::DeclTraitArg::Literal)
+            .collect::<Vec<_>>()];
+        let parent_pre_args = [Some(parent_args[0].as_slice())];
         let modifiers = super::registration_class::ClassDeclModifiers {
             class_is_rw: false,
             is_hidden: false,
@@ -1106,7 +1119,7 @@ impl Interpreter {
             method_name_chunks: &[],
             method_decls: &[],
             declared_static_names: &[],
-            parent_pre_args: &[],
+            parent_pre_args: &parent_pre_args,
             compiled_fns: &crate::opcode::CompiledFns::default(),
             body_plan: &[],
             is_hoisted_shell: false,

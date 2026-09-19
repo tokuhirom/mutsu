@@ -60,6 +60,39 @@
 use super::*;
 
 impl Interpreter {
+    /// Move a package-less lexical helper declared while a parameterized role
+    /// body is being re-run into the role's compilation-unit table.
+    ///
+    /// Role composition can happen inside a method. The role body's `sub`
+    /// declaration is installed in the flat registry while that method runs,
+    /// but the method's routine-scope restore quite correctly removes ordinary
+    /// lexical declarations afterwards. Composed role methods still need the
+    /// helper on later calls, so give it the same compunit lifetime as a
+    /// top-level lexical helper loaded from a module.
+    pub(crate) fn seclude_role_lexical_routine(
+        &mut self,
+        package: &str,
+        name: &str,
+        source_path: Option<&str>,
+    ) {
+        let key = Symbol::intern(&format!("{package}::{name}"));
+        let Some(def) = self.registry_mut().functions_mut().remove(&key) else {
+            return;
+        };
+        let unit = self.unit_of_source(source_path.or(def.source_file.as_deref()));
+        crate::runtime::cow_table_mut(&mut self.unit_private_routines)
+            .entry(unit)
+            .or_default()
+            .insert(Symbol::intern(name), def);
+        crate::runtime::cow_table_mut(&mut self.unit_private_names).insert(Symbol::intern(name));
+        // The declaration's code-variable binding is only the live-scope
+        // record. Calls resolve through the unit-private table after the
+        // composition scope has ended.
+        self.env.remove(&format!("&{name}"));
+        self.env.remove(&format!("&{package}::{name}"));
+        self.invalidate_fn_resolution_for_keys([key]);
+    }
+
     /// Move the package-less top-level routines the compunit at `source_path`
     /// just declared, but did not export, out of the shared registry and into
     /// that compunit's private table.

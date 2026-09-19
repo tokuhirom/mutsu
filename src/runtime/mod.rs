@@ -932,6 +932,14 @@ pub(crate) struct ClassAttributeDef {
     pub(crate) name: String,
     pub(crate) is_public: bool,
     pub(crate) default: Option<crate::opcode::DeclTraitArg>,
+    /// Lexicals visible where a role attribute default was declared. A role's
+    /// default is copied onto each consuming class, but its compiled chunk must
+    /// still resolve imported names in the role's own scope.
+    pub(crate) captured_env: Option<ValueMap>,
+    /// Compunit whose imports were visible where a role attribute default was
+    /// declared. Composed defaults run during construction, after the role's
+    /// compunit has finished loading, so they must restore that visibility.
+    pub(crate) captured_unit: Option<crate::symbol::Symbol>,
     pub(crate) is_rw: bool,
     pub(crate) is_required: Option<Option<String>>,
     pub(crate) sigil: char,

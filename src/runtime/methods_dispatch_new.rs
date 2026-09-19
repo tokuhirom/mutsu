@@ -415,6 +415,7 @@ impl Interpreter {
                         arg,
                         &temp_self,
                         &attributes,
+                        (attr.captured_env.as_ref(), attr.captured_unit),
                     )?;
                     Self::coerce_attr_value_by_sigil(val, *sigil)
                 } else if *sigil == '@' || *sigil == '%' {
@@ -471,6 +472,8 @@ impl Interpreter {
                     name: attr_name.clone(),
                     sigil: *sigil,
                     default: default.clone(),
+                    captured_env: attr.captured_env.clone(),
+                    captured_unit: attr.captured_unit,
                     build_override: None,
                     seed: val.clone(),
                 });

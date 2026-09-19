@@ -1167,6 +1167,16 @@ impl Compiler {
                         main_leaves_value = true;
                         continue;
                     }
+                    // A statement modifier is represented as `Stmt::If`, even
+                    // when it is the final expression in a try block (`try {
+                    // value if condition }`). Compile that tail in value
+                    // position so the conditional result reaches the try's
+                    // result stack instead of falling through to Nil.
+                    if matches!(stmt, Stmt::If { .. }) {
+                        self.compile_tail_stmt_value(stmt);
+                        main_leaves_value = true;
+                        continue;
+                    }
                     // A tail `given`/`when`/`default` leaves its value on the
                     // stack (ADR-0052) and IS the region's value.
                     if Self::stmt_nets_a_stack_value(stmt) {

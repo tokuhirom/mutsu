@@ -296,8 +296,14 @@ pub(crate) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
             if let Some(r2) = keyword("does", r) {
                 let (r2, _) = ws1(r2)?;
                 let (r2, role_name) = qualified_ident(r2)?;
-                parents.push(role_name.clone());
-                does_parents.push(role_name);
+                let (r2, _) = ws(r2)?;
+                let (r2, bracket_suffix) = parse_optional_bracket_suffix(r2)?;
+                let full_name = format!("{}{}", role_name, bracket_suffix);
+                if let Some(exprs) = super::class_decl::parse_bracket_arg_exprs(bracket_suffix) {
+                    parent_args.push((full_name.clone(), exprs));
+                }
+                parents.push(full_name.clone());
+                does_parents.push(full_name);
                 let (r2, _) = ws(r2)?;
                 r = r2;
                 continue;
@@ -305,8 +311,14 @@ pub(crate) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
             if let Some(r2) = keyword("hides", r) {
                 let (r2, _) = ws1(r2)?;
                 let (r2, parent) = qualified_ident(r2)?;
-                parents.push(parent.clone());
-                hidden_parents.push(parent);
+                let (r2, _) = ws(r2)?;
+                let (r2, bracket_suffix) = parse_optional_bracket_suffix(r2)?;
+                let full_name = format!("{}{}", parent, bracket_suffix);
+                if let Some(exprs) = super::class_decl::parse_bracket_arg_exprs(bracket_suffix) {
+                    parent_args.push((full_name.clone(), exprs));
+                }
+                parents.push(full_name.clone());
+                hidden_parents.push(full_name);
                 let (r2, _) = ws(r2)?;
                 r = r2;
                 continue;

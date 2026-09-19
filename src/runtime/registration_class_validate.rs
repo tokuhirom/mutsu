@@ -214,6 +214,7 @@ impl Interpreter {
         if !does_parents.is_empty() {
             let does_roles: Vec<String> = does_parents
                 .iter()
+                .filter(|p| p.as_str() != name)
                 .filter(|p| {
                     let base = p.split_once('[').map(|(b, _)| b).unwrap_or(p);
                     self.registry().roles.contains_key(base)

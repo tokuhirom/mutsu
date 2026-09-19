@@ -230,6 +230,22 @@ impl Interpreter {
             .native_call_specs
             .get(&Self::native_method_key(class_name, method))
             .or_else(|| {
+                // A short descriptor is needed for native handles that still
+                // carry an unqualified class name, but it must not leak into
+                // an ordinary registered class with the same basename.  For
+                // example, Native::Statement's `count` must not shadow the
+                // generated accessor on SQLite::Statement.
+                if !class_name.contains("::") {
+                    return None;
+                }
+                if self
+                    .registry()
+                    .classes
+                    .get(class_name)
+                    .is_some_and(|class_def| class_def.native_methods.is_empty())
+                {
+                    return None;
+                }
                 let short = class_name.rsplit("::").next().unwrap_or(class_name);
                 self.native_call_specs
                     .get(&Self::native_method_key(short, method))

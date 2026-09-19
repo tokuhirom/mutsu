@@ -85,11 +85,22 @@ fn is_numericish_matcher(v: &Value) -> bool {
 /// `IO::Path ~~ :e/:d/:f/:l/:r/:w/:x/:rw/:rwx/:s/:z` file-test result (and
 /// negated forms `:!e`, ...), shared by the `Pair`- and `ValuePair`-flavour
 /// match arms in `pure_smart_match` below.
-fn io_path_file_test_result(key: &str, negated: bool, path_str: Option<String>) -> bool {
+fn io_path_file_test_result(
+    key: &str,
+    negated: bool,
+    path_str: Option<String>,
+    cwd_str: Option<String>,
+) -> bool {
     let Some(p) = path_str else {
         return negated;
     };
-    let path = std::path::Path::new(&p);
+    let cwd = cwd_str.unwrap_or_else(|| {
+        std::env::current_dir()
+            .map(|path| path.to_string_lossy().into_owned())
+            .unwrap_or_else(|_| ".".to_string())
+    });
+    let absolute = io_path_cleanup_absolute(&p, &cwd);
+    let path = std::path::Path::new(&absolute);
     let result = match key {
         "e" => path.exists(),
         "d" => path.is_dir(),
@@ -572,8 +583,13 @@ pub(crate) fn pure_smart_match(left: &Value, right: &Value) -> Option<bool> {
             ) =>
         {
             let negated = matches!(val.view(), ValueView::Bool(false));
-            let path_str = attributes.as_map().get("path").map(|v| v.to_string_value());
-            Some(io_path_file_test_result(key.as_str(), negated, path_str))
+            let (path_str, cwd_str) = io_path_attrs(&attributes);
+            Some(io_path_file_test_result(
+                key.as_str(),
+                negated,
+                Some(path_str),
+                Some(cwd_str),
+            ))
         }
         (
             ValueView::Instance {
@@ -591,8 +607,13 @@ pub(crate) fn pure_smart_match(left: &Value, right: &Value) -> Option<bool> {
         {
             let negated = matches!(val.view(), ValueView::Bool(false));
             let key = key.to_string_value();
-            let path_str = attributes.as_map().get("path").map(|v| v.to_string_value());
-            Some(io_path_file_test_result(&key, negated, path_str))
+            let (path_str, cwd_str) = io_path_attrs(&attributes);
+            Some(io_path_file_test_result(
+                &key,
+                negated,
+                Some(path_str),
+                Some(cwd_str),
+            ))
         }
 
         // Str/Int/Cool ~~ IO::Path: convert LHS to IO::Path and compare cleanup.absolute

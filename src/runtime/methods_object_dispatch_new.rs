@@ -2140,6 +2140,8 @@ impl Interpreter {
                     let ClassAttributeDef {
                         name: attr_name,
                         default,
+                        captured_env,
+                        captured_unit,
                         sigil,
                         ..
                     } = attr;
@@ -2169,6 +2171,8 @@ impl Interpreter {
                             name: attr_name.clone(),
                             sigil,
                             default,
+                            captured_env,
+                            captured_unit,
                             build_override,
                             seed: seed.clone(),
                         });
@@ -2194,6 +2198,7 @@ impl Interpreter {
                                 &arg,
                                 &temp_self,
                                 &attrs,
+                                (captured_env.as_ref(), captured_unit),
                             )?;
                             Self::coerce_attr_value_by_sigil(val, sigil)
                         }
@@ -2373,6 +2378,8 @@ impl Interpreter {
                         let ClassAttributeDef {
                             name: attr_name,
                             default,
+                            captured_env,
+                            captured_unit,
                             sigil,
                             ..
                         } = attr;
@@ -2406,7 +2413,11 @@ impl Interpreter {
                             let temp_self = Value::make_instance(*class_name, attrs.clone());
                             let old_self = self.env.get("self").cloned();
                             self.env.insert("self".to_string(), temp_self);
-                            let result = self.eval_decl_trait_arg(&arg);
+                            let result = self.eval_decl_trait_arg_with_captured_context(
+                                &arg,
+                                captured_env.as_ref(),
+                                captured_unit,
+                            );
                             if let Some(old) = old_self {
                                 self.env.insert("self".to_string(), old);
                             } else {

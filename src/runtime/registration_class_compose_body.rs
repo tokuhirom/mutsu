@@ -179,10 +179,48 @@ impl Interpreter {
         if role.deferred_body.is_empty() {
             return Ok(());
         }
-        // Bind type parameters as type captures
+        // Bind `::T` parameters as type captures, but keep ordinary value
+        // parameters (for example `Str:D :$prefix` and `Bool :$lc`) as their
+        // actual values. `bind_type_capture` intentionally turns a value into
+        // its type object; applying it to every role parameter makes `$prefix`
+        // become `Str` and `$lc` become `Bool` inside role-local subs.
+        let type_capture_names: HashSet<String> = self
+            .registry()
+            .role_candidates
+            .get(base_role_name)
+            .into_iter()
+            .flat_map(|candidates| candidates.iter())
+            .find(|candidate| candidate.role_def.role_id == role.role_id)
+            .map(|candidate| {
+                candidate
+                    .type_param_defs
+                    .iter()
+                    .filter_map(|pd| pd.captured_type_name().map(str::to_string))
+                    .collect()
+            })
+            .unwrap_or_default();
         for (param_name, param_value) in role_param_values {
-            self.bind_type_capture(param_name, param_value);
+            if type_capture_names.contains(param_name) {
+                self.bind_type_capture(param_name, param_value);
+            } else {
+                self.env.insert(param_name.clone(), param_value.clone());
+            }
         }
+        // Lexical subs in a role method resolve in the package captured when
+        // the role method was declared, not in the package of the class that
+        // happens to compose the role later.  Deferred role-body execution
+        // normally uses the ambient composer package; recover the method's
+        // lexical package for `sub`/`proto` declarations so a bare call from
+        // the composed method can find the helper.
+        let role_lexical_package = (!role_arg_values.is_empty())
+            .then(|| {
+                role.methods
+                    .values()
+                    .flat_map(|methods| methods.iter())
+                    .next()
+                    .map(|method| method.lexical_package.resolve())
+            })
+            .flatten();
         // A class declared inside a *parametric* role body becomes
         // parametric over the role's type args: `class A is Array[T]`
         // in `role R[::T]` composed with `Int` is `R::A[Int]` (or
@@ -242,10 +280,23 @@ impl Interpreter {
             // role's own methods can never find it via `bare_name_packages`.
             let is_use_decl = op.kind == crate::opcode::DeferredBodyOpKind::Plain
                 && matches!(op.raw, Stmt::Use { .. } | Stmt::Need { .. });
+            let is_lexical_sub_decl = op.kind == crate::opcode::DeferredBodyOpKind::Plain
+                && matches!(op.raw, Stmt::SubDecl { .. } | Stmt::ProtoDecl { .. });
+            let lexical_sub_name = match &op.raw {
+                Stmt::SubDecl {
+                    name,
+                    multi: false,
+                    is_export: false,
+                    ..
+                } if is_lexical_sub_decl => Some(name.resolve()),
+                _ => None,
+            };
             if is_type_decl || is_use_decl {
                 self.set_current_package(base_role_name.to_string());
             } else if is_regex_decl {
                 self.set_current_package(cx.name.to_string());
+            } else if is_lexical_sub_decl && let Some(package) = role_lexical_package.as_deref() {
+                self.set_current_package(package.to_string());
             }
             let run_one = |this: &mut Self| -> Result<(), RuntimeError> {
                 match &op.chunk {
@@ -270,8 +321,14 @@ impl Interpreter {
             } else {
                 run_one(self)
             };
-            if is_type_decl || is_regex_decl || is_use_decl {
+            if is_type_decl || is_regex_decl || is_use_decl || is_lexical_sub_decl {
                 self.set_current_package(saved_body_pkg.clone());
+            }
+            if r.is_ok()
+                && let (Some(package), Some(name)) =
+                    (role_lexical_package.as_deref(), lexical_sub_name.as_deref())
+            {
+                self.seclude_role_lexical_routine(package, name, role.decl_file.as_deref());
             }
             // A role body statement that dies rejects this
             // parameterisation (`role R[::T] { die unless T.REPR eq
@@ -328,7 +385,11 @@ impl Interpreter {
                 .iter()
                 .filter_map(|(k, v)| {
                     let bare = k.resolve();
-                    if body_env_before.contains(k) && !declared.contains(bare.as_str()) {
+                    let is_role_param = role_param_values.contains_key(bare.as_str());
+                    if body_env_before.contains(k)
+                        && !declared.contains(bare.as_str())
+                        && !is_role_param
+                    {
                         return None;
                     }
                     if bare.contains("::")
@@ -341,6 +402,7 @@ impl Interpreter {
                         return None;
                     }
                     if !declared.contains(bare.as_str())
+                        && !is_role_param
                         && matches!(v.view(), ValueView::Package(_))
                     {
                         return None;

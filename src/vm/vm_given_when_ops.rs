@@ -97,7 +97,23 @@ impl Interpreter {
         if let Some(slot) = topic_local_slot {
             self.locals[slot] = topic.clone();
         }
-        self.env_mut().insert("_".to_string(), topic);
+        // A `for` body is compiled through an implicit `given $_` and carries
+        // `TagContainerRef("_")`.  When the loop item is an element cell,
+        // keep that cell as the body's topic binding instead of installing its
+        // decontainerized value.  Otherwise a call in the body can replace
+        // `env["_"]` with a plain value; a following assignment then misses
+        // the loop element's cell and the wrapper restores the old value on
+        // exit (for example `$_ = lookup($_) when Str`).
+        let body_topic = if container_binding.as_deref() == Some("_")
+            && matches!(
+                saved_topic.as_ref().map(Value::view),
+                Some(ValueView::ContainerRef(_))
+            ) {
+            saved_topic.clone().unwrap_or(topic)
+        } else {
+            topic
+        };
+        self.env_mut().insert("_".to_string(), body_topic);
         loan_env!(self, set_when_matched(false));
         // A read-only topic (`given @a` / `given 42` / `given expr()`) forbids
         // `$_ = ...`; container *mutation* (`.push`) is still allowed and is
@@ -384,13 +400,23 @@ impl Interpreter {
         let cond_val = self.stack.pop().unwrap();
         let body_start = *ip + 1;
         let end = body_end as usize;
+        let topic_snapshot = self
+            .find_local_slot(code, "_")
+            .map(|slot| self.locals[slot].clone())
+            .or_else(|| self.env().get("_").cloned())
+            .unwrap_or(Value::NIL);
 
         // Num(Inf) represents Whatever (*) which always matches in `when *`
         let matches = if matches!(cond_val.view(), ValueView::Num(v) if v.is_infinite() && v.is_sign_positive())
         {
             true
         } else {
-            let topic = self.env().get("_").cloned().unwrap_or(Value::NIL);
+            // A `for` loop keeps its topic in a local slot on the optimized
+            // path, while the shared env's `_` may still contain the caller's
+            // topic. Postfix `when` must match the current loop element (for
+            // example `$_ = lookup($_) when Str`), so prefer the compiled
+            // topic slot when one is present.
+            let topic = topic_snapshot.clone();
             match cond_val.view() {
                 ValueView::Sub(_) | ValueView::Routine { .. } => {
                     let (_params, param_defs) = self.callable_signature(&cond_val);
@@ -469,24 +495,41 @@ impl Interpreter {
                 }
             }
             if !did_proceed {
-                loan_env!(self, set_when_matched(true));
-                let last = if self.stack.len() > stack_base {
-                    self.stack.pop().unwrap_or(Value::NIL)
+                if statement_modifier {
+                    // `STMT when COND` is a plain conditional, not a
+                    // `when` clause. A matching body completes normally; it
+                    // must not raise the succeed signal that unwinds a real
+                    // `when` clause. Preserve the body's value on the normal
+                    // expression stack, just as an ordinary conditional does.
+                    let last = if self.stack.len() > stack_base {
+                        self.stack.pop().unwrap_or(Value::NIL)
+                    } else {
+                        Value::NIL
+                    };
+                    self.stack.truncate(stack_base);
+                    self.stack.push(last);
                 } else {
-                    Value::NIL
-                };
+                    loan_env!(self, set_when_matched(true));
+                    let last = if self.stack.len() > stack_base {
+                        self.stack.pop().unwrap_or(Value::NIL)
+                    } else {
+                        Value::NIL
+                    };
+                    self.stack.truncate(stack_base);
+                    let mut sig = RuntimeError::succeed_signal();
+                    sig.return_value = Some(last);
+                    sig.set_container_name(self.take_container_ref_for(code).map(|(n, _)| n));
+                    return Err(sig);
+                }
+            } else {
+                // `proceed`: the clause did not produce a value, so fall through
+                // to the next statement without one. The barrier that catches
+                // the ensuing control flow already truncates, but drain here too
+                // so the ordinary (non-`proceed`) path stays the only one that
+                // pushes.
                 self.stack.truncate(stack_base);
-                let mut sig = RuntimeError::succeed_signal();
-                sig.return_value = Some(last);
-                sig.set_container_name(self.take_container_ref_for(code).map(|(n, _)| n));
-                return Err(sig);
+                self.stack.push(Value::NIL);
             }
-            // `proceed`: the clause did not produce a value, so fall through to
-            // the next statement without one. The barrier that catches the
-            // ensuing control flow already truncates, but drain here too so the
-            // ordinary (non-`proceed`) path stays the only one that pushes.
-            self.stack.truncate(stack_base);
-            self.stack.push(Value::NIL);
         } else {
             // A failed `when` evaluates to the falsy result of its test
             // (control.rakudoc: "the block is not abandoned since the
