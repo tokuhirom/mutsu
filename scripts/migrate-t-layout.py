@@ -121,6 +121,13 @@ OVERRIDES: dict[str, str] = {
     # The lifetime of a `signal()` Supply's tap (arm on tap, disarm on the last
     # untap) -- supply teardown, not the `Signal` enum's type behaviour.
     "signal-supply-tap-lifetime": "concurrency",
+    # The element-store twin of scalar-bind-unrelated-store-semantics.t
+    # (#8747). What breaks if this file breaks is the fast element-store lane's
+    # `:=` bind-pair gate -- a binding/store-path mechanism. The array subscript
+    # is only where it becomes visible, so `element`/`store` must not pull this
+    # into `collections`; it belongs beside its scalar twin, which lands in
+    # vm/writeback by the rules.
+    "scalar-bind-unrelated-element-store-semantics": "vm",
     # The `__mutsu_*` metadata key namespaces (#8087). What breaks if this file
     # breaks is a key whose writer and reader spell it differently, or an env
     # write that skips the `note_env_key` latch -- a binding/env mechanism. The

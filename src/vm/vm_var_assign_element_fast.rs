@@ -147,6 +147,67 @@ impl Interpreter {
         self.try_fast_array_element_assign(code, name_idx, is_positional, target_slot, false)
     }
 
+    /// True when a recorded `:=` bind pair names the `@` variable this element
+    /// store is about to write, so the store may have to be reconciled with a
+    /// second local slot holding a detached copy of the container.
+    ///
+    /// This replaces the lane's opening refusal, which declined whenever
+    /// `local_bind_pairs` was non-empty at all. That field is **frame-global**,
+    /// so **one** `my $x := $y` anywhere in a scope pushed every `@a[$i] = $v`
+    /// in that scope back onto
+    /// [`Interpreter::exec_index_assign_expr_named_op_inner`] -- 23
+    /// `Symbol::intern` calls and 8 heap allocations per store, the numbers
+    /// [#8069](https://github.com/tokuhirom/mutsu/issues/8069) §2 was filed
+    /// with -- including stores into arrays the binding cannot reach.
+    /// `benchmarks/bench-threads-serial.raku` is the measured case: its single
+    /// `my $sref := $seed` cost that file's element stores 15,858 instructions
+    /// each against a `:=`-free copy's 1,214, and made its row the worst ratio
+    /// in `bench-history.tsv` with no array binding and no thread in sight
+    /// ([#8747](https://github.com/tokuhirom/mutsu/issues/8747)). Asking the
+    /// question per name rather than per frame is the same narrowing
+    /// [`Interpreter::slot_is_bind_pair_source`] already made for the *scalar*
+    /// store, against the same field and the same benchmark; the element store
+    /// is the half that was left behind.
+    ///
+    /// **Why a name test is the right question here.** A pair is a pair of local
+    /// *slots*, and the only thing the VM does with one is copy a scalar store's
+    /// value from the source slot into the alias slot
+    /// (`exec_set_local_op_inner`'s reverse-propagation loop,
+    /// `exec_compound_assign_scalar_for`'s forward one). An element store writes
+    /// no local slot at all -- it mutates the backing node in place, which every
+    /// holder of that node observes -- so a pair can only matter when one of its
+    /// two slots IS this array, i.e. when the frame holds a second slot for it
+    /// whose value the lane has not checked. Most pairs cannot be that: a
+    /// whole-container `:=` (`my @b := @a`) is served by a shared
+    /// `ContainerCell` and returns *before* any pair is recorded, which is why
+    /// the pairs are overwhelmingly scalar-only. They are not exclusively so --
+    /// an `@`/`%`/`&` bind routed through `SetGlobal` (a free-variable `:=`
+    /// inside a named sub) skips the cell branch and reaches
+    /// [`Interpreter::resolve_pending_alias_binds`], which records the pair
+    /// bidirectionally on two `@` slots -- so this asks the question rather than
+    /// assuming the answer.
+    ///
+    /// Matching by NAME, not by slot index, is deliberate: a name can occupy
+    /// several `code.locals` slots (a same-named shadow) while the lane's own
+    /// `target_slot` resolves to just one of them, and a frame torn down by an
+    /// exception can leave a pair whose slot index does not address this frame
+    /// at all (the reverse-propagation loop bounds-checks for exactly that).
+    /// Both cases resolve to "decline", which is always safe.
+    ///
+    /// A program with no `:=` binding pays one `is_empty` check on the `Vec` and
+    /// reads nothing, exactly as before.
+    #[inline]
+    fn bind_pair_names_array(&self, code: &CompiledCode, var_name: &str) -> bool {
+        if self.local_bind_pairs.is_empty() {
+            return false;
+        }
+        self.local_bind_pairs.iter().any(|&(source, target)| {
+            [source, target]
+                .iter()
+                .any(|&slot| code.locals.get(slot).is_some_and(|n| n == var_name))
+        })
+    }
+
     /// Fast path for a simple positional element store: `@a[$i] = $v`.
     ///
     /// Returns `Some(Ok(()))` when it handled the store, `None` when the caller
@@ -154,8 +215,9 @@ impl Interpreter {
     /// It never returns `Some(Err(_))`.
     ///
     /// Preconditions (all must hold):
-    /// - a positional subscript on an `@`-sigiled name, with no SCALAR `:=`
-    ///   binding pair recorded in this frame and no pending `=`-element share;
+    /// - a positional subscript on an `@`-sigiled name that is not itself named
+    ///   by a `:=` bind pair recorded in this frame, and no pending `=`-element
+    ///   share;
     /// - a plain non-negative `Int` index that is already **in range** (an
     ///   autovivifying store needs the full path's native-fill and hole
     ///   bookkeeping);
@@ -178,11 +240,6 @@ impl Interpreter {
         share_pending: bool,
     ) -> Option<Result<(), RuntimeError>> {
         if !is_positional || share_pending {
-            return None;
-        }
-        // A `:=` binding in scope can make any name an alias; the slow path owns
-        // that resolution.
-        if !self.local_bind_pairs.is_empty() {
             return None;
         }
         // Once a second VM mutator thread exists, an element store is no longer
@@ -215,6 +272,12 @@ impl Interpreter {
         // so this also excludes the `__mutsu_sigilless_alias::` redirect the
         // slow path resolves -- same reasoning as the `%` hash twin.
         if !var_name.as_bytes().starts_with(b"@") {
+            return None;
+        }
+        // A `:=` bind pair that names THIS array; see
+        // [`Interpreter::bind_pair_names_array`] for why the frame-global
+        // `is_empty` test this replaces was far wider than the question.
+        if self.bind_pair_names_array(code, var_name) {
             return None;
         }
         // `env_root_descended_mut_tracked` -- the write chokepoint the full
