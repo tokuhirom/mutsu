@@ -676,6 +676,9 @@ impl Interpreter {
                     if is_export && !self.suppress_exports {
                         self.register_exported_sub(package.clone(), name.resolve(), export_tags);
                     }
+                    if multi && !self.suppress_exports {
+                        self.refresh_exported_multi_family(&name.resolve());
+                    }
                     for (alt_params, alt_param_defs) in &signature_alternates {
                         let alt_metadata = crate::opcode::compiled_routine_metadata(
                             alt_params,

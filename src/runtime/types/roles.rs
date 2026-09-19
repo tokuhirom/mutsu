@@ -943,6 +943,15 @@ impl Interpreter {
                         .cloned()
                         .unwrap_or_else(|| Value::package(crate::symbol::wk::any())),
                 );
+                // Later role-attribute defaults may call an accessor for an
+                // earlier attribute (`has $.builder = "build_" ~ self.base-name`).
+                // Keep the declaration-time invocant in sync with the mixin
+                // map as each attribute is seeded, rather than leaving it on
+                // the snapshot created before the loop.
+                self.env.insert(
+                    "self".to_string(),
+                    Value::mixin_with_state(inner.clone(), mixins.clone()),
+                );
             }
             for (key, old_value) in saved_attr_env {
                 match old_value {

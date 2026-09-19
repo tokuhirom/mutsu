@@ -159,16 +159,16 @@ impl Interpreter {
         // news/2026-08/role-composition-memo-key-raku-case-table.md).
         let mixin_class = self.ensure_mixin_class(&base, &role_names)?;
         attributes.rebless(Symbol::intern(&mixin_class));
-        // Seed the composed roles' own attributes. The object already exists, so
-        // no constructor runs for them: give each declared attribute its default
-        // (or the sigil-appropriate empty container) unless the object carries it
-        // already.
-        self.seed_mixin_role_attributes(&attributes, &role_names)?;
         let reblessed = Value::instance_sharing_cell(
             &attributes,
             Symbol::intern(&mixin_class),
             attributes.instance_id(),
         );
+        // Seed the composed roles' own attributes. The object already exists, so
+        // no constructor runs for them: give each declared attribute its default
+        // (or the sigil-appropriate empty container) unless the object carries it
+        // already.
+        self.seed_mixin_role_attributes(&attributes, &role_names, &reblessed)?;
         // 6.e runs a composed role's BUILD/TWEAK on the object it was mixed into.
         for name in &role_names {
             self.run_mixin_role_build(&reblessed, &attributes, name)?;
@@ -241,42 +241,56 @@ impl Interpreter {
         &mut self,
         attributes: &crate::gc::Gc<crate::value::InstanceAttrs>,
         role_names: &[String],
+        target: &Value,
     ) -> Result<(), RuntimeError> {
-        for role_name in role_names {
-            let Some(role) = self.registry().roles.get(role_name).cloned() else {
-                continue;
-            };
-            let saved_env = role.captured_env.as_ref().map(|captured| {
-                let saved = self.env.clone();
-                for (k, v) in captured {
-                    if !self.env.contains_key(k) {
-                        self.env.insert(k.clone(), v.clone());
-                    }
-                }
-                saved
-            });
-            for attr in &role.attributes {
-                let attr_name = &attr.name;
-                let default_expr = &attr.default;
-                let sigil = &attr.sigil;
-                if attributes.contains_key(attr_name.as_str()) {
+        let saved_self = self.env.get("self").cloned();
+        self.env.insert("self".to_string(), target.clone());
+        let result = (|| {
+            for role_name in role_names {
+                let Some(role) = self.registry().roles.get(role_name).cloned() else {
                     continue;
-                }
-                let value = match default_expr {
-                    Some(arg) => self.eval_decl_trait_arg(arg)?,
-                    None => match sigil {
-                        '@' => Value::real_array(Vec::new()),
-                        '%' => Value::hash_with_data(Value::hash_arc(ValueMap::default())),
-                        _ => Value::NIL,
-                    },
                 };
-                attributes.insert(attr_name.as_str(), value);
+                let saved_env = role.captured_env.as_ref().map(|captured| {
+                    let saved = self.env.clone();
+                    for (k, v) in captured {
+                        if !self.env.contains_key(k) {
+                            self.env.insert(k.clone(), v.clone());
+                        }
+                    }
+                    saved
+                });
+                for attr in &role.attributes {
+                    let attr_name = &attr.name;
+                    let default_expr = &attr.default;
+                    let sigil = &attr.sigil;
+                    if attributes.contains_key(attr_name.as_str()) {
+                        continue;
+                    }
+                    let value = match default_expr {
+                        Some(arg) => self.eval_decl_trait_arg(arg)?,
+                        None => match sigil {
+                            '@' => Value::real_array(Vec::new()),
+                            '%' => Value::hash_with_data(Value::hash_arc(ValueMap::default())),
+                            _ => Value::NIL,
+                        },
+                    };
+                    attributes.insert(attr_name.as_str(), value);
+                }
+                if let Some(saved) = saved_env {
+                    self.env = saved;
+                }
             }
-            if let Some(saved) = saved_env {
-                self.env = saved;
+            Ok(())
+        })();
+        match saved_self {
+            Some(value) => {
+                self.env.insert("self".to_string(), value);
+            }
+            None => {
+                self.env.remove("self");
             }
         }
-        Ok(())
+        result
     }
 
     /// Run a freshly composed role's `BUILD` / `TWEAK` submethods on the object.

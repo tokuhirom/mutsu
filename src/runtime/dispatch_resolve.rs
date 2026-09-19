@@ -738,7 +738,10 @@ impl Interpreter {
         name: &str,
         arg_values: &[Value],
     ) -> Vec<FunctionDef> {
-        let arity = arg_values.len();
+        let arity = arg_values
+            .iter()
+            .filter(|value| !value.is_string_pair_value())
+            .count();
         let mut all_matches = Vec::new();
 
         let search_pkgs = self.candidate_search_packages(name);
@@ -757,7 +760,11 @@ impl Interpreter {
                 .map(|(_, def)| (**def).clone())
                 .collect();
             for def in candidates {
-                if self.args_match_multi_candidate(arg_values, &def.param_defs) {
+                if self.args_match_multi_candidate_in_package(
+                    arg_values,
+                    &def.param_defs,
+                    def.package,
+                ) {
                     all_matches.push(def);
                 }
             }
@@ -784,7 +791,11 @@ impl Interpreter {
                 b_has_subsig.cmp(&a_has_subsig).then(a.0.cmp(&b.0))
             });
             for (_, def) in candidates {
-                if self.args_match_multi_candidate(arg_values, &def.param_defs) {
+                if self.args_match_multi_candidate_in_package(
+                    arg_values,
+                    &def.param_defs,
+                    def.package,
+                ) {
                     let fp = crate::ast::function_body_fingerprint(
                         &def.params,
                         &def.param_defs,
@@ -821,7 +832,8 @@ impl Interpreter {
             .collect();
         slurpy_candidates.sort_by(|a, b| a.0.cmp(&b.0));
         for (_, def) in slurpy_candidates {
-            if self.args_match_multi_candidate(arg_values, &def.param_defs) {
+            if self.args_match_multi_candidate_in_package(arg_values, &def.param_defs, def.package)
+            {
                 let fp = def.body_fingerprint();
                 if !all_matches.iter().any(|m: &FunctionDef| {
                     crate::ast::function_body_fingerprint(&m.params, &m.param_defs, &m.body) == fp

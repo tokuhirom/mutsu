@@ -273,7 +273,7 @@ impl Interpreter {
             if !seen_fps.insert(fp) {
                 continue; // duplicate
             }
-            if !self.args_match_multi_candidate(args, &cand.param_defs) {
+            if !self.args_match_multi_candidate_in_package(args, &cand.param_defs, cand.package) {
                 continue; // doesn't match
             }
             if !found_current {
@@ -296,7 +296,10 @@ impl Interpreter {
         name: &str,
         arg_values: &[Value],
     ) -> Option<FunctionDef> {
-        let arity = arg_values.len();
+        let arity = arg_values
+            .iter()
+            .filter(|value| !value.is_string_pair_value())
+            .count();
         if name.contains("::") {
             let prefix = format!("{}/{arity}:", name);
             let untyped_key = format!("{}/{}", name, arity);

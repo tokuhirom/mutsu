@@ -1144,7 +1144,7 @@ impl Interpreter {
             return false;
         };
         if self.has_multi_function(name) {
-            self.args_match_multi_candidate(args, &def.param_defs)
+            self.args_match_multi_candidate_in_package(args, &def.param_defs, def.package)
         } else {
             self.args_match_param_types(args, &def.param_defs)
         }

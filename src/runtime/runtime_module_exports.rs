@@ -570,6 +570,30 @@ impl Interpreter {
         }
     }
 
+    /// Refresh the export aliases for a multi family after a later candidate
+    /// is registered. An exported proto exports its candidates too, but the
+    /// proto commonly appears before those candidates in a module body. The
+    /// first export registration therefore cannot create the arity-qualified
+    /// aliases until the candidates exist.
+    pub(crate) fn refresh_exported_multi_family(&mut self, name: &str) {
+        let package = self.current_package();
+        let tags = if package == "GLOBAL" {
+            self.module_load_stack
+                .last()
+                .and_then(|module| self.module_owned_exports.get(module))
+                .and_then(|exports| exports.get(name))
+                .cloned()
+        } else {
+            self.exported_subs
+                .get(&package)
+                .and_then(|exports| exports.get(name))
+                .cloned()
+        };
+        if let Some(tags) = tags {
+            self.register_exported_sub(package, name.to_string(), tags.into_iter().collect());
+        }
+    }
+
     pub(crate) fn register_exported_var(
         &mut self,
         package: String,
