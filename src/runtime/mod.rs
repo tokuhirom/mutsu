@@ -2930,8 +2930,26 @@ pub struct Interpreter {
     /// When set, `does` on a routine parameter inside `trait_mod:<is>` will
     /// store the resulting Mixin value for writeback to the outer scope.
     pub(crate) trait_mod_writeback_key: Option<String>,
-    /// The captured Mixin value from a trait_mod `does` writeback.
+    /// The captured Mixin value from a trait_mod `does` writeback: whichever
+    /// `does`/`but` ran LAST while `trait_mod_writeback_key` was armed,
+    /// regardless of its target. `apply_attribute_traits` reads this to
+    /// detect and invoke a role's `compose` hook (AttrX::Lazy's shape mixes a
+    /// role into `$class.HOW` specifically so this fires).
     pub(crate) trait_mod_writeback_value: Option<Value>,
+    /// Like `trait_mod_writeback_value`, but captured ONLY when the `does`
+    /// target is (or wraps) an Attribute instance — i.e. NOT a `$class.HOW`
+    /// mixin, which persists through its own dedicated path
+    /// (`eval_does_values`'s `how_target_from_value` branch writes
+    /// `registry.class_how_values`). A handler that mixes into both `$attr`
+    /// AND `$class.HOW` (AttrX::Lazy: `$attr does LazyAttribute; ...
+    /// $class.HOW does LazyAttributeContainerHOW`) needs both captured
+    /// separately: `trait_mod_writeback_value` for whichever ran last (to
+    /// find the compose hook), this field for the attribute's OWN resulting
+    /// value, cached as its `^attributes` meta-object. Conflating the two
+    /// into one slot lost the attribute's own mixin whenever a HOW-mixin ran
+    /// last, corrupting the cache a later re-registration of the class reuses
+    /// (#8806).
+    pub(crate) trait_mod_attr_writeback_value: Option<Value>,
     /// When true, hash indexing with a missing key autovivifies (creates an
     /// empty Hash entry and returns it).  Set during reduce with `is raw`
     /// callbacks so that container semantics are preserved.

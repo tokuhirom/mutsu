@@ -444,7 +444,7 @@ impl Interpreter {
     }
 
     /// Check if a value is a HOW meta-object and return the target class name.
-    fn how_target_from_value(value: &Value) -> Option<String> {
+    pub(crate) fn how_target_from_value(value: &Value) -> Option<String> {
         match value.view() {
             ValueView::Instance { attributes, .. } => {
                 match attributes

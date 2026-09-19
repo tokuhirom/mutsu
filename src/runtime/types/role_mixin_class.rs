@@ -243,6 +243,13 @@ impl Interpreter {
         role_names: &[String],
         target: &Value,
     ) -> Result<(), RuntimeError> {
+        // An attribute default may reference `self` (`has $.builder = "build_"
+        // ~ self.base-name`, or simply another attribute's accessor). `target`
+        // shares this same `attributes` cell, so an earlier attribute's value
+        // -- inserted below -- is visible to a later default through `self`
+        // without needing to re-bind it per attribute (contrast
+        // `compose_role_on_value`'s wrapper path, which mixes into an
+        // immutable map snapshot and must refresh `self` after every insert).
         let saved_self = self.env.get("self").cloned();
         self.env.insert("self".to_string(), target.clone());
         let result = (|| {

@@ -736,6 +736,7 @@ impl Interpreter {
             in_does_rhs: false,
             trait_mod_writeback_key: None,
             trait_mod_writeback_value: None,
+            trait_mod_attr_writeback_value: None,
             hash_autovivify: false,
             newline_mode: self.newline_mode,
             import_scope_stack: Vec::new(),
