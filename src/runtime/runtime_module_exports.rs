@@ -638,6 +638,21 @@ impl Interpreter {
                     .and_then(|entries| entries.get(name).or_else(|| entries.get(bare)))
                     .cloned()
             })
+            // `our &name` bindings are persistent package variables.  The
+            // module load restores their lexical env entries after the first
+            // import, so a later tagged re-import must read the durable
+            // package store as well (e.g. Math::Trig's code aliases).
+            .or_else(|| self.our_vars.get(&qualified).cloned())
+            .or_else(|| self.our_vars.get(name).cloned())
+            // Code variables use the routine registry as an additional
+            // durable store.  This matters for `our &alias = &routine`: the
+            // module's lexical `env` entry is restored after its first load,
+            // but the qualified code value remains resolvable by name.
+            .or_else(|| {
+                (sigil == Some('&'))
+                    .then(|| self.resolve_code_var(&format!("{module}::{bare}")))
+                    .filter(|value| !value.is_nil())
+            })
             .or_else(|| self.env.get(name).cloned())
     }
 
