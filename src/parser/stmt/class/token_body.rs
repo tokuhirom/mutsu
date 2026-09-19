@@ -243,6 +243,18 @@ pub(crate) fn inject_implicit_rule_ws(pattern: &str) -> String {
     let mut in_double = false;
     let mut escaped = false;
     let mut brace_depth = 0usize;
+    // Depth of currently-open `<...>` regex-syntax regions (subrule calls,
+    // `<[...]>` bracketed char classes, named captures, lookarounds, ...)
+    // that are NOT code assertions (`<{ … }>` / `<?{ … }>` / `<!{ … }>`).
+    // While inside one, a `{`/`}` character is just a literal atom (e.g. the
+    // brace matched by `<[{]>`), not a code-block delimiter, so it must not
+    // touch `brace_depth` — otherwise it desyncs `brace_depth` and silently
+    // suppresses `<.ws>` insertion for the rest of the pattern (mutsu#8755).
+    // Code assertions are deliberately left alone here: their own `{`/`}`
+    // already balance correctly via the ordinary `brace_depth` tracking
+    // below, and unlike a bracketed char class they never contain a lone,
+    // unmatched brace.
+    let mut angle_depth = 0usize;
     // One entry per currently-open `[`/`(` group, tracking where each of its
     // top-level `|`/`||` branches ends. A closing bracket with significant
     // trailing whitespace (see `should_insert`) uses the innermost of these
@@ -291,13 +303,29 @@ pub(crate) fn inject_implicit_rule_ws(pattern: &str) -> String {
         }
         // Track brace depth to skip ws injection inside code blocks { ... }
         if !in_single && !in_double {
-            if c == '{' {
+            // Track `<...>` region depth so a literal `{`/`}` inside one
+            // (e.g. `<[{]>`) is not mistaken for a code-block delimiter. A
+            // `<` that opens a code assertion (`<{`, `<?{`, `<!{`) is left
+            // out of this tracking — its own braces already balance via the
+            // ordinary `brace_depth` counter below.
+            if c == '<' && brace_depth == 0 {
+                let mut probe = i + 1;
+                if matches!(chars.get(probe), Some('?') | Some('!')) {
+                    probe += 1;
+                }
+                if chars.get(probe) != Some(&'{') {
+                    angle_depth += 1;
+                }
+            } else if c == '>' && angle_depth > 0 && brace_depth == 0 {
+                angle_depth -= 1;
+            }
+            if c == '{' && angle_depth == 0 {
                 brace_depth += 1;
                 out.push(c);
                 i += 1;
                 continue;
             }
-            if c == '}' && brace_depth > 0 {
+            if c == '}' && brace_depth > 0 && angle_depth == 0 {
                 brace_depth -= 1;
                 out.push(c);
                 i += 1;
