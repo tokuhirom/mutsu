@@ -429,7 +429,12 @@ impl Interpreter {
         //   - a pending alias bind to resolve, or a recorded bind pair that
         //     this slot is the SOURCE of (see `slot_is_bind_pair_source`),
         //   - an `is default(...)` value to substitute for a stored `Nil`,
-        //   - a typed lexical whose constraint has to be checked and coerced,
+        //   - a typed lexical whose constraint has to be checked and coerced —
+        //     asked PER NAME (`env_type_constraint_seen_for`), because the
+        //     whole-program latch makes one `my int` anywhere disqualify every
+        //     store in the program from this path (measured 2.5x on an
+        //     otherwise untyped loop). A slot with no symbol cannot be asked
+        //     per name, so it keeps the program-wide answer.
         //   - an atomic-variable cell to detach the name from,
         //   - a `state`/predictive-`Seq` closure-metadata key anywhere in the
         //     program,
@@ -443,7 +448,10 @@ impl Interpreter {
             || !self.pending_alias_bind_names.is_empty()
             || self.slot_is_bind_pair_source(idx)
             || self.has_var_defaults()
-            || Self::env_type_constraint_seen()
+            || match code.locals_sym.get(idx).copied() {
+                Some(sym) => Self::env_type_constraint_seen_for(sym),
+                None => Self::env_type_constraint_seen(),
+            }
             || crate::env::sigilless_readonly_keys_possible()
             || Self::atomic_var_seen_anywhere()
             || crate::env::closure_state_meta_keys_possible()

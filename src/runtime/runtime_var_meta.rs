@@ -26,6 +26,39 @@ static ATOMIC_VAR_SEEN: std::sync::atomic::AtomicBool = std::sync::atomic::Atomi
 static ENV_TYPE_CONSTRAINT_SEEN: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(false);
 
+/// How many `u64` words [`ENV_TYPE_CONSTRAINT_NAMES`] spreads name symbols
+/// over. A power of two so the index is a mask, not a division.
+const ENV_TYPE_CONSTRAINT_NAME_WORDS: usize = 16;
+
+/// Process-global, monotonic: which *names* have ever carried a type
+/// constraint, as a 1024-bit set of `Symbol::raw() % 1024`.
+///
+/// [`ENV_TYPE_CONSTRAINT_SEEN`] answers "does this PROGRAM have any typed
+/// lexical", which is the wrong question for a per-store gate: one `my int $i`
+/// anywhere latches it for good, and every store in the program then pays the
+/// typed-lexical cascade — an unrelated `my int` in an already-returned
+/// routine measured 2.5x on an otherwise untyped loop. This set answers "could
+/// THIS name carry one", which is what the store actually needs.
+///
+/// Collisions are by construction one-directional: a name whose bit is set by
+/// another name merely takes the same path it takes today, so the set can only
+/// ever move a store from the slow path to the fast one, never the reverse.
+/// It is never cleared, so dropping a constraint (the `None` arm of
+/// [`Interpreter::bind_param_type_constraint`], a scope exit) leaves the bit
+/// set — again conservative.
+static ENV_TYPE_CONSTRAINT_NAMES: [std::sync::atomic::AtomicU64; ENV_TYPE_CONSTRAINT_NAME_WORDS] =
+    [const { std::sync::atomic::AtomicU64::new(0) }; ENV_TYPE_CONSTRAINT_NAME_WORDS];
+
+/// The `(word, bit)` [`ENV_TYPE_CONSTRAINT_NAMES`] holds `name_sym` at.
+#[inline(always)]
+fn env_type_constraint_name_slot(name_sym: Symbol) -> (usize, u64) {
+    let raw = name_sym.raw() as usize;
+    (
+        (raw >> 6) & (ENV_TYPE_CONSTRAINT_NAME_WORDS - 1),
+        1u64 << (raw & 63),
+    )
+}
+
 impl Interpreter {
     pub(crate) fn env(&self) -> &Env {
         &self.env
@@ -226,8 +259,9 @@ impl Interpreter {
         if info.value_type == "atomicint" || constraint.contains("atomicint") {
             self.mark_atomic_var_seen();
         }
+        let name_sym = Symbol::intern(name);
         self.env.insert_sym_noting(
-            Self::type_meta_key_for_sym(Symbol::intern(name)),
+            Self::type_meta_key_for_sym(name_sym),
             Value::str(info.value_type),
         );
         // ADR-0042 slice 1: an object-hash's key type (`my %h{Int}`) must be
@@ -238,13 +272,13 @@ impl Interpreter {
         // hash. Without it a key-only object hash declared inside a routine
         // (now scoped since step 3 stopped excluding `%` from the scoped
         // opcode) silently lost key-type enforcement.
-        let hash_key_meta_key = Self::hash_key_meta_key_for_sym(Symbol::intern(name));
+        let hash_key_meta_key = Self::hash_key_meta_key_for_sym(name_sym);
         if let Some(key_type) = info.key_type {
             self.env.insert_sym(hash_key_meta_key, Value::str(key_type));
         } else {
             self.env.remove_sym(hash_key_meta_key);
         }
-        Self::mark_env_type_constraint_seen();
+        Self::mark_env_type_constraint_seen_for(name_sym);
     }
 
     fn set_var_type_constraint_impl(
@@ -265,7 +299,7 @@ impl Interpreter {
             }
             self.env
                 .insert_sym(meta_key, Value::str(info.value_type.clone()));
-            Self::mark_env_type_constraint_seen();
+            Self::mark_env_type_constraint_seen_for(name_sym);
             let hash_key_meta_key = Self::hash_key_meta_key_for_sym(name_sym);
             if let Some(key_type) = info.key_type.clone() {
                 self.env.insert_sym(hash_key_meta_key, Value::str(key_type));
@@ -290,10 +324,17 @@ impl Interpreter {
             // false no such env entry can exist to remove. Once it is set
             // (any program with one typed lexical) the two keys are the
             // per-name memoized symbols, not a `format!` + intern each.
+            // The whole-program latch first, so a program with no typed lexical
+            // at all still returns without interning the name; then the
+            // per-name bit, which clears the common case in a program that has
+            // one somewhere else.
             if !Self::env_type_constraint_seen() {
                 return;
             }
             let name_sym = name_sym.unwrap_or_else(|| Symbol::intern(name));
+            if !Self::env_type_constraint_seen_for(name_sym) {
+                return;
+            }
             self.env.remove_sym(Self::type_meta_key_for_sym(name_sym));
             self.env
                 .remove_sym(Self::hash_key_meta_key_for_sym(name_sym));
@@ -384,7 +425,7 @@ impl Interpreter {
                     self.mark_atomic_var_seen();
                 }
                 self.env.insert_sym(meta_key, Value::str(info.value_type));
-                Self::mark_env_type_constraint_seen();
+                Self::mark_env_type_constraint_seen_for(name_sym);
             }
             None => {
                 // An untyped scalar parameter shadows any same-named lexical: it
@@ -413,6 +454,9 @@ impl Interpreter {
         // Most programs declare no typed lexical at all; when the monotonic
         // flag is clear no `__mutsu_type::*` entry can exist, so skip the
         // intern + env probe entirely.
+        // The program-wide latch first (no intern when the program declares no
+        // typed lexical at all); `var_type_constraint_sym` then asks the same
+        // question per name.
         if !Self::env_type_constraint_seen() {
             return None;
         }
@@ -424,7 +468,10 @@ impl Interpreter {
     /// `SetGlobal` interns its constant once) probe this several times per
     /// store, and each `&str` probe re-hashed the name to find its symbol.
     pub(crate) fn var_type_constraint_sym(&self, name_sym: Symbol) -> Option<String> {
-        if !Self::env_type_constraint_seen() {
+        // Per NAME, not per program: in a program that declares any typed
+        // lexical at all the whole-program latch is permanently on, so every
+        // store of every *untyped* variable in it paid this env probe.
+        if !Self::env_type_constraint_seen_for(name_sym) {
             return None;
         }
         let meta_key = Self::type_meta_key_for_sym(name_sym);
@@ -492,11 +539,32 @@ impl Interpreter {
         ENV_TYPE_CONSTRAINT_SEEN.load(std::sync::atomic::Ordering::Relaxed)
     }
 
-    /// Latch [`Self::env_type_constraint_seen`]. Called at every
-    /// `__mutsu_type::*` / `__mutsu_hash_key_type::*` env-insert site.
+    /// Latch [`Self::env_type_constraint_seen`] and record `name_sym` in
+    /// [`ENV_TYPE_CONSTRAINT_NAMES`]. Called at every `__mutsu_type::*` /
+    /// `__mutsu_hash_key_type::*` env-insert site, which is why a gate may
+    /// trust a clear bit: no insert can have happened without passing here.
     #[inline(always)]
-    pub(crate) fn mark_env_type_constraint_seen() {
+    pub(crate) fn mark_env_type_constraint_seen_for(name_sym: Symbol) {
         ENV_TYPE_CONSTRAINT_SEEN.store(true, std::sync::atomic::Ordering::Relaxed);
+        let (word, bit) = env_type_constraint_name_slot(name_sym);
+        ENV_TYPE_CONSTRAINT_NAMES[word].fetch_or(bit, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    /// Whether a type constraint could ever have been registered *for this
+    /// name*. False means no `__mutsu_type::<name>` entry can exist, so a
+    /// store to it needs none of the typed-lexical machinery; true means
+    /// "maybe", and the caller does what it does today.
+    ///
+    /// This is the per-name replacement for [`Self::env_type_constraint_seen`]
+    /// on the hot store paths — see [`ENV_TYPE_CONSTRAINT_NAMES`] for why the
+    /// whole-program latch is the wrong question there.
+    #[inline(always)]
+    pub(crate) fn env_type_constraint_seen_for(name_sym: Symbol) -> bool {
+        if !Self::env_type_constraint_seen() {
+            return false;
+        }
+        let (word, bit) = env_type_constraint_name_slot(name_sym);
+        ENV_TYPE_CONSTRAINT_NAMES[word].load(std::sync::atomic::Ordering::Relaxed) & bit != 0
     }
 
     /// Whether any sigilless-parameter alias (`__mutsu_sigilless_alias::name` env
