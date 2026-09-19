@@ -1823,9 +1823,7 @@ impl Interpreter {
                     // applied any `use variables` pragma), so `implicit` cannot be
                     // recovered at this site — the TypeCheck opcode path reports it.
                     return Err(RuntimeError::missing_initializer(
-                        constraint,
-                        "variable",
-                        None,
+                        constraint, "variable", None,
                     ));
                 }
             }
@@ -1850,9 +1848,7 @@ impl Interpreter {
                 let check_val = bind_derefed.as_ref().unwrap_or(&val);
                 if !check_val.is_nil() && !self.type_matches_value(constraint, check_val) {
                     return Err(runtime::utils::type_check_assignment_typed_error(
-                        name,
-                        constraint,
-                        check_val,
+                        name, constraint, check_val,
                     ));
                 }
                 if !val.is_nil() {
