@@ -322,6 +322,17 @@ impl Interpreter {
                 return Ok(value);
             }
         }
+        // `%$raw-param = %source` / `@$raw-param = @source` are lowered to
+        // assignment through the parameter's `.hash` / `.list` lvalue.  The
+        // raw named parameter carries the caller's aggregate itself, not an
+        // Instance, so it must use the same in-place aggregate store as a raw
+        // routine return rather than falling through to the instance-only
+        // method lvalue diagnostic.
+        if matches!(method, "hash" | "list" | "array")
+            && let Some(stored) = self.store_into_aggregate_lvalue(&target, value.clone())
+        {
+            return Ok(stored);
+        }
         if let ValueView::Instance { class_name, .. } = target.view()
             && (class_name == "Date" || class_name == "DateTime")
         {

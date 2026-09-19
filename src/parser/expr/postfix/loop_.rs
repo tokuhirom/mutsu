@@ -2921,6 +2921,19 @@ fn postfix_expr_loop_from(
             if let Some((r, _dotted)) = hyper_index_input {
                 let (r, _) = ws(r)?;
                 if let Some(after) = r.strip_prefix(']') {
+                    // An empty hyper subscript decontainerizes each element;
+                    // `@header>>[].flat` is the idiom used by
+                    // Data::StaticTable to flatten a selected row.  The plain
+                    // `[]` form is represented by `ZenSlice`, but the hyper
+                    // form needs a per-element operation so it cannot be a
+                    // no-op here.
+                    expr = Expr::HyperMethodCall {
+                        target: Box::new(expr),
+                        name: Symbol::intern("__mutsu_hyper_zen"),
+                        args: Vec::new(),
+                        modifier: None,
+                        quoted: false,
+                    };
                     rest = after;
                     continue;
                 }

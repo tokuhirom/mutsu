@@ -531,6 +531,12 @@ impl Interpreter {
             RuntimeError::new("Interpreter stack underflow in HyperMethodCall target")
         })?;
         let (target, target_was_itemized) = Self::hyper_target(target);
+        if arity == 0 && !quoted && method_raw == "__mutsu_hyper_zen" {
+            let items = hyper_source_items(&target);
+            let result = items.into_iter().map(Value::deitemize_element).collect();
+            self.stack.push(Value::array(result));
+            return Ok(());
+        }
         // The metaobject introspectors are *not* hyper-dispatched in Rakudo:
         // they are compiled as special forms, so `@a>>.WHAT` applies to the
         // Array itself (`Array`, not a per-element list of `Int`s), and a Seq

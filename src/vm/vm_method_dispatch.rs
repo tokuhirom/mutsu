@@ -1769,7 +1769,7 @@ impl Interpreter {
                     val = val.detach_shared_container();
                 }
                 if let Some(constraint) = pd.and_then(|pd| pd.type_constraint.as_ref())
-                    && !self.type_matches_value(constraint, &val)
+                    && !self.type_matches_value(&self.resolved_type_capture_name(constraint), &val)
                 {
                     // Type mismatch — fall back to slow path for proper error
                     self.restore_var_bindings(saved_var_bindings);

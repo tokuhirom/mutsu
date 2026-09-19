@@ -838,7 +838,17 @@ impl Interpreter {
         // registration uses. The short key stays in `subsets` because most
         // constraint lookups are by the exact name written at the use site.
         let mut canonical = name.to_string();
-        if !is_my && !name.contains("::") && !pkg.is_empty() && pkg != "GLOBAL" && pkg != "Main" {
+        // A compound name written inside a package is still relative to that
+        // package.  `subset Table::Position` inside `module M` is therefore
+        // `M::Table::Position`, not a top-level `Table::Position`.  The old
+        // bare-name-only qualification happened to handle `subset Small` but
+        // left compound names detached from their declaring package.  That
+        // made the package-qualified type object differ from the one stored
+        // in a typed signature (and, in turn, caused valid subset parameters
+        // to be rejected during dispatch).
+        let already_qualified =
+            name == pkg || name.starts_with(&format!("{}::", pkg)) || name.starts_with("GLOBAL::");
+        if !is_my && !already_qualified && !pkg.is_empty() && pkg != "GLOBAL" && pkg != "Main" {
             let qualified = format!("{}::{}", pkg, name);
             self.subset_predicate_cache.remove(&qualified);
             self.registry_mut()
@@ -849,6 +859,26 @@ impl Interpreter {
                 Value::package(Symbol::intern(&qualified)),
             );
             canonical = qualified;
+        }
+        // Keep the final name available by its leaf inside the declaring
+        // package.  Method signatures use that short spelling (`Position` in
+        // `class StaticTable`), while the registry stores the canonical
+        // package-qualified subset.  Package-key the alias just like nested
+        // classes, so it remains visible to the package's methods without
+        // leaking a global short name.
+        if !is_my
+            && !pkg.is_empty()
+            && pkg != "GLOBAL"
+            && pkg != "Main"
+            && let Some((_, short)) = canonical.rsplit_once("::")
+            && !short.is_empty()
+            && !Self::is_builtin_type(short)
+        {
+            crate::runtime::cow_table_mut(&mut self.package_type_aliases)
+                .entry(pkg.clone())
+                .or_default()
+                .entry(short.to_string())
+                .or_insert_with(|| canonical.clone());
         }
         self.registry_mut().subsets.insert(name.to_string(), def);
         self.env
