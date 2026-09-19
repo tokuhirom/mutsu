@@ -101,6 +101,18 @@ impl Interpreter {
                 pd.type_constraint = Some(tc.replace("::?CLASS", cx.name));
             }
         }
+        // A nested class's short name in a method type constraint is private
+        // to its declaring class (`Docker::File::Label` written as `Label`).
+        // Qualify it once in the stored method signature so dispatch does not
+        // perform package resolution on every invocation.
+        for pd in effective_param_defs.iter_mut() {
+            if let Some(tc) = &pd.type_constraint {
+                let resolved = self.resolve_method_type_name(cx.name, tc);
+                if resolved != *tc {
+                    pd.type_constraint = Some(resolved);
+                }
+            }
+        }
         // Raku methods never get an implicit `*@_` (unlike subs) -- a
         // signature-less method body that reads a bare `@_` directly (ADR-
         // 0019 D3-9's precomputed `uses_bare_positional_args`, so this reads

@@ -124,6 +124,12 @@ impl Interpreter {
                         Err(_) => val.clone(),
                     }
                 }
+                ValueView::Seq(items) => {
+                    match crate::runtime::utils::build_hash_from_items(items.to_vec()) {
+                        Ok(h) => h,
+                        Err(_) => val.clone(),
+                    }
+                }
                 _ => val.clone(),
             },
             _ => val,
