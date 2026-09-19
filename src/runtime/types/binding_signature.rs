@@ -2120,18 +2120,488 @@ impl Interpreter {
                     }
                 }
             } else if pd.named || pd.name.starts_with(':') {
-                let pd_name_sym = pd_name_sym();
-                self.bind_named_function_arg(
-                    pd,
-                    param_defs,
-                    param_idx,
-                    args,
-                    arg_sources.as_ref(),
-                    binding_name,
-                    pd_name_sym,
-                    &mut container_param_sources,
-                    &mut rw_bindings,
-                )?;
+                // Look for a matching named argument (Pair) in args
+                // Rakudo does not enforce a named parameter's nominal or
+                // callable-return constraint when it follows a positional
+                // slurpy. This is observable with `sub f(*@items, Callable
+                // :&by)`: the named callback is intentionally accepted as
+                // an unconstrained value. A `where` constraint remains an
+                // explicit runtime check and therefore keeps the normal
+                // binding path.
+                let enforce_named_constraints = pd.where_constraint.is_some()
+                    || !param_defs[..param_idx]
+                        .iter()
+                        .any(|candidate| candidate.slurpy);
+                let match_key = if pd.name.starts_with(':') {
+                    &pd.name[1..]
+                } else if let Some(rest) = pd
+                    .name
+                    .strip_prefix("@:")
+                    .or_else(|| pd.name.strip_prefix("%:"))
+                {
+                    rest
+                } else if pd.named {
+                    // Named params like :@l, :%h or :&c have name "@l", "%h" or
+                    // "&c"; strip the sigil to match the Pair key "l", "h", "c".
+                    // Also strip twigil prefixes: :$!x has name "!x", :$.x has name ".x",
+                    // :@!types has name "@!types" -- match against Pair key "types".
+                    // First strip sigil (@, %, &), then strip twigil (!, .).
+                    let after_sigil = pd
+                        .name
+                        .strip_prefix('@')
+                        .or_else(|| pd.name.strip_prefix('%'))
+                        .or_else(|| pd.name.strip_prefix('&'))
+                        .unwrap_or(&pd.name);
+                    after_sigil
+                        .strip_prefix('!')
+                        .or_else(|| after_sigil.strip_prefix('.'))
+                        .unwrap_or(after_sigil)
+                } else {
+                    &pd.name
+                };
+                let mut found = false;
+                // Iterate in reverse so that the rightmost named argument wins
+                // when the same key is provided multiple times.
+                for (arg_idx, raw_arg) in args.iter().enumerate().rev() {
+                    let arg = unwrap_varref_value(raw_arg.clone());
+                    if let ValueView::Pair(key, val) = arg.view()
+                        && key == match_key
+                    {
+                        if enforce_named_constraints
+                            && let Some((sig_params, sig_ret)) = &pd.code_signature
+                            && !code_signature_matches_value(self, sig_params, sig_ret, val)
+                        {
+                            let expected = Self::signature_constraint_for_error(sig_params);
+                            let got = self.callable_signature_for_error(val);
+                            return Err(RuntimeError::typecheck_binding_parameter_signature(
+                                &param_display_name(pd),
+                                &expected,
+                                &got,
+                            )
+                            .with_parameter_object(pd, Some(&*self)));
+                        }
+                        // Slice 2d (named follow-up): an `@`/`%` *variable* passed by
+                        // name to a plain readonly scalar `$` named param binds the
+                        // same mutable container in Raku (`sub f(:$n){ $n.push }`
+                        // mutates the caller's `@a`), exactly like the positional
+                        // case. The source variable name is encoded "key=source" in
+                        // `arg_sources` (`positional_arg_source_name`). Promote the
+                        // bound value to a shared `ContainerRef` cell and register the
+                        // exit-time rw writeback. Only `=` rebinding stays forbidden
+                        // (named scalar params are readonly). A `$`-scalar source
+                        // (`:$n` shorthand over `my $n = @a`) is excluded — it shares
+                        // by reference already, like the positional scalar source.
+                        let mut bound_value = val.clone();
+                        // Supplied `@`/`%` named param bound from a caller
+                        // container variable: record the source for the
+                        // container-descriptor `.name` pass at the end.
+                        if (pd.name.starts_with('@') || pd.name.starts_with('%'))
+                            && !pd.name[1..].starts_with(['!', '.'])
+                            && let Some(source_name) = arg_sources
+                                .as_ref()
+                                .and_then(|names| names.get(arg_idx))
+                                .and_then(|n| n.as_ref())
+                                .and_then(|encoded| {
+                                    encoded.split_once('=').map(|(_, s)| s.to_string())
+                                })
+                                .or_else(|| {
+                                    varref_from_value(val).map(|(name, _)| name.to_string())
+                                })
+                                .filter(|s| s.starts_with('@') || s.starts_with('%'))
+                        {
+                            container_param_sources.push((pd.name.clone(), source_name));
+                        }
+                        // A named param's declared type constraint (built-in,
+                        // user class, or user `subset`) must be enforced here
+                        // too — this used to be positional-only (see
+                        // todo/tickets/named-parameter-user-subset-type-not-
+                        // enforced-at-binding.md), so `sub f(Int :$x!) {};
+                        // f(x => "no")` silently bound the mismatched Str.
+                        // Checked against the raw passed value, before any
+                        // container-sharing/rw promotion below.
+                        if enforce_named_constraints {
+                            bound_value =
+                                self.check_and_coerce_param_type(pd, bound_value, None, None)?;
+                        }
+                        // A named hash parameter (`:%params`) collects the
+                        // entries nested in its named argument into a Hash.
+                        // The call `f(:params(query => 'value'))` arrives here
+                        // as the Pair `query => 'value'`; binding that Pair
+                        // directly leaves `%params` as a Pair, so later
+                        // mutations or hash iteration lose the named-hash
+                        // semantics. A real Hash is already in the desired
+                        // form (for example `f(:params(%options))`).
+                        if pd.name == "%"
+                            || (pd.name.starts_with('%')
+                                && pd.traits.iter().any(|trait_name| trait_name == "copy"))
+                        {
+                            let entries = match bound_value.view() {
+                                ValueView::Pair(key, value) => {
+                                    let mut entries = ValueMap::default();
+                                    entries.insert(key.clone(), value.clone());
+                                    Some(entries)
+                                }
+                                ValueView::ValuePair(key, value) => {
+                                    let mut entries = ValueMap::default();
+                                    entries.insert(key.to_string_value(), value.clone());
+                                    Some(entries)
+                                }
+                                ValueView::Array(items, _) => {
+                                    let mut entries = ValueMap::default();
+                                    for item in items.iter() {
+                                        match item.view() {
+                                            ValueView::Pair(key, value) => {
+                                                entries.insert(key.clone(), value.clone());
+                                            }
+                                            ValueView::ValuePair(key, value) => {
+                                                entries
+                                                    .insert(key.to_string_value(), value.clone());
+                                            }
+                                            _ => {}
+                                        }
+                                    }
+                                    Some(entries)
+                                }
+                                ValueView::Seq(items) => {
+                                    let mut entries = ValueMap::default();
+                                    for item in items.iter() {
+                                        match item.view() {
+                                            ValueView::Pair(key, value) => {
+                                                entries.insert(key.clone(), value.clone());
+                                            }
+                                            ValueView::ValuePair(key, value) => {
+                                                entries
+                                                    .insert(key.to_string_value(), value.clone());
+                                            }
+                                            _ => {}
+                                        }
+                                    }
+                                    Some(entries)
+                                }
+                                _ => None,
+                            };
+                            if let Some(entries) = entries {
+                                bound_value = Value::hash_bare_values(entries);
+                            }
+                        }
+                        // Named `is copy` container param: own a distinct
+                        // container, exactly like the positional arm — and give
+                        // the fresh copy the "element" descriptor name (rakudo:
+                        // `sub g(:@kh is copy)` bound to `@x` reports "element").
+                        if (pd.name.starts_with('@') || pd.name.starts_with('%'))
+                            && !pd.name[1..].starts_with(['!', '.'])
+                            && pd.traits.iter().any(|t| t == "copy")
+                            && matches!(
+                                bound_value.view(),
+                                ValueView::Array(..) | ValueView::Hash(..)
+                            )
+                        {
+                            bound_value = bound_value.detach_shared_container();
+                            if pd.name.starts_with('@')
+                                && let ValueView::Array(
+                                    gc,
+                                    crate::value::ArrayKind::List
+                                    | crate::value::ArrayKind::ItemList,
+                                ) = bound_value.view()
+                            {
+                                bound_value = Value::array_with_kind(
+                                    crate::gc::Gc::new((*gc).as_ref().clone()),
+                                    crate::value::ArrayKind::Array,
+                                );
+                            }
+                            bound_value.stamp_descriptor_name("element");
+                        }
+                        if self.named_scalar_container_share_eligible(pd)
+                            && matches!(
+                                bound_value.view(),
+                                ValueView::Array(..) | ValueView::Hash(..)
+                            )
+                            && let Some(source_name) = arg_sources
+                                .as_ref()
+                                .and_then(|names| names.get(arg_idx))
+                                .and_then(|n| n.as_ref())
+                                .and_then(|encoded| {
+                                    encoded.split_once('=').map(|(_, s)| s.to_string())
+                                })
+                                .filter(|s| s.starts_with('@') || s.starts_with('%'))
+                        {
+                            bound_value = Value::container_ref_itemized(crate::gc::Gc::new(
+                                crate::value::ContainerCell::new(bound_value),
+                            ));
+                            rw_bindings.push((pd.name.clone(), source_name));
+                        }
+                        // A named `is rw`/`is raw` scalar param aliases the
+                        // caller's variable through a shared `ContainerRef`
+                        // cell, exactly like the positional arm (raku requires
+                        // such a param to be non-optional, and rejects a
+                        // non-writable argument at bind time). The caller
+                        // source arrives as the "key=source" encoding in
+                        // `arg_sources`, or as a VarRef wrapper on the Pair's
+                        // value.
+                        let named_is_rw = pd.traits.iter().any(|t| t == "rw");
+                        let named_is_raw = pd.traits.iter().any(|t| t == "raw");
+                        let named_plain_scalar = pd.sub_signature.is_none()
+                            && pd.name != "_"
+                            && pd
+                                .name
+                                .as_bytes()
+                                .first()
+                                .is_some_and(|b| b.is_ascii_alphabetic() || *b == b'_');
+                        if (named_is_rw || named_is_raw) && named_plain_scalar {
+                            let source_name = arg_sources
+                                .as_ref()
+                                .and_then(|names| names.get(arg_idx))
+                                .and_then(|n| n.as_ref())
+                                .and_then(|encoded| {
+                                    encoded.split_once('=').map(|(_, s)| s.to_string())
+                                })
+                                .or_else(|| {
+                                    varref_from_value(raw_arg)
+                                        .map(|(name, _)| name)
+                                        .or_else(|| varref_from_value(val).map(|(name, _)| name))
+                                })
+                                .filter(|s| {
+                                    s.as_bytes()
+                                        .first()
+                                        .is_some_and(|b| b.is_ascii_alphabetic() || *b == b'_')
+                                });
+                            if let Some(src) = source_name {
+                                rw_bindings.push((pd.name.clone(), src.clone()));
+                                let existing = self
+                                    .env
+                                    .get(&src)
+                                    .filter(|v| matches!(v.view(), ValueView::ContainerRef(_)))
+                                    .cloned();
+                                bound_value = match existing {
+                                    Some(cell) => cell,
+                                    None => {
+                                        let cell = if matches!(
+                                            bound_value.view(),
+                                            ValueView::ContainerRef(_)
+                                        ) {
+                                            bound_value
+                                        } else {
+                                            Value::container_ref(crate::gc::Gc::new(
+                                                crate::value::ContainerCell::new(bound_value),
+                                            ))
+                                        };
+                                        self.env.insert(src, cell.clone());
+                                        cell
+                                    }
+                                };
+                            } else if matches!(bound_value.view(), ValueView::ContainerRef(_)) {
+                                // A bare cell IS a writable lvalue (mirrors the
+                                // positional arm's deepmap/hyper case).
+                            } else if named_is_rw {
+                                return Err(RuntimeError::parameter_rw_not_container(
+                                    &param_display_name(pd),
+                                    &bound_value,
+                                ));
+                            }
+                            // is raw with a non-lvalue: binds readonly (the
+                            // trait pass below keeps raw params writable, which
+                            // matches the positional arm's behavior for now).
+                        }
+                        // A named alias param `:min(:$minutes)` names a caller key
+                        // only; its OWN name (`min`) is NOT a body variable
+                        // (raku: `min` in the body resolves to the outer
+                        // routine/constant, not the argument). Named variable
+                        // parameters such as `:$value ($item)` bind both the
+                        // outer value and the destructured leaves. The parser's
+                        // `named_alias` flag distinguishes these forms.
+                        if let Some(sub_params) = &pd.sub_signature {
+                            // A named variable with a sub-signature, such as
+                            // `:$foo [$first, *@rest]`, is a real destructuring
+                            // signature. The parser records the distinct
+                            // `:foo($value)` alias form in `named_alias`; use that
+                            // source-level distinction instead of the parameter's
+                            // sigil here. Treating a variable destructure as an
+                            // alias binds every inner scalar to the whole value
+                            // and skips the inner slurpy entirely.
+                            if !pd.named_alias {
+                                self.bind_param_value_sym(
+                                    binding_name,
+                                    pd_name_sym(),
+                                    bound_value.clone(),
+                                );
+                                self.bind_param_type_constraint_sym(
+                                    binding_name,
+                                    pd_name_sym(),
+                                    pd.assignment_type_constraint(),
+                                );
+                                bind_sub_signature_from_value(self, sub_params, &bound_value)?;
+                            } else {
+                                bind_named_rename_sub_signature(self, sub_params, val, &pd.traits)?;
+                            }
+                        } else {
+                            // Named `$` params are item bindings too (raku:
+                            // `f(v => [1,2])` binds `$v` as `$[1, 2]`); rw
+                            // cells pass through untouched.
+                            let bound_value = Self::itemize_plain_scalar_param(pd, bound_value);
+                            self.bind_param_value_sym(binding_name, pd_name_sym(), bound_value);
+                            self.bind_param_type_constraint_sym(
+                                binding_name,
+                                pd_name_sym(),
+                                pd.assignment_type_constraint(),
+                            );
+                        }
+                        found = true;
+                        break;
+                    }
+                }
+                // Alias matching: for :a(:$b), also accept b => val. A nested
+                // chain (`:variety(:style(:sort($x)))`) lets the caller use any
+                // level's name, so match against every alias key down the chain.
+                if !found
+                    && pd.named_alias
+                    && let Some(sub_params) = &pd.sub_signature
+                {
+                    let alias_keys = collect_nested_named_alias_keys(sub_params);
+                    'alias: for inner_key in &alias_keys {
+                        for arg in args.iter().rev() {
+                            let arg = unwrap_varref_value(arg.clone());
+                            if let ValueView::Pair(key, inner_val) = arg.view()
+                                && key == inner_key.as_str()
+                            {
+                                // Rename param: bind only the leaf variable, not
+                                // the param's own name (see the primary-match
+                                // branch above).
+                                bind_named_rename_sub_signature(
+                                    self, sub_params, inner_val, &pd.traits,
+                                )?;
+                                found = true;
+                                break 'alias;
+                            }
+                        }
+                    }
+                }
+                if !found && let Some(default_expr) = &pd.default {
+                    let value = self.eval_param_default(pd, default_expr)?;
+                    let value = self.checked_default_param_value(pd, value)?;
+                    let mut value = if pd.captured_type_name().is_some() {
+                        self.normalize_type_capture_value(value)
+                    } else {
+                        value
+                    };
+                    // A default bound to an `@`/`%` parameter follows the
+                    // same copy semantics as a supplied named argument. In
+                    // particular, `:@units is copy = %Units{$set}` must
+                    // receive an independent mutable Array, or a callee that
+                    // normalizes its elements mutates the package-global
+                    // default and the next call sees corrupted units.
+                    if (pd.name.starts_with('@') || pd.name.starts_with('%'))
+                        && pd.traits.iter().any(|trait_name| trait_name == "copy")
+                        && matches!(value.view(), ValueView::Array(..) | ValueView::Hash(..))
+                    {
+                        value = value.detach_shared_container();
+                        if pd.name.starts_with('@')
+                            && let ValueView::Array(
+                                gc,
+                                crate::value::ArrayKind::List | crate::value::ArrayKind::ItemList,
+                            ) = value.view()
+                        {
+                            value = Value::array_with_kind(
+                                crate::gc::Gc::new((*gc).as_ref().clone()),
+                                crate::value::ArrayKind::Array,
+                            );
+                        }
+                        value.stamp_descriptor_name("element");
+                    }
+                    if let Some((sig_params, sig_ret)) = &pd.code_signature
+                        && !code_signature_matches_value(self, sig_params, sig_ret, &value)
+                    {
+                        let expected = Self::signature_constraint_for_error(sig_params);
+                        let got = self.callable_signature_for_error(&value);
+                        return Err(RuntimeError::typecheck_binding_parameter_signature(
+                            &param_display_name(pd),
+                            &expected,
+                            &got,
+                        )
+                        .with_parameter_object(pd, Some(&*self)));
+                    }
+                    // A named alias param `:min(:$minutes)` binds only its leaf
+                    // variable (below); its own name is a caller key, not a body
+                    // variable. A named variable with a destructuring
+                    // sub-signature binds the outer parameter too.
+                    let is_rename = pd.named_alias;
+                    if let Some(captured_name) = pd.captured_type_name() {
+                        self.bind_type_capture(captured_name, &value);
+                        if !pd.name.is_empty() && !is_rename {
+                            self.bind_param_value_sym(binding_name, pd_name_sym(), value.clone());
+                            self.bind_param_type_constraint_sym(
+                                binding_name,
+                                pd_name_sym(),
+                                pd.assignment_type_constraint(),
+                            );
+                        }
+                    } else if !pd.name.is_empty() && !is_rename {
+                        self.bind_param_value_sym(binding_name, pd_name_sym(), value.clone());
+                        self.bind_param_type_constraint_sym(
+                            binding_name,
+                            pd_name_sym(),
+                            pd.assignment_type_constraint(),
+                        );
+                    }
+                    // For renamed named params like :foo($y) = $x, also bind the
+                    // sub-signature variable ($y) to the default value.
+                    if let Some(sub_params) = &pd.sub_signature {
+                        bind_named_rename_sub_signature(
+                            self,
+                            sub_params,
+                            &Box::new(value),
+                            &pd.traits,
+                        )?;
+                    }
+                } else if !found && pd.required {
+                    // A missing required named parameter is a runtime X::AdHoc in
+                    // Raku (not the compile-time arity X::TypeCheck::Argument that
+                    // a missing positional yields). Carry the typed exception so it
+                    // surfaces as X::AdHoc instead of the bare "Exception" default.
+                    return Err(RuntimeError::typed_msg(
+                        "X::AdHoc",
+                        format!("Required named parameter '{}' not passed", pd.name),
+                    ));
+                } else if !found && !pd.name.is_empty() {
+                    // An unsupplied optional named param binds its default (the
+                    // signature default expr, or the type object). It must do so
+                    // even when `self.env` ALREADY holds a value under the param
+                    // name: the callee's env is an overlay over the caller's, so a
+                    // caller's same-named named arg (`outer(:section)` calling
+                    // `inner()` whose `:$section` is unsupplied) is visible here and
+                    // would otherwise LEAK into the callee (Template::Mustache's
+                    // recursive `get(:section)` -> `format` -> `get(:encode)` had
+                    // the inner `$section` read the outer True). The one legitimate
+                    // pre-population is a BUILD/TWEAK submethod, whose attribute
+                    // bindings live under twigil'd keys (`$!x`/`!x`), not the bare
+                    // param name — so binding the default here does not disturb them.
+                    let value = Self::missing_optional_param_value(pd);
+                    // A named alias binds only its leaf variable (below); skip
+                    // binding the parameter's own name in that form.
+                    if !pd.named_alias {
+                        self.bind_param_value_sym(binding_name, pd_name_sym(), value.clone());
+                        self.bind_param_type_constraint_sym(
+                            binding_name,
+                            pd_name_sym(),
+                            pd.assignment_type_constraint(),
+                        );
+                    }
+                    // A `:color(:$colour)` alias chain declares its inner
+                    // variable(s); bind them to the same unsupplied default so
+                    // the body's `$colour` read finds an (undefined) value
+                    // instead of throwing "not declared".
+                    if let Some(sub_params) = &pd.sub_signature {
+                        bind_named_rename_sub_signature(self, sub_params, &value, &pd.traits)?;
+                    }
+                }
+                // Check the where constraint against the *bound* value, whether it
+                // came from the supplied argument, the parameter default, or the
+                // type-object fallback for an unsupplied optional named param. Raku
+                // checks `:version($) where .so` even with no `--version` (the topic
+                // is then the `Bool` type object, so `.so` is False and the candidate
+                // is rejected) -- gating this on `found` skipped that case.
+                if pd.where_constraint.is_some() {
+                    self.check_named_param_where_constraint(pd, binding_name)?;
+                }
             } else if pd.is_capture_subsignature()
                 && let Some(sub_params) = &pd.sub_signature
             {
@@ -3215,513 +3685,5 @@ impl Interpreter {
         }
         self.fold_rw_writeback_slots(&rw_bindings, &arg_source_slots);
         Ok(rw_bindings)
-    }
-
-    // Named-argument binding for one signature parameter (`pd.named`, or a
-    // `:`-prefixed positional-as-named alias). Split out of
-    // `bind_function_args_values_inner` so that growing this branch's logic
-    // no longer perturbs the giant function's codegen for its positional/
-    // slurpy paths -- adding ~25 lines here (the `is copy` default-value fix
-    // for #8796) measurably regressed bench-array's instruction count
-    // (+16%, see bench-det-history.tsv commit 6be07a45) even though that
-    // branch never executes for a positional-only call; `#[inline(never)]`
-    // keeps it that way by construction rather than by accident of function
-    // size.
-    #[inline(never)]
-    fn bind_named_function_arg(
-        &mut self,
-        pd: &ParamDef,
-        param_defs: &[ParamDef],
-        param_idx: usize,
-        args: &[Value],
-        arg_sources: Option<&Vec<Option<String>>>,
-        binding_name: &str,
-        pd_name_sym: Symbol,
-        container_param_sources: &mut Vec<(String, String)>,
-        rw_bindings: &mut Vec<(String, String)>,
-    ) -> Result<(), RuntimeError> {
-        // Look for a matching named argument (Pair) in args
-        // Rakudo does not enforce a named parameter's nominal or
-        // callable-return constraint when it follows a positional
-        // slurpy. This is observable with `sub f(*@items, Callable
-        // :&by)`: the named callback is intentionally accepted as
-        // an unconstrained value. A `where` constraint remains an
-        // explicit runtime check and therefore keeps the normal
-        // binding path.
-        let enforce_named_constraints = pd.where_constraint.is_some()
-            || !param_defs[..param_idx]
-                .iter()
-                .any(|candidate| candidate.slurpy);
-        let match_key = if pd.name.starts_with(':') {
-            &pd.name[1..]
-        } else if let Some(rest) = pd
-            .name
-            .strip_prefix("@:")
-            .or_else(|| pd.name.strip_prefix("%:"))
-        {
-            rest
-        } else if pd.named {
-            // Named params like :@l, :%h or :&c have name "@l", "%h" or
-            // "&c"; strip the sigil to match the Pair key "l", "h", "c".
-            // Also strip twigil prefixes: :$!x has name "!x", :$.x has name ".x",
-            // :@!types has name "@!types" -- match against Pair key "types".
-            // First strip sigil (@, %, &), then strip twigil (!, .).
-            let after_sigil = pd
-                .name
-                .strip_prefix('@')
-                .or_else(|| pd.name.strip_prefix('%'))
-                .or_else(|| pd.name.strip_prefix('&'))
-                .unwrap_or(&pd.name);
-            after_sigil
-                .strip_prefix('!')
-                .or_else(|| after_sigil.strip_prefix('.'))
-                .unwrap_or(after_sigil)
-        } else {
-            &pd.name
-        };
-        let mut found = false;
-        // Iterate in reverse so that the rightmost named argument wins
-        // when the same key is provided multiple times.
-        for (arg_idx, raw_arg) in args.iter().enumerate().rev() {
-            let arg = unwrap_varref_value(raw_arg.clone());
-            if let ValueView::Pair(key, val) = arg.view()
-                && key == match_key
-            {
-                if enforce_named_constraints
-                    && let Some((sig_params, sig_ret)) = &pd.code_signature
-                    && !code_signature_matches_value(self, sig_params, sig_ret, val)
-                {
-                    let expected = Self::signature_constraint_for_error(sig_params);
-                    let got = self.callable_signature_for_error(val);
-                    return Err(RuntimeError::typecheck_binding_parameter_signature(
-                        &param_display_name(pd),
-                        &expected,
-                        &got,
-                    )
-                    .with_parameter_object(pd, Some(&*self)));
-                }
-                // Slice 2d (named follow-up): an `@`/`%` *variable* passed by
-                // name to a plain readonly scalar `$` named param binds the
-                // same mutable container in Raku (`sub f(:$n){ $n.push }`
-                // mutates the caller's `@a`), exactly like the positional
-                // case. The source variable name is encoded "key=source" in
-                // `arg_sources` (`positional_arg_source_name`). Promote the
-                // bound value to a shared `ContainerRef` cell and register the
-                // exit-time rw writeback. Only `=` rebinding stays forbidden
-                // (named scalar params are readonly). A `$`-scalar source
-                // (`:$n` shorthand over `my $n = @a`) is excluded — it shares
-                // by reference already, like the positional scalar source.
-                let mut bound_value = val.clone();
-                // Supplied `@`/`%` named param bound from a caller
-                // container variable: record the source for the
-                // container-descriptor `.name` pass at the end.
-                if (pd.name.starts_with('@') || pd.name.starts_with('%'))
-                    && !pd.name[1..].starts_with(['!', '.'])
-                    && let Some(source_name) = arg_sources
-                        .as_ref()
-                        .and_then(|names| names.get(arg_idx))
-                        .and_then(|n| n.as_ref())
-                        .and_then(|encoded| {
-                            encoded.split_once('=').map(|(_, s)| s.to_string())
-                        })
-                        .or_else(|| {
-                            varref_from_value(val).map(|(name, _)| name.to_string())
-                        })
-                        .filter(|s| s.starts_with('@') || s.starts_with('%'))
-                {
-                    container_param_sources.push((pd.name.clone(), source_name));
-                }
-                // A named param's declared type constraint (built-in,
-                // user class, or user `subset`) must be enforced here
-                // too — this used to be positional-only (see
-                // todo/tickets/named-parameter-user-subset-type-not-
-                // enforced-at-binding.md), so `sub f(Int :$x!) {};
-                // f(x => "no")` silently bound the mismatched Str.
-                // Checked against the raw passed value, before any
-                // container-sharing/rw promotion below.
-                if enforce_named_constraints {
-                    bound_value =
-                        self.check_and_coerce_param_type(pd, bound_value, None, None)?;
-                }
-                // A named hash parameter (`:%params`) collects the
-                // entries nested in its named argument into a Hash.
-                // The call `f(:params(query => 'value'))` arrives here
-                // as the Pair `query => 'value'`; binding that Pair
-                // directly leaves `%params` as a Pair, so later
-                // mutations or hash iteration lose the named-hash
-                // semantics. A real Hash is already in the desired
-                // form (for example `f(:params(%options))`).
-                if pd.name == "%"
-                    || (pd.name.starts_with('%')
-                        && pd.traits.iter().any(|trait_name| trait_name == "copy"))
-                {
-                    let entries = match bound_value.view() {
-                        ValueView::Pair(key, value) => {
-                            let mut entries = ValueMap::default();
-                            entries.insert(key.clone(), value.clone());
-                            Some(entries)
-                        }
-                        ValueView::ValuePair(key, value) => {
-                            let mut entries = ValueMap::default();
-                            entries.insert(key.to_string_value(), value.clone());
-                            Some(entries)
-                        }
-                        ValueView::Array(items, _) => {
-                            let mut entries = ValueMap::default();
-                            for item in items.iter() {
-                                match item.view() {
-                                    ValueView::Pair(key, value) => {
-                                        entries.insert(key.clone(), value.clone());
-                                    }
-                                    ValueView::ValuePair(key, value) => {
-                                        entries
-                                            .insert(key.to_string_value(), value.clone());
-                                    }
-                                    _ => {}
-                                }
-                            }
-                            Some(entries)
-                        }
-                        ValueView::Seq(items) => {
-                            let mut entries = ValueMap::default();
-                            for item in items.iter() {
-                                match item.view() {
-                                    ValueView::Pair(key, value) => {
-                                        entries.insert(key.clone(), value.clone());
-                                    }
-                                    ValueView::ValuePair(key, value) => {
-                                        entries
-                                            .insert(key.to_string_value(), value.clone());
-                                    }
-                                    _ => {}
-                                }
-                            }
-                            Some(entries)
-                        }
-                        _ => None,
-                    };
-                    if let Some(entries) = entries {
-                        bound_value = Value::hash_bare_values(entries);
-                    }
-                }
-                // Named `is copy` container param: own a distinct
-                // container, exactly like the positional arm — and give
-                // the fresh copy the "element" descriptor name (rakudo:
-                // `sub g(:@kh is copy)` bound to `@x` reports "element").
-                if (pd.name.starts_with('@') || pd.name.starts_with('%'))
-                    && !pd.name[1..].starts_with(['!', '.'])
-                    && pd.traits.iter().any(|t| t == "copy")
-                    && matches!(
-                        bound_value.view(),
-                        ValueView::Array(..) | ValueView::Hash(..)
-                    )
-                {
-                    bound_value = bound_value.detach_shared_container();
-                    if pd.name.starts_with('@')
-                        && let ValueView::Array(
-                            gc,
-                            crate::value::ArrayKind::List
-                            | crate::value::ArrayKind::ItemList,
-                        ) = bound_value.view()
-                    {
-                        bound_value = Value::array_with_kind(
-                            crate::gc::Gc::new((*gc).as_ref().clone()),
-                            crate::value::ArrayKind::Array,
-                        );
-                    }
-                    bound_value.stamp_descriptor_name("element");
-                }
-                if self.named_scalar_container_share_eligible(pd)
-                    && matches!(
-                        bound_value.view(),
-                        ValueView::Array(..) | ValueView::Hash(..)
-                    )
-                    && let Some(source_name) = arg_sources
-                        .as_ref()
-                        .and_then(|names| names.get(arg_idx))
-                        .and_then(|n| n.as_ref())
-                        .and_then(|encoded| {
-                            encoded.split_once('=').map(|(_, s)| s.to_string())
-                        })
-                        .filter(|s| s.starts_with('@') || s.starts_with('%'))
-                {
-                    bound_value = Value::container_ref_itemized(crate::gc::Gc::new(
-                        crate::value::ContainerCell::new(bound_value),
-                    ));
-                    rw_bindings.push((pd.name.clone(), source_name));
-                }
-                // A named `is rw`/`is raw` scalar param aliases the
-                // caller's variable through a shared `ContainerRef`
-                // cell, exactly like the positional arm (raku requires
-                // such a param to be non-optional, and rejects a
-                // non-writable argument at bind time). The caller
-                // source arrives as the "key=source" encoding in
-                // `arg_sources`, or as a VarRef wrapper on the Pair's
-                // value.
-                let named_is_rw = pd.traits.iter().any(|t| t == "rw");
-                let named_is_raw = pd.traits.iter().any(|t| t == "raw");
-                let named_plain_scalar = pd.sub_signature.is_none()
-                    && pd.name != "_"
-                    && pd
-                        .name
-                        .as_bytes()
-                        .first()
-                        .is_some_and(|b| b.is_ascii_alphabetic() || *b == b'_');
-                if (named_is_rw || named_is_raw) && named_plain_scalar {
-                    let source_name = arg_sources
-                        .as_ref()
-                        .and_then(|names| names.get(arg_idx))
-                        .and_then(|n| n.as_ref())
-                        .and_then(|encoded| {
-                            encoded.split_once('=').map(|(_, s)| s.to_string())
-                        })
-                        .or_else(|| {
-                            varref_from_value(raw_arg)
-                                .map(|(name, _)| name)
-                                .or_else(|| varref_from_value(val).map(|(name, _)| name))
-                        })
-                        .filter(|s| {
-                            s.as_bytes()
-                                .first()
-                                .is_some_and(|b| b.is_ascii_alphabetic() || *b == b'_')
-                        });
-                    if let Some(src) = source_name {
-                        rw_bindings.push((pd.name.clone(), src.clone()));
-                        let existing = self
-                            .env
-                            .get(&src)
-                            .filter(|v| matches!(v.view(), ValueView::ContainerRef(_)))
-                            .cloned();
-                        bound_value = match existing {
-                            Some(cell) => cell,
-                            None => {
-                                let cell = if matches!(
-                                    bound_value.view(),
-                                    ValueView::ContainerRef(_)
-                                ) {
-                                    bound_value
-                                } else {
-                                    Value::container_ref(crate::gc::Gc::new(
-                                        crate::value::ContainerCell::new(bound_value),
-                                    ))
-                                };
-                                self.env.insert(src, cell.clone());
-                                cell
-                            }
-                        };
-                    } else if matches!(bound_value.view(), ValueView::ContainerRef(_)) {
-                        // A bare cell IS a writable lvalue (mirrors the
-                        // positional arm's deepmap/hyper case).
-                    } else if named_is_rw {
-                        return Err(RuntimeError::parameter_rw_not_container(
-                            &param_display_name(pd),
-                            &bound_value,
-                        ));
-                    }
-                    // is raw with a non-lvalue: binds readonly (the
-                    // trait pass below keeps raw params writable, which
-                    // matches the positional arm's behavior for now).
-                }
-                // A named alias param `:min(:$minutes)` names a caller key
-                // only; its OWN name (`min`) is NOT a body variable
-                // (raku: `min` in the body resolves to the outer
-                // routine/constant, not the argument). Named variable
-                // parameters such as `:$value ($item)` bind both the
-                // outer value and the destructured leaves. The parser's
-                // `named_alias` flag distinguishes these forms.
-                if let Some(sub_params) = &pd.sub_signature {
-                    // A named variable with a sub-signature, such as
-                    // `:$foo [$first, *@rest]`, is a real destructuring
-                    // signature. The parser records the distinct
-                    // `:foo($value)` alias form in `named_alias`; use that
-                    // source-level distinction instead of the parameter's
-                    // sigil here. Treating a variable destructure as an
-                    // alias binds every inner scalar to the whole value
-                    // and skips the inner slurpy entirely.
-                    if !pd.named_alias {
-                        self.bind_param_value_sym(
-                            binding_name,
-                            pd_name_sym,
-                            bound_value.clone(),
-                        );
-                        self.bind_param_type_constraint_sym(
-                            binding_name,
-                            pd_name_sym,
-                            pd.assignment_type_constraint(),
-                        );
-                        bind_sub_signature_from_value(self, sub_params, &bound_value)?;
-                    } else {
-                        bind_named_rename_sub_signature(self, sub_params, val, &pd.traits)?;
-                    }
-                } else {
-                    // Named `$` params are item bindings too (raku:
-                    // `f(v => [1,2])` binds `$v` as `$[1, 2]`); rw
-                    // cells pass through untouched.
-                    let bound_value = Self::itemize_plain_scalar_param(pd, bound_value);
-                    self.bind_param_value_sym(binding_name, pd_name_sym, bound_value);
-                    self.bind_param_type_constraint_sym(
-                        binding_name,
-                        pd_name_sym,
-                        pd.assignment_type_constraint(),
-                    );
-                }
-                found = true;
-                break;
-            }
-        }
-        // Alias matching: for :a(:$b), also accept b => val. A nested
-        // chain (`:variety(:style(:sort($x)))`) lets the caller use any
-        // level's name, so match against every alias key down the chain.
-        if !found
-            && pd.named_alias
-            && let Some(sub_params) = &pd.sub_signature
-        {
-            let alias_keys = collect_nested_named_alias_keys(sub_params);
-            'alias: for inner_key in &alias_keys {
-                for arg in args.iter().rev() {
-                    let arg = unwrap_varref_value(arg.clone());
-                    if let ValueView::Pair(key, inner_val) = arg.view()
-                        && key == inner_key.as_str()
-                    {
-                        // Rename param: bind only the leaf variable, not
-                        // the param's own name (see the primary-match
-                        // branch above).
-                        bind_named_rename_sub_signature(
-                            self, sub_params, inner_val, &pd.traits,
-                        )?;
-                        found = true;
-                        break 'alias;
-                    }
-                }
-            }
-        }
-        if !found && let Some(default_expr) = &pd.default {
-            let value = self.eval_param_default(pd, default_expr)?;
-            let value = self.checked_default_param_value(pd, value)?;
-            let mut value = if pd.captured_type_name().is_some() {
-                self.normalize_type_capture_value(value)
-            } else {
-                value
-            };
-            // A default bound to an `@`/`%` parameter follows the
-            // same copy semantics as a supplied named argument. In
-            // particular, `:@units is copy = %Units{$set}` must
-            // receive an independent mutable Array, or a callee that
-            // normalizes its elements mutates the package-global
-            // default and the next call sees corrupted units.
-            if (pd.name.starts_with('@') || pd.name.starts_with('%'))
-                && pd.traits.iter().any(|trait_name| trait_name == "copy")
-                && matches!(value.view(), ValueView::Array(..) | ValueView::Hash(..))
-            {
-                value = value.detach_shared_container();
-                if pd.name.starts_with('@')
-                    && let ValueView::Array(
-                        gc,
-                        crate::value::ArrayKind::List | crate::value::ArrayKind::ItemList,
-                    ) = value.view()
-                {
-                    value = Value::array_with_kind(
-                        crate::gc::Gc::new((*gc).as_ref().clone()),
-                        crate::value::ArrayKind::Array,
-                    );
-                }
-                value.stamp_descriptor_name("element");
-            }
-            if let Some((sig_params, sig_ret)) = &pd.code_signature
-                && !code_signature_matches_value(self, sig_params, sig_ret, &value)
-            {
-                let expected = Self::signature_constraint_for_error(sig_params);
-                let got = self.callable_signature_for_error(&value);
-                return Err(RuntimeError::typecheck_binding_parameter_signature(
-                    &param_display_name(pd),
-                    &expected,
-                    &got,
-                )
-                .with_parameter_object(pd, Some(&*self)));
-            }
-            // A named alias param `:min(:$minutes)` binds only its leaf
-            // variable (below); its own name is a caller key, not a body
-            // variable. A named variable with a destructuring
-            // sub-signature binds the outer parameter too.
-            let is_rename = pd.named_alias;
-            if let Some(captured_name) = pd.captured_type_name() {
-                self.bind_type_capture(captured_name, &value);
-                if !pd.name.is_empty() && !is_rename {
-                    self.bind_param_value_sym(binding_name, pd_name_sym, value.clone());
-                    self.bind_param_type_constraint_sym(
-                        binding_name,
-                        pd_name_sym,
-                        pd.assignment_type_constraint(),
-                    );
-                }
-            } else if !pd.name.is_empty() && !is_rename {
-                self.bind_param_value_sym(binding_name, pd_name_sym, value.clone());
-                self.bind_param_type_constraint_sym(
-                    binding_name,
-                    pd_name_sym,
-                    pd.assignment_type_constraint(),
-                );
-            }
-            // For renamed named params like :foo($y) = $x, also bind the
-            // sub-signature variable ($y) to the default value.
-            if let Some(sub_params) = &pd.sub_signature {
-                bind_named_rename_sub_signature(
-                    self,
-                    sub_params,
-                    &Box::new(value),
-                    &pd.traits,
-                )?;
-            }
-        } else if !found && pd.required {
-            // A missing required named parameter is a runtime X::AdHoc in
-            // Raku (not the compile-time arity X::TypeCheck::Argument that
-            // a missing positional yields). Carry the typed exception so it
-            // surfaces as X::AdHoc instead of the bare "Exception" default.
-            return Err(RuntimeError::typed_msg(
-                "X::AdHoc",
-                format!("Required named parameter '{}' not passed", pd.name),
-            ));
-        } else if !found && !pd.name.is_empty() {
-            // An unsupplied optional named param binds its default (the
-            // signature default expr, or the type object). It must do so
-            // even when `self.env` ALREADY holds a value under the param
-            // name: the callee's env is an overlay over the caller's, so a
-            // caller's same-named named arg (`outer(:section)` calling
-            // `inner()` whose `:$section` is unsupplied) is visible here and
-            // would otherwise LEAK into the callee (Template::Mustache's
-            // recursive `get(:section)` -> `format` -> `get(:encode)` had
-            // the inner `$section` read the outer True). The one legitimate
-            // pre-population is a BUILD/TWEAK submethod, whose attribute
-            // bindings live under twigil'd keys (`$!x`/`!x`), not the bare
-            // param name — so binding the default here does not disturb them.
-            let value = Self::missing_optional_param_value(pd);
-            // A named alias binds only its leaf variable (below); skip
-            // binding the parameter's own name in that form.
-            if !pd.named_alias {
-                self.bind_param_value_sym(binding_name, pd_name_sym, value.clone());
-                self.bind_param_type_constraint_sym(
-                    binding_name,
-                    pd_name_sym,
-                    pd.assignment_type_constraint(),
-                );
-            }
-            // A `:color(:$colour)` alias chain declares its inner
-            // variable(s); bind them to the same unsupplied default so
-            // the body's `$colour` read finds an (undefined) value
-            // instead of throwing "not declared".
-            if let Some(sub_params) = &pd.sub_signature {
-                bind_named_rename_sub_signature(self, sub_params, &value, &pd.traits)?;
-            }
-        }
-        // Check the where constraint against the *bound* value, whether it
-        // came from the supplied argument, the parameter default, or the
-        // type-object fallback for an unsupplied optional named param. Raku
-        // checks `:version($) where .so` even with no `--version` (the topic
-        // is then the `Bool` type object, so `.so` is False and the candidate
-        // is rejected) -- gating this on `found` skipped that case.
-        if pd.where_constraint.is_some() {
-            self.check_named_param_where_constraint(pd, binding_name)?;
-        }
-        Ok(())
     }
 }
