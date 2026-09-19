@@ -338,13 +338,23 @@ impl Interpreter {
         // `arguments` attribute. Only the failing index is remembered, so the
         // borrow of `self.stack` ends before the `&mut self` rollback runs.
         let mut type_failure: Option<(usize, &'static str)> = None;
+        // Set only for a `NativeInt` (native `int`) param whose value shape
+        // passed the check below but whose actual coercion then failed (an
+        // out-of-range `BigInt` -- `wrap_native_int_for_binding` mirrors the
+        // general binder's own `X::AdHoc`-style overflow message exactly,
+        // #8686 Phase 0). When set, this is the real error to raise instead
+        // of the generic `positional_light_type_error` built from
+        // `type_failure` below.
+        let mut native_coerce_err: Option<RuntimeError> = None;
         for param_idx in 0..positional_count.min(actual_count) {
             // `param_fast_types` classified every constraint at registration
             // time; `None` means the precompute never ran (a hand-built chunk),
             // which falls back to matching the constraint string per call.
+            let is_native_int;
             let ok = match cf.param_fast_types.get(param_idx) {
                 Some(crate::opcode::FastParamCheck::Unconstrained) => continue,
                 Some(&crate::opcode::FastParamCheck::Fast { kind, name_sym }) => {
+                    is_native_int = kind == crate::opcode::FastParamType::NativeInt;
                     let val = self.stack[args_base + param_idx].unwrap_varref();
                     Self::fast_type_check_tagged(val, kind, name_sym)
                 }
@@ -352,10 +362,28 @@ impl Interpreter {
                     let Some(tc) = cf.param_defs[param_idx].type_constraint.as_ref() else {
                         continue;
                     };
+                    is_native_int = tc == "int";
                     let val = self.stack[args_base + param_idx].unwrap_varref();
                     Self::fast_type_check(val, tc)
                 }
             };
+            if ok && is_native_int {
+                // The check above admitted only `Int`/`BigInt`/`Bool` for a
+                // `NativeInt` param, so this reuses the exact same
+                // Bool-unbox/range-check/wrap the general binder applies to
+                // a native `int` parameter -- the only way it can still fail
+                // here is a `BigInt` outside `int`'s i64 range.
+                let val = self.stack[args_base + param_idx].unwrap_varref().clone();
+                match crate::runtime::types::wrap_native_int_for_binding("int", val) {
+                    Ok(coerced) => self.stack[args_base + param_idx] = coerced,
+                    Err(e) => {
+                        native_coerce_err = Some(e);
+                        type_failure = Some((param_idx, ""));
+                        break;
+                    }
+                }
+                continue;
+            }
             if !ok {
                 let val = self.stack[args_base + param_idx].unwrap_varref();
                 type_failure = Some((param_idx, runtime::value_type_name(val)));
@@ -389,14 +417,17 @@ impl Interpreter {
             self.block_declared_vars
                 .pop_frame(saved_block_declared_vars);
             self.current_unit = saved_unit;
-            let err = positional_light_type_error(
-                func_name,
-                &cf.param_defs,
-                &self.stack[args_base..],
-                param_idx,
-                tc,
-                got,
-            );
+            let err = match native_coerce_err {
+                Some(e) => e,
+                None => positional_light_type_error(
+                    func_name,
+                    &cf.param_defs,
+                    &self.stack[args_base..],
+                    param_idx,
+                    tc,
+                    got,
+                ),
+            };
             self.stack.truncate(args_base);
             return Err(err);
         }
@@ -458,6 +489,48 @@ impl Interpreter {
                 // No env mirror: move the bound value straight into the
                 // slot instead of cloning it and dropping the original.
                 self.locals.put_param_slot(params_fill_frame, *slot, val);
+            }
+            // A native `int`/`str`/`num` parameter's "nativeness" is tracked
+            // as env-scoped `__mutsu_type::name` metadata (consulted by
+            // `~~ int`/introspection inside the body), not by the bound
+            // value's own runtime shape -- the general binder registers this
+            // for every typed parameter via `bind_param_type_constraint_sym`,
+            // and this fast path must do the same for a `NativeInt`/
+            // `NativeStr`/`NativeNum` param or `sub f(int $x) { $x ~~ int }`
+            // silently loses its `True` inside the body (#8686 Phase 0,
+            // `t/nativecall/native-value-smartmatch.t` subtest 25). Plain
+            // `Int`/`Str`/`Num`/... need no such write: their declared type
+            // IS their runtime shape, so `~~` answers correctly with no
+            // per-call bookkeeping at all -- this cost is specific to the
+            // three native spellings.
+            //
+            // Gated on `mentions_native_scalar_type_name`: this env write
+            // forces a full env deep-copy on every call (measured via
+            // `MUTSU_VM_STATS=1`), which would erase most of the point of
+            // putting native params on the fast path at all for a body that
+            // never actually introspects one -- see that field's doc comment.
+            if cf.code.mentions_native_scalar_type_name
+                && let Some(&crate::opcode::FastParamCheck::Fast { kind, .. }) =
+                    cf.param_fast_types.get(param_idx)
+            {
+                use crate::opcode::FastParamType as T;
+                let native_base = match kind {
+                    T::NativeInt => Some("int"),
+                    T::NativeStr => Some("str"),
+                    T::NativeNum => Some("num"),
+                    _ => None,
+                };
+                if let Some(base) = native_base {
+                    let name_sym = match cf.param_name_syms.get(param_idx) {
+                        Some(&sym) => sym,
+                        None => Symbol::intern(param_name),
+                    };
+                    self.bind_param_type_constraint_sym(
+                        param_name,
+                        name_sym,
+                        Some(base.to_string()),
+                    );
+                }
             }
             match cf.param_name_syms.get(param_idx) {
                 Some(sym) => self.mark_readonly_sym(*sym),
@@ -934,12 +1007,27 @@ impl Interpreter {
             // A bare type object satisfies a smiley-less nominal constraint of
             // its own name (`Int` for `Int $a`), and `Any`/`Mu`.
             // Interning is injective, so the `Symbol` compare is exactly the
-            // by-name form's `sym.resolve() == type_name`.
+            // by-name form's `sym.resolve() == type_name`. A native `int`/
+            // `str`/`num` constraint is deliberately NOT admitted by this
+            // arm even when it happens to equal `name_sym`: native types
+            // cannot hold a type object at all (`f(int)` dies "Cannot unbox
+            // a type object ... to int" -- see the coercion step at the
+            // light-call bind sites, which is where that rejection actually
+            // happens for a `NativeInt`/`NativeStr`/`NativeNum` kind; no
+            // legitimate caller value ever reaches this arm with one of
+            // those kinds since a Raku source program has no way to name a
+            // lowercase native type in term position as a bare word).
             ValueView::Package(sym) => kind == T::Wild || sym == name_sym,
-            ValueView::Int(_) | ValueView::BigInt(_) => matches!(kind, T::Int | T::Wild),
-            ValueView::Str(_) => matches!(kind, T::Str | T::Wild),
-            ValueView::Num(_) => matches!(kind, T::Num | T::Wild),
-            ValueView::Bool(_) => matches!(kind, T::Bool | T::Wild),
+            // `NativeInt` also accepts `Bool` and `BigInt` here -- the actual
+            // Bool-unbox / range-check / wrap coercion (which can fail for an
+            // out-of-range `BigInt`) runs at the bind site right after this
+            // check passes (#8686 Phase 0), not in this pure predicate.
+            ValueView::Int(_) | ValueView::BigInt(_) => {
+                matches!(kind, T::Int | T::NativeInt | T::Wild)
+            }
+            ValueView::Str(_) => matches!(kind, T::Str | T::NativeStr | T::Wild),
+            ValueView::Num(_) => matches!(kind, T::Num | T::NativeNum | T::Wild),
+            ValueView::Bool(_) => matches!(kind, T::Bool | T::NativeInt | T::Wild),
             ValueView::Rat(_, _) => matches!(kind, T::Rat | T::Wild),
             // An enum value satisfies the base type its values carry (`our Str
             // enum S «:A<a>»` — `S::A` is a `Str`) as well as its own enum type,
@@ -965,6 +1053,10 @@ impl Interpreter {
     fn light_return_type_check(val: &Value, type_name: &str) -> bool {
         // Nil and Failure always pass return type checks
         if val.is_nil() {
+            return true;
+        }
+        // See the tagged form's identical native-return bypass just above.
+        if matches!(type_name, "int" | "str" | "num") {
             return true;
         }
         if let ValueView::Instance { class_name, .. } = val.view()
@@ -995,6 +1087,15 @@ impl Interpreter {
     ) -> bool {
         use crate::opcode::FastParamType as T;
         if val.is_nil() {
+            return true;
+        }
+        // A native `returns int`/`returns str`/`returns num` is not actually
+        // enforced by the general binder today (a `sub f() returns int {
+        // True }` returns the unconverted `Bool`, not an `Int`), so admitting
+        // these onto the light/positional-light return check must match that
+        // same no-op enforcement rather than inventing a stricter check the
+        // slow path never applied (#8686 Phase 0) -- unconditionally accept.
+        if matches!(kind, T::NativeInt | T::NativeStr | T::NativeNum) {
             return true;
         }
         match val.view() {
@@ -1067,6 +1168,16 @@ impl Interpreter {
             "Num" => matches!(val.view(), ValueView::Num(_)),
             "Bool" => matches!(val.view(), ValueView::Bool(_)),
             "Rat" => matches!(val.view(), ValueView::Rat(_, _)),
+            // Native `int` also accepts `Bool` (unboxed at the bind site --
+            // see the coercion step in the light-call bind loops, #8686
+            // Phase 0); native `str`/`num` need no such coercion, so they
+            // match exactly like their boxed counterparts above.
+            "int" => matches!(
+                val.view(),
+                ValueView::Int(_) | ValueView::BigInt(_) | ValueView::Bool(_)
+            ),
+            "str" => matches!(val.view(), ValueView::Str(_)),
+            "num" => matches!(val.view(), ValueView::Num(_)),
             "Any" | "Mu" => true,
             _ => {
                 let actual = runtime::value_type_name(val);

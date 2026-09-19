@@ -4699,6 +4699,27 @@ pub(crate) struct CompiledCode {
     /// read, so a topic-free hot loop (`fib`) skips the shadowing write and
     /// keeps the frame-reuse fast path. Computed once in `compute_needs_env_sync`.
     pub(crate) reads_topic: bool,
+    /// Whether the body's constant pool contains the bareword spelling of a
+    /// native scalar type (`"int"`/`"str"`/`"num"`) -- the same sound,
+    /// never-miss over-approximation `reads_topic` uses: a `~~ int`/`.^name`
+    /// probe against a native-typed local compiles the type name in as a
+    /// `GetBareWord` constant, so a body with none of the three strings in
+    /// its pool cannot possibly introspect a native parameter's declared
+    /// type. This gates the `__mutsu_type::` env-metadata write the
+    /// light-call fast paths perform for a `NativeInt`/`NativeStr`/
+    /// `NativeNum` parameter (#8686 Phase 0): that write forces a full env
+    /// deep-copy on every call (measured: 100_000 calls of `sub f(int $x,
+    /// int $y) { $x + $y }` went from 0 to 100_000 `env_deep_copies` under
+    /// `MUTSU_VM_STATS=1` when the write was unconditional), which would
+    /// have eaten most of the point of admitting native params onto the fast
+    /// path at all. A body that never mentions `int`/`str`/`num` (the
+    /// overwhelming majority of native-typed hot loops, including
+    /// `JSON::Fast`'s own helpers) skips the write entirely; a stray,
+    /// unrelated string constant spelled `"int"`/`"str"`/`"num"` only costs
+    /// a harmless extra metadata write, exactly as a stray `"_"` costs
+    /// `reads_topic` one shadow write. Computed once in
+    /// `compute_needs_env_sync`.
+    pub(crate) mentions_native_scalar_type_name: bool,
     /// Source line number (1-based) where this closure/block was defined.
     pub(crate) source_line: Option<i64>,
     /// Whether this compiled code represents a pointy block (`-> { }` / `<-> { }`).
@@ -5742,6 +5763,7 @@ impl CompiledCode {
             closure_escapes: Vec::new(),
             is_routine: false,
             reads_topic: false,
+            mentions_native_scalar_type_name: false,
             has_once: false,
             uses_callframe: false,
             needs_reflective_capture: false,
@@ -6222,6 +6244,9 @@ impl CompiledCode {
             .constants
             .iter()
             .any(|c| matches!(c.view(), crate::value::ValueView::Str(s) if s.as_str() == "_"));
+        self.mentions_native_scalar_type_name = self.constants.iter().any(|c| {
+            matches!(c.view(), crate::value::ValueView::Str(s) if matches!(s.as_str(), "int" | "str" | "num"))
+        });
         self.compute_const_syms();
         self.compute_locals_sym();
         self.compute_free_vars();
@@ -9457,6 +9482,22 @@ pub(crate) enum FastParamType {
     Num,
     Bool,
     Rat,
+    /// The lowercase native scalar spellings `int`/`str`/`num` (#8686 Phase
+    /// 0). Kept as distinct tags from `Int`/`Str`/`Num` rather than merged
+    /// into them, because a bare type-object argument must be REJECTED for a
+    /// native slot but accepted for a boxed one (`sub f(int $x){}; f(int)`
+    /// dies "Cannot unbox a type object (int) to int" in both raku and
+    /// mutsu, unlike `sub f(Int $x){}; f(Int)`, which legitimately returns
+    /// the `Int` type object) -- see
+    /// `t/vm/frames/light-call-bare-type-accepts-type-object.t` for the
+    /// boxed case this must not disturb. `NativeInt` additionally accepts a
+    /// `Bool` argument (`Bool` "does" `Int`, `t/nativecall/bool-native-int-unbox.t`),
+    /// which the boxed `Int` tag deliberately does not. Only the plain
+    /// full-width spellings are covered, not the sized (`int8`/`uint32`/...)
+    /// or C-width-alias forms -- those stay on the general binder.
+    NativeInt,
+    NativeStr,
+    NativeNum,
     /// `Any` / `Mu`: satisfied by every value.
     ///
     /// `Cool` is deliberately NOT here. It is a real type: a user class
@@ -9479,6 +9520,9 @@ impl FastParamType {
             "Num" => Self::Num,
             "Bool" => Self::Bool,
             "Rat" => Self::Rat,
+            "int" => Self::NativeInt,
+            "str" => Self::NativeStr,
+            "num" => Self::NativeNum,
             "Any" | "Mu" => Self::Wild,
             _ => return None,
         })
