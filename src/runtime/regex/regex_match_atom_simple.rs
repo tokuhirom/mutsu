@@ -18,6 +18,9 @@ impl Interpreter {
         start: usize,
         pkg: Symbol,
     ) -> bool {
+        if pattern.anchor_start && start != 0 {
+            return false;
+        }
         let mut stack = Vec::new();
         stack.push((0usize, start));
         while let Some((idx, pos)) = stack.pop() {

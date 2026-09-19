@@ -371,6 +371,15 @@ impl Interpreter {
         stop_at_full: bool,
         sink: &mut MatchSink<'_>,
     ) -> bool {
+        // An alternative is represented as its own RegexPattern, so its
+        // leading `^` is checked here when the enclosing pattern tries that
+        // branch at every scan position. The public search entry points apply
+        // this check to the outer pattern, but nested walks need the same
+        // guard or `^ 'x' | 'y' $` would let the first branch match at every
+        // position.
+        if pattern.anchor_start && start != 0 {
+            return false;
+        }
         // ADR-0099 §1's walk, and the one region that re-enters itself freely
         // (sub-patterns, lookaround, LTM ranking, subrules). No depth counter
         // is needed: an inner guard drops first and an outer claim is a no-op
