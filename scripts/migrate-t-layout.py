@@ -109,6 +109,8 @@ OVERRIDES: dict[str, str] = {
     "is-eqv": "types",
     # Unicode case folding is regex `:i` matching, not string conversion.
     "ignorecase-casefold-equivalence": "regex",
+    # IPv4-mapped IPv6 parsing exercises grammar dynamic-variable scope.
+    "ipv6-mapped-dotted-decimal": "grammar",
     # The Time::localtime compatibility surface is a temporal type/module test.
     "time-localtime": "types/temporal",
     # Running out of native stack is a VM-execution property (mutsu runs a Raku

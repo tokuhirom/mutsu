@@ -140,7 +140,17 @@ impl Interpreter {
             if !keys.contains(&main_key) {
                 keys.push(main_key);
             }
-            if let Some(stmts) = self.parse_regex_code_cached(&format!("{decl};")) {
+            // A grammar rule owns this dynamic frame explicitly.  Evaluating a
+            // `temp` declaration verbatim would let the ordinary VM temp scope
+            // restore its value as soon as this initializer block returns,
+            // before the rule body can see it.  Evaluate the same declaration as
+            // a persistent `my` binding and let this frame's saved environment
+            // restore it when the rule invocation ends.
+            let eval_decl = decl
+                .strip_prefix("temp ")
+                .map(|rest| format!("my {rest}"))
+                .unwrap_or_else(|| decl.clone());
+            if let Some(stmts) = self.parse_regex_code_cached(&format!("{eval_decl};")) {
                 let _ = self.eval_block_value(&stmts);
             }
         }
@@ -254,7 +264,11 @@ impl Interpreter {
             let at = &rest[colon..];
             // `:` is one byte, so the tail is on a char boundary.
             rest = &at[1..];
-            let Some(after) = at.strip_prefix(":my ").or_else(|| at.strip_prefix(":our ")) else {
+            let Some(after) = at
+                .strip_prefix(":my ")
+                .or_else(|| at.strip_prefix(":our "))
+                .or_else(|| at.strip_prefix(":temp "))
+            else {
                 continue;
             };
             // Only dynamic (`*`-twigil) declarations concern us.
@@ -271,12 +285,14 @@ impl Interpreter {
         }
     }
 
-    /// The env key (`%*PLAYED` → `%*PLAYED`) declared by a `my $*/%*/@*NAME …`
+    /// The env key (`%*PLAYED` → `%*PLAYED`) declared by a `my`/`temp`
+    /// `$*/%*/@*NAME …`
     /// declaration string, or `None` if it is not a simple dynamic declaration.
     pub(crate) fn dynamic_decl_var_key(decl: &str) -> Option<String> {
         let rest = decl
             .strip_prefix("my ")
-            .or_else(|| decl.strip_prefix("our "))?;
+            .or_else(|| decl.strip_prefix("our "))
+            .or_else(|| decl.strip_prefix("temp "))?;
         let rest = rest.trim_start();
         let mut chars = rest.chars();
         let sigil = chars.next()?;
