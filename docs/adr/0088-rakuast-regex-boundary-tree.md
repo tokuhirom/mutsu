@@ -17,10 +17,10 @@
   dynamic-argument, literal-hash-index, indirect-callable, named-colonpair,
   variable-colonpair, expression-only block-valued-colonpair, hash-composer
   block-valued-colonpair, array-slurpy-placeholder, and hash-slurpy-placeholder
-  dynamic-argument, and typed-scalar, defaulted-scalar, and typed-defaulted-
-  scalar explicit-signature slices implemented
+  dynamic-argument, and typed-scalar, defaulted-scalar, typed-defaulted-scalar,
+  and named-scalar explicit-signature slices implemented
   2026-09-12 through
-  2026-09-18;
+  2026-09-19;
   direct hash interpolation is reserved by Rakudo and mutsu;
   explicit block signatures, other complex block
   values, other dynamic contents, and the complete execution-tree
@@ -1510,3 +1510,23 @@ The focused regression is
 `t/rakuast/rakuast-regex-dynamic-arguments.t`; it pins the typed and default
 RakuAST nodes, direct constructed-call type/default behavior, constructed regex
 lowering, and source grammar match-time lexical behavior.
+
+## 62. Named scalar explicit-signature block-valued colonpair dynamic argument slice (2026-09-19)
+
+An ordinary named scalar parameter in an explicit pointy block, such as
+`<word(:expected(-> :$candidate { ... }))>`, now survives the constructed
+RakuAST lowering boundary. The lowerer retains the signature-bearing
+`AnonSubParams` representation instead of collapsing the parameter to
+`Expr::Lambda`, and the regex colonpair renderer reconstructs the `:$candidate`
+spelling for the existing match-time argument evaluator.
+
+This slice accepts one untyped named scalar parameter without a default or
+decorating trait. The existing signature binder remains responsible for named
+binding and the parameter's optional-named semantics; named defaults, slurpy or
+decorated parameters, type captures, and other complex signatures remain
+separate boundaries. The Parser -> Compiler -> VM matcher path is unchanged.
+
+The focused regression is
+`t/rakuast/rakuast-regex-dynamic-arguments.t`; it pins the named parameter
+nodes, direct constructed-call binding, constructed regex lowering, and source
+grammar match-time lexical behavior.

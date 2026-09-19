@@ -6,7 +6,7 @@ use Test;
 # ADR-0088 issue #8033: dynamic expressions in subrule arguments keep their
 # RakuAST expression trees and can be lowered back to the regex parser.
 
-plan 170;
+plan 178;
 
 my $value = 'a';
 my $ast = Q[/<word($value.uc)>/].AST;
@@ -918,3 +918,63 @@ ok GDynamicTypedDefaultedSignatureColonPairArgument.parse('a').defined,
 $typed_default_value = 41;
 ok !GDynamicTypedDefaultedSignatureColonPairArgument.parse('a').defined,
     'a typed defaulted signature keeps its outer lexical dynamic';
+
+my $named_signature_ast =
+    Q[/<word(:expected(-> :$candidate { $candidate eq "a" }))>/].AST;
+my $named_signature_gist = $named_signature_ast.gist;
+ok $named_signature_gist.contains('names  =>')
+    && $named_signature_gist.contains('"candidate"'),
+    'a named signature keeps its parameter name list';
+ok $named_signature_gist.contains('target => RakuAST::ParameterTarget::Var.new('),
+    'a named signature keeps its parameter target';
+ok EVAL($named_signature_ast) ~~ Regex,
+    'a source named-signature regex lowers successfully';
+
+my $named_parameter = RakuAST::Parameter.new(
+    names => ('candidate',),
+    target => RakuAST::ParameterTarget::Var.new(name => '$candidate'),
+);
+my $named_statements = RakuAST::StatementList.new;
+$named_statements.add-statement(
+    RakuAST::Statement::Expression.new(
+        expression => RakuAST::Var::Lexical.new('$candidate'),
+    )
+);
+my $named_pointy = RakuAST::PointyBlock.new(
+    signature => RakuAST::Signature.new(parameters => [$named_parameter]),
+    body => RakuAST::Blockoid.new($named_statements),
+);
+my &named_callable = EVAL($named_pointy);
+is &named_callable(candidate => 7), 7,
+    'a constructed named pointy block binds its named argument';
+is &named_callable(), Mu,
+    'a constructed named pointy block keeps its optional named parameter';
+
+my $named_pair = RakuAST::ColonPair::Value.new(
+    key => 'expected',
+    value => RakuAST::Circumfix::Parentheses.new(
+        RakuAST::SemiList.new(
+            RakuAST::Statement::Expression.new(expression => $named_pointy),
+        ),
+    ),
+);
+my $named_constructed_ast = RakuAST::QuotedRegex.new(
+    body => RakuAST::Regex::Assertion::Named::Args.new(
+        name => RakuAST::Name.from-identifier('word'),
+        args => RakuAST::ArgList.new($named_pair),
+        capturing => True,
+    ),
+);
+ok EVAL($named_constructed_ast) ~~ Regex,
+    'a hand-built named-signature regex lowers through the matcher';
+
+my $named_value = 'a';
+grammar GDynamicNamedSignatureColonPairArgument {
+    token TOP { <word(:expected(-> :$candidate { $candidate eq $named_value }))> };
+    token word(:$expected) { <.alpha> <?{ $expected(candidate => 'a') }> }
+}
+ok GDynamicNamedSignatureColonPairArgument.parse('a').defined,
+    'a named signature reaches the named subrule with a named argument';
+$named_value = 'b';
+ok !GDynamicNamedSignatureColonPairArgument.parse('a').defined,
+    'a named signature keeps its outer lexical dynamic';
