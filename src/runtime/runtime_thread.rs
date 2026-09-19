@@ -620,6 +620,7 @@ impl Interpreter {
             defining_class: None,
             pending_call_arg_sources: None,
             pending_where_exception: None,
+            pending_skip_where_recheck: false,
             pending_raw_invocant: None,
             pending_call_topic_bare: false,
             pending_call_topic_source: None,

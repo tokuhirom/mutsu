@@ -2236,6 +2236,17 @@ pub struct Interpreter {
     /// dropped. Only genuine exceptions are recorded -- a control-flow signal
     /// (`return`/`next`/...) is not an exception and still reads as "no match".
     pub(crate) pending_where_exception: Option<Box<RuntimeError>>,
+    /// Set by `dispatch_func_call_inner` right before it binds the winning
+    /// candidate of a value-dependent `multi` (one carrying a `where` clause)
+    /// whose resolution it already ran fresh, against these exact arguments,
+    /// a few lines earlier ([#8697](https://github.com/tokuhirom/mutsu/issues/8697)).
+    /// `bind_function_args_values_inner` takes (clears) it at entry into a
+    /// local, so a positional `where` post-constraint check can skip
+    /// re-evaluating a predicate resolution already proved true for this
+    /// call, instead of running the user's constraint a second time. Any
+    /// nested call the bind or the routine body itself makes reads it as
+    /// `false` again, since the flag is consumed before either runs.
+    pub(crate) pending_skip_where_recheck: bool,
     /// ADR-0067 slice 3b: the caller's container for the invocant of the method
     /// call currently being dispatched, staged by
     /// `Interpreter::arm_raw_invocant_arrival` and consumed by whichever of the

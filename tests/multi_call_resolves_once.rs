@@ -100,10 +100,12 @@ fn a_subset_constrained_multi_resolves_once_per_call() {
 #[test]
 fn a_where_clause_runs_far_fewer_times_than_it_used_to() {
     // The user-visible consequence. Rakudo evaluates the winning candidate's
-    // constraint once per call; mutsu still re-evaluates it while binding the
-    // winner, but the count must no longer scale with a *re-resolution* of the
-    // same call. Three resolutions of this two-candidate multi cost 16
-    // evaluations before #7886.
+    // constraint exactly once per call; mutsu is now at parity (#8697): one
+    // resolution evaluates it, and the winning candidate's own parameter bind
+    // trusts that verdict (`pending_skip_where_recheck`) instead of
+    // re-running it. Three resolutions of this two-candidate multi cost 16
+    // evaluations before #7886; two evaluations (one resolution, one
+    // redundant bind-time recheck) before this fix.
     let src = "my $n = 0;\n\
                multi sub f(Int:D $x where { $n++; True }) { 'int' }\n\
                multi sub f($x where { $n++; True }) { 'any' }\n\
@@ -117,9 +119,10 @@ fn a_where_clause_runs_far_fewer_times_than_it_used_to() {
         .unwrap_or_else(|| panic!("wrong candidate won: {out}"))
         .parse()
         .unwrap_or_else(|_| panic!("unparseable count: {out}"));
-    assert!(
-        n <= 8,
-        "the winning candidate's `where` ran {n} times for one call (was 16 \
-         across three resolutions; rakudo runs it once): {out}{err}"
+    assert_eq!(
+        n, 1,
+        "the winning candidate's `where` must run exactly once, at parity \
+         with rakudo (was 16 across three resolutions, then 2 with one \
+         resolution plus a redundant bind-time recheck): {out}{err}"
     );
 }

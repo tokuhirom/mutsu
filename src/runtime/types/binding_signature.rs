@@ -240,16 +240,27 @@ impl Interpreter {
     /// bare `f()`, and -- because a `where` clause is a multi-dispatch
     /// discriminator -- silently widened candidate selection (#8089). So all
     /// three binder paths funnel through here.
+    ///
+    /// `skip` is `true` only when this bind is for the winning candidate of a
+    /// value-dependent `multi` whose resolution just ran this exact predicate
+    /// against this exact value, a few lines up in the same call
+    /// ([#8697](https://github.com/tokuhirom/mutsu/issues/8697)) -- see
+    /// `pending_skip_where_recheck`'s doc comment for why that verdict may be
+    /// trusted instead of re-running the constraint.
     fn check_positional_param_where_constraint(
         &mut self,
         pd: &ParamDef,
         binding_name: &str,
         name_sym: Symbol,
         value: &Value,
+        skip: bool,
     ) -> Result<(), RuntimeError> {
         let Some(where_expr) = &pd.where_constraint else {
             return Ok(());
         };
+        if skip {
+            return Ok(());
+        }
         let saved_param = if pd.name.is_empty() {
             None
         } else {
@@ -954,6 +965,12 @@ impl Interpreter {
         // must match to legitimately describe THIS call. See its validation
         // where the pending sources are consumed, a few lines down.
         let raw_args_len = args.len();
+        // #8697: taken (cleared) immediately, so it describes only THIS bind
+        // call -- a nested call made while evaluating a default expression or
+        // running the routine's own body sees the flag already back at
+        // `false`, exactly like the other `pending_*` one-shot signals this
+        // struct carries (see its doc comment on `pending_skip_where_recheck`).
+        let skip_where_recheck = std::mem::take(&mut self.pending_skip_where_recheck);
         let FunctionBindingOptions {
             reads_args_array,
             param_name_syms,
@@ -3251,6 +3268,7 @@ impl Interpreter {
                         binding_name,
                         pd_name_sym(),
                         &value,
+                        skip_where_recheck,
                     )?;
                     // Resolve type capture prefixes (e.g., `::T` → `Int`) so
                     // that the stored variable type constraint uses the
@@ -3408,6 +3426,7 @@ impl Interpreter {
                         binding_name,
                         pd_name_sym(),
                         &value,
+                        skip_where_recheck,
                     )?;
                     if let Some(captured_name) = pd.captured_type_name() {
                         self.bind_type_capture(captured_name, &value);
@@ -3463,6 +3482,7 @@ impl Interpreter {
                         binding_name,
                         pd_name_sym(),
                         &value,
+                        skip_where_recheck,
                     )?;
                     if !pd.name.is_empty() {
                         self.bind_param_value_sym(binding_name, pd_name_sym(), value);

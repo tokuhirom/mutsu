@@ -1827,6 +1827,40 @@ impl Interpreter {
                         .unwrap_or_else(|| self.current_package_sym())
                 };
                 let cf_auto_fetch = !cf.returns_container();
+                // The remaining half of #8697: `multi_def_memo` holds the
+                // winner `find_compiled_function_memo` already resolved a
+                // few lines up, and for a value-dependent multi (`where`)
+                // that resolution ran the constraint FRESH against these
+                // exact `args` -- it is only ever memoised non-cacheably for
+                // such a family (`resolve_function_multi_cached_sym`/
+                // `func_multi_argkeys_cacheable`: a winning candidate that
+                // itself carries a `where` can never be the cached, type-
+                // keyed answer). So the positional bind below -- which is
+                // about to re-run the identical predicate against the
+                // identical value while actually binding the parameter --
+                // may trust that verdict instead of asking the user's
+                // constraint a second time. Harmless when there is no
+                // `where` to skip.
+                //
+                // `multi_def_memo` is filled by `resolve_function_multi_cached_sym`
+                // for EVERY resolved name, multi or not -- gate on
+                // `has_multi_candidates_cached_sym` too, or a plain (non-multi)
+                // `where`-constrained sub would wrongly skip its ONLY
+                // evaluation: a lone sub's resolution never runs candidate
+                // matching (there is nothing to disambiguate), so its `where`
+                // has not run yet at this point the way a multi's has.
+                // Further gated on the winner actually carrying a `where`
+                // (mirrors `compile_and_call_function_def`'s own gate): this
+                // is not merely an optimisation but a safety property, since
+                // it guarantees the positional light-call fast paths above
+                // (gated on `pd.where_constraint.is_none()` for every param)
+                // could never have fired instead and left the flag unconsumed.
+                self.pending_skip_where_recheck = multi_def_memo.as_deref().is_some_and(|def| {
+                    def.param_defs
+                        .iter()
+                        .any(|pd| pd.where_constraint.is_some())
+                }) && self
+                    .has_multi_candidates_cached_sym(name_sym);
                 let result =
                     self.call_compiled_function_named(cf, args, compiled_fns, pkg_sym, name_sym);
                 self.set_pending_call_arg_sources(None);
