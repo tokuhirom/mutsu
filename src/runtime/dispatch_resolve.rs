@@ -96,7 +96,16 @@ impl Interpreter {
     /// the [`Self::fn_keys_for_base`] index, invalidated by `fn_resolve_gen`
     /// (bumped on every function registration/removal).
     pub(crate) fn fn_base_name_registered(&mut self, name: &str) -> bool {
-        let keys = self.fn_keys_for_base(name);
+        self.fn_base_name_registered_sym(name, Symbol::intern(name))
+    }
+
+    /// [`Self::fn_base_name_registered`] for a caller that already holds the
+    /// callsite name's `Symbol` (every `CallFunc`-shaped site does, via
+    /// [`crate::opcode::CompiledCode::const_sym`]) — see
+    /// [`Self::fn_keys_for_base_sym`], whose caller-supplied-`Symbol` shortcut
+    /// this passes straight through ([#8690](https://github.com/tokuhirom/mutsu/issues/8690)).
+    pub(crate) fn fn_base_name_registered_sym(&mut self, name: &str, name_sym: Symbol) -> bool {
+        let keys = self.fn_keys_for_base_sym(name, name_sym);
         // Debug-only staleness audit, placed HERE rather than inside
         // `fn_keys_for_base`: the resolver asks this negative gate exactly once
         // per resolution but reaches the index several times, so auditing at

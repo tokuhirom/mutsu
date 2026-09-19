@@ -71,10 +71,13 @@ fn a_call_into_a_module_sub_does_not_intern_its_package() {
     eprintln!("module sub call: {per_call:.3} interns per call");
     // Measured 3.0 before this change and 1.0 after: the package switch was
     // exactly 2.0 of it (one intern of `"M"` entering, one of `"GLOBAL"`
-    // restoring). The remaining 1.0 is the dispatch-name interning that
-    // #8686 Phase 1's *first* bullet still leaves open --
-    // [#8690](https://github.com/tokuhirom/mutsu/issues/8690) -- so the budget
-    // leaves room for it and tightens when that lands.
+    // restoring). The remaining 1.0 is NOT the dispatch-name interning
+    // [#8690](https://github.com/tokuhirom/mutsu/issues/8690) fixed -- that
+    // landed without moving this number. It is
+    // `push_routine_with_location` re-splitting and re-interning this
+    // qualified callsite's short name (`"helper"`) on every call; see
+    // [#8776](https://github.com/tokuhirom/mutsu/issues/8776), whose fix
+    // should let this budget tighten toward 0.5.
     let limit = 2.0;
     assert!(
         per_call <= limit,
