@@ -114,7 +114,7 @@ pub fn date_method_0arg(attributes: &AttrMap, method: &str) -> Option<Result<Val
             year, month, day
         )))),
         "WHICH" => {
-            let which = format!("Date|{}", days);
+            let which = format!("Date|{}", daycount(year, month, day));
             let mut attrs = HashMap::new();
             attrs.insert("WHICH".to_string(), Value::str(which));
             Some(Ok(Value::make_instance(
@@ -294,11 +294,16 @@ pub fn datetime_method_0arg(
             Some(Ok(Value::str(s)))
         }
         "WHICH" => {
-            let posix = datetime_to_posix(year, month, day, hour, minute, second, timezone);
-            let which = format!("DateTime|{}", posix);
+            let which = format!(
+                "DateTime|{}",
+                format_datetime(year, month, day, hour, minute, second, timezone)
+            );
             let mut attrs = HashMap::new();
             attrs.insert("WHICH".to_string(), Value::str(which));
-            Some(Ok(Value::make_instance(Symbol::intern("ObjAt"), attrs)))
+            Some(Ok(Value::make_instance(
+                Symbol::intern("ValueObjAt"),
+                attrs,
+            )))
         }
         _ => None,
     }

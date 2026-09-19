@@ -20,7 +20,7 @@
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 0.53,
+        "secs": 0.21,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -30,7 +30,7 @@
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 17.6,
+        "secs": 5.62,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -42,7 +42,7 @@
         "nok": 0,
         "ok": 12,
         "plan": 12,
-        "secs": 0.42,
+        "secs": 0.17,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -52,7 +52,7 @@
         "nok": 0,
         "ok": 12,
         "plan": 12,
-        "secs": 1.07,
+        "secs": 0.29,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -64,7 +64,7 @@
         "nok": 0,
         "ok": 15,
         "plan": 15,
-        "secs": 0.52,
+        "secs": 0.18,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -74,53 +74,7 @@
         "nok": 0,
         "ok": 15,
         "plan": 15,
-        "secs": 0.97,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "partial",
-      "mutsu": {
-        "first_failure": "good read of existing data",
-        "nok": 1,
-        "ok": 0,
-        "plan": 1,
-        "secs": 0.52,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "fail"
-      },
-      "path": "t/3-check-good-formats.t",
-      "raku": {
-        "nok": 0,
-        "ok": 1,
-        "plan": 1,
-        "secs": 0.92,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "FATAL: The two dates are not the same: '2000-01-01', '2000-01-01'",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 0.41,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/4-calc-winnings.t",
-      "raku": {
-        "nok": 0,
-        "ok": 72,
-        "plan": 72,
-        "secs": 1.29,
+        "secs": 0.3,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -132,7 +86,51 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.42,
+        "secs": 0.19,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/3-check-good-formats.t",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.28,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 72,
+        "plan": 72,
+        "secs": 0.26,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/4-calc-winnings.t",
+      "raku": {
+        "nok": 0,
+        "ok": 72,
+        "plan": 72,
+        "secs": 0.35,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.16,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -142,7 +140,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 1.18,
+        "secs": 0.35,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -154,7 +152,7 @@
         "nok": 0,
         "ok": 19,
         "plan": 19,
-        "secs": 0.42,
+        "secs": 0.16,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -164,7 +162,7 @@
         "nok": 0,
         "ok": 19,
         "plan": 19,
-        "secs": 0.96,
+        "secs": 0.3,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -176,7 +174,7 @@
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 0.35,
+        "secs": 0.13,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -186,7 +184,7 @@
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 0.82,
+        "secs": 0.24,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -203,10 +201,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-18",
+    "date": "2026-09-19",
     "harness": 2,
-    "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "44c2987",
+    "host": "linux-x86_64",
+    "mutsu_commit": "8e147006f",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -217,13 +215,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/P/BL/PBLOTTERY/3931b79a64ca9a4ba72b2234eff51e1b0b0a9f3a.tar.gz"
   },
-  "status": "partial",
+  "status": "green",
   "totals": {
     "baseline_assertions": 131,
     "baseline_files": 8,
-    "mutsu_assertions": 58,
-    "parity_files": 6,
-    "regressed_files": 2
+    "mutsu_assertions": 131,
+    "parity_files": 8,
+    "regressed_files": 0
   },
   "version": "0.0.1"
 }
