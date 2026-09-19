@@ -334,6 +334,7 @@ impl Interpreter {
             is_rw: def.is_rw,
             is_raw: def.is_raw,
             uses_return_rw: crate::opcode::body_uses_return_rw(&def.body),
+            has_rw_positional_param: false,
             is_cached: def.is_cached,
             param_local_slots: None,
             params_fill_frame: false,
@@ -486,13 +487,23 @@ impl Interpreter {
                 &name,
                 Self::positional_light_argc(&args),
                 &args,
+                // This entry has no caller `CompiledCode` in scope (it is
+                // reached with already-evaluated `Vec<Value>` args, not from
+                // the bytecode-native call opcode), so an `is rw` positional
+                // parameter always declines here -- see
+                // `is_positional_light_call_eligible`'s own doc comment.
+                None,
             )
             && !Self::call_shares_container_into_scalar_param(&cf, &args)
             && !loan_env!(self, routine_is_test_assertion_by_name(&name, &args))
             && self.wrap_sub_id_for_name(&name).is_none()
             && !self.light_call_blocked_by_mainline_capture(&name);
         let result = if light_eligible {
-            self.call_compiled_function_positional_light(&cf, &args, fns, &name, def.name)
+            // No caller `CompiledCode` in scope here (see the `None` passed
+            // to `is_positional_light_call_eligible` above) -- eligibility
+            // has therefore already refused any `has_rw_positional_param`
+            // routine, so this is never asked to alias anything.
+            self.call_compiled_function_positional_light(&cf, &args, fns, &name, def.name, None)
         } else {
             self.call_compiled_function_named(&cf, args, fns, def.package, def.name)
         };

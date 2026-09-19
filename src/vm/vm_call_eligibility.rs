@@ -286,6 +286,87 @@ impl Interpreter {
                 .any(|v| matches!(v.view(), ValueView::Pair(..) | ValueView::ValuePair(..)))
     }
 
+    /// ADR-0109 (#8686 Phase 2) §2: whether every `is rw` positional
+    /// parameter's argument at THIS call is a shape the positional-light
+    /// path may actually alias. A signature-level check
+    /// (`is_positional_light_call_eligible`'s trait clause) cannot answer
+    /// this — the same routine can be called with a plain lexical in one
+    /// place and a subscript/literal/method result in another — so this is
+    /// re-derived per call, exactly like `positional_light_full_arity_call`:
+    /// both the two cold eligibility call sites AND the hot name-keyed
+    /// `pos_light_call_cache` dispatch (which serves every call shape a
+    /// call site uses for the same name) must agree on it.
+    ///
+    /// Admits only:
+    /// - a plain lexical read or plain-assignment-expression argument whose
+    ///   target the compiler resolved to a local of the CALLER's own frame
+    ///   (`Value::varref_slot()` is `Some` and not the `u32::MAX`
+    ///   "known not a local of this frame" sentinel), or
+    /// - an argument that is already a shared cell (`ContainerRef`/
+    ///   `HashEntryRef`) relayed from an outer `is rw` parameter.
+    ///
+    /// A parameter typed with one of the three native scalar spellings
+    /// (`int`/`str`/`num`) is admitted only when the argument's value
+    /// already has the exact matching native shape and needs no coercion:
+    /// binding an `is rw` argument must never run the general binder's
+    /// `Bool`->`Int`/... coercion (ADR-0109 §4), because coercion would fork
+    /// a fresh value away from the caller's own storage and silently break
+    /// write-visibility through the shared cell. A boxed nominal type
+    /// (`Int $x is rw`, `Str`, ...) is out of this slice's scope entirely —
+    /// it needs the general binder's type-check-then-box ordering — so any
+    /// `is rw` parameter with a non-native, non-empty type constraint always
+    /// declines here, permanently, for every call to that routine.
+    ///
+    /// Declining costs only a speedup, never correctness: the call falls
+    /// through to the general binder exactly as it did before this ADR.
+    pub(super) fn positional_light_rw_args_admitted(cf: &CompiledFunction, args: &[Value]) -> bool {
+        if !cf.has_rw_positional_param {
+            return true;
+        }
+        cf.param_defs.iter().enumerate().all(|(i, pd)| {
+            if pd.named || !pd.traits.iter().any(|t| t == "rw") {
+                return true;
+            }
+            let native_kind = match pd.type_constraint.as_deref() {
+                None => None,
+                Some("int") => Some("int"),
+                Some("str") => Some("str"),
+                Some("num") => Some("num"),
+                Some(_) => return false,
+            };
+            let Some(arg) = args.get(i) else {
+                return false;
+            };
+            match arg.view() {
+                // A relayed alias already IS a shared cell: it carries no
+                // name/slot to re-derive a native-shape check from, and the
+                // light path that first captured it (or the general binder,
+                // for a call this ADR does not touch) already validated
+                // whatever shape it needed to. Admit it for an untyped
+                // parameter, where no native shape check ever applies;
+                // decline for a native one rather than trust a shape this
+                // call site cannot re-verify.
+                ValueView::ContainerRef(_) | ValueView::HashEntryRef { .. } => {
+                    native_kind.is_none()
+                }
+                _ => match arg.varref_slot() {
+                    Some(slot) if slot != u32::MAX => match native_kind {
+                        Some("int") => {
+                            matches!(arg.unwrap_varref().view(), ValueView::Int(_))
+                        }
+                        // `str`/`num` need no exactness re-check: unlike
+                        // `int`, mutsu's native `str`/`num` fast-path type
+                        // check (`fast_type_check_tagged`) admits only an
+                        // exact `Str`/`Num` value in the first place -- there
+                        // is no Bool/BigInt-style coercion arm for either.
+                        _ => true,
+                    },
+                    _ => false,
+                },
+            }
+        })
+    }
+
     /// Check if eligible for the positional light call path.
     /// This path avoids push_call_frame, Sub value creation, block/routine push,
     /// callable_id lookup, and full bind_function_args_values. Parameters are
@@ -302,6 +383,7 @@ impl Interpreter {
         fn_name: &str,
         argc: usize,
         args: &[Value],
+        caller_code: Option<&CompiledCode>,
     ) -> bool {
         !fn_name.is_empty()
             && cf.code.state_locals.is_empty()
@@ -332,6 +414,16 @@ impl Interpreter {
             // so is admitted regardless (`positional_light_full_arity_call`).
             && (cf.light_required_positionals.is_some()
                 || Self::positional_light_full_arity_call(cf, argc, args))
+            // ADR-0109 (#8686 Phase 2): a signature with an `is rw` positional
+            // parameter is admitted only when this specific call's argument at
+            // that position is actually alias-capable AND a caller `CompiledCode`
+            // is on hand to promote it -- see `positional_light_rw_args_admitted`
+            // and `Interpreter::capture_var_cell`, which indexes the CALLER's own
+            // locals and so needs the caller's compiled code, not the callee's.
+            // Cheap no-op for the overwhelming majority of routines, which carry
+            // no `is rw` positional parameter at all (`has_rw_positional_param`).
+            && (!cf.has_rw_positional_param
+                || (caller_code.is_some() && Self::positional_light_rw_args_admitted(cf, args)))
             && cf.param_defs.iter().all(|pd| {
                 !pd.named
                     && pd.where_constraint.is_none()
@@ -340,7 +432,19 @@ impl Interpreter {
                     && pd.code_signature.is_none()
                     && !pd.sigilless
                     && !pd.is_invocant
-                    && pd.traits.is_empty()
+                    // ADR-0109 (#8686 Phase 2): a positional `$`-scalar
+                    // parameter whose only trait is `rw` is admitted at the
+                    // SIGNATURE level -- the per-call argument-shape and
+                    // native-coercion restrictions live in
+                    // `positional_light_rw_args_admitted` above, which is the
+                    // per-call gate this signature-level check cannot express
+                    // (whether THIS call's argument is actually a caller
+                    // lexical). Every other trait (`raw`, `copy`, ...) keeps
+                    // the general binder, matching the ADR's declared scope.
+                    && (pd.traits.is_empty()
+                        || (pd.traits.len() == 1
+                            && pd.traits[0] == "rw"
+                            && Self::is_plain_scalar_param_name(&pd.name)))
                     && pd.sub_signature.is_none()
                     // Only allow basic type constraints that fast_type_check handles.
                     // Excludes subset types, parametric roles, etc.

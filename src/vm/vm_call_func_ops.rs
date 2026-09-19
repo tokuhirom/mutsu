@@ -721,6 +721,16 @@ impl Interpreter {
                                             as usize,
                                     stack_args,
                                 ))
+                            // ADR-0109 (#8686 Phase 2): same per-call
+                            // re-check as `light_full_arity_only` just above,
+                            // and for the same reason -- this NAME-keyed
+                            // cache serves every call shape a call site uses,
+                            // so an `is rw` parameter's alias-capability must
+                            // be re-derived per call, not trusted from
+                            // whichever call first populated this entry. Free
+                            // for the overwhelming majority of routines
+                            // (`has_rw_positional_param` is false).
+                            && Self::positional_light_rw_args_admitted(cf, stack_args)
                         {
                             // Bind straight out of the stack (no args buffer):
                             // the callee takes the arguments in place from
@@ -751,6 +761,7 @@ impl Interpreter {
                                 compiled_fns,
                                 name_str,
                                 code.const_sym(name_idx),
+                                Some(code),
                             );
                             self.stack.push(result?);
                             // Slice F: drain any captured-outer writes the body
@@ -954,6 +965,7 @@ impl Interpreter {
                                 name_str,
                                 Self::positional_light_argc(&args),
                                 &args,
+                                Some(code),
                             )
                         {
                             // Promote to the ultra-fast positional cache at the
@@ -977,6 +989,7 @@ impl Interpreter {
                                 compiled_fns,
                                 name_str,
                                 name_sym,
+                                Some(code),
                             )
                         } else {
                             // The body must run under its *defining* package, not
@@ -1695,6 +1708,7 @@ impl Interpreter {
                         name,
                         Self::positional_light_argc(&args),
                         &args,
+                        Some(code),
                     )
                     && !Self::call_shares_container_into_scalar_param(cf, &args)
                     && !self.has_multi_candidates_cached_sym(name_sym)
@@ -1731,6 +1745,7 @@ impl Interpreter {
                         compiled_fns,
                         name,
                         name_sym,
+                        Some(code),
                     );
                     let result = result?;
                     return loan_env!(self, maybe_fetch_rw_proxy(result, !cf.returns_container()));
