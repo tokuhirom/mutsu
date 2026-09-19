@@ -1772,8 +1772,11 @@ impl Interpreter {
             // Twigils, qualified names and the `__mutsu_*` / `?FILE`-style
             // metadata keys are never plain module-scope declarations. A scalar
             // `my $x` is stored sigil-less (key `x`); `@`/`%` keep their sigil.
-            // `&` names are routines and have the registry, so they stay out.
-            let bare = name.strip_prefix(['@', '%']).unwrap_or(name.as_str());
+            // A `my constant &name` is a code value rather than a registered
+            // routine, so retain its `&`-sigiled binding too: a later tagged
+            // re-import needs a durable source after the module restores the
+            // importer's plain environment.
+            let bare = name.strip_prefix(['@', '%', '&']).unwrap_or(name.as_str());
             if name.contains("::")
                 || !bare
                     .chars()

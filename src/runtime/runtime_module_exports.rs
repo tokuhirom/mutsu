@@ -653,6 +653,17 @@ impl Interpreter {
                     .then(|| self.resolve_code_var(&format!("{module}::{bare}")))
                     .filter(|value| !value.is_nil())
             })
+            // A bare-file module's `my constant &name` lives in the
+            // compunit's durable module-scope lexical table after module
+            // loading restores the importer's plain environment.  The first
+            // import can still read the live env entry, but a later tagged
+            // re-import must recover the same code value from that table.
+            .or_else(|| {
+                self.module_scope_lexicals
+                    .get(module)
+                    .and_then(|entries| entries.get(name).or_else(|| entries.get(bare)))
+                    .cloned()
+            })
             .or_else(|| self.env.get(name).cloned())
     }
 
