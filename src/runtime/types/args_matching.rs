@@ -129,7 +129,9 @@ impl Interpreter {
         param_defs: &[ParamDef],
         package: Symbol,
     ) -> bool {
-        self.args_match_param_types_inner(args, param_defs, true, Some(package))
+        self.with_candidate_package(Some(package), |this| {
+            this.args_match_param_types_inner(args, param_defs, true, Some(package))
+        })
     }
 
     fn with_candidate_package<T>(

@@ -105,6 +105,11 @@ impl Interpreter {
                     // `my subset`, ...) is not registered until the body
                     // runs; accept its name here.
                     || cx.body_declared_types.contains(tc_base)
+                    // A bare enum member in a method signature is a literal
+                    // value constraint, not a type name (`multi method
+                    // encode(Text, ...)` where Text is an enum member).
+                    || self.enum_bare_value(tc_base).is_some()
+                    || crate::env::global_base_contains(tc_base)
                     || self.is_resolvable_type(tc)
                     // Qualify with each enclosing package. `tc_base`, not
                     // `tc`: a decorated constraint (`Column::List(Any)`,

@@ -290,9 +290,15 @@ impl Interpreter {
     }
 
     /// Resolve a potentially qualified role name to its registered key.
-    /// If `name` is in `self.registry().roles`, returns it as-is. Otherwise, if `name`
-    /// contains `::`, tries the short name (after the last `::`).
+    /// Package-local names are resolved against the current declaration scope
+    /// first; the direct and imported aliases below preserve the existing
+    /// fallback behavior for fully qualified and external names.
     pub(in crate::runtime) fn resolve_role_key(&self, name: &str) -> Option<String> {
+        if let Some(resolved) = self.resolve_type_in_current_package(name)
+            && self.is_role_type_name(&resolved)
+        {
+            return Some(resolved);
+        }
         if self.is_role_type_name(name) {
             return Some(name.to_string());
         }
