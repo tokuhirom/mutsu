@@ -3895,7 +3895,9 @@ pub(crate) fn class_body_plan(body: &[Stmt]) -> Vec<ClassBodyOp> {
     let mut flattened: Vec<&Stmt> = body
         .iter()
         .flat_map(|s| match s {
-            Stmt::SyntheticBlock(inner) => inner.iter().collect::<Vec<_>>(),
+            Stmt::SyntheticBlock(inner) if !synthetic_block_needs_atomic_compile(inner) => {
+                inner.iter().collect::<Vec<_>>()
+            }
             other => vec![other],
         })
         .collect();
@@ -3910,6 +3912,40 @@ pub(crate) fn class_body_plan(body: &[Stmt]) -> Vec<ClassBodyOp> {
             classify_class_body_stmt(stmt, decl_line)
         })
         .collect()
+}
+
+/// Whether a `SyntheticBlock`'s statements must be compiled together, as one
+/// `Compiler::compile_stmt` call, rather than split apart by
+/// [`class_body_plan`]'s flatten step.
+///
+/// `Compiler::compile_stmt`'s own `Stmt::SyntheticBlock` arm scans its
+/// statement list for these same markers (`Stmt::MarkBind`,
+/// `Stmt::MarkSigilless`, `Stmt::MarkSigillessReadonly`, and the `@`-bind
+/// marker call) to decide how the `Stmt::VarDecl` sitting alongside them
+/// should store its value — e.g. whether a sigilless bind (`my \x := $y`)
+/// aliases `$y`'s container or snapshots its value. That decision needs the
+/// WHOLE block as context. Splitting the block into independent
+/// single-statement chunks (each compiled by its own child `Compiler`, as a
+/// top-level class-body "Other" statement is) loses that context: the
+/// `VarDecl`'s own compile no longer sees the `MarkSigilless` that follows
+/// it, so the runtime's `OpCode::MarkSigillessBind` handler falls back to
+/// inspecting the already-stored (and already-dereferenced) value instead of
+/// the compiler's verdict — turning a container bind into an immutable-value
+/// one. A `my \x := $x` placed directly at class-body top level (a common
+/// class-scoped-scratch-variable idiom) hit exactly this: the bind aliased
+/// nothing, and the first later write from a method died with "Cannot modify
+/// an immutable Int" (Math::Interval 0.0.3's `Operation` helper class).
+fn synthetic_block_needs_atomic_compile(stmts: &[Stmt]) -> bool {
+    stmts.iter().any(|s| {
+        matches!(
+            s,
+            Stmt::MarkBind | Stmt::MarkSigilless(_) | Stmt::MarkSigillessReadonly(_)
+        ) || matches!(
+            s,
+            Stmt::Expr(Expr::Call { name, .. })
+                if name.resolve() == "__mutsu_record_bound_array_len"
+        )
+    })
 }
 
 /// `has` declarations nested inside a `sub`/`method` within a class body, or
