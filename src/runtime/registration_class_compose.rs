@@ -215,10 +215,22 @@ impl Interpreter {
             .and_then(|m| m.get("language-revision"))
             .map(|v| v.to_string_value())
             .unwrap_or_else(|| "c".to_string());
-        // Submethods from roles are only composed when the class is 6.c
-        // AND the role is also 6.c. In 6.d+, submethods are never composed
-        // from roles.
+        // BUILD/TWEAK/DESTROY submethods from roles are only composed into
+        // the flat method table when the class is 6.c AND the role is also
+        // 6.c -- see the `CONSTRUCTION_PHASE_SUBMETHODS` doc comment below
+        // for why (they run through a separate ordering walk regardless).
         let compose_submethods = cx.class_lang_rev == "c" && role_lang_rev == "c";
+        // Every OTHER public submethod composes normally in 6.c AND 6.d, but
+        // NOT in 6.e+ -- verified against `raku`: a role's plain `submethod
+        // foo` is reachable as an ordinary `.foo` call on the consuming
+        // class at the default (6.d) revision, but at 6.e+ only the
+        // role-qualified form (`.R::foo`) works and `.foo` raises
+        // X::Method::NotFound (`roast/S14-roles/submethods-6e.t`'s own
+        // comment: "Since 6.e submethods are not composed into consuming
+        // classes"). Either side being 6.e+ suppresses it (checked against
+        // `raku` with the class and the role declared in separately
+        // `use`d, differently-versioned compilation units).
+        let either_side_is_6e_plus = cx.class_lang_rev >= "e" || role_lang_rev.as_str() >= "e";
         // Collect type parameter substitutions for method type constraints.
         let type_subs: Vec<(String, String)> = role_param_names
             .iter()
@@ -373,11 +385,47 @@ impl Interpreter {
         for (mname, overloads) in &role.methods {
             // Skip methods declared with `my` scope -- they are role-private
             // and should not be composed into consuming classes.
-            // Submethods (is_submethod=true) ARE composed only when both
-            // the class and role share 6.c language revision.
+            //
+            // Submethods (is_submethod=true) compose into the class's own
+            // method table like any other role method for most shapes --
+            // raku flattens role composition textually -- but three
+            // exceptions carry their own rule, checked in order:
+            //
+            // 1. BUILD/TWEAK/DESTROY are invoked through a SEPARATE
+            //    role-submethod-ordering walk (`ordered_role_submethods_for_class`
+            //    / `build_construction_phase_steps`) that reads the role
+            //    definitions directly, regardless of whether they are also
+            //    composed here. Composing them into the flat table too would
+            //    run them a second time for a 6.e+ class --
+            //    `run_pending_instance_destroys_inner`'s "class's own
+            //    DESTROY" scan does not filter by `role_origin`, so it would
+            //    pick up a role-composed DESTROY there in addition to the
+            //    dedicated walk. So these three stay gated on 6.c/6.c
+            //    (`compose_submethods`).
+            // 2. A PRIVATE submethod always composes, at every language
+            //    revision (verified against `raku`, including 6.e.PREVIEW;
+            //    see #8815) -- `self!name` from the consuming class's own
+            //    method body must reach it.
+            // 3. Every other (public, non-construction-phase) submethod
+            //    composes at 6.c/6.d but NOT at 6.e+ (`either_side_is_6e_plus`).
+            const CONSTRUCTION_PHASE_SUBMETHODS: [&str; 3] = ["BUILD", "TWEAK", "DESTROY"];
             let non_my_overloads: Vec<&MethodDef> = overloads
                 .iter()
-                .filter(|md| !md.is_my || (md.is_submethod && compose_submethods))
+                .filter(|md| {
+                    if !md.is_my {
+                        return true;
+                    }
+                    if !md.is_submethod {
+                        return false;
+                    }
+                    if CONSTRUCTION_PHASE_SUBMETHODS.contains(&mname.as_str()) {
+                        return compose_submethods;
+                    }
+                    if md.is_private {
+                        return true;
+                    }
+                    !either_side_is_6e_plus
+                })
                 .collect();
             if non_my_overloads.is_empty() {
                 continue;

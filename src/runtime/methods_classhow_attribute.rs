@@ -596,6 +596,23 @@ impl Interpreter {
                     &mut self.trait_mod_attr_writeback_value,
                     saved_attr_wb_value,
                 );
+                // Store the attribute's own mixin BEFORE the `compose` hook
+                // below runs, not after: `compose` (AttrX::Lazy's
+                // `LazyAttributeContainerHOW.compose`, among others) typically
+                // reads `type.^attributes` right away to find attributes that
+                // did a role the trait just mixed in (`$attr does
+                // LazyAttribute`), and `^attributes` serves this very
+                // registry entry (`make_attribute_object`'s `stored` lookup).
+                // Storing it only after `compose` returned left `^attributes`
+                // seeing the pre-mixin object while `compose` ran, so a
+                // `.grep(LazyAttribute)` inside `compose` always came back
+                // empty and the lazy accessor was never installed (#8815).
+                if let Some(attr_mixin_val) = &attr_mixin_val {
+                    self.registry_mut().class_attribute_trait_objects.insert(
+                        (owner.to_string(), attr_name_str.to_string()),
+                        attr_mixin_val.clone(),
+                    );
+                }
                 if let Some(mixin_val) = self.trait_mod_writeback_value.take() {
                     // Attribute traits may compose a role whose `compose`
                     // method edits the declaring class's method table. This
@@ -627,12 +644,6 @@ impl Interpreter {
                             vec![Value::package(Symbol::intern(owner))],
                         )?;
                     }
-                }
-                if let Some(attr_mixin_val) = attr_mixin_val {
-                    self.registry_mut().class_attribute_trait_objects.insert(
-                        (owner.to_string(), attr_name_str.to_string()),
-                        attr_mixin_val,
-                    );
                 }
                 // Raku dispatches `trait_mod:<is>` as an ordinary multi: the
                 // built-in candidates and any user-declared one (e.g.
