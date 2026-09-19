@@ -296,9 +296,10 @@ split is a partition of the samples, so `sum(regions[].samples) == samples`.
   source file has ([#8719](https://github.com/tokuhirom/mutsu/issues/8719)), the
   same string `Code.file`, `CallFrame.file` and a backtrace report; `$?FILE`'s
   absolutified spelling is derived from it, and is not what the tables are keyed
-  by. One reconciliation remains: the call site of a call made inside a `use`d
-  module is resolved from the enclosing routine's declaring file, because a
-  frame's own `?FILE` still names the mainline there
+  by. The call site of a call made inside a `use`d module names that module,
+  not the mainline that `use`d it: every `RoutineFrame` push resolves it from
+  the calling routine's own declaring file at push time, rather than trusting
+  the dynamically-scoped `?FILE`
   ([#8743](https://github.com/tokuhirom/mutsu/issues/8743)).
 - **`EVAL` and threads.** An `EVAL`'d unit appears under its own name
   (`EVAL_<n>`), as it does in a backtrace. Inclusive time is always the sampled

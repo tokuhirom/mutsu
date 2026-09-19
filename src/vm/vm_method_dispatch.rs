@@ -849,7 +849,7 @@ impl Interpreter {
             method_def.lexical_package,
             Symbol::intern(method_name),
             self.current_source_line(),
-            self.current_source_file_sym(),
+            self.executing_source_file_sym(),
             method_def.source_file.as_deref().map(Symbol::intern),
             method_def.is_submethod,
         );
@@ -2080,7 +2080,7 @@ impl Interpreter {
             method_def.lexical_package,
             Symbol::intern(method_name),
             self.current_source_line(),
-            self.current_source_file_sym(),
+            self.executing_source_file_sym(),
             method_def.source_file.as_deref().map(Symbol::intern),
             method_def.is_submethod,
         );

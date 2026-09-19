@@ -672,15 +672,17 @@ implementation settled that the sketch left open:
 - **A call site's file comes from the enclosing body, not from `$?FILE`.** The first profile of a
   multi-file program (`benchmarks/bench-json-fast.raku`) filed every callsite inside JSON::Fast
   under the *script's* path with the *module's* line numbers -- a caller row reading
-  `bench-json-fast.raku:275` for a file 84 lines long -- because a frame records its call site's
+  `bench-json-fast.raku:275` for a file 84 lines long -- because a frame recorded its call site's
   file as the dynamically-scoped `?FILE`, which still names the mainline while a `use`d module's
-  routine runs (#8743). The profiler now derives it from the declaring file of the routine whose
-  body holds the call site, in one outward pass over the sampled stack and from the frame stack
-  at the exact counter's push site. This is a profiler-side reconciliation: it changes no
-  Raku-visible file, and settling it at the source -- which means changing what a backtrace and
-  `CallFrame.file` report -- is now [#8743](https://github.com/tokuhirom/mutsu/issues/8743). Its
-  sibling, the canonicalized-versus-spelled split that `src/profile/paths.rs` used to reconcile,
-  was settled by #8719 and that file is gone.
+  routine runs. The profiler used to paper over this with its own reconciliation pass
+  (`ProfileAggregate::resolve_caller_files`, an outward walk over the sampled stack). Settled at
+  the source by [#8743](https://github.com/tokuhirom/mutsu/issues/8743): every
+  `push_*_routine_with_location` now resolves the call site the same way, via
+  `Interpreter::executing_source_file_sym` (an outward walk over the *live* `routine_stack`, done
+  once at push time), so `RoutineFrame.file` -- and therefore a backtrace, `CallFrame.file`, and
+  the profiler's own counters -- all read the correct file with no reconciliation pass left to run.
+  Its sibling, the canonicalized-versus-spelled split that `src/profile/paths.rs` used to
+  reconcile, was settled by #8719 and that file is gone the same way.
 
 Slice 6 is explicitly optional and unstarted, tracked as
   [#8738](https://github.com/tokuhirom/mutsu/issues/8738). Each slice landed as its own PR with its

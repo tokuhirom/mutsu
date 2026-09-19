@@ -69,6 +69,15 @@ Fact 2 is what makes the divergence fixable without giving anything up: if `$?FI
 
 `t/tooling/profiler-unit-file-identity.t` pins all of it: the two Raku-visible spellings, the `.`/`..` preservation, the `-e` pseudo-name, and the profile document's single file row.
 
-## 5. What this does NOT settle
+## 5. What this does NOT settle (settled by #8743)
 
-A frame's `file` is the **dynamically scoped** `?FILE`, which still names the mainline while a `use`d module's routine runs — so a call made inside a module is filed under the script's path with the module's line numbers. That is a different divergence with a much larger blast radius (it changes backtrace text), it keeps its profiler-side reconciliation in `ProfileAggregate::resolve_caller_files`, and it is [#8743](https://github.com/tokuhirom/mutsu/issues/8743).
+A frame's `file` used to be the **dynamically scoped** `?FILE`, which still named the mainline
+while a `use`d module's routine ran — so a call made inside a module was filed under the script's
+path with the module's line numbers. That was a different divergence with a much larger blast
+radius (it changed backtrace text) than the one this ADR settles, and it kept its own
+profiler-side reconciliation in `ProfileAggregate::resolve_caller_files`. Settled by
+[#8743](https://github.com/tokuhirom/mutsu/issues/8743): every `RoutineFrame` push now resolves
+its call-site `file` via `Interpreter::executing_source_file_sym` (an outward walk over the live
+`routine_stack` for the nearest frame that names its own file), not `?FILE`, so a backtrace,
+`CallFrame.file` and the profiler's counters all read the correct file with no reconciliation pass
+left to run.

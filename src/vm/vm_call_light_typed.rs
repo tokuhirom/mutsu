@@ -550,7 +550,7 @@ impl Interpreter {
             cf.package_sym(),
             func_name_sym,
             self.current_source_line(),
-            self.current_source_file_sym(),
+            self.executing_source_file_sym(),
             cf.source_file_sym(),
         );
 
