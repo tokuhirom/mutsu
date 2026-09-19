@@ -280,7 +280,8 @@ impl Interpreter {
             }
             let mut attrs = HashMap::new();
             attrs.insert("name".to_string(), Value::str(full_name.clone()));
-            let how = Value::make_instance(Symbol::intern("Perl6::Metamodel::CurriedRoleHOW"), attrs);
+            let how =
+                Value::make_instance(Symbol::intern("Perl6::Metamodel::CurriedRoleHOW"), attrs);
             self.registry_mut()
                 .class_how_values
                 .insert(full_name, how.clone());
@@ -362,7 +363,9 @@ impl Interpreter {
             // `is_individual_role_type_object` only matches a `Package` or
             // `Instance` target, so `how_cache_key` is always `Some` here.
             if let Some(key) = how_cache_key.clone() {
-                self.registry_mut().class_how_values.insert(key, how.clone());
+                self.registry_mut()
+                    .class_how_values
+                    .insert(key, how.clone());
             }
             return Ok(how);
         }
@@ -411,56 +414,55 @@ impl Interpreter {
         // lives on the name, not on the values made from it.
         let is_type_object = matches!(target.view(), ValueView::Package(_));
         // Use appropriate HOW metaclass for each type kind
-        let how_name: String = if let Some(native) =
-            self.registry().declared_native_how.get(&type_name).cloned()
-        {
-            // Minted at runtime by `Metamodel::<X>HOW.new_type(...)`; the
-            // metaclass it was minted through is its metaclass.
-            native
-        } else if let Some(kind) = self.registry().package_kinds.get(&type_name) {
-            // A bare `package`/`module`/`grammar` reports its own metaclass
-            // rather than the default `ClassHOW`.
-            match kind {
-                crate::ast::PackageKind::Package => "Perl6::Metamodel::PackageHOW",
-                crate::ast::PackageKind::Module => "Perl6::Metamodel::ModuleHOW",
-                crate::ast::PackageKind::Grammar => "Perl6::Metamodel::GrammarHOW",
-            }
-            .to_string()
-        } else if is_type_object
-            && !self.registry().classes.contains_key(&type_name)
-            && !self.registry().roles.contains_key(&type_name)
-            && !self.registry().enum_types.contains_key(&type_name)
-            && !self.registry().subsets.contains_key(&type_name)
-            && !crate::runtime::Interpreter::is_builtin_type(&type_name)
-            && self.package_namespace_exists(&type_name)
-        {
-            // A package created implicitly rather than declared: `my $foo::bar
-            // = 1` brings the package `foo` into being with no `package`
-            // statement, so it has no `package_kinds` entry, but it is still a
-            // package and reports `PackageHOW`, not the default `ClassHOW`.
-            "Perl6::Metamodel::PackageHOW".to_string()
-        } else if is_type_object
-            && (self.registry().roles.contains_key(&type_name) && !type_name.contains('[')
+        let how_name: String =
+            if let Some(native) = self.registry().declared_native_how.get(&type_name).cloned() {
+                // Minted at runtime by `Metamodel::<X>HOW.new_type(...)`; the
+                // metaclass it was minted through is its metaclass.
+                native
+            } else if let Some(kind) = self.registry().package_kinds.get(&type_name) {
+                // A bare `package`/`module`/`grammar` reports its own metaclass
+                // rather than the default `ClassHOW`.
+                match kind {
+                    crate::ast::PackageKind::Package => "Perl6::Metamodel::PackageHOW",
+                    crate::ast::PackageKind::Module => "Perl6::Metamodel::ModuleHOW",
+                    crate::ast::PackageKind::Grammar => "Perl6::Metamodel::GrammarHOW",
+                }
+                .to_string()
+            } else if is_type_object
+                && !self.registry().classes.contains_key(&type_name)
+                && !self.registry().roles.contains_key(&type_name)
+                && !self.registry().enum_types.contains_key(&type_name)
+                && !self.registry().subsets.contains_key(&type_name)
+                && !crate::runtime::Interpreter::is_builtin_type(&type_name)
+                && self.package_namespace_exists(&type_name)
+            {
+                // A package created implicitly rather than declared: `my $foo::bar
+                // = 1` brings the package `foo` into being with no `package`
+                // statement, so it has no `package_kinds` entry, but it is still a
+                // package and reports `PackageHOW`, not the default `ClassHOW`.
+                "Perl6::Metamodel::PackageHOW".to_string()
+            } else if is_type_object
+                && (self.registry().roles.contains_key(&type_name) && !type_name.contains('[')
                 // The core roles mutsu models natively have no `RoleDef`; ask the
                 // single core-role oracle rather than keeping a private copy of
                 // the list here (which had drifted: it omitted `Blob`/`Buf`/
                 // `Sequence`/`QuantHash`/`Scheduler`, so those reported `ClassHOW`).
                 || crate::runtime::types::is_builtin_role_name(&type_name))
-        {
-            "Perl6::Metamodel::ParametricRoleGroupHOW".to_string()
-        } else if self.registry().enum_types.contains_key(&type_name) {
-            "Perl6::Metamodel::EnumHOW".to_string()
-        } else if self.registry().subsets.contains_key(&type_name)
-            || matches!(type_name.as_str(), "UInt" | "NativeInt")
-        {
-            "Perl6::Metamodel::SubsetHOW".to_string()
-        } else if crate::runtime::types::parse_coercion_type(&type_name).is_some() {
-            "Perl6::Metamodel::CoercionHOW".to_string()
-        } else if self.class_is_grammar(&type_name) {
-            "Perl6::Metamodel::GrammarHOW".to_string()
-        } else {
-            "Perl6::Metamodel::ClassHOW".to_string()
-        };
+            {
+                "Perl6::Metamodel::ParametricRoleGroupHOW".to_string()
+            } else if self.registry().enum_types.contains_key(&type_name) {
+                "Perl6::Metamodel::EnumHOW".to_string()
+            } else if self.registry().subsets.contains_key(&type_name)
+                || matches!(type_name.as_str(), "UInt" | "NativeInt")
+            {
+                "Perl6::Metamodel::SubsetHOW".to_string()
+            } else if crate::runtime::types::parse_coercion_type(&type_name).is_some() {
+                "Perl6::Metamodel::CoercionHOW".to_string()
+            } else if self.class_is_grammar(&type_name) {
+                "Perl6::Metamodel::GrammarHOW".to_string()
+            } else {
+                "Perl6::Metamodel::ClassHOW".to_string()
+            };
         let anonymous_mixin_layers = match type_name.as_str() {
             "Array" => 2,
             "Hash" | "Set" | "Bag" | "Mix" => 1,
