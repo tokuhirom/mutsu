@@ -122,6 +122,7 @@ impl Compiler {
                     } {
                         let source_slot = self.local_map.get(source_name.as_str()).copied();
                         let name_idx = self.code.add_constant(Value::str(source_name));
+                        self.code.note_rebind_target(source_slot);
                         self.code
                             .emit(OpCode::TagContainerRef(name_idx, source_slot));
                     }

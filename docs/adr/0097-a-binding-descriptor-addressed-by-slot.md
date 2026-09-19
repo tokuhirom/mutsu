@@ -414,3 +414,177 @@ the loop-topic half of `deep_readonly` at once), or take `constant_var` on
 its own once someone has decided its EVAL-enumeration consumer's fate, or
 take `type`/`hash_key_type` alone as a dedicated slice given its call-site
 count and history. Bundling all five, as written, is not one PR.
+
+## 11. A second, distinct consumer: the `GetLocal`/Tier-B spoiler latch (#8748, 2026-09-19)
+
+[#8748](https://github.com/tokuhirom/mutsu/issues/8748) reported a *different*
+name→metadata indirection than the one slices 2-5 investigate, but the same
+disease: the interpreter's `GetLocal` fast path (#8332) and the JIT's Tier B
+inline local read (ADR-0004 J4d) both gate on
+`crate::vm::vm_jit::LOCAL_READ_SPOILERS`, one process-global, monotonic,
+never-decremented `AtomicU32`. Packing a single `ContainerRef` cell or `Proxy`
+anywhere in the process — one `my $x := $y` on line 1 of an unrelated file —
+bumps it forever, which disables the fast local read for **every slot, in
+every frame, for the rest of the process**, including slots that are plain
+`Int`s with no cell, no alias, and no relation to the bind at all. Measured
+cost: +21.7% Ir with the JIT on, +11.6% with it off, on a loop that never
+reads the spoiled variable (see the issue for the full repro and profile).
+
+### 11.1 Why this is the same shape of problem as §1, and why it is not slice 2-5's problem
+
+`LOCAL_READ_SPOILERS` already has a *static* half:
+`CompiledCode::local_read_plain(idx)`, a per-slot, name-derived bit computed
+once per chunk (attribute slots, `!`/`@`/`%`/`.`-prefixed names are
+statically excluded). The interpreter and JIT both gate on
+`local_read_unspoiled() && code.local_read_plain(idx)` — but because the left
+operand is one global bit shared by every slot in every chunk, a real,
+per-slot static classification is short-circuited into uselessness the
+moment *any* cell exists *anywhere*. This is exactly §1.5's finding restated:
+a process-wide flag is standing in for a question that is actually about one
+binding's own history, not a fact about the process.
+
+It is a **separate** consumer from slices 2-5, not a sixth item on that list:
+`BindingDesc` answers questions about a binding's own declared shape
+(sigilless, bound, typed, ...), while this latch answers a question about
+*any* binding's dynamic history (was a cell ever created here). It shares
+slice 1's design principle — collapse a process/name-keyed probe into a
+per-slot, compile-time-resolved one — but touches different code (the JIT's
+emitted guard, not the scalar-store cascade) and has its own, independent
+correctness surface. It gets its own section rather than a slice number
+because, unlike slices 2-5, part of it is investigated below to the point of
+a concrete, testable mechanism (already landed as a data-only slice), which
+none of slices 2-5 reached.
+
+### 11.2 `LOCAL_READ_SPOILERS` is actually four unrelated sources, of two different shapes
+
+Reading `note_local_read_spoiler`'s callers (`src/vm/vm_jit.rs:129-159`)
+splits the latch into two classes:
+
+- **Slot-addressable in principle**: a `ContainerRef` cell
+  (`CONTAINER_CELLS`) or a `Proxy` (`note_proxy_value`) packed into *this
+  slot*. The compiler can, in principle, know which local names are ever the
+  target of such a value — this is a static fact about the chunk's own
+  bytecode, the same kind of fact `local_read_plain` already is.
+- **Inherently name/dynamic-scope-based, not slot-addressable from this
+  chunk's compilation**: a `$CALLER::x := ...` alias (`CALLER_VAR_BINDS`)
+  targets a variable in some *caller* frame by name and depth, resolved at
+  call time — the compiling chunk cannot know which of its own slots a
+  distant caller's `$CALLER::` will name. The two remaining sources
+  (`Interpreter::atomic_var_seen`, `Interpreter::sigilless_attrs_active`) are
+  *per-interpreter* runtime flags, not compile-time facts about any chunk at
+  all.
+
+So a sound per-slot answer can only ever cover the first class. The second
+class has to stay a dynamic (if no longer necessarily process-global) latch
+regardless of how precise the first class becomes.
+
+### 11.3 Investigating the first class found the existing analysis is incomplete, not just process-global
+
+The natural place to look for "does this chunk already know which slots
+receive a `:=`/Proxy value" is `CompiledCode::scalar_bind_locals` (§1.3's
+table: "the slots declared `my $x := …`") and `OpCode::TagContainerRef`,
+which every `:=`-shaped compile site already emits with a
+`source_slot: Option<u32>` resolved from `self.local_map` — i.e. the
+compiler already computes the exact target slot at every one of these sites,
+it just does not record it anywhere durable. Auditing every
+`TagContainerRef`/`TagContainerRefReversed` emission site
+(`compiler/control_for.rs`, `compiler/expr_block.rs`, `compiler/expr_data.rs`,
+`compiler/helpers_block_inline.rs`, `compiler/stmt.rs`) plus
+`scalar_bind_locals`'s own call site found the coverage is **not** what a
+first read suggests:
+
+- `scalar_bind_locals` only fires for a **scalar** `my $x := …`
+  declaration (`is_scalar_colon_bind` explicitly excludes `@`/`%`) — the
+  issue's own repro, `my @unused := @data;`, is an **array** bind and is
+  invisible to it.
+- A **statement-level rebind with no `my`** (`$x := $y;`, targeting an
+  already-declared lexical) emits *no* `TagContainerRef` at all — it
+  compiles straight to `SetLocal`/`SetGlobal` (`stmt.rs`'s `AssignOp::Bind`
+  arm, `emit_set_named_var`), so this shape was previously invisible to both
+  `scalar_bind_locals` and every `TagContainerRef` site.
+- The remaining `TagContainerRef` sites (expression-context `:=`, `for`-loop
+  `is rw` source aliasing, `given`/`when`/tail-position topic
+  container-writeback) do resolve a slot via `self.local_map`, but nothing
+  collected it.
+
+This matters beyond completeness for its own sake: it is a second instance of
+§1.5's warning that "a name is not an address" — the *existing* per-name
+tracking (`scalar_bind_locals`) was itself missing two of the four shapes a
+`:=` can take, and would have been silently wrong as the sole basis for a
+fast-path relaxation.
+
+### 11.4 What has landed: a data-collection-only slice, no behaviour change
+
+Following exactly the precedent of slice 1 ("no behaviour change, no
+namespace retired — this is the consolidation that makes every later slice a
+one-site change"), this PR adds:
+
+- `CompiledCode::rebind_target_slots: Vec<u32>` — every slot ever recorded as
+  a compile-time-resolved `TagContainerRef`/`TagContainerRefReversed` target,
+  fed by a new `CompiledCode::note_rebind_target(Option<u32>)` called from
+  all eight existing emission sites, from the declaration-time array/hash
+  bind path (previously only `scalar_bind_locals`, and only for scalars),
+  and from the statement-level no-`my` rebind path identified in §11.3 (which
+  had no `TagContainerRef` to piggyback on before this PR).
+- `CompiledCode::local_may_be_celled(idx) -> bool`, memoized the same way as
+  `local_read_plain` (a `OnceLock<Box<[bool]>>` built once per chunk),
+  answering "was this slot ever observed, at compile time, as a bind
+  target" — conservative default `true` (the *pessimistic* direction, unlike
+  `local_read_plain`'s `false`) for an index outside the recorded range.
+- Five Rust unit tests (`opcode::local_may_be_celled_tests`) compiling real
+  source and asserting the exact repro shape from #8748: an unrelated
+  `my @unused := …` marks only its own slot, a plain program with no `:=`
+  anywhere marks nothing, and the previously-uncovered no-`my` rebind and
+  expression-context rebind shapes are both tracked.
+
+**Neither field is read by any execution path yet** (`#[allow(dead_code)]`,
+same pattern used elsewhere in this codebase for a deliberately-unconsumed
+preparatory field). This is intentional: §11.5 lists what is still open
+before wiring `local_may_be_celled` into `local_read_unspoiled`'s gate would
+be sound, and getting that wrong is not a `make roast` red — it is a fast
+path silently serving a stale value for a program that happens not to be in
+the roast/`t/` corpus. ADR-0097 §1.5 records two prior instances of exactly
+this failure mode, both caught only by a pre-existing test, not by review.
+
+### 11.5 What is still open before wiring this in
+
+- **Closure capture is not covered at all.** A nested `sub`/closure that
+  captures an outer lexical and later binds or mutates it through a shared
+  cell does not go through `self.local_map` in the *outer* chunk's own
+  compilation (a true closure boundary gets its own `CompiledCode` and
+  reaches outer names through the upvalue mechanism, not `SetLocal`), so
+  `rebind_target_slots` cannot see it from the outer chunk alone. Whether the
+  compiler's existing closure-capture bookkeeping (built to construct the
+  upvalue array) already identifies, from the *outer* chunk's perspective,
+  which of its own slots are captured by an inner closure needs its own
+  investigation before this can be folded in as a third source alongside
+  `TagContainerRef` and the declaration path.
+- **The site audit in §11.3 is not proven exhaustive.** It covers every
+  `TagContainerRef`-shaped bind this investigation found, plus the one
+  no-`my`-rebind gap, but (per closures above) is known to be incomplete,
+  and a codebase this size may have other bind-shaped constructs (parameter
+  binding forms, sigilless `\`-capture, sub-signature destructuring) that
+  were not audited here.
+- **Wiring it in must not simply replace the global check** — the residual
+  sources (§11.2's second class: `CALLER_VAR_BINDS`, the two per-interpreter
+  flags) still need a latch, whether that stays the current
+  `LOCAL_READ_SPOILERS` word (with `CONTAINER_CELLS`/`note_proxy_value` no
+  longer contributing to it once the per-slot answer subsumes their case) or
+  something narrower.
+- **The JIT side is comparatively low-risk once the interpreter side is
+  proven**: because the classification is per-chunk and compile-time-fixed
+  (exactly like `local_read_plain`), `vm_jit_tier_b.rs`'s `emit_get_local`
+  would bake the per-slot answer into the emitted-code eligibility decision
+  the same way it already does for `local_read_plain` — no new invalidation
+  story, since a `false` answer never becomes `true` later for the same
+  chunk.
+- **Verification approach for the wiring slice**: the existing
+  `debug_assert!` block in `exec_get_local_op_inner`
+  (`vm_var_assign_local_get.rs:189-202`) already cross-checks the *global*
+  latch's three readable sources against reality on every fast-path hit in
+  debug builds, exercised by the `gc-stress-tap`/`jit-stress-tap` CI jobs.
+  The wiring slice should extend that same assertion to check
+  `local_may_be_celled(idx)` against `self.locals[idx]`'s actual runtime kind
+  before trusting it to gate anything in release, giving the closure-capture
+  gap (and any other unaudited source) a real chance to surface as a debug
+  assertion rather than a silent wrong answer.

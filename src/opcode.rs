@@ -5337,6 +5337,35 @@ pub(crate) struct CompiledCode {
     /// both the interpreter's `GetLocal` fast path (#8332) and the JIT's Tier B
     /// inline read (ADR-0004 J4d).
     pub(crate) local_read_plain: std::sync::OnceLock<Box<[bool]>>,
+    /// Raw slots ever recorded as the compile-time-resolved target of an
+    /// `OpCode::TagContainerRef`/`TagContainerRefReversed` emission anywhere
+    /// in this chunk (see [`Self::note_rebind_target`] and
+    /// [`Self::local_may_be_celled`]). Populated at every call site that
+    /// already computes `self.local_map.get(name).copied()` for that opcode
+    /// — `:=` binds (declaration and expression-context rebind), `for`-loop
+    /// `is rw` source aliasing, and `given`/`when`/tail-position topic
+    /// container writeback all funnel through it. Not deduplicated: a slot
+    /// may be pushed more than once, which only wastes a few bytes of `Vec`
+    /// capacity, never correctness.
+    ///
+    /// #8748 (ADR-0097 §11): this is the raw material for a per-slot answer
+    /// to "could this local ever become a `ContainerRef`/`Proxy` word",
+    /// which the Tier B `GetLocal` fast path and its interpreter twin
+    /// currently answer with one process-global monotonic latch
+    /// ([`crate::vm::vm_jit::LOCAL_READ_SPOILERS`]) — so a single `:=`
+    /// anywhere in the process disables the fast local read for every slot,
+    /// in every frame, forever. **Not yet consumed by that gate**: closures
+    /// that capture and rebind an outer lexical are a second, distinct
+    /// source of celling that this Vec does not yet cover (see the ADR
+    /// section), so wiring [`Self::local_may_be_celled`] into the fast path
+    /// ahead of that investigation would be unsound. This slice is
+    /// data-collection only, exactly like ADR-0097 slice 1 — no behaviour
+    /// change.
+    pub(crate) rebind_target_slots: Vec<u32>,
+    /// Lazily-built per-slot memo of [`Self::rebind_target_slots`] (see that
+    /// field and [`Self::local_may_be_celled`]).
+    #[allow(dead_code)]
+    pub(crate) local_may_be_celled: std::sync::OnceLock<Box<[bool]>>,
     /// Lazily-built `Symbol` sets over [`free_var_syms`](Self::free_var_syms)
     /// and [`locals_sym`](Self::locals_sym), for `capture_closure_env`'s
     /// membership tests. Both are pure functions of the chunk, but the capture
@@ -5774,6 +5803,8 @@ impl CompiledCode {
             const_syms: Vec::new(),
             local_attr_keys: std::sync::OnceLock::new(),
             local_read_plain: std::sync::OnceLock::new(),
+            rebind_target_slots: Vec::new(),
+            local_may_be_celled: std::sync::OnceLock::new(),
             free_var_sym_set: std::sync::OnceLock::new(),
             local_sym_set: std::sync::OnceLock::new(),
             stmt_pool_bodies: std::sync::OnceLock::new(),
@@ -5832,6 +5863,50 @@ impl CompiledCode {
                 .collect()
         });
         slots.get(idx).copied().unwrap_or(false)
+    }
+
+    /// Record `slot` (when present) as a compile-time-resolved
+    /// `TagContainerRef`/`TagContainerRefReversed` target — see
+    /// [`Self::rebind_target_slots`]. Called from every compiler site that
+    /// already resolves `self.local_map.get(name).copied()` for one of those
+    /// opcodes, so this is a pure side record with no new resolution of its
+    /// own.
+    pub(crate) fn note_rebind_target(&mut self, slot: Option<u32>) {
+        if let Some(slot) = slot {
+            self.rebind_target_slots.push(slot);
+        }
+    }
+
+    /// Whether local slot `idx` was ever observed, at compile time, as the
+    /// resolved target of a `TagContainerRef`/`TagContainerRefReversed`
+    /// emission in this chunk (see [`Self::rebind_target_slots`]) — i.e.
+    /// whether a `:=` bind, a `for`-loop `is rw` source, or a topic
+    /// container-writeback tag names this slot anywhere in the bytecode.
+    ///
+    /// **Not currently read by any execution path.** This is raw material
+    /// for a slot-addressed replacement of one arm of
+    /// [`crate::vm::vm_jit::LOCAL_READ_SPOILERS`] (#8748, ADR-0097 §11): a
+    /// slot for which this returns `false` is never the target of any
+    /// bind-shaped opcode *visible to this chunk's own compilation*, but
+    /// closures that capture and rebind the slot from a nested chunk are a
+    /// second, distinct source of celling this analysis does not yet cover
+    /// — see the ADR section before wiring this into any fast-path gate.
+    /// Conservative default for an index this chunk never assigned (e.g. a
+    /// hand-built `CompiledCode` whose `locals` outgrew its analysis) is
+    /// `true`, the opposite direction from [`Self::local_read_plain`]'s
+    /// `false`, because here `true` is the *pessimistic* answer.
+    #[allow(dead_code)]
+    pub(crate) fn local_may_be_celled(&self, idx: usize) -> bool {
+        let slots = self.local_may_be_celled.get_or_init(|| {
+            let mut marked = vec![false; self.locals.len()];
+            for &slot in &self.rebind_target_slots {
+                if let Some(m) = marked.get_mut(slot as usize) {
+                    *m = true;
+                }
+            }
+            marked.into_boxed_slice()
+        });
+        slots.get(idx).copied().unwrap_or(true)
     }
 
     /// The shared body of the closure declaration at `stmt_pool[idx]`, built
@@ -10173,5 +10248,75 @@ mod compiled_fns_identity {
         // the table size is a power of two.
         assert!(CALL_IC_WAYS.is_power_of_two());
         assert!(CallIcSlot::way(crate::symbol::Symbol::intern("anything")) < CALL_IC_WAYS);
+    }
+}
+
+/// #8748 (ADR-0097 §11): `rebind_target_slots` / `local_may_be_celled` is a
+/// pure data-collection slice — not yet read by any execution path — so these
+/// tests pin what it collects rather than any observable interpreter
+/// behavior. They compile real source and inspect the resulting
+/// `CompiledCode` directly, the same technique
+/// `compiler::declaration_plan_tests` uses.
+#[cfg(test)]
+mod local_may_be_celled_tests {
+    use super::CompiledCode;
+    use crate::compiler::Compiler;
+
+    fn slot_of(code: &CompiledCode, name: &str) -> usize {
+        code.locals
+            .iter()
+            .position(|n| n.as_str() == name)
+            .unwrap_or_else(|| panic!("no local slot named {name:?} (locals: {:?})", code.locals))
+    }
+
+    fn compile(source: &str) -> CompiledCode {
+        let (stmts, _) = crate::parse_dispatch::parse_source(source).expect("source parses");
+        Compiler::new().compile(&stmts).0
+    }
+
+    #[test]
+    fn declaration_bind_marks_only_its_own_slot() {
+        // The exact #8748 repro shape: an unrelated `:=` must not mark the
+        // plain locals a hot loop actually reads.
+        let code = compile("my @unused := (1, 2, 3); my $s = 0; my $i = 1;");
+        assert!(code.local_may_be_celled(slot_of(&code, "@unused")));
+        assert!(!code.local_may_be_celled(slot_of(&code, "s")));
+        assert!(!code.local_may_be_celled(slot_of(&code, "i")));
+    }
+
+    #[test]
+    fn scalar_declaration_bind_marks_its_slot() {
+        let code = compile("my $y = 1; my $x := $y; say $x;");
+        assert!(code.local_may_be_celled(slot_of(&code, "x")));
+        assert!(!code.local_may_be_celled(slot_of(&code, "y")));
+    }
+
+    #[test]
+    fn statement_level_rebind_with_no_my_is_still_tracked() {
+        // `$x := $y;` with no `my` at all -- a rebind of an already-declared
+        // lexical -- has no `TagContainerRef` of its own (it falls straight
+        // to `SetLocal`/`SetGlobal`); this is the gap the stmt.rs `AssignOp::Bind`
+        // arm closes.
+        let code = compile("my $x; my $y = 1; $x := $y;");
+        assert!(code.local_may_be_celled(slot_of(&code, "x")));
+        assert!(!code.local_may_be_celled(slot_of(&code, "y")));
+    }
+
+    #[test]
+    fn expression_context_rebind_is_tracked() {
+        let code = compile("my $c; my $y = 1; if $c := $y { 1 }");
+        assert!(code.local_may_be_celled(slot_of(&code, "c")));
+    }
+
+    #[test]
+    fn plain_program_with_no_binds_marks_nothing() {
+        let code = compile("my $a = 1; my $b = 2; say $a + $b;");
+        for idx in 0..code.locals.len() {
+            assert!(
+                !code.local_may_be_celled(idx),
+                "slot {idx} ({:?}) wrongly marked with no `:=` anywhere in the program",
+                code.locals[idx]
+            );
+        }
     }
 }
