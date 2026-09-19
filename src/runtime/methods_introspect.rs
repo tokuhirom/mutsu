@@ -359,7 +359,8 @@ impl Interpreter {
         }
         if self.is_individual_role_type_object(target) {
             let display = self.role_type_object_display_name(target);
-            let mut how = Self::native_how_instance("Perl6::Metamodel::ParametricRoleHOW", &display);
+            let mut how =
+                Self::native_how_instance("Perl6::Metamodel::ParametricRoleHOW", &display);
             // A role-declaration trait (`role Nom is description(...) { }`)
             // dispatches `trait_mod:<is>` with the role GROUP's own `Package`
             // as `$c` (mutsu has no other type object to hand it at that
@@ -373,8 +374,11 @@ impl Interpreter {
                 .as_ref()
                 .map(|n| self.role_group_name(n))
                 .unwrap_or_else(|| display.clone());
-            if let Some(ValueView::Mixin(_, group_mixins)) =
-                self.registry().class_how_values.get(&group_key).map(Value::view)
+            if let Some(ValueView::Mixin(_, group_mixins)) = self
+                .registry()
+                .class_how_values
+                .get(&group_key)
+                .map(Value::view)
             {
                 how = Value::mixin(how, group_mixins.overrides().clone());
             }
