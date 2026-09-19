@@ -3145,6 +3145,7 @@ impl Interpreter {
             pending_call_arg_source_slots: std::collections::HashMap::new(),
             pending_rw_writeback_slots: std::collections::HashMap::new(),
             test_pending_callsite_line: None,
+            type_meta_key_cache: std::cell::Cell::new(None),
             nqp_arg_scratch: Vec::new(),
             cur_source_line: 1,
             thread_spawn_origin: None,

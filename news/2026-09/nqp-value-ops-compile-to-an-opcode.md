@@ -91,9 +91,27 @@ between these two builds, which is layout, not this change):
 | `nqp::ordat` loop vs. the `.substr(3, 1).ord` loop | 1.54x faster | **2.89x faster** |
 
 Writing the inner loop in `nqp::` is now the faster choice under mutsu, as it
-is under rakudo, and an nqp op costs about what the VM's own native `+`
-opcode does. The wall-clock trend belongs to the bench CI series rather than
-to these local runs.
+is under rakudo. The wall-clock trend belongs to the bench CI series rather
+than to these local runs.
+
+**Against rakudo, though, the gap is still two orders of magnitude**, and the
+sentence this paragraph used to end with — that an nqp op now costs about what
+the VM's own native `+` opcode does — measured mutsu against itself and read
+as more than it was. Timed in-script over 10M iterations with startup
+excluded, the `nqp::islt_i` + `nqp::add_i` loop is:
+
+| | ns/iter | vs. raku |
+| --- | ---: | ---: |
+| raku | 5.2 | 1x |
+| mutsu, before this change | 1064.4 | 205x |
+| mutsu, after | 489.7 | **94x** |
+
+Halving it is real and it removes the polarity inversion, but it does not
+change the order of magnitude, and the native `+` opcode it now ties is just
+as far from rakudo: mutsu's JIT emits a Cranelift *call* per opcode
+(`vm_jit_support::noarg_shim` maps `OpCode::Add => helpers::add`), never
+`iadd`, and operands stay NaN-boxed on a heap stack throughout. Closing that
+is [#8831](https://github.com/tokuhirom/mutsu/issues/8831).
 
 ## What this does not fix
 
@@ -101,9 +119,13 @@ Profiling the `nqp::add_i` loop after the change puts nqp dispatch at ~13% of
 it; the remaining string `match op` inside the one surviving table is ~2%, so
 converting all 171 arms to id constants is not worth its churn. What dominates
 now is general VM work that has nothing to do with `nqp::` — `SetLocal`
-(15.8%), the `my int` type check on each assignment (4.7%), env lookups. That
+(15.8%), the `my int` type check on each assignment (4.7%), env lookups, and
+two allocations plus two thread-local probes per iteration. The allocations
+and the thread-local probes were the bounded part and are gone (see
+`news/2026-09/typed-local-store-stops-allocating-per-assignment.md`); the rest
 is the register/unboxed-IR half of
-[#8673](https://github.com/tokuhirom/mutsu/issues/8673), which needs an ADR.
+[#8673](https://github.com/tokuhirom/mutsu/issues/8673), tracked as
+[#8831](https://github.com/tokuhirom/mutsu/issues/8831), which needs an ADR.
 
 Pinned by `t/routines/dispatch/nqp-value-ops-compile-to-opcode.t`, alongside
 the existing `t/routines/dispatch/nqp-dispatch-fast-path.t`.

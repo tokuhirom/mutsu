@@ -468,18 +468,54 @@ impl Interpreter {
     /// `SetGlobal` interns its constant once) probe this several times per
     /// store, and each `&str` probe re-hashed the name to find its symbol.
     pub(crate) fn var_type_constraint_sym(&self, name_sym: Symbol) -> Option<String> {
+        let stored = self.var_type_constraint_value_sym(name_sym)?;
+        match stored.view() {
+            // `to_string` on the `Arc<String>` guard went through `Display`;
+            // this is a plain copy of the bytes.
+            ValueView::Str(tc) => Some(tc.as_str().to_owned()),
+            _ => None,
+        }
+    }
+
+    /// [`Self::var_type_constraint_sym`] without the copy: the env's own `Str`
+    /// value, whose clone is a refcount bump rather than a fresh `String`.
+    ///
+    /// The constraint is only ever read, compared and passed on as a `&str`,
+    /// so copying its bytes out of the env was one malloc **and** one free per
+    /// typed store — `my int $i = nqp::add_i($i, 1)` paid both on every
+    /// iteration. A caller that needs the `&str` holds this value and borrows
+    /// through it (`exec_set_local_op_inner`); the owned-`String` wrapper
+    /// above stays for the callers that keep the constraint past the borrow.
+    pub(crate) fn var_type_constraint_value_sym(&self, name_sym: Symbol) -> Option<Value> {
         // Per NAME, not per program: in a program that declares any typed
         // lexical at all the whole-program latch is permanently on, so every
         // store of every *untyped* variable in it paid this env probe.
         if !Self::env_type_constraint_seen_for(name_sym) {
             return None;
         }
-        let meta_key = Self::type_meta_key_for_sym(name_sym);
-        match self.env.get_sym(meta_key).map(Value::view) {
-            // `to_string` on the `Arc<String>` guard went through `Display`;
-            // this is a plain copy of the bytes.
-            Some(ValueView::Str(tc)) => Some(tc.as_str().to_owned()),
-            _ => None,
+        let meta_key = self.type_meta_key_cached(name_sym);
+        let stored = self.env.get_sym(meta_key)?;
+        matches!(stored.view(), ValueView::Str(_)).then(|| stored.clone())
+    }
+
+    /// [`Self::type_meta_key_for_sym`] through a one-entry memo.
+    ///
+    /// The mapping from a name symbol to its `__mutsu_type::<name>` key is a
+    /// pure function, fixed for the life of the process, so caching it is
+    /// always sound. [`MetaNs::key`] already memoizes it — but in a
+    /// thread-local `HashMap`, so every typed store paid a TLS access and a
+    /// hash to re-learn a constant. A hot loop stores to the same variable
+    /// every iteration, so one entry is all it takes to miss only once.
+    ///
+    /// [`MetaNs::key`]: crate::runtime::meta_ns::MetaNs::key
+    fn type_meta_key_cached(&self, name_sym: Symbol) -> Symbol {
+        match self.type_meta_key_cache.get() {
+            Some((cached_name, key)) if cached_name == name_sym => key,
+            _ => {
+                let key = Self::type_meta_key_for_sym(name_sym);
+                self.type_meta_key_cache.set(Some((name_sym, key)));
+                key
+            }
         }
     }
 
@@ -495,6 +531,24 @@ impl Interpreter {
             Some(sym) => self.var_type_constraint_sym(sym),
             None => self.var_type_constraint(name),
         }
+    }
+
+    /// [`Self::var_type_constraint_for`] answering with the env's own `Str`
+    /// value instead of a copy — see [`Self::var_type_constraint_value_sym`].
+    #[inline]
+    pub(crate) fn var_type_constraint_value_for(
+        &self,
+        name: &str,
+        name_sym: Option<Symbol>,
+    ) -> Option<Value> {
+        let sym = match name_sym {
+            Some(sym) => sym,
+            // The whole-program latch first, so a program with no typed
+            // lexical at all does not intern the name just to miss.
+            None if Self::env_type_constraint_seen() => Symbol::intern(name),
+            None => return None,
+        };
+        self.var_type_constraint_value_sym(sym)
     }
 
     /// Whether any `atomicint`/atomic-storage variable has ever been registered

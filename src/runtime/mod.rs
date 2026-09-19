@@ -2318,6 +2318,12 @@ pub struct Interpreter {
     /// nested frame with a same-named local cannot consume the pending writeback.
     pub(crate) pending_rw_writeback_slots: std::collections::HashMap<String, (u32, usize)>,
     test_pending_callsite_line: Option<i64>,
+    /// One-entry memo for a name symbol's `__mutsu_type::<name>` env key, the
+    /// probe every typed store makes (`var_type_constraint_value_sym`). The
+    /// mapping is a pure function of the name, so caching it is sound
+    /// unconditionally; one entry suffices because a hot loop stores to the
+    /// same variable every iteration.
+    type_meta_key_cache: std::cell::Cell<Option<(Symbol, Symbol)>>,
     /// Operand buffer reused by every `OpCode::NqpOp` execution.
     ///
     /// An nqp op's operand list is statically shaped and dies with the op, so
