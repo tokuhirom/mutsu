@@ -29,26 +29,30 @@ change" precedent as
 [ADR-0097](../../docs/adr/0097-a-binding-descriptor-addressed-by-slot.md)
 slice 1: a new `CompiledCode::rebind_target_slots: Vec<u32>`, fed from all
 eight `TagContainerRef`/`TagContainerRefReversed` emission sites plus the two
-previously-uncovered declaration and no-`my`-rebind paths, and a memoized
-`CompiledCode::local_may_be_celled(idx)` accessor mirroring
-`local_read_plain`'s existing per-chunk memoization pattern. Five new unit
+previously-uncovered declaration and no-`my`-rebind paths. Five new unit
 tests (`opcode::local_may_be_celled_tests`) pin the exact #8748 repro shape:
 an unrelated array bind marks only its own slot, a program with no `:=`
 anywhere marks nothing, and both previously-uncovered rebind shapes are
 tracked correctly.
 
-Neither new field is read by any execution path yet. Wiring
-`local_may_be_celled` into the fast-path gate is deliberately deferred:
-closure capture of a mutable outer lexical is a second, distinct source of
-celling this analysis does not cover (a true closure boundary reaches outer
-names through the upvalue mechanism, not the compiling chunk's own
-`local_map`), and ADR-0097 §1.5 already records two prior instances of a
-similar "make store logic per-slot" attempt shipping a subtle correctness
-bug caught only by an existing test, not by review. ADR-0097 §11 records the
-full investigation, the residual sources that must stay on a dynamic latch
-regardless (`$CALLER::x := ...` aliasing is inherently name/dynamic-scope-based,
-not slot-addressable from the compiling chunk), and the concrete next steps
-— auditing closure capture, and extending the existing
-`exec_get_local_op_inner` debug-assertion cross-check to verify
-`local_may_be_celled` against runtime reality before it gates anything in
-release.
+The field is written by real compile sites but read by no execution path
+yet, and deliberately by no production accessor either: a first pass added a
+memoized `local_may_be_celled(idx)` accessor mirroring `local_read_plain`'s
+per-chunk memoization, but with no real caller it was genuinely dead code,
+and `scripts/check-panic-surface.py`'s `#[allow(` ratchet (#8186) correctly
+rejected the `#[allow(dead_code)]` it would have taken to ship. The per-slot
+answer now lives only as a small test helper reading `rebind_target_slots`
+directly; a follow-up wiring slice is what earns the memoized accessor back
+into production code. This is deliberate: closure capture of a mutable outer
+lexical is a second, distinct source of celling this analysis does not cover
+(a true closure boundary reaches outer names through the upvalue mechanism,
+not the compiling chunk's own `local_map`), and ADR-0097 §1.5 already records
+two prior instances of a similar "make store logic per-slot" attempt shipping
+a subtle correctness bug caught only by an existing test, not by review.
+ADR-0097 §11 records the full investigation, the residual sources that must
+stay on a dynamic latch regardless (`$CALLER::x := ...` aliasing is
+inherently name/dynamic-scope-based, not slot-addressable from the compiling
+chunk), and the concrete next steps — auditing closure capture, and
+extending the existing `exec_get_local_op_inner` debug-assertion cross-check
+to verify the per-slot answer against runtime reality before it gates
+anything in release.

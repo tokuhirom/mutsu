@@ -526,25 +526,33 @@ one-site change"), this PR adds:
   bind path (previously only `scalar_bind_locals`, and only for scalars),
   and from the statement-level no-`my` rebind path identified in §11.3 (which
   had no `TagContainerRef` to piggyback on before this PR).
-- `CompiledCode::local_may_be_celled(idx) -> bool`, memoized the same way as
-  `local_read_plain` (a `OnceLock<Box<[bool]>>` built once per chunk),
-  answering "was this slot ever observed, at compile time, as a bind
-  target" — conservative default `true` (the *pessimistic* direction, unlike
-  `local_read_plain`'s `false`) for an index outside the recorded range.
 - Five Rust unit tests (`opcode::local_may_be_celled_tests`) compiling real
   source and asserting the exact repro shape from #8748: an unrelated
   `my @unused := …` marks only its own slot, a plain program with no `:=`
   anywhere marks nothing, and the previously-uncovered no-`my` rebind and
   expression-context rebind shapes are both tracked.
 
-**Neither field is read by any execution path yet** (`#[allow(dead_code)]`,
-same pattern used elsewhere in this codebase for a deliberately-unconsumed
-preparatory field). This is intentional: §11.5 lists what is still open
-before wiring `local_may_be_celled` into `local_read_unspoiled`'s gate would
-be sound, and getting that wrong is not a `make roast` red — it is a fast
-path silently serving a stale value for a program that happens not to be in
-the roast/`t/` corpus. ADR-0097 §1.5 records two prior instances of exactly
-this failure mode, both caught only by a pre-existing test, not by review.
+**The field is written but not read by any execution path yet.** A first
+version of this slice also added a memoized `local_may_be_celled(idx) ->
+bool` accessor (mirroring `local_read_plain`'s `OnceLock<Box<[bool]>>`
+pattern) with a conservative `true` default — but with no real caller, that
+method and its backing field were genuinely dead code, and
+`scripts/check-panic-surface.py`'s `#[allow(` ratchet (#8186) correctly
+rejected the two `#[allow(dead_code)]` markers it would have taken to ship
+them. Rather than force the ratchet open for a preparatory accessor, the
+per-slot memo was pushed down into the test module itself (a small
+`may_be_celled(code, idx)` test helper reading `rebind_target_slots`
+directly) — production code carries only the raw, write-only `Vec<u32>`,
+which needs no allow because it is genuinely exercised by real compile
+sites. The follow-up wiring slice is what gives the memoized accessor a real
+caller and earns it back into production code.
+
+This incompleteness is intentional: §11.5 lists what is still open before
+wiring a per-slot answer into `local_read_unspoiled`'s gate would be sound,
+and getting that wrong is not a `make roast` red — it is a fast path
+silently serving a stale value for a program that happens not to be in the
+roast/`t/` corpus. ADR-0097 §1.5 records two prior instances of exactly this
+failure mode, both caught only by a pre-existing test, not by review.
 
 ### 11.5 What is still open before wiring this in
 
