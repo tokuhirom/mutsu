@@ -2239,6 +2239,36 @@ impl Interpreter {
             return Ok(Value::array(Vec::new()));
         }
 
+        // A user class `is Range` inherits Range's own private introspection
+        // attributes (`$!excludes-min`, `$!excludes-max`, `$!infinite`,
+        // `$!is-int`), which real Rakudo's `.bless` never actually populates
+        // for a subclass — verified against `raku`: even an explicit
+        // `MyRange.bless(excludes-min => True, min => 1, max => 5)` still
+        // answers `False` from `.excludes-min` (only `min`/`max` bind, since
+        // those are plain positional-attribute names Range's own accessor
+        // methods read straight back; the boolean predicates are computed by
+        // Range's real `new`, which `.bless` bypasses). So these four
+        // zero-arg predicates always resolve to their class-declared default
+        // when the subclass does not override them: ordinary inherited-method
+        // dispatch, which must win over `handles`/`FALLBACK` interception,
+        // not be swallowed by it. Without this, calling one of them on an
+        // un-overridden `is Range` subclass fell all the way through to
+        // `FALLBACK` (or `X::Method::NotFound` with none defined) instead of
+        // the inherited default (tokuhirom/mutsu#8807).
+        if args.is_empty()
+            && matches!(
+                method,
+                "excludes-min" | "excludes-max" | "infinite" | "is-int"
+            )
+            && let ValueView::Instance { class_name, .. } = target.view()
+            && self
+                .class_mro(&class_name.resolve())
+                .iter()
+                .any(|s| s.as_str() == "Range")
+        {
+            return Ok(Value::FALSE);
+        }
+
         // Wildcard delegation (`handles *`) and FALLBACK method dispatch.
         // Dispatch order: wildcard delegation -> FALLBACK -> built-in fallbacks -> error.
         {
