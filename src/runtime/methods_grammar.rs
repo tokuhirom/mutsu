@@ -606,7 +606,14 @@ impl Interpreter {
         self.set_current_package(package_name.to_string());
         let has_start_rule =
             self.resolve_token_defs(&start_rule).is_some() || self.has_proto_token(&start_rule);
-        if !has_start_rule {
+        // A start rule with no `rule`/`token`/`regex`/proto definition may
+        // still be an ordinary user-defined `method` -- a well-established
+        // idiom for running setup code before delegating to a real rule
+        // (issue #8752). Dispatch it via `dispatch_package_parse_via_method`
+        // below instead of rejecting the whole parse outright.
+        let is_method_start_rule =
+            !has_start_rule && self.has_user_method(package_name, &start_rule);
+        if !has_start_rule && !is_method_start_rule {
             self.set_current_package(saved_package);
             if let Some(old_topic) = saved_topic {
                 self.env.insert("_".to_string(), old_topic);
@@ -672,6 +679,20 @@ impl Interpreter {
         // before the parse returns to the caller.
         let mut active_start_dynvars = None;
         let result = (|| -> Result<Value, RuntimeError> {
+            if is_method_start_rule {
+                return self.dispatch_package_parse_via_method(
+                    super::methods_grammar_method_start::MethodStartRuleCall {
+                        package_name,
+                        start_rule: &start_rule,
+                        text: &text,
+                        is_full_parse,
+                        start_pos,
+                        continue_pos,
+                        rule_args: &rule_args,
+                    },
+                    &mut actions_obj,
+                );
+            }
             let candidates =
                 match self.eval_token_call_candidates_at(&start_rule, &rule_args, candidate_from) {
                     Ok(Some(candidates)) => candidates,
