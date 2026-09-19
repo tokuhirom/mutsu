@@ -96,12 +96,20 @@ impl Interpreter {
     /// package-context sensitivity is carried in the key (see
     /// [`Self::bare_name_ctx_key`]), so this is strictly conservative.
     pub(crate) fn has_proto_cached(&mut self, name: &str) -> bool {
+        self.has_proto_cached_sym(name, Symbol::intern(name))
+    }
+
+    /// [`Self::has_proto_cached`] for a caller that already holds the
+    /// callsite name's `Symbol` (every `CallFunc`-shaped site does, via
+    /// [`crate::opcode::CompiledCode::const_sym`]), so the cache key does not
+    /// re-hash a string constant it already had ([#8690](https://github.com/tokuhirom/mutsu/issues/8690)).
+    pub(crate) fn has_proto_cached_sym(&mut self, name: &str, name_sym: Symbol) -> bool {
         let pgen = self.registry().proto_generation();
         if self.has_proto_cache_gen != pgen {
             self.has_proto_cache.clear();
             self.has_proto_cache_gen = pgen;
         }
-        let key = self.bare_name_ctx_key(Symbol::intern(name));
+        let key = self.bare_name_ctx_key(name_sym);
         if let Some(&cached) = self.has_proto_cache.get(&key) {
             return cached;
         }
@@ -113,8 +121,19 @@ impl Interpreter {
     /// Cached [`Self::has_declared_function`]; guarded by `fn_resolve_gen`
     /// like `multi_candidates_cache`, with the package context in the key.
     pub(crate) fn has_declared_function_cached(&mut self, name: &str) -> bool {
+        self.has_declared_function_cached_sym(name, Symbol::intern(name))
+    }
+
+    /// [`Self::has_declared_function_cached`] for a caller that already holds
+    /// the callsite name's `Symbol` — see [`Self::has_proto_cached_sym`]
+    /// ([#8690](https://github.com/tokuhirom/mutsu/issues/8690)).
+    pub(crate) fn has_declared_function_cached_sym(
+        &mut self,
+        name: &str,
+        name_sym: Symbol,
+    ) -> bool {
         let generation = self.fn_resolve_gen;
-        let key = self.bare_name_ctx_key(Symbol::intern(name));
+        let key = self.bare_name_ctx_key(name_sym);
         if let Some(&cached) = self.declared_fn_cache.get(generation, &key) {
             return cached;
         }
@@ -127,8 +146,15 @@ impl Interpreter {
     /// the package context in the key. The uncached probe resolves EVERY
     /// registry function key to a `String` and prefix-compares it, per call.
     pub(crate) fn has_multi_function_cached(&mut self, name: &str) -> bool {
+        self.has_multi_function_cached_sym(name, Symbol::intern(name))
+    }
+
+    /// [`Self::has_multi_function_cached`] for a caller that already holds
+    /// the callsite name's `Symbol` — see [`Self::has_proto_cached_sym`]
+    /// ([#8690](https://github.com/tokuhirom/mutsu/issues/8690)).
+    pub(crate) fn has_multi_function_cached_sym(&mut self, name: &str, name_sym: Symbol) -> bool {
         let generation = self.fn_resolve_gen;
-        let key = self.bare_name_ctx_key(Symbol::intern(name));
+        let key = self.bare_name_ctx_key(name_sym);
         if let Some(&cached) = self.multi_fn_cache.get(generation, &key) {
             return cached;
         }

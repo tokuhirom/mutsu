@@ -1030,6 +1030,7 @@ impl Interpreter {
         // the lexical callable below.
         let lexical_override: Option<Value> = {
             let name_str = Self::const_str(code, name_idx);
+            let name_sym = code.const_sym(name_idx);
             // Only look for a lexical override when there is actually a
             // same-named package sub to shadow. When no package sub exists,
             // the normal dispatch path already handles lexical `&name`
@@ -1042,10 +1043,10 @@ impl Interpreter {
             // circuits the whole check for a builtin like `make` (no registry
             // key carries the name, so `has_function` is false), and the
             // multi-candidates full-map scan runs last, memoized.
-            if !self.fn_base_name_registered(name_str)
+            if !self.fn_base_name_registered_sym(name_str, name_sym)
                 || !self.has_function(name_str)
-                || self.has_proto_cached(name_str)
-                || self.has_multi_candidates_cached(name_str)
+                || self.has_proto_cached_sym(name_str, name_sym)
+                || self.has_multi_candidates_cached_sym(name_sym)
             {
                 None
             } else {
@@ -1055,9 +1056,7 @@ impl Interpreter {
                 // free-var case just below, it must be visible to a bareword
                 // call anywhere within that unit's reach, so it is not gated
                 // by `free_var_syms`.
-                let is_export_override = self
-                    .export_amp_override_names
-                    .contains(&Symbol::intern(name_str));
+                let is_export_override = self.export_amp_override_names.contains(&name_sym);
                 let candidate = dispatch_key::with_amp_name(name_str, |ampname| {
                     // First check local slots (parameter bindings live here).
                     self.locals_get_by_name(code, ampname).or_else(|| {
@@ -1089,7 +1088,7 @@ impl Interpreter {
                 0usize,
                 Vec::<&'static str>::new(),
             );
-            let use_cache = !self.has_multi_candidates_cached(name_str);
+            let use_cache = !self.has_multi_candidates_cached_sym(name_sym);
             if use_cache
                 && self.wrap_sub_id_for_name(name_str).is_none()
                 && !loan_env!(self, routine_is_test_assertion_by_name(name_str, &[]))
@@ -1168,6 +1167,7 @@ impl Interpreter {
             }
         }
         let name = Self::const_str(code, name_idx).to_string();
+        let name_sym = code.const_sym(name_idx);
         let arity = arity as usize;
         if self.stack.len() < arity {
             return Err(RuntimeError::new("Interpreter stack underflow in CallFunc"));
@@ -1180,7 +1180,7 @@ impl Interpreter {
         let decoded_sources = self.decode_arg_sources(code, arg_sources_idx);
         let (args, arg_sources) =
             Self::spread_call_args_by_syntax(code, raw_args, arg_sources_idx, decoded_sources);
-        let args = self.normalize_call_args_for_target(&name, args);
+        let args = self.normalize_call_args_for_target(&name, name_sym, args);
         let (args, callsite_line) = self.sanitize_call_args_owned(args);
         // Don't auto-FETCH Proxy args for callees that take their arguments as
         // CONTAINERS by contract, or when in lvalue assignment context
@@ -1664,7 +1664,7 @@ impl Interpreter {
             // the light path's cache key and the named entry all want it, and
             // each used to re-hash the same name (#7766 unit 2).
             let name_sym = Symbol::intern(name);
-            let compiled = if !self.has_proto_cached(name) {
+            let compiled = if !self.has_proto_cached_sym(name, name_sym) {
                 self.find_compiled_function_memo(
                     compiled_fns,
                     name,
@@ -1694,12 +1694,11 @@ impl Interpreter {
                         &args,
                     )
                     && !Self::call_shares_container_into_scalar_param(cf, &args)
-                    && !self.has_multi_candidates_cached(name)
+                    && !self.has_multi_candidates_cached_sym(name_sym)
                     && !loan_env!(self, routine_is_test_assertion_by_name(name, &args))
                     && self.wrap_sub_id_for_name(name).is_none()
                     && !self.light_call_blocked_by_mainline_capture(name)
                 {
-                    let name_sym = Symbol::intern(name);
                     let cur_pkg_sym = self.current_package_sym();
                     if !self
                         .pos_light_call_cache
@@ -1747,7 +1746,7 @@ impl Interpreter {
                 // could not hand this path a per-candidate body at all
                 // (roast/S06-multi/positional-vs-named.t).
                 if Self::is_light_call_eligible(cf, name)
-                    && !self.has_multi_candidates_cached(name)
+                    && !self.has_multi_candidates_cached_sym(name_sym)
                     && !Self::call_shares_container_into_scalar_param(cf, &args)
                     && !Self::call_shares_container_into_named_scalar_param(
                         cf,
@@ -1848,7 +1847,7 @@ impl Interpreter {
                 // paths above instead rely on their own scoped-overlay merge to
                 // signal env_dirty only when a captured-outer write happened, so
                 // a pure compiled call no longer forces a per-call locals pull.
-                if self.has_proto_cached(name)
+                if self.has_proto_cached_sym(name, name_sym)
                     && let Some(def) = self.vm_resolve_trivial_proto_candidate(name, &args)
                 {
                     // VM-native proto dispatch (ledger §D, multi-dispatch VM-ization):
@@ -1866,7 +1865,7 @@ impl Interpreter {
                     let returns_container = Self::routine_is_rw_capable(&def);
                     let result = self.compile_and_call_function_def(&def, args, compiled_fns)?;
                     loan_env!(self, maybe_fetch_rw_proxy(result, !returns_container))
-                } else if self.has_proto_cached(name)
+                } else if self.has_proto_cached_sym(name, name_sym)
                     && let Some(result) =
                         self.vm_try_run_nontrivial_proto_body(name, args.clone(), compiled_fns)
                 {
@@ -1877,7 +1876,9 @@ impl Interpreter {
                     // existing proto-dispatch handler. Non-OTF-eligible protos return
                     // None and fall through to the interpreter unchanged.
                     result
-                } else if self.has_multi_candidates_cached(name) && !self.has_proto_cached(name) {
+                } else if self.has_multi_candidates_cached_sym(name_sym)
+                    && !self.has_proto_cached_sym(name, name_sym)
+                {
                     // User-defined multi candidates take priority over builtins.
                     // Resolve the winning candidate Interpreter-side via the same resolver
                     // call_function_fallback uses (③ PR-3, ledger §2). When the
@@ -1952,8 +1953,8 @@ impl Interpreter {
                     // the interpreter (e.g. a nested `sub` whose `when` control flow
                     // must not escape the enclosing routine — Test::Util's
                     // is-deeply-junction). Those keep tree-walking unchanged.
-                    if !self.has_proto_cached(name)
-                        && !self.has_multi_candidates_cached(name)
+                    if !self.has_proto_cached_sym(name, name_sym)
+                        && !self.has_multi_candidates_cached_sym(name_sym)
                         && let Some(def) = loan_env!(self, resolve_function_with_types(name, &args))
                     {
                         let is_builtin = crate::runtime::Interpreter::is_builtin_function(name);
@@ -1969,7 +1970,7 @@ impl Interpreter {
                                 args,
                                 compiled_fns,
                                 pkg_sym,
-                                Symbol::intern(name),
+                                name_sym,
                             )?;
                             return loan_env!(
                                 self,
@@ -2018,12 +2019,10 @@ impl Interpreter {
                     self.set_pending_call_arg_sources(None);
                     let result = result?;
                     loan_env!(self, maybe_fetch_rw_proxy(result, true))
-                } else if let Some(native_result) =
-                    self.try_native_function(Symbol::intern(name), &args)
-                {
+                } else if let Some(native_result) = self.try_native_function(name_sym, &args) {
                     native_result
                 } else if !self.is_interpreter_handled_function(name)
-                && !self.has_multi_candidates_cached(name)
+                && !self.has_multi_candidates_cached_sym(name_sym)
                 && let Some(def) = loan_env!(self, resolve_function_with_types(name, &args))
                 // Only OTF-compile simple functions: no default params, no
                 // code params (&foo), no where constraints, no closures.

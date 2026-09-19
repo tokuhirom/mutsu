@@ -329,6 +329,7 @@ impl Interpreter {
     pub(super) fn normalize_call_args_for_target(
         &mut self,
         name: &str,
+        name_sym: Symbol,
         raw_args: Vec<Value>,
     ) -> Vec<Value> {
         let plain_args: Vec<Value> = raw_args
@@ -341,9 +342,15 @@ impl Interpreter {
         // `has_multi_function` (a full functions-map scan) cannot match, so a
         // builtin like `make` skips both. `has_proto` reads a separate map and
         // stays unguarded.
-        if (self.fn_base_name_registered(name)
-            && (self.has_declared_function_cached(name) || self.has_multi_function_cached(name)))
-            || self.has_proto_cached(name)
+        //
+        // `name_sym` is the callsite name's pre-interned `Symbol` (every caller
+        // holds it via `CompiledCode::const_sym`), so these four predicates
+        // read the cache key straight off it instead of re-hashing `name`
+        // once each ([#8690](https://github.com/tokuhirom/mutsu/issues/8690)).
+        if (self.fn_base_name_registered_sym(name, name_sym)
+            && (self.has_declared_function_cached_sym(name, name_sym)
+                || self.has_multi_function_cached_sym(name, name_sym)))
+            || self.has_proto_cached_sym(name, name_sym)
         {
             raw_args
         } else {
