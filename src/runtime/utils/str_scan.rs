@@ -63,6 +63,42 @@ pub(crate) fn split_once_bracket(name: &str) -> Option<(&str, &str)> {
     Some((&name[..at], &name[at + 1..]))
 }
 
+/// `pkg.rsplit_once("::")`, without the `StrSearcher`/`TwoWaySearcher` setup.
+///
+/// `lookup_in_package_chain` (the package-chain walk every free-variable read
+/// that misses its own lexical bucket takes — `unit_lexical_slot` above all)
+/// calls this once per candidate package per tier walked. Line-level
+/// `callgrind` profiling of a `JSON::Fast.from-json` parse (#8673) found
+/// `<core::str::pattern::StrSearcher>::new` and its `TwoWaySearcher`/
+/// `CharSearcher` machinery costing over 15% of total instructions retired,
+/// almost all of it reachable from this one `rsplit_once("::")` call —
+/// General-purpose substring search builds a Two-Way searcher (critical
+/// factorization, period computation, ...) for a needle whose length and
+/// bytes are a compile-time constant; a package name has no more than a
+/// handful of `::` separators, so a plain reverse byte scan for the pair costs
+/// a handful of instructions per haystack byte and needs no setup at all —
+/// same idea as [`has_double_colon`] and [`split_once_bracket`] above.
+///
+/// `:` is ASCII, so every match's byte offset is always a char boundary and
+/// the split is byte-for-byte what `rsplit_once("::")` returns.
+#[inline]
+pub(crate) fn rsplit_once_double_colon(s: &str) -> Option<(&str, &str)> {
+    let b = s.as_bytes();
+    if b.len() < 2 {
+        return None;
+    }
+    let mut i = b.len() - 1;
+    loop {
+        if b[i] == b':' && b[i - 1] == b':' {
+            return Some((&s[..i - 1], &s[i + 1..]));
+        }
+        if i < 2 {
+            return None;
+        }
+        i -= 1;
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -105,6 +141,30 @@ mod tests {
         ] {
             assert_eq!(has_bracket(s), s.contains('['), "{s:?}");
             assert_eq!(split_once_bracket(s), s.split_once('['), "{s:?}");
+        }
+    }
+
+    #[test]
+    fn rsplit_double_colon_agrees_with_str() {
+        for s in [
+            "",
+            ":",
+            "::",
+            ":::",
+            "a",
+            "a:",
+            ":a",
+            "a::b",
+            "a::b::c",
+            "a:::b",
+            "a::::b",
+            "GLOBAL",
+            "JSON::Fast",
+            "IO::Handle+{M::R}",
+            "\u{3042}::b",
+            "a::\u{3042}",
+        ] {
+            assert_eq!(rsplit_once_double_colon(s), s.rsplit_once("::"), "{s:?}");
         }
     }
 }
