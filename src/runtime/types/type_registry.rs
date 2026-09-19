@@ -667,6 +667,19 @@ impl Interpreter {
             || reg.roles.contains_key(name))
     }
 
+    /// Whether a user `subset` is registered under exactly `name`.
+    ///
+    /// The `is_empty` guard is the whole point: a `HashMap` probe hashes its
+    /// key before it can discover the map is empty, and the type-match fast
+    /// accepts ask this question two or three times per typed assignment while
+    /// the overwhelming majority of programs declare no `subset` at all. Same
+    /// answer, no hashing.
+    #[inline]
+    pub(crate) fn is_subset_type_name(&self, name: &str) -> bool {
+        let subsets = &self.registry().subsets;
+        !subsets.is_empty() && subsets.contains_key(name)
+    }
+
     /// `has_type` without short-name alias resolution — checks the type
     /// registries directly (classes/roles/enums/subsets, including parametric
     /// base names).
