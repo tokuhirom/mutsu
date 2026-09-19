@@ -150,9 +150,6 @@ pub(crate) enum MetaNs {
     /// `__mutsu_constant_var::<name>` — the name was declared `constant`, which
     /// makes it a compile-time value rather than merely readonly.
     ConstantVar,
-    /// `__mutsu_deep_readonly::<name>` — the binding refuses method-based
-    /// mutation too (`.value = …` on a readonly `Pair`).
-    DeepReadonly,
     /// `__mutsu_deleted_index::<name>` — the set of indices `:delete`d out of
     /// this container, which read as missing even when the slot holds a type
     /// object.
@@ -278,7 +275,6 @@ impl MetaNs {
         MetaNs::BoundDecont,
         MetaNs::Compunit,
         MetaNs::ConstantVar,
-        MetaNs::DeepReadonly,
         MetaNs::DeletedIndex,
         MetaNs::ElemShare,
         MetaNs::EvalRole,
@@ -338,7 +334,6 @@ impl MetaNs {
             MetaNs::BoundDecont => "__mutsu_bound_decont::",
             MetaNs::Compunit => "__mutsu_compunit::",
             MetaNs::ConstantVar => "__mutsu_constant_var::",
-            MetaNs::DeepReadonly => "__mutsu_deep_readonly::",
             MetaNs::DeletedIndex => "__mutsu_deleted_index::",
             MetaNs::ElemShare => "__mutsu_elem_share::",
             MetaNs::EvalRole => "__mutsu_eval_role::",
@@ -602,7 +597,6 @@ mod tests {
             (MetaNs::BoundArraySlice, "__mutsu_bound_array_slice::@a"),
             (MetaNs::BoundDecont, "__mutsu_bound_decont::@a"),
             (MetaNs::ConstantVar, "__mutsu_constant_var::@a"),
-            (MetaNs::DeepReadonly, "__mutsu_deep_readonly::@a"),
             (MetaNs::DeletedIndex, "__mutsu_deleted_index::@a"),
             (MetaNs::ElemShare, "__mutsu_elem_share::@a"),
             (MetaNs::EvalRole, "__mutsu_eval_role::@a"),

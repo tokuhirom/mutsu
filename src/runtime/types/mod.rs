@@ -297,7 +297,11 @@ impl Interpreter {
         !name.starts_with(['@', '%', '&'])
             && matches!(
                 self.readonly_kind(name.trim_start_matches('$')),
-                Some(ReadonlyKind::Immutable | ReadonlyKind::ImmutableValue)
+                Some(
+                    ReadonlyKind::Immutable
+                        | ReadonlyKind::ImmutableValue
+                        | ReadonlyKind::ImmutableDeep
+                )
             )
     }
 
@@ -448,6 +452,9 @@ impl Interpreter {
     /// * [`ReadonlyKind::ImmutableValue`] — the name denotes the value itself
     ///   (sigilless `constant PI`, `is List` array): `X::Assignment::RO`,
     ///   "Cannot modify an immutable TYPE (VALUE)".
+    /// * [`ReadonlyKind::ImmutableDeep`] — same wording as `Immutable` for a
+    ///   plain `$_ = ...`; the extra method-mutation refusal it carries is
+    ///   checked separately, at the method-lvalue dispatch site.
     pub(crate) fn check_readonly_for_modify(&self, name: &str) -> Result<(), RuntimeError> {
         self.check_readonly_for_modify_sym(name, Symbol::intern(name))
     }
@@ -469,7 +476,9 @@ impl Interpreter {
         match self.readonly_kind_sym(name_sym) {
             None => Ok(()),
             Some(ReadonlyKind::Alias) => Err(RuntimeError::readonly_variable()),
-            Some(ReadonlyKind::Immutable) => Err(RuntimeError::immutable_value()),
+            Some(ReadonlyKind::Immutable | ReadonlyKind::ImmutableDeep) => {
+                Err(RuntimeError::immutable_value())
+            }
             Some(ReadonlyKind::ImmutableValue) => Err(self.immutable_value_error(name)),
         }
     }

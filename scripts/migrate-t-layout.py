@@ -101,6 +101,13 @@ OVERRIDES: dict[str, str] = {
     # Type-matching against a core type name that a lexical shadows: the
     # question is which type the matcher resolves, not the shadowing itself.
     "core-type-not-shadowed-in-typematch": "types",
+    # The `for`-loop implicit topic's `ReadonlyKind::ImmutableDeep` mark and
+    # its restoration across a nested loop (ADR-0097 slice 4). What this file
+    # would catch breaking is the readonly-set restore mechanism forgetting
+    # part of a mark on scope exit -- a binding/env mechanism, not a property
+    # of `for`-loop control flow as a language feature (the `^for-` rule would
+    # otherwise place it in `control`).
+    "for-loop-topic-deep-readonly-nesting": "vm/binding",
     # `where` on a generic type parameter -- a signature constraint.
     "generic-where": "routines",
     # Whether a generic class nominalizes -- a type-system property.
