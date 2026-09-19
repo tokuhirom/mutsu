@@ -280,11 +280,19 @@ impl Interpreter {
         // the slot's cell is still what this frame's `env` names.
         let slot_cell_is_env_binding = (name.starts_with('@') || name.starts_with('%'))
             && match self.locals[idx].view() {
-                ValueView::ContainerRef(slot_cell) => matches!(
-                    self.env().get(name).map(Value::view),
-                    Some(ValueView::ContainerRef(env_cell))
-                        if crate::gc::Gc::ptr_eq(&slot_cell, &env_cell)
-                ),
+                ValueView::ContainerRef(slot_cell) => {
+                    // Probe via the pre-interned Symbol when this chunk has
+                    // one (see `code.locals_sym.get(idx)` ~40 lines below) —
+                    // this read runs on every GetLocal of a celled `@`/`%`
+                    // local, and a by-name `Env::get` would re-intern `name`
+                    // on every single one.
+                    let key_sym = code.locals_sym.get(idx).copied();
+                    matches!(
+                        self.env().get_for(name, key_sym).map(Value::view),
+                        Some(ValueView::ContainerRef(env_cell))
+                            if crate::gc::Gc::ptr_eq(&slot_cell, &env_cell)
+                    )
+                }
                 _ => false,
             };
         let skip_name_keyed_store =
@@ -486,8 +494,15 @@ impl Interpreter {
             // one more step so callers see the array hole, while lvalue context
             // keeps the cell for `store_through_cell` to materialize.
             if !keep_deferred_entry {
-                let inner = val.with_deref(|inner| inner.clone());
-                if matches!(inner.view(), ValueView::HashEntryRef { .. }) {
+                // Tag-probe without cloning first: the common case (the cell
+                // does not hold a deferred HashEntryRef token) needs no clone
+                // here at all — `into_deref()` below does the one clone this
+                // read actually needs. Only the rare HashEntryRef case pays
+                // for a second `with_deref` to materialize the clone it needs.
+                let is_hash_entry_ref =
+                    val.with_deref(|inner| matches!(inner.view(), ValueView::HashEntryRef { .. }));
+                if is_hash_entry_ref {
+                    let inner = val.with_deref(|inner| inner.clone());
                     self.stack.push(inner.hash_entry_read());
                     return Ok(());
                 }
