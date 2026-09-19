@@ -1685,12 +1685,41 @@ impl Interpreter {
                     if let Some(kind) = source_kind {
                         self.mark_readonly_with(&name, kind);
                     }
+                    // A whole-container `:=` against an `@`/`%` name takes the
+                    // shared cell too, exactly as its `SetLocal` twin does
+                    // (`vm_var_assign_set_local.rs`, the `val_is_container`
+                    // branch). It used to be excluded here alongside `&`, and
+                    // fell through to `pending_alias_bind_names` instead --
+                    // which `resolve_pending_alias_binds` turns into a one-shot
+                    // value copy plus a bidirectional `local_bind_pairs` entry.
+                    // But a pair is a *scalar* propagation mechanism: its only
+                    // consumers copy a value between two local slots on a
+                    // WHOLE-variable store, and an element store writes no slot
+                    // at all. So `sub f() { @dst := @src }` handed `@dst` a
+                    // second `Gc` handle that the next COW mutation detached,
+                    // and the two names drifted apart permanently
+                    // ([#8759](https://github.com/tokuhirom/mutsu/issues/8759)).
+                    // The cell IS the alias, so nothing needs to be recorded for
+                    // the caller to fix up afterwards.
+                    //
+                    // `&` stays excluded (a sub bind is not a container), and so
+                    // does an `@`/`%` bind whose value is not a container -- the
+                    // `SetLocal` twin gates on the same `val_is_container` test,
+                    // and a non-container value under an `@` name means the bind
+                    // is something else (a `&`-ish or a not-yet-materialized
+                    // source) that the pending-alias route still owns.
+                    let container_sigil = name.starts_with('@') || name.starts_with('%');
+                    let val_is_container = matches!(
+                        val.view(),
+                        ValueView::Array(..) | ValueView::Hash(..) | ValueView::ContainerRef(_)
+                    );
+                    let sigil_takes_cell = if container_sigil {
+                        val_is_container
+                    } else {
+                        !name.starts_with('&')
+                    };
                     // Create a shared ContainerRef for cross-scope binding persistence.
-                    if !name.starts_with('@')
-                        && !name.starts_with('%')
-                        && !name.starts_with('&')
-                        && !source_readonly
-                    {
+                    if sigil_takes_cell && !source_readonly {
                         // Reuse the source's existing cell when it already has
                         // one, so the bind joins the LIVE cell instead of
                         // minting a disconnected snapshot: the source read that
@@ -1725,6 +1754,31 @@ impl Interpreter {
                                 }
                             }
                         };
+                        // A bound `@`/`%` variable adopts the *source*
+                        // container's declared element/key type, not its own
+                        // (`my Int %a; my Cool %b := %a` ⇒ `%b.of` is `Int`).
+                        // Same propagation the `SetLocal` twin performs; this
+                        // branch returns early, so nothing downstream would do
+                        // it for us.
+                        if container_sigil {
+                            let constraint = container.with_deref(|inner| {
+                                self.container_type_metadata(inner)
+                                    .filter(|info| !info.value_type.is_empty())
+                                    .map(|info| {
+                                        if name.starts_with('%')
+                                            && let Some(ref kt) = info.key_type
+                                        {
+                                            format!("{}{{{}}}", info.value_type, kt)
+                                        } else {
+                                            info.value_type.clone()
+                                        }
+                                    })
+                            });
+                            // `None` deliberately CLEARS any constraint this
+                            // variable's own declaration left behind, so it
+                            // cannot over-constrain the container it now shares.
+                            self.vm_set_var_type_constraint(&name, constraint);
+                        }
                         // Store ContainerRef in target and source env.
                         //
                         // The SOURCE side is skipped when its home is the
@@ -1741,6 +1795,16 @@ impl Interpreter {
                         // same gate, as the `SetLocal` scalar-bind twin in
                         // `vm_var_assign_set_local.rs`; see
                         // `t/free-var-bind-does-not-alias-caller-lexical.t`.
+                        //
+                        // The TARGET side is a plain by-name write, which for a
+                        // name the compunit / mainline lexical store owns means
+                        // the new cell is stored THROUGH the cell that store
+                        // already holds for it (`unit_scope_lexical_write`).
+                        // That is how the holders of the old cell -- a caller
+                        // frame's own local slot above all, which this routine
+                        // cannot reach -- follow the rebind, and it is why
+                        // `Value::with_deref` collapses a chain of cells rather
+                        // than stopping at the first.
                         self.set_env_with_main_alias(&name, container.clone());
                         let source_is_unit_lexical =
                             self.unit_scope_lexical_bind(&resolved_source, &container);

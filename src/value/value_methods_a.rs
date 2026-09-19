@@ -748,6 +748,21 @@ impl Value {
                 let _cross_thread =
                     crate::value::container_lock::ContainerStructGuard::acquire_for_cell(&arc);
                 let inner = arc.lock().unwrap();
+                // Collapse a redundant cell chain. A cell whose content is
+                // ITSELF a cell is what a `:=` REBIND leaves behind: the new
+                // binding's cell is stored *through* the name's old one so the
+                // old cell's holders (a caller frame's local slot, which the
+                // binding routine cannot reach) follow the rebind. It is never
+                // a value anyone means to see, so stopping at the first cell
+                // hands the consumer a container where it expects the
+                // contained Array/Hash -- `@q.elems` answered 1 and `@q.push`
+                // died with "No such method 'push' for invocant of type
+                // 'Array'" ([#8759](https://github.com/tokuhirom/mutsu/issues/8759)).
+                if inner.is_container_ref() {
+                    let nested = inner.clone();
+                    drop(inner);
+                    return nested.with_deref(f);
+                }
                 if self.container_ref_is_itemized() {
                     let itemized = inner.clone().itemize_for_element_store();
                     f(&itemized)
@@ -787,14 +802,31 @@ impl Value {
     /// owned variant of [`Value::descalarize`]. Single-level only (a nested
     /// `ContainerRef` is unwrapped one cell), and it does NOT force an inner
     /// `LazyThunk` nor strip an inner `Scalar` — matching the prior hand-rolled
-    /// `arc.lock().unwrap().clone()` reads it replaces.
+    /// `arc.lock().unwrap().clone()` reads it replaces. A chain of cells is
+    /// collapsed to the value at its end, for the reason [`Value::with_deref`]
+    /// gives.
     pub fn into_deref(self) -> Value {
         if let ValueView::ContainerRef(arc) = self.view() {
-            // See `with_deref`: the cell lock alone does not exclude the store.
-            let _cross_thread =
-                crate::value::container_lock::ContainerStructGuard::acquire_for_cell(&arc);
-            let inner = arc.lock().unwrap().clone();
-            return if self.container_ref_is_itemized() {
+            let itemized = self.container_ref_is_itemized();
+            let mut cell = arc.clone();
+            let inner = loop {
+                // See `with_deref`: the cell lock alone does not exclude the store.
+                let value = {
+                    let _cross_thread =
+                        crate::value::container_lock::ContainerStructGuard::acquire_for_cell(&cell);
+                    let guard = cell.lock().unwrap();
+                    guard.clone()
+                };
+                let nested = match value.view() {
+                    ValueView::ContainerRef(next) => Some(next.clone()),
+                    _ => None,
+                };
+                match nested {
+                    Some(next) => cell = next,
+                    None => break value,
+                }
+            };
+            return if itemized {
                 inner.itemize_for_element_store()
             } else {
                 inner
