@@ -978,7 +978,7 @@ impl Interpreter {
             return Err(Self::malformed_return_value_compile_error(spec));
         }
         // Auto-detect @_ / %_ usage for subs without explicit signatures
-        let (effective_param_defs, empty_sig) = if let Some(metadata) = metadata {
+        let (mut effective_param_defs, empty_sig) = if let Some(metadata) = metadata {
             (metadata.effective_param_defs.clone(), metadata.empty_sig)
         } else if param_defs.is_empty() && params.is_empty() {
             let (use_positional, use_named) =
@@ -1044,6 +1044,26 @@ impl Interpreter {
         } else {
             (param_defs.to_vec(), false)
         };
+        // `::?CLASS` in a class-scoped sub's signature is fixed to the
+        // declaring class at compile time. Methods already receive this
+        // substitution in `registration_class_body_method`; ordinary subs
+        // (including exported operator multis) are registered through this
+        // path while the class package is current and need the same
+        // treatment. Leaving the pseudo-type unresolved makes the candidate
+        // effectively unconstrained, so a class's `infix:<eqv>` can intercept
+        // Array comparisons and its `infix:<*>` can intercept Array math.
+        let raw_param_defs_for_key_check = effective_param_defs.clone();
+        let current_package = self.current_package();
+        let is_class_scoped = self.registry().classes.contains_key(&current_package);
+        if is_class_scoped {
+            for pd in &mut effective_param_defs {
+                if let Some(tc) = &pd.type_constraint
+                    && tc.contains("::?CLASS")
+                {
+                    pd.type_constraint = Some(tc.replace("::?CLASS", &current_package));
+                }
+            }
+        }
         self.validate_static_default_typechecks(&effective_param_defs)?;
         let deprecated_message = custom_traits.iter().find_map(|(t, _)| {
             if t == "DEPRECATED" {
@@ -1141,7 +1161,7 @@ impl Interpreter {
                 metadata.body_fingerprint,
                 crate::ast::function_body_fingerprint(
                     &new_def.params,
-                    &new_def.param_defs,
+                    &raw_param_defs_for_key_check,
                     &new_def.body
                 ),
                 "plan-seeded body_fingerprint diverges from the def for {name}"
@@ -1150,7 +1170,7 @@ impl Interpreter {
                 metadata.body_facts.registration_identity,
                 crate::ast::registration_identity_fingerprint(
                     &new_def.params,
-                    &new_def.param_defs,
+                    &raw_param_defs_for_key_check,
                     &new_def.body
                 ),
                 "plan-seeded registration_identity diverges from the def for {name}"
