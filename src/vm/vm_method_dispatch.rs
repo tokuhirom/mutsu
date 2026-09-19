@@ -513,7 +513,6 @@ impl Interpreter {
                 self.env_mut().insert(name.clone(), value.clone());
             }
         }
-
         // A method can carry its defining lexical environment either from an
         // `.^add_method` closure literal or from a class declared in a routine.
         // Install these true lexical captures before parameter binding.

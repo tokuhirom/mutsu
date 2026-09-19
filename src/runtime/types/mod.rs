@@ -1200,6 +1200,23 @@ impl Interpreter {
                     self.env.get(&pd.name).cloned()
                 }
             })
+            .enumerate()
+            .map(|(i, value)| {
+                let pd = &candidate.type_param_defs[i];
+                if pd.named {
+                    let key = pd
+                        .name
+                        .strip_prefix('@')
+                        .or_else(|| pd.name.strip_prefix('%'))
+                        .or_else(|| pd.name.strip_prefix('&'))
+                        .unwrap_or(&pd.name)
+                        .trim_start_matches(['!', '.'])
+                        .to_string();
+                    Value::pair(key, value)
+                } else {
+                    value
+                }
+            })
             .collect::<Vec<_>>();
         self.env = saved_env;
         Ok(Value::parametric_role(

@@ -340,6 +340,12 @@ impl Interpreter {
             let is_ancestor = level > 0;
             let owner_str = owner.as_str();
             let overloads = match role_fallback {
+                RoleFallback::Disabled
+                    if level == 0 && !self.registry().classes.contains_key(owner_str) =>
+                {
+                    self.registry()
+                        .get_method_overloads_with_role_fallback(owner_str, name.as_str())
+                }
                 RoleFallback::Disabled => self
                     .registry()
                     .user_method_overloads(owner_str, name.as_str()),

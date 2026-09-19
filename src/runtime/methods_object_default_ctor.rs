@@ -217,6 +217,7 @@ impl Interpreter {
                         arg,
                         &temp_self,
                         &attrs,
+                        (attr.captured_env.as_ref(), attr.captured_unit),
                     );
                     let val = match result {
                         Ok(val) => val,

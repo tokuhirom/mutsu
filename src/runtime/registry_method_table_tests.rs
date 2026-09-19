@@ -164,6 +164,8 @@ fn sync_accessor_entries_derives_from_attributes_and_clears_stale_rows() {
         name: "x".to_string(),
         is_public: true,
         default: None,
+        captured_env: None,
+        captured_unit: None,
         is_rw: false,
         is_required: None,
         sigil: '$',

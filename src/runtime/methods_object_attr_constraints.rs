@@ -133,6 +133,24 @@ impl Interpreter {
                 }
             }
         }
+        // A parameterized role's TWEAK runs before the TWEAKs supplied by a
+        // role it composes. This is observable for model-style roles whose
+        // derived TWEAK installs the state a parent TWEAK consumes. Direct
+        // parameterized roles without a role parent retain declaration order;
+        // that distinction matters to the versioned role-constructor roast.
+        let has_parameterized_role_parent = composed.iter().any(|role| {
+            let base = role.split_once('[').map_or(role.as_str(), |(base, _)| base);
+            self.registry()
+                .role_parents
+                .get(base)
+                .is_some_and(|parents| !parents.is_empty())
+        });
+        if method_name == "TWEAK"
+            && composed.iter().any(|role| role.contains('['))
+            && has_parameterized_role_parent
+        {
+            result.reverse();
+        }
         result
     }
 

@@ -138,7 +138,13 @@ impl Interpreter {
             // arguments off the parent but not off the class.
             let is_self_named_does_role = does_parents.contains(parent)
                 && (short_of(resolved_parent) == self_short
-                    || resolved_parent_name == name.as_ref())
+                    || resolved_parent_name == name.as_ref()
+                    // A parameterized role pun whose type argument is a
+                    // lexical class resolves the argument to its mangled
+                    // storage name. Compare that spelling as well, or the
+                    // pun would retain itself as an inheritance parent and
+                    // fail C3 MRO construction.
+                    || resolved_parent_name == storage_name)
                 && self.registry().roles.contains_key(resolved_parent);
             if is_self_named_does_role {
                 non_inheritance_parents.insert(parent.clone());

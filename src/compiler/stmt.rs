@@ -4683,7 +4683,7 @@ impl Compiler {
     /// NativeHelpers::Blob shape — used to yield `True` here), a declaration or
     /// assignment yields the assigned value, and only genuinely valueless
     /// statements fall back to `True` ("completed" success).
-    fn compile_tail_stmt_value(&mut self, stmt: &Stmt) {
+    pub(super) fn compile_tail_stmt_value(&mut self, stmt: &Stmt) {
         match stmt {
             Stmt::Expr(expr) => {
                 // Tail expression escapes the frame (implicit result).

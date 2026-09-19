@@ -230,22 +230,57 @@ impl Interpreter {
                     };
                     // env_dirty substrate (docs/captured-outer-cell-sharing.md §10):
                     // the CAS block (`cas $var, { $was = $_; … }`) can mutate a
-                    // captured-outer caller scalar by name. The write reaches env but
-                    // the owning caller slot is refreshed only by the call site's
-                    // blanket pull (no-op once env_dirty is removed). Snapshot the env
-                    // scalars before the block and record the names it changes into
-                    // the retain-on-miss caller-var writeback, drained at the cas call
-                    // site (`apply_pending_rw_writeback`).
+                    // captured-outer caller lexical by name. The write reaches env
+                    // but the owning caller slot is refreshed only by the call site's
+                    // retain-on-miss writeback. Keep immutable scalars on the cheap
+                    // path, but also remember plain user lexicals whose value is an
+                    // object: Concurrent::Stack.pop assigns its captured `$taken`
+                    // an Instance, and filtering those values out loses the object
+                    // even though the closure changed the lexical binding.
                     let cas_pre_env: Option<
                         std::collections::HashMap<crate::symbol::Symbol, Value>,
                     > = Some(
                         self.env
                             .iter()
-                            .filter(|(_, v)| Self::is_writeback_safe_scalar(v))
+                            .filter(|(k, v)| {
+                                Self::is_writeback_safe_scalar(v)
+                                    || crate::env::is_plain_user_lexical(&k.resolve())
+                            })
                             .map(|(k, v)| (*k, v.clone()))
                             .collect(),
                     );
                     let result = self.call_sub_value(code.clone(), call_args, bind_dollar_topic)?;
+                    if let ValueView::Sub(sub) = code.view() {
+                        let closure_writebacks: Vec<(crate::symbol::Symbol, Value)> =
+                            if let Some(ov) = self.closure_env_overrides.get(&sub.id) {
+                                // The interpreter carrier keeps an anonymous block's
+                                // persistent captured state in `closure_env_overrides`.
+                                // Its ordinary non-`merge_all` exit path only copies
+                                // scalar captures into the caller env, so an object
+                                // assigned to a captured lexical can otherwise remain
+                                // stranded in the override. CAS callbacks need that
+                                // write immediately: `Concurrent::Stack.pop` returns
+                                // its captured `$taken` object after this call.
+                                if let Some(cc) = &sub.compiled_code {
+                                    cc.free_var_writes
+                                        .iter()
+                                        .filter_map(|sym| {
+                                            let value = ov.get_sym(*sym).cloned()?;
+                                            (sub.env.get_sym(*sym) != Some(&value))
+                                                .then_some((*sym, value))
+                                        })
+                                        .collect()
+                                } else {
+                                    Vec::new()
+                                }
+                            } else {
+                                Vec::new()
+                            };
+                        for (sym, value) in closure_writebacks {
+                            self.env.insert_sym(sym, value);
+                            self.record_caller_var_writeback(&sym.resolve());
+                        }
+                    }
                     if let Some(cas_pre_env) = cas_pre_env {
                         let changed: Vec<String> = self
                             .env
@@ -255,8 +290,14 @@ impl Interpreter {
                                 kn != "_"
                                     && kn != "$_"
                                     && kn != name
-                                    && Self::is_writeback_safe_scalar(v)
-                                    && cas_pre_env.get(*k).map(|p| p != *v).unwrap_or(true)
+                                    && (Self::is_writeback_safe_scalar(v)
+                                        || crate::env::is_plain_user_lexical(&kn))
+                                    && cas_pre_env
+                                        .get(*k)
+                                        .map(|p| {
+                                            !crate::vm::vm_method_dispatch::cheaply_unchanged(p, v)
+                                        })
+                                        .unwrap_or(true)
                             })
                             .map(|(k, _)| k.resolve())
                             .collect();
@@ -284,6 +325,16 @@ impl Interpreter {
                     }
                     result
                 };
+                // A CAS callback may deliberately return an unhandled Failure
+                // to report a soft miss (Concurrent::Stack.pop uses this when
+                // its typed Node head is empty). Do not feed that Failure into
+                // the target's declared type constraint: the callback did not
+                // produce a replacement value, so the CAS operation must return
+                // the Failure without attempting a typed store.
+                if let Some(mut err) = self.failure_to_runtime_error_if_unhandled(&new_val) {
+                    err.control = Some(crate::value::Control::Fail);
+                    return Err(err);
+                }
                 // If the block returned a value equal to the old value or Nil
                 // but the variable itself was modified (e.g., `{ $x = expr }`),
                 // use the variable's current value from the env. This handles

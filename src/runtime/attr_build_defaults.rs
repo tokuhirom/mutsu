@@ -39,6 +39,10 @@ pub(crate) struct DeferredAttrDefault {
     pub(crate) sigil: char,
     /// The `has $.x = <expr>` initializer, when the attribute has one.
     pub(crate) default: Option<DeclTraitArg>,
+    /// Lexicals captured where a role-composed attribute default was declared.
+    pub(crate) captured_env: Option<ValueMap>,
+    /// Compunit whose imports were visible where that default was declared.
+    pub(crate) captured_unit: Option<crate::symbol::Symbol>,
     /// An `is built(&code)` override, which takes precedence over `default`.
     pub(crate) build_override: Option<Value>,
     /// The value the slot was seeded with; the slot still holding it is half of
@@ -125,8 +129,14 @@ impl Interpreter {
                     Self::coerce_attr_value_by_sigil(lit_val.clone(), d.sigil)
                 } else {
                     let attrs = cell.to_map();
-                    let val =
-                        self.eval_attr_default_expr(class_key, class_name, arg, inv, &attrs)?;
+                    let val = self.eval_attr_default_expr(
+                        class_key,
+                        class_name,
+                        arg,
+                        inv,
+                        &attrs,
+                        (d.captured_env.as_ref(), d.captured_unit),
+                    )?;
                     Self::coerce_attr_value_by_sigil(val, d.sigil)
                 }
             } else {
@@ -302,7 +312,9 @@ impl Interpreter {
         arg: &DeclTraitArg,
         self_val: &Value,
         attrs: &AttrMap,
+        captured: (Option<&ValueMap>, Option<crate::symbol::Symbol>),
     ) -> Result<Value, RuntimeError> {
+        let (captured_env, captured_unit) = captured;
         let old_self = self.env.get("self").cloned();
         self.env.insert("self".to_string(), self_val.clone());
         // A compiled method-body chunk always carries an implicit `__ANON_STATE__`
@@ -341,10 +353,10 @@ impl Interpreter {
         // a bare call can reach a compunit-private sub declared beside the
         // class even when a foreign module called `.new`.
         let saved_unit = self.current_unit;
-        if let Some(&unit) = self.class_declaring_units.get(class_key) {
-            self.current_unit = unit;
-        }
-        let result = self.eval_decl_trait_arg(arg);
+        self.current_unit = captured_unit
+            .or_else(|| self.class_declaring_units.get(class_key).copied())
+            .unwrap_or(saved_unit);
+        let result = self.eval_decl_trait_arg_with_captured_env(arg, captured_env);
         self.current_unit = saved_unit;
         self.constructing_class = saved_constructing;
         self.set_current_package(saved_package);
@@ -380,5 +392,44 @@ impl Interpreter {
         // A default that built its own fresh container owns its `Gc` already,
         // so this is free on the common path (#8150).
         result.map(Value::detach_shared_container)
+    }
+
+    /// Evaluate a declaration expression with names captured where a role
+    /// attribute default was declared. Names already visible in the consuming
+    /// class remain authoritative; role-only names are scoped to this eval.
+    pub(crate) fn eval_decl_trait_arg_with_captured_env(
+        &mut self,
+        arg: &DeclTraitArg,
+        captured_env: Option<&ValueMap>,
+    ) -> Result<Value, RuntimeError> {
+        let mut inserted = Vec::new();
+        if let Some(captured_env) = captured_env {
+            for (key, value) in captured_env {
+                if !self.env.contains_key(key) {
+                    self.env.insert(key.clone(), value.clone());
+                    inserted.push(key.clone());
+                }
+            }
+        }
+        let result = self.eval_decl_trait_arg(arg);
+        for key in inserted {
+            self.env.remove(&key);
+        }
+        result
+    }
+
+    pub(crate) fn eval_decl_trait_arg_with_captured_context(
+        &mut self,
+        arg: &DeclTraitArg,
+        captured_env: Option<&ValueMap>,
+        captured_unit: Option<crate::symbol::Symbol>,
+    ) -> Result<Value, RuntimeError> {
+        let saved_unit = self.current_unit;
+        if let Some(unit) = captured_unit {
+            self.current_unit = unit;
+        }
+        let result = self.eval_decl_trait_arg_with_captured_env(arg, captured_env);
+        self.current_unit = saved_unit;
+        result
     }
 }

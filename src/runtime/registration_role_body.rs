@@ -139,6 +139,8 @@ impl Interpreter {
             name: attr_name_str.clone(),
             is_public: decl.is_public,
             default: decl.default.clone(),
+            captured_env: None,
+            captured_unit: None,
             is_rw: effective_is_rw,
             is_required: decl.is_required.clone(),
             sigil: decl.sigil,

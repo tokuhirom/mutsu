@@ -677,7 +677,13 @@ impl Interpreter {
             // `sync_user_method_entries` keeps the two in lockstep, verified
             // with zero mismatches across a full `t/`+roast sweep by the
             // shadow check this cutover retires (#6402).
-            if let Some(defs) = self.registry().user_method_overloads(cn, method_name) {
+            let defs = if self.registry().classes.contains_key(cn) {
+                self.registry().user_method_overloads(cn, method_name)
+            } else {
+                self.registry()
+                    .get_method_overloads_with_role_fallback(cn, method_name)
+            };
+            if let Some(defs) = defs {
                 let visible: Vec<&MethodDef> = defs
                     .iter()
                     .filter(|def| !def.is_my || cn == &class_name)
@@ -820,7 +826,8 @@ impl Interpreter {
             // pure arity cascade (`Buf.allocate`) and class-registry-only
             // methods outside `BUILTIN_METHOD_OWNERS` (e.g. `Cancellation`'s
             // `cancel`, the one case that still diverges from the catalog).
-            let has_native = self.e2_native_method_exists(target, method_sym.as_str())
+            let e2_exists = self.e2_native_method_exists(target, method_sym.as_str());
+            let has_native = e2_exists
                 // Slow-path builtin methods (block-taking / `&mut self`, e.g.
                 // `Buf.allocate`) are invisible to the pure native probe; the
                 // declared per-type lists cover them. NativeHelpers::Blob's
@@ -828,11 +835,79 @@ impl Interpreter {
                 // takes a REPR-poking fallback when it wrongly answers false.
                 || crate::builtins::builtin_type_methods::builtin_type_method_names(&class_name)
                     .contains(&method_name)
-                // Check user-defined classes and their native_methods set
-                || {
+                // Check native methods registered on the target class or its
+                // MRO. A proto with no candidates has no user overload row,
+                // but its marker is still an introspectable method.
+                || mro.iter().any(|owner| {
+                    self.registry()
+                        .method_entry_proto(owner, method_name)
+                        .is_some()
+                })
+                // Built-in systemic classes such as Distro and Kernel keep
+                // their native methods in ClassDef rather than in the user
+                // method table. Preserve those entries even when their name
+                // also matches a ClassHOW meta-method (Distro.^can('name')
+                // must describe the instance's native accessor).
+                || mro.iter().any(|owner| {
+                    self.registry()
+                        .classes
+                        .get(owner)
+                        .is_some_and(|class_def| class_def.native_methods.contains(method_name))
+                })
+                // Keep the historical ClassHOW fallback for package and
+                // primitive receivers. An ordinary instance must not inherit
+                // the metaobject API (for example, `Row.new.^can('name')`),
+                // but upstream code such as zef probes a failed `when` value
+                // with `False.^can('name')` before calling the harmless Nil
+                // fallback. The package path also needs ClassHOW's own names.
+                || !matches!(
+                    target.view(),
+                    ValueView::Instance { .. } | ValueView::Mixin(..)
+                ) && {
                     let pkg = Value::package(Symbol::intern(&class_name));
                     self.classhow_find_method(&pkg, method_name).is_some()
-                };
+                }
+                // `classhow_find_method` also covers native methods whose
+                // catalog row is not available. It intentionally reports
+                // ClassHOW's own methods (including `name`) for package
+                // receivers, so exclude those meta-method names here: they
+                // are not methods of an ordinary introspected instance.
+                || (!matches!(
+                    method_name,
+                    "name"
+                        | "shortname"
+                        | "array_type"
+                        | "ver"
+                        | "auth"
+                        | "api"
+                        | "mro"
+                        | "mro_unhidden"
+                        | "archetypes"
+                        | "isa"
+                        | "can"
+                        | "does"
+                        | "declares_method"
+                        | "lookup"
+                        | "find_method"
+                        | "add_attribute"
+                        | "add_method"
+                        | "add_multi_method"
+                        | "add_fallback"
+                        | "compose"
+                        | "methods"
+                        | "attributes"
+                        | "parents"
+                        | "roles"
+                        | "concretization"
+                        | "curried_role"
+                        | "pun"
+                        | "language-revision"
+                        | "method_table"
+                        | "submethod_table"
+                ) && {
+                    let pkg = Value::package(Symbol::intern(&class_name));
+                    self.classhow_find_method(&pkg, method_name).is_some()
+                });
             if has_native {
                 results.push(Value::routine_parts(
                     Symbol::intern(&class_name),
@@ -854,17 +929,22 @@ impl Interpreter {
                 false,
             ));
         }
-        // Built-in exception instances (X::...) expose their attributes as
-        // accessor methods (e.g. X::Undeclared.suggestions, .symbol). The HOW
+        // Built-in exception instances expose their attributes as accessor
+        // methods (e.g. X::Undeclared.suggestions, .symbol). The HOW
         // metamodel has no user class def for these, so probe the instance's own
-        // attribute map directly.
+        // attribute map directly. Do not use the X:: namespace alone as the
+        // test: user classes may be declared there too (for example DB model
+        // classes named X::Model::*).
         if results.is_empty()
             && let ValueView::Instance {
                 class_name: cn,
                 attributes,
                 ..
             } = target.view()
-            && cn.resolve().starts_with("X::")
+            && self
+                .class_mro(&cn.resolve())
+                .iter()
+                .any(|parent| parent == "Exception")
             && attributes.contains_key(method_name)
         {
             results.push(Value::routine_parts(

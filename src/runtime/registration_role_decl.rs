@@ -203,7 +203,15 @@ impl Interpreter {
             .iter()
             .any(|attr| attr.default.is_some());
         if has_expr_default {
-            role_def.captured_env = Some(self.env.flatten());
+            let captured_env = self.env.flatten();
+            let captured_unit = self.current_unit;
+            role_def.captured_env = Some(captured_env.clone());
+            for attr in &mut role_def.attributes {
+                if attr.default.is_some() && attr.captured_env.is_none() {
+                    attr.captured_env = Some(captured_env.clone());
+                    attr.captured_unit = Some(captured_unit);
+                }
+            }
         }
         // Capture the parents that were added during this registration
         // (these are the parents specific to this candidate).

@@ -929,6 +929,24 @@ impl Interpreter {
             }
         }
 
+        // Enum members are stored in the enum registry as `(name, value)`
+        // pairs, while the package stash is assembled from ordinary lexical
+        // and package bindings. Reconstruct the enum's members here so an
+        // indirect package lookup such as `EnumBits::{"OPEN_READONLY"}` can
+        // traverse a type object captured through a parametric role.
+        if let Some(variants) = self.registry().enum_types.get(&package_name) {
+            for (index, (key, value)) in variants.iter().enumerate() {
+                symbols.entry(key.clone()).or_insert_with(|| {
+                    Value::enum_parts(
+                        Symbol::intern(package_name.as_str()),
+                        Symbol::intern(key),
+                        value.clone(),
+                        index,
+                    )
+                });
+            }
+        }
+
         for (key, def) in self.registry().functions.iter() {
             let key_s = key.resolve();
             // A top-level sub's registry key is always package-qualified

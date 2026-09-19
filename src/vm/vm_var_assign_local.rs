@@ -525,12 +525,15 @@ impl Interpreter {
             let target = self
                 .get_env_with_main_alias(package)
                 .and_then(|v| match v.view() {
-                    ValueView::Package(sym) => Some(sym.resolve().to_string()),
+                    ValueView::Package(sym) => Some(
+                        self.resolve_type_in_current_package(&sym.resolve())
+                            .unwrap_or_else(|| sym.resolve().to_string()),
+                    ),
                     _ => None,
                 })
                 .unwrap_or_else(|| package.to_string());
-            self.stack
-                .push(loan_env!(self, package_stash_value(&target)));
+            let stash = loan_env!(self, package_stash_value(&target));
+            self.stack.push(stash);
             return;
         }
 

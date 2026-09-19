@@ -1482,6 +1482,8 @@ impl Interpreter {
                             name: bare_name.clone(),
                             is_public: has_accessor,
                             default: None,
+                            captured_env: None,
+                            captured_unit: None,
                             is_rw,
                             is_required: None,
                             sigil,
