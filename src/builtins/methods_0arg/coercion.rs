@@ -607,6 +607,11 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                         &attributes,
                     ))))
                 }
+                ValueView::Instance { class_name, .. }
+                    if crate::value::types::is_stash_class_name(&class_name.resolve()) =>
+                {
+                    Some(Ok(wrap(crate::runtime::utils::value_to_list(target))))
+                }
                 // A shaped array falls through to the slow path (flatten + Nil
                 // → type-default). Non-shaped arrays keep the fast path.
                 ValueView::Array(..) if crate::runtime::utils::is_shaped_array(target) => None,

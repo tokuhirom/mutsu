@@ -734,6 +734,14 @@ fn coerce_to_array_inner(value: Value) -> Value {
                 })
                 .collect(),
         ),
+        // A package Stash is Associative, so assigning it to an array
+        // materializes its symbol table as key/value pairs rather than
+        // retaining the Stash as one opaque instance.
+        ValueView::Instance { class_name, .. }
+            if crate::value::types::is_stash_class_name(&class_name.resolve()) =>
+        {
+            Value::real_array(value_to_list(&value))
+        }
         // A WalkList assigned to an `@` variable flattens to its candidate
         // closures, so `my @cands = $x.WALK(...)` yields the per-level candidates.
         ValueView::Instance {

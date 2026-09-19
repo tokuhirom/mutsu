@@ -452,6 +452,12 @@ impl Interpreter {
                 let items = crate::runtime::utils::value_to_list_for_receiver(&target);
                 self.eval_grep_with_adverb(args.first().cloned(), items, &grep_adverb)
             }
+            ValueView::Instance { class_name, .. }
+                if crate::value::types::is_stash_class_name(&class_name.resolve()) =>
+            {
+                let items = crate::runtime::utils::value_to_list(&target);
+                self.eval_grep_with_adverb(args.first().cloned(), items, &grep_adverb)
+            }
             ValueView::Uni(_) => {
                 // A Uni/NFC/NFD/NFKC/NFKD receiver greps over its codepoints
                 // (matches raku iteration; see `value_to_list_for_receiver`'s

@@ -13,14 +13,14 @@
   "dist": "List::AllUtils",
   "files": [],
   "load": {
-    "List::AllUtils": "No such method 'key' for invocant of type 'Stash'"
+    "List::AllUtils": "Unknown function: trait_mod:<is>"
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-18",
+    "date": "2026-09-19",
     "harness": 2,
-    "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "44c2987",
+    "host": "linux-x86_64",
+    "mutsu_commit": "e11a4350b",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",

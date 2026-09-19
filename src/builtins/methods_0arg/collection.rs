@@ -595,6 +595,25 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                     }
                     Some(Ok(Value::seq(kv)))
                 }
+                ValueView::Instance { class_name, .. }
+                    if crate::value::types::is_stash_class_name(&class_name.resolve()) =>
+                {
+                    let mut kv = Vec::new();
+                    for pair in crate::runtime::utils::value_to_list(target) {
+                        match pair.view() {
+                            ValueView::Pair(key, value) => {
+                                kv.push(Value::str(key.clone()));
+                                kv.push(value.clone());
+                            }
+                            ValueView::ValuePair(key, value) => {
+                                kv.push(key.clone());
+                                kv.push(value.clone());
+                            }
+                            _ => {}
+                        }
+                    }
+                    Some(Ok(Value::seq(kv)))
+                }
                 ValueView::Enum { key, value, .. } => Some(Ok(Value::seq(vec![
                     Value::str(key.resolve()),
                     value.to_value(),
@@ -679,6 +698,11 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 }
                 // Index => value pairs of the array's own elements, itemization-agnostic.
                 ValueView::Array(items, _) => Some(Ok(Value::seq(positional_pairs(&items)))),
+                ValueView::Instance { class_name, .. }
+                    if crate::value::types::is_stash_class_name(&class_name.resolve()) =>
+                {
+                    Some(Ok(Value::seq(crate::runtime::utils::value_to_list(target))))
+                }
                 ValueView::Package(_) => None, // let runtime handle (may be enum type)
                 _ if target.is_range() => Some(Ok(Value::seq(positional_pairs(
                     &crate::runtime::utils::value_to_list(target),
