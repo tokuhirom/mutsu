@@ -316,6 +316,27 @@ pub(crate) fn is_known_compound_type(name: &str) -> bool {
             | "IO::Spec::Win32"
             | "IO::Special"
             | "Metamodel::Primitives"
+            // The rest of the metamodel HOW family: `when Metamodel::ClassHOW
+            // { }` in a custom trait handler's `given $*PACKAGE.HOW { }`
+            // (AttrX::Mooish) was misdiagnosed as an undeclared routine call
+            // gobbling the block, because this list — consulted only to
+            // settle that ambiguity — didn't know the name, even though `~~
+            // Metamodel::ClassHOW` and `.HOW does Metamodel::ClassHOW` both
+            // already work at runtime. Bare `Metamodel::*` only: verified
+            // against rakudo that the `Perl6::Metamodel::*` spelling is NOT
+            // pre-declared for this check either (`when
+            // Perl6::Metamodel::ClassHOW { }` gobbles the block there too),
+            // so adding it here would diverge from the reference.
+            | "Metamodel::ClassHOW"
+            | "Metamodel::GrammarHOW"
+            | "Metamodel::ParametricRoleHOW"
+            | "Metamodel::ConcreteRoleHOW"
+            | "Metamodel::CurriedRoleHOW"
+            | "Metamodel::EnumHOW"
+            | "Metamodel::ModuleHOW"
+            | "Metamodel::PackageHOW"
+            | "Metamodel::ParametricRoleGroupHOW"
+            | "Metamodel::SubsetHOW"
             | "Rakudo::Internals"
             | "Rakudo::Internals::JSON"
             | "Pod::Block"

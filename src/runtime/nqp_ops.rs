@@ -414,7 +414,11 @@ impl Interpreter {
             }
 
             // -- type test --
-            "istype" => {
+            // `istype_nd` is the no-decontainerize sibling of `istype`; mutsu
+            // already decontainerizes every operand once at this function's
+            // boundary (see the comment above), so the two ops observe the
+            // same value here and share one implementation.
+            "istype" | "istype_nd" => {
                 // Operands are already decontainerized at the `call_nqp_op`
                 // boundary, so a promoted element container answers about what
                 // it holds.
