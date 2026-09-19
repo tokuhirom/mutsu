@@ -16,11 +16,21 @@ use crate::runtime::Interpreter;
 pub(crate) type PollSite = u32;
 
 struct PollTriggers {
-    armed: bool,
     gc: bool,
     profiler: bool,
 }
 
+/// Resolve the poll policy and arm the profiler, exactly once per process.
+///
+/// Nothing on the hot path calls this any more — [`state`] reads its result
+/// out of a relaxed byte instead — but the `OnceLock` stays as the thing that
+/// makes "exactly once" true, because arming the profiler has side effects
+/// (the tick thread, the per-thread buffers) that must happen once and only
+/// when armed.
+///
+/// The combined `armed` flag that used to live here is gone: [`armed`] is now
+/// `gc || profiler` read off the same byte, so there is no second copy of that
+/// disjunction to keep in step.
 fn triggers() -> &'static PollTriggers {
     static TRIGGERS: std::sync::OnceLock<PollTriggers> = std::sync::OnceLock::new();
     TRIGGERS.get_or_init(|| {
@@ -32,22 +42,60 @@ fn triggers() -> &'static PollTriggers {
             // else, so a disarmed run carries none of it (gate 1b).
             crate::profile::arm();
         }
-        PollTriggers {
-            armed: gc || profiler,
-            gc,
-            profiler,
-        }
+        PollTriggers { gc, profiler }
     })
+}
+
+/// [`triggers`] as a single relaxed byte, so the dispatch loop does not resolve
+/// a `OnceLock` for a value that is fixed for the life of the process.
+///
+/// `vm_run_loop` asks [`armed`], then hands the same opcode to [`poll_code`],
+/// which asked the same `OnceLock` again one call later; `gc_safepoint_armed`
+/// then resolved a second one in `gc::safepoint`. Three derefs per executed
+/// opcode, and `OnceLock`'s state load plus branch is not free at that
+/// frequency (1.56% of a tight loop's instructions across all five holders).
+/// The byte is written once, by [`state`]'s cold resolver, from exactly the
+/// `triggers()` it would otherwise have read.
+///
+/// [`STATE_UNRESOLVED`] (zero, the initial value) is the conservative value:
+/// it sends the reader to the resolver, so a poll reached before the policy has
+/// ever been read behaves exactly as it did before.
+static STATE: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(STATE_UNRESOLVED);
+const STATE_UNRESOLVED: u8 = 0;
+const STATE_RESOLVED: u8 = 1;
+const STATE_GC: u8 = 2;
+const STATE_PROFILER: u8 = 4;
+
+#[inline(always)]
+fn state() -> u8 {
+    let s = STATE.load(std::sync::atomic::Ordering::Relaxed);
+    if s != STATE_UNRESOLVED {
+        return s;
+    }
+    resolve_state()
+}
+
+#[cold]
+fn resolve_state() -> u8 {
+    let t = triggers();
+    let mut s = STATE_RESOLVED;
+    if t.gc {
+        s |= STATE_GC;
+    }
+    if t.profiler {
+        s |= STATE_PROFILER;
+    }
+    STATE.store(s, std::sync::atomic::Ordering::Relaxed);
+    s
 }
 
 /// Whether at least one poll consumer is armed.
 ///
 /// This is the single cached gate used by the bytecode dispatch loops. With
 /// both consumers disabled, the loop does not enter [`poll`] at all.
-#[inline]
+#[inline(always)]
 pub(crate) fn armed() -> bool {
-    let t = triggers();
-    t.armed || test_profiler_enabled()
+    state() & (STATE_GC | STATE_PROFILER) != 0 || test_profiler_enabled()
 }
 
 /// Whether the profiler consumer is armed.  JIT code generation uses this
@@ -55,20 +103,19 @@ pub(crate) fn armed() -> bool {
 /// disarmed native backedge keeps the original one-argument helper shape.
 #[inline]
 pub(crate) fn profiler_armed() -> bool {
-    let t = triggers();
-    t.profiler || test_profiler_enabled()
+    state() & STATE_PROFILER != 0 || test_profiler_enabled()
 }
 
 /// Run the consumers for one VM poll.
-#[inline]
+#[inline(always)]
 pub(crate) fn poll(kind: SafepointKind, site: PollSite) {
-    let t = triggers();
-    if t.gc {
+    let s = state();
+    if s & STATE_GC != 0 {
         // `armed` was checked by the caller for the hot dispatch-loop sites;
         // this entry point is also used directly at call/re-entry boundaries.
         crate::gc::gc_safepoint_armed(kind);
     }
-    if t.profiler || test_profiler_enabled() {
+    if s & STATE_PROFILER != 0 || test_profiler_enabled() {
         profiler_poll(kind, site);
     }
 }
@@ -80,21 +127,21 @@ pub(crate) fn poll(kind: SafepointKind, site: PollSite) {
 /// The profiler runs *before* the GC consumer: the line was entered at this ip
 /// whatever the collector then does, and time spent inside a collect is not
 /// time this line was running (`profile::exclude_non_raku` discounts it).
-#[inline]
+#[inline(always)]
 pub(crate) fn poll_code(
     kind: SafepointKind,
     site: PollSite,
     code: &CompiledCode,
     interp: &Interpreter,
 ) {
-    let t = triggers();
-    if t.profiler || test_profiler_enabled() {
+    let s = state();
+    if s & STATE_PROFILER != 0 || test_profiler_enabled() {
         record_line(code, site, interp);
     }
-    if t.gc {
+    if s & STATE_GC != 0 {
         crate::gc::gc_safepoint_armed(kind);
     }
-    if t.profiler || test_profiler_enabled() {
+    if s & STATE_PROFILER != 0 || test_profiler_enabled() {
         profiler_poll(kind, site);
     }
 }
