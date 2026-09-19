@@ -7,16 +7,40 @@
     "unresolved": []
   },
   "dist": "Rakudo::CORE::META",
-  "files": [],
+  "files": [
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "do we have an authority",
+        "nok": 3,
+        "ok": 10,
+        "plan": 13,
+        "secs": 0.3,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/01-basic.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 13,
+        "plan": 13,
+        "secs": 2.26,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
   "load": {
-    "Rakudo::CORE::META": "An exception occurred while evaluating a CHECK"
+    "Rakudo::CORE::META": "ok"
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-18",
+    "date": "2026-09-19",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "44c2987",
+    "mutsu_commit": "5d2e9a2",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -27,13 +51,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/R/AK/RAKUDO_CORE_META/90d90b690b7fe621f96ff05b7b398253eeaa9af9.tar.gz"
   },
-  "status": "blocked_load",
+  "status": "red",
   "totals": {
-    "baseline_assertions": 0,
-    "baseline_files": 0,
-    "mutsu_assertions": 0,
+    "baseline_assertions": 13,
+    "baseline_files": 1,
+    "mutsu_assertions": 10,
     "parity_files": 0,
-    "regressed_files": 0
+    "regressed_files": 1
   },
   "version": "0.0.12"
 }

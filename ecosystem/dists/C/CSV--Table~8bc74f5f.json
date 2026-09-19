@@ -18,110 +18,115 @@
   "dist": "CSV::Table",
   "files": [
     {
-      "cmp": "parity",
+      "cmp": "regression",
       "mutsu": {
+        "first_failure": "Type check failed for return value; expected Text::Utils::Line but got Any (CSV::Table::Line())",
         "nok": 0,
-        "ok": 28,
-        "plan": 28,
-        "secs": 0.91,
+        "ok": 1,
+        "plan": null,
+        "secs": 0.64,
         "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "die"
       },
       "path": "t/1-delimiters.t",
       "raku": {
         "nok": 0,
         "ok": 28,
         "plan": 28,
-        "secs": 23.07,
+        "secs": 21.12,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "parity",
+      "cmp": "regression",
       "mutsu": {
+        "first_failure": "Type check failed for return value; expected Text::Utils::Line but got Any (CSV::Table::Line())",
         "nok": 0,
-        "ok": 53,
-        "plan": 53,
-        "secs": 0.92,
+        "ok": 5,
+        "plan": null,
+        "secs": 0.69,
         "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "die"
       },
       "path": "t/10-normalize-trim.t",
       "raku": {
         "nok": 0,
         "ok": 53,
         "plan": 53,
-        "secs": 1.2,
+        "secs": 1.07,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "parity",
+      "cmp": "regression",
       "mutsu": {
+        "first_failure": "Type check failed for return value; expected Text::Utils::Line but got Any (CSV::Table::Line())",
         "nok": 0,
-        "ok": 10,
-        "plan": 10,
-        "secs": 0.87,
+        "ok": 1,
+        "plan": null,
+        "secs": 0.71,
         "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "die"
       },
       "path": "t/2-commented.t",
       "raku": {
         "nok": 0,
         "ok": 10,
         "plan": 10,
-        "secs": 0.91,
+        "secs": 0.82,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "parity",
+      "cmp": "regression",
       "mutsu": {
+        "first_failure": "Type check failed for return value; expected Text::Utils::Line but got Any (CSV::Table::Line())",
         "nok": 0,
-        "ok": 9,
-        "plan": 9,
-        "secs": 0.93,
+        "ok": 1,
+        "plan": null,
+        "secs": 0.71,
         "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "die"
       },
       "path": "t/3-headers.t",
       "raku": {
         "nok": 0,
         "ok": 9,
         "plan": 9,
-        "secs": 0.95,
+        "secs": 0.87,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "parity",
+      "cmp": "regression",
       "mutsu": {
+        "first_failure": "Type check failed for return value; expected Text::Utils::Line but got Any (CSV::Table::Line())",
         "nok": 0,
-        "ok": 15,
-        "plan": 15,
-        "secs": 0.91,
+        "ok": 1,
+        "plan": null,
+        "secs": 0.68,
         "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "die"
       },
       "path": "t/4-line-ending.t",
       "raku": {
         "nok": 0,
         "ok": 15,
         "plan": 15,
-        "secs": 1.07,
+        "secs": 0.9,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -135,51 +140,53 @@
         "nok": 0,
         "ok": 10,
         "plan": null,
-        "secs": 3.18,
+        "secs": 2.71,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
       }
     },
     {
-      "cmp": "parity",
+      "cmp": "regression",
       "mutsu": {
+        "first_failure": "Type check failed for return value; expected Text::Utils::Line but got Any (CSV::Table::Line())",
         "nok": 0,
-        "ok": 16,
-        "plan": 16,
-        "secs": 0.82,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.76,
         "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "die"
       },
       "path": "t/6-slice.t",
       "raku": {
         "nok": 0,
         "ok": 16,
         "plan": 16,
-        "secs": 0.95,
+        "secs": 0.89,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "parity",
+      "cmp": "regression",
       "mutsu": {
+        "first_failure": "Type check failed for return value; expected Text::Utils::Line but got Any (CSV::Table::Line())",
         "nok": 0,
-        "ok": 9,
-        "plan": 9,
-        "secs": 0.88,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.78,
         "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "die"
       },
       "path": "t/7-half-matrix.t",
       "raku": {
         "nok": 0,
         "ok": 9,
         "plan": 9,
-        "secs": 0.84,
+        "secs": 0.83,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -191,7 +198,7 @@
         "nok": 0,
         "ok": 14,
         "plan": 14,
-        "secs": 0.79,
+        "secs": 0.7,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -201,22 +208,23 @@
         "nok": 0,
         "ok": 14,
         "plan": 14,
-        "secs": 1.11,
+        "secs": 0.99,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "parity",
+      "cmp": "regression",
       "mutsu": {
+        "first_failure": "Type check failed for return value; expected Text::Utils::Line but got Any (CSV::Table::Line())",
         "nok": 0,
-        "ok": 14,
-        "plan": 14,
-        "secs": 0.94,
+        "ok": 1,
+        "plan": null,
+        "secs": 0.74,
         "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "die"
       },
       "path": "t/9-row-and-xtras.t",
       "raku": {
@@ -235,10 +243,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-18",
+    "date": "2026-09-19",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "44c2987",
+    "mutsu_commit": "5d2e9a2",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -249,13 +257,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/C/SV/CSV_TABLE/cb1203476575f1344d0a10429e6dba51cea916f7.tar.gz"
   },
-  "status": "green",
+  "status": "partial",
   "totals": {
     "baseline_assertions": 168,
     "baseline_files": 9,
-    "mutsu_assertions": 168,
-    "parity_files": 9,
-    "regressed_files": 0
+    "mutsu_assertions": 24,
+    "parity_files": 1,
+    "regressed_files": 8
   },
   "version": "0.0.2"
 }

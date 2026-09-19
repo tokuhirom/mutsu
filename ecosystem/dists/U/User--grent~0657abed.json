@@ -16,7 +16,7 @@
         "nok": 0,
         "ok": 16,
         "plan": 16,
-        "secs": 0.09,
+        "secs": 0.21,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -26,53 +26,51 @@
         "nok": 0,
         "ok": 16,
         "plan": 16,
-        "secs": 1.99,
+        "secs": 3.87,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "partial",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "did we get the groupname in this struct by gid",
-        "nok": 1,
-        "ok": 2,
+        "nok": 0,
+        "ok": 17,
         "plan": 17,
-        "secs": 0.07,
+        "secs": 0.75,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "pass"
       },
       "path": "t/getgrnam.t",
       "raku": {
         "nok": 0,
         "ok": 17,
         "plan": 17,
-        "secs": 0.4,
+        "secs": 1.11,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "SWEEP-TIMEOUT",
         "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 240.1,
+        "ok": 15,
+        "plan": 15,
+        "secs": 0.58,
         "skip": 0,
         "todo": 0,
-        "verdict": "timeout"
+        "verdict": "pass"
       },
       "path": "t/getgrnamvar.t",
       "raku": {
         "nok": 0,
         "ok": 15,
         "plan": 15,
-        "secs": 0.66,
+        "secs": 0.96,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -86,8 +84,8 @@
     "attempts": 3,
     "date": "2026-09-19",
     "harness": 2,
-    "host": "linux-x86_64",
-    "mutsu_commit": "6be07a458",
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "5d2e9a2",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -98,13 +96,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/U/SE/USER_GRENT/acc0d66e5745e85f7f31ca4ccd38501724954bb2.tar.gz"
   },
-  "status": "partial",
+  "status": "green",
   "totals": {
     "baseline_assertions": 48,
     "baseline_files": 3,
-    "mutsu_assertions": 18,
-    "parity_files": 1,
-    "regressed_files": 2
+    "mutsu_assertions": 48,
+    "parity_files": 3,
+    "regressed_files": 0
   },
   "version": "0.0.4"
 }

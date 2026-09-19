@@ -14,11 +14,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "Cannot dispatch to method STORE on Hash::Agnostic because it is not inherited or done by Map::Ordered",
+        "first_failure": "Ambiguous call to 'gist(Map::Ordered: )'; these signatures all match:",
         "nok": 0,
         "ok": 0,
         "plan": 18,
-        "secs": 0.15,
+        "secs": 0.17,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -28,7 +28,7 @@
         "nok": 0,
         "ok": 18,
         "plan": 18,
-        "secs": 3.59,
+        "secs": 4.08,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -40,10 +40,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-18",
+    "date": "2026-09-19",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "44c2987",
+    "mutsu_commit": "5d2e9a2",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",

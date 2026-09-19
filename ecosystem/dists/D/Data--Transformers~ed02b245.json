@@ -16,7 +16,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 0,
-        "secs": 0.26,
+        "secs": 0.21,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -26,7 +26,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 0,
-        "secs": 4.54,
+        "secs": 4.92,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -38,7 +38,7 @@
         "nok": 0,
         "ok": 16,
         "plan": 16,
-        "secs": 0.26,
+        "secs": 0.3,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -48,30 +48,29 @@
         "nok": 0,
         "ok": 16,
         "plan": 16,
-        "secs": 1.07,
+        "secs": 0.97,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Calling center-array(Str, Int) will never work with declared signature (Mu:D $dimension-specification, Mu:D $padding, Bool:D $sparse, Mu:D $interpolation-order)",
         "nok": 0,
-        "ok": 1,
-        "plan": null,
-        "secs": 0.23,
+        "ok": 11,
+        "plan": 11,
+        "secs": 0.31,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/02-center-array.rakutest",
       "raku": {
         "nok": 0,
         "ok": 11,
         "plan": 11,
-        "secs": 1.02,
+        "secs": 0.88,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -84,7 +83,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.23,
+        "secs": 0.24,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -94,7 +93,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 0.93,
+        "secs": 0.91,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -107,7 +106,7 @@
         "nok": 1,
         "ok": 1,
         "plan": 2,
-        "secs": 0.23,
+        "secs": 0.24,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -117,7 +116,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 0.76,
+        "secs": 0.75,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -131,10 +130,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-18",
+    "date": "2026-09-19",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "44c2987",
+    "mutsu_commit": "5d2e9a2",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -149,9 +148,9 @@
   "totals": {
     "baseline_assertions": 33,
     "baseline_files": 5,
-    "mutsu_assertions": 18,
-    "parity_files": 2,
-    "regressed_files": 3
+    "mutsu_assertions": 28,
+    "parity_files": 3,
+    "regressed_files": 2
   },
   "version": "0.0.2"
 }

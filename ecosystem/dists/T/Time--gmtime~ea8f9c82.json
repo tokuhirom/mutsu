@@ -16,7 +16,7 @@
         "nok": 0,
         "ok": 13,
         "plan": 13,
-        "secs": 0.07,
+        "secs": 0.12,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -26,30 +26,29 @@
         "nok": 0,
         "ok": 13,
         "plan": 13,
-        "secs": 1.71,
+        "secs": 1.8,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "No such method 'sec' for invocant of type 'List'",
         "nok": 0,
-        "ok": 9,
+        "ok": 20,
         "plan": 20,
-        "secs": 0.06,
+        "secs": 0.08,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/gmtime.t",
       "raku": {
         "nok": 0,
         "ok": 20,
         "plan": 20,
-        "secs": 0.36,
+        "secs": 0.35,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -61,7 +60,7 @@
         "nok": 0,
         "ok": 18,
         "plan": 18,
-        "secs": 0.06,
+        "secs": 0.07,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -71,7 +70,7 @@
         "nok": 0,
         "ok": 18,
         "plan": 18,
-        "secs": 0.34,
+        "secs": 0.33,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -83,10 +82,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-18",
+    "date": "2026-09-19",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "44c2987",
+    "mutsu_commit": "5d2e9a2",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -97,13 +96,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/T/IM/TIME_GMTIME/d26ea7c74b43fbc0e9e2d6e82aa799cda6df3fb9.tar.gz"
   },
-  "status": "partial",
+  "status": "green",
   "totals": {
     "baseline_assertions": 51,
     "baseline_files": 3,
-    "mutsu_assertions": 40,
-    "parity_files": 2,
-    "regressed_files": 1
+    "mutsu_assertions": 51,
+    "parity_files": 3,
+    "regressed_files": 0
   },
   "version": "0.0.8"
 }

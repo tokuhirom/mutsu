@@ -18,7 +18,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.15,
+        "secs": 0.11,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -28,7 +28,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 2.24,
+        "secs": 2.53,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -37,11 +37,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "No such method 'increment' for invocant of type 'Int'",
-        "nok": 0,
-        "ok": 0,
+        "first_failure": "Odd number of elements found where hash initializer expected: found 1 element(s); last element seen: 79f3e1df-8744-4991-85f7-ee95475fc72d(7) c0b4e020-c1d7-4e4a-84cb-c8997dad666f(3) e4d2555d-8ea6-4628-",
+        "nok": 24,
+        "ok": 21,
         "plan": null,
-        "secs": 0.13,
+        "secs": 1.34,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -51,7 +51,7 @@
         "nok": 0,
         "ok": 38,
         "plan": 38,
-        "secs": 4.28,
+        "secs": 4.3,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -60,11 +60,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "No such method 'copy' for invocant of type 'Int'",
-        "nok": 0,
-        "ok": 0,
+        "first_failure": "Odd number of elements found where hash initializer expected: found 1 element(s); last element seen: 3fb4b22e-f2ac-4f10-bb44-5e735fea9e32 6f659f9e-c2f5-4832-8d9b-49ac4226dca9(17) e332993c-b0d4-451f-80",
+        "nok": 14,
+        "ok": 28,
         "plan": null,
-        "secs": 0.25,
+        "secs": 0.78,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -74,7 +74,7 @@
         "nok": 0,
         "ok": 63,
         "plan": 63,
-        "secs": 5.04,
+        "secs": 4.46,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -87,7 +87,7 @@
         "nok": 8,
         "ok": 11,
         "plan": null,
-        "secs": 0.38,
+        "secs": 0.57,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -97,7 +97,7 @@
         "nok": 0,
         "ok": 27,
         "plan": 27,
-        "secs": 2.32,
+        "secs": 2.18,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -110,7 +110,7 @@
         "nok": 7,
         "ok": 7,
         "plan": null,
-        "secs": 0.3,
+        "secs": 0.49,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -120,7 +120,7 @@
         "nok": 0,
         "ok": 29,
         "plan": 29,
-        "secs": 2.73,
+        "secs": 2.45,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -133,7 +133,7 @@
         "nok": 10,
         "ok": 9,
         "plan": null,
-        "secs": 0.45,
+        "secs": 0.59,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -143,7 +143,7 @@
         "nok": 0,
         "ok": 41,
         "plan": 41,
-        "secs": 3.75,
+        "secs": 3.37,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -152,11 +152,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "Odd number of elements found where hash initializer expected: found 1 element(s); last element seen: 27352552-374b-4f45-8660-c6d6f065ac07",
+        "first_failure": "Odd number of elements found where hash initializer expected: found 1 element(s); last element seen: c458dc0b-9117-4e6e-bc6f-b5bd5fc6ce7f",
         "nok": 3,
         "ok": 4,
         "plan": null,
-        "secs": 0.24,
+        "secs": 0.28,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -166,53 +166,53 @@
         "nok": 0,
         "ok": 43,
         "plan": 43,
-        "secs": 4.88,
+        "secs": 4.3,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "partial",
       "mutsu": {
-        "first_failure": "No such method 'counter' for invocant of type 'Int'",
-        "nok": 2,
-        "ok": 8,
-        "plan": null,
-        "secs": 0.3,
+        "first_failure": "Right emited? expected: 13; iteration: 1;",
+        "nok": 6,
+        "ok": 10,
+        "plan": 16,
+        "secs": 25.22,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "fail"
       },
       "path": "t/08-lww-register.rakutest",
       "raku": {
         "nok": 0,
         "ok": 12,
         "plan": 12,
-        "secs": 2.07,
+        "secs": 2.19,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "partial",
       "mutsu": {
-        "first_failure": "No such method 'increment' for invocant of type 'Int'",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 0.66,
+        "first_failure": "not ok 7 -",
+        "nok": 2,
+        "ok": 8,
+        "plan": 10,
+        "secs": 0.65,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "fail"
       },
       "path": "t/09-storage.rakutest",
       "raku": {
         "nok": 0,
         "ok": 10,
         "plan": 10,
-        "secs": 8.54,
+        "secs": 8.46,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -222,10 +222,10 @@
       "cmp": "regression",
       "mutsu": {
         "first_failure": "No such method 'set' for invocant of type 'Hash'",
-        "nok": 12,
-        "ok": 14,
+        "nok": 10,
+        "ok": 16,
         "plan": null,
-        "secs": 0.58,
+        "secs": 1.01,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -235,7 +235,7 @@
         "nok": 0,
         "ok": 54,
         "plan": 54,
-        "secs": 3.27,
+        "secs": 3.25,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -257,10 +257,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-18",
+    "date": "2026-09-19",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "44c2987",
+    "mutsu_commit": "5d2e9a2",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -275,7 +275,7 @@
   "totals": {
     "baseline_assertions": 318,
     "baseline_files": 10,
-    "mutsu_assertions": 54,
+    "mutsu_assertions": 115,
     "parity_files": 1,
     "regressed_files": 9
   },

@@ -12,23 +12,23 @@
   "dist": "Env::File",
   "files": [
     {
-      "cmp": "no_baseline",
-      "flaky": true,
+      "cmp": "partial",
       "mutsu": {
-        "nok": 0,
-        "ok": 7,
+        "first_failure": "Unknown file does not create variable",
+        "nok": 2,
+        "ok": 5,
         "plan": 7,
-        "secs": 0.16,
+        "secs": 0.18,
         "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "fail"
       },
       "path": "t/01-basic.rakutest",
       "raku": {
         "nok": 0,
         "ok": 7,
         "plan": 7,
-        "secs": 1.72,
+        "secs": 1.73,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -40,10 +40,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-18",
+    "date": "2026-09-19",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "44c2987",
+    "mutsu_commit": "5d2e9a2",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -54,13 +54,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/E/NV/ENV_FILE/8e41710d137823290eb900644ee836e34b6a1c95.tar.gz"
   },
-  "status": "no_baseline",
+  "status": "red",
   "totals": {
-    "baseline_assertions": 0,
-    "baseline_files": 0,
-    "mutsu_assertions": 0,
+    "baseline_assertions": 7,
+    "baseline_files": 1,
+    "mutsu_assertions": 5,
     "parity_files": 0,
-    "regressed_files": 0
+    "regressed_files": 1
   },
   "version": "0.0.1"
 }

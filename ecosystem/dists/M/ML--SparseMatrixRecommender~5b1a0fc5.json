@@ -14,18 +14,133 @@
     "unresolved": []
   },
   "dist": "ML::SparseMatrixRecommender",
-  "files": [],
+  "files": [
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "The indexes are expected to be non-negative integers or strings.",
+        "nok": 0,
+        "ok": 1,
+        "plan": null,
+        "secs": 9.29,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/01-creation.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 4,
+        "plan": 4,
+        "secs": 38.23,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "The indexes are expected to be non-negative integers or strings.",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 3.7,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/02-basic-workflows.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 7,
+        "plan": 7,
+        "secs": 3.71,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "The indexes are expected to be non-negative integers or strings.",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 5.24,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/03-classification.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 1.79,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "The indexes are expected to be non-negative integers or strings.",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 5.42,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/04-retrieval-by-query-elements.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 2,
+        "plan": 2,
+        "secs": 3.23,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 4,
+        "plan": 4,
+        "secs": 0.91,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/05-categorize-to-intervals.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 4,
+        "plan": 4,
+        "secs": 0.76,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
   "load": {
-    "ML::SparseMatrixRecommender": "Variable $.csr-struct used where no 'self' is available",
-    "ML::SparseMatrixRecommender::DocumentTermWeightish": "Variable $.csr-struct used where no 'self' is available",
+    "ML::SparseMatrixRecommender": "ok",
+    "ML::SparseMatrixRecommender::DocumentTermWeightish": "ok",
     "ML::SparseMatrixRecommender::Utilities": "ok"
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-18",
+    "date": "2026-09-19",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "44c2987",
+    "mutsu_commit": "5d2e9a2",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -36,13 +151,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/M/L_/ML_SPARSEMATRIXRECOMMENDER/427f66e800bebc04d509305db2f923c85bb5c6b4.tar.gz"
   },
-  "status": "blocked_load",
+  "status": "partial",
   "totals": {
-    "baseline_assertions": 0,
-    "baseline_files": 0,
-    "mutsu_assertions": 0,
-    "parity_files": 0,
-    "regressed_files": 0
+    "baseline_assertions": 20,
+    "baseline_files": 5,
+    "mutsu_assertions": 5,
+    "parity_files": 1,
+    "regressed_files": 4
   },
   "version": "0.0.4"
 }

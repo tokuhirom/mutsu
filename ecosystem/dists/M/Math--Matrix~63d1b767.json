@@ -11,17 +11,17 @@
   "dist": "Math::Matrix",
   "files": [],
   "load": {
-    "Math::Matrix": "No such method 'base-name' for invocant of type 'Attribute'",
+    "Math::Matrix": "No such private method 'check-index' for invocant of type 'Math::Matrix'",
     "Math::Matrix::ArrayOfArray": "ok",
     "Math::Matrix::Type": "ok",
     "Math::Matrix::Util": "ok"
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-18",
+    "date": "2026-09-19",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "44c2987",
+    "mutsu_commit": "5d2e9a2",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",

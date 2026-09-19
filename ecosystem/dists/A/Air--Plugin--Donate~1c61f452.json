@@ -42,16 +42,40 @@
     "unresolved": []
   },
   "dist": "Air::Plugin::Donate",
-  "files": [],
+  "files": [
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Ambiguous call to 'HTML(Air::Plugin::Donate: )'; these signatures all match:",
+        "nok": 0,
+        "ok": 1,
+        "plan": null,
+        "secs": 0.24,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/01-basic.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 17,
+        "plan": 17,
+        "secs": 7.04,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
   "load": {
-    "Air::Plugin::Donate": "Invalid typename 'Singular' in parameter declaration."
+    "Air::Plugin::Donate": "ok"
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-18",
+    "date": "2026-09-19",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "44c2987",
+    "mutsu_commit": "5d2e9a2",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -62,13 +86,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/A/IR/AIR_PLUGIN_DONATE/dabec07cf1a38ccc79581ea937ea54d0744cc920.tar.gz"
   },
-  "status": "blocked_load",
+  "status": "red",
   "totals": {
-    "baseline_assertions": 0,
-    "baseline_files": 0,
-    "mutsu_assertions": 0,
+    "baseline_assertions": 17,
+    "baseline_files": 1,
+    "mutsu_assertions": 1,
     "parity_files": 0,
-    "regressed_files": 0
+    "regressed_files": 1
   },
   "version": "0.0.1"
 }
