@@ -935,6 +935,14 @@ impl Interpreter {
             .insert(Self::type_capture_marker_key(name), Value::TRUE);
     }
 
+    /// Cheap, name-independent version of the same process-global check
+    /// `has_type_capture_binding` gates on, for a caller (like
+    /// `type_matches_value`) that wants to skip a whole resolution attempt
+    /// up front rather than ask about one specific name.
+    pub(crate) fn any_type_capture_seen() -> bool {
+        TYPE_CAPTURE_SEEN.load(std::sync::atomic::Ordering::Relaxed)
+    }
+
     pub(crate) fn has_type_capture_binding(&self, name: &str) -> bool {
         // No `::T` capture has ever been bound anywhere in the process, so no
         // marker key can exist: skip the `format!` + interning env probe that
@@ -943,7 +951,7 @@ impl Interpreter {
         // base). Monotonic and process-global for the same reason
         // `ENV_TYPE_CONSTRAINT_SEEN` is: a worker interpreter binds captures
         // into the same env family the parent later reads.
-        if !TYPE_CAPTURE_SEEN.load(std::sync::atomic::Ordering::Relaxed) {
+        if !Self::any_type_capture_seen() {
             return false;
         }
         matches!(

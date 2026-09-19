@@ -430,7 +430,22 @@ impl Interpreter {
         // constraint like `Any` or `Int` that needs no resolution at all --
         // skips the `String` allocation this function would otherwise pay on
         // every single type check in the interpreter.
-        if let Some(resolved_constraint) = self.try_resolved_type_capture_name(constraint) {
+        //
+        // The cheap disjunction below mirrors `try_resolved_type_capture_name`'s
+        // own early-outs (type-capture bindings, gated by the process-global
+        // `any_type_capture_seen`; package aliases, gated by
+        // `package_type_aliases` being non-empty; a `[...]` parameterization or
+        // a `::(...)` indirect spelling, which its generic-args/`q<...>` branches
+        // always inspect regardless of either flag) so a program using neither
+        // feature -- the overwhelming majority of type checks -- skips the call
+        // (and its internal string scans) entirely instead of re-deriving the
+        // same "nothing to do" verdict on every invocation.
+        if (constraint.starts_with("::(")
+            || constraint.contains('[')
+            || Self::any_type_capture_seen()
+            || !self.package_type_aliases.is_empty())
+            && let Some(resolved_constraint) = self.try_resolved_type_capture_name(constraint)
+        {
             return self.type_matches_value(&resolved_constraint, value);
         }
         // Hot-path fast accept (ADR-0004 J3): a concrete value whose exact tag /
