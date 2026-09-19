@@ -1514,6 +1514,31 @@ pub(crate) enum OpCode {
         /// and a boxed candidate.
         literal_native_args: u32,
     },
+    /// An `nqp::` VALUE op (`nqp::add_i`, `nqp::ordat`, `nqp::atpos_i`, ...)
+    /// with a fixed, all-positional argument list: pop `arity` operands, run
+    /// the op, push its result.
+    ///
+    /// `nqp::` is a reserved namespace holding compiler-known primitives, so
+    /// which op a call site means is settled at COMPILE time — `id` is a dense
+    /// index into `runtime/nqp_op_ids`'s registry, resolved once by
+    /// `try_compile_nqp_value_op`. The `CallFunc` this replaces re-derived it
+    /// per execution from the callee string, and then paid the generic call
+    /// protocol (argument spreading, `VarRef` unwrapping, callsite-line
+    /// sanitizing, `Proxy` auto-FETCH — four `Vec`s) for operands an nqp op
+    /// never uses any of it on. In NQP/Rakudo this is a `QAST::Op` node that
+    /// becomes a single MoarVM instruction; this is the same idea one level up.
+    ///
+    /// Only the fixed-arity, all-positional shape compiles to this: a `|EXPR`
+    /// spread or a named argument keeps the `CallFunc` path, as does any op
+    /// name the registry does not know (which is also what keeps an unknown
+    /// `nqp::` name failing loudly, from the one dispatch chain that raises
+    /// that error).
+    NqpOp {
+        /// Dense registry index (`runtime::nqp_op_ids::nqp_op_id`).
+        id: u16,
+        /// Operand count on the stack. `u8` because the widest nqp op takes 5.
+        arity: u8,
+    },
     /// Expression-level function call whose literal named args travel
     /// out-of-band: `arity` values on the stack, of which the positions
     /// listed in `CompiledCode::named_arg_specs[spec_idx]` are named-arg

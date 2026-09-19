@@ -628,6 +628,7 @@ impl Interpreter {
             pending_call_arg_source_slots: std::collections::HashMap::new(),
             pending_rw_writeback_slots: std::collections::HashMap::new(),
             test_pending_callsite_line: None,
+            nqp_arg_scratch: Vec::new(),
             cur_source_line: 1,
             thread_spawn_origin,
             args_scratch_pool: Vec::new(),

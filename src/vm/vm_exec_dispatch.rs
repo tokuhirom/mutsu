@@ -3926,6 +3926,29 @@ impl Interpreter {
                 }
                 *ip += 1;
             }
+            OpCode::NqpOp { id, arity } => {
+                self.sync_source_line(code, *ip);
+                // `use fatal`: same gate as the `CallFunc` arm above — an
+                // operand expression may have produced a Failure that must
+                // explode before the op consumes it.
+                self.explode_if_fatal_failure_in_call_args(
+                    crate::runtime::nqp_op_ids::nqp_op_name(*id),
+                    *arity as usize,
+                )?;
+                match self.exec_nqp_op(*id, *arity as usize) {
+                    Ok(()) => {}
+                    Err(e) => {
+                        // Same resume-point recording as CallFunc: an op can
+                        // reach user code (an `AT-KEY` override) that raises a
+                        // resumable control signal.
+                        if !e.is_resume() && self.resume_ip.is_none() {
+                            self.resume_ip = Some((Self::resume_code_fp(code), *ip + 1));
+                        }
+                        return Err(e);
+                    }
+                }
+                *ip += 1;
+            }
             OpCode::CallFuncNamed {
                 name_idx,
                 arity,

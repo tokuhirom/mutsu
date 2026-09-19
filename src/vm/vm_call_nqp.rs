@@ -61,4 +61,70 @@ impl Interpreter {
         self.stack.push(result);
         Ok(())
     }
+
+    /// `OpCode::NqpOp` — an `nqp::` VALUE op whose identity and operand count
+    /// the compiler already settled (`try_compile_nqp_value_op`).
+    ///
+    /// This is the same work `exec_nqp_call_op` above does, with everything
+    /// that was re-deriving a compile-time fact removed. Each step it drops is
+    /// dropped because the compiler only emits this opcode for the shape that
+    /// makes the step a no-op, not because the step was found unnecessary in
+    /// practice:
+    ///
+    /// * `spread_call_args_by_syntax` — a `|EXPR` position keeps the
+    ///   `CallFunc` path, so `arity` operands on the stack ARE the operands;
+    /// * `sanitize_call_args_owned` — that scan looks for the synthetic
+    ///   callsite-line `Pair` the test-assertion lowering injects, and no nqp
+    ///   op site carries one. Clearing a line a PRECEDING call left pending is
+    ///   still done unconditionally, exactly as before: rakudo's own
+    ///   `Test.rakumod` runs several nqp ops per assertion, so this opcode
+    ///   sits between a test call and the next one;
+    /// * the `Vec`s — the operands move into a buffer reused across ops
+    ///   (`nqp_arg_scratch`), and the `VarRef` unwrap and `Proxy` FETCH happen
+    ///   in place in it rather than each rebuilding the list;
+    /// * the callee-string lookup and the walk down the table chain — the id
+    ///   names the op and its owning table (`dispatch_nqp_op_by_id`).
+    ///
+    /// `literal_native_args` is cleared for the duration rather than carried:
+    /// it ranks a `multi`'s native-vs-boxed candidates for the CALL it belongs
+    /// to, an nqp op ranks no candidates, and leaving the enclosing call's
+    /// mask visible would offer it to whatever an op dispatches into (an
+    /// `AT-KEY` override reached through `nqp::atkey`).
+    pub(super) fn exec_nqp_op(&mut self, id: u16, arity: usize) -> Result<(), RuntimeError> {
+        if self.stack.len() < arity {
+            return Err(RuntimeError::new("Interpreter stack underflow in NqpOp"));
+        }
+        let mut args = std::mem::take(&mut self.nqp_arg_scratch);
+        args.clear();
+        let start = self.stack.len() - arity;
+        args.extend(self.stack.drain(start..).map(Self::unwrap_var_ref_value));
+        loan_env!(self, set_pending_callsite_line(None));
+        let saved_literals = std::mem::replace(&mut self.literal_native_args, 0);
+        // Keep the `MUTSU_VM_STATS` dispatch tally comparable across this
+        // change: an nqp op used to reach `exec_call_func_op_inner`, which
+        // counted it here.
+        crate::vm::vm_stats::record_function_dispatch();
+        let result = self
+            .fetch_nqp_proxy_operands(&mut args)
+            .and_then(|()| self.dispatch_nqp_op_by_id(id, &args));
+        self.literal_native_args = saved_literals;
+        args.clear();
+        self.nqp_arg_scratch = args;
+        self.stack.push(result?);
+        Ok(())
+    }
+
+    /// FETCH any `Proxy` operand in place. The general call path rebuilt the
+    /// whole argument list to do this (`auto_fetch_proxy_args`); an nqp op's
+    /// operands are almost never `Proxy`, so probe and only write back the
+    /// ones that are.
+    fn fetch_nqp_proxy_operands(&mut self, args: &mut [Value]) -> Result<(), RuntimeError> {
+        for arg in args {
+            if arg.is_proxy_value() {
+                let fetched = loan_env!(self, auto_fetch_proxy(arg))?;
+                *arg = fetched;
+            }
+        }
+        Ok(())
+    }
 }

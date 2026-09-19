@@ -12,6 +12,7 @@
 //! of that dispatch lives.
 
 use super::*;
+use crate::runtime::nqp_op_ids::NqpOpTable;
 
 impl Interpreter {
     /// The single entry point for every `nqp::` op, with `op` being the name
@@ -39,6 +40,40 @@ impl Interpreter {
         Err(RuntimeError::new(format!(
             "Unsupported nqp:: op: nqp::{op}"
         )))
+    }
+
+    /// [`Self::dispatch_nqp_op`] for a call site whose op was already resolved
+    /// to a dense registry id at COMPILE time (`OpCode::NqpOp`).
+    ///
+    /// The registry records which of the six chained tables claims the op, so
+    /// this enters that one directly instead of walking the chain from the
+    /// top: `nqp::ordat` lives in the fifth table and used to pay four failed
+    /// `match op` walks — over 25, 72, 20 and 24 names — before reaching its
+    /// own. Each table's `_` arm still falls through to the next, so entering
+    /// mid-chain only skips walks that were going to decline.
+    ///
+    /// A registry entry tagged with the wrong table therefore cannot break an
+    /// op, only slow it down: the tables after it decline too, and the `None`
+    /// that falls out re-runs the full chain from the top.
+    pub(crate) fn dispatch_nqp_op_by_id(
+        &mut self,
+        id: u16,
+        args: &[Value],
+    ) -> Result<Value, RuntimeError> {
+        let _region = crate::profile::enter(crate::profile::Region::Nqp);
+        let op = crate::runtime::nqp_op_ids::nqp_op_name(id);
+        let claimed = match crate::runtime::nqp_op_ids::nqp_op_table(id) {
+            NqpOpTable::Builtin => self.call_nqp_interpreter_op(op, args),
+            NqpOpTable::Value => self.call_nqp_op(op, args),
+            NqpOpTable::Process => self.call_nqp_op_process(op, args),
+            NqpOpTable::Text => self.call_nqp_op_text(op, args),
+            NqpOpTable::Str => self.call_nqp_op_str(op, args),
+            NqpOpTable::List => self.call_nqp_op_list(op, args),
+        };
+        match claimed {
+            Some(result) => result,
+            None => self.dispatch_nqp_op(op, args),
+        }
     }
 
     /// The interpreter-coupled `nqp::` ops. `None` means "not one of these" —
