@@ -188,16 +188,21 @@ impl Interpreter {
                 arity,
                 type_sig.join(",")
             );
+            let typed_fq_sym = Symbol::intern(&typed_fq);
             self.registry_mut()
                 .functions_mut()
-                .entry(Symbol::intern(&typed_fq))
+                .entry(typed_fq_sym)
                 .or_insert_with(|| arc.clone());
+            crate::runtime::cow_table_mut(&mut self.method_export_forwarder_keys)
+                .insert(typed_fq_sym);
         }
         let fq = format!("{}::{}/{}", class_name, op_name, arity);
+        let fq_sym = Symbol::intern(&fq);
         self.registry_mut()
             .functions_mut()
-            .entry(Symbol::intern(&fq))
+            .entry(fq_sym)
             .or_insert(arc);
+        crate::runtime::cow_table_mut(&mut self.method_export_forwarder_keys).insert(fq_sym);
         self.register_exported_sub(class_name.to_string(), op_name.to_string(), tags);
     }
 }

@@ -3183,6 +3183,7 @@ impl Interpreter {
             module_registered_functions: Default::default(),
             packages_with_deferred_use_imports: Default::default(),
             prelude_registered_functions: Default::default(),
+            method_export_forwarder_keys: Default::default(),
             prelude_declaring_units: Default::default(),
             module_package_globals: Default::default(),
             need_hidden_classes: Default::default(),

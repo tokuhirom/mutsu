@@ -1163,11 +1163,9 @@ impl Interpreter {
         let multi_prefix = format!("{}::{}/", self.current_package(), name);
         let single_key_sym = Symbol::intern(&single_key);
         let has_single = self.registry().functions.contains_key(&single_key_sym);
-        let has_multi = self
-            .registry()
-            .functions
-            .keys()
-            .any(|k| k.resolve().starts_with(&multi_prefix));
+        let has_multi = self.registry().functions.keys().any(|k| {
+            k.resolve().starts_with(&multi_prefix) && !self.method_export_forwarder_keys.contains(k)
+        });
         let has_proto = self.registry().proto_subs_contains(&single_key);
         let allow_lexical_shadow = (self.block_scope_depth > 0 || is_lexical_hoist)
             && !matches!(

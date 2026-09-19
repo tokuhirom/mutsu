@@ -2498,6 +2498,19 @@ pub struct Interpreter {
     /// unable to resolve the helper its own body calls, since `loaded_modules`
     /// still claimed it was loaded and the later real `use` short-circuited.
     prelude_registered_functions: std::sync::Arc<HashSet<Symbol>>,
+    /// Registry keys installed by [`Interpreter::register_exported_operator_method_sub`]
+    /// for a `method ... is export`'s forwarding sub-form (`Class::name/arity`).
+    ///
+    /// These share the arity-suffixed key shape genuine `multi sub`/`multi
+    /// method` candidates use, purely so `register_exported_sub`'s
+    /// candidate-family prefix scan and `import` can find them. That shape
+    /// is coincidental, not semantic: a class body's ordinary, unrelated
+    /// `sub name(...)` of the same name is a different namespace in Raku
+    /// (confirmed against rakudo — a `method leafQ is export` and a sibling
+    /// `sub leafQ` coexist there) and must not be rejected as redeclaring a
+    /// "multi" that was never declared `multi`. Keys recorded here are
+    /// excluded from that collision scan; see `register_sub_decl_with_metadata`.
+    method_export_forwarder_keys: std::sync::Arc<HashSet<Symbol>>,
     /// For each prelude key in `prelude_registered_functions`, the compilation
     /// units the declaration was actually spliced into (`?FILE` at registration
     /// time; `main_unit()` for the main script).
