@@ -1262,6 +1262,22 @@ impl Interpreter {
         // single candidate, so its `callsame` reaches the NATIVE base
         // implementation (`native_mu_base_next_candidate`: the built instance
         // for BUILDALL/POPULATE, the native attribute-copying clone for clone).
+        // A user `method new` is the same situation, and the one that bites
+        // hardest: Raku's `Mu.new(*%attrinit)` is ALWAYS the base candidate of
+        // a `new` MRO, but mutsu models it natively (bless), so it is not a
+        // `MethodDef` and never appears among the deferral candidates. Without
+        // a frame, a `method new { ... callwith(|%args) ... }` had no dispatch
+        // context of its own, and `callwith` resolved against whatever frame an
+        // ENCLOSING routine happened to leave live — an outer `multi sub`'s,
+        // typically — calling a completely unrelated candidate or dying with
+        // "Cannot resolve caller". (Raku lets a plain SUB see an enclosing
+        // dispatcher, but a method call always establishes its own, so the leak
+        // is only ever wrong.) Gated on the program-global
+        // `dispatcher_possible()` latch: a program with no `callsame`/`callwith`
+        // anywhere keeps the single-candidate fast path for every `.new`.
+        let new_base_override = method_name == "new"
+            && crate::opcode::dispatcher_possible()
+            && self.has_user_method(receiver_class, method_name);
         let mu_base_override = matches!(method_name, "BUILDALL" | "POPULATE" | "clone")
             && self.has_user_method(receiver_class, method_name);
         // A user (or role-composed) override of a native container protocol
@@ -1298,6 +1314,7 @@ impl Interpreter {
             accessor_owner.is_some() && self.has_user_method(receiver_class, method_name);
         let native_base_override = grammar_parse_override
             || mu_base_override
+            || new_base_override
             || container_protocol_override
             || accessor_base_override;
         // Fast path: a name with at most one *structural* dispatch candidate across

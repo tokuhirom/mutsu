@@ -27,6 +27,25 @@ pub(crate) fn reflective_name_access_possible() -> bool {
     REFLECTIVE_NAME_ACCESS_SEEN.load(Ordering::Relaxed)
 }
 
+/// Process-global latch: set once any compiled chunk anywhere in the program
+/// calls `callsame`/`nextsame`/`callwith`/`nextwith` (see
+/// [`CompiledCode::uses_dispatcher`], which answers the same question for one
+/// chunk).
+///
+/// Method dispatch uses it to decide whether a name whose only remaining MRO
+/// candidate is a NATIVE base — `new`, whose base candidate is `Mu.new` —
+/// must establish a dispatch frame at all. A program that never defers pays
+/// nothing; one that does pays an MRO walk on the affected calls. The flag is
+/// monotonic and global, so an over-set only ever forces the (correct) frame.
+static DISPATCHER_SEEN: AtomicBool = AtomicBool::new(false);
+
+/// True if any compiled code in this program calls `callsame`/`nextsame`/
+/// `callwith`/`nextwith`. See [`DISPATCHER_SEEN`].
+#[inline]
+pub(crate) fn dispatcher_possible() -> bool {
+    DISPATCHER_SEEN.load(Ordering::Relaxed)
+}
+
 /// Which bracket a subscript was written with. Carried in bits 8-9 of the
 /// `ExistsIndexAdv` / `ExistsIndexNamedAdv` flag word so the VM can pick the
 /// subscript protocol from the *syntax* rather than guessing from the index's
@@ -8266,6 +8285,7 @@ impl CompiledCode {
             )
         {
             self.uses_dispatcher = true;
+            DISPATCHER_SEEN.store(true, Ordering::Relaxed);
         }
         if !self.has_calls {
             // Every call opcode -- any of these can invoke a callee that writes

@@ -435,7 +435,12 @@ impl Interpreter {
         if attributes.contains_key("__mutsu_array_storage") {
             return true;
         }
-        self.has_user_method(&cn, "iterator") && self.class_does_role(&cn, "Iterable")
+        if self.class_does_role(&cn, "Iterable")
+            && (self.has_user_method(&cn, "iterator") || self.has_user_method(&cn, "list"))
+        {
+            return true;
+        }
+        false
     }
 
     /// The array an `@`-assignment of `raw` produces when `raw` is an instance
@@ -496,6 +501,19 @@ impl Interpreter {
         };
         let cn = class_name.as_str().to_string();
         if !self.has_user_method(&cn, "iterator") {
+            // A class that composes `Iterable` without declaring its own
+            // `iterator` inherits `Any.iterator`, which rakudo defines as
+            // `self.list.iterator` — so `does Iterable` plus a `list` method is
+            // enough to decompose, with no `iterator` anywhere (Selkie::UI's
+            // `ReactiveArray`, which is `does Positional does Iterable` and
+            // provides `list`/`AT-POS`/`elems` only). Gated on the Iterable
+            // role exactly like the `iterator` route below: a plain class with
+            // a `list` method is still one item.
+            if self.class_does_role(&cn, "Iterable") && self.has_user_method(&cn, "list") {
+                let list =
+                    self.try_compiled_method_or_interpret(iterable.clone(), "list", vec![])?;
+                return Ok(Some(crate::runtime::utils::value_to_list(&list)));
+            }
             return Ok(None);
         }
         // An `is Array`/`is List` subclass is Iterable by inheritance, and its
@@ -548,6 +566,16 @@ impl Interpreter {
         }
         let cn = class_name.as_str().to_string();
         if !self.has_user_method(&cn, "iterator") {
+            // Same inherited-`Any.iterator` route as
+            // `try_iterable_instance_items`: `does Iterable` + `list` and no
+            // `iterator` at all. Kept on the Iterable-role gate even though
+            // this helper's `iterator` route deliberately is not — a plain
+            // class with only a `list` method is one item to `.map` in rakudo.
+            if self.class_does_role(&cn, "Iterable") && self.has_user_method(&cn, "list") {
+                let list =
+                    self.try_compiled_method_or_interpret(iterable.clone(), "list", vec![])?;
+                return Ok(Some(crate::runtime::utils::value_to_list(&list)));
+            }
             return Ok(None);
         }
         self.drive_user_iterator_items(iterable).map(Some)
