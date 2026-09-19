@@ -36,21 +36,38 @@
 
 use super::*;
 
+/// The pieces of `dispatch_package_parse`'s own arguments that
+/// `dispatch_package_parse_via_method` needs, bundled to keep the function
+/// under clippy's argument-count lint rather than tacking on a ninth
+/// positional parameter.
+pub(super) struct MethodStartRuleCall<'a> {
+    pub(super) package_name: &'a str,
+    pub(super) start_rule: &'a str,
+    pub(super) text: &'a str,
+    pub(super) is_full_parse: bool,
+    pub(super) start_pos: Option<usize>,
+    pub(super) continue_pos: Option<usize>,
+    pub(super) rule_args: &'a [Value],
+}
+
 impl Interpreter {
     /// Run a method-shaped start rule and produce the same kind of result
     /// `dispatch_package_parse`'s regular path would: a `Match`/failed-`Match`
     /// for `.subparse`, or a `Match`/`Failure` for `.parse`/`.parsefile`.
     pub(super) fn dispatch_package_parse_via_method(
         &mut self,
-        package_name: &str,
-        start_rule: &str,
-        text: &str,
-        is_full_parse: bool,
-        start_pos: Option<usize>,
-        continue_pos: Option<usize>,
-        rule_args: &[Value],
+        call: MethodStartRuleCall<'_>,
         actions_obj: &mut Option<Value>,
     ) -> Result<Value, RuntimeError> {
+        let MethodStartRuleCall {
+            package_name,
+            start_rule,
+            text,
+            is_full_parse,
+            start_pos,
+            continue_pos,
+            rule_args,
+        } = call;
         let from = start_pos.or(continue_pos).unwrap_or(0) as i64;
         let cursor = Interpreter::make_cursor_value(package_name, text, from, from, false);
         let value = self.call_method_with_values(cursor, start_rule, rule_args.to_vec())?;

@@ -681,13 +681,15 @@ impl Interpreter {
         let result = (|| -> Result<Value, RuntimeError> {
             if is_method_start_rule {
                 return self.dispatch_package_parse_via_method(
-                    package_name,
-                    &start_rule,
-                    &text,
-                    is_full_parse,
-                    start_pos,
-                    continue_pos,
-                    &rule_args,
+                    super::methods_grammar_method_start::MethodStartRuleCall {
+                        package_name,
+                        start_rule: &start_rule,
+                        text: &text,
+                        is_full_parse,
+                        start_pos,
+                        continue_pos,
+                        rule_args: &rule_args,
+                    },
                     &mut actions_obj,
                 );
             }
