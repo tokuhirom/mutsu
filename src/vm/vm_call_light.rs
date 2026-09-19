@@ -1054,8 +1054,8 @@ impl Interpreter {
                 enum_type, value, ..
             } => match (kind, value) {
                 (T::Wild, _)
-                | (T::Str, crate::value::EnumValue::Str(_))
-                | (T::Int, crate::value::EnumValue::Int(_)) => true,
+                | (T::Str | T::NativeStr, crate::value::EnumValue::Str(_))
+                | (T::Int | T::NativeInt, crate::value::EnumValue::Int(_)) => true,
                 _ => enum_type == name_sym,
             },
             // Every other value shape satisfies only `Any`/`Mu` -- the
@@ -1185,8 +1185,8 @@ impl Interpreter {
         // nor `value_type_name` (which answers the enum's own name) can see.
         if let ValueView::Enum { value: ev, .. } = val.view() {
             return match (type_name, ev) {
-                ("Str", crate::value::EnumValue::Str(_))
-                | ("Int", crate::value::EnumValue::Int(_))
+                ("Str" | "str", crate::value::EnumValue::Str(_))
+                | ("Int" | "int", crate::value::EnumValue::Int(_))
                 | ("Any" | "Mu", _) => true,
                 _ => runtime::value_type_name(val) == type_name,
             };

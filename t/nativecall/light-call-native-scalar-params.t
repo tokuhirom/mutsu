@@ -12,7 +12,7 @@ use Test;
 # overflow message, and the per-parameter `~~ int`-style declared-type
 # metadata still works from inside the body.
 
-plan 25;
+plan 27;
 
 sub takes-int(int $x) { $x }
 is takes-int(5), 5, 'native int parameter accepts a plain Int';
@@ -107,3 +107,24 @@ my $int-str = <42>;
 is $int-str.^name, 'IntStr', 'sanity: <42> is an IntStr allomorph';
 is takes-str($int-str), '42', 'native str parameter accepts an IntStr allomorph';
 is takes-int($int-str), 42, 'native int parameter accepts an IntStr allomorph';
+
+# An enum value satisfies the base type its values carry (`our Str enum S
+# «:A<a>»` -- `S::A` is a `Str`) for a NATIVE constraint too, exactly as it
+# does for the corresponding boxed one -- the `fast_type_check`/
+# `fast_type_check_tagged` enum arms special-cased `Int`/`Str` but not
+# `NativeInt`/`NativeStr`, so an Int-valued enum constant (the idiomatic
+# `enum CBORMajorType (CBOR_UInt => 0, ...)` shape the vendored CBOR::Simple
+# module uses to name its wire-format tags) was wrongly rejected by a native
+# `int` parameter -- caught by the release-time battery gate
+# (scripts/battery-testsuite.sh) regressing CBOR::Simple's own upstream
+# suite below its recorded baseline.
+enum Flavor (VANILLA => 1, CHOCOLATE => 2);
+our Str enum Grade «:A<a> :B<b>»;
+# mutsu does not yet unbox an accepted enum value to a plain Int at the
+# native-int bind site (a PRE-EXISTING gap shared with the general binder --
+# `sub f(int $x is rw) {...}` forces the general path and shows the same
+# `Flavor`-not-`Int` result -- so this is not a regression this PR
+# introduces, and not in scope to fix here). What CBOR::Simple's own code
+# actually depends on is arithmetic behaving correctly, which it does.
+ok takes-int(VANILLA) == 1, 'native int parameter accepts an Int-valued enum constant (numeric equality)';
+is takes-str(Grade::A), 'a', 'native str parameter accepts a Str-valued enum constant';
