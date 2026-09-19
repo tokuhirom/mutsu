@@ -2478,11 +2478,35 @@ impl Interpreter {
                 if !found && let Some(default_expr) = &pd.default {
                     let value = self.eval_param_default(pd, default_expr)?;
                     let value = self.checked_default_param_value(pd, value)?;
-                    let value = if pd.captured_type_name().is_some() {
+                    let mut value = if pd.captured_type_name().is_some() {
                         self.normalize_type_capture_value(value)
                     } else {
                         value
                     };
+                    // A default bound to an `@`/`%` parameter follows the
+                    // same copy semantics as a supplied named argument. In
+                    // particular, `:@units is copy = %Units{$set}` must
+                    // receive an independent mutable Array, or a callee that
+                    // normalizes its elements mutates the package-global
+                    // default and the next call sees corrupted units.
+                    if (pd.name.starts_with('@') || pd.name.starts_with('%'))
+                        && pd.traits.iter().any(|trait_name| trait_name == "copy")
+                        && matches!(value.view(), ValueView::Array(..) | ValueView::Hash(..))
+                    {
+                        value = value.detach_shared_container();
+                        if pd.name.starts_with('@')
+                            && let ValueView::Array(
+                                gc,
+                                crate::value::ArrayKind::List | crate::value::ArrayKind::ItemList,
+                            ) = value.view()
+                        {
+                            value = Value::array_with_kind(
+                                crate::gc::Gc::new((*gc).as_ref().clone()),
+                                crate::value::ArrayKind::Array,
+                            );
+                        }
+                        value.stamp_descriptor_name("element");
+                    }
                     if let Some((sig_params, sig_ret)) = &pd.code_signature
                         && !code_signature_matches_value(self, sig_params, sig_ret, &value)
                     {

@@ -96,7 +96,7 @@ pub(crate) fn try_interpolate_var<'a>(
     parts: &mut Vec<Expr>,
     current: &mut String,
 ) -> Option<&'a str> {
-    let parse_postcircumfix_index = |input: &'a str, target: Expr| -> (Expr, &'a str) {
+    let parse_one_postcircumfix_index = |input: &'a str, target: Expr| -> (Expr, &'a str) {
         // Double angle bracket indexing: $var<<key>> (must be checked before single <)
         if let Some(after_dlt) = input.strip_prefix("<<")
             && let Some(end) = after_dlt.find(">>")
@@ -241,6 +241,19 @@ pub(crate) fn try_interpolate_var<'a>(
             }
         }
         (target, input)
+    };
+    // Interpolated variables use the same postcircumfix chaining rules as
+    // ordinary expressions: `@units[*-1]<plural>` is an index followed by an
+    // associative lookup, not an index plus literal `<plural>` text.
+    let parse_postcircumfix_index = |mut input: &'a str, mut target: Expr| {
+        loop {
+            let (next_target, remainder) = parse_one_postcircumfix_index(input, target);
+            if remainder.len() == input.len() {
+                return (next_target, remainder);
+            }
+            target = next_target;
+            input = remainder;
+        }
     };
 
     if rest.starts_with('$') && rest.len() > 1 {
