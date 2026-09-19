@@ -693,7 +693,9 @@ impl Interpreter {
             // Only scalars are in the store (see `collect_unit_lexical_names`) and
             // a scalar is keyed sigil-less, so the only sigil that can appear here
             // is its own.
-            let (pkg, bare) = name.strip_prefix('$').unwrap_or(name).rsplit_once("::")?;
+            let (pkg, bare) = crate::runtime::utils::rsplit_once_double_colon(
+                name.strip_prefix('$').unwrap_or(name),
+            )?;
             if pkg != cur || cur.is_empty() || cur == "GLOBAL" {
                 return None;
             }
@@ -769,7 +771,9 @@ impl Interpreter {
             // Only scalars are in the store (see `collect_unit_lexical_names`) and
             // a scalar is keyed sigil-less, so the only sigil that can appear here
             // is its own.
-            let (pkg, bare) = name.strip_prefix('$').unwrap_or(name).rsplit_once("::")?;
+            let (pkg, bare) = crate::runtime::utils::rsplit_once_double_colon(
+                name.strip_prefix('$').unwrap_or(name),
+            )?;
             if pkg != cur || cur.is_empty() || cur == "GLOBAL" {
                 return None;
             }

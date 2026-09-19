@@ -598,7 +598,7 @@ impl Interpreter {
             if let Some(found) = table.get(pkg).and_then(|entries| entries.get(name)) {
                 return Some(found);
             }
-            match pkg.rsplit_once("::") {
+            match crate::runtime::utils::rsplit_once_double_colon(pkg) {
                 Some((parent, _)) => pkg = parent,
                 None => break,
             }
@@ -625,7 +625,7 @@ impl Interpreter {
                     .get_mut(&pkg)
                     .and_then(|entries| entries.get_mut(name));
             }
-            match pkg.rsplit_once("::") {
+            match crate::runtime::utils::rsplit_once_double_colon(&pkg) {
                 Some((parent, _)) => pkg = parent.to_string(),
                 None => break,
             }
