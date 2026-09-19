@@ -577,7 +577,7 @@ impl Interpreter {
     /// This is the mixin-path counterpart of what the class-header path already
     /// does through `resolve_role_candidate` and what `.new` does through
     /// `materialize_default_parametric_role`.
-    fn role_default_type_param_bindings(
+    pub(crate) fn role_default_type_param_bindings(
         &mut self,
         role_name: &str,
     ) -> Result<Vec<(String, Value)>, RuntimeError> {

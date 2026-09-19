@@ -1236,14 +1236,33 @@ impl Interpreter {
         // A punned role's attributes keep their declared types: the pun IS the
         // class here, so `::?CLASS` resolves to the role's own name. Parent
         // roles' entries are collected first so the punned role's own
-        // declaration wins on a name clash.
+        // declaration wins on a name clash. Defaulted type captures need the
+        // same substitution as a class composing the role; otherwise a direct
+        // `R.new(value => ...)` sees the literal capture name as its constraint.
+        let default_bindings = self.role_default_type_param_bindings(role_name)?;
+        let default_type_subs: Vec<(String, String)> = default_bindings
+            .iter()
+            .map(|(name, value)| {
+                (
+                    name.clone(),
+                    super::registration_class::type_value_name(value),
+                )
+            })
+            .collect();
         let mut attribute_types: HashMap<String, String> = HashMap::new();
         let mut attribute_smileys: HashMap<String, String> = HashMap::new();
         for owner in composed_roles_list.iter().rev() {
             let base = owner.split_once('[').map(|(b, _)| b).unwrap_or(owner);
             for ((r, attr), tc) in &self.registry().role_attribute_types {
                 if r == base {
-                    attribute_types.insert(attr.clone(), tc.replace("::?CLASS", role_name));
+                    let tc = tc.replace("::?CLASS", role_name);
+                    attribute_types.insert(
+                        attr.clone(),
+                        super::registration_class_compose::substitute_type_param_tokens(
+                            &tc,
+                            &default_type_subs,
+                        ),
+                    );
                 }
             }
             for ((r, attr), s) in &self.registry().role_attribute_smileys {
@@ -1277,6 +1296,12 @@ impl Interpreter {
         self.registry_mut()
             .class_composed_roles
             .insert(role_name.to_string(), composed_roles_list);
+        if !default_bindings.is_empty() {
+            self.registry_mut().class_role_param_bindings.insert(
+                role_name.to_string(),
+                default_bindings.into_iter().collect(),
+            );
+        }
         // A role pun materializes a new dispatch owner. Compile its copied
         // declarations once at that boundary so VM dispatch sees them in the
         // canonical method-entry table immediately.

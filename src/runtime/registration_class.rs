@@ -704,6 +704,58 @@ impl Interpreter {
         }
     }
 
+    /// Keep a self-named core role in a class header bound to the core role.
+    ///
+    /// A declaration such as `unit package P; class Iterator does Iterator {}`
+    /// has a package-qualified class name, but the bare `Iterator` on the
+    /// right-hand side still names the core role.  The ordinary sibling
+    /// qualification pass runs after the class shell is published and would
+    /// otherwise rewrite that parent to `P::Iterator`, the class being defined.
+    pub(crate) fn qualify_class_header_parent_name(
+        &self,
+        child_name: &str,
+        parent: &str,
+        does_parents: &[String],
+    ) -> String {
+        if self.is_self_named_builtin_role_parent(child_name, parent, does_parents) {
+            parent.to_string()
+        } else {
+            self.qualify_sibling_parent_name(parent)
+        }
+    }
+
+    /// Resolve a class-header parent while preserving the self-named core-role
+    /// spelling described by [`Self::qualify_class_header_parent_name`].
+    pub(crate) fn resolve_class_header_parent_name(
+        &self,
+        child_name: &str,
+        parent: &str,
+        does_parents: &[String],
+    ) -> String {
+        if self.is_self_named_builtin_role_parent(child_name, parent, does_parents) {
+            parent.to_string()
+        } else {
+            self.resolve_declared_type_name(parent)
+        }
+    }
+
+    fn is_self_named_builtin_role_parent(
+        &self,
+        child_name: &str,
+        parent: &str,
+        does_parents: &[String],
+    ) -> bool {
+        let base = parent
+            .split_once('[')
+            .map(|(base, _)| base)
+            .unwrap_or(parent);
+        let child_name = crate::value::user_facing_type_name(child_name);
+        let child_short = child_name.rsplit("::").next().unwrap_or(&child_name);
+        does_parents.iter().any(|candidate| candidate == parent)
+            && base == child_short
+            && crate::runtime::types::is_builtin_role_name(base)
+    }
+
     pub(crate) fn resolve_declared_type_name(&self, name: &str) -> String {
         let (base, suffix) = if let Some(bracket) = name.find('[') {
             (&name[..bracket], &name[bracket..])

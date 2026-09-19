@@ -481,7 +481,25 @@ impl Interpreter {
         // twice with different type args, `does R[Int] does R[Str]` — the
         // class-level map is last-write-wins there) is then overlaid on top
         // to correct just the type-param keys for this specific candidate.
-        if let Some(role_bindings) = self.class_role_param_bindings(owner_class) {
+        if matches!(method_name, "BUILD" | "TWEAK") {
+            // Construction-phase role methods are run with the consuming class
+            // as the receiver even when their owner is the role declaration.
+            // Its concrete role bindings must win over the bare role pun's
+            // default bindings so captures such as `ValueType()` coerce
+            // constructor arguments against the consuming class's type.
+            if let Some(role_bindings) = self.class_role_param_bindings(receiver_class_name) {
+                for (name, value) in &role_bindings {
+                    self.env_mut().insert(name.clone(), value.clone());
+                }
+            }
+            if let Some(role_bindings) = self.class_role_param_bindings(owner_class) {
+                for (name, value) in &role_bindings {
+                    if !self.env().contains_key(name) {
+                        self.env_mut().insert(name.clone(), value.clone());
+                    }
+                }
+            }
+        } else if let Some(role_bindings) = self.class_role_param_bindings(owner_class) {
             for (name, value) in &role_bindings {
                 self.env_mut().insert(name.clone(), value.clone());
             }

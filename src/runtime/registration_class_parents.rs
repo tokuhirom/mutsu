@@ -119,7 +119,8 @@ impl Interpreter {
         let mut deferred_custom_traits: Vec<String> = Vec::new();
         let mut deferred_body_parents: Vec<String> = Vec::new();
         for parent in parents {
-            let resolved_parent_name = self.resolve_declared_type_name(parent);
+            let resolved_parent_name =
+                self.resolve_class_header_parent_name(&name, parent, does_parents);
             // Strip type arguments for validation (e.g., "R[Str:D(Numeric)]" -> "R")
             let base_parent = if let Some(bracket) = resolved_parent_name.find('[') {
                 &resolved_parent_name[..bracket]
