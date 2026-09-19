@@ -474,6 +474,39 @@ impl Interpreter {
         {
             return Ok(v.clone());
         }
+
+        // IO::Handle's inherited `.nl-out` getter on a pure-Raku subclass
+        // must answer the default newline (or a value written through the
+        // inherited accessor), just like `.chomp` below.  A subclass such as
+        // IO::MiddleMan can carry an attribute named `handle`, but that is a
+        // wrapped user-level IO::Handle, not the native descriptor the
+        // IO::Handle fast path expects at the top level.  Letting that path
+        // run raises "Expected IO::Handle" in code that merely appends
+        // `$.nl-out` before writing.
+        if method == "nl-out"
+            && args.is_empty()
+            && let ValueView::Instance {
+                class_name,
+                attributes,
+                ..
+            } = target.view()
+            && class_name != "IO::Handle"
+        {
+            let cls = class_name.resolve();
+            if !self.class_has_user_method(&cls, "nl-out")
+                && self
+                    .class_mro(&cls)
+                    .iter()
+                    .any(|c| c.as_str() == "IO::Handle")
+            {
+                return Ok(attributes
+                    .as_map()
+                    .get("nl-out")
+                    .cloned()
+                    .unwrap_or_else(|| Value::str_from("\n")));
+            }
+        }
+
         // IO::Handle's `$.chomp is rw` attribute, inherited by a pure-Raku
         // subclass (`class Text::IO::String is IO::Handle`): a blessed instance
         // carries no native handle state and no "chomp" attribute, so nothing
