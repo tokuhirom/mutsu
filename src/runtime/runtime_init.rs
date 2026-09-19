@@ -3252,6 +3252,7 @@ impl Interpreter {
             our_vars: rustc_hash::FxHashMap::default(),
             our_var_unqualified: rustc_hash::FxHashSet::default(),
             process_dynamics: rustc_hash::FxHashMap::default(),
+            hll_syms: rustc_hash::FxHashMap::default(),
             package_lexicals: std::sync::Arc::new(PackageLexicals::default()),
             class_body_static_names: Default::default(),
             unit_lexicals: std::sync::Arc::new(PackageLexicals::default()),
@@ -3538,6 +3539,12 @@ impl Interpreter {
             // interpreter inherits $*REPO (and thus the site repo) from the
             // caller's cloned env, so it needs neither.
             interpreter.add_default_site_repo();
+            // Rakudo's own core setting bootstraps `nqp::gethllsym("default",
+            // "SysConfig")` at BEGIN time (see `bootstrap_hll_syms`); a
+            // scratch interpreter never runs top-level BEGIN code of its own
+            // and inherits nothing that would read this, so it is skipped
+            // along with the rest of this block.
+            interpreter.bootstrap_hll_syms();
         }
         interpreter
     }

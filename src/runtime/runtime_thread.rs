@@ -746,6 +746,7 @@ impl Interpreter {
             our_vars: rustc_hash::FxHashMap::default(),
             our_var_unqualified: rustc_hash::FxHashSet::default(),
             process_dynamics: rustc_hash::FxHashMap::default(),
+            hll_syms: rustc_hash::FxHashMap::default(),
             package_lexicals: self.package_lexicals.clone(),
             class_body_static_names: self.class_body_static_names.clone(),
             unit_lexicals: self.unit_lexicals.clone(),
@@ -1044,6 +1045,7 @@ impl Interpreter {
         // redirection is preserved and a later write on either side promotes
         // into that side's overlay only.
         cloned.hoist_builtin_dynamics();
+        cloned.bootstrap_hll_syms();
         cloned
     }
 

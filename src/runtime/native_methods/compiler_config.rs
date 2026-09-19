@@ -6,6 +6,31 @@ use crate::value::AttrMap;
 use crate::value::ValueMap;
 
 impl Interpreter {
+    /// The `Perl6::SysConfig` object `nqp::gethllsym("default", "SysConfig")`
+    /// hands back (see `Interpreter::bootstrap_hll_syms`). Real Rakudo's
+    /// `Perl6::SysConfig` is generated at build time from the MoarVM/NQP
+    /// configure step and carries dozens of keys (compiler flags, library
+    /// paths, ...); mutsu has no such build database, so — following
+    /// `compiler_verbose_config`'s rule of not inventing Rakudo build facts —
+    /// this reports only what is true of mutsu itself: `version`, the one
+    /// key Rakudo's own core setting (`Rakudo::CORE::META`, issue #8775)
+    /// reads from it during bootstrap.
+    pub(in crate::runtime) fn native_sys_config(method: &str) -> Result<Value, RuntimeError> {
+        match method {
+            "rakudo-build-config" => {
+                let mut config: ValueMap = ValueMap::default();
+                config.insert(
+                    "version".to_string(),
+                    Value::str_from(env!("CARGO_PKG_VERSION")),
+                );
+                Ok(Value::hash_with_data(Value::hash_arc(config)))
+            }
+            _ => Err(RuntimeError::new(format!(
+                "Perl6::SysConfig has no method '{method}'"
+            ))),
+        }
+    }
+
     /// `$*RAKU.compiler` native methods. Everything the identity object
     /// (`Raku`/`Perl`) also answers is delegated to `native_perl`; the extras
     /// here are the ones only a `Compiler` has.

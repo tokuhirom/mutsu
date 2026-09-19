@@ -2995,6 +2995,17 @@ pub struct Interpreter {
     /// `$*name = ...` write from any frame keeps in sync, mirroring
     /// `our_vars`'s block-scope-survival role for `our` variables.
     process_dynamics: rustc_hash::FxHashMap<String, Value>,
+    /// The NQP/MoarVM HLL symbol table (`nqp::bindhllsym`/`nqp::gethllsym`),
+    /// keyed by `(hll, name)`. Real MoarVM keeps one such table per process,
+    /// shared by every HLL; mutsu instead seeds it fresh on every
+    /// [`Interpreter::new`] / thread-spawn construction (see
+    /// `bootstrap_hll_syms`) rather than sharing it across interpreter
+    /// clones, mirroring how `process_dynamics` above already does not
+    /// propagate to a spawned thread's interpreter. That is sufficient for
+    /// the one binding mutsu itself installs (`"default"` -> `"SysConfig"`,
+    /// Rakudo core's own bootstrap symbol) and for any nqp code that binds
+    /// and reads a symbol within one interpreter's lifetime.
+    hll_syms: rustc_hash::FxHashMap<(String, String), Value>,
     /// Package-block `my` lexicals, keyed by package name then env var name.
     /// A named sub defined in a `package Foo { my $x = ...; sub f { $x } }` block
     /// closes over `$x`, but mutsu's registry subs have no per-sub closure env and
