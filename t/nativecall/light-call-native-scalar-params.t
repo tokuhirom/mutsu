@@ -12,7 +12,7 @@ use Test;
 # overflow message, and the per-parameter `~~ int`-style declared-type
 # metadata still works from inside the body.
 
-plan 22;
+plan 25;
 
 sub takes-int(int $x) { $x }
 is takes-int(5), 5, 'native int parameter accepts a plain Int';
@@ -92,3 +92,18 @@ is native-return().^name, 'Bool', 'the Bool return value is unconverted';
 my @seen;
 for ^3 { @seen.push(takes-int(True)) }
 is-deeply @seen, [1, 1, 1], 'cached light-call binds keep coercing True on every call';
+
+# An allomorph (`IntStr`/`NumStr`/...) must satisfy a native constraint in
+# exactly the cases it satisfies the corresponding boxed one: `isa_check`
+# only ever matches the BOXED MRO name (`Value::isa_or_does_check`'s
+# `my_type` is always `"Int"`/`"Str"`/`"Num"`, never the lowercase native
+# spelling), so checking a `Mixin` against its own native `name_sym` would
+# wrongly reject every allomorph argument -- caught by
+# `t/concurrency/thread-lock/thread-clone-program-table-isolation.t` and the
+# two `t/modules/batteries/*-battery.t` smoke tests going through
+# `MIME::Base64.encode-str`, whose `add-byte(str $x, ...)` helper is called
+# with an `IntStr` literal in real-world module code.
+my $int-str = <42>;
+is $int-str.^name, 'IntStr', 'sanity: <42> is an IntStr allomorph';
+is takes-str($int-str), '42', 'native str parameter accepts an IntStr allomorph';
+is takes-int($int-str), 42, 'native int parameter accepts an IntStr allomorph';

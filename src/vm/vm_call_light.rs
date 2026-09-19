@@ -1003,7 +1003,24 @@ impl Interpreter {
         match val.view() {
             // Allomorphs and other mixins go through the full `isa_check`, as
             // in the by-name form: an `IntStr` satisfies both `Int` and `Str`.
-            ValueView::Mixin(..) => name_sym.with_str(|n| val.isa_check(n)),
+            // A native kind's `name_sym` is its own lowercase spelling
+            // (`"int"`/`"str"`/`"num"`), which `isa_check` never matches --
+            // every MRO name it builds is the boxed spelling (`Value::isa_or_
+            // does_check`'s `my_type` is always `"Int"`/`"Str"`/`"Num"`, never
+            // lowercase). Check against the boxed counterpart instead: an
+            // allomorph "is" its native type in exactly the same cases it
+            // "is" the boxed one (raku: `sub f(str $x){}; f(<42>)` binds the
+            // `IntStr`'s string half, just like a boxed `Str $x` would).
+            // Regression: an `IntStr`/`NumStr`/... argument to a native
+            // `str`/`num`/`int` parameter was wrongly rejected before this,
+            // since the light path did not exist for these constraints until
+            // #8686 Phase 0 admitted them.
+            ValueView::Mixin(..) => match kind {
+                T::NativeInt => val.isa_check("Int"),
+                T::NativeStr => val.isa_check("Str"),
+                T::NativeNum => val.isa_check("Num"),
+                _ => name_sym.with_str(|n| val.isa_check(n)),
+            },
             // A bare type object satisfies a smiley-less nominal constraint of
             // its own name (`Int` for `Int $a`), and `Any`/`Mu`.
             // Interning is injective, so the `Symbol` compare is exactly the
@@ -1123,9 +1140,21 @@ impl Interpreter {
         // are `Mixin`s: an `IntStr` must satisfy `Int` (via its inner value) and
         // `Str` (via its mixin), just like `~~` does. Delegate to the full
         // `isa_check`, which already handles every allomorph/mixin case, rather
-        // than matching only the plain scalar variant below.
+        // than matching only the plain scalar variant below. `isa_check` only
+        // ever matches a BOXED type name (`Value::isa_or_does_check`'s MRO
+        // entries are always `"Int"`/`"Str"`/`"Num"`, never lowercase), so a
+        // native constraint must probe the boxed spelling instead of its own
+        // -- an allomorph "is" a native type in exactly the cases it "is" the
+        // boxed one (raku: `sub f(str $x){}; f(<42>)` binds the `IntStr`'s
+        // string half).
         if matches!(val.view(), ValueView::Mixin(..)) {
-            return val.isa_check(type_name);
+            let boxed_name = match type_name {
+                "int" => "Int",
+                "str" => "Str",
+                "num" => "Num",
+                other => other,
+            };
+            return val.isa_check(boxed_name);
         }
         // A type object (an undefined value of the given type, e.g. the bare
         // term `Int`) satisfies a smiley-less nominal type constraint: `Int
