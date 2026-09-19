@@ -39,7 +39,7 @@
 //!   unproductive collects).
 
 use std::sync::OnceLock;
-use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU64, AtomicUsize, Ordering};
 
 use super::collect::collect_cycles_at;
 use super::gc_ptr::gc_enabled;
@@ -285,8 +285,38 @@ fn random_fires(rate_bits: u64) -> bool {
 
 fn triggers() -> &'static Triggers {
     static T: OnceLock<Triggers> = OnceLock::new();
-    T.get_or_init(Triggers::from_env)
+    T.get_or_init(|| {
+        let t = Triggers::from_env();
+        // Publish the one bit [`gc_safepoint_armed`]'s fast decline needs, so
+        // it never has to reach the `OnceLock` at all. See [`UNCONDITIONAL`].
+        UNCONDITIONAL.store(
+            if t.every_safepoint || t.at_mask != 0 || t.random_rate_bits != 0 {
+                UNCONDITIONAL_MAYBE
+            } else {
+                UNCONDITIONAL_NEVER
+            },
+            Ordering::Relaxed,
+        );
+        t
+    })
 }
+
+/// Whether a safepoint can fire on the *static* trigger configuration alone —
+/// `MUTSU_GC_EVERY_SAFEPOINT`, a `MUTSU_GC_AT` kind mask, or a
+/// `MUTSU_GC_RANDOM_RATE` draw. Those three are the only reasons
+/// [`gc_safepoint_armed`] collects without a [`PENDING`] arming, and all three
+/// are fixed for the life of the process, so the hot decline can read one
+/// relaxed byte instead of resolving [`triggers`]'s `OnceLock` and evaluating
+/// a four-term disjunction.
+///
+/// [`UNCONDITIONAL_UNRESOLVED`] is the initial value and is deliberately the
+/// *conservative* one: it sends the caller down the slow path, which resolves
+/// `triggers()` and stores the real answer. So a safepoint reached before the
+/// policy has ever been read behaves exactly as it did before.
+static UNCONDITIONAL: AtomicU8 = AtomicU8::new(UNCONDITIONAL_UNRESOLVED);
+const UNCONDITIONAL_UNRESOLVED: u8 = 0;
+const UNCONDITIONAL_NEVER: u8 = 1;
+const UNCONDITIONAL_MAYBE: u8 = 2;
 
 /// Whether any automatic collect trigger is configured. The VM gates its
 /// per-safepoint work on this so a GC-off run pays a single cached load.
@@ -367,8 +397,37 @@ pub(crate) fn note_candidate_push() {
 /// Run the GC consumer after the shared VM-poll gate has established that GC
 /// is armed. Keeping the gate outside this function lets `vm_poll` make one
 /// composite cached-load decision for GC and the profiler.
-#[inline]
+///
+/// This runs on **every executed opcode** in a default (GC-on) run, so what it
+/// costs to *decline* is what the whole VM pays for the safepoint's existence.
+/// It used to cost ~31 instructions there: an out-of-line call, a `park`
+/// helper, an `OnceLock` deref for [`triggers`], and a four-term disjunction.
+/// Everything a decline actually depends on is now three relaxed-ish loads,
+/// inlined — the stop-the-world request, the pending arming, and the static
+/// policy byte — with the real work behind a `#[cold]` tail. The decision is
+/// unchanged; only the cost of reaching it is.
+#[inline(always)]
 pub(crate) fn gc_safepoint_armed(kind: SafepointKind) {
+    // Ordered the way the branch predictor wants them: `stw_requested` is the
+    // one that must stay an `Acquire` (it synchronizes with the stopping
+    // thread), and it is also the one that is false on essentially every
+    // safepoint of a single-threaded run.
+    if !super::stw::stw_requested()
+        && UNCONDITIONAL.load(Ordering::Relaxed) == UNCONDITIONAL_NEVER
+        && !PENDING.load(Ordering::Relaxed)
+    {
+        return;
+    }
+    gc_safepoint_armed_slow(kind);
+}
+
+/// The out-of-line half of [`gc_safepoint_armed`]: everything past the fast
+/// decline, verbatim. Reached when a stop-the-world is pending, when the
+/// static policy can fire on its own, or when a collect has been armed by the
+/// candidate counter — and, once per process, before the policy byte has been
+/// resolved at all.
+#[cold]
+fn gc_safepoint_armed_slow(kind: SafepointKind) {
     // Another thread may have stopped the world for its cycle scan: park here
     // until it releases (one load when no stop is requested — see gc::stw).
     super::stw::park_at_safepoint();
