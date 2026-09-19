@@ -760,9 +760,11 @@ impl Interpreter {
         };
         if let Some(bucket) = own_bucket {
             crate::vm::vm_stats::record_mainline_lexical_hit();
+            // `get_value_mut` keeps the table's name filter: the entry was
+            // proved to exist above and only its value is handed out, so
+            // nothing about the key set changes here.
             return crate::runtime::cow_table_mut(&mut self.unit_lexicals)
-                .get_mut(&bucket)
-                .and_then(|m| m.get_mut(name));
+                .get_value_mut(&bucket, name);
         }
         // `&'static str` off the atomic symbol mirror: `current_package()` takes
         // the `RwLock` and clones the `String` on every free-variable read.
@@ -1085,8 +1087,12 @@ impl Interpreter {
         {
             return false;
         }
-        if let Some(m) = crate::runtime::cow_table_mut(&mut self.package_lexicals).get_mut(cur)
-            && let Some(slot) = m.get_mut(name)
+        // `get_value_mut`, not `get_mut`: the entry is known to exist (the
+        // probe above proved it) and only its VALUE is written here, so the
+        // table's name filter stays valid. Reaching the inner map through
+        // `DerefMut` would drop that filter on every package-scope write-back.
+        if let Some(slot) =
+            crate::runtime::cow_table_mut(&mut self.package_lexicals).get_value_mut(cur, name)
         {
             // A boxed lexical's cell is shared with every reader; mutate it in
             // place rather than replacing the entry with a plain value (which
