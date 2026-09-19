@@ -347,13 +347,25 @@ impl Interpreter {
             let resolved_target = self.resolve_constraint_alias(target);
             return self.try_coerce_value_with_method(&resolved_target, intermediate);
         }
+        // A registry with no subsets (most programs) has nothing to walk — and
+        // that settles the whole rest of the function, alias resolution
+        // included, so the test belongs ABOVE it rather than after.
+        //
+        // Past the coercion arm the only thing that can still change `value` is
+        // a subset redirect. `resolve_constraint_alias` cannot produce one: it
+        // answers with a *package name* (`ValueView::Package`), which carries
+        // no `(...)` and so cannot re-enter the coercion arm on the recursion —
+        // every alias hop lands right back here and returns `Ok(value)`
+        // unchanged. Asking first costs one `is_empty`; asking after cost a
+        // `Symbol::lookup` (a thread-local `HashMap<String, _>` probe, ~159
+        // instructions) plus an `Env::get_sym` (~115) on every typed
+        // assignment in the program.
+        if self.registry().subsets.is_empty() {
+            return Ok(value);
+        }
         let resolved_constraint = self.resolve_constraint_alias(constraint);
         if resolved_constraint != constraint {
             return self.try_coerce_value_for_constraint(&resolved_constraint, value);
-        }
-        // A registry with no subsets (most programs) has nothing to walk.
-        if self.registry().subsets.is_empty() {
-            return Ok(value);
         }
         let subset = self.registry().subsets.get(&*resolved_constraint).cloned();
         if let Some(subset) = subset

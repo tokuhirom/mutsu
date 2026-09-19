@@ -150,49 +150,93 @@ impl Interpreter {
                 return Some(name.to_string());
             }
         }
-        if self.has_type_capture_binding(constraint)
-            && let Some(value) = self.env.get(constraint)
-        {
-            return Some(match value.view() {
-                ValueView::Package(name) => name.resolve(),
-                ValueView::ParametricRole {
-                    base_name,
-                    type_args,
-                } => format!(
-                    "{}[{}]",
-                    base_name.resolve(),
-                    type_args
-                        .iter()
-                        .map(|arg| match arg.view() {
-                            ValueView::Package(name) => name.resolve(),
-                            _ => arg.to_string_value(),
-                        })
-                        .collect::<Vec<_>>()
-                        .join(",")
-                ),
-                _ => value.to_string_value(),
-            });
+        // One pass answers every structural question the arms below ask: where
+        // the first `:`/`(` smiley-or-coercion suffix starts, where the first
+        // `[` parameterization opens, and whether the name is package-qualified.
+        // Those were three separate pattern searches over the same few bytes --
+        // and `find([':', '('])` is a generic `CharSearcher`, not a `memchr`,
+        // so it was the most expensive of the three. Every caller that does
+        // reach this function pays the scan once now instead.
+        let bytes = constraint.as_bytes();
+        let mut suffix_start: Option<usize> = None;
+        let mut bracket_start: Option<usize> = None;
+        let mut package_qualified = false;
+        for (i, &b) in bytes.iter().enumerate() {
+            match b {
+                b':' => {
+                    if suffix_start.is_none() {
+                        suffix_start = Some(i);
+                    }
+                    if bytes.get(i + 1) == Some(&b':') {
+                        package_qualified = true;
+                    }
+                }
+                b'(' => {
+                    if suffix_start.is_none() {
+                        suffix_start = Some(i);
+                    }
+                }
+                b'[' => {
+                    if bracket_start.is_none() {
+                        bracket_start = Some(i);
+                    }
+                }
+                _ => {}
+            }
         }
-        // Handle composite type specs where the base name is a type capture
-        // but has suffixes like `:D`, `:U`, `()`, `:D()`, etc.
-        // E.g., `T:D()` where `T` is a captured type should resolve to `Int:D()`.
-        if let Some(suffix_start) = constraint.find([':', '('])
-            && let (base, suffix) = (&constraint[..suffix_start], &constraint[suffix_start..])
-            && self.has_type_capture_binding(base)
-            && let Some(value) = self.env.get(base)
-        {
-            let resolved_base = match value.view() {
-                ValueView::Package(name) => name.resolve(),
-                _ => value.to_string_value(),
-            };
-            return Some(format!("{}{}", resolved_base, suffix));
+        // Both capture arms need a bound `::T` to say anything, so ask the
+        // process-global latch once here rather than once inside each
+        // `has_type_capture_binding`. `type_matches_value`'s caller-side
+        // disjunction (#8815) skips this function outright for a plain
+        // constraint, but every other caller -- parameter binding, method
+        // dispatch, the typed-store cascade -- arrives here directly.
+        if Self::any_type_capture_seen() {
+            if self.has_type_capture_binding(constraint)
+                && let Some(value) = self.env.get(constraint)
+            {
+                return Some(match value.view() {
+                    ValueView::Package(name) => name.resolve(),
+                    ValueView::ParametricRole {
+                        base_name,
+                        type_args,
+                    } => format!(
+                        "{}[{}]",
+                        base_name.resolve(),
+                        type_args
+                            .iter()
+                            .map(|arg| match arg.view() {
+                                ValueView::Package(name) => name.resolve(),
+                                _ => arg.to_string_value(),
+                            })
+                            .collect::<Vec<_>>()
+                            .join(",")
+                    ),
+                    _ => value.to_string_value(),
+                });
+            }
+            // Handle composite type specs where the base name is a type capture
+            // but has suffixes like `:D`, `:U`, `()`, `:D()`, etc.
+            // E.g., `T:D()` where `T` is a captured type should resolve to `Int:D()`.
+            if let Some(suffix_start) = suffix_start
+                && let (base, suffix) = (&constraint[..suffix_start], &constraint[suffix_start..])
+                && self.has_type_capture_binding(base)
+                && let Some(value) = self.env.get(base)
+            {
+                let resolved_base = match value.view() {
+                    ValueView::Package(name) => name.resolve(),
+                    _ => value.to_string_value(),
+                };
+                return Some(format!("{}{}", resolved_base, suffix));
+            }
         }
         // Handle a type capture that appears inside a parameterization's type
         // arguments (`Associative[T]`, `Positional[T]`, `Hash[T,U]`): resolve
         // each captured argument to its bound type so the check becomes e.g.
         // `Associative[Int]`. Without this a genuinely-typed argument
         // (`Hash[Int]`) is checked against the literal, unbound `T` and fails.
-        if let Some(open) = constraint.find('[')
+        // NOT gated on the capture latch: `type_alias_target` resolves a
+        // `constant intptr = uint64` alias with no capture in sight.
+        if let Some(open) = bracket_start
             && constraint.ends_with(']')
         {
             let base = &constraint[..open];
@@ -220,9 +264,7 @@ impl Interpreter {
         // `Data::StaticTable::Position`).  The package alias is the scoped
         // equivalent of the ordinary env alias used by a simple declaration;
         // resolve it before dispatch/binding compares the constraint.
-        if !constraint.contains("::")
-            && let Some(resolved) = self.package_type_alias(constraint)
-        {
+        if !package_qualified && let Some(resolved) = self.package_type_alias(constraint) {
             return Some(resolved);
         }
         None
@@ -503,7 +545,7 @@ impl Interpreter {
                 _ => false,
             }
         };
-        if tag_match && !self.registry().subsets.contains_key(constraint) {
+        if tag_match && !self.is_subset_type_name(constraint) {
             return true;
         }
         // `Mu` is the root of the type hierarchy: every value, container, type
@@ -511,7 +553,7 @@ impl Interpreter {
         // reaches the same answer only at the end of its walk, and a `Mu`
         // parameter is the shape every assertion routine in `Test.rakumod`
         // declares (`ok(Mu $cond, ...)`, `proclaim(Bool(Mu) $cond, ...)`).
-        if constraint == "Mu" && !self.registry().subsets.contains_key("Mu") {
+        if constraint == "Mu" && !self.is_subset_type_name("Mu") {
             return true;
         }
         // `Any` is the next root down, and a concrete native scalar is an
@@ -534,7 +576,7 @@ impl Interpreter {
                     | ValueView::BigInt(_)
                     | ValueView::Rat(..)
             )
-            && !self.registry().subsets.contains_key("Any")
+            && !self.is_subset_type_name("Any")
         {
             return true;
         }
