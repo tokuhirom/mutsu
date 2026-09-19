@@ -923,6 +923,44 @@ impl Interpreter {
         name
     }
 
+    /// Resolve a method signature's bare type against its declaring class.
+    /// Method dispatch reuses the stored signature many times, so nested type
+    /// names must be qualified while the method is registered rather than
+    /// rediscovered on every call. Core roles and the implicit Grammar parent
+    /// retain their ordinary spellings for the class-header self-name guards.
+    pub(crate) fn resolve_method_type_name(&self, owner: &str, name: &str) -> String {
+        // Definedness smileys belong to the constraint, not to the type's
+        // package name.  Resolve `Label` in `Label:D` and put the marker back;
+        // otherwise the owner walk cannot see the nested class because it is
+        // asked to resolve the literal name `Label:D`.
+        for smiley in [":D", ":U", ":_"] {
+            if let Some(base) = name.strip_suffix(smiley) {
+                let resolved = self.resolve_method_type_name(owner, base);
+                return format!("{resolved}{smiley}");
+            }
+        }
+        if name.contains("::")
+            || name.is_empty()
+            || name == "Grammar"
+            || is_builtin_role_name(name)
+            || self.has_type_capture_binding(name)
+        {
+            return name.to_string();
+        }
+        // The declaring class's shell is not necessarily published yet while
+        // its body is registering methods.  Still recognize its own short
+        // name (including a core name such as `Label`) as a self-reference.
+        if owner.rsplit_once("::").map(|(_, last)| last == name) == Some(true) || owner == name {
+            return owner.to_string();
+        }
+        if self.has_type_direct(owner)
+            && crate::value::user_facing_type_name(owner).as_ref() == name
+        {
+            return owner.to_string();
+        }
+        self.resolve_type_name_for_owner(owner, name.to_string())
+    }
+
     pub(crate) fn has_enum_type(&self, name: &str) -> bool {
         self.registry().enum_types.contains_key(name)
     }
