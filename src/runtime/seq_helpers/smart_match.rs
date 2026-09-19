@@ -1154,6 +1154,34 @@ impl Interpreter {
                     values.iter().all(|v| !self.smart_match(left, v))
                 }
             },
+            // Pair ~~ Pair compares the keys and smartmatches the values. A
+            // named pair and a data pair are interchangeable for this
+            // operation; their distinction matters when binding call
+            // arguments, not when a pair is used as a matcher.
+            (ValueView::Pair(left_key, left_value), ValueView::Pair(right_key, right_value)) => {
+                left_key == right_key && self.smart_match(left_value, right_value)
+            }
+            (
+                ValueView::Pair(left_key, left_value),
+                ValueView::ValuePair(right_key, right_value),
+            ) => {
+                *left_key == right_key.to_string_value()
+                    && self.smart_match(left_value, right_value)
+            }
+            (
+                ValueView::ValuePair(left_key, left_value),
+                ValueView::Pair(right_key, right_value),
+            ) => {
+                left_key.to_string_value() == *right_key
+                    && self.smart_match(left_value, right_value)
+            }
+            (
+                ValueView::ValuePair(left_key, left_value),
+                ValueView::ValuePair(right_key, right_value),
+            ) => {
+                left_key.to_string_value() == right_key.to_string_value()
+                    && self.smart_match(left_value, right_value)
+            }
             // IO::Path/Str ~~ Pair(:e), :d, :f, :r, :w, :x file tests
             // Also handles negated forms: :!e, :!d, :!f, :!r, :!w, :!x, :!s, :!z.
             // ADR-0021: a bare colonpair on the RHS of `~~` (`$file ~~ :e`) is

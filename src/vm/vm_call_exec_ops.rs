@@ -162,7 +162,7 @@ impl Interpreter {
     /// never runs the body at all, so `throws-like`'s own `EVAL $code, context
     /// => $ctx;` call (a statement-level call with named args, routed through
     /// `ExecCallPairs`) never sees the escaping `return`.
-    fn sink_discarded_call_value(&mut self, value: &Value) -> Result<(), RuntimeError> {
+    pub(crate) fn sink_discarded_call_value(&mut self, value: &Value) -> Result<(), RuntimeError> {
         match value.view() {
             // A `.cache`-returned view or a `$s = SEQ`-itemized value must not
             // be force-drained — see the matching guard in `SinkPop`

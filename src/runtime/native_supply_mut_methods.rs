@@ -59,6 +59,12 @@ impl Interpreter {
                 let mut done_cb = Self::named_value(&args, "done");
                 let mut quit_cb = Self::named_value(&args, "quit");
                 let mut delay_seconds = Self::supply_delay_seconds(&attrs);
+                let shared_on_demand = attrs.contains_key("shared_on_demand");
+                let shared_started = attrs
+                    .get("shared_started")
+                    .map(Value::truthy)
+                    .unwrap_or(false);
+                let mut outer_tap_registered = false;
 
                 // ADR-0028 Slice 1: `Supply.schedule-on($scheduler)` genuinely
                 // defers tap/done/quit delivery instead of letting it reach
@@ -120,8 +126,13 @@ impl Interpreter {
                     // all, is the one case that still carries `head_limit`/
                     // `is_lines`/`is_words` -- handled entirely below, by the
                     // channel-tap branch that reads `attrs` directly.)
-                    if Self::supply_has_active_callback(&tap_cb) {
+                    if Self::supply_has_active_callback(&tap_cb)
+                        && (!shared_on_demand || shared_started)
+                    {
                         register_supplier_tap(supplier_id as u64, tap_cb.clone(), delay_seconds);
+                    } else if Self::supply_has_active_callback(&tap_cb) && shared_on_demand {
+                        register_supplier_tap(supplier_id as u64, tap_cb.clone(), delay_seconds);
+                        outer_tap_registered = true;
                     }
                 }
 
@@ -337,13 +348,26 @@ impl Interpreter {
                 // `whenever` sources); recorded on the Tap handle so `.close`
                 // can stop the workers.
                 let mut act_loop_close_ids: Vec<Value> = Vec::new();
-                let values = if let Some(on_demand_cb) = attrs.get("on_demand_callback").cloned() {
+                let values = if let Some(on_demand_cb) = attrs.get("on_demand_callback").cloned()
+                    && (!shared_on_demand || !shared_started)
+                {
                     // Give the emitter a supplier_id so that when a `whenever`
                     // body calls `$emitter.emit(val)`, the value can be dispatched
                     // to taps registered on this emitter. The outer tap_cb will
                     // be registered lazily below only when `whenever` subscriptions
                     // are found, to avoid double-delivery for plain `emit` calls.
-                    let emitter_supplier_id = next_supplier_id();
+                    let emitter_supplier_id = if shared_on_demand {
+                        attrs
+                            .get("supplier_id")
+                            .and_then(Value::as_int)
+                            .map(|id| id as u64)
+                            .unwrap_or_else(next_supplier_id)
+                    } else {
+                        next_supplier_id()
+                    };
+                    if shared_on_demand {
+                        attrs.insert("shared_started".to_string(), Value::TRUE);
+                    }
                     close_supplier_id = Some(emitter_supplier_id);
                     // ADR-0031 Decision A: this supply block's own emitter is
                     // what "quit" means for this block — register the tap's
@@ -441,15 +465,22 @@ impl Interpreter {
                     let mut done_group_id: Option<u64> = None;
                     if whenever_supplier_count > 0 {
                         done_group_marker = done_cb.as_ref().map(|df| {
+                            let group_done = if shared_on_demand {
+                                Self::make_shared_supply_done_marker(
+                                    emitter_supplier_id,
+                                    df.clone(),
+                                )
+                            } else {
+                                df.clone()
+                            };
                             let group_id =
-                                create_whenever_done_group(whenever_supplier_count, df.clone());
+                                create_whenever_done_group(whenever_supplier_count, group_done);
                             done_group_id = Some(group_id);
                             Self::make_whenever_done_group_marker(group_id)
                         });
                     }
 
                     let mut plain_values = Vec::new();
-                    let mut outer_tap_registered = false;
                     // on-close callbacks from each whenever source supply,
                     // fired when the supply completes via `done`.
                     let mut whenever_on_close: Vec<Value> = Vec::new();
@@ -919,7 +950,7 @@ impl Interpreter {
                                     ));
                                 }
                             }
-                        } else {
+                        } else if !(shared_on_demand && outer_tap_registered) {
                             plain_values.push(item.clone());
                         }
                     }
@@ -943,7 +974,7 @@ impl Interpreter {
                         );
                         if body_done {
                             self.invoke_done_callback(complete_marker)?;
-                        } else {
+                        } else if !(shared_on_demand && done_group_marker.is_some()) {
                             register_supplier_done_callback(emitter_supplier_id, complete_marker);
                         }
                     }
@@ -1018,6 +1049,8 @@ impl Interpreter {
                         }
                     }
                     plain_values
+                } else if shared_on_demand {
+                    Vec::new()
                 } else if has_unique {
                     if Self::supply_has_active_callback(&tap_cb) {
                         let pushed = attrs
@@ -1268,7 +1301,7 @@ impl Interpreter {
                                 // the chained inner tap of an enclosing whenever.
                                 self.invoke_done_callback(done_fn)?;
                             }
-                        } else {
+                        } else if !(shared_on_demand && done_group_marker.is_some()) {
                             register_supplier_done_callback(supplier_id as u64, done_fn);
                         }
                     } else if done_group_marker.is_none() {

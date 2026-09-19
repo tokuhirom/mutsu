@@ -66,6 +66,16 @@ impl Interpreter {
         let _react_done_handler =
             crate::runtime::react_done_handler_depth::ReactDoneHandlerGuard::new();
         let res = self.call_sub_value(tap, args, propagate_return);
+        let res = res.and_then(|value| {
+            // Tap callbacks are invoked for their side effects; their return
+            // value is discarded by the supply machinery.  Sink a deferred
+            // map/grep Seq here so a callback such as
+            // `Buf.map({ ... })` runs its body before the callback returns.
+            // This is observable in streaming decoders, where the callback's
+            // map drives the parser but nobody consumes the returned Seq.
+            self.sink_discarded_call_value(&value)?;
+            Ok(value)
+        });
         if emitter.is_some() {
             self.active_supply_emitters.pop();
         }

@@ -228,6 +228,37 @@ struct SupplierSubscriptions {
 
 type SupplierSubscriptionsMap = std::sync::Mutex<HashMap<u64, SupplierSubscriptions>>;
 
+/// Derived live Supplies made by `Supply.share`, keyed by their source
+/// supplier. They use the ordinary forward-tap path for values, while this
+/// side map lets source completion reach the shared output as well. Migrate's
+/// forward taps intentionally do not participate: an inner migrate source
+/// finishing must not finish the outer migrate Supply.
+type SharedSupplyOutputsMap = std::sync::Mutex<HashMap<u64, Vec<u64>>>;
+
+fn shared_supply_outputs_map() -> &'static SharedSupplyOutputsMap {
+    static MAP: OnceLock<SharedSupplyOutputsMap> = OnceLock::new();
+    MAP.get_or_init(|| std::sync::Mutex::new(HashMap::new()))
+}
+
+pub(in crate::runtime) fn register_supplier_share_output(
+    source_supplier_id: u64,
+    downstream_supplier_id: u64,
+) {
+    if let Ok(mut map) = shared_supply_outputs_map().lock() {
+        map.entry(source_supplier_id)
+            .or_default()
+            .push(downstream_supplier_id);
+    }
+}
+
+pub(in crate::runtime) fn supplier_share_output_ids(source_supplier_id: u64) -> Vec<u64> {
+    shared_supply_outputs_map()
+        .lock()
+        .ok()
+        .and_then(|map| map.get(&source_supplier_id).cloned())
+        .unwrap_or_default()
+}
+
 fn supplier_subscriptions_map() -> &'static SupplierSubscriptionsMap {
     static MAP: OnceLock<SupplierSubscriptionsMap> = OnceLock::new();
     MAP.get_or_init(|| std::sync::Mutex::new(HashMap::new()))
@@ -2213,6 +2244,7 @@ pub(in crate::runtime) fn get_transform_output_supplier_ids(supplier_id: u64) ->
                 if let Some(ref ts) = tap.transform_state {
                     next.push(ts.downstream_supplier_id);
                 }
+                next.extend(supplier_share_output_ids(sid));
                 if let Some(ref ps) = tap.produce_state
                     && let Some(ds) = ps.produce_downstream
                 {

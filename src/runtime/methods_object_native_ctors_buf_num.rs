@@ -17,34 +17,10 @@ impl Interpreter {
     /// byte-identical. `utf8`/`utf16` are intentionally NOT handled here.
     pub(crate) fn build_native_buf_value(class_name: Symbol, args: &[Value]) -> Value {
         let cn = class_name.resolve();
-        let raw_vals: Vec<Value> = args
-            .iter()
-            .flat_map(|a| match a.view() {
-                ValueView::Int(i) => vec![Value::int(i)],
-                ValueView::Array(items, ..) => items.to_vec(),
-                ValueView::Seq(items) => items.to_vec(),
-                ValueView::Slip(items) => items.to_vec(),
-                ValueView::Range(start, end) => (start..=end).map(Value::int).collect(),
-                ValueView::RangeExcl(start, end) => (start..end).map(Value::int).collect(),
-                ValueView::Instance {
-                    class_name,
-                    attributes,
-                    ..
-                } if class_name == "Buf"
-                    || class_name == "Blob"
-                    || class_name == "utf8"
-                    || class_name == "utf16"
-                    || class_name.resolve().starts_with("Buf[")
-                    || class_name.resolve().starts_with("Blob[")
-                    || class_name.resolve().starts_with("buf")
-                    || class_name.resolve().starts_with("blob") =>
-                {
-                    buf_elems_or_empty(&attributes)
-                }
-                ValueView::BigInt(_) => vec![a.clone()],
-                _ => vec![Value::int(to_int(a))],
-            })
-            .collect();
+        let mut raw_vals = Vec::new();
+        for arg in args {
+            Self::flatten_native_buf_arg(arg, &mut raw_vals);
+        }
         // Mask values to unsigned range based on element size. For uint64, use
         // BigInt-aware conversion to preserve values > i64::MAX.
         let width = crate::value::value_buf::buf_elem_width(&cn);
@@ -79,6 +55,57 @@ impl Interpreter {
             _ => class_name,
         };
         make_buf(canonical_name, byte_vals)
+    }
+
+    /// Flatten positional buffer constructor arguments recursively.  Raku's
+    /// `Blob.new`/`Buf.new` accepts nested positional iterables produced by
+    /// code such as `@pairs.map(*.list)`, which is how Data::MessagePack builds
+    /// map payloads.  The old one-level flattening converted an inner list to
+    /// its numeric element count instead of appending its bytes.
+    fn flatten_native_buf_arg(value: &Value, out: &mut Vec<Value>) {
+        match value.view() {
+            ValueView::Int(i) => out.push(Value::int(i)),
+            ValueView::Array(items, ..) => {
+                for item in items.iter() {
+                    Self::flatten_native_buf_arg(item, out);
+                }
+            }
+            ValueView::Seq(items) => {
+                for item in items.iter() {
+                    Self::flatten_native_buf_arg(item, out);
+                }
+            }
+            ValueView::Slip(items) => {
+                for item in items.iter() {
+                    Self::flatten_native_buf_arg(item, out);
+                }
+            }
+            ValueView::Range(start, end) => {
+                out.extend((start..=end).map(Value::int));
+            }
+            ValueView::RangeExcl(start, end) => {
+                out.extend((start..end).map(Value::int));
+            }
+            ValueView::Instance {
+                class_name,
+                attributes,
+                ..
+            } if class_name == "Buf"
+                || class_name == "Blob"
+                || class_name == "utf8"
+                || class_name == "utf16"
+                || class_name.resolve().starts_with("Buf[")
+                || class_name.resolve().starts_with("Blob[")
+                || class_name.resolve().starts_with("buf")
+                || class_name.resolve().starts_with("blob") =>
+            {
+                for item in buf_elems_or_empty(&attributes) {
+                    Self::flatten_native_buf_arg(&item, out);
+                }
+            }
+            ValueView::BigInt(_) => out.push(value.clone()),
+            _ => out.push(Value::int(to_int(value))),
+        }
     }
 
     /// Build a `utf8`/`utf16` instance from `.new` arguments as pure data:
