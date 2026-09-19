@@ -113,19 +113,53 @@ impl Interpreter {
         args: &[Value],
         param_defs: &[ParamDef],
     ) -> bool {
-        self.args_match_param_types_inner(args, param_defs, false)
+        self.args_match_param_types_inner(args, param_defs, false, None)
     }
 
-    /// Match a signature while selecting among multi candidates.  Native type
-    /// constraints are deliberately stricter in this context: a boxed value
-    /// does not make a native-only candidate applicable, although ordinary
-    /// single-candidate binding still accepts and unboxes it.
-    pub(crate) fn args_match_multi_candidate(
+    /// Match a multi candidate in the package where it was declared.
+    ///
+    /// A `where` constraint is compiled and evaluated while the dispatcher is
+    /// still selecting a candidate, so no callee routine frame has installed
+    /// the candidate's lexical package yet.  Imported routines referenced by
+    /// the constraint must nevertheless resolve from that package, just as
+    /// they do in the candidate body.
+    pub(crate) fn args_match_multi_candidate_in_package(
         &mut self,
         args: &[Value],
         param_defs: &[ParamDef],
+        package: Symbol,
     ) -> bool {
-        self.args_match_param_types_inner(args, param_defs, true)
+        self.args_match_param_types_inner(args, param_defs, true, Some(package))
+    }
+
+    fn with_candidate_package<T>(
+        &mut self,
+        package: Option<Symbol>,
+        f: impl FnOnce(&mut Self) -> T,
+    ) -> T {
+        if let Some(package) = package {
+            let _package_guard = self.enter_package_guarded_sym(package);
+            f(self)
+        } else {
+            f(self)
+        }
+    }
+
+    fn eval_block_value_in_candidate_package(
+        &mut self,
+        body: &[Stmt],
+        package: Option<Symbol>,
+    ) -> Result<Value, RuntimeError> {
+        self.with_candidate_package(package, |this| this.eval_block_value(body))
+    }
+
+    fn eval_param_default_in_candidate_package(
+        &mut self,
+        pd: &ParamDef,
+        default_expr: &Expr,
+        package: Option<Symbol>,
+    ) -> Result<Value, RuntimeError> {
+        self.with_candidate_package(package, |this| this.eval_param_default(pd, default_expr))
     }
 
     fn args_match_param_types_inner(
@@ -133,6 +167,7 @@ impl Interpreter {
         args: &[Value],
         param_defs: &[ParamDef],
         multi_dispatch: bool,
+        candidate_package: Option<Symbol>,
     ) -> bool {
         let saved_env = self.env.clone();
         // The outer per-arg `bind_param_value` below only exists so that a
@@ -614,8 +649,11 @@ impl Interpreter {
                     && !arg_was_supplied
                     && let Some(default_expr) = pd.default.as_ref()
                 {
-                    self.eval_block_value(&[Stmt::Expr(default_expr.clone())])
-                        .ok()
+                    self.eval_block_value_in_candidate_package(
+                        &[Stmt::Expr(default_expr.clone())],
+                        candidate_package,
+                    )
+                    .ok()
                 } else {
                     None
                 };
@@ -651,7 +689,8 @@ impl Interpreter {
                                 self.mark_readonly(key);
                             }
                             let r = {
-                                let ev = self.eval_block_value(body);
+                                let ev = self
+                                    .eval_block_value_in_candidate_package(body, candidate_package);
                                 self.where_truthy(ev)
                             };
                             for key in &ph_keys {
@@ -661,12 +700,17 @@ impl Interpreter {
                         }
                         Expr::MethodCall { target, .. } if matches!(target.as_ref(), Expr::Var(name) if name == "_") =>
                         {
-                            let ev =
-                                self.eval_block_value(&[Stmt::Expr(where_expr.as_ref().clone())]);
+                            let ev = self.eval_block_value_in_candidate_package(
+                                &[Stmt::Expr(where_expr.as_ref().clone())],
+                                candidate_package,
+                            );
                             self.where_truthy(ev)
                         }
                         expr => {
-                            let ev = self.eval_block_value(&[Stmt::Expr(expr.clone())]);
+                            let ev = self.eval_block_value_in_candidate_package(
+                                &[Stmt::Expr(expr.clone())],
+                                candidate_package,
+                            );
                             self.where_smartmatch(arg, ev)
                         }
                     };
@@ -832,7 +876,11 @@ impl Interpreter {
                         Some(v) => v.clone(),
                         None => {
                             if let Some(default_expr) = &pd.default {
-                                match self.eval_param_default(pd, default_expr) {
+                                match self.eval_param_default_in_candidate_package(
+                                    pd,
+                                    default_expr,
+                                    candidate_package,
+                                ) {
                                     Ok(v) => v,
                                     Err(_) => return false,
                                 }
@@ -864,17 +912,23 @@ impl Interpreter {
                     }
                     let ok = match where_expr.as_ref() {
                         Expr::AnonSub { body, .. } => {
-                            let ev = self.eval_block_value(body);
+                            let ev =
+                                self.eval_block_value_in_candidate_package(body, candidate_package);
                             self.where_truthy(ev)
                         }
                         Expr::MethodCall { target, .. } if matches!(target.as_ref(), Expr::Var(name) if name == "_") =>
                         {
-                            let ev =
-                                self.eval_block_value(&[Stmt::Expr(where_expr.as_ref().clone())]);
+                            let ev = self.eval_block_value_in_candidate_package(
+                                &[Stmt::Expr(where_expr.as_ref().clone())],
+                                candidate_package,
+                            );
                             self.where_truthy(ev)
                         }
                         expr => {
-                            let ev = self.eval_block_value(&[Stmt::Expr(expr.clone())]);
+                            let ev = self.eval_block_value_in_candidate_package(
+                                &[Stmt::Expr(expr.clone())],
+                                candidate_package,
+                            );
                             self.where_smartmatch(&val, ev)
                         }
                     };
@@ -923,16 +977,23 @@ impl Interpreter {
                 }
                 let ok = match where_expr.as_ref() {
                     Expr::AnonSub { body, .. } => {
-                        let ev = self.eval_block_value(body);
+                        let ev =
+                            self.eval_block_value_in_candidate_package(body, candidate_package);
                         self.where_truthy(ev)
                     }
                     Expr::MethodCall { target, .. } if matches!(target.as_ref(), Expr::Var(name) if name == "_") =>
                     {
-                        let ev = self.eval_block_value(&[Stmt::Expr(where_expr.as_ref().clone())]);
+                        let ev = self.eval_block_value_in_candidate_package(
+                            &[Stmt::Expr(where_expr.as_ref().clone())],
+                            candidate_package,
+                        );
                         self.where_truthy(ev)
                     }
                     expr => {
-                        let ev = self.eval_block_value(&[Stmt::Expr(expr.clone())]);
+                        let ev = self.eval_block_value_in_candidate_package(
+                            &[Stmt::Expr(expr.clone())],
+                            candidate_package,
+                        );
                         self.where_smartmatch(&slurpy_value, ev)
                     }
                 };

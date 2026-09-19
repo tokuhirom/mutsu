@@ -1372,7 +1372,17 @@ impl Interpreter {
             elems
         });
         let mut results = Vec::with_capacity(items.len());
-        let name_val_callable_name = method_value_callable_name(&name_val);
+        let name_val_callable_name = method_value_callable_name(&name_val).or_else(|| {
+            // An instance that provides CALL-ME is callable even though it has
+            // no Sub/Routine name to extract. Keep it on the callable hyper
+            // path instead of stringifying the instance into a method name.
+            let ValueView::Instance { class_name, .. } = name_val.view() else {
+                return None;
+            };
+            let class_name = class_name.resolve();
+            self.class_has_method(&class_name, "CALL-ME")
+                .then(String::new)
+        });
         let method = name_val_callable_name.is_none().then(|| {
             let method_raw = name_val.to_string_value();
             Self::rewrite_method_name(&method_raw, modifier)

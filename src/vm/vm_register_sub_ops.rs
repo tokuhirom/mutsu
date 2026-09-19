@@ -349,6 +349,9 @@ impl Interpreter {
                 self.mark_hoisted_decl_reached(&resolved_name);
             }
             if preregistered {
+                if *multi && !self.suppress_exports {
+                    self.refresh_exported_multi_family(&resolved_name);
+                }
                 return Ok(());
             }
             // ADR-0041 §9: remember what this hoist-pass registration is about
@@ -497,6 +500,9 @@ impl Interpreter {
                     // no-op unless `current_package()` actually names such a
                     // stash.
                     self.export_implicit_stash_sub(&resolved_name, *multi);
+                }
+                if *multi && !self.suppress_exports {
+                    self.refresh_exported_multi_family(&resolved_name);
                 }
                 for (slot, (alt_params, alt_param_defs)) in signature_alternates.iter().enumerate()
                 {
