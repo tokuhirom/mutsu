@@ -310,6 +310,11 @@ pub(crate) fn values_identical(left: &Value, right: &Value) -> bool {
                     (Some(a_h), Some(b_h)) => a_h.to_string_value() == b_h.to_string_value(),
                     _ => a_id == b_id,
                 }
+            } else if a_name == b_name && matches!(a_name.as_str(), "Date" | "DateTime") {
+                // Date and DateTime are value types: their native WHICH is
+                // derived from the calendar value, not the allocated instance.
+                crate::runtime::utils::value_which_key(left)
+                    == crate::runtime::utils::value_which_key(right)
             } else if a_name == b_name
                 && a_name.starts_with("Perl6::Metamodel::")
                 && a_name.ends_with("HOW")

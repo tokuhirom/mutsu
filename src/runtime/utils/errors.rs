@@ -348,9 +348,35 @@ pub(crate) fn value_which_key(value: &Value) -> String {
         // needs the interpreter, so it deposits the answer on the instance and
         // we read it here; without an override the identity is the object's own
         // id. See `InstanceAttrs::which_memo`.
-        ValueView::Instance { id, .. } => match value.user_which_memo() {
+        ValueView::Instance {
+            class_name,
+            attributes,
+            id,
+        } => match value.user_which_memo() {
             Some(which) => which.to_string(),
-            None => format!("{}|{}", value_type_name(value), id),
+            None => match class_name.resolve().as_str() {
+                "Date" => {
+                    let (year, month, day) =
+                        crate::builtins::methods_0arg::temporal::date_attrs(&attributes.as_map());
+                    format!(
+                        "Date|{}",
+                        crate::builtins::methods_0arg::temporal::daycount(year, month, day)
+                    )
+                }
+                "DateTime" => {
+                    let (year, month, day, hour, minute, second, timezone) =
+                        crate::builtins::methods_0arg::temporal::datetime_attrs(
+                            &attributes.as_map(),
+                        );
+                    format!(
+                        "DateTime|{}",
+                        crate::builtins::methods_0arg::temporal::format_datetime(
+                            year, month, day, hour, minute, second, timezone,
+                        )
+                    )
+                }
+                _ => format!("{}|{}", value_type_name(value), id),
+            },
         },
         // Same never-reused id as the `.WHICH` twin in
         // `builtins::methods_0arg::dispatch_core_coerce` -- an address is
