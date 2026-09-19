@@ -25,9 +25,8 @@ use Test;
 # (subset vs its base type vs untyped), narrowness across two positionals,
 # arity, and the ambiguity tie set.
 #
-# All 12 assertions pass under rakudo, except the `where`-evaluation COUNT,
-# which is deliberately a bound rather than rakudo's value -- see #8697 at
-# that assertion.
+# All 12 assertions pass under rakudo, including the `where`-evaluation
+# count, now that #8697 is fully closed.
 
 plan 12;
 
@@ -85,20 +84,18 @@ is counted(5), 'pos', 'a where-constrained candidate still binds';
 # multi-dispatch frame, and `dispatch_func_call_inner`'s own probe for the
 # winner's declaring package -- and for a value-dependent multi (a `where`, a
 # subset-typed parameter) `func_multi_dispatch_type_cacheable` refuses the
-# resolution cache, so each of those re-ran the user's constraint. #8697.
+# resolution cache, so each of those re-ran the user's constraint (#8697).
 #
-# Two of the three now reuse the winner the call already resolved, leaving 2:
-# one resolution, plus the winning candidate's actual parameter bind
-# re-checking a constraint the resolution had already proved. Closing that
-# last one means carrying "already validated" into the binder and is the
-# remainder of #8697.
-#
-# Still a BOUND rather than an equality, for the same reason as before: it
-# also pins that the per-registry-key dedup #7858 added, which #8696 step 1
-# moved ahead of the ranking loop, keeps working -- the count cannot climb
-# back toward once-per-registry-key. Tighten to 1 when #8697 closes.
-ok $where-runs <= 2,
-    "its where clause ran a bounded number of times ($where-runs <= 2; raku: 1, see issue 8697)";
+# Two of the three were fixed by reusing the winner the call already
+# resolved, leaving 2: one resolution, plus the winning candidate's actual
+# parameter bind re-checking a constraint the resolution had already proved.
+# The bind now trusts that verdict (`pending_skip_where_recheck`) instead of
+# re-running the predicate, so this is at parity with rakudo: exactly 1. This
+# also still pins that the per-registry-key dedup #7858 added, which #8696
+# step 1 moved ahead of the ranking loop, keeps working -- the count cannot
+# climb back toward once-per-registry-key.
+is $where-runs, 1,
+    'its where clause ran exactly once, at parity with rakudo (#8697)';
 
 $where-runs = 0;
 is counted(-5), 'nonpos', 'and the wider candidate wins when the where rejects';
