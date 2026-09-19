@@ -187,7 +187,10 @@ impl Interpreter {
             // nqp::clone($x) — a shallow copy that does not share the
             // original's container, so mutating the copy leaves the original
             // alone (nqp's `clone`, not Raku's `.clone` method dispatch).
-            "clone" => {
+            // `clone_nd` is the no-decontainerize sibling; operands are
+            // already decontainerized once at the `call_nqp_op` boundary, so
+            // it shares this implementation (see `nqp_ops.rs`).
+            "clone" | "clone_nd" => {
                 let v = crate::runtime::types::unwrap_varref_value(
                     args.first().cloned().unwrap_or(Value::NIL),
                 );

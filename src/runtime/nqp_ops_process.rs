@@ -112,10 +112,74 @@ impl Interpreter {
             // a finer HLL-vs-REPR distinction between the two upstream, but
             // both collapse to the same test here, matching the raku-observed
             // behavior driving this op (Test::Async's `HubHOW` bundle
-            // registry, #8024).
-            "defined" | "isconcrete" => Ok(Value::int(i64::from(
+            // registry, #8024). `isconcrete_nd` is the no-decontainerize
+            // sibling of `isconcrete`; operands are already decontainerized
+            // once at the `call_nqp_op` boundary (`nqp_ops.rs`), so it shares
+            // this implementation.
+            "defined" | "isconcrete" | "isconcrete_nd" => Ok(Value::int(i64::from(
                 crate::runtime::types::value_is_defined(args.first().unwrap_or(&Value::NIL)),
             ))),
+
+            // nqp::istrue($v) — int 0/1: nqp's own truthiness test. This is
+            // the same predicate Raku's `so`/boolification uses internally,
+            // exposed for nqp-level code that inspects a native attribute
+            // directly (AttrX::Mooish's `composed` method boolifies a
+            // `nqp::getattr_i` int this way rather than going through `?`).
+            "istrue" => Ok(Value::int(i64::from(
+                args.first().unwrap_or(&Value::NIL).truthy(),
+            ))),
+
+            // nqp::islist($v) — int 0/1: is this a raw nqp-level list (the
+            // `list` op above builds one), as opposed to a boxed Raku Array
+            // or other object. AttrX::Mooish::ClassHOW walks its own
+            // BUILDPLAN-like task list this way to tell a sub-list task apart
+            // from a Code task.
+            //
+            // Real nqp draws a REPR-level distinction here: a bare
+            // `nqp::list()` answers true, a boxed `Array` answers false, even
+            // though `nqp::list()` and a boxed `Array` are otherwise
+            // interchangeable through `elems`/`atpos`/etc. mutsu represents
+            // both the same way (`ValueView::Array`, matching `"list" =>
+            // Value::array(...)` above), so this can't draw that line and
+            // instead answers true for both. That over-answers for a real
+            // Array passed to `nqp::islist` directly (rare — the op exists to
+            // inspect nqp-level bookkeeping structures like BUILDPLAN, not
+            // ordinary Raku data), so it stays a loud gap rather than a
+            // silent one: TODO: track the raw-list/boxed-Array distinction
+            // at the representation level rather than approximating it here.
+            "islist" => Ok(Value::int(i64::from(matches!(
+                args.first().map(|v| v.view()),
+                Some(ValueView::Array(..) | ValueView::Slip(_))
+            )))),
+
+            // nqp::hllize($v) — the HLL (Raku-level) box of an nqp-level
+            // value. mutsu has no separate nqp/HLL value representation (see
+            // `p6box_*`/`unbox_*` above), so every value here is already its
+            // own HLL box and this is the identity function.
+            "hllize" => Ok(args.first().cloned().unwrap_or(Value::NIL)),
+
+            // nqp::what($v) — the type object of $v, i.e. `$v.WHAT` at the
+            // nqp level. Routed through the ordinary method dispatcher, which
+            // already answers `WHAT` generically for every value shape.
+            "what" => {
+                let v = args.first().cloned().unwrap_or(Value::NIL);
+                self.call_method_with_values(v, "WHAT", Vec::new())
+            }
+
+            // nqp::lock($lock) / nqp::unlock($lock) — the nqp-level entry
+            // points to the same critical section `Lock`'s `.lock`/`.unlock`
+            // methods use (`native_lock` in
+            // `runtime/native_methods/concurrency.rs`); AttrX::Mooish takes
+            // this path directly around a `Lock.new` attribute rather than
+            // calling the methods.
+            "lock" => {
+                let lock = args.first().cloned().unwrap_or(Value::NIL);
+                self.call_method_with_values(lock, "lock", Vec::new())
+            }
+            "unlock" => {
+                let lock = args.first().cloned().unwrap_or(Value::NIL);
+                self.call_method_with_values(lock, "unlock", Vec::new())
+            }
 
             // nqp::list(...) — an untyped VM list; mutsu represents one as an
             // ordinary array, same as the typed `list_s`/`list_i`/`list_n`.
