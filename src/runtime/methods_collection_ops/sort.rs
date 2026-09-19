@@ -58,13 +58,22 @@ pub(crate) fn inline_numeric_cmp(a: &Value, b: &Value) -> std::cmp::Ordering {
 /// User instances need the real `<=>` dispatch: their numeric value may come
 /// from a user-defined `Numeric`/`Real` method. The inline comparator only has
 /// the value representation, so it cannot perform that method dispatch.
+///
+/// A plain scalar wrapped in a `ContainerRef` (an ordinary `.grep`/`.map`
+/// rw-alias element, or a `:=`-bound array slot) is not itself the problem:
+/// `inline_numeric_cmp`'s fallback arm already compares through the cell via
+/// `compare_values`. Blocking on the outer `ContainerRef` shape rather than on
+/// what it holds made *every* array with even one aliased element (e.g. any
+/// array that had been `.grep`/`.map`-ed over beforehand, which promotes the
+/// matching elements' cells) fall back to the full per-comparison `<=>`
+/// dispatch for the whole sort -- an 8.5x instruction-count regression on
+/// `benchmarks/bench-array.raku` (#8586's fix, measured post-hoc). Deref
+/// through the cell chain before checking, so only a container that actually
+/// holds a user `Instance` forces the slow dispatch path.
 fn can_inline_numeric_cmp(items: &[Value]) -> bool {
-    items.iter().all(|value| {
-        !matches!(
-            value.view(),
-            ValueView::Instance { .. } | ValueView::ContainerRef(_)
-        )
-    })
+    items
+        .iter()
+        .all(|value| value.with_deref(|inner| !matches!(inner.view(), ValueView::Instance { .. })))
 }
 
 /// Detect simple comparison patterns in sort blocks and return an inline comparator.
