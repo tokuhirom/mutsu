@@ -74,12 +74,19 @@ impl Interpreter {
             self.set_env_with_main_alias(&var_name, mixed.clone());
             if self.trait_mod_writeback_key.is_some() {
                 self.trait_mod_writeback_value = Some(mixed.clone());
+                // See `trait_mod_attr_writeback_value`'s doc comment.
+                if Self::how_target_from_value(&mixed).is_none() {
+                    self.trait_mod_attr_writeback_value = Some(mixed.clone());
+                }
             }
             return Ok(mixed);
         }
         let mixed = self.vm_does_values(doee, role)?;
         if self.trait_mod_writeback_key.is_some() && matches!(mixed.view(), ValueView::Mixin(..)) {
             self.trait_mod_writeback_value = Some(mixed.clone());
+            if Self::how_target_from_value(&mixed).is_none() {
+                self.trait_mod_attr_writeback_value = Some(mixed.clone());
+            }
         }
         Ok(mixed)
     }

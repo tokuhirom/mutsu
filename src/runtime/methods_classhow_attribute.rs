@@ -575,6 +575,7 @@ impl Interpreter {
                 let saved_wb_key = self.trait_mod_writeback_key.take();
                 self.trait_mod_writeback_key =
                     Some(MetaNs::AttrTrait.owned_key_pair_for_strs(owner, attr_name_str));
+                let saved_attr_wb_value = self.trait_mod_attr_writeback_value.take();
                 let saved_pkg = self.current_package();
                 if let Some(pkg) = &dispatch_pkg
                     && *pkg != saved_pkg
@@ -584,12 +585,27 @@ impl Interpreter {
                 let call_result = self.call_function(&trait_mod_name, args);
                 self.set_current_package(saved_pkg);
                 self.trait_mod_writeback_key = saved_wb_key;
+                // The attribute's OWN resulting mixin (from `$attr does
+                // SomeRole` specifically, never from a `$class.HOW` mixin
+                // elsewhere in the same handler — see
+                // `trait_mod_attr_writeback_value`'s doc comment), cached as
+                // this attribute's `^attributes` meta-object. Read before the
+                // `compose` hook call below, which can itself perform further
+                // `does` mixins and would otherwise overwrite this slot.
+                let attr_mixin_val = std::mem::replace(
+                    &mut self.trait_mod_attr_writeback_value,
+                    saved_attr_wb_value,
+                );
                 if let Some(mixin_val) = self.trait_mod_writeback_value.take() {
                     // Attribute traits may compose a role whose `compose`
                     // method edits the declaring class's method table. This
-                    // is how `will lazy { ... }` installs its lazy accessor:
-                    // the role is mixed into the Attribute meta-object, then
-                    // its compose hook is called with the owning class.
+                    // is how AttrX::Lazy installs its lazy accessor: a role is
+                    // mixed into `$class.HOW` (or, elsewhere, directly into
+                    // the Attribute meta-object), then its compose hook is
+                    // called with the owning class. `mixin_val` is whichever
+                    // `does` ran LAST in the handler, not necessarily the
+                    // attribute's own value -- see `attr_mixin_val` above for
+                    // that.
                     let has_compose_hook = match mixin_val.view() {
                         ValueView::Mixin(_, mixins) => mixins.keys().any(|key| {
                             key.strip_prefix("__mutsu_role__").is_some_and(|role_name| {
@@ -611,9 +627,12 @@ impl Interpreter {
                             vec![Value::package(Symbol::intern(owner))],
                         )?;
                     }
-                    self.registry_mut()
-                        .class_attribute_trait_objects
-                        .insert((owner.to_string(), attr_name_str.to_string()), mixin_val);
+                }
+                if let Some(attr_mixin_val) = attr_mixin_val {
+                    self.registry_mut().class_attribute_trait_objects.insert(
+                        (owner.to_string(), attr_name_str.to_string()),
+                        attr_mixin_val,
+                    );
                 }
                 // Raku dispatches `trait_mod:<is>` as an ordinary multi: the
                 // built-in candidates and any user-declared one (e.g.

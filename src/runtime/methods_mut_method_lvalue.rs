@@ -1005,6 +1005,11 @@ impl Interpreter {
                 {
                     self.trait_mod_writeback_value = Some(target.clone());
                 }
+                if self.trait_mod_writeback_key.is_some()
+                    && self.trait_mod_attr_writeback_value.is_some()
+                {
+                    self.trait_mod_attr_writeback_value = Some(target.clone());
+                }
                 return Ok(value);
             }
             // If we have the mixin key but didn't find a matching role attribute,
@@ -1024,7 +1029,12 @@ impl Interpreter {
                 if self.trait_mod_writeback_key.is_some()
                     && self.trait_mod_writeback_value.is_some()
                 {
-                    self.trait_mod_writeback_value = Some(new_mixin);
+                    self.trait_mod_writeback_value = Some(new_mixin.clone());
+                }
+                if self.trait_mod_writeback_key.is_some()
+                    && self.trait_mod_attr_writeback_value.is_some()
+                {
+                    self.trait_mod_attr_writeback_value = Some(new_mixin);
                 }
                 return Ok(value);
             }

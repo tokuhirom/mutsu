@@ -285,7 +285,19 @@ impl Interpreter {
                 // — it must NOT raise X::Role::Composition::Unimplemented. So keep
                 // class-direct stubs as concrete; only role-origin stubs are
                 // requirements.
-                if Self::is_stub_method_def(&def) && def.role_origin.is_some() {
+                //
+                // A PRIVATE stub (`method !foo { ... }`) is also never a
+                // requirement, for a different reason: private methods are not
+                // virtual in Raku — `self!foo` always resolves to the *role's
+                // own* `!foo`, never to a composing class's method of the same
+                // name, so there is no such thing as a class "implementing" a
+                // role's private stub. Rakudo raises no composition error for
+                // one (verified against `raku`); it only dies with "Stub code
+                // executed" if the role's own body ever calls it. Math::Matrix
+                // (real ecosystem dist backing #8806) relies on this: its
+                // `Math::Matrix::Util` role stubs a `!clone-rows` that the
+                // class never implements and the role body never calls.
+                if Self::is_stub_method_def(&def) && def.role_origin.is_some() && !def.is_private {
                     stubs.push(def);
                 } else {
                     concrete.push(def);

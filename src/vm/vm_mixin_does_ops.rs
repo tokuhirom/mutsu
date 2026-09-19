@@ -456,9 +456,24 @@ impl Interpreter {
         // Sync back: BUILD submethods may have modified closure variables, so the
         // captured-outer writes reach the caller's slots.
         self.carrier_writeback_changed_aggregates(code, &pre_env);
-        // Capture Mixin value for trait_mod writeback (same as DoesVar path)
+        // Capture Mixin value for trait_mod writeback (same as DoesVar path).
+        // `apply_attribute_traits` reads this to invoke a `compose` hook the
+        // mixed-in role may define (`will lazy { ... }`'s mechanism), on
+        // WHICHEVER `does` happened last in the handler -- deliberately not
+        // scoped to a particular target, since a compose hook can live on a
+        // role mixed into `$attr` OR into `$class.HOW` (AttrX::Lazy mixes
+        // into both: `$attr does LazyAttribute; ... $class.HOW does
+        // LazyAttributeContainerHOW`, and it's the HOW-mixin's `compose` that
+        // installs the lazy accessor). See `apply_attribute_traits` for the
+        // other half: it must NOT assume this value is $attr's own mixin.
         if matches!(result.view(), ValueView::Mixin(..)) && self.trait_mod_writeback_key.is_some() {
             self.trait_mod_writeback_value = Some(result.clone());
+            // Separately: capture this specific `does`'s result as the
+            // ATTRIBUTE's own value only when it is not itself a `$class.HOW`
+            // mixin (see `trait_mod_attr_writeback_value`'s doc comment).
+            if Self::how_target_from_value(&result).is_none() {
+                self.trait_mod_attr_writeback_value = Some(result.clone());
+            }
         }
         self.stack.push(result);
         Ok(())
@@ -510,6 +525,13 @@ impl Interpreter {
         if matches!(updated.view(), ValueView::Mixin(..)) && self.trait_mod_writeback_key.is_some()
         {
             self.trait_mod_writeback_value = Some(updated.clone());
+            // See `trait_mod_attr_writeback_value`'s doc comment: captured
+            // separately so a LATER unrelated `does` in the same handler
+            // (e.g. `$class.HOW does OtherRole`) cannot clobber the value
+            // this named variable's own mixin needs cached.
+            if Self::how_target_from_value(&updated).is_none() {
+                self.trait_mod_attr_writeback_value = Some(updated.clone());
+            }
         }
         self.stack.push(updated);
         Ok(())
