@@ -463,6 +463,27 @@ impl Interpreter {
         method: &str,
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
+        if let ValueView::Instance {
+            class_name,
+            attributes,
+            ..
+        } = target.view()
+            && class_name != "IO::Handle"
+            && method == "nl-out"
+            && args.is_empty()
+            && !self.has_user_method(&class_name.resolve(), "nl-out")
+            && self
+                .class_mro(&class_name.resolve())
+                .iter()
+                .any(|c| c == "IO::Handle")
+        {
+            return Some(Ok(attributes
+                .as_map()
+                .get("nl-out")
+                .cloned()
+                .unwrap_or_else(|| Value::str_from("\n"))));
+        }
+
         let id = match target.view() {
             ValueView::Instance {
                 class_name,
