@@ -162,26 +162,14 @@ impl Interpreter {
         let mut bracket_start: Option<usize> = None;
         let mut package_qualified = false;
         for (i, &b) in bytes.iter().enumerate() {
-            match b {
-                b':' => {
-                    if suffix_start.is_none() {
-                        suffix_start = Some(i);
-                    }
-                    if bytes.get(i + 1) == Some(&b':') {
-                        package_qualified = true;
-                    }
-                }
-                b'(' => {
-                    if suffix_start.is_none() {
-                        suffix_start = Some(i);
-                    }
-                }
-                b'[' => {
-                    if bracket_start.is_none() {
-                        bracket_start = Some(i);
-                    }
-                }
-                _ => {}
+            if suffix_start.is_none() && (b == b':' || b == b'(') {
+                suffix_start = Some(i);
+            }
+            if b == b':' && bytes.get(i + 1) == Some(&b':') {
+                package_qualified = true;
+            }
+            if b == b'[' && bracket_start.is_none() {
+                bracket_start = Some(i);
             }
         }
         // Both capture arms need a bound `::T` to say anything, so ask the
