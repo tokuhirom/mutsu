@@ -773,6 +773,23 @@ impl Interpreter {
         )
     }
 
+    /// Whether `current_package` is the "no package" case — unset, or the
+    /// default top-level `GLOBAL`.
+    ///
+    /// Read from the interned mirror: one relaxed atomic load and two id
+    /// compares. The spelling this replaces — `let cur = self.current_package();
+    /// cur.is_empty() || cur == "GLOBAL"` — takes the `RwLock` and clones the
+    /// package name onto the heap to compare it against two literals, and the
+    /// `GetGlobal` fast-hit gate in `exec_one_dispatch` asks it on every
+    /// unqualified global read: 1,091,175 of the 1,449,126 `String` clones
+    /// `current_package()` made in a ten-decode `JSON::Fast` profile came from
+    /// that one line.
+    #[inline]
+    pub(crate) fn current_package_is_global(&self) -> bool {
+        let sym = self.current_package_sym();
+        sym == crate::symbol::wk::empty_package() || sym == crate::symbol::wk::global_package()
+    }
+
     pub(crate) fn set_current_package(&mut self, pkg: String) {
         let sym = Symbol::intern(&pkg);
         self.set_current_package_with_sym(pkg, sym);

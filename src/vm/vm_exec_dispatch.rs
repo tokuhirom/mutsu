@@ -354,10 +354,7 @@ impl Interpreter {
                         && (name == "_" || !name.contains('_'))
                         && self.escaping_our_lexical_names.is_empty()
                         && !self.mainline_lexical_frame_active()
-                        && {
-                            let cur = self.current_package();
-                            cur.is_empty() || cur == "GLOBAL"
-                        }
+                        && self.current_package_is_global()
                     {
                         match self.env().get_sym(code.const_sym(*name_idx)) {
                             Some(val)
@@ -425,10 +422,13 @@ impl Interpreter {
                                     // `$D2::d3` from inside package `D1::D2` (or any
                                     // ancestor of it), also try the fully-qualified
                                     // forms by prepending each ancestor prefix.
-                                    let cur = self.current_package().to_string();
-                                    if cur.is_empty() || cur == "GLOBAL" {
+                                    // The cheap gate first: the common case is
+                                    // GLOBAL, and `current_package()` clones the
+                                    // name onto the heap to find that out.
+                                    if self.current_package_is_global() {
                                         return None;
                                     }
+                                    let cur = self.current_package();
                                     let (sigil, bare) = if let Some(rest) = name.strip_prefix('$') {
                                         ("$", rest)
                                     } else if let Some(rest) = name.strip_prefix('@') {
@@ -479,8 +479,7 @@ impl Interpreter {
                         // Only apply when the qualifier matches the current package
                         // (i.e. the name was auto-qualified by the compiler, not
                         // explicitly written as a package-qualified access).
-                        let cur = self.current_package().to_string();
-                        if cur.is_empty() || cur == "GLOBAL" {
+                        if self.current_package_is_global() {
                             return None;
                         }
                         // Extract bare component after the last `::`
