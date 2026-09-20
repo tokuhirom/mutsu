@@ -40,7 +40,11 @@ use crate::value::Value;
 pub(crate) mod compile;
 pub(crate) mod entry;
 pub(crate) mod exec;
+// `#[path]`-spelled so `scripts/check-panic-surface.py` recognizes the whole
+// file as test scaffolding (see its doc comment) rather than charging its
+// assertions to the production budget.
 #[cfg(test)]
+#[path = "tests.rs"]
 mod tests;
 
 /// The kind of a TRIR slot or operand, as the compiler proved it.

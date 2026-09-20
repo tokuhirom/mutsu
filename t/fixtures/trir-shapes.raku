@@ -130,6 +130,20 @@ say "rw-through-cell={$shared},{$peek()}";
 # --- arity mismatch --------------------------------------------------------
 say "arity={(try arith(1)) // 'FAILED'}";
 
+# --- a parameter whose BINDING the general binder alone performs -----------
+# An attributive parameter writes straight to `self`'s attribute cell. Its
+# body here is empty, so the routine is otherwise perfectly provable — which
+# is exactly why the gate has to be on the parameter's spelling rather than on
+# what the body does with it.
+class Attributive {
+    has $!t = 'orig';
+    method set($v) { sub s($!t) { }; s($v); }
+    method get { $!t }
+}
+my $box = Attributive.new;
+$box.set('bound');
+say "attributive-param={$box.get}";
+
 # --- `.wrap` (ADR-0110 §3.3's run-time guard) ------------------------------
 # A statically linked call site would step straight past the wrapper, so the
 # guard has to send the call back to the ordinary dispatch. Kept LAST: once

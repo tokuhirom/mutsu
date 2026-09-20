@@ -14,20 +14,45 @@ use crate::symbol::Symbol;
 /// Compile the first `sub` declaration in `src` to TRIR, or `None`.
 fn chunk_of(src: &str) -> Option<TrChunk> {
     let (stmts, _) = crate::parse_dispatch::parse_source(src).expect("test source must parse");
-    for stmt in &stmts {
-        if let Stmt::SubDecl {
-            name,
-            params,
-            param_defs,
-            return_type,
-            body,
-            ..
-        } = stmt
-        {
-            return TrirCompiler::compile(*name, param_defs, params, return_type.as_deref(), body);
+    first_sub_chunk(&stmts).expect("test source declares no sub")
+}
+
+/// The first `sub` declaration anywhere in `stmts`, compiled to TRIR (or
+/// `None` if it declined). `Option<Option<..>>` so "no sub here" and "this sub
+/// declined" stay distinguishable while the walk recurses into method bodies.
+fn first_sub_chunk(stmts: &[Stmt]) -> Option<Option<TrChunk>> {
+    for stmt in stmts {
+        match stmt {
+            Stmt::SubDecl {
+                name,
+                params,
+                param_defs,
+                return_type,
+                body,
+                ..
+            } => {
+                return Some(TrirCompiler::compile(
+                    *name,
+                    param_defs,
+                    params,
+                    return_type.as_deref(),
+                    body,
+                ));
+            }
+            Stmt::ClassDecl { body, .. } => {
+                if let Some(found) = first_sub_chunk(body) {
+                    return Some(found);
+                }
+            }
+            Stmt::MethodDecl { body, .. } => {
+                if let Some(found) = first_sub_chunk(body) {
+                    return Some(found);
+                }
+            }
+            _ => {}
         }
     }
-    panic!("test source declares no sub");
+    None
 }
 
 /// A one-word rendering of an op, so an expectation reads as the instruction
@@ -145,6 +170,18 @@ fn unprovable_shapes_decline() {
         (
             "a boxed operand: `+` there is full multi-dispatch",
             "my sub f($a, $b) { $a + $b }",
+        ),
+        (
+            "an attributive parameter binds to self's attribute cell",
+            "class B { has $!t; method m { sub s($!t) { }; s(1) } }",
+        ),
+        (
+            "a dynamic parameter",
+            "my sub f($*level) { nqp::add_i(1, 1) }",
+        ),
+        (
+            "the reserved invocant lexical",
+            "my sub f($self) { nqp::chars($self) }",
         ),
         (
             "a statement form Stage 1 does not compile",

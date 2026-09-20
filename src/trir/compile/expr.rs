@@ -239,9 +239,12 @@ impl TrirCompiler {
         self.compile_expr_sink(body)?;
         self.ops.push(TrOp::Jump(start));
         let end = self.ops.len() as u32;
+        // Declining rather than asserting: this is a compile-time pass with a
+        // free "no" (#8186's never-panic goal), so an emit the arm below does
+        // not recognize costs a speedup, never a crash.
         match &mut self.ops[exit_at] {
             TrOp::JumpIfFalseI(t) | TrOp::JumpIfTrueI(t) => *t = end,
-            _ => unreachable!("the exit jump was just emitted"),
+            _ => return None,
         }
         let idx = self.add_const(Value::NIL);
         self.ops.push(TrOp::ConstObj(idx));
@@ -280,11 +283,11 @@ impl TrirCompiler {
         let end = self.ops.len() as u32;
         match &mut self.ops[branch_at] {
             TrOp::JumpIfFalseI(t) | TrOp::JumpIfTrueI(t) => *t = else_at,
-            _ => unreachable!("the branch was just emitted"),
+            _ => return None,
         }
         match &mut self.ops[jump_end_at] {
             TrOp::Jump(t) => *t = end,
-            _ => unreachable!("the jump was just emitted"),
+            _ => return None,
         }
         Some(then_kind)
     }
@@ -340,7 +343,7 @@ impl TrirCompiler {
         let outer_make: fn(u16) -> TrOp = match op {
             "ordat" => TrOp::OrdAtOuter,
             "atpos_i" => TrOp::AtPosIOuter,
-            _ => unreachable!("the match above admitted only these two"),
+            _ => return None,
         };
         match self.binding_of(n) {
             Some(Binding {

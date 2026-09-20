@@ -36,6 +36,32 @@ pub(crate) struct TrirCompiler {
     obj_written: Vec<bool>,
 }
 
+/// Whether a parameter's recorded name is a plain `$`-scalar lexical.
+///
+/// `ParamDef::name` carries the spelling with the `$` stripped but every
+/// other marker intact, so this is the gate that keeps out an ATTRIBUTIVE
+/// parameter (`$!t` arrives as `"!t"`, and binding it must reach `self`'s
+/// attribute cell, which only the general binder does — `sub s($!t) {}` with
+/// an empty body is otherwise a perfectly provable TRIR routine that silently
+/// discards its argument), a `@`/`%`/`&` container, a `*`-slurpy, a dynamic
+/// (`*foo`), a compiler variable (`?FILE`), and the anonymous `_`.
+fn plain_scalar_param_name(name: &str) -> bool {
+    let mut chars = name.chars();
+    let Some(first) = chars.next() else {
+        return false;
+    };
+    if !(first.is_alphabetic() || first == '_') {
+        return false;
+    }
+    // `$self` is the reserved invocant lexical (ADR-0061), not an ordinary
+    // parameter name.
+    if name == "_" || name == "self" || name.starts_with("__") {
+        return false;
+    }
+    name.chars()
+        .all(|c| c.is_alphanumeric() || c == '_' || c == '-' || c == '\'')
+}
+
 /// The native scalar spellings TRIR gives a native slot. Everything else —
 /// including the boxed nominal types `Int`/`Str`/`Num` — is a boxed slot,
 /// because a boxed parameter legitimately accepts a bare type object and a
@@ -126,9 +152,7 @@ impl TrirCompiler {
                 || pd.literal_value.is_some()
                 || pd.shape_constraints.is_some()
                 || !pd.trait_args.is_empty()
-                || pd.name.starts_with(['@', '%', '&', '*'])
-                || pd.name.starts_with("__")
-                || pd.name == "_"
+                || !plain_scalar_param_name(&pd.name)
             {
                 return None;
             }
