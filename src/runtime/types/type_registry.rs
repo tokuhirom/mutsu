@@ -724,15 +724,23 @@ impl Interpreter {
     /// registries directly (classes/roles/enums/subsets, including parametric
     /// base names).
     pub(crate) fn has_type_direct(&self, name: &str) -> bool {
-        self.registry().classes.contains_key(name)
-            || self.registry().roles.contains_key(name)
-            || self.registry().enum_types.contains_key(name)
-            || self.registry().subsets.contains_key(name)
+        // ONE read guard, not one per map. `self.registry()` is a `RwLock`
+        // read acquisition (plus, in debug builds, the reentrancy bookkeeping),
+        // and this function asked for four of them on a hit and eight on the
+        // parametric path. `package_type_alias` alone calls it 140,460 times on
+        // a `JSON::Fast.from-json` parse, at ~372 instructions each -- 2% of
+        // the run spent almost entirely on re-acquiring a lock it already had
+        // (#8830).
+        let reg = self.registry();
+        reg.classes.contains_key(name)
+            || reg.roles.contains_key(name)
+            || reg.enum_types.contains_key(name)
+            || reg.subsets.contains_key(name)
             || Self::parse_parametric_type_name(name).is_some_and(|(base, _)| {
-                self.registry().classes.contains_key(&base)
-                    || self.registry().roles.contains_key(&base)
-                    || self.registry().enum_types.contains_key(&base)
-                    || self.registry().subsets.contains_key(&base)
+                reg.classes.contains_key(&base)
+                    || reg.roles.contains_key(&base)
+                    || reg.enum_types.contains_key(&base)
+                    || reg.subsets.contains_key(&base)
             })
     }
 
@@ -796,8 +804,16 @@ impl Interpreter {
         if self.has_type_direct(qualified) {
             return Some(qualified.to_string());
         }
-        let prefix = format!("{qualified}\u{0}");
         let reg = self.registry();
+        // Nothing carries this source-facing name under a mangled key, so the
+        // scan below cannot match — skip the `format!` and the four
+        // whole-map walks. See `Registry::has_lexical_type_key_for`: this is
+        // the miss path, and it was 4.2% of a `JSON::Fast.from-json` parse for
+        // 7,236 calls.
+        if !reg.has_lexical_type_key_for(qualified) {
+            return None;
+        }
+        let prefix = format!("{qualified}\u{0}");
         reg.classes
             .keys()
             .find(|key| key.starts_with(&prefix))
