@@ -48,18 +48,20 @@ pub(super) enum IntDivMod {
 /// `runtime/nqp_ops.rs`.
 #[derive(Clone, Copy)]
 pub(super) enum NqpIntOp {
+    /// Produces an i64 whose small-Int range has to be checked.
+    Arith(NqpIntArith),
+    /// Produces 0 or 1, which is always in range.
+    Cmp(IntCC),
+}
+
+#[derive(Clone, Copy)]
+pub(super) enum NqpIntArith {
     Add,
     Sub,
     Mul,
     BitAnd,
     BitOr,
     BitXor,
-    Eq,
-    Ne,
-    Lt,
-    Le,
-    Gt,
-    Ge,
 }
 
 impl NqpIntOp {
@@ -73,30 +75,18 @@ impl NqpIntOp {
     /// native at all.
     pub(super) fn from_name(name: &str) -> Option<NqpIntOp> {
         Some(match name {
-            "add_i" => NqpIntOp::Add,
-            "sub_i" => NqpIntOp::Sub,
-            "mul_i" => NqpIntOp::Mul,
-            "bitand_i" => NqpIntOp::BitAnd,
-            "bitor_i" => NqpIntOp::BitOr,
-            "bitxor_i" => NqpIntOp::BitXor,
-            "iseq_i" => NqpIntOp::Eq,
-            "isne_i" => NqpIntOp::Ne,
-            "islt_i" => NqpIntOp::Lt,
-            "isle_i" => NqpIntOp::Le,
-            "isgt_i" => NqpIntOp::Gt,
-            "isge_i" => NqpIntOp::Ge,
-            _ => return None,
-        })
-    }
-
-    fn cmp_cc(self) -> Option<IntCC> {
-        Some(match self {
-            NqpIntOp::Eq => IntCC::Equal,
-            NqpIntOp::Ne => IntCC::NotEqual,
-            NqpIntOp::Lt => IntCC::SignedLessThan,
-            NqpIntOp::Le => IntCC::SignedLessThanOrEqual,
-            NqpIntOp::Gt => IntCC::SignedGreaterThan,
-            NqpIntOp::Ge => IntCC::SignedGreaterThanOrEqual,
+            "add_i" => NqpIntOp::Arith(NqpIntArith::Add),
+            "sub_i" => NqpIntOp::Arith(NqpIntArith::Sub),
+            "mul_i" => NqpIntOp::Arith(NqpIntArith::Mul),
+            "bitand_i" => NqpIntOp::Arith(NqpIntArith::BitAnd),
+            "bitor_i" => NqpIntOp::Arith(NqpIntArith::BitOr),
+            "bitxor_i" => NqpIntOp::Arith(NqpIntArith::BitXor),
+            "iseq_i" => NqpIntOp::Cmp(IntCC::Equal),
+            "isne_i" => NqpIntOp::Cmp(IntCC::NotEqual),
+            "islt_i" => NqpIntOp::Cmp(IntCC::SignedLessThan),
+            "isle_i" => NqpIntOp::Cmp(IntCC::SignedLessThanOrEqual),
+            "isgt_i" => NqpIntOp::Cmp(IntCC::SignedGreaterThan),
+            "isge_i" => NqpIntOp::Cmp(IntCC::SignedGreaterThanOrEqual),
             _ => return None,
         })
     }
@@ -431,28 +421,25 @@ impl TierB {
         b.switch_to_block(int_blk);
         let av = self.sx48(b, wa);
         let bv = self.sx48(b, wb);
-        let (res, needs_range_check) = match op.cmp_cc() {
+        let (res, needs_range_check) = match op {
             // A comparison yields 0 or 1, which is always in range.
-            Some(cc) => {
+            NqpIntOp::Cmp(cc) => {
                 let c = b.ins().icmp(cc, av, bv);
                 (b.ins().uextend(types::I64, c), false)
             }
-            None => match op {
-                // 48-bit operands cannot overflow an i64 add/sub; only the
-                // result's small-Int range needs checking.
-                NqpIntOp::Add => (b.ins().iadd(av, bv), true),
-                NqpIntOp::Sub => (b.ins().isub(av, bv), true),
-                NqpIntOp::Mul => (b.ins().imul(av, bv), true),
-                // Bitwise ops on two sign-extended 48-bit values: bits 47..63
-                // are a single repeated value on each side, so they are on the
-                // result too, and it is always back in range. Checked anyway --
-                // the check is four instructions and the alternative is an
-                // argument in a comment.
-                NqpIntOp::BitAnd => (b.ins().band(av, bv), true),
-                NqpIntOp::BitOr => (b.ins().bor(av, bv), true),
-                NqpIntOp::BitXor => (b.ins().bxor(av, bv), true),
-                _ => unreachable!("comparison handled above"),
-            },
+            // 48-bit operands cannot overflow an i64 add/sub; only the
+            // result's small-Int range needs checking.
+            NqpIntOp::Arith(NqpIntArith::Add) => (b.ins().iadd(av, bv), true),
+            NqpIntOp::Arith(NqpIntArith::Sub) => (b.ins().isub(av, bv), true),
+            NqpIntOp::Arith(NqpIntArith::Mul) => (b.ins().imul(av, bv), true),
+            // Bitwise ops on two sign-extended 48-bit values: bits 47..63 are a
+            // single repeated value on each side, so they are on the result
+            // too, and it is always back in range. Checked anyway -- the check
+            // is four instructions and the alternative is an argument in a
+            // comment.
+            NqpIntOp::Arith(NqpIntArith::BitAnd) => (b.ins().band(av, bv), true),
+            NqpIntOp::Arith(NqpIntArith::BitOr) => (b.ins().bor(av, bv), true),
+            NqpIntOp::Arith(NqpIntArith::BitXor) => (b.ins().bxor(av, bv), true),
         };
         let store_blk = b.create_block();
         if needs_range_check {

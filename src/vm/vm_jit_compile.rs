@@ -391,28 +391,6 @@ fn build(
                 let tb = tier_b.as_ref().unwrap();
                 tb.emit_compare(&mut b, NumCmp::Ne, helpers::num_ne as *const () as usize);
             }
-            // Tier B inline `nqp::*_i`: the op name is settled at compile time
-            // (the opcode carries a registry index, not a callee string), so
-            // the whitelist is resolved here, once, rather than per execution.
-            OpCode::NqpOp { id, arity: 2 }
-                if tier_b.is_some()
-                    && tier_b.as_ref().unwrap().lay.pending_line_tag.is_some()
-                    && NqpIntOp::from_name(crate::runtime::nqp_op_ids::nqp_op_name(*id))
-                        .is_some() =>
-            {
-                let tb = tier_b.as_ref().unwrap();
-                let nqp_op =
-                    NqpIntOp::from_name(crate::runtime::nqp_op_ids::nqp_op_name(*id)).unwrap();
-                tb.emit_nqp_int_binop(
-                    &mut b,
-                    nqp_op,
-                    tb.lay.pending_line_tag.unwrap(),
-                    sigs.s_call,
-                    helpers::step as *const () as usize,
-                    i as u32,
-                    fnsp,
-                );
-            }
             OpCode::GetLocal(idx) => {
                 if let Some(tb) = &tier_b
                     && get_local_tier_b_eligible(code, *idx as usize)
@@ -643,7 +621,26 @@ fn build(
                 b.switch_to_block(next);
             }
             op => {
-                if let Some(f) = noarg_shim(op) {
+                // Tier B inline `nqp::*_i`. Which op a site means is settled at
+                // bytecode-compile time (the opcode carries a dense registry
+                // index, not a callee string), so the whitelist is resolved
+                // here, once per JIT compilation, rather than per execution.
+                if let Some(tb) = &tier_b
+                    && let Some(pending_line) = tb.lay.pending_line_tag
+                    && let OpCode::NqpOp { id, arity: 2 } = op
+                    && let Some(nqp_op) =
+                        NqpIntOp::from_name(crate::runtime::nqp_op_ids::nqp_op_name(*id))
+                {
+                    tb.emit_nqp_int_binop(
+                        &mut b,
+                        nqp_op,
+                        pending_line,
+                        sigs.s_call,
+                        helpers::step as *const () as usize,
+                        i as u32,
+                        fnsp,
+                    );
+                } else if let Some(f) = noarg_shim(op) {
                     // Dedicated payload-free shim (arith / compare / Return —
                     // for Return, OK status = a rebound `&return` ran and
                     // execution falls through; otherwise the parked return
