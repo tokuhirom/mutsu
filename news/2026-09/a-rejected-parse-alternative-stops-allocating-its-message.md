@@ -44,6 +44,12 @@ copying. Only a `format!`-built context can allocate there now.
 | `_int_free` | 123,569,678 | 106,620,482 | -13.7% |
 | `mutsu::parser::*` (self, summed) | 199,084,427 | 183,924,447 | -7.6% |
 
+**Wall clock at 727 records did not move**: 1.918s before, 1.929s after, seven
+runs each, distributions overlapping. That is not a contradiction — see the
+next section. The saving is concentrated in work that happens *once*, so a
+document seven times larger dilutes it by roughly seven, well under this box's
+run-to-run spread. The deterministic counts above are the evidence.
+
 ## An unexpected finding: the parser runs *inside* `from-json`
 
 The change was expected to pay off at module-load time. It does not — a
@@ -64,6 +70,13 @@ amortizes — but it is ~5% of this 100-record profile, and it means **a share
 of every percentage measured on the 100-record reproduction is a fixed
 startup-shaped cost, not per-record work**. Worth confirming and filing
 separately; it is not this slice's to fix.
+
+It also explains this slice's own wall clock. If the parser cost is a one-off,
+then so is most of what this change removes: at 100 records it is 3% of the
+run, at 727 records roughly a seventh of that, and a 0.4% difference is not
+something seven runs on this box can see. The consequence for whoever takes
+the next slice is that **the 100-record reproduction over-weights startup** —
+either measure at 727 records, or subtract a load-only run first.
 
 Pinned by the existing parser tests — `merge_expected_messages`'s two unit
 tests in `parser/stmt/tests_3.rs` cover the merge directly, and the parse-error
