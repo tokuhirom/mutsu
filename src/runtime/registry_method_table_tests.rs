@@ -166,6 +166,7 @@ fn sync_accessor_entries_derives_from_attributes_and_clears_stale_rows() {
         default: None,
         captured_env: None,
         captured_unit: None,
+        declaring_package: None,
         is_rw: false,
         is_required: None,
         sigil: '$',

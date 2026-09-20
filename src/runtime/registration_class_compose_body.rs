@@ -293,6 +293,17 @@ impl Interpreter {
             };
             if is_type_decl || is_use_decl {
                 self.set_current_package(base_role_name.to_string());
+                // `set_current_package` alone does not reach the import: the
+                // importer package a module load keys its type aliases by comes
+                // from `unit_module_loading_stack`, which still names the
+                // compunit whose body is composing this role. Say so explicitly
+                // (#8842) -- otherwise everything the role body imports is
+                // recorded against the COMPOSING class, and the role's own
+                // attribute defaults, which resolve in the role's package, see
+                // an empty alias table.
+                if is_use_decl {
+                    self.import_target_package = Some(base_role_name.to_string());
+                }
             } else if is_regex_decl {
                 self.set_current_package(cx.name.to_string());
             } else if is_lexical_sub_decl && let Some(package) = role_lexical_package.as_deref() {
@@ -316,6 +327,7 @@ impl Interpreter {
             // A `use`/`need`'s installed functions must survive an enclosing
             // bare block's routine-registry restore (#8646) — see
             // `run_role_deferred_use_stmt`.
+            let import_mark = self.deferred_body_import_mark();
             let r = if is_use_decl {
                 self.run_role_deferred_use_stmt(run_one)
             } else {
@@ -323,6 +335,13 @@ impl Interpreter {
             };
             if is_type_decl || is_regex_decl || is_use_decl || is_lexical_sub_decl {
                 self.set_current_package(saved_body_pkg.clone());
+            }
+            if is_use_decl {
+                self.import_target_package = None;
+                // The role's compunit finished loading long before this body
+                // ran, so nothing will ever fold these names into the role's own
+                // package scope. Do it here (#8842).
+                self.record_deferred_body_imports(base_role_name, import_mark);
             }
             if r.is_ok()
                 && let (Some(package), Some(name)) =

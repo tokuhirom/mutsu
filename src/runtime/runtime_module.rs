@@ -500,9 +500,9 @@ impl Interpreter {
             // bare too, even though the module itself is already loaded.
             if let Some(module_aliases) = self.package_type_aliases.get(module).cloned() {
                 let importer_package = self
-                    .unit_module_loading_stack
-                    .last()
-                    .cloned()
+                    .import_target_package
+                    .clone()
+                    .or_else(|| self.unit_module_loading_stack.last().cloned())
                     .unwrap_or_else(|| self.current_package());
                 let entry = crate::runtime::cow_table_mut(&mut self.package_type_aliases)
                     .entry(importer_package)

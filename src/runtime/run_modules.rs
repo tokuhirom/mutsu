@@ -742,9 +742,9 @@ impl Interpreter {
         // inside that body sees its own unit name on top, precisely because
         // it has not been popped yet.
         let importer_package = self
-            .unit_module_loading_stack
-            .last()
-            .cloned()
+            .import_target_package
+            .clone()
+            .or_else(|| self.unit_module_loading_stack.last().cloned())
             .unwrap_or_else(|| self.current_package());
         // #7797: which COMPUNIT (not package) is doing the importing, captured
         // before anything below switches `?FILE`/`current_unit` to this

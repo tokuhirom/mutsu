@@ -141,6 +141,7 @@ impl Interpreter {
             default: decl.default.clone(),
             captured_env: None,
             captured_unit: None,
+            declaring_package: Some(crate::symbol::Symbol::intern(cx.name)),
             is_rw: effective_is_rw,
             is_required: decl.is_required.clone(),
             sigil: decl.sigil,

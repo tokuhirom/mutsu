@@ -615,6 +615,7 @@ mod nqp_ops_text;
 pub(crate) use class_introspection::UserMethodOrAccessor;
 pub(crate) mod cstruct_layout;
 mod decl_types;
+pub(crate) mod deferred_body_imports;
 pub(crate) mod enum_bare_names;
 pub(crate) mod nativecall_fnptr;
 pub(crate) use self::decl_types::*;
@@ -941,6 +942,15 @@ pub(crate) struct ClassAttributeDef {
     /// declared. Composed defaults run during construction, after the role's
     /// compunit has finished loading, so they must restore that visibility.
     pub(crate) captured_unit: Option<crate::symbol::Symbol>,
+    /// The package this declaration was WRITTEN in -- the class or role body it
+    /// appears in, which is NOT necessarily the class being constructed. A
+    /// subclass inherits the declaration together with the scope its initializer
+    /// has to resolve names in: `has NcplaneHandle $!plane` in a base class
+    /// carries the synthesized default `BareWord("NcplaneHandle")`, and that
+    /// bareword only resolves through the *declaring* package's import aliases
+    /// (`package_type_aliases`) -- anchoring it on the constructed subclass
+    /// instead let it degrade to the plain string `"NcplaneHandle"` (#8842).
+    pub(crate) declaring_package: Option<crate::symbol::Symbol>,
     pub(crate) is_rw: bool,
     pub(crate) is_required: Option<Option<String>>,
     pub(crate) sigil: char,
@@ -2901,6 +2911,19 @@ pub struct Interpreter {
     /// `register_exported_sub` to mirror GLOBAL registrations into
     /// `unit_module_exported_subs`.
     unit_module_loading_stack: Vec<String>,
+    /// The package a `use`/`need` must import INTO, when the statement is run
+    /// by a body that is not a compunit mainline: a role's deferred body, or an
+    /// `augment` body. Both re-point `current_package` at the declaring package
+    /// around such a statement, but module loading derives the importer package
+    /// from `unit_module_loading_stack`, which still names the compunit being
+    /// loaded -- so the import landed under the COMPOSING class instead of the
+    /// role, and nothing the role imported was reachable from the role's own
+    /// package afterwards. That is the half of #8842 that survives anchoring an
+    /// attribute default on its declaring package: the anchor was right and the
+    /// package's alias table was empty.
+    ///
+    /// `None` outside such a body, which is every ordinary `use`.
+    pub(crate) import_target_package: Option<String>,
     /// #7797: stack of compunits whose OWN mainline is currently executing
     /// via `load_module_inner`'s `run_block`, pushed/popped around exactly
     /// the same window as `unit_module_loading_stack` (but keyed by every

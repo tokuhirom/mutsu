@@ -1484,6 +1484,7 @@ impl Interpreter {
                             default: None,
                             captured_env: None,
                             captured_unit: None,
+                            declaring_package: None,
                             is_rw,
                             is_required: None,
                             sigil,

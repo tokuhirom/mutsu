@@ -415,7 +415,7 @@ impl Interpreter {
                         arg,
                         &temp_self,
                         &attributes,
-                        (attr.captured_env.as_ref(), attr.captured_unit),
+                        crate::runtime::attr_build_defaults::AttrDeclScope::of(attr),
                     )?;
                     Self::coerce_attr_value_by_sigil(val, *sigil)
                 } else if *sigil == '@' || *sigil == '%' {
@@ -474,6 +474,7 @@ impl Interpreter {
                     default: default.clone(),
                     captured_env: attr.captured_env.clone(),
                     captured_unit: attr.captured_unit,
+                    declaring_package: attr.declaring_package,
                     build_override: None,
                     seed: val.clone(),
                 });

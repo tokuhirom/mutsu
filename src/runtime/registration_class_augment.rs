@@ -587,6 +587,7 @@ impl Interpreter {
                             default: decl.default.clone(),
                             captured_env: None,
                             captured_unit: None,
+                            declaring_package: Some(crate::symbol::Symbol::intern(name)),
                             is_rw: decl.is_rw,
                             is_required: decl.is_required.clone(),
                             sigil: decl.sigil,
@@ -1509,6 +1510,14 @@ impl Interpreter {
             let is_use_or_need = matches!(op.raw, Stmt::Use { .. } | Stmt::Need { .. });
             if let Some(pkg) = body_pkg {
                 self.set_current_package(pkg.to_string());
+                // The importer package a module load keys its type aliases by
+                // comes from `unit_module_loading_stack`, not from
+                // `current_package`, so the switch above does not reach the
+                // import itself. See the twin in
+                // `run_composed_role_deferred_body` (#8842).
+                if is_use_or_need {
+                    self.import_target_package = Some(pkg.to_string());
+                }
             }
             let run_one = |this: &mut Self| -> Result<(), RuntimeError> {
                 match &op.chunk {
@@ -1528,6 +1537,7 @@ impl Interpreter {
             // A `use`/`need`'s installed functions must survive an enclosing
             // bare block's routine-registry restore (#8646) — see
             // `run_role_deferred_use_stmt`.
+            let import_mark = self.deferred_body_import_mark();
             let r = if is_use_or_need {
                 self.run_role_deferred_use_stmt(run_one)
             } else {
@@ -1535,6 +1545,11 @@ impl Interpreter {
             };
             if body_pkg.is_some() {
                 self.set_current_package(saved_pkg.clone());
+            }
+            if is_use_or_need {
+                self.import_target_package = None;
+                // See the twin in `run_composed_role_deferred_body` (#8842).
+                self.record_deferred_body_imports(type_owner, import_mark);
             }
             if let Err(err) = r {
                 if err.control.is_none() {

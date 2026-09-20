@@ -217,7 +217,7 @@ impl Interpreter {
                         arg,
                         &temp_self,
                         &attrs,
-                        (attr.captured_env.as_ref(), attr.captured_unit),
+                        crate::runtime::attr_build_defaults::AttrDeclScope::of(attr),
                     );
                     let val = match result {
                         Ok(val) => val,

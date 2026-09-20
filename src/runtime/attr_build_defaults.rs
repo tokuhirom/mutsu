@@ -33,6 +33,32 @@ use crate::symbol::Symbol;
 use crate::value::ValueMap;
 use crate::value::{AttrMap, Value, ValueView};
 
+/// Where an attribute initializer has to be evaluated: the scope the
+/// declaration was WRITTEN in, not the scope of whatever class is being
+/// constructed. The two differ whenever the declaration is inherited or
+/// composed -- a subclass in another compunit constructs an attribute whose
+/// default names a type only the declaring class ever imported (#8842).
+#[derive(Clone, Copy, Default)]
+pub(crate) struct AttrDeclScope<'a> {
+    /// Lexicals captured where a role attribute default was declared.
+    pub(crate) env: Option<&'a ValueMap>,
+    /// Compunit whose imports were visible at the declaration.
+    pub(crate) unit: Option<Symbol>,
+    /// The class or role body the declaration appears in.
+    pub(crate) package: Option<&'a str>,
+}
+
+impl<'a> AttrDeclScope<'a> {
+    /// The scope one registered attribute declaration carries.
+    pub(crate) fn of(attr: &'a crate::runtime::ClassAttributeDef) -> Self {
+        Self {
+            env: attr.captured_env.as_ref(),
+            unit: attr.captured_unit,
+            package: attr.declaring_package.map(|p| p.as_str()),
+        }
+    }
+}
+
 /// An attribute whose initializer was postponed until after the BUILD phase.
 pub(crate) struct DeferredAttrDefault {
     pub(crate) name: String,
@@ -43,6 +69,8 @@ pub(crate) struct DeferredAttrDefault {
     pub(crate) captured_env: Option<ValueMap>,
     /// Compunit whose imports were visible where that default was declared.
     pub(crate) captured_unit: Option<crate::symbol::Symbol>,
+    /// The class or role body that default was declared in (#8842).
+    pub(crate) declaring_package: Option<Symbol>,
     /// An `is built(&code)` override, which takes precedence over `default`.
     pub(crate) build_override: Option<Value>,
     /// The value the slot was seeded with; the slot still holding it is half of
@@ -135,7 +163,11 @@ impl Interpreter {
                         arg,
                         inv,
                         &attrs,
-                        (d.captured_env.as_ref(), d.captured_unit),
+                        AttrDeclScope {
+                            env: d.captured_env.as_ref(),
+                            unit: d.captured_unit,
+                            package: d.declaring_package.map(|p| p.as_str()),
+                        },
                     )?;
                     Self::coerce_attr_value_by_sigil(val, d.sigil)
                 }
@@ -292,10 +324,15 @@ impl Interpreter {
     /// Evaluate one `has $.x = <expr>` initializer with `self_val` bound as
     /// `self` and every already-initialized attribute reachable as `$!a` / `$.a`
     /// (so `has $.c = $!a + $!b` and `has $.total = self.a + self.b` work), in
-    /// the class's own package so class-scoped subs resolve, and with
-    /// `class_key` marked as the class under construction so a bare nested-class
-    /// type name in the default (e.g. `has Inner $.x` defaulting to the `Inner`
-    /// type object) resolves too.
+    /// the DECLARING package so class-scoped subs and that package's import
+    /// aliases resolve, and with that package marked as the class under
+    /// construction so a bare nested-class type name in the default (e.g.
+    /// `has Inner $.x` defaulting to the `Inner` type object) resolves too.
+    ///
+    /// `scope` is what makes the declaring package the anchor rather than
+    /// `class_key`: an inherited or role-composed declaration is constructed by
+    /// a class that may live in another compunit and never imported the type
+    /// its default names (#8842).
     ///
     /// This is the single env-setup shape for evaluating an attribute default,
     /// shared by every construction path: the pre-BUILD attribute fill in
@@ -312,9 +349,19 @@ impl Interpreter {
         arg: &DeclTraitArg,
         self_val: &Value,
         attrs: &AttrMap,
-        captured: (Option<&ValueMap>, Option<crate::symbol::Symbol>),
+        scope: AttrDeclScope<'_>,
     ) -> Result<Value, RuntimeError> {
-        let (captured_env, captured_unit) = captured;
+        let AttrDeclScope {
+            env: captured_env,
+            unit: captured_unit,
+            package: declaring_package,
+        } = scope;
+        // The declaration's OWN package, which is `class_key` only when the
+        // class being constructed is also the one that wrote the `has`. An
+        // inherited or composed declaration keeps the scope it was written in:
+        // its default resolves bare names through THAT package's import
+        // aliases and file-scope lexicals (#8842).
+        let decl_package = declaring_package.unwrap_or(class_key);
         let old_self = self.env.get("self").cloned();
         self.env.insert("self".to_string(), self_val.clone());
         // A compiled method-body chunk always carries an implicit `__ANON_STATE__`
@@ -341,19 +388,20 @@ impl Interpreter {
         // Temporarily switch to the class package so that class-scoped subs
         // (e.g. `sub inner`) are found when evaluating the initializer.
         let saved_package = self.current_package();
-        self.set_current_package(class_key.to_string());
+        self.set_current_package(decl_package.to_string());
         // Mark the class under construction so a bare nested-class type name in
         // the default resolves within its owning class even where no
         // method-class stack frame is active (`resolve_suppressed_type`'s
         // `constructing_class` fallback).
         let saved_constructing = self.constructing_class.take();
-        self.constructing_class = Some(class_key.to_string());
+        self.constructing_class = Some(decl_package.to_string());
         // The default chunk runs during construction, not while the class's
         // compilation unit is active. Restore that lexical unit explicitly so
         // a bare call can reach a compunit-private sub declared beside the
         // class even when a foreign module called `.new`.
         let saved_unit = self.current_unit;
         self.current_unit = captured_unit
+            .or_else(|| self.class_declaring_units.get(decl_package).copied())
             .or_else(|| self.class_declaring_units.get(class_key).copied())
             .unwrap_or(saved_unit);
         let result = self.eval_decl_trait_arg_with_captured_env(arg, captured_env);

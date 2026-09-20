@@ -2142,6 +2142,7 @@ impl Interpreter {
                         default,
                         captured_env,
                         captured_unit,
+                        declaring_package,
                         sigil,
                         ..
                     } = attr;
@@ -2173,6 +2174,7 @@ impl Interpreter {
                             default,
                             captured_env,
                             captured_unit,
+                            declaring_package,
                             build_override,
                             seed: seed.clone(),
                         });
@@ -2198,7 +2200,11 @@ impl Interpreter {
                                 &arg,
                                 &temp_self,
                                 &attrs,
-                                (captured_env.as_ref(), captured_unit),
+                                super::attr_build_defaults::AttrDeclScope {
+                                    env: captured_env.as_ref(),
+                                    unit: captured_unit,
+                                    package: declaring_package.map(|p| p.as_str()),
+                                },
                             )?;
                             Self::coerce_attr_value_by_sigil(val, sigil)
                         }
@@ -2380,6 +2386,7 @@ impl Interpreter {
                             default,
                             captured_env,
                             captured_unit,
+                            declaring_package,
                             sigil,
                             ..
                         } = attr;
@@ -2416,7 +2423,11 @@ impl Interpreter {
                             let result = self.eval_decl_trait_arg_with_captured_context(
                                 &arg,
                                 captured_env.as_ref(),
-                                captured_unit,
+                                captured_unit.or_else(|| {
+                                    declaring_package
+                                        .and_then(|p| self.class_declaring_units.get(p.as_str()))
+                                        .copied()
+                                }),
                             );
                             if let Some(old) = old_self {
                                 self.env.insert("self".to_string(), old);
