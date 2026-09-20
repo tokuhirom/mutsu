@@ -10,32 +10,47 @@ impl Value {
     ///   1 eqv 1.0  → False  (Int vs Num)
     ///   `[1,2] eqv (1,2)`  → False  (Array vs List)
     pub(crate) fn eqv(&self, other: &Self) -> bool {
+        let mut seen = std::collections::HashSet::new();
+        self.eqv_inner(other, &mut seen)
+    }
+
+    fn eqv_inner(&self, other: &Self, seen: &mut std::collections::HashSet<(u64, u64)>) -> bool {
         // Unwrap Scalar/ContainerRef containers: eqv looks through containerization
         if let ValueView::Scalar(inner) = self.view() {
-            return inner.eqv(other);
+            return inner.eqv_inner(other, seen);
         }
         if let ValueView::Scalar(inner) = other.view() {
-            return self.eqv(inner);
+            return self.eqv_inner(inner, seen);
         }
         // Deref to an OWNED clone (releasing the cell lock) before recursing:
         // when both sides alias the SAME cell (e.g. two pairs built from the same
         // `key => $var`), holding the lock across the recursive `eqv` would lock
         // the same non-reentrant Mutex twice and deadlock.
         if matches!(self.view(), ValueView::ContainerRef(_)) {
-            return self.deref_container().eqv(other);
+            return self.deref_container().eqv_inner(other, seen);
         }
         if matches!(other.view(), ValueView::ContainerRef(_)) {
-            return self.eqv(&other.deref_container());
+            return self.eqv_inner(&other.deref_container(), seen);
         }
         // A deferred vivification token (an out-of-range `:=`-bound element, or a
         // multi-dim subscript whose path does not exist yet) is a container
         // wrapper like the two above, not a value: compare the hole value it
         // reads back as, never the token itself.
         if matches!(self.view(), ValueView::HashEntryRef { .. }) {
-            return self.hash_entry_read().eqv(other);
+            return self.hash_entry_read().eqv_inner(other, seen);
         }
         if matches!(other.view(), ValueView::HashEntryRef { .. }) {
-            return self.eqv(&other.hash_entry_read());
+            return self.eqv_inner(&other.hash_entry_read(), seen);
+        }
+        // User objects can contain back-references (for example a
+        // configuration owns its evaluator while the evaluator owns the
+        // configuration). Treat a repeated pair of object identities as an
+        // already-validated cycle instead of descending forever.
+        if let (ValueView::Instance { id: a, .. }, ValueView::Instance { id: b, .. }) =
+            (self.view(), other.view())
+            && !seen.insert((a, b))
+        {
+            return true;
         }
         // ADR-0038 S2: `.cache` on a not-yet-reified `Seq` hands back a SECOND
         // handle over the same body tagged `SeqView::List`. That handle
@@ -46,15 +61,15 @@ impl Value {
         // adding four cross-arms keeps every pairing (List-view vs List,
         // vs Array, vs real Seq, vs List-view) consistent in one place.
         if let Some(as_list) = Self::seq_list_view_as_list(self) {
-            return as_list.eqv(other);
+            return as_list.eqv_inner(other, seen);
         }
         if let Some(as_list) = Self::seq_list_view_as_list(other) {
-            return self.eqv(&as_list);
+            return self.eqv_inner(&as_list, seen);
         }
         // Junction threading: if either side is a junction, thread eqv
         // through it and return the boolean result of the junction.
         if let ValueView::Junction { kind, values } = other.view() {
-            let results: Vec<bool> = values.iter().map(|v| self.eqv(v)).collect();
+            let results: Vec<bool> = values.iter().map(|v| self.eqv_inner(v, seen)).collect();
             return match kind {
                 crate::value::JunctionKind::Any => results.iter().any(|&b| b),
                 crate::value::JunctionKind::All => results.iter().all(|&b| b),
@@ -63,7 +78,7 @@ impl Value {
             };
         }
         if let ValueView::Junction { kind, values } = self.view() {
-            let results: Vec<bool> = values.iter().map(|v| v.eqv(other)).collect();
+            let results: Vec<bool> = values.iter().map(|v| v.eqv_inner(other, seen)).collect();
             return match kind {
                 crate::value::JunctionKind::Any => results.iter().any(|&b| b),
                 crate::value::JunctionKind::All => results.iter().all(|&b| b),
@@ -77,24 +92,28 @@ impl Value {
             (ValueView::Array(a, a_kind), ValueView::Array(b, b_kind)) => {
                 a_kind.is_real_array() == b_kind.is_real_array()
                     && a.len() == b.len()
-                    && a.iter().zip(b.iter()).all(|(x, y)| x.eqv(y))
+                    && a.iter().zip(b.iter()).all(|(x, y)| x.eqv_inner(y, seen))
             }
             // Buffer storage: bytes and element type, same rule as `==`.
             (ValueView::BufStorage(a), ValueView::BufStorage(b)) => *a == *b,
             // Hashes: recursively use eqv for values
             (ValueView::Hash(a), ValueView::Hash(b)) => {
-                a.len() == b.len() && a.iter().all(|(k, v)| b.get(k).is_some_and(|bv| v.eqv(bv)))
+                a.len() == b.len()
+                    && a.iter()
+                        .all(|(k, v)| b.get(k).is_some_and(|bv| v.eqv_inner(bv, seen)))
             }
             // Pairs: recursively use eqv for values (Pair and ValuePair are equivalent)
-            (ValueView::Pair(ak, av), ValueView::Pair(bk, bv)) => ak == bk && av.eqv(bv),
+            (ValueView::Pair(ak, av), ValueView::Pair(bk, bv)) => {
+                ak == bk && av.eqv_inner(bv, seen)
+            }
             (ValueView::ValuePair(ak, av), ValueView::ValuePair(bk, bv)) => {
-                ak.eqv(bk) && av.eqv(bv)
+                ak.eqv_inner(bk, seen) && av.eqv_inner(bv, seen)
             }
             (ValueView::Pair(ak, av), ValueView::ValuePair(bk, bv)) => {
-                matches!(bk.view(), ValueView::Str(s) if s.as_str() == ak) && av.eqv(bv)
+                matches!(bk.view(), ValueView::Str(s) if s.as_str() == ak) && av.eqv_inner(bv, seen)
             }
             (ValueView::ValuePair(ak, av), ValueView::Pair(bk, bv)) => {
-                matches!(ak.view(), ValueView::Str(s) if s.as_str() == bk) && av.eqv(bv)
+                matches!(ak.view(), ValueView::Str(s) if s.as_str() == bk) && av.eqv_inner(bv, seen)
             }
             // Captures: recursively use eqv for positional and named elements
             (
@@ -108,19 +127,19 @@ impl Value {
                 },
             ) => {
                 ap.len() == bp.len()
-                    && ap.iter().zip(bp.iter()).all(|(x, y)| x.eqv(y))
+                    && ap.iter().zip(bp.iter()).all(|(x, y)| x.eqv_inner(y, seen))
                     && an.len() == bn.len()
                     && an
                         .iter()
-                        .all(|(k, v)| bn.get(k).is_some_and(|bv| v.eqv(bv)))
+                        .all(|(k, v)| bn.get(k).is_some_and(|bv| v.eqv_inner(bv, seen)))
             }
             // Slips: recursively use eqv for elements
             (ValueView::Slip(a), ValueView::Slip(b)) => {
-                a.len() == b.len() && a.iter().zip(b.iter()).all(|(x, y)| x.eqv(y))
+                a.len() == b.len() && a.iter().zip(b.iter()).all(|(x, y)| x.eqv_inner(y, seen))
             }
             // Seqs: recursively use eqv for elements
             (ValueView::Seq(a), ValueView::Seq(b)) => {
-                a.len() == b.len() && a.iter().zip(b.iter()).all(|(x, y)| x.eqv(y))
+                a.len() == b.len() && a.iter().zip(b.iter()).all(|(x, y)| x.eqv_inner(y, seen))
             }
             // RakuAST nodes are model objects: eqv compares their complete
             // immutable tree, not their Arc identity. This lets two
@@ -325,13 +344,13 @@ impl Value {
                     a_attrs.as_map().get("before"),
                     b_attrs.as_map().get("before"),
                 ) {
-                    (Some(a), Some(b)) => a.eqv(b),
+                    (Some(a), Some(b)) => a.eqv_inner(b, seen),
                     (None, None) => true,
                     _ => false,
                 };
                 let after_eq = match (a_attrs.as_map().get("after"), b_attrs.as_map().get("after"))
                 {
-                    (Some(a), Some(b)) => a.eqv(b),
+                    (Some(a), Some(b)) => a.eqv_inner(b, seen),
                     (None, None) => true,
                     _ => false,
                 };
@@ -353,8 +372,8 @@ impl Value {
                     && self.match_to() == other.match_to()
                     && self.match_orig().map(|v| v.to_string_value())
                         == other.match_orig().map(|v| v.to_string_value());
-                let opt_eqv = |a: Option<Value>, b: Option<Value>| match (a, b) {
-                    (Some(a), Some(b)) => a.eqv(&b),
+                let mut opt_eqv = |a: Option<Value>, b: Option<Value>| match (a, b) {
+                    (Some(a), Some(b)) => a.eqv_inner(&b, seen),
                     (None, None) => true,
                     _ => false,
                 };
@@ -362,8 +381,113 @@ impl Value {
                     && opt_eqv(self.match_list(), other.match_list())
                     && opt_eqv(self.match_named(), other.match_named())
             }
-            // Other Instance types: use identity comparison
-            (ValueView::Instance { .. }, ValueView::Instance { .. }) => self == other,
+            // IO::Handle's open registry id and mode are process-local state;
+            // only its public, reproducible attributes participate in eqv.
+            (
+                ValueView::Instance {
+                    class_name: a_class,
+                    attributes: a_attrs,
+                    ..
+                },
+                ValueView::Instance {
+                    class_name: b_class,
+                    attributes: b_attrs,
+                    ..
+                },
+            ) if a_class == "IO::Handle" && b_class == "IO::Handle" => {
+                const COMPARABLE_KEYS: &[&str] =
+                    &["path", "chomp", "nl-in", "nl-out", "encoding", "bin"];
+                let a_map = a_attrs.as_map();
+                let b_map = b_attrs.as_map();
+                COMPARABLE_KEYS
+                    .iter()
+                    .all(|key| match (a_map.get(*key), b_map.get(*key)) {
+                        (Some(a), Some(b)) => a.eqv_inner(b, seen),
+                        (None, None) => true,
+                        _ => false,
+                    })
+            }
+            // Duration values are numeric quantities. The arithmetic path may
+            // retain a Num while the constructor retains an exact Rat, but
+            // Rakudo compares equal durations by their numeric seconds.
+            (
+                ValueView::Instance {
+                    class_name: a_class,
+                    attributes: a_attrs,
+                    ..
+                },
+                ValueView::Instance {
+                    class_name: b_class,
+                    attributes: b_attrs,
+                    ..
+                },
+            ) if a_class == "Duration" && b_class == "Duration" => {
+                let a_seconds = a_attrs
+                    .as_map()
+                    .get("value")
+                    .map(Value::to_f64)
+                    .unwrap_or(0.0);
+                let b_seconds = b_attrs
+                    .as_map()
+                    .get("value")
+                    .map(Value::to_f64)
+                    .unwrap_or(0.0);
+                a_seconds == b_seconds
+            }
+            // Instants are numeric TAI values. Arithmetic can preserve an
+            // exact Rat on one side while constructing a Num on the other;
+            // compare their numeric timestamps, as Raku does for eqv.
+            (
+                ValueView::Instance {
+                    class_name: a_class,
+                    attributes: a_attrs,
+                    ..
+                },
+                ValueView::Instance {
+                    class_name: b_class,
+                    attributes: b_attrs,
+                    ..
+                },
+            ) if a_class == "Instant" && b_class == "Instant" => {
+                let a_seconds = a_attrs
+                    .as_map()
+                    .get("value")
+                    .map(Value::to_f64)
+                    .unwrap_or(0.0);
+                let b_seconds = b_attrs
+                    .as_map()
+                    .get("value")
+                    .map(Value::to_f64)
+                    .unwrap_or(0.0);
+                a_seconds == b_seconds
+            }
+            // User instances compare by their public attribute values. Rakudo
+            // uses this structural object equivalence for `eqv`/`is-deeply`;
+            // comparing the backing maps with `eqv` also makes independently
+            // constructed objects containing routines compare correctly (their
+            // routine identities are not part of the object's value).
+            (
+                ValueView::Instance {
+                    class_name: a_class,
+                    attributes: a_attrs,
+                    ..
+                },
+                ValueView::Instance {
+                    class_name: b_class,
+                    attributes: b_attrs,
+                    ..
+                },
+            ) => {
+                let a_map = a_attrs.to_map();
+                let b_map = b_attrs.to_map();
+                a_class == b_class
+                    && a_map.iter().count() == b_map.iter().count()
+                    && a_map.iter().all(|(key, value)| {
+                        b_map
+                            .get(key)
+                            .is_some_and(|other| value.eqv_inner(other, seen))
+                    })
+            }
             // The Nil value IS the Nil type object: a `Package("Nil")` obtained
             // via type lookup (`::('Nil')`) denotes the same singleton.
             (ValueView::Nil, ValueView::Package(name))
@@ -391,16 +515,16 @@ impl Value {
             (ValueView::Mixin(inner, mix), _)
                 if mix.len() == 1 && mix.contains_key("__mutsu_topic_ro__") =>
             {
-                inner.eqv(other)
+                inner.eqv_inner(other, seen)
             }
             (_, ValueView::Mixin(inner, mix))
                 if mix.len() == 1 && mix.contains_key("__mutsu_topic_ro__") =>
             {
-                self.eqv(inner)
+                self.eqv_inner(inner, seen)
             }
             // Mixin (allomorphs): compare both base values and mixin maps with eqv
             (ValueView::Mixin(a, a_mix), ValueView::Mixin(b, b_mix)) => {
-                if !a.eqv(b) {
+                if !a.eqv_inner(b, seen) {
                     return false;
                 }
                 // Compare mixin maps (e.g. Str part of allomorphs), ignoring the
@@ -424,7 +548,7 @@ impl Value {
                 }
                 a_relevant
                     .into_iter()
-                    .all(|(k, v)| b_mix.get(k).is_some_and(|bv| v.eqv(bv)))
+                    .all(|(k, v)| b_mix.get(k).is_some_and(|bv| v.eqv_inner(bv, seen)))
             }
             // Cross-type comparisons always return false for eqv
             _ => false,

@@ -2843,9 +2843,9 @@ impl Interpreter {
                 let is_public_rw_accessor = if class_attrs.is_empty() {
                     attributes.contains_key(method)
                 } else {
-                    class_attrs
-                        .iter()
-                        .any(|a| a.is_public && a.name == method && a.is_rw)
+                    class_attrs.iter().any(|a| {
+                        a.is_public && a.name == method && (a.is_rw || matches!(a.sigil, '@' | '%'))
+                    })
                 };
                 if is_public_rw_accessor {
                     // User-defined rw method takes priority over simple accessor
@@ -2857,7 +2857,32 @@ impl Interpreter {
                             "callmethodmutwithvalues",
                             "accessor",
                         );
-                        let assigned = args[0].clone();
+                        let sigil = class_attrs
+                            .iter()
+                            .find(|a| a.is_public && a.name == method)
+                            .map(|a| a.sigil)
+                            .or_else(|| {
+                                attributes.as_map().get(method).and_then(|value| {
+                                    match value.view() {
+                                        ValueView::Array(..) => Some('@'),
+                                        ValueView::Hash(_) => Some('%'),
+                                        _ => None,
+                                    }
+                                })
+                            });
+                        // A public rw accessor for an aggregate attribute is
+                        // still an assignment to that attribute's container.
+                        // Coerce list-shaped RHS values before replacing the
+                        // existing contents; otherwise assigning a Seq (for
+                        // example a `gather` result) leaves a bare Seq in an
+                        // `@` attribute and later mutators cannot operate on
+                        // it.
+                        let assigned = match sigil {
+                            Some(sigil @ ('@' | '%')) => {
+                                Self::coerce_attr_value_by_sigil(args[0].clone(), sigil)
+                            }
+                            _ => args[0].clone(),
+                        };
                         // An `@`/`%` attribute IS a container: `$obj.attr = (…)`
                         // assigns into the container the attribute already holds
                         // rather than rebinding the slot to a fresh one. Storing

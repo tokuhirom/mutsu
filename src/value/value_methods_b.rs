@@ -125,6 +125,24 @@ impl Value {
                 data.original_keys = new_original_keys;
                 true
             }
+            // Public aggregate accessors receive list-shaped RHS values in
+            // several assignment paths.  Normalize a Seq/Slip here as a
+            // final guard so replacing an Array's contents never leaves the
+            // attribute slot holding an immutable list value.
+            (ValueView::Array(dst_arc, _), ValueView::Seq(_) | ValueView::Slip(_)) => {
+                let coerced = crate::runtime::utils::coerce_to_array(src.clone());
+                let ValueView::Array(src_items, _) = coerced.view() else {
+                    return false;
+                };
+                if crate::gc::Gc::ptr_eq(&dst_arc, &src_items) {
+                    return true;
+                }
+                let new_items = src_items.items().clone();
+                let data = unsafe { crate::gc::gc_contents_mut(&dst_arc) };
+                data.clear_native_storage();
+                *data.items_mut() = new_items;
+                true
+            }
             _ => false,
         }
     }

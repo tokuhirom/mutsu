@@ -947,6 +947,15 @@ impl Interpreter {
                 crate::value::Value::array_arc(items.to_vec()),
                 crate::value::ArrayKind::List,
             )
+        } else if let ValueView::Slip(items) = index.view() {
+            // A capture/slip index (`%h{|@keys}`) is a multi-key slice. Keep
+            // its flattened elements as a List so the Hash slice arm can read
+            // each key in order instead of treating the Slip as one scalar
+            // key and falling through to the missing-key default.
+            Value::array_with_kind(
+                crate::value::Value::array_arc(items.to_vec()),
+                crate::value::ArrayKind::List,
+            )
         } else {
             index
         };

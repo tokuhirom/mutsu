@@ -1109,6 +1109,20 @@ impl Interpreter {
                 // `Nil` is exempt: the store below replaces it with the
                 // declaration's default or its type object.
                 self.check_attr_store_type(&class_name.resolve(), method, attr_sigil, &value)?;
+                // A gather is represented by a lazy list until it reaches a
+                // strict aggregate assignment.  An `@` attribute owns a real
+                // mutable Array, so finish a finite gather here before the
+                // accessor write; leaving the lazy wrapper in the slot makes
+                // subsequent `.append` dispatch as if the attribute were an
+                // immutable Seq.
+                let value = match value.view() {
+                    ValueView::LazyList(list)
+                        if list.is_from_gather() || list.has_finite_closure_endpoint() =>
+                    {
+                        Value::real_array(self.force_lazy_list_vm(&list)?)
+                    }
+                    _ => value,
+                };
                 // Element-level type check for @ attributes (e.g. `has @.a of int`)
                 if attr_sigil == '@'
                     && let Some(type_constraint) =
@@ -1174,8 +1188,9 @@ impl Interpreter {
                 // mixin took the attribute's container identity) is transparent
                 // to the accessor write: normalize against the inner value and
                 // (below) write through the cell instead of replacing it.
+                let current = updated.get(&attr_key).cloned().map(|v| v.deref_container());
                 let mut assigned_value = Self::normalize_rw_accessor_assignment(
-                    updated.get(&attr_key).cloned().map(|v| v.deref_container()),
+                    current,
                     value.clone(),
                     preserve_hash_entries,
                     attr_sigil == '%',
