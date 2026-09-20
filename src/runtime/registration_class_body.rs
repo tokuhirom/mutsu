@@ -150,12 +150,36 @@ impl Interpreter {
             is_hoisted_shell,
             pending_attr_composes: Vec::new(),
         };
+        // Snapshotted BEFORE the hoist pre-pass below, so the per-op
+        // `class_subs` tail-probe (search "Check if any new functions were
+        // registered" further down) still sees a hoisted sub as newly
+        // registered when the walk reaches its normal position.
         let saved_functions_keys: HashSet<String> = self
             .registry()
             .functions
             .keys()
             .map(|k| k.resolve())
             .collect();
+        // Hoist every `sub` this class body declares before running any of
+        // its statements — Raku hoists a `sub`'s name to the top of its
+        // enclosing scope at compile time regardless of what kind of scope
+        // that is, so a class-body statement above the `sub`'s textual
+        // position must already be able to call it (`Compiler::hoist_sub_decls`
+        // does the same for a compilation unit's own top level, ADR-0041 §9).
+        // `hoist_chunk` only *registers* the routine — it never runs the
+        // routine's body — so pre-running it here is safe: the sub's own
+        // in-sequence `chunk`, unmarked, still executes at its normal walk
+        // position below and is what a later BEGIN-time reference sees as
+        // "reached" (`mark_hoisted_decl_reached`).
+        for op in body_plan {
+            if let crate::opcode::ClassBodyOp::ClassSub {
+                hoist_chunk: Some(chunk),
+                ..
+            } = op
+            {
+                self.run_compiled_block_raw(&chunk.code, &chunk.fns)?;
+            }
+        }
         // LEAVE phasers declared at class-body scope (e.g. via
         // `my $x will leave { ... }`) must fire when the class body is left,
         // i.e. once all body statements have been processed. Collect them here
