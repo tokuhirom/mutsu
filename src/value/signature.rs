@@ -118,13 +118,15 @@ pub(crate) fn lookup_sig_info(id: u64) -> Option<SigInfo> {
 static PARAM_REGISTRY: Mutex<Option<HashMap<u64, SigParam>>> = Mutex::new(None);
 
 fn register_param_info(id: u64, param: SigParam) {
-    let mut guard = PARAM_REGISTRY.lock().unwrap();
+    // Poison-tolerant: a panic elsewhere while this lock was held must not
+    // turn an unrelated later `Parameter.new` call into a second panic here.
+    let mut guard = PARAM_REGISTRY.lock().unwrap_or_else(|e| e.into_inner());
     let map = guard.get_or_insert_with(HashMap::new);
     map.insert(id, param);
 }
 
 fn lookup_param_info(id: u64) -> Option<SigParam> {
-    let guard = PARAM_REGISTRY.lock().unwrap();
+    let guard = PARAM_REGISTRY.lock().unwrap_or_else(|e| e.into_inner());
     guard.as_ref()?.get(&id).cloned()
 }
 
