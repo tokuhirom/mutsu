@@ -23,6 +23,7 @@ mod parser;
 mod placeholder_order;
 pub(crate) mod precomp;
 pub(crate) mod profile;
+pub(crate) mod qualified;
 mod rakuast;
 pub(crate) mod regex_tree;
 #[cfg(feature = "native")]

@@ -45,8 +45,8 @@ type RwPlan = ([(u16, RwTarget); 4], usize);
 /// nested subs) is skipped for the same reason the untyped path skips it: it
 /// is not a package name.
 pub(super) fn trir_body_package(cf: &CompiledFunction) -> Option<Symbol> {
-    (!cf.package.is_empty() && !cf.package_is_routine_scoped() && cf.package != "GLOBAL")
-        .then(|| cf.package_sym())
+    let sym = cf.package_sym();
+    (!crate::qualified::is_global_package(sym) && !cf.package_is_routine_scoped()).then_some(sym)
 }
 
 impl Interpreter {

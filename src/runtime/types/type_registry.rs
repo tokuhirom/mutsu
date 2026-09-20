@@ -840,8 +840,14 @@ impl Interpreter {
         if name.is_empty() {
             return None;
         }
-        let pkg_owned = self.current_package().to_string();
-        let mut pkg: &str = &pkg_owned;
+        // The package comes off the interned mirror (a `&'static str`, no
+        // clone), the ancestor walk off `package_ancestors`, and each
+        // `<pkg>::<name>` candidate off `qualified` — all three were rebuilt
+        // from strings on every call, which made this the largest single
+        // function in the `JSON::Fast` decode profile at 5.11% inclusive,
+        // 0.48% of the whole program in `format!` alone (#8898).
+        let pkg_sym = self.current_package_sym();
+        let pkg: &str = pkg_sym.as_str();
         // Self-reference from inside a lexically-mangled class's OWN body
         // (ADR-0047 P1: `my class A { ...; A.^add_method(...) }`). While the
         // body executes, `current_package()` is already the REAL storage name
@@ -859,11 +865,13 @@ impl Interpreter {
         if self.has_type_direct(pkg) && crate::value::user_facing_type_name(pkg).as_ref() == name {
             return Some(pkg.to_string());
         }
-        loop {
-            if pkg.is_empty() || pkg == "GLOBAL" {
+        let name_sym = crate::symbol::Symbol::intern(name);
+        for pkg in crate::qualified::package_ancestors(pkg_sym) {
+            if crate::qualified::is_global_package(pkg) {
                 return None;
             }
-            let qualified = format!("{pkg}::{name}");
+            let qualified = crate::qualified::qualified(pkg, name_sym);
+            let qualified: &str = qualified.as_str();
             // ADR-0047: a lexically-scoped `my class`/`my grammar` reachable
             // through this package chain is registered under a mangled
             // storage name (`{qualified}\u{0}<decl-id>`), never the bare
@@ -883,16 +891,13 @@ impl Interpreter {
             // short name `Hash`, shadowing CORE's `Hash` for its whole body
             // (and `Crane::List`'s `List.new` for the whole `Crane` dist).
             // Real nesting (`unit module NL; class Hash`) still resolves.
-            if !self.compound_name_segment_is_not_a_scope(&qualified)
-                && let Some(key) = self.resolve_lexical_type_key(&qualified)
+            if !self.compound_name_segment_is_not_a_scope(qualified)
+                && let Some(key) = self.resolve_lexical_type_key(qualified)
             {
                 return Some(key);
             }
-            match pkg.rsplit_once("::") {
-                Some((parent, _)) => pkg = parent,
-                None => return None,
-            }
         }
+        None
     }
 
     /// Resolve a short type name against a specific owner package's chain
@@ -901,9 +906,14 @@ impl Interpreter {
     /// outer type inside its declaring class, so the qualified probe runs
     /// first; an unresolvable name is returned unchanged.
     pub(crate) fn resolve_type_name_for_owner(&self, owner: &str, name: String) -> String {
-        if name.contains("::") || name.is_empty() {
+        if name.is_empty() {
             return name;
         }
+        let name_sym = crate::symbol::Symbol::intern(&name);
+        if crate::qualified::is_qualified(name_sym) {
+            return name;
+        }
+        let owner_sym = crate::symbol::Symbol::intern(owner);
         // Skipping the probe for an unshadowed core name is what keeps this
         // from allocating an `Owner::Int` candidate for every ordinary
         // attribute on every `.new` (see
@@ -917,18 +927,10 @@ impl Interpreter {
             // attribute to the owning class itself. Keep the package walk
             // for a real package-local type that shadows this builtin,
             // but never let that self-reference win.
-            let mut pkg = owner;
-            loop {
-                if pkg.is_empty() {
-                    break;
-                }
-                let qualified = format!("{pkg}::{name}");
-                if qualified != owner && self.has_type_direct(&qualified) {
-                    return qualified;
-                }
-                match pkg.rsplit_once("::") {
-                    Some((parent, _)) => pkg = parent,
-                    None => break,
+            for pkg in crate::qualified::package_ancestors(owner_sym) {
+                let qualified = crate::qualified::qualified(pkg, name_sym).as_str();
+                if qualified != owner && self.has_type_direct(qualified) {
+                    return qualified.to_string();
                 }
             }
             if let Some(ValueView::Package(target)) = self
@@ -942,12 +944,8 @@ impl Interpreter {
             }
             return name;
         }
-        let mut pkg = owner;
-        loop {
-            if pkg.is_empty() {
-                break;
-            }
-            let qualified = format!("{pkg}::{name}");
+        for pkg in crate::qualified::package_ancestors(owner_sym) {
+            let qualified = crate::qualified::qualified(pkg, name_sym).as_str();
             // Same footgun `resolve_type_in_current_package` guards against:
             // `pkg` here can be a prefix obtained by stripping the LAST
             // segment off a compound *declared name* (`class Foo::Bar::Supply`
@@ -957,14 +955,10 @@ impl Interpreter {
             // `qualified` reconstructs the class's OWN full name and this loop
             // would "resolve" the attribute's `Supply` type constraint to the
             // enclosing class itself instead of the real core `Supply` type.
-            if !self.compound_name_segment_is_not_a_scope(&qualified)
-                && self.has_type_direct(&qualified)
+            if !self.compound_name_segment_is_not_a_scope(qualified)
+                && self.has_type_direct(qualified)
             {
-                return qualified;
-            }
-            match pkg.rsplit_once("::") {
-                Some((parent, _)) => pkg = parent,
-                None => break,
+                return qualified.to_string();
             }
         }
         if let Some(ValueView::Package(target)) = self
