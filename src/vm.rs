@@ -142,6 +142,7 @@ mod vm_call_method_compiled_coerce;
 mod vm_call_method_compiled_direct;
 mod vm_call_method_compiled_interpret;
 mod vm_call_method_compiled_io;
+pub(crate) use vm_call_method_compiled_io::note_io_handle_user_method_declared;
 mod vm_call_method_compiled_mut;
 mod vm_call_method_mut_ops;
 mod vm_call_method_mut_prenative;
