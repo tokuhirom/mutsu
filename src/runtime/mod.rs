@@ -133,6 +133,7 @@ pub(crate) fn flatten_append_args(args: Vec<Value>) -> Vec<Value> {
         match args[0].view() {
             ValueView::Array(vals, kind) if !kind.is_itemized() => vals.to_vec(),
             ValueView::Seq(vals) => vals.to_vec(),
+            ValueView::Slip(vals) => vals.to_vec(),
             // Same itemization guard as the Array arm above: an itemized
             // Hash (`my $h = {a=>1}; @a.append($h)`) is a single `$`-held
             // element and must NOT flatten into its pairs -- confirmed

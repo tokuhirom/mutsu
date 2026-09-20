@@ -197,7 +197,23 @@ impl Interpreter {
                     // deliberately type-blind and hardcodes `Any` for a `Nil`
                     // RHS, which is only correct when no default is declared.
                     Some(def) if value.is_nil() => Value::real_array(vec![def.clone()]),
-                    _ => super::coerce_to_array(value),
+                    _ => match value.view() {
+                        ValueView::Seq(items) => Value::real_array(
+                            items
+                                .iter()
+                                .cloned()
+                                .map(Value::itemize_for_element_store)
+                                .collect(),
+                        ),
+                        ValueView::Slip(items) => Value::real_array(
+                            items
+                                .iter()
+                                .cloned()
+                                .map(Value::itemize_for_element_store)
+                                .collect(),
+                        ),
+                        _ => crate::runtime::utils::coerce_to_array(value),
+                    },
                 };
                 Self::carry_container_default(current.as_ref(), result)
             }

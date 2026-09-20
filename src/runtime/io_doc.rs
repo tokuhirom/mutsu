@@ -44,6 +44,12 @@ impl Interpreter {
         let mut anon_sub_counter: usize = 0;
         // Track role declaration counts for uniquifying parametric role variants
         let mut role_counters: HashMap<String, usize> = HashMap::new();
+        // A sub/method declaration may spread its signature over several lines.
+        // Keep its declarant available while parameter lines and the return
+        // type are being scanned, so a trailing #= after the body can still
+        // attach to the routine rather than the last parameter.
+        let mut signature_declarant: Option<Declarant> = None;
+        let mut signature_closed = false;
 
         fn extract_ident(s: &str) -> String {
             s.trim_start()
@@ -610,7 +616,8 @@ impl Interpreter {
 
             // Trailing doc comment (#=) on its own line
             if let Some((text, next_idx, _is_block)) = parse_doc_comment(&lines, idx, "#=") {
-                if !text.is_empty()
+                if !signature_closed
+                    && !text.is_empty()
                     && let Some((
                         ref name,
                         ref kind,
@@ -792,6 +799,11 @@ impl Interpreter {
             if let Some((name, is_class_like, kind, dispatch, callable_type_ovr)) =
                 last_seg.or_else(|| try_extract_declarant(check_line, &current_class))
             {
+                let declaration_opens_body = brace_depth > depth_before_line
+                    || check_line.find('{').is_some_and(|brace_pos| {
+                        let before_brace = &check_line[..brace_pos];
+                        before_brace.contains(')') || !before_brace.contains('(')
+                    });
                 // For multi declarations, generate a unique key to avoid
                 // overwriting proto or other multi variants.
                 // For anonymous subs, also uniquify to avoid collisions.
@@ -886,13 +898,19 @@ impl Interpreter {
                 );
                 // A declaration that opens a block body remembers itself so the
                 // matching closing brace can restore it for a trailing `#=`.
-                if brace_depth > depth_before_line {
+                if declaration_opens_body {
                     open_block_declarants.push((depth_before_line, declarant.clone()));
                 }
-                last_declarant = Some(declarant);
+                last_declarant = Some(declarant.clone());
                 // Track the current function for parameter scoping
                 if kind == super::DocDeclKind::Sub {
                     current_sub = Some(name.clone());
+                    signature_closed = false;
+                    signature_declarant = if declaration_opens_body {
+                        None
+                    } else {
+                        Some(declarant.clone())
+                    };
                 }
                 // Check for inline #| on the same line as a sub declaration
                 // (e.g. "sub foo( #| leading for param") — sets pending_leading
@@ -927,7 +945,13 @@ impl Interpreter {
                         }
                     }
                 }
-            } else if let Some(param_name) = try_extract_param_name(check_line) {
+            } else if !(signature_declarant.is_some()
+                && check_line.find('{').is_some_and(|brace_pos| {
+                    let before_brace = &check_line[..brace_pos];
+                    before_brace.contains(')') || !before_brace.contains('(')
+                }))
+                && let Some(param_name) = try_extract_param_name(check_line)
+            {
                 // Key parameter docs by "sub_name::param_name" to avoid
                 // collisions when the same param name appears in different subs
                 let param_key = if let Some(ref sub_name) = current_sub {
@@ -955,7 +979,10 @@ impl Interpreter {
                         entry.trailing = append_doc_text(entry.trailing.take(), trail);
                     }
                 }
-                // Set last_declarant so trailing #= on the next line can attach
+                // A standalone #= immediately after this line documents the
+                // parameter. A later signature-closing line switches the
+                // pending declarant back to the routine when it opens the
+                // body, so a #= after the body can document the routine.
                 last_declarant = Some((
                     param_key,
                     super::DocDeclKind::Param,
@@ -965,9 +992,33 @@ impl Interpreter {
                     None,
                 ));
             } else {
-                // Not a recognized declaration — discard pending leading
-                pending_leading = None;
-                last_declarant = None;
+                // A multiline signature contains continuation lines such as
+                // `--> Int` and the closing `) {`. The latter opens the body
+                // whose trailing #= belongs to the routine. Preserve the
+                // parameter declarant until the body opener and register the
+                // routine for brace-based restoration below.
+                if let Some(declarant) = signature_declarant.clone() {
+                    let body_opens = trimmed.find('{').is_some_and(|brace_pos| {
+                        let before_brace = &trimmed[..brace_pos];
+                        before_brace.contains(')') || !before_brace.contains('(')
+                    });
+                    if body_opens {
+                        open_block_declarants.push((depth_before_line, declarant.clone()));
+                        signature_declarant = None;
+                        signature_closed = false;
+                        last_declarant = Some(declarant);
+                    } else if check_line.contains(')') {
+                        // A standalone closing signature line is followed by
+                        // the body opener. A #= in between is not associated
+                        // with either the routine or its final parameter.
+                        signature_closed = true;
+                        last_declarant = None;
+                    }
+                } else {
+                    // Not a recognized declaration — discard pending leading
+                    pending_leading = None;
+                    last_declarant = None;
+                }
             }
 
             idx += 1;

@@ -935,11 +935,16 @@ fn is_hash_literal_start(input: &str) -> bool {
                 return true;
             }
         }
-        // :$var / :@var / :%var
-        if (r.starts_with('$') || r.starts_with('@') || r.starts_with('%'))
-            && crate::parser::stmt::ident_pub(&r[1..]).is_ok()
-        {
-            return true;
+        // :$var / :@var / :%var / :&var, including twigils such as
+        // :$!attr.  The full colon-pair parser accepts these forms; keep the
+        // brace classifier in step so a private-attribute autopair is parsed
+        // as a Hash rather than as an anonymous Block.
+        if r.starts_with('$') || r.starts_with('@') || r.starts_with('%') || r.starts_with('&') {
+            let after_sigil = &r[1..];
+            let after_twigil = after_sigil.strip_prefix('!').unwrap_or(after_sigil);
+            if crate::parser::stmt::ident_pub(after_twigil).is_ok() {
+                return true;
+            }
         }
         // :name or :name(expr) or :name[expr]
         //

@@ -34,161 +34,154 @@
   "dist": "LLM::Functions",
   "files": [
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Odd number of elements found where hash initializer expected: found 2 element(s); last element seen:",
-        "nok": 2,
-        "ok": 8,
-        "plan": null,
-        "secs": 2.55,
+        "nok": 0,
+        "ok": 14,
+        "plan": 14,
+        "secs": 1.18,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/01-LLM-configurations.rakutest",
       "raku": {
         "nok": 0,
         "ok": 14,
         "plan": 14,
-        "secs": 107.15,
+        "secs": 59.96,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "No such method 'clone' for invocant of type 'Slip'",
-        "nok": 9,
-        "ok": 4,
-        "plan": null,
-        "secs": 3.03,
+        "nok": 0,
+        "ok": 22,
+        "plan": 22,
+        "secs": 1.33,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/02-LLM-evaluators.rakutest",
       "raku": {
         "nok": 0,
         "ok": 22,
         "plan": 22,
-        "secs": 3.49,
+        "secs": 1.83,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "partial",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "not ok 3 -",
-        "nok": 1,
-        "ok": 4,
+        "nok": 0,
+        "ok": 5,
         "plan": 5,
-        "secs": 2.27,
+        "secs": 1.07,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "pass"
       },
       "path": "t/03-cloning.rakutest",
       "raku": {
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 3.55,
+        "secs": 1.42,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "partial",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "not ok 4 -",
-        "nok": 3,
-        "ok": 7,
+        "nok": 0,
+        "ok": 10,
         "plan": 10,
-        "secs": 2.68,
+        "secs": 1.12,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "pass"
       },
       "path": "t/04-LLM-chats.rakutest",
       "raku": {
         "nok": 0,
         "ok": 10,
         "plan": 10,
-        "secs": 4.06,
+        "secs": 1.61,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "partial",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Magician duel sub",
-        "nok": 1,
-        "ok": 1,
+        "nok": 0,
+        "ok": 2,
         "plan": 2,
-        "secs": 0.44,
+        "secs": 0.18,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "pass"
       },
       "path": "t/05-sub-info-extraction.rakutest",
       "raku": {
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 0.95,
+        "secs": 0.47,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "error\tNot enough required argument values are supplied.",
         "nok": 0,
-        "ok": 2,
-        "plan": null,
-        "secs": 0.63,
+        "ok": 4,
+        "plan": 4,
+        "secs": 0.3,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/06-LLM-tooling.rakutest",
       "raku": {
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 1.41,
+        "secs": 0.6,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "No such method 'append' for invocant of type 'Slip'",
         "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 2.3,
+        "ok": 3,
+        "plan": 3,
+        "secs": 1.1,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/07-LLM-functors-and-functions.rakutest",
       "raku": {
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 3.59,
+        "secs": 1.33,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -211,10 +204,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-19",
+    "date": "2026-09-20",
     "harness": 2,
-    "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "5d2e9a2",
+    "host": "linux-x86_64",
+    "mutsu_commit": "ed51cbb97",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -225,13 +218,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/L/LM/LLM_FUNCTIONS/6bf4cecdef73997cd656dd630b288669db917d79.tar.gz"
   },
-  "status": "red",
+  "status": "green",
   "totals": {
     "baseline_assertions": 60,
     "baseline_files": 7,
-    "mutsu_assertions": 26,
-    "parity_files": 0,
-    "regressed_files": 7
+    "mutsu_assertions": 60,
+    "parity_files": 7,
+    "regressed_files": 0
   },
   "version": "0.5.10"
 }

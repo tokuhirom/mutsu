@@ -310,6 +310,14 @@ pub(super) fn dispatch(
                 ValueView::Hash(map) => Some(Some(Ok(Value::hash_with_data(Value::hash_arc(
                     (**map).clone(),
                 ))))),
+                // A Seq clone is a new eager Seq with the same elements.  A
+                // Slip is likewise copied while retaining its itemization
+                // marker; both are first-class values even though their
+                // method surface is otherwise mostly provided by Mu.
+                ValueView::Seq(items) => Some(Some(Ok(Value::seq(items.to_vec())))),
+                ValueView::Slip(items) => Some(Some(Ok(
+                    Value::slip(items.to_vec()).with_slip_itemized(target.slip_is_itemized())
+                ))),
                 ValueView::Set(data, mutable) => Some(Some(Ok(Value::set_parts(
                     crate::gc::Gc::new((**data).clone()),
                     mutable,

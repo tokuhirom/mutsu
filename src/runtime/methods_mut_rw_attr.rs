@@ -244,6 +244,19 @@ impl Interpreter {
                 unsafe { crate::value::gc_contents_mut(&dst) }.adopt_state_from(&src);
                 true
             }
+            (ValueView::Array(dst, _), ValueView::Seq(_) | ValueView::Slip(_)) => {
+                let coerced = crate::runtime::utils::coerce_to_array(new_value.clone());
+                let ValueView::Array(src, _) = coerced.view() else {
+                    return false;
+                };
+                if crate::gc::Gc::ptr_eq(&dst, &src) {
+                    return true;
+                }
+                let _guard =
+                    crate::value::container_lock::ContainerStructGuard::acquire_for(None, existing);
+                unsafe { crate::value::gc_contents_mut(&dst) }.adopt_state_from(&src);
+                true
+            }
             (ValueView::Hash(dst), ValueView::Hash(src)) => {
                 if crate::gc::Gc::ptr_eq(&dst, &src) {
                     return true;
