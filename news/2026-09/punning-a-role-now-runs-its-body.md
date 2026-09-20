@@ -91,6 +91,21 @@ the values came back shuffled, disagreeing with both `%h.values` and the equival
 key slice, which were correct. The object's own key order is now carried through to the
 expansion.
 
+## Neighbours moved for free
+
+Re-measured by root cause (the records that consume the same role machinery), none of them
+worked on directly:
+
+| distribution | before | after |
+| --- | --- | --- |
+| `Map::Ordered` 0.0.9 | `red`, 4/18 assertions, same `Undeclared name: KV` | **`green`, 1/1 files, 18/18** |
+| `BSON::Simple` 0.1.2 | `partial`, 1/93 assertions | **`partial`, 1/2 files, 38/93** |
+| `Terminal::Tests` 0.0.3 | `red`, 0/1 | unchanged — blocked on an unrelated `Redeclaration of routine 'MAIN'` |
+
+`Map::Ordered` going green on its own is the evidence that these are general interpreter
+fixes rather than a distribution-shaped special case: it is a separate distribution with its
+own copy of the same idiom, and nothing in the change names either of them.
+
 ## Filed, not fixed
 
 Neither is needed by the distribution, and neither is a small fix:
