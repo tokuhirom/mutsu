@@ -77,10 +77,11 @@ impl Interpreter {
         // `lexical_amp_var_callable`): an imported CODE variable outlives its
         // `env` entry only in `module_scope_lexicals`, so `&f()` written in a
         // routine of the importing compunit needs it too, not just `f()`.
-        if val.is_nil() && !name.contains("::") {
-            if let Some(found) = self.module_scope_lexical(&format!("&{name}")).cloned() {
-                val = found.into_deref();
-            }
+        if val.is_nil()
+            && !name.contains("::")
+            && let Some(found) = self.module_scope_lexical(&format!("&{name}")).cloned()
+        {
+            val = found.into_deref();
         }
         // Compound control blocks execute inline and therefore do not install
         // `&?BLOCK` in the ordinary lexical environment. When the compiler has
