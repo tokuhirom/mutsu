@@ -711,22 +711,28 @@ impl Interpreter {
     /// anchor on `current_package` — which is GLOBAL while a method body runs,
     /// so the plain entry point declines for exactly the methods that need it.
     fn running_package_our_var(&self, name: &str) -> Option<Value> {
-        if crate::runtime::utils::has_double_colon(name) || name.is_empty() {
+        if name.is_empty() {
+            return None;
+        }
+        // Every question below is decided by TEXT the source fixed once: is
+        // the name qualified, is a package the no-package case, is it a
+        // routine-scope mangled name, and what is `<pkg>::<name>` spelled as.
+        // Building the candidate with `format!` per level made this function's
+        // caller 1.54% of a `JSON::Fast` decode with another 0.77% of the
+        // program in `format!` (#8899).
+        let name_sym = crate::symbol::Symbol::intern(name);
+        if crate::qualified::is_qualified(name_sym) {
             return None;
         }
         for candidate in self.running_package_candidates().into_iter().flatten() {
-            let mut pkg = candidate;
-            loop {
-                if !pkg.is_empty()
-                    && pkg != "GLOBAL"
-                    && !crate::runtime::utils::has_routine_scope_marker(pkg)
-                    && let Some(v) = self.get_our_var(&format!("{pkg}::{name}"))
+            let candidate_sym = crate::symbol::Symbol::intern(candidate);
+            for pkg in crate::qualified::package_ancestors(candidate_sym) {
+                if !crate::qualified::is_global_package(pkg)
+                    && !crate::qualified::is_routine_scoped_package(pkg)
+                    && let Some(v) =
+                        self.get_our_var(crate::qualified::qualified(pkg, name_sym).as_str())
                 {
                     return Some(v.clone());
-                }
-                match pkg.rsplit_once("::") {
-                    Some((parent, _)) => pkg = parent,
-                    None => break,
                 }
             }
         }

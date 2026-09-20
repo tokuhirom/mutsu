@@ -35,7 +35,8 @@
 //! - [`package_parent`] strips one trailing `::` segment, once per package.
 //! - [`package_ancestors`] walks that chain without allocating, which is the
 //!   shape every "try this name in each enclosing package" loop wants.
-//! - [`is_qualified`] and [`is_global_package`] classify a name once.
+//! - [`is_qualified`], [`is_routine_scoped_package`] and [`is_global_package`]
+//!   classify a name once.
 //!
 //! # The gate
 //!
@@ -119,31 +120,62 @@ impl Iterator for PackageAncestors {
     }
 }
 
-/// Whether `name` carries a `::` qualifier, decided once per symbol.
+/// Everything a symbol's TEXT decides, classified on first ask and kept in a
+/// flag table indexed by symbol id.
 ///
-/// Backed by a flag table indexed by symbol id rather than a map: ids are
-/// dense and assigned in order, so the table is a `Vec` push in the worst case
-/// and a bounds-checked byte read otherwise.
-pub(crate) fn is_qualified(name: Symbol) -> bool {
-    thread_local! {
-        // 0 = not yet classified, 1 = unqualified, 2 = qualified.
-        static FLAGS: std::cell::RefCell<Vec<u8>> = const { std::cell::RefCell::new(Vec::new()) };
-    }
-    let idx = name.id() as usize;
-    if let Some(flag) = FLAGS.with(|c| c.borrow().get(idx).copied())
-        && flag != 0
-    {
-        return flag == 2;
-    }
-    let qualified = name.as_str().contains("::");
-    FLAGS.with(|c| {
-        let mut flags = c.borrow_mut();
-        if flags.len() <= idx {
-            flags.resize(idx + 1, 0);
+/// A table rather than a map because ids are dense and assigned in order: a
+/// `Vec` push in the worst case, a bounds-checked byte read otherwise.
+mod flags {
+    use crate::symbol::Symbol;
+
+    pub(super) const CLASSIFIED: u8 = 1 << 0;
+    /// The name carries a `::` qualifier.
+    pub(super) const QUALIFIED: u8 = 1 << 1;
+    /// The "package" is a routine-scope mangled name (`Pkg::&sub/arity`),
+    /// which is not a package name at all and must not be walked as one.
+    pub(super) const ROUTINE_SCOPED: u8 = 1 << 2;
+
+    pub(super) fn of(sym: Symbol) -> u8 {
+        thread_local! {
+            static TABLE: std::cell::RefCell<Vec<u8>> = const { std::cell::RefCell::new(Vec::new()) };
         }
-        flags[idx] = if qualified { 2 } else { 1 };
-    });
-    qualified
+        let idx = sym.id() as usize;
+        if let Some(f) = TABLE.with(|c| c.borrow().get(idx).copied())
+            && f & CLASSIFIED != 0
+        {
+            return f;
+        }
+        let text = sym.as_str();
+        let mut f = CLASSIFIED;
+        if text.contains("::") {
+            f |= QUALIFIED;
+        }
+        if crate::runtime::utils::has_routine_scope_marker(text) {
+            f |= ROUTINE_SCOPED;
+        }
+        TABLE.with(|c| {
+            let mut table = c.borrow_mut();
+            if table.len() <= idx {
+                table.resize(idx + 1, 0);
+            }
+            table[idx] = f;
+        });
+        f
+    }
+}
+
+/// Whether `name` carries a `::` qualifier, decided once per symbol.
+pub(crate) fn is_qualified(name: Symbol) -> bool {
+    flags::of(name) & flags::QUALIFIED != 0
+}
+
+/// Whether `pkg` is a routine-scope mangled package name (`Pkg::&sub/arity`,
+/// used for nested subs) rather than a real package, decided once per symbol.
+///
+/// Such a name must not be walked as a package chain, which is why every site
+/// that reads `current_package` for a chain walk asks this too.
+pub(crate) fn is_routine_scoped_package(pkg: Symbol) -> bool {
+    flags::of(pkg) & flags::ROUTINE_SCOPED != 0
 }
 
 /// Whether `pkg` names no package at all — unset, or the default top-level
@@ -194,6 +226,20 @@ mod tests {
             assert_eq!(is_qualified(sym), name.contains("::"), "{name:?}");
             // Second call takes the memo, and must answer the same.
             assert_eq!(is_qualified(sym), name.contains("::"), "{name:?} memoized");
+        }
+    }
+
+    #[test]
+    fn a_routine_scope_mangled_package_is_not_a_package() {
+        for pkg in ["Foo::&bar/2", "::&x", "Foo::Bar", "Foo", "", "&bar"] {
+            let sym = Symbol::intern(pkg);
+            let want = crate::runtime::utils::has_routine_scope_marker(pkg);
+            assert_eq!(is_routine_scoped_package(sym), want, "{pkg:?}");
+            // Second call takes the memo, and must answer the same.
+            assert_eq!(is_routine_scoped_package(sym), want, "{pkg:?} memoized");
+            // The two classifications share one table entry and must not
+            // overwrite each other.
+            assert_eq!(is_qualified(sym), pkg.contains("::"), "{pkg:?} qualified");
         }
     }
 
