@@ -111,9 +111,6 @@ impl Interpreter {
                     .filter(|pd| pd.traits.iter().any(|t| t == "rw" || t == "raw"));
                 let mut i = 0usize;
                 while i < list_items.len() {
-                    if arity > 1 && i + arity > list_items.len() {
-                        return Err(RuntimeError::new("Not enough elements for map block arity"));
-                    }
                     let value = if rw_param.is_some() {
                         let cell = crate::gc::Gc::new(crate::value::ContainerCell::new(
                             list_items[i].clone(),
@@ -127,10 +124,19 @@ impl Interpreter {
                         wrote_back.set(true);
                         res.deref_container()
                     } else {
+                        // A short final chunk (fewer than `arity` elements
+                        // remain) is not an error here — an optional trailing
+                        // parameter (`-> $a, $b? {...}`) binds its missing
+                        // slot to the default/`Any` via the normal call
+                        // machinery below, the same way the List sibling's
+                        // batch loop (`eval_map_over_items`) already handles
+                        // it. A block whose trailing params are all mandatory
+                        // still raises "Too few positionals" from that same
+                        // call, matching raku.
                         let chunk: Vec<Value> = if arity == 1 {
                             vec![list_items[i].clone()]
                         } else {
-                            list_items[i..i + arity].to_vec()
+                            list_items[i..(i + arity).min(list_items.len())].to_vec()
                         };
                         self.env.remove(topic_key);
                         let v =
