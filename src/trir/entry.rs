@@ -374,7 +374,11 @@ impl Interpreter {
     ) -> Result<Value, RuntimeError> {
         let mut args = Vec::with_capacity(site.arg_slots.len());
         for &slot in &site.arg_slots {
-            let value = self.locals.get(slot as usize).cloned().unwrap_or(Value::NIL);
+            let value = self
+                .locals
+                .get(slot as usize)
+                .cloned()
+                .unwrap_or(Value::NIL);
             let sym = caller_code
                 .locals_sym
                 .get(slot as usize)
@@ -422,15 +426,7 @@ pub(crate) fn compile_routine(
     routines: Option<&crate::trir::compile::TrirRoutineMap>,
     fns: Option<&CompiledFns>,
 ) -> Option<std::sync::Arc<TrChunk>> {
-    let chunk = TrirCompiler::compile(
-        name,
-        param_defs,
-        params,
-        return_type,
-        body,
-        routines,
-        fns,
-    );
+    let chunk = TrirCompiler::compile(name, param_defs, params, return_type, body, routines, fns);
     if dump_enabled() {
         match &chunk {
             Some(c) => eprintln!(

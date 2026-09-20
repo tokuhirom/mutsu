@@ -304,6 +304,21 @@ impl Interpreter {
                     let v = self.stack.pop().unwrap_or(Value::NIL);
                     self.trir.os.push(v);
                 }
+                TrOp::DupObj => {
+                    let v = self.trir.os.last().cloned().unwrap_or(Value::NIL);
+                    self.trir.os.push(v);
+                }
+                TrOp::TruthyDefined => {
+                    // The same test the untyped `JumpIfNotNil` arm makes.
+                    let v = self.opop();
+                    let defined = self.value_is_defined_dispatch(&v);
+                    self.trir.ns.push(defined as i64);
+                }
+                TrOp::NewHash => self
+                    .trir
+                    .os
+                    .push(Value::hash(crate::value::ValueMap::default())),
+                TrOp::NewArray => self.trir.os.push(Value::array(Vec::new())),
                 TrOp::TruthyObj => {
                     let v = self.opop();
                     let t = self.eval_truthy(&v);

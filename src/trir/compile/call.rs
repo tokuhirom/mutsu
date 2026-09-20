@@ -40,7 +40,11 @@ impl TrirCompiler<'_> {
                 Some(ps) => ps.get(i).map(|p| p.is_rw).unwrap_or(false),
                 None => true,
             };
-            plan.push(self.compile_call_arg(a, wants_ref, params.as_deref().and_then(|p| p.get(i).map(|p| p.kind)))?);
+            plan.push(self.compile_call_arg(
+                a,
+                wants_ref,
+                params.as_deref().and_then(|p| p.get(i).map(|p| p.kind)),
+            )?);
         }
         let (kind, site_callee, sym) = match callee {
             Some((key, fingerprint, _)) => (

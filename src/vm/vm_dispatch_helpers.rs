@@ -571,7 +571,7 @@ impl Interpreter {
     /// dispatch, so the hot path is unaffected.
     ///
     /// [`value_is_defined`]: crate::runtime::types::value_is_defined
-    pub(super) fn value_is_defined_dispatch(&mut self, val: &Value) -> bool {
+    pub(crate) fn value_is_defined_dispatch(&mut self, val: &Value) -> bool {
         let has_override = match val.view() {
             ValueView::Mixin(..) => self.mixin_role_has_method(val, "defined"),
             ValueView::Instance { class_name, .. } => {

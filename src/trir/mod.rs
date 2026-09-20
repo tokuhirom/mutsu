@@ -39,10 +39,10 @@ use crate::value::Value;
 
 pub(crate) mod compile;
 pub(crate) mod entry;
-pub(crate) mod frame;
-pub(crate) mod outers;
 pub(crate) mod exec;
 pub(crate) mod exec_call;
+pub(crate) mod frame;
+pub(crate) mod outers;
 // `#[path]`-spelled so `scripts/check-panic-surface.py` recognizes the whole
 // file as test scaffolding (see its doc comment) rather than charging its
 // assertions to the production budget.
@@ -209,6 +209,18 @@ pub(crate) enum TrOp {
     /// Pop two boxed values and push `$a ~ $b`, through the interpreter's own
     /// `Concat` — which is where a user `infix:<~>` override is honoured.
     ConcatBin,
+    /// Duplicate the top of the boxed bank.
+    DupObj,
+    /// Pop a boxed value and push 1 when it is DEFINED — `nqp::ifnull`'s
+    /// test, which mutsu answers as "not undefined" because it has no
+    /// VM-level null distinct from an undefined Raku value (the untyped
+    /// `JumpIfNotNil` arm says the same).
+    TruthyDefined,
+    /// Push a FRESH empty `Hash`. A constant would be shared by every
+    /// invocation, and `my %result;` declares a new container each time.
+    NewHash,
+    /// Push a fresh empty `Array`, for the same reason.
+    NewArray,
     /// Pop a boxed value and push its truth as an int-bank 0/1, through the
     /// interpreter's own `eval_truthy` — so a `.Bool` override, a `Failure`
     /// being marked handled, and every other rule behave exactly as they do

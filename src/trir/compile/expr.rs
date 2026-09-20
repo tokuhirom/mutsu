@@ -51,6 +51,10 @@ impl TrirCompiler<'_> {
                 Some(TrKind::Obj)
             }
             Expr::Var(name) => self.compile_var(name),
+            // `%result` / `@result`: the same slot the declaration made,
+            // keyed by the sigiled name.
+            Expr::HashVar(n) => self.compile_sigiled_var('%', n),
+            Expr::ArrayVar(n) => self.compile_sigiled_var('@', n),
             // `"at $pos: ..."` — the pieces, concatenated. Every `die` helper
             // in a hand-written scanner is one of these, and refusing them
             // would refuse the routine that raises the error.
@@ -138,6 +142,17 @@ impl TrirCompiler<'_> {
             }
             _ => None,
         }
+    }
+
+    /// A `%`/`@`-sigiled read of one of this frame's own containers.
+    fn compile_sigiled_var(&mut self, sigil: char, bare: &str) -> Option<TrKind> {
+        let key = format!("{sigil}{bare}");
+        let Some(Binding { slot, kind }) = self.binding_of(&key) else {
+            self.note_decline(|| format!("container {key} is not this frame's"));
+            return None;
+        };
+        self.load(slot, kind);
+        Some(kind)
     }
 
     fn compile_var(&mut self, name: &str) -> Option<TrKind> {
@@ -240,13 +255,15 @@ impl TrirCompiler<'_> {
         self.ops.push(TrOp::Jump(0));
         let else_at = self.ops.len() as u32;
         let ek = self.compile_expr(e)?;
-        if tk != ek {
-            // Both arms must leave the same kind on the same bank; boxing the
-            // `then` arm would have to happen before its jump, which is
-            // declined rather than patched after the fact.
-            self.note_decline(|| format!("ternary arms of different kinds ({tk:?}/{ek:?})"));
-            return None;
-        }
+        let unified = self.unify_arms(tk, ek, jump_end_at)?;
+        // `unify_arms` may have inserted a box before the `then` arm's jump,
+        // which moves everything at or past it — including that jump.
+        let jump_end_at = if tk == ek {
+            jump_end_at
+        } else {
+            jump_end_at + 1
+        };
+        let else_at = if tk == ek { else_at } else { else_at + 1 };
         let end = self.ops.len() as u32;
         match &mut self.ops[branch_at] {
             TrOp::JumpIfFalseI(x) => *x = else_at,
@@ -256,7 +273,7 @@ impl TrirCompiler<'_> {
             TrOp::Jump(x) => *x = end,
             _ => return None,
         }
-        Some(tk)
+        Some(unified)
     }
 
     /// Unbox a value an `nqp::` op just produced, where `iarg` coercion IS
@@ -417,6 +434,26 @@ impl TrirCompiler<'_> {
             "nqp::if" | "nqp::unless" if args.len() == 2 || args.len() == 3 => {
                 self.compile_nqp_if(name == "nqp::if", args)
             }
+            // `nqp::ifnull(a, b)` is lazy in `b`: rakudo's idiom installs a
+            // fresh store only when there is none, and evaluating both arms
+            // would install one over a live store.
+            "nqp::ifnull" if args.len() == 2 => {
+                let ak = self.compile_expr(&args[0])?;
+                self.coerce(ak, TrKind::Obj)?;
+                self.ops.push(TrOp::DupObj);
+                self.ops.push(TrOp::TruthyDefined);
+                let keep_at = self.ops.len();
+                self.ops.push(TrOp::JumpIfTrueI(0));
+                self.ops.push(TrOp::PopObj);
+                let bk = self.compile_expr(&args[1])?;
+                self.coerce(bk, TrKind::Obj)?;
+                let end = self.ops.len() as u32;
+                match &mut self.ops[keep_at] {
+                    TrOp::JumpIfTrueI(x) => *x = end,
+                    _ => return None,
+                }
+                Some(TrKind::Obj)
+            }
             _ => {
                 if name.starts_with("nqp::") {
                     return self.compile_nqp_value_op(name, args);
@@ -491,12 +528,10 @@ impl TrirCompiler<'_> {
         // Both arms must leave the same kind on the same bank. A mismatch
         // would need the `then` arm boxed BEFORE its jump, which Stage 1
         // declines rather than patching after the fact.
-        if then_kind != else_kind {
-            self.note_decline(|| {
-                format!("nqp::if arms of different kinds ({then_kind:?}/{else_kind:?})")
-            });
-            return None;
-        }
+        let unified = self.unify_arms(then_kind, else_kind, jump_end_at)?;
+        let shifted = (then_kind != else_kind) as usize;
+        let jump_end_at = jump_end_at + shifted;
+        let else_at = else_at + shifted as u32;
         let end = self.ops.len() as u32;
         match &mut self.ops[branch_at] {
             TrOp::JumpIfFalseI(t) | TrOp::JumpIfTrueI(t) => *t = else_at,
@@ -506,7 +541,7 @@ impl TrirCompiler<'_> {
             TrOp::Jump(t) => *t = end,
             _ => return None,
         }
-        Some(then_kind)
+        Some(unified)
     }
 
     /// The `nqp::` VALUE ops TRIR lowers to typed instructions.

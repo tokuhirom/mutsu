@@ -9,7 +9,7 @@
 use std::collections::HashMap;
 
 use super::{TrChunk, TrKind, TrOp, TrOuter, TrParam};
-use crate::ast::{ParamDef, Stmt};
+use crate::ast::{Expr, ParamDef, Stmt};
 use crate::symbol::Symbol;
 use crate::value::Value;
 
@@ -462,11 +462,41 @@ impl<'a> TrirCompiler<'a> {
             || *is_dynamic
             || *is_export
             || where_constraint.is_some()
-            || name.starts_with(['@', '%', '&'])
+            || name.starts_with('&')
         {
             let n = name.clone();
             self.note_decline(|| format!("declaration shape {n}"));
             return None;
+        }
+        // `my %result;` / `my @result;` — a FRESH container per invocation,
+        // held in a boxed slot under its sigiled name. Only the empty form:
+        // an initializer would be a list/hash construction this does not
+        // compile.
+        if name.starts_with(['@', '%']) {
+            let empty = match expr {
+                Expr::Hash(entries) if entries.is_empty() => TrOp::NewHash,
+                Expr::Literal(v) => match v.view() {
+                    crate::value::ValueView::Array(items, _) if items.is_empty() => TrOp::NewArray,
+                    _ => {
+                        let n = name.clone();
+                        self.note_decline(|| format!("initialized container declaration {n}"));
+                        return None;
+                    }
+                },
+                _ => {
+                    let n = name.clone();
+                    self.note_decline(|| format!("initialized container declaration {n}"));
+                    return None;
+                }
+            };
+            self.ops.push(empty);
+            let slot = self.alloc(name, TrKind::Obj);
+            self.store(slot, TrKind::Obj);
+            if keep {
+                self.load(slot, TrKind::Obj);
+                return Some(Some(TrKind::Obj));
+            }
+            return Some(None);
         }
         // `__has_initializer` is the parser's own marker for `my T $x = ...`;
         // `__scalar_bind` marks `my $x := ...`, which binds rather than
@@ -500,6 +530,72 @@ impl<'a> TrirCompiler<'a> {
             return Some(Some(kind));
         }
         Some(None)
+    }
+
+    /// Insert `op` at `at`, keeping every jump target pointing at the same
+    /// instruction.
+    ///
+    /// Needed by the two branch forms: a `then` arm whose kind differs from
+    /// the `else` arm's has to be boxed BEFORE its jump to the join, and by
+    /// then the arm is already emitted. Targets are absolute indices, so
+    /// everything at or past the insertion point moves by one.
+    pub(super) fn insert_op(&mut self, at: usize, op: TrOp) {
+        self.ops.insert(at, op);
+        let at = at as u32;
+        for o in &mut self.ops {
+            match o {
+                TrOp::Jump(t)
+                | TrOp::JumpIfFalseI(t)
+                | TrOp::JumpIfTrueI(t)
+                | TrOp::JumpIfFalseKeepI(t)
+                | TrOp::JumpIfTrueKeepI(t) => {
+                    if *t >= at {
+                        *t += 1;
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    /// Reconcile two branch arms that left different kinds, answering the
+    /// common kind. `then_end` is where the `then` arm's jump to the join
+    /// sits, so a box for that arm goes immediately before it.
+    pub(super) fn unify_arms(
+        &mut self,
+        then_kind: TrKind,
+        else_kind: TrKind,
+        then_end: usize,
+    ) -> Option<TrKind> {
+        if then_kind == else_kind {
+            return Some(then_kind);
+        }
+        // Box whichever arm is native. An `int`/`num` pair is not unified:
+        // widening one side would change which arithmetic the consumer does.
+        match (then_kind, else_kind) {
+            (TrKind::Int, TrKind::Obj) => {
+                self.insert_op(then_end, TrOp::BoxI);
+                Some(TrKind::Obj)
+            }
+            (TrKind::Num, TrKind::Obj) => {
+                self.insert_op(then_end, TrOp::BoxN);
+                Some(TrKind::Obj)
+            }
+            (TrKind::Obj, TrKind::Int) => {
+                self.ops.push(TrOp::BoxI);
+                Some(TrKind::Obj)
+            }
+            (TrKind::Obj, TrKind::Num) => {
+                self.ops.push(TrOp::BoxN);
+                Some(TrKind::Obj)
+            }
+            _ => {
+                self.note_decline(|| {
+                    format!("branch arms of different native kinds ({then_kind:?}/{else_kind:?})")
+                });
+                None
+            }
+        }
     }
 
     pub(super) fn drop_top(&mut self, kind: TrKind) {

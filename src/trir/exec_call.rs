@@ -147,7 +147,9 @@ impl Interpreter {
                     let r = self.trir.nl[nbase + *s as usize] as usize;
                     Value::int(self.trir.nl[r]).into_container_ref()
                 }
-                TrArg::Obj(s) => self.trir.ol[obase + *s as usize].clone().into_container_ref(),
+                TrArg::Obj(s) => self.trir.ol[obase + *s as usize]
+                    .clone()
+                    .into_container_ref(),
             };
         }
         let name = call.name.resolve();

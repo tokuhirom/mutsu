@@ -12,8 +12,8 @@
 //! A body that calls out can, so `has_calls` chunks re-read after every call
 //! instead (see `TrChunk::has_calls`).
 
-use super::frame::TrFrame;
 use super::TrChunk;
+use super::frame::TrFrame;
 use crate::runtime::Interpreter;
 use crate::symbol::Symbol;
 use crate::value::Value;
