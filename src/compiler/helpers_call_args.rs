@@ -122,20 +122,22 @@ impl Compiler {
     /// the same kind of storage location a `$`-sigiled one does, but the parser
     /// gives it `Expr::BareWord` rather than `Expr::Var` — a bareword is also
     /// how a type name, an enum value and a listop-less call are spelled, so it
-    /// is only a container reference when it actually resolves to a local slot
-    /// of the frame being compiled. That is exactly what `local_map` records, so
-    /// consult it rather than guessing from the spelling.
+    /// is only a container reference when it actually names a sigilless binding
+    /// visible to the frame being compiled. The compiler's local and enclosing
+    /// sigilless sets record that distinction, so consult them rather than
+    /// guessing from the spelling.
     ///
     /// Deliberately NOT folded into `scalar_container_alias_name`: that is an
-    /// associated function, and only the `local_map` probe here can tell a
-    /// sigilless *variable* from the type name / enum value / listop-less call a
-    /// bareword otherwise spells.
+    /// associated function, and only the sigilless-binding probes here can tell
+    /// a sigilless *variable* from the type name / enum value / listop-less call
+    /// a bareword otherwise spells.
     pub(super) fn sigilless_local_container_name(&self, arg: &Expr) -> Option<String> {
         let Expr::BareWord(name) = arg else {
             return None;
         };
-        (Self::is_plain_lexical_name(name) && self.local_map.contains_key(name))
-            .then(|| name.clone())
+        (Self::is_plain_lexical_name(name)
+            && (self.sigilless_locals.contains(name) || self.enclosing_sigilless.contains(name)))
+        .then(|| name.clone())
     }
 
     /// Deliberately narrow. `@`/`%`/`&`-sigiled names, twigils, attributes and
