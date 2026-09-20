@@ -77,7 +77,14 @@ impl Interpreter {
                 let source_name = source_name.resolve();
                 let inner = inner.clone();
                 let slot_hint = val.varref_slot();
-                elems.push(self.capture_var_cell_inner(code, &source_name, inner, true, slot_hint));
+                let cell = self.capture_var_cell_inner(code, &source_name, inner, true, slot_hint);
+                // List aliasing promotes the scalar's storage into the cell
+                // that the loop will write through. Carry the scalar's
+                // declared constraint onto that promoted cell; other callers
+                // of `capture_var_cell_inner` (notably raw lvalue returns)
+                // have different mutability semantics and must not inherit it.
+                self.register_container_cell_constraint_for_name(&cell, &source_name);
+                elems.push(cell);
                 continue;
             }
             // A hash/array-element read reaches here as a live `ContainerRef` cell

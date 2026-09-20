@@ -261,9 +261,20 @@ impl Compiler {
         // single-element wrap (`for $a` -> `ArrayLiteral([$a])`) must NOT also
         // box `$a` into an aliasing `ContainerRef` cell -- doing so would write
         // that shared cell back into `$a` and create a self-referential cycle
-        // (infinite loop on the next read).
+        // (infinite loop on the next read). Explicit lists still need their
+        // normal scalar-container aliasing: `for $a, 1 -> \x, $value` binds
+        // `\x` to `$a`'s container, so a typed `$a` rejects an out-of-range
+        // assignment just as it does outside the loop.
+        let synthetic_scalar_wrap = matches!(
+            iterable,
+            Expr::Var(name) if self.scalar_var_is_item_container(name)
+        ) || matches!(
+            iterable,
+            Expr::Grouped(inner)
+                if matches!(inner.as_ref(), Expr::Var(name) if self.scalar_var_is_item_container(name))
+        );
         let saved_suppress = self.suppress_list_var_alias;
-        self.suppress_list_var_alias = true;
+        self.suppress_list_var_alias = saved_suppress || synthetic_scalar_wrap;
         self.compile_expr(&normalized_iterable);
         self.suppress_list_var_alias = saved_suppress;
         if let Some(source_name) = Self::for_iterable_source_name(iterable) {
