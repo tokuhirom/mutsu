@@ -1136,7 +1136,7 @@ mod helpers_placeholder_binds;
 mod helpers_stmt_analysis;
 mod helpers_sub_body;
 pub(crate) mod lex_scope;
-mod nqp_forms;
+pub(crate) mod nqp_forms;
 mod stmt;
 mod trir_call;
 

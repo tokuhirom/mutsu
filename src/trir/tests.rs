@@ -37,6 +37,8 @@ fn first_sub_chunk(stmts: &[Stmt]) -> Option<Option<TrChunk>> {
                     params,
                     return_type.as_deref(),
                     body,
+                    None,
+                    None,
                 ));
             }
             Stmt::ClassDecl { body, .. } => {
@@ -60,6 +62,10 @@ fn first_sub_chunk(stmts: &[Stmt]) -> Option<Option<TrChunk>> {
 fn sketch(op: &TrOp) -> String {
     match op {
         TrOp::LoadI(n) => format!("LoadI({n})"),
+        TrOp::GetRefI(n) => format!("GetRefI({n})"),
+        TrOp::IncRefIVoid(n) => format!("IncRefIVoid({n})"),
+        TrOp::CallTr(n) => format!("CallTr({n})"),
+        TrOp::CallGen(n) => format!("CallGen({n})"),
         TrOp::ConstI(v) => format!("ConstI({v})"),
         TrOp::IncIVoid(n) => format!("IncIVoid({n})"),
         TrOp::OrdAtLocal(n) => format!("OrdAtLocal({n})"),
@@ -89,11 +95,14 @@ fn nom_ws_compiles_to_the_typed_scanner_loop() {
     assert_eq!(
         ops,
         vec![
-            "LoadI(0)",
+            // `$pos` is `is rw`, so it is a REFERENCE to the caller's slot
+            // (ADR-0110 §3.3's `getlexref_i`) and every read and increment of
+            // it goes through that reference.
+            "GetRefI(0)",
             "OrdAtLocal(0)",
             "AtPosIOuter(0)",
             "JumpIfFalseI(6)",
-            "IncIVoid(0)",
+            "IncRefIVoid(0)",
             "Jump(0)",
             "ConstObj(0)",
             "PopObj",
@@ -130,10 +139,6 @@ fn native_arithmetic_uses_typed_ops() {
 #[test]
 fn unprovable_shapes_decline() {
     let cases: &[(&str, &str)] = &[
-        (
-            "a call the compiler has not resolved",
-            "my sub f(int $a) { g($a) }",
-        ),
         (
             "a boxed nominal type needs the general binder's check",
             "my sub f(Int $a) { nqp::add_i($a, 1) }",
@@ -191,6 +196,23 @@ fn unprovable_shapes_decline() {
     for (why, src) in cases {
         assert!(chunk_of(src).is_none(), "must decline ({why}): {src}");
     }
+}
+
+/// A call the compiler did not resolve is not a decline: it compiles to the
+/// generic form, which is what keeps a routine whose hot loop is typed from
+/// being refused for the cold `die` helper it ends in (ADR-0110 Stage 2).
+#[test]
+fn an_unresolved_callee_compiles_to_the_generic_call() {
+    let chunk = chunk_of("my sub f(int $a) { g($a) }")
+        .expect("a call to an unknown routine must still be admitted");
+    let ops: Vec<String> = chunk.ops.iter().map(sketch).collect();
+    assert_eq!(ops, vec!["CallGen(0)", "ReturnObj"]);
+    assert!(chunk.has_calls);
+    assert_eq!(chunk.calls.len(), 1);
+    assert!(matches!(
+        chunk.calls[0].callee,
+        crate::trir::TrCallee::Generic
+    ));
 }
 
 #[test]

@@ -221,7 +221,7 @@ impl Interpreter {
         self.stack.push(out);
     }
 
-    pub(super) fn exec_concat_op(&mut self) -> Result<(), RuntimeError> {
+    pub(crate) fn exec_concat_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
         // Thread over junctions — concat uses left-first threading

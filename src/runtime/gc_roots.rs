@@ -64,6 +64,15 @@ impl Interpreter {
         // Every frame's slots, not just the executing window (ADR-0077):
         // suspended callers below `base` hold live values too.
         visit_slice(visitor, self.locals.all_slots());
+        // The TRIR frame stacks' boxed halves (ADR-0110). Their native halves
+        // hold raw words and no references, so the collector never sees them;
+        // the boxed slots, operand stack, resolved free variables and the
+        // codepoint memo's strings are reachable ONLY from here while a TRIR
+        // body is running, and a generic call inside one can reach a
+        // safepoint.
+        for v in self.trir.boxed_slots() {
+            visitor.visit_value(v);
+        }
         for v in &self.upvalues {
             visit_opt(visitor, v);
         }

@@ -734,7 +734,7 @@ impl Interpreter {
                             && cl.is_none()
                         {
                             let start = self.stack.len() - arity_usize;
-                            if let Some(result) = self.try_call_trir(cf, start, Some(code)) {
+                            if let Some(result) = self.try_call_trir(cf, start, Some(code), compiled_fns) {
                                 self.stack.push(result?);
                                 self.drain_and_reconcile_after_cached_call(code);
                                 return Ok(());

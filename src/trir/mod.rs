@@ -39,7 +39,10 @@ use crate::value::Value;
 
 pub(crate) mod compile;
 pub(crate) mod entry;
+pub(crate) mod frame;
+pub(crate) mod outers;
 pub(crate) mod exec;
+pub(crate) mod exec_call;
 // `#[path]`-spelled so `scripts/check-panic-surface.py` recognizes the whole
 // file as test scaffolding (see its doc comment) rather than charging its
 // assertions to the production budget.
@@ -135,6 +138,12 @@ pub(crate) enum TrOp {
     JumpIfFalseI(u32),
     /// Pop the int bank; jump when the value is non-zero.
     JumpIfTrueI(u32),
+    /// PEEK the int bank; jump when the value is 0, leaving it in place.
+    /// `a && b` yields an operand rather than a boolean, so the
+    /// short-circuited result is the value already on the bank.
+    JumpIfFalseKeepI(u32),
+    /// PEEK the int bank; jump when the value is non-zero, leaving it.
+    JumpIfTrueKeepI(u32),
 
     // ---- boxed bank ----
     /// Push constant `TrChunk::constants[i]`.
@@ -157,6 +166,14 @@ pub(crate) enum TrOp {
     /// Push the cached value of pre-resolved outer lexical `n`
     /// ([`TrChunk::outers`]).
     LoadOuter(u16),
+    /// Push the value a BAREWORD names — a type object (`Map`, `NFD`), a
+    /// constant, a package. Resolved by name through the ordinary machinery:
+    /// these appear as arguments to `nqp::getattr`/`istype`/`create`, which
+    /// is a cold-ish position, and resolving one is not what the untyped
+    /// path's per-opcode cost was.
+    LoadBareWord(u32),
+    /// Push the value of a dynamic variable (`$*ALLOW-JSONC`), or `Nil`.
+    LoadDynamic(u32),
 
     // ---- fused, operand-direct forms ----
     //
@@ -184,6 +201,64 @@ pub(crate) enum TrOp {
     AtPosI,
     /// Pop a boxed string; push its length in codepoints.
     CharsS,
+    /// Pop `n` boxed values and push their concatenation — the lowering of
+    /// `"a $b c"`. Runs the interpreter's own `StringConcat`, so a `.Str`
+    /// override, a `Proxy` operand and the writeback reconcile behave
+    /// identically to the untyped path.
+    ConcatN(u16),
+    /// Pop two boxed values and push `$a ~ $b`, through the interpreter's own
+    /// `Concat` — which is where a user `infix:<~>` override is honoured.
+    ConcatBin,
+    /// Pop a boxed value and push its truth as an int-bank 0/1, through the
+    /// interpreter's own `eval_truthy` — so a `.Bool` override, a `Failure`
+    /// being marked handled, and every other rule behave exactly as they do
+    /// under `JumpIfFalse`.
+    TruthyObj,
+
+    // ---- `is rw` native parameters (ADR-0110 §3.3's `getlexref_i`) ----
+    //
+    // The slot holds the ABSOLUTE index of the native slot it aliases, so a
+    // write lands in the frame that owns the variable — including when this
+    // routine passes the parameter on to another.
+    /// Push the value the reference in slot `n` names.
+    GetRefI(u16),
+    /// Pop and store through the reference in slot `n`.
+    SetRefI(u16),
+    /// `++` through the reference in slot `n`, pushing the new value.
+    IncRefI(u16),
+    /// `++` through the reference in slot `n`, result discarded.
+    IncRefIVoid(u16),
+    /// `--` through the reference in slot `n`, pushing the new value.
+    DecRefI(u16),
+    /// `--` through the reference in slot `n`, result discarded.
+    DecRefIVoid(u16),
+
+    /// Dispatch an `nqp::` op TRIR has no typed form for: pop `arity` boxed
+    /// operands, run the ordinary implementation, push the boxed result.
+    ///
+    /// One opcode covers the whole `nqp::` namespace, which is what makes a
+    /// routine written in it compile at all. The typed forms above exist for
+    /// the handful that a scanner's inner loop actually executes; everything
+    /// else is correct here at the cost of boxing, and boxing is not what the
+    /// ~211 ns per opcode was.
+    NqpOpGen {
+        id: u16,
+        arity: u8,
+    },
+
+    // ---- calls ----
+    /// Call another TRIR routine, resolved at compile time. `site` indexes
+    /// [`TrChunk::calls`].
+    CallTr(u32),
+    /// Call a routine TRIR did not resolve — a cold error helper, a routine
+    /// in another compunit, anything. The arguments are boxed and handed to
+    /// the ordinary dispatch, and the result comes back boxed.
+    ///
+    /// This is what keeps eligibility from collapsing on cold paths: a
+    /// scanner routine whose hot loop is typed usually ends in a `die` helper
+    /// that is arbitrary Raku, and refusing the whole routine for it would
+    /// leave the hot loop untyped too.
+    CallGen(u32),
 
     // ---- exits ----
     /// Return the top of the int bank, boxed.
@@ -194,6 +269,50 @@ pub(crate) enum TrOp {
     ReturnObj,
     /// Return `Nil`.
     ReturnNil,
+}
+
+/// How one argument of a call inside a TRIR body is supplied.
+///
+/// The distinction that matters is whether the argument NAMES A VARIABLE the
+/// callee might write (through an `is rw` parameter) or is merely a computed
+/// value. For a resolved TRIR callee the signature settles it at compile
+/// time; for a generic one it cannot, so a named variable is passed as a
+/// container and read back — the ordinary path's `WrapVarRef` reduced to what
+/// TRIR's own slots can express.
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum TrArg {
+    /// Already evaluated onto the operand stack of this kind's bank.
+    Value(TrKind),
+    /// This frame's native slot.
+    Native(u16),
+    /// This frame's boxed slot.
+    Obj(u16),
+    /// A native reference this frame already holds — its own `is rw`
+    /// parameter, handed on.
+    Ref(u16),
+}
+
+/// Who a call inside a TRIR body reaches.
+#[derive(Debug, Clone)]
+pub(crate) enum TrCallee {
+    /// Another TRIR routine, resolved at compile time exactly as a
+    /// [`TrCallSite`] resolves one.
+    Trir { key: Symbol, fingerprint: u64 },
+    /// Anything else, dispatched by name through the ordinary machinery.
+    Generic,
+}
+
+/// One call inside a TRIR body.
+#[derive(Debug, Clone)]
+pub(crate) struct TrInnerCall {
+    pub(crate) callee: TrCallee,
+    /// The callee's name — the dispatch key for a generic call, and the
+    /// wrapper-table probe for a resolved one.
+    pub(crate) name: Symbol,
+    /// The arguments, in signature order.
+    pub(crate) args: Vec<TrArg>,
+    /// The kind the call leaves on a bank.
+    pub(crate) result: TrKind,
 }
 
 /// One pre-resolved outer lexical (ADR-0110 §3.1).
@@ -272,6 +391,13 @@ pub(crate) struct TrChunk {
     pub(crate) outers: Vec<TrOuter>,
     /// The routine's name, for error messages.
     pub(crate) name: Symbol,
+    /// The calls this body makes, indexed by `CallTr`/`CallGen`.
+    pub(crate) calls: Vec<TrInnerCall>,
+    /// True when the body contains any call at all. A body that makes none
+    /// cannot observe a free variable changing under it, which is what lets
+    /// its free variables be read once at entry instead of re-read after
+    /// every call.
+    pub(crate) has_calls: bool,
 }
 
 /// The next chunk identity. Wrapping is unreachable in practice (a program

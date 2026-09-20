@@ -3757,10 +3757,11 @@ pub struct Interpreter {
     // former `VM` struct). The Interpreter IS the bytecode VM now. ===
     pub(crate) stack: Vec<Value>,
     pub(crate) locals: Locals,
-    /// Pooled TRIR frame buffers (ADR-0110). A TRIR invocation needs five
-    /// vectors; allocating them per call cost more than the body it was
-    /// opening a frame for, so one set is kept here and handed round.
-    pub(crate) trir_scratch: Option<Box<crate::trir::exec::TrScratch>>,
+    /// Every live TRIR frame's slots and operand stacks (ADR-0110). One
+    /// contiguous region per bank, like `Locals`: a call extends it, a return
+    /// truncates it, and an `is rw` native parameter is an index into it.
+    /// Its boxed halves are GC roots (`gc_roots.rs`).
+    pub(crate) trir: crate::trir::frame::TrStacks,
     /// ADR-0110 §3.1: each TRIR chunk's free variables, resolved once and
     /// kept as the `unit_lexicals` CELLS they live in — so a write from
     /// anywhere is seen without re-resolving. Keyed by the chunk's address
