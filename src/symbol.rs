@@ -1100,18 +1100,42 @@ mod tests {
             "<flags_probe_named>",
         ] {
             let sym = Symbol::intern(name);
+            // `EVER_ENV_KEY` is the one bit in the word that is NOT a property
+            // of the string -- it is a runtime latch (`mark_env_key`) -- so it
+            // is masked out here rather than expected from `compute_flags`.
+            // A name this test uses may well have been stored in an env by an
+            // earlier test in the same process.
+            let derived = |f: u16| f & !flags::EVER_ENV_KEY;
             assert_eq!(
-                sym.flags(),
+                derived(sym.flags()),
                 compute_flags(name),
                 "memoized flags disagree for {name:?}"
             );
             // A second ask must serve the memo, not recompute a different word.
             assert_eq!(
-                sym.flags(),
+                derived(sym.flags()),
                 compute_flags(name),
                 "flags for {name:?} drifted"
             );
         }
+    }
+
+    /// The latch must survive a `flags()` call, including the cold path that
+    /// recomputes and plain-`store`s the word -- the one write that could
+    /// clobber it. `mark_env_key` forecloses that by asking for `flags()`
+    /// first, and this pins the result.
+    #[test]
+    fn the_env_key_latch_survives_a_later_flags_computation() {
+        let sym = Symbol::intern("$env_key_latch_survives_flags");
+        assert!(!maybe_env_key(sym));
+        mark_env_key(sym);
+        assert!(maybe_env_key(sym));
+        // Every string-derived bit still answers what a fresh scan would.
+        assert_eq!(
+            sym.flags() & !flags::EVER_ENV_KEY,
+            compute_flags("$env_key_latch_survives_flags")
+        );
+        assert!(maybe_env_key(sym), "asking for flags must not clear it");
     }
 
     #[test]
