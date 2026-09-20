@@ -404,6 +404,32 @@ impl Interpreter {
         code: &CompiledCode,
         idx: usize,
     ) -> bool {
+        self.set_local_scalar_fast_metadata_clear_except_type(code, idx)
+            && !Self::slot_type_constraint_possible(code, idx)
+    }
+
+    /// Whether a type constraint could ever have been registered for this
+    /// slot's name — the one term of the list below that
+    /// [`Self::exec_set_local_scalar_fast`] answers for itself, because it can
+    /// look at the incoming value and prove the typed branch is the identity
+    /// for it (see [`Self::native_typed_store_is_identity`]). Every other
+    /// caller wants the term included, which is what
+    /// [`Self::set_local_scalar_fast_metadata_clear`] above is.
+    #[inline]
+    fn slot_type_constraint_possible(code: &CompiledCode, idx: usize) -> bool {
+        match code.locals_sym.get(idx).copied() {
+            Some(sym) => Self::env_type_constraint_seen_for(sym),
+            None => Self::env_type_constraint_seen(),
+        }
+    }
+
+    /// [`Self::set_local_scalar_fast_metadata_clear`] minus the typed-lexical
+    /// term. See [`Self::slot_type_constraint_possible`].
+    pub(super) fn set_local_scalar_fast_metadata_clear_except_type(
+        &self,
+        code: &CompiledCode,
+        idx: usize,
+    ) -> bool {
         // The slot's name makes every name-derived branch inert (see the
         // bitmap's doc), and there is no `@`/`%`/`&`/attribute slot in play for
         // the wrapper's tied-store, `our`-sync and attribute-mirror steps either.
@@ -429,12 +455,11 @@ impl Interpreter {
         //   - a pending alias bind to resolve, or a recorded bind pair that
         //     this slot is the SOURCE of (see `slot_is_bind_pair_source`),
         //   - an `is default(...)` value to substitute for a stored `Nil`,
-        //   - a typed lexical whose constraint has to be checked and coerced —
-        //     asked PER NAME (`env_type_constraint_seen_for`), because the
-        //     whole-program latch makes one `my int` anywhere disqualify every
-        //     store in the program from this path (measured 2.5x on an
-        //     otherwise untyped loop). A slot with no symbol cannot be asked
-        //     per name, so it keeps the program-wide answer.
+        //   - (a typed lexical whose constraint has to be checked and coerced
+        //     used to be tested here; it moved to
+        //     `slot_type_constraint_possible`, which the scalar-store fast
+        //     path answers against the incoming value instead of declining
+        //     outright),
         //   - an atomic-variable cell to detach the name from,
         //   - a `state`/predictive-`Seq` closure-metadata key anywhere in the
         //     program,
@@ -448,10 +473,6 @@ impl Interpreter {
             || !self.pending_alias_bind_names.is_empty()
             || self.slot_is_bind_pair_source(idx)
             || self.has_var_defaults()
-            || match code.locals_sym.get(idx).copied() {
-                Some(sym) => Self::env_type_constraint_seen_for(sym),
-                None => Self::env_type_constraint_seen(),
-            }
             || crate::env::sigilless_readonly_keys_possible()
             || Self::atomic_var_seen_anywhere()
             || crate::env::closure_state_meta_keys_possible()
@@ -461,13 +482,73 @@ impl Interpreter {
             || !code.our_locals.is_empty())
     }
 
+    /// Whether the typed branch of the full store path would be the IDENTITY
+    /// for `value` in this slot — the one question
+    /// [`Self::exec_set_local_scalar_fast`] asks that
+    /// `set_local_scalar_fast_metadata_clear` cannot, because it needs the
+    /// incoming value.
+    ///
+    /// `my int $i` made every store to `$i` decline the fast path and run the
+    /// ~2,000-line cascade, at **873 instructions per store** — the single
+    /// largest cost in both an `nqp::add_i` loop (22.0%) and a plain
+    /// `$j = $j + 1` loop (25.8%), byte-identical in the two, and none of it
+    /// about `nqp::` ([#8830](https://github.com/tokuhirom/mutsu/issues/8830),
+    /// [#8831](https://github.com/tokuhirom/mutsu/issues/8831)).
+    ///
+    /// Nothing here is assumed from the declaration. The three steps the typed
+    /// branch runs are each checked to be a no-op for this exact
+    /// (constraint, value) pair, and anything else declines:
+    ///
+    /// * `type_matches_value` — a native scalar constraint against a value
+    ///   already carrying that tag.
+    /// * `try_coerce_value_for_constraint` — returns `Ok(value)` unchanged
+    ///   once past the coercion arm, which a `(...)`-free name cannot enter,
+    ///   *provided* no subset can redirect the name. Hence the
+    ///   `subsets.is_empty()` term: a `subset int of ...` would make the
+    ///   constraint mean something else, and then this must not fire.
+    /// * `wrap_native_int_by_constraint` — the identity for `int`/`int64`
+    ///   given a non-`BigInt`, non-`Bool` integer (the width check only
+    ///   rejects a `BigInt`), and for `str`/`num`/`num64`, which are not
+    ///   native *int* types and are not `num32` (the one width that
+    ///   truncates).
+    ///
+    /// The narrower widths (`int8`, `uint32`, `num32`, ...) are deliberately
+    /// NOT here: each wraps or truncates, so the store is not the identity and
+    /// the cascade has real work to do.
+    fn native_typed_store_is_identity(&self, code: &CompiledCode, idx: usize, value: &Value) -> bool
+    {
+        // A subset anywhere in the program can redirect a constraint name, so
+        // the constraint below would no longer be self-describing.
+        if !self.registry().subsets.is_empty() {
+            return false;
+        }
+        let name = &code.locals[idx];
+        let name_sym = code.locals_sym.get(idx).copied();
+        let Some(declared) = self.var_type_constraint_value_for(name, name_sym) else {
+            // The per-name latch is a "maybe": no constraint is actually
+            // registered, so there is nothing for the typed branch to do.
+            return true;
+        };
+        let ValueView::Str(constraint) = declared.view() else {
+            return false;
+        };
+        matches!(
+            (constraint.as_str(), value.view()),
+            ("int" | "int64", ValueView::Int(_))
+                | ("str", ValueView::Str(_))
+                | ("num" | "num64", ValueView::Num(_))
+        )
+    }
+
     fn exec_set_local_scalar_fast(&mut self, code: &CompiledCode, idx: u32) -> bool {
         let idx = idx as usize;
         // The slot's name, the pending store flavours, and every metadata lane
         // the full path would consult — see
         // `set_local_scalar_fast_metadata_clear`, which owns that list so the
-        // in-place `~=` append can ask exactly the same question.
-        if !self.set_local_scalar_fast_metadata_clear(code, idx) {
+        // in-place `~=` append can ask exactly the same question. The typed
+        // term is split out (`slot_type_constraint_possible`) and answered
+        // below against the incoming value instead.
+        if !self.set_local_scalar_fast_metadata_clear_except_type(code, idx) {
             return false;
         }
         // The incoming value is an ordinary scalar — nothing to unwrap, reify,
@@ -482,6 +563,20 @@ impl Interpreter {
             || !self.locals[idx].is_plain_scalar_store_slot()
         {
             return false;
+        }
+        // A declared type constraint is only allowed through when the typed
+        // branch would not change the value — see
+        // `native_typed_store_is_identity`. Asked here, before the commit
+        // point, because it needs the value still on the stack.
+        if Self::slot_type_constraint_possible(code, idx) {
+            let Some(v) = self.stack.last() else {
+                return false;
+            };
+            // Two shared borrows of `self`; the commit below takes `&mut self`
+            // only after both have ended.
+            if !self.native_typed_store_is_identity(code, idx, v) {
+                return false;
+            }
         }
         // The one probe the full path would run anyway: a shared cell or Proxy
         // parked in env under this name, which the slot adopts and then writes
