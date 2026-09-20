@@ -305,8 +305,11 @@ pub(crate) fn native_method_0arg(
     target: &Value,
     method_sym: Symbol,
 ) -> Option<Result<Value, RuntimeError>> {
-    let method = method_sym.resolve();
-    let method = method.as_str();
+    // `as_str`, not `resolve`: the latter is `as_str().to_owned()`, so every
+    // native method call heap-allocated a copy of a string the symbol table
+    // already owns as `&'static str`. This is the entry point for EVERY
+    // zero-argument native method in the interpreter.
+    let method: &str = method_sym.as_str();
 
     // Lazy-Match scalar fast path: these arms are semantically identical to
     // the Match block far below, but answered here straight from the capture
