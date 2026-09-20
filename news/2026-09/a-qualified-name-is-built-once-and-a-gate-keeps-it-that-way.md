@@ -86,3 +86,11 @@ silently report 0. The rule is in CLAUDE.md's Conventions next to `MetaNs`.
 `src/parser/` and `src/compiler/` are exempt, deliberately: deciding what a
 name *is* from its text is their job, and doing it there rather than once per
 execution is the whole point of the rule.
+
+It earned its keep before it landed. Rebasing this branch onto a `main` that
+had moved ten commits made the gate fail on a `global-cmp` count of 100
+against a baseline of 99 — and the new site was `trir_body_package`, written
+by the ADR-0110 Stage 2 PR that merged an hour earlier. Converted, and the
+count is back to 99. That is the failure mode this exists for: not a careless
+site, a *reasonable* one, written by someone who had just spent a day in the
+profile.
