@@ -229,6 +229,12 @@ impl Interpreter {
                     return None;
                 }
                 let caller_slot = arg.varref_slot().filter(|s| *s != u32::MAX)?;
+                // Same aliasing refusal as the statically linked door.
+                if rw[..rw_len].iter().any(|(_, t)| {
+                    matches!(t, RwTarget::Slot(s) | RwTarget::Cell(s) if *s == caller_slot)
+                }) {
+                    return None;
+                }
                 let (raw, target) = self.bind_rw_slot(caller_slot, caller_code?)?;
                 st.set_native_slot(p.slot, raw);
                 rw[rw_len] = (p.slot, target);

@@ -56,9 +56,15 @@ impl Compiler {
         let mut arg_slots = Vec::with_capacity(args.len());
         for a in args {
             let Expr::Var(n) = a else { return false };
-            // The argument must be a plain lexical of THIS frame. A free
-            // variable (no `local_map` entry) is resolved by name at run time
-            // and has no slot to read.
+            // A plain `$`-sigil user lexical only: `is_plain_lexical_name`
+            // excludes the topic, twigils, dynamics and attributes, whose
+            // frame slot is not the authority the ordinary read op consults.
+            if !Self::is_plain_lexical_name(n) {
+                return false;
+            }
+            // The argument must be a lexical of THIS frame. A free variable
+            // (no `local_map` entry) is resolved by name at run time and has
+            // no slot to read.
             let Some(&slot) = self.local_map.get(n.as_str()) else {
                 return false;
             };
