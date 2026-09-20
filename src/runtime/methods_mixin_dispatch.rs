@@ -358,9 +358,21 @@ impl Interpreter {
             let matching: Vec<(Symbol, MethodDef)> = overloads
                 .into_iter()
                 .filter(|def| {
-                    // For private calls, only match private methods; for public calls, skip private
+                    // For private calls, only match private methods; for public calls, skip private.
+                    // Use the invocant-aware matcher (not `method_args_match`) so an
+                    // invocant-discriminated multi pair (`::?ROLE:U:` / `::?ROLE:D:`)
+                    // is told apart by the mixin's definedness, matching the ordinary
+                    // MRO dispatch path (`resolve_method_with_owner_impl`). Without
+                    // this, a punned role's `:D:` candidate never won over `:U:`
+                    // because this filter never looked at the invocant at all.
                     is_private_call == def.is_private
-                        && self.method_args_match(&args, &def.param_defs)
+                        && self.method_args_match_for_invocant(
+                            &role_name,
+                            def,
+                            &args,
+                            None,
+                            Some(target),
+                        )
                 })
                 .map(|def| (Symbol::intern(&role_name), def))
                 .collect();
