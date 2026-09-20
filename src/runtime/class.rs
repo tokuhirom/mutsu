@@ -6,7 +6,38 @@
 use super::*;
 
 impl Interpreter {
+    /// Run the `DESTROY` submethods queued since the last sweep.
+    ///
+    /// Called at every loop-iteration boundary (`exec_while_loop_op_inner` and
+    /// the `for`-loop body), so the *empty* case is the hot one: it ran
+    /// 100,000 times, at 56 instructions each, in a `while` loop that
+    /// constructs nothing at all (3.6% of that loop).
+    ///
+    /// The whole-program latch answers it for one relaxed load. The single
+    /// site that can enqueue anything — `InstanceAttrs::finalize_destroy` —
+    /// checks the same latch before pushing, so a clear latch is a proof that
+    /// no thread has ever queued an item. Taking the thread-local `Vec` to
+    /// discover that is what this skips: a TLS access, a `RefCell` borrow, a
+    /// three-word `mem::take` and an empty `Vec`'s construction and drop.
+    ///
+    /// The latch is monotonic, so a `DESTROY` registered later turns this back
+    /// on for everything that dies after it — which is exactly the contract
+    /// `ANY_DESTROY_DECLARED` documents, read at drop time rather than at
+    /// construction.
+    #[inline]
     pub(crate) fn run_pending_instance_destroys(&mut self) -> Result<(), RuntimeError> {
+        if !crate::value::any_destroy_method_declared() {
+            return Ok(());
+        }
+        self.run_queued_instance_destroys()
+    }
+
+    /// The non-empty half of [`Self::run_pending_instance_destroys`], kept out
+    /// of line so inlining its latch check into a loop body copies one load and
+    /// a branch rather than the whole sweep.
+    #[cold]
+    #[inline(never)]
+    fn run_queued_instance_destroys(&mut self) -> Result<(), RuntimeError> {
         let pending = take_pending_instance_destroys();
         if pending.is_empty() {
             return Ok(());
