@@ -16,7 +16,7 @@
 //! operand stack, with a debug-build stack-kind verifier as the soundness
 //! gate. This implementation keeps the *typing* and drops the sharing: native
 //! `int`/`num` operands live in their own `Vec<i64>` bank
-//! ([`TrExecState::ints`]), boxed operands in the interpreter's own
+//! ([`exec::TrScratch::ints`]), boxed operands in the interpreter's own
 //! `Vec<Value>` stack and frame. Nothing ever reads a raw word as a `Value`,
 //! because no raw word is ever stored where a `Value` lives — the top risk in
 //! ADR-0110 §5 is removed structurally rather than contained by a verifier,
@@ -166,7 +166,7 @@ pub(crate) enum TrOp {
     // iteration is dominated by exactly that kind of traffic.
     /// `nqp::ordat(<boxed slot n>, <int bank>)`: pop a codepoint index, push
     /// the codepoint at it, or -1 past the end. The slot's characters are
-    /// materialized once per frame ([`exec::TrFrame`]'s char memo).
+    /// materialized once per frame (`TrScratch`'s char memo).
     OrdAtLocal(u16),
     /// `nqp::ordat(<outer n>, <int bank>)`.
     OrdAtOuter(u16),
