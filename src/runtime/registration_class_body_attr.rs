@@ -418,14 +418,9 @@ impl Interpreter {
             .insert(cx.name.to_string(), cx.class_def.clone());
         self.registry_mut()
             .sync_accessor_entries(Symbol::intern(cx.name));
-        if let Err(err) = self.apply_attribute_traits(
-            &decl.unknown_traits,
-            attr_name,
-            decl.sigil,
-            decl.is_public,
-            cx.name,
-            decl.type_constraint.as_deref(),
-        ) {
+        if let Err(err) =
+            self.apply_attribute_traits(decl, attr_name, cx.name, &mut cx.pending_attr_composes)
+        {
             self.set_current_package(cx.saved_package.clone());
             self.env = cx.saved_env.clone();
             return Err(err);

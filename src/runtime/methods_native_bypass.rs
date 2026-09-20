@@ -156,6 +156,7 @@ impl Interpreter {
                 | "method_table"
                 | "private_method_table"
                 | "submethod_table"
+                | "roles_to_compose"
                 | "nativesize"
                 | "unsigned"
         )

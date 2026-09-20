@@ -457,16 +457,22 @@ impl Interpreter {
     /// Dispatch unknown attribute traits to user-defined `trait_mod:<...>` subs,
     /// or raise X::Comp::Trait::Unknown if no handler is registered. Called at
     /// class registration for each `has` declaration that carries unknown traits.
+    ///
+    /// `pending_composes` collects the owner class name for every mixin whose
+    /// `compose` hook must fire (see the call site below) instead of invoking
+    /// it inline — `run_class_body` drains it once the whole class body has
+    /// registered (#8845).
     pub(crate) fn apply_attribute_traits(
         &mut self,
-        unknown_traits: &[(String, String, Option<crate::ast::Expr>)],
+        decl: &crate::opcode::CompiledAttrDecl,
         attr_name_str: &str,
-        sigil: char,
-        is_public: bool,
         owner: &str,
-        type_constraint: Option<&str>,
+        pending_composes: &mut Vec<String>,
     ) -> Result<(), RuntimeError> {
-        for (kind, trait_name, trait_arg) in unknown_traits {
+        let sigil = decl.sigil;
+        let is_public = decl.is_public;
+        let type_constraint = decl.type_constraint.as_deref();
+        for (kind, trait_name, trait_arg) in &decl.unknown_traits {
             // `has $.x does Foo` — record the role so construction mixes it into
             // the attribute's value (its container does the role). Not a
             // `trait_mod:<does>` dispatch.
@@ -638,17 +644,21 @@ impl Interpreter {
                         _ => false,
                     };
                     if has_compose_hook {
-                        // While this hook runs, `owner`'s own auto-generated
-                        // accessors are not yet in `.^method_table` — see
-                        // `classes_composing_accessors`'s doc comment (#8836).
-                        self.classes_composing_accessors.insert(owner.to_string());
-                        let result = self.call_method_with_values(
-                            mixin_val.clone(),
-                            "compose",
-                            vec![Value::package(Symbol::intern(owner))],
-                        );
-                        self.classes_composing_accessors.remove(owner);
-                        result?;
+                        // Do NOT call `compose` here: at this point in the
+                        // class-body walk, statements after this `has`
+                        // declaration (in particular later `method`
+                        // declarations) have not registered yet, so a
+                        // `compose` hook that inspects
+                        // `type.^private_method_table`/`.^method_table`
+                        // (AttrX::Lazy's conflict/existence checks) sees an
+                        // incomplete class -- source-order-sensitive, unlike
+                        // Rakudo (#8845). Queue the owner instead; the caller
+                        // (`run_class_body`) drains this once every
+                        // class-body statement has run, re-reading the
+                        // owner's current HOW from the registry so a compose
+                        // that runs after further mixins still sees the
+                        // fully-composed HOW.
+                        pending_composes.push(owner.to_string());
                     }
                 }
                 // Raku dispatches `trait_mod:<is>` as an ordinary multi: the
