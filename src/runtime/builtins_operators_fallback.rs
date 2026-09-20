@@ -995,6 +995,26 @@ impl Interpreter {
                     }
                 }
             }
+            // A role that INHERITS a built-in type (`role Markup is Str {}`)
+            // describes "a Str that also does Markup", so the coercion
+            // `Markup('x')` is that Str carrying the role -- which is exactly
+            // how mutsu represents a non-`Instance` value with a mixed-in role
+            // (`types::role_mixin_class`'s wrapper path: an `Int`/`Str` has no
+            // shared attribute node to rebless, so the role rides in the
+            // wrapper). `Air::Functional` returns every rendered tag through
+            // such a coercion (`method HTML(--> Markup())`), and without this
+            // the role had no CALL-ME/COERCE/new to reach and the call died
+            // with X::Coerce::Impossible.
+            //
+            // A CLASS with a built-in parent (`class C is Str {}; C('x')`)
+            // needs a built-in-backed instance representation mutsu does not
+            // have yet, and is NOT handled here -- see
+            // https://github.com/tokuhirom/mutsu/issues/8856.
+            if args.len() == 1
+                && let Some(coerced) = self.coerce_into_builtin_inheriting_role(name, &args[0])
+            {
+                return coerced;
+            }
             // Role called with args but no CALL-ME/COERCE/new:
             // In `does` context, return a Pair for role application.
             // Otherwise, throw X::Coerce::Impossible.

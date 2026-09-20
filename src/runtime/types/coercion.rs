@@ -324,7 +324,58 @@ impl Interpreter {
                 return Ok(coerced);
             }
         }
+        if let Some(coerced) = self.coerce_into_builtin_inheriting_role(base_target, &value) {
+            return coerced;
+        }
         Err(coerce_impossible_error(target, &value))
+    }
+
+    /// Coerce into a role that INHERITS a built-in type (`role Markup is Str
+    /// {}`): the result is that built-in value carrying the role.
+    ///
+    /// Such a role says "a Str that also does Markup", and mutsu already
+    /// represents exactly that -- a non-`Instance` value with a mixed-in role
+    /// rides in the mixin wrapper, because an `Int`/`Str` has no shared
+    /// attribute node to rebless (see `types::role_mixin_class`). So the
+    /// coercion is the role composed onto the value once the value has been
+    /// coerced to the built-in parent.
+    ///
+    /// `Air::Functional` hands every rendered tag back through one of these
+    /// (`method HTML(--> Markup())`, `role Taggable is Str`), and before this
+    /// the role offered no `COERCE`/`new` to reach and the coercion died with
+    /// X::Coerce::Impossible.
+    ///
+    /// Returns `None` when the target is not such a role, so the caller's own
+    /// error path is unchanged. A CLASS with a built-in parent (`class C is Str
+    /// {}; C('x')`) would need a built-in-backed *instance* representation
+    /// mutsu does not have, and is deliberately not handled -- see
+    /// <https://github.com/tokuhirom/mutsu/issues/8856>.
+    pub(in crate::runtime) fn coerce_into_builtin_inheriting_role(
+        &mut self,
+        role_name: &str,
+        value: &Value,
+    ) -> Option<Result<Value, RuntimeError>> {
+        if !self.has_role(role_name) {
+            return None;
+        }
+        let parents: Vec<String> = self
+            .registry()
+            .role_parents_of(role_name)
+            .into_iter()
+            .map(|parent| Self::role_base_name(&parent).to_string())
+            .collect();
+        let builtin_parent = parents.into_iter().find(|parent| {
+            !self.has_role(parent)
+                && !self.has_class(parent)
+                && crate::runtime::utils::is_known_type_constraint(parent)
+        })?;
+        let coerced = self
+            .try_coerce_value_for_constraint(&builtin_parent, value.clone())
+            .ok()?;
+        if !self.type_matches_value(&builtin_parent, &coerced) {
+            return None;
+        }
+        Some(self.compose_role_on_value(coerced, role_name, &[], false))
     }
 
     pub(crate) fn coerce_value_for_constraint(&mut self, constraint: &str, value: Value) -> Value {

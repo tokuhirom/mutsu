@@ -916,6 +916,40 @@ impl Interpreter {
         // $x)` pair (issue #8566). The dedicated Instance/MRO walk below
         // computes the real distance, `Any` included, via the class's own
         // `mro` chain.
+        // A value carrying mixed-in roles (`'x' but Markup`, or the coercion
+        // into a role that inherits a built-in type) sits one step BELOW its
+        // inner type, exactly as rakudo's synthesized `Str+{Markup}` class
+        // does: a constraint naming one of the composed roles is the narrowest
+        // match there is, and every ancestor of the inner type is one step
+        // further away than it would be for a bare inner value.
+        //
+        // Without this the inner type answered distance 0 and the role the 500
+        // "unrelated" distance, so a wider candidate won the tie-break:
+        // `Air::Functional`'s `multi render-tag(Str() $)` beat `multi
+        // render-tag(Markup $)` for its own `Markup` values and HTML-escaped
+        // the markup it exists to pass through. (An `Instance` needs none of
+        // this -- `types::role_mixin_class` reblesses it into a real
+        // `C+{R}` class whose MRO the walk below already follows.)
+        if let ValueView::Mixin(inner, mixins) = value.view() {
+            if mixins.contains_key(crate::runtime::meta_ns::MetaNs::Role.str_key_for_str(base)) {
+                return 0;
+            }
+            // A role the mixed-in one itself composes is still nearer than the
+            // inner type's own ancestors.
+            if self.has_role(base)
+                && mixins.keys().any(|key| {
+                    key.as_str()
+                        .strip_prefix(crate::runtime::meta_ns::MetaNs::Role.prefix())
+                        .is_some_and(|role| self.role_is_descendant_of(role, base))
+                })
+            {
+                return 1;
+            }
+            return self
+                .type_hierarchy_distance(constraint, inner.as_ref())
+                .saturating_add(1)
+                .min(UNRELATED_DISTANCE);
+        }
         if base == value_type && !matches!(value.view(), ValueView::Instance { .. }) {
             return 0;
         }

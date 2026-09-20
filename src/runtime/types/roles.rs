@@ -644,7 +644,7 @@ impl Interpreter {
         }
     }
 
-    fn compose_role_on_value(
+    pub(crate) fn compose_role_on_value(
         &mut self,
         left: Value,
         role_name: &str,

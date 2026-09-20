@@ -3258,11 +3258,37 @@ impl Interpreter {
         stash_name_idx: u32,
     ) -> Result<(), RuntimeError> {
         let stash_name = Self::const_str(code, stash_name_idx);
-        // The compiler only emits this op for PROCESS:: (see compile_index_assign).
-        debug_assert_eq!(stash_name, "PROCESS::");
+        // The compiler emits this op for PROCESS:: and OUR:: (see
+        // compile_index_assign).
+        debug_assert!(matches!(stash_name, "PROCESS::" | "OUR::"));
         let key = self.stack.pop().unwrap_or(Value::NIL);
         let val = self.stack.pop().unwrap_or(Value::NIL);
         let raw_key = key.to_string_value();
+        if stash_name == "OUR::" {
+            // The stash key carries its own sigil (`'&' ~ $tag`); the internal
+            // pseudo-var spelling drops a leading `$` and keeps every other
+            // sigil ahead of the qualifier, exactly as the literal-key branch
+            // of `compile_index_assign` reconstructs it.
+            let name = match raw_key.as_bytes().first() {
+                Some(b'$') => format!("OUR::{}", &raw_key[1..]),
+                Some(b'&' | b'@' | b'%') => {
+                    format!("{}OUR::{}", &raw_key[..1], &raw_key[1..])
+                }
+                _ => format!("OUR::{raw_key}"),
+            };
+            if name.starts_with("&OUR::") {
+                // A re-export of an existing named routine (`OUR::{'&' ~ $n}
+                // := &known`) still wants its registry aliases.
+                self.register_our_code_alias(&name, &val);
+            }
+            self.publish_our_pseudo_stash_symbol(&name, &val);
+            // Keep the literal pseudo-var key too, so a read back through the
+            // same `OUR::` spelling in this scope resolves as it does for the
+            // literal-key form.
+            self.env_mut().insert(name, val.clone());
+            self.stack.push(val);
+            return Ok(());
+        }
         let stored = self.store_process_dynamic(&raw_key, val)?;
         self.stack.push(stored);
         Ok(())

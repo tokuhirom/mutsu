@@ -178,6 +178,74 @@ impl Interpreter {
         }
     }
 
+    /// Publish a symbol bound through the `OUR::` pseudo-stash.
+    ///
+    /// `OUR::` names the CURRENT package's own symbol table, so `OUR::<&f> :=
+    /// ...` inside `package Foo { }` binds `Foo::f` -- the same slot `our &f
+    /// := ...` writes, and the one `Foo::f()` calls. mutsu stored the binding
+    /// under the literal env key `&OUR::f` instead, which read back only
+    /// through the identical spelling: `Foo::f()` answered "Could not find
+    /// symbol '&f' in 'Foo'" and the scalar form `OUR::<$x> := 1` was simply
+    /// lost, because `our_pseudo_var_read` resolves a read against the current
+    /// package and so never looked where the write had landed.
+    ///
+    /// The case that matters in practice is the generated-export idiom, where
+    /// the enclosing package is a module's export stash:
+    ///
+    /// ```raku
+    /// my package EXPORT::DEFAULT {
+    ///     for @tags -> $tag {
+    ///         OUR::{'&' ~ $tag} := sub (*@inners) { do-regular-tag($tag, @inners) }
+    ///     }
+    /// }
+    /// ```
+    ///
+    /// That is how `Air::Functional` exports one sub per HTML tag (`h3`, `p`,
+    /// `article`, ...), and none of them existed under mutsu. It cannot go
+    /// through [`Self::register_our_code_alias`], which aliases an *existing*
+    /// named routine by copying its `FunctionDef`: these are fresh closures
+    /// over the loop variable, so there is no `FunctionDef` to find and the
+    /// captured `$tag` is exactly what must be preserved. The closure value
+    /// itself is published instead, as the module's exported symbol -- the
+    /// same representation an `our &f is export = sub { ... }` already uses.
+    pub(crate) fn publish_our_pseudo_stash_symbol(&mut self, name: &str, value: &Value) {
+        // The compiler's pseudo-var spelling: a scalar arrives sigil-less
+        // (`OUR::x`), every other sigil leads (`&OUR::f`, `@OUR::a`, `%OUR::h`).
+        let (sigil, rest) = match name.as_bytes().first() {
+            Some(b'&' | b'@' | b'%') => (&name[..1], &name[1..]),
+            _ => ("", name),
+        };
+        let Some(bare) = rest.strip_prefix("OUR::") else {
+            return;
+        };
+        // A nested name is a package path, not a symbol of THIS package.
+        if bare.is_empty() || bare.contains("::") {
+            return;
+        }
+        let package = self.current_package();
+        let qualified = if package.is_empty() || package == "GLOBAL" {
+            format!("{sigil}{bare}")
+        } else {
+            format!("{sigil}{package}::{bare}")
+        };
+        // `our_vars` is the durable package store a qualified read consults
+        // after the declaring block's env entry is gone; `env` serves the
+        // reads that happen while it is still live.
+        self.set_our_var(qualified.clone(), value.clone());
+        self.env_mut().insert(qualified, value.clone());
+        let Some(tag) = Self::export_stash_tag(&package).map(str::to_string) else {
+            return;
+        };
+        let Some(module) = self.module_load_stack.last().cloned() else {
+            return;
+        };
+        // `exported_var_value` reads the sigil-leading spelling, so the
+        // module-qualified key is `&Mod::f`, not `Mod::&f`.
+        self.env_mut()
+            .insert(format!("{sigil}{module}::{bare}"), value.clone());
+        self.register_exported_var(module, format!("{sigil}{bare}"), vec![tag]);
+    }
+
     /// Register a value assigned directly into an `EXPORT::<tag>` stash.
     ///
     /// Modules such as Interval use `BEGIN EXPORT::refine::<DateTime> :=
