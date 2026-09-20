@@ -840,8 +840,14 @@ impl Interpreter {
         if name.is_empty() {
             return None;
         }
-        let pkg_owned = self.current_package().to_string();
-        let mut pkg: &str = &pkg_owned;
+        // The package comes off the interned mirror (a `&'static str`, no
+        // clone), the ancestor walk off `package_ancestors`, and each
+        // `<pkg>::<name>` candidate off `qualified` — all three were rebuilt
+        // from strings on every call, which made this the largest single
+        // function in the `JSON::Fast` decode profile at 5.11% inclusive,
+        // 0.48% of the whole program in `format!` alone (#8898).
+        let pkg_sym = self.current_package_sym();
+        let pkg: &str = pkg_sym.as_str();
         // Self-reference from inside a lexically-mangled class's OWN body
         // (ADR-0047 P1: `my class A { ...; A.^add_method(...) }`). While the
         // body executes, `current_package()` is already the REAL storage name
@@ -859,11 +865,13 @@ impl Interpreter {
         if self.has_type_direct(pkg) && crate::value::user_facing_type_name(pkg).as_ref() == name {
             return Some(pkg.to_string());
         }
-        loop {
-            if pkg.is_empty() || pkg == "GLOBAL" {
+        let name_sym = crate::symbol::Symbol::intern(name);
+        for pkg in crate::qualified::package_ancestors(pkg_sym) {
+            if crate::qualified::is_global_package(pkg) {
                 return None;
             }
-            let qualified = format!("{pkg}::{name}");
+            let qualified = crate::qualified::qualified(pkg, name_sym);
+            let qualified: &str = qualified.as_str();
             // ADR-0047: a lexically-scoped `my class`/`my grammar` reachable
             // through this package chain is registered under a mangled
             // storage name (`{qualified}\u{0}<decl-id>`), never the bare
@@ -883,16 +891,13 @@ impl Interpreter {
             // short name `Hash`, shadowing CORE's `Hash` for its whole body
             // (and `Crane::List`'s `List.new` for the whole `Crane` dist).
             // Real nesting (`unit module NL; class Hash`) still resolves.
-            if !self.compound_name_segment_is_not_a_scope(&qualified)
-                && let Some(key) = self.resolve_lexical_type_key(&qualified)
+            if !self.compound_name_segment_is_not_a_scope(qualified)
+                && let Some(key) = self.resolve_lexical_type_key(qualified)
             {
                 return Some(key);
             }
-            match pkg.rsplit_once("::") {
-                Some((parent, _)) => pkg = parent,
-                None => return None,
-            }
         }
+        None
     }
 
     /// Resolve a short type name against a specific owner package's chain

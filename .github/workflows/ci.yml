@@ -297,6 +297,17 @@ jobs:
         # matter what src/ contains.
         run: make check-panic-surface
 
+      - name: Run-time package-name string surgery did not grow
+        # A ratchet, not a ban: `format!("{pkg}::{name}")`, `== "GLOBAL"` and
+        # `"::"` splitting outside src/parser/ and src/compiler/ may go down
+        # but never up (#8899). A qualified name is derived from two things
+        # the caller already holds, so src/qualified.rs builds it once per
+        # pair; doing it per execution was 5.11% of a JSON::Fast decode in
+        # `resolve_type_in_current_package` alone. The script self-tests its
+        # patterns against synthetic snippets first, so a regex that stopped
+        # matching cannot make the ratchet silently report 0.
+        run: make check-name-scans
+
       - uses: dtolnay/rust-toolchain@01ba1edad32c6f80dbcce879d3e0fa5a00b2a84e # 1.96.0
         with:
           components: clippy, rustfmt

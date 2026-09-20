@@ -46,7 +46,7 @@ PROVE_JOBS ?= 4
 # the gc-stress / jit-stress CI jobs keep running the whole t/ suite on debug.
 # See docs/adr/0075-make-test-runs-tap-on-release-binary.md, which supersedes
 # ADR-0014.
-test: check-pipefail check-value-wall check-flaky-list check-t-layout check-magic-keys check-panic-surface
+test: check-pipefail check-value-wall check-flaky-list check-t-layout check-magic-keys check-panic-surface check-name-scans
 	@mkdir -p tmp
 	(cargo build --release && cargo test -- --test-threads=1 && cargo test -p mutsu-lsp && MUTSU_BIN='$(CARGO_TARGET_DIR)/release/mutsu' MUTSU_T_TIMEOUT=60 prove -r -e 'scripts/run-t-test.sh' t/) 2>&1 | tee tmp/make-test.log
 
@@ -88,6 +88,17 @@ check-magic-keys:
 check-panic-surface:
 	python3 scripts/check-panic-surface.py --self-test
 	python3 scripts/check-panic-surface.py
+
+# Ratchet on run-time package-name string surgery (#8899): `format!("{pkg}::
+# {name}")`, `== "GLOBAL"`, and `"::"` splitting/classification outside
+# src/parser/ and src/compiler/. A qualified name is derived from two things
+# the caller already holds, so it belongs in src/qualified.rs's memoizing
+# constructor, built once per pair. All three counts may go down, never up.
+# Re-cut after a change that shifts any of them:
+#   scripts/check-name-scans.sh --update
+check-name-scans:
+	scripts/check-name-scans.sh --self-test
+	scripts/check-name-scans.sh
 
 roast: check-pipefail
 	@mkdir -p tmp

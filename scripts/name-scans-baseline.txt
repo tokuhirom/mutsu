@@ -1,0 +1,3 @@
+qualify 176
+global-cmp 99
+scan 351
