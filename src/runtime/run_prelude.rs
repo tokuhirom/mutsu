@@ -1,7 +1,8 @@
 use super::run::{
     ENUMERATION_ROLE_PRELUDE, IO_SOCKET_ROLE_PRELUDE, METAMODEL_ROLE_PRELUDE,
     NATIVECALL_POINTER_PRELUDE, NATIVECALL_SUB_PRELUDES, RATIONAL_ROLE_PRELUDE,
-    TRAIT_MOD_DOES_PRELUDE, TRAIT_MOD_IS_NATIVECALL_PRELUDE, X_WRAPPER_ROLE_PRELUDE,
+    TRAIT_MOD_DOES_PRELUDE, TRAIT_MOD_IS_DEFAULT_PRELUDE, TRAIT_MOD_IS_NATIVECALL_PRELUDE,
+    X_WRAPPER_ROLE_PRELUDE,
 };
 use super::source_code_text::CodeText;
 use super::*;
@@ -221,6 +222,40 @@ impl Interpreter {
         static TRAIT_MOD_IS_STMTS: OnceLock<Vec<Stmt>> = OnceLock::new();
         let prelude = TRAIT_MOD_IS_STMTS.get_or_init(|| {
             let mut stmts = crate::parse_dispatch::parse_source(TRAIT_MOD_IS_NATIVECALL_PRELUDE)
+                .map(|(s, _)| s)
+                .unwrap_or_default();
+            Self::mark_prelude_subs(&mut stmts);
+            stmts
+        });
+        if prelude.is_empty() {
+            return;
+        }
+        let mut combined = prelude.clone();
+        combined.append(stmts);
+        *stmts = combined;
+    }
+
+    /// Prepend CORE's `trait_mod:<is>(Attribute:D $attr, :$default!)` candidate
+    /// (see [`TRAIT_MOD_IS_DEFAULT_PRELUDE`]) to a program that names
+    /// `trait_mod:<is>` at all — unlike [`Self::inject_trait_mod_is_prelude`],
+    /// not gated on a `use NativeCall`/no-self-declaration check: this
+    /// candidate's `:default!` shape is CORE.setting's own and is vanishingly
+    /// unlikely to collide with a distribution's own candidate for some other
+    /// named trait (`ASN::Types` declares four `trait_mod:<is>` candidates of
+    /// its own — `:$UTF8String`, `:$OctetString`, `:$optional`,
+    /// `:$default-value` — none of which is `:default`, and all four keep
+    /// dispatching to their own bodies exactly as before).
+    pub(super) fn inject_trait_mod_is_default_prelude(
+        source: &CodeText<'_>,
+        stmts: &mut Vec<Stmt>,
+    ) {
+        if !source.contains("trait_mod:<is>") {
+            return;
+        }
+        use std::sync::OnceLock;
+        static TRAIT_MOD_IS_DEFAULT_STMTS: OnceLock<Vec<Stmt>> = OnceLock::new();
+        let prelude = TRAIT_MOD_IS_DEFAULT_STMTS.get_or_init(|| {
+            let mut stmts = crate::parse_dispatch::parse_source(TRAIT_MOD_IS_DEFAULT_PRELUDE)
                 .map(|(s, _)| s)
                 .unwrap_or_default();
             Self::mark_prelude_subs(&mut stmts);

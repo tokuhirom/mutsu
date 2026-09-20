@@ -2168,6 +2168,11 @@ impl Interpreter {
                     // The mixin + writeback behind the `trait_mod:<does>`
                     // prelude candidates (see vm::vm_trait_mod_does_ops).
                     result
+                } else if let Some(result) = self.try_trait_mod_set_default(name, &args) {
+                    // The writeback behind the `trait_mod:<is>(Attribute,
+                    // :$default!)` prelude candidate (see
+                    // vm::vm_trait_mod_does_ops).
+                    result
                 } else if let Some(callable) = self.lexical_amp_var_callable(Some(code), name) {
                     // Pure lexical `&name` callable (a `&code` parameter or
                     // `my &f = ...` with no same-named package sub): dispatch

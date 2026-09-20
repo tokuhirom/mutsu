@@ -418,12 +418,30 @@ impl Interpreter {
             .insert(cx.name.to_string(), cx.class_def.clone());
         self.registry_mut()
             .sync_accessor_entries(Symbol::intern(cx.name));
+        self.trait_mod_default_writeback = None;
         if let Err(err) =
             self.apply_attribute_traits(decl, attr_name, cx.name, &mut cx.pending_attr_composes)
         {
             self.set_current_package(cx.saved_package.clone());
             self.env = cx.saved_env.clone();
             return Err(err);
+        }
+        // A custom attribute trait may have re-dispatched to CORE's own
+        // `trait_mod:<is>(Attribute, :$default!)` candidate on this same
+        // attribute (see `TRAIT_MOD_IS_DEFAULT_PRELUDE`'s doc comment) — fold
+        // the value it relayed into the attribute's compiled default, exactly
+        // as `is default(...)` written directly on the `has` line would.
+        if let Some(default_val) = self.trait_mod_default_writeback.take()
+            && let Some(a) = cx
+                .class_def
+                .attributes
+                .iter_mut()
+                .find(|a| a.name == attr_name)
+        {
+            a.default = Some(crate::opcode::DeclTraitArg::Literal(default_val));
+            self.registry_mut()
+                .classes
+                .insert(cx.name.to_string(), cx.class_def.clone());
         }
         Ok(())
     }

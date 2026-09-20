@@ -3009,6 +3009,21 @@ pub struct Interpreter {
     /// last, corrupting the cache a later re-registration of the class reuses
     /// (#8806).
     pub(crate) trait_mod_attr_writeback_value: Option<Value>,
+    /// The value passed to CORE's `trait_mod:<is>(Attribute:D $attr, :$default!)`
+    /// candidate (see `runtime::run::TRAIT_MOD_IS_DEFAULT_PRELUDE`), set by the
+    /// native primitive `__mutsu_attribute_set_default` behind it
+    /// (`vm::vm_trait_mod_does_ops::try_trait_mod_set_default`). A distribution's
+    /// own custom attribute trait handler may re-dispatch to this builtin
+    /// candidate as an ordinary function call to reuse `is default(...)`'s
+    /// semantics on an `Attribute` object it already holds (ASN::BER's
+    /// `DefaultValue` role: `trait_mod:<is>($attr, :default($v))` from inside its
+    /// own `is default-value(...)` handler) — mutsu otherwise only recognizes
+    /// `is default(...)` as parse-time sugar on a `has` declaration
+    /// (`CompiledAttrDecl::is_default`), which a runtime call can't reach.
+    /// `apply_class_body_attribute_traits` drains this after dispatching an
+    /// attribute's custom traits and folds it into the attribute's compiled
+    /// default, exactly as if `is default(...)` had been written directly.
+    pub(crate) trait_mod_default_writeback: Option<Value>,
     /// When true, hash indexing with a missing key autovivifies (creates an
     /// empty Hash entry and returns it).  Set during reduce with `is raw`
     /// callbacks so that container semantics are preserved.

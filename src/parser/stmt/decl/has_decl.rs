@@ -616,14 +616,25 @@ pub(in crate::parser::stmt) fn has_decl(input: &str) -> PResult<'_, Stmt> {
                     continue;
                 }
                 is_built = Some(true);
-            } else if trait_name
-                .chars()
-                .next()
-                .is_some_and(|c| c.is_ascii_uppercase())
+            } else if (sigil == b'@' || sigil == b'%')
+                && trait_name
+                    .chars()
+                    .next()
+                    .is_some_and(|c| c.is_ascii_uppercase())
             {
                 // Uppercase-starting trait name: `is Buf`, `is BagHash`,
                 // `is Array[Int]`, `is G::A`, etc. This is a container type trait
-                // for `@`/`%` attributes. `ident` only captured the first segment,
+                // for `@`/`%` attributes only — gated on sigil so a `$`/`&`
+                // attribute's uppercase custom trait (ASN::BER's `is
+                // UTF8String`/`is OctetString`) falls through to the generic
+                // `unknown_traits` dispatch below instead, exactly like a
+                // lowercase one. That dispatch already resolves the trait name
+                // against real types itself (`apply_attribute_traits`'s
+                // `resolve_type_object`), so an uppercase name that IS a real
+                // type still reaches its `trait_mod:<is>` candidate positionally
+                // — this branch existing at all is a native shortcut for the
+                // `@`/`%` container-shape idiom, not the only path to one.
+                // `ident` only captured the first segment,
                 // so pull in any `::`-qualified segments and a `[...]`
                 // parameterization to keep the full type name (`Array[Int]` /
                 // `R::G::A`); otherwise the trailing `[Int]` is misparsed as a

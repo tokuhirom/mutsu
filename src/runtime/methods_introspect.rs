@@ -395,8 +395,19 @@ impl Interpreter {
         let type_name = match target.view() {
             ValueView::Package(name) => name.resolve(),
             ValueView::Instance { class_name, .. } => class_name.resolve(),
+            // An enum VALUE (`Solid`, not the `Fuel` type object) has its own
+            // dedicated representation, not `Instance` — falling through to
+            // the catch-all below reported `Mu` (hence `ClassHOW`) for every
+            // enum value's `.HOW`, while the type object's own `.HOW` (a
+            // `Package`) already resolved correctly via `enum_types` below.
+            // ASN::BER's `Serializer.serialize`/`Parser.parse` both dispatch
+            // on `$value.HOW ~~ Metamodel::EnumHOW` to tell an enum value
+            // apart from a plain `Int`, so a wrong `ClassHOW` here silently
+            // picked the `Int` multi candidate instead.
+            ValueView::Enum { enum_type, .. } => enum_type.resolve(),
             ValueView::Mixin(inner, _) => match inner.as_ref().view() {
                 ValueView::Instance { class_name, .. } => class_name.resolve(),
+                ValueView::Enum { enum_type, .. } => enum_type.resolve(),
                 _ => value_type_name(target).to_string(),
             },
             _ => {

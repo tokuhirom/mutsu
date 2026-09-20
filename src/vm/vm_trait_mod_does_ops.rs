@@ -1,6 +1,9 @@
-//! `__mutsu_trait_mod_does_apply` — the native primitive behind the
-//! `trait_mod:<does>` CORE.setting prelude (`runtime::run::TRAIT_MOD_DOES_PRELUDE`,
-//! injected via `runtime::run_prelude::inject_trait_mod_does_prelude`).
+//! `__mutsu_trait_mod_does_apply` and `__mutsu_attribute_set_default` — the
+//! native primitives behind the `trait_mod:<does>` and `trait_mod:<is>
+//! (Attribute, :$default!)` CORE.setting preludes
+//! (`runtime::run::TRAIT_MOD_DOES_PRELUDE`, `TRAIT_MOD_IS_DEFAULT_PRELUDE`,
+//! injected via `runtime::run_prelude::inject_trait_mod_does_prelude`,
+//! `inject_trait_mod_is_default_prelude`).
 //!
 //! `trait_mod:<does>` is Raku's callable form of the `does` mixin operator —
 //! real Rakudo declares three overloads (verified against `raku`):
@@ -44,6 +47,37 @@ impl Interpreter {
             ))));
         }
         Some(self.apply_trait_mod_does(args[0].clone(), args[1].clone()))
+    }
+
+    /// `__mutsu_attribute_set_default($attr, $default)` — the Rust half of
+    /// the `trait_mod:<is>(Attribute:D $attr, :$default!)` prelude candidate
+    /// (`runtime::run::TRAIT_MOD_IS_DEFAULT_PRELUDE`). `None` for any other
+    /// function name, matching the shape of `try_trait_mod_does_apply` above.
+    ///
+    /// Relays `$default` through `trait_mod_default_writeback` rather than
+    /// mutating `$attr` itself: `apply_class_body_attribute_traits` drains it
+    /// right after dispatching an attribute's own custom traits and folds it
+    /// into that attribute's compiled default. A call reached with no
+    /// attribute-trait dispatch in progress (a bare `trait_mod:<is>($attr,
+    /// :default($v))` outside a `has` handler) leaves a value nobody reads —
+    /// a harmless no-op, matching how real Rakudo's own default machinery is
+    /// meaningless there too.
+    pub(super) fn try_trait_mod_set_default(
+        &mut self,
+        name: &str,
+        args: &[Value],
+    ) -> Option<Result<Value, RuntimeError>> {
+        if name != "__mutsu_attribute_set_default" {
+            return None;
+        }
+        if args.len() != 2 {
+            return Some(Err(RuntimeError::new(format!(
+                "__mutsu_attribute_set_default expects 2 arguments, got {}",
+                args.len()
+            ))));
+        }
+        self.trait_mod_default_writeback = Some(args[1].clone());
+        Some(Ok(Value::NIL))
     }
 
     /// Mix `role` into `doee`, the same way the `does` operator does

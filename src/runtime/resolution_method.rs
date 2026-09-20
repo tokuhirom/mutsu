@@ -31,6 +31,21 @@ impl Interpreter {
         // rollback is dropping a tier.
         let saved_env = self.env.clone();
         self.env = crate::env::Env::scoped_child(std::mem::take(&mut self.env));
+        // A `where` constraint (or the type check just below) can run user
+        // code that dispatches a nested method call, which clears
+        // `pending_call_arg_sources` on its own exit (see the doc comment at
+        // its clear site in `vm_call_method_mut_ops.rs`) — scoped to THAT
+        // call, but this is a single `self` field, so the clear also wiped
+        // out the OUTER, still-in-flight call's arg-source names before its
+        // own `is rw` parameter got to bind them. Symptom: an `is rw` Buf
+        // parameter bound from a real lexical (`self.parse($in, ...)`) failed
+        // with "expects a writable container" only when a SIBLING multi
+        // candidate for the same call had a `where` clause invoking `.HOW`/`~~`
+        // (ASN::BER's `Parser.parse` — its `enum-type where
+        // $enum-type.HOW ~~ Metamodel::EnumHOW` candidate cleared the arg
+        // sources meant for the `ASNSequence` candidate ultimately selected).
+        // Save and restore here, in the same speculative window as `env`.
+        let saved_arg_sources = self.pending_call_arg_sources.clone();
         // Candidate matching happens before the method frame is installed.
         // Anchor package-local aliases to the receiver's class for this
         // speculative window so a nested subset such as
@@ -114,6 +129,7 @@ impl Interpreter {
                     if !is_type_capture && !self.type_matches_value(&resolved, inv) {
                         self.env = saved_env;
                         self.set_current_package(saved_package);
+                        self.pending_call_arg_sources = saved_arg_sources;
                         return false;
                     }
                 }
@@ -130,6 +146,7 @@ impl Interpreter {
             self.env = saved_env;
         }
         self.set_current_package(saved_package);
+        self.pending_call_arg_sources = saved_arg_sources;
         args_match
     }
 
@@ -541,7 +558,29 @@ impl Interpreter {
 
     /// Compute the type distance of a method's param constraints from the
     /// actual arguments.  Lower distance = more specific match.
+    ///
+    /// `args` is the call's full argument list, positional and named
+    /// interleaved in call-site order (`f(1, :debug, :mode)` is `[1,
+    /// Pair(debug), Pair(mode)]`), while `arg_idx` below walks only a
+    /// candidate's POSITIONAL parameters. Indexing the raw `args` by that
+    /// counter treated a named-argument Pair as if it were the next
+    /// positional value whenever a candidate had more positional parameters
+    /// than the call supplied positionally (an unfilled trailing optional,
+    /// e.g. `Int $index = 10`): `type_hierarchy_distance("Int", <a Pair
+    /// value>)` scored as unrelated, adding a large penalty that a candidate
+    /// with fewer positional parameters (and hence never reaching that
+    /// out-of-range access) did not pay — so a plain untyped catch-all could
+    /// outrank a candidate that was actually the correct, narrower match
+    /// (ASN::BER's `Serializer.serialize($enum-value, ..., :$debug, :$mode)`
+    /// losing to its own `$unknown-type` fallback whenever the call passed
+    /// any named argument at all). Filtering to positional-only values first
+    /// — the same filter `resolve_function_with_types` uses to count arity —
+    /// keeps `arg_idx` aligned with the positional arguments it is meant to
+    /// index.
     fn method_candidate_type_distance(&self, args: &[Value], def: &MethodDef) -> usize {
+        let positional_args: Vec<&Value> =
+            args.iter().filter(|v| !v.is_string_pair_value()).collect();
+        let args = positional_args.as_slice();
         let mut total = 0usize;
         let mut arg_idx = 0;
         for pd in &def.param_defs {
@@ -585,7 +624,7 @@ impl Interpreter {
                     base.to_string()
                 };
                 if arg_idx < args.len() {
-                    let value = &args[arg_idx];
+                    let value = args[arg_idx];
                     total += if matches!(value.view(), ValueView::Nil) {
                         Self::nil_type_distance(&resolved)
                     } else {
