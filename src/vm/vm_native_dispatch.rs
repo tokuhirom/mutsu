@@ -147,7 +147,7 @@ impl Interpreter {
                 _ => None,
             };
             if let Some(cn) = class_name
-                && self.has_user_method(&cn, &method_name)
+                && self.has_user_method(&cn, method_name)
             {
                 return None;
             }
@@ -238,12 +238,12 @@ impl Interpreter {
         // (2-or-3-arg form, which the arity-keyed native_method_*arg dispatch below
         // cannot cover for 3 args). Blob and bad arity fall through to the interpreter.
         if let Some(result) =
-            crate::builtins::buf_write_int::try_native_buf_write(target, &method_name, args)
+            crate::builtins::buf_write_int::try_native_buf_write(target, method_name, args)
         {
             return Some(result);
         }
         // Mixin role method bypass
-        if self.mixin_role_has_method(target, &method_name) {
+        if self.mixin_role_has_method(target, method_name) {
             return None;
         }
         // Augmented native-type bypass: a plain Array/List/Hash/Str/Range/Set/
@@ -277,7 +277,7 @@ impl Interpreter {
             let owner = target.match_dispatch_class();
             let is_pure_render =
                 matches!(method_name, "gist" | "Str" | "Stringy" | "raku" | "perl");
-            let render_overridden = is_pure_render && self.has_user_method(owner, &method_name);
+            let render_overridden = is_pure_render && self.has_user_method(owner, method_name);
             if (!is_pure_render || render_overridden) && self.has_user_method(owner, "Bridge") {
                 return None;
             }
@@ -288,7 +288,7 @@ impl Interpreter {
             {
                 return None;
             }
-            if self.is_native_method(owner, &method_name) {
+            if self.is_native_method(owner, method_name) {
                 return None;
             }
         }
@@ -334,7 +334,7 @@ impl Interpreter {
                 // reach the same `None` for such a class only after two full
                 // `type_matches_value` walks (`Real`, then `Numeric`) -- the
                 // cost every `$output.say` in the vendored `Test` was paying.
-                if self.is_native_method(&cn, &method_name) {
+                if self.is_native_method(&cn, method_name) {
                     return None;
                 }
                 // Numeric bridge — Real/Numeric instances route through the
@@ -347,7 +347,7 @@ impl Interpreter {
                 // `None` from native and still fall through to the interpreter.
                 let is_pure_render =
                     matches!(method_name, "gist" | "Str" | "Stringy" | "raku" | "perl");
-                let render_overridden = is_pure_render && self.has_user_method(&cn, &method_name);
+                let render_overridden = is_pure_render && self.has_user_method(&cn, method_name);
                 // The probe (`~~ Real`, `~~ Numeric`, own `Bridge` method)
                 // is a property of the receiver's CLASS, not of the call, so
                 // it is memoized per class symbol. Asked inline it made two
@@ -382,7 +382,7 @@ impl Interpreter {
                 // unconditionally stringifying the receiver. Name-gated
                 // first (a cheap `matches!`) so the MRO walk only runs for
                 // the rare "Instance x Cool-only name" shape.
-                if Self::cool_only_builtin_method(&method_name)
+                if Self::cool_only_builtin_method(method_name)
                     && self.class_has_wildcard_handles_or_fallback(&cn)
                 {
                     return None;
@@ -398,7 +398,7 @@ impl Interpreter {
                 // `X::Method::NotFound`). Deferring to the interpreter lets
                 // normal "no candidate" resolution throw instead of
                 // fabricating a stringified answer.
-                if Self::cool_only_builtin_method(&method_name)
+                if Self::cool_only_builtin_method(method_name)
                     && !self.e2_native_method_exists(target, method_sym.as_str())
                 {
                     return None;
@@ -520,7 +520,7 @@ impl Interpreter {
         // into the caller's containers, so it needs `&mut self` and the call
         // site's arg-source names (see `vm/vm_range_int_bounds.rs`). The
         // zero-argument candidate stays in the pure arity cascade below.
-        if Self::is_range_int_bounds_rw(target, &method_name, args) {
+        if Self::is_range_int_bounds_rw(target, method_name, args) {
             return Some(self.range_int_bounds_rw(target));
         }
         // A named argument the method does not accept must not be counted as a
