@@ -688,7 +688,13 @@ impl Interpreter {
                 let how_val = self.registry().class_how_values.get(&cname).cloned();
                 if let Some(how_val) = how_val {
                     let type_obj = Value::package(Symbol::intern(&cname));
-                    self.call_method_with_values(how_val, "compose", vec![type_obj])?;
+                    // While this hook runs, `cname`'s own auto-generated
+                    // accessors are not yet in `.^method_table` — see
+                    // `classes_composing_accessors`'s doc comment (#8836).
+                    self.classes_composing_accessors.insert(cname.clone());
+                    let result = self.call_method_with_values(how_val, "compose", vec![type_obj]);
+                    self.classes_composing_accessors.remove(&cname);
+                    result?;
                 }
             }
 

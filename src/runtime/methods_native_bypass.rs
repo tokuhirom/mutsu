@@ -154,6 +154,7 @@ impl Interpreter {
                 | "pun"
                 | "language-revision"
                 | "method_table"
+                | "private_method_table"
                 | "submethod_table"
                 | "nativesize"
                 | "unsigned"

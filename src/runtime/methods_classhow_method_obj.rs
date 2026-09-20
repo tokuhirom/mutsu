@@ -15,28 +15,33 @@ impl Interpreter {
         let Some(class_def) = registry.classes.get(class_name) else {
             return;
         };
-        // First add accessor methods for public attributes (in order)
-        for attr in &class_def.attributes {
-            if attr.is_public
-                && registry
-                    .user_method_overloads(class_name, &attr.name)
-                    .is_none()
-            {
-                result.push(self.make_native_method_object(&attr.name, class_name));
+        // A public attribute's auto-generated accessor is not yet installed
+        // while `class_name`'s custom-HOW `compose` hook is still running
+        // (see `classes_composing_accessors`'s doc comment, #8836).
+        if !self.classes_composing_accessors.contains(class_name) {
+            // First add accessor methods for public attributes (in order)
+            for attr in &class_def.attributes {
+                if attr.is_public
+                    && registry
+                        .user_method_overloads(class_name, &attr.name)
+                        .is_none()
+                {
+                    result.push(self.make_native_method_object(&attr.name, class_name));
+                }
             }
-        }
-        // Class-level attributes (`my $.x` / `our $.x`) also get a reader
-        // accessor, but they are never entries of `class_def.attributes`
-        // (real Raku: `Foo.^attributes` is empty for one of these — the
-        // declaration is a class-scoped lexical, not an instance attribute).
-        // Every name here is public by construction (a `!`-twigil is a parse
-        // error on `my`/`our`), so no `is_public` gate is needed.
-        for attr_name in class_def.class_level_attrs.keys() {
-            if registry
-                .user_method_overloads(class_name, attr_name)
-                .is_none()
-            {
-                result.push(self.make_native_method_object(attr_name, class_name));
+            // Class-level attributes (`my $.x` / `our $.x`) also get a reader
+            // accessor, but they are never entries of `class_def.attributes`
+            // (real Raku: `Foo.^attributes` is empty for one of these — the
+            // declaration is a class-scoped lexical, not an instance attribute).
+            // Every name here is public by construction (a `!`-twigil is a parse
+            // error on `my`/`our`), so no `is_public` gate is needed.
+            for attr_name in class_def.class_level_attrs.keys() {
+                if registry
+                    .user_method_overloads(class_name, attr_name)
+                    .is_none()
+                {
+                    result.push(self.make_native_method_object(attr_name, class_name));
+                }
             }
         }
         // Then add explicit methods. The overload data comes from the
@@ -83,7 +88,10 @@ impl Interpreter {
     /// Rakudo keeps submethods in `.^submethod_table` and private methods in
     /// `.^private_method_table`, so neither appears here; public attribute
     /// accessors and role-composed methods do, and a `multi` contributes a
-    /// single dispatcher entry.
+    /// single dispatcher entry. A public attribute's accessor is temporarily
+    /// absent while `class_name` is still inside a custom-HOW `compose` hook
+    /// (`classes_composing_accessors`, #8836) — Rakudo installs it as part of
+    /// the native `compose` step the hook reaches via `callsame`.
     pub(super) fn class_method_table(&self, class_name: &str) -> ValueMap {
         let mut table = ValueMap::default();
         // RakuAST model classes are native type objects and therefore have no
@@ -102,29 +110,34 @@ impl Interpreter {
         let Some(class_def) = registry.classes.get(class_name) else {
             return table;
         };
-        for attr in &class_def.attributes {
-            if attr.is_public
-                && registry
-                    .user_method_overloads(class_name, &attr.name)
-                    .is_none()
-            {
-                table.insert(
-                    attr.name.clone(),
-                    self.make_native_method_object(&attr.name, class_name),
-                );
+        // A public attribute's auto-generated accessor is not yet installed
+        // while `class_name`'s custom-HOW `compose` hook is still running
+        // (see `classes_composing_accessors`'s doc comment, #8836).
+        if !self.classes_composing_accessors.contains(class_name) {
+            for attr in &class_def.attributes {
+                if attr.is_public
+                    && registry
+                        .user_method_overloads(class_name, &attr.name)
+                        .is_none()
+                {
+                    table.insert(
+                        attr.name.clone(),
+                        self.make_native_method_object(&attr.name, class_name),
+                    );
+                }
             }
-        }
-        // Class-level attributes (`my $.x` / `our $.x`) — see the matching
-        // comment in `collect_class_methods`.
-        for attr_name in class_def.class_level_attrs.keys() {
-            if registry
-                .user_method_overloads(class_name, attr_name)
-                .is_none()
-            {
-                table.insert(
-                    attr_name.clone(),
-                    self.make_native_method_object(attr_name, class_name),
-                );
+            // Class-level attributes (`my $.x` / `our $.x`) — see the matching
+            // comment in `collect_class_methods`.
+            for attr_name in class_def.class_level_attrs.keys() {
+                if registry
+                    .user_method_overloads(class_name, attr_name)
+                    .is_none()
+                {
+                    table.insert(
+                        attr_name.clone(),
+                        self.make_native_method_object(attr_name, class_name),
+                    );
+                }
             }
         }
         // ADR-0019 F4c-1: enumerate via the canonical reverse index instead
@@ -157,6 +170,44 @@ impl Interpreter {
             table.insert(
                 native_name.clone(),
                 self.make_native_method_object(native_name, class_name),
+            );
+        }
+        table
+    }
+
+    /// Build the class's own private method table (`.^private_method_table`):
+    /// private methods AND private submethods declared directly on
+    /// `class_name`, keyed by name — the counterpart `class_method_table`
+    /// deliberately excludes (#8836). A public attribute has no accessor
+    /// here regardless of composition state: only `!`-twigil declarations
+    /// (`method !foo`) and their `submethod` equivalent are private methods.
+    pub(super) fn class_private_method_table(&self, class_name: &str) -> ValueMap {
+        let mut table = ValueMap::default();
+        let registry = self.registry();
+        if !registry.classes.contains_key(class_name) {
+            return table;
+        }
+        for method_name in registry.owner_method_names(class_name) {
+            let method_name = method_name.resolve();
+            let Some(overloads) = registry.user_method_overloads(class_name, &method_name) else {
+                continue;
+            };
+            let Some(first) = overloads.first() else {
+                continue;
+            };
+            if !first.is_private {
+                continue;
+            }
+            table.insert(
+                method_name.clone(),
+                self.make_method_object_with_owner(
+                    &method_name,
+                    first,
+                    overloads.len() > 1,
+                    first.return_type.clone(),
+                    Some(&overloads),
+                    Some(class_name),
+                ),
             );
         }
         table
@@ -903,6 +954,7 @@ impl Interpreter {
                         | "pun"
                         | "language-revision"
                         | "method_table"
+                        | "private_method_table"
                         | "submethod_table"
                 ) && {
                     let pkg = Value::package(Symbol::intern(&class_name));
