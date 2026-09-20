@@ -672,9 +672,18 @@ impl Interpreter {
                     return Ok(());
                 }
                 let val = self
+                    // A package-block/class-body `my @a` static is stored in
+                    // `package_lexicals`; it is the authoritative store for a
+                    // bare free-variable read from inside that package's named
+                    // subs (a `sub`, not only a `method`), and must be read
+                    // BEFORE `env` — a stale `env` shadow (the declaration-time
+                    // local slot flushed to `env` before the class body's own
+                    // initializer ran) would otherwise win. Mirrors the scalar
+                    // `GetGlobal` ordering (#8869).
+                    .package_scope_lexical(name)
                     // Constant-pool name: hand over the chunk's memoized
                     // `Symbol` instead of re-interning it on every array read.
-                    .get_env_with_main_alias_sym(name, code.const_sym(*name_idx))
+                    .or_else(|| self.get_env_with_main_alias_sym(name, code.const_sym(*name_idx)))
                     .or_else(|| self.get_local_by_bare_name(code, name))
                     .or_else(|| {
                         // Fallback: check bare name in env (for closures capturing params)
@@ -795,9 +804,16 @@ impl Interpreter {
                     return Ok(());
                 }
                 let val = self
+                    // A package-block/class-body `my %h` static is stored in
+                    // `package_lexicals`; it is the authoritative store for a
+                    // bare free-variable read from inside that package's named
+                    // subs (a `sub`, not only a `method`), and must be read
+                    // BEFORE `env` — mirrors the scalar `GetGlobal` ordering
+                    // and the `GetArrayVar` twin (#8869).
+                    .package_scope_lexical(name)
                     // Constant-pool name: hand over the chunk's memoized
                     // `Symbol` instead of re-interning it on every hash read.
-                    .get_env_with_main_alias_sym(name, code.const_sym(*name_idx))
+                    .or_else(|| self.get_env_with_main_alias_sym(name, code.const_sym(*name_idx)))
                     .or_else(|| self.get_local_by_bare_name(code, name))
                     .or_else(|| {
                         name.strip_prefix('%')
