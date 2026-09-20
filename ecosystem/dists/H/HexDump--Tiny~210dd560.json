@@ -9,23 +9,22 @@
   "dist": "HexDump::Tiny",
   "files": [
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Not enough elements for map block arity",
         "nok": 0,
-        "ok": 0,
+        "ok": 4,
         "plan": 4,
-        "secs": 0.08,
+        "secs": 0.07,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/00-basic.rakutest",
       "raku": {
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 1.11,
+        "secs": 1.0,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -37,10 +36,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-19",
+    "date": "2026-09-20",
     "harness": 2,
-    "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "5d2e9a2",
+    "host": "linux-x86_64",
+    "mutsu_commit": "f08bb38d",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -51,13 +50,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/H/EX/HEXDUMP_TINY/7fd8879dd75b8a6fe35d1ee22eedde9239057f3f.tar.gz"
   },
-  "status": "red",
+  "status": "green",
   "totals": {
     "baseline_assertions": 4,
     "baseline_files": 1,
-    "mutsu_assertions": 0,
-    "parity_files": 0,
-    "regressed_files": 1
+    "mutsu_assertions": 4,
+    "parity_files": 1,
+    "regressed_files": 0
   },
   "version": "0.6"
 }
