@@ -1414,6 +1414,10 @@ impl Interpreter {
                 }
                 if is_rebind {
                     self.register_manual_export_var(name_str, &raw_val);
+                    // `OUR::` names the current package, so the binding is also
+                    // that package's own symbol (and its module's export, in an
+                    // `EXPORT::<tag>` stash). A non-`OUR::` name is ignored.
+                    self.publish_our_pseudo_stash_symbol(name_str, &raw_val);
                 }
                 let mut val = if raw_mode && name.starts_with('@') {
                     // Constants with @ sigil coerce to List (not Array).

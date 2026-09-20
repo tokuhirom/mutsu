@@ -1110,6 +1110,19 @@ impl Interpreter {
         {
             return std::borrow::Cow::Owned(name.resolve());
         }
+        // An IMPORTED short name (`use RoleCo;` binding `M` to `RoleCo::M`)
+        // is a lexical of the importing compunit, and the module load restores
+        // the caller's scope over that `env` entry -- so from a routine
+        // declared in that compunit the alias above finds nothing and the
+        // constraint stays the unregistered short name. `package_type_alias`
+        // is the surviving per-package record of exactly these imports, and is
+        // what `type_matches_value` already consults, which is why `M ~~ Str`
+        // answered True from the same frame where a `--> M()` coercion died
+        // with X::Coerce::Impossible (Air::Plugin::Donate's `--> Markup()`
+        // methods, over `Air::Functional`'s exported `Markup` role).
+        if let Some(target) = self.package_type_alias(constraint) {
+            return std::borrow::Cow::Owned(target);
+        }
         std::borrow::Cow::Borrowed(constraint)
     }
 

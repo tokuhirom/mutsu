@@ -871,6 +871,27 @@ impl Compiler {
             });
             return;
         }
+        // Runtime-key `OUR::` assignment (`OUR::{'&' ~ $tag} := sub {...}`, the
+        // generated-export idiom -- see `publish_our_pseudo_stash_symbol`). The
+        // literal-key branch above cannot take it because the subscript is only
+        // known at runtime, and the generic index-assign it would otherwise
+        // reach writes a throwaway stash hash and drops the store.
+        if let Expr::PseudoStash(stash_name) = target
+            && stash_name == "OUR::"
+        {
+            let rhs = match value {
+                Expr::Call { name, args } if *name == "__mutsu_bind_index_value" => {
+                    args.first().cloned().unwrap_or(Expr::Literal(Value::NIL))
+                }
+                other => other.clone(),
+            };
+            self.compile_expr(&rhs);
+            self.compile_expr(index);
+            let stash_name_idx = self.code.add_constant(Value::str(stash_name.clone()));
+            self.code
+                .emit(OpCode::IndexAssignPseudoStashKeyed { stash_name_idx });
+            return;
+        }
         // Runtime-key PROCESS:: assignment (`PROCESS::{$k} = v`), notably how a
         // `//=` / `||=` compound assignment desugars its subscript into a temp
         // variable. Without this it would fall through to the generic path, which

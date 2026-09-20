@@ -233,6 +233,76 @@ impl Interpreter {
             })
     }
 
+    /// Drops, from a role's own freshly-composed method table, each multi
+    /// candidate a `does`-parent contributed that this role -- or a nearer
+    /// role between them -- already supplies with the same signature.
+    ///
+    /// Rakudo's role-to-role applier resolves this when `role D does B` is
+    /// *compiled*: `B`'s candidates are flattened into `D` with `D`'s own
+    /// winning per signature, so `D` ends up with one `m()` (its own) plus
+    /// `B`'s `m(Int)`. mutsu instead appended the parent's candidates
+    /// verbatim (`registration_role_body.rs`'s `does` handler), leaving `D`
+    /// holding two `m()`s and relying on each *consumer* to spot the
+    /// duplicate. `class K does D` did, via `role_method_is_shadowed` in
+    /// `resolve_class_stub_requirements` -- but punning `D` directly
+    /// (`D.new`) builds its method table by a different route and never
+    /// reached that pass, so the pun kept both copies and every call died
+    /// with "Ambiguous call ... (D $:: *%_), (D $:: *%_)": the same
+    /// signature printed twice. Air::Plugin::Donate is exactly that shape
+    /// (`multi method HTML` over Air::Functional's `Tag`, instantiated as a
+    /// pun), and it is why this moved to the one canonical point instead of
+    /// being patched into a second consumer.
+    ///
+    /// Only `multi` candidates are considered: a non-`multi` collision is a
+    /// composition conflict, which is diagnosed elsewhere and must not be
+    /// silently resolved here.
+    pub(super) fn prune_role_parent_shadowed_multis(
+        &self,
+        methods: &mut HashMap<String, Vec<MethodDef>>,
+    ) {
+        for defs in methods.values_mut() {
+            if defs.len() < 2 {
+                continue;
+            }
+            let all = defs.clone();
+            defs.retain(|candidate| {
+                if !candidate.is_multi {
+                    return true;
+                }
+                // No source at all means this role declared the candidate
+                // itself, so nothing can be nearer than it.
+                let Some(source) = candidate
+                    .original_role
+                    .as_deref()
+                    .or(candidate.role_origin.as_deref())
+                else {
+                    return true;
+                };
+                let source = Self::role_base_name(source);
+                !all.iter().any(|other| {
+                    if !other.is_multi
+                        || !Self::method_signatures_match(candidate, other)
+                        || Self::multi_constraints_distinguish(candidate, other)
+                    {
+                        return false;
+                    }
+                    match other
+                        .original_role
+                        .as_deref()
+                        .or(other.role_origin.as_deref())
+                    {
+                        // Declared by the role being registered: it is the
+                        // most derived participant by construction.
+                        None => true,
+                        Some(other_source) => {
+                            self.role_is_descendant_of(Self::role_base_name(other_source), source)
+                        }
+                    }
+                })
+            });
+        }
+    }
+
     /// Whether a multi candidate was inherited from a role ancestor that a
     /// more-derived role has replaced with the same signature.
     pub(super) fn role_method_is_shadowed(

@@ -651,7 +651,68 @@ impl Interpreter {
         // `bless` also runs a user BUILDALL/POPULATE (Rakudo: bless calls
         // BUILDALL) — see `run_user_buildall_hook` for the semantics.
         self.run_user_buildall_hook(cn_resolved, &inv, &args)?;
+        // And so is `is required`: Rakudo enforces it in `BUILDALL`, which
+        // `bless` runs, so a class whose own `method new { self.bless: |%h }`
+        // replaces the default constructor — the commonest custom-constructor
+        // idiom, and what `Air::Plugin::Donate`'s role declares over
+        // `Air::Functional`'s `Tag` — must still reject a missing required
+        // attribute. mutsu only checked it on the default-`new` path, so any
+        // such class silently constructed with the attribute unset. Checked
+        // last, because BUILD/TWEAK/BUILDALL are all entitled to supply it.
+        self.enforce_required_attributes_after_build(cn_resolved, &inv, &args)?;
         Ok(inv)
+    }
+
+    /// Fail unless every `is required` attribute of `class_key` has a value on
+    /// the freshly built `inv`. The counterpart of the post-BUILD check the
+    /// default constructor runs (`methods_object_dispatch_new.rs`), and it
+    /// reads "unset" the same way: `Nil`, absent, or the `Any` type object the
+    /// pre-BUILD seed leaves on an untyped attribute.
+    pub(crate) fn enforce_required_attributes_after_build(
+        &mut self,
+        class_key: &str,
+        inv: &Value,
+        args: &[Value],
+    ) -> Result<(), RuntimeError> {
+        let class_attrs_info = self.collect_class_attributes(class_key);
+        if !class_attrs_info.iter().any(|a| a.is_required.is_some()) {
+            return Ok(());
+        }
+        let ValueView::Instance { attributes, .. } = inv.view() else {
+            return Ok(());
+        };
+        let attrs = attributes.as_map();
+        for attr in &class_attrs_info {
+            let Some(reason) = &attr.is_required else {
+                continue;
+            };
+            // A named argument naming the attribute settles it, whatever it
+            // carries: `C.new(:x(Int))` really did supply a value, and it is a
+            // type object.
+            if args.iter().any(|a| match a.view() {
+                ValueView::Pair(k, _) => *k == attr.name,
+                _ => false,
+            }) {
+                continue;
+            }
+            let key = super::attribute_storage_key(&class_attrs_info, &attr.name, attr.sigil);
+            // Unset is: absent, `Nil`, or still holding a TYPE OBJECT -- which
+            // is what the pre-BUILD seed leaves (`Any` for an untyped
+            // attribute, the declared type for `has Str $.key is required`).
+            // Checking only for `Any` is why a TYPED required attribute went
+            // unnoticed.
+            let is_set = !matches!(
+                attrs.get(key).map(Value::view),
+                Some(ValueView::Nil) | Some(ValueView::Package(_)) | None
+            );
+            if !is_set {
+                return Err(RuntimeError::attribute_required(
+                    &format!("$!{}", attr.name),
+                    reason.as_deref(),
+                ));
+            }
+        }
+        Ok(())
     }
 
     /// Run a USER-defined `BUILDALL` (or `POPULATE`) method on a freshly

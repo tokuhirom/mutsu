@@ -228,6 +228,21 @@ impl Interpreter {
         let candidate = dispatch_key::with_amp_name(name, |ampname| {
             code.and_then(|c| self.locals_get_by_name(c, ampname))
                 .or_else(|| self.env().get(ampname).cloned())
+                // An imported CODE variable (`our &f is export`, or a sub
+                // generated into a module's `EXPORT::` stash) is a lexical of
+                // the importing compunit, and the module load restores the
+                // caller's scope over its `env` entry once the load finishes.
+                // The surviving record is `module_scope_lexicals`, keyed by the
+                // packages that compunit declared -- so without this, a bare
+                // call to such a name worked from the importing compunit's
+                // MAINLINE and then died with "Unknown function" from a `sub`
+                // or `method` declared in that same file. This is the code
+                // half of the lookup `module_scope_lexical` already serves for
+                // a module's own bare `constant`s and sigilless declarations,
+                // and it stays properly scoped: the table is consulted for the
+                // running package only, so the name does not leak to a
+                // compunit that never imported it.
+                .or_else(|| self.module_scope_lexical(ampname).cloned())
         })
         // An `&` lexical may be a shared cell (ADR-0055 §7.3); the shape
         // filter below must classify the CALLABLE, not the cell.
@@ -1556,6 +1571,16 @@ impl Interpreter {
         {
             // Read through a shared cell (ADR-0055 §7.3) before dispatch.
             target = val.clone().into_deref();
+        }
+        // An imported CODE variable survives its compunit's `env` entry only in
+        // `module_scope_lexicals` -- the same lookup the bare-call path needs
+        // (see `lexical_amp_var_callable`), for `&f()` written in a routine of
+        // the importing compunit.
+        if target.is_nil()
+            && !name.contains("::")
+            && let Some(found) = self.module_scope_lexical(&format!("&{name}")).cloned()
+        {
+            target = found.into_deref();
         }
         // Fallback for fast-path method dispatch (skip_env_setup=true):
         // &!attr is not set in env, so read directly from self's instance

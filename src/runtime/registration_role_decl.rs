@@ -213,6 +213,14 @@ impl Interpreter {
                 }
             }
         }
+        // The role body has finished, so `role_def.methods` now holds both
+        // this role's own declarations and everything its `does` parents
+        // contributed. That is the point Rakudo's role-to-role applier
+        // resolves same-signature multi candidates at, and doing it here
+        // makes `roles[name].methods` canonical for every consumer -- the
+        // pun, mixin dispatch and class composition alike -- instead of
+        // leaving each to spot the duplicate for itself.
+        self.prune_role_parent_shadowed_multis(&mut role_def.methods);
         // Capture the parents that were added during this registration
         // (these are the parents specific to this candidate).
         let candidate_parents = self
