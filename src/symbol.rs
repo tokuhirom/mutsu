@@ -359,14 +359,10 @@ pub(crate) fn mark_env_key(sym: Symbol) {
     if f & flags::EVER_ENV_KEY != 0 {
         return;
     }
-    let idx = sym.0 as usize;
-    match flag_slot(idx) {
-        Some(slot) => {
-            slot.fetch_or(flags::EVER_ENV_KEY, Ordering::Relaxed);
-        }
-        // Beyond the table's reach: unmemoized, so `maybe_env_key` answers
-        // `true` for it anyway and there is nothing to record.
-        None => {}
+    // A slot beyond the table's reach has nothing to record, and needs none:
+    // `maybe_env_key` answers `true` for such an id anyway.
+    if let Some(slot) = flag_slot(sym.0 as usize) {
+        slot.fetch_or(flags::EVER_ENV_KEY, Ordering::Relaxed);
     }
 }
 
