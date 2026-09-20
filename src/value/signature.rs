@@ -107,6 +107,193 @@ pub(crate) fn lookup_sig_info(id: u64) -> Option<SigInfo> {
     guard.as_ref()?.get(&id).cloned()
 }
 
+// Global registry mapping user-constructed `Parameter` instance IDs to the
+// `SigParam` they were built from (`Parameter.new`, mirroring `SIG_REGISTRY`
+// above). A materialized-by-introspection `Parameter` (from `.signature.params`)
+// is never registered here, since `sig_param_to_parameter_instance` already had
+// its own `SigParam` in hand at the call site; this table exists purely so a
+// LATER `Signature.new(:@params, ...)` can recover the `SigParam` each
+// already-built `Parameter` in `@params` came from, instead of re-deriving one
+// from the Parameter's own rendered display attrs.
+static PARAM_REGISTRY: Mutex<Option<HashMap<u64, SigParam>>> = Mutex::new(None);
+
+fn register_param_info(id: u64, param: SigParam) {
+    let mut guard = PARAM_REGISTRY.lock().unwrap();
+    let map = guard.get_or_insert_with(HashMap::new);
+    map.insert(id, param);
+}
+
+fn lookup_param_info(id: u64) -> Option<SigParam> {
+    let guard = PARAM_REGISTRY.lock().unwrap();
+    guard.as_ref()?.get(&id).cloned()
+}
+
+/// Parse a `$`/`@`/`%`/`&`-sigiled display name (as `Parameter.new(:name(...))`
+/// takes it, and as a `Parameter`'s own `.name` attribute renders it) into a
+/// sigil and bare name. An unsigiled name is treated as sigilless (`\x`-style),
+/// matching how [`build_parameter_attrs`] already renders one back out
+/// (`p.name.clone()` verbatim when `p.sigilless`).
+fn split_sigiled_name(raw: &str) -> (char, String, bool) {
+    let mut chars = raw.chars();
+    match chars.next() {
+        Some(c @ ('$' | '@' | '%' | '&')) => (c, chars.as_str().to_string(), false),
+        _ => ('$', raw.to_string(), true),
+    }
+}
+
+/// Build a `SigParam` from the named arguments passed to a user-level
+/// `Parameter.new(...)` call. `Parameter`/`Signature` are ordinarily built
+/// only by the runtime itself (from a real declaration's `ParamDef`s), but
+/// Raku exposes both as constructible public types precisely so code can
+/// synthesize a signature at runtime (`Template::Classic`'s `template(Signature
+/// $sig, Str $source)`, which reconstructs `$sig.perl` into real declaration
+/// syntax and `EVAL`s a fresh sub from it — the actual argument binding is
+/// always done by the ordinary declaration path once that string exists, not
+/// by this constructed value itself). Only the named args ecosystem code has
+/// been observed to pass are recognized here; an unrecognized one is ignored
+/// rather than rejected, the same tolerance a native constructor would have
+/// for a caller that only uses a subset of its full parameter surface.
+pub(crate) fn sig_param_from_named_args(args: &[Value]) -> SigParam {
+    let mut p = SigParam {
+        required: true,
+        sigil: '$',
+        // Every ordinary declared parameter is `multi_invocant: true`
+        // (`param_def_to_sig_param` inherits it from the parser); `false` is
+        // reserved for a param *after* an explicit `;;` boundary in a `multi`
+        // signature. `SigParam::default()` gives `false`, which would render
+        // a synthetic signature as `:(;; $a, $b)` — a spurious leading `;;`
+        // that `render_signature` inserts whenever the first param is not
+        // multi_invocant.
+        multi_invocant: true,
+        // An untyped declared param (`sub f($x) {}`) records no type
+        // constraint at all, which is why `render_param` omits it — but
+        // `Parameter.new` with no `:type` is rakudo's explicit "no
+        // constraint given" case, which it renders as the nominal `Any`
+        // (verified against `raku`: `Parameter.new(:name('$x')).raku` is
+        // `Any $x`, not `$x`).
+        type_constraint: Some("Any".to_string()),
+        ..Default::default()
+    };
+    for arg in args {
+        let ValueView::Pair(key, value) = arg.view() else {
+            continue;
+        };
+        match key.as_str() {
+            "name" => {
+                let (sigil, name, sigilless) = split_sigiled_name(&value.to_string_value());
+                p.sigil = sigil;
+                p.name = name;
+                p.sigilless = sigilless;
+            }
+            "type" => {
+                if let ValueView::Package(name) = value.view() {
+                    p.type_constraint = Some(name.resolve());
+                }
+            }
+            "optional" => {
+                let optional = value.truthy();
+                p.optional_marker = optional;
+                p.required = !optional;
+            }
+            "named" => p.named = value.truthy(),
+            "slurpy" => p.slurpy = value.truthy(),
+            "multi_invocant" | "multi-invocant" => p.multi_invocant = value.truthy(),
+            _ => {}
+        }
+    }
+    p
+}
+
+/// [`sig_param_from_named_args`]'s twin: build the `Parameter` Value itself
+/// and remember its `SigParam` in [`PARAM_REGISTRY`] under the new instance's
+/// id, so a later `Signature.new(:@params, ...)` naming this exact Parameter
+/// recovers the same `SigParam` rather than re-deriving an approximation from
+/// the Parameter's own rendered attrs.
+pub(crate) fn make_parameter_value(param: SigParam, interp: Option<&Interpreter>) -> Value {
+    let val = sig_param_to_parameter_instance(&param, interp);
+    if let ValueView::Instance { id, .. } = val.view() {
+        register_param_info(id, param);
+    }
+    val
+}
+
+/// Recover the `SigParam` a `Parameter` Value was built from: the exact one
+/// if it came from [`make_parameter_value`], or a minimal one derived from its
+/// own `.name` attribute otherwise (a `Parameter` pulled from `.signature.params`
+/// introspection rather than freshly constructed — name is enough to `.perl`
+/// it back into valid, if less richly typed, declaration syntax).
+fn sig_param_from_parameter_value(v: &Value) -> SigParam {
+    if let ValueView::Instance { id, .. } = v.view()
+        && let Some(p) = lookup_param_info(id)
+    {
+        return p;
+    }
+    let mut p = SigParam {
+        required: true,
+        sigil: '$',
+        multi_invocant: true,
+        ..Default::default()
+    };
+    if let ValueView::Instance { attributes, .. } = v.view() {
+        let map = attributes.as_map();
+        if let Some(name_val) = map.get("name") {
+            let (sigil, name, sigilless) = split_sigiled_name(&name_val.to_string_value());
+            p.sigil = sigil;
+            p.name = name;
+            p.sigilless = sigilless;
+        }
+        // Round-tripping an introspected `Parameter` through `Signature.new`
+        // renders its type explicitly even when the original declaration was
+        // untyped (verified against `raku`: `Signature.new(:params(&f.signature.params)).raku`
+        // shows `Any $x`, even though `&f.signature.raku` itself — never
+        // passing back through `Signature.new` — shows plain `$x`).
+        if let Some(ValueView::Package(name)) = map.get("type").map(Value::view) {
+            p.type_constraint = Some(name.resolve());
+        }
+    }
+    p
+}
+
+/// Build a `SigInfo` from the named arguments passed to a user-level
+/// `Signature.new(:@params, :$returns)` call — [`sig_param_from_named_args`]'s
+/// counterpart one level up. `:params` is expected to be the array of
+/// `Parameter` instances Raku's own `Signature.new` takes; `:returns` a type
+/// object (`Mu`, the untyped default, is dropped rather than rendered, so
+/// `.perl` on a signature with no declared return type omits the arrow exactly
+/// as one declared without `-->` would).
+pub(crate) fn sig_info_from_new_args(args: &[Value]) -> SigInfo {
+    let mut params: Vec<SigParam> = Vec::new();
+    // An ordinary declared signature with no `-->` records no return type at
+    // all (`render_signature` then omits the arrow entirely) -- but
+    // `Signature.new` with no `:returns` is rakudo's explicit "no return type
+    // given" case, which it renders as the nominal `Mu` (verified against
+    // `raku`: `Signature.new(:params(())).raku` is `:( --> Mu)`, not `:()`).
+    let mut return_type: Option<String> = Some("Mu".to_string());
+    for arg in args {
+        let ValueView::Pair(key, value) = arg.view() else {
+            continue;
+        };
+        match key.as_str() {
+            "params" => {
+                params = crate::runtime::utils::value_to_list(value)
+                    .iter()
+                    .map(sig_param_from_parameter_value)
+                    .collect();
+            }
+            "returns" => {
+                if let ValueView::Package(name) = value.view() {
+                    return_type = Some(name.resolve());
+                }
+            }
+            _ => {}
+        }
+    }
+    SigInfo {
+        params,
+        return_type,
+    }
+}
+
 /// Stable identity key for [`cached_sub_signature`]/[`cache_sub_signature`].
 /// Wraps whichever `Arc` a rebuilt `SubData` clones from the registry's own
 /// `FunctionDef` — see `Interpreter::sub_signature_cache_key`, which builds
