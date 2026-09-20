@@ -276,6 +276,14 @@ impl Interpreter {
             if role_def.methods.contains_key("DESTROY") {
                 crate::value::note_destroy_method_declared();
             }
+            // A role supplying `WRITE`/`READ` to an `IO::Handle` subclass arms
+            // the same probe. Composition into a class would pass through
+            // `reindex_user_method_name` and arm it there too, so this is
+            // belt-and-braces: an over-set only makes the correct probe run,
+            // and a missed one would lose a user handle's output.
+            if role_def.methods.contains_key("WRITE") || role_def.methods.contains_key("READ") {
+                crate::vm::note_io_handle_user_method_declared();
+            }
             self.registry_mut().roles.insert(name.to_string(), role_def);
             self.registry_mut()
                 .user_declared_roles

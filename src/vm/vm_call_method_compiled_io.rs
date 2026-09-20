@@ -1,5 +1,38 @@
 use super::*;
 
+/// Whether any user `WRITE` or `READ` method has ever been declared, anywhere
+/// in this process.
+///
+/// [`Interpreter::try_user_io_handle_method`] sits in the method-dispatch probe
+/// chain *without a method-name gate*, so it runs on every method call on every
+/// instance — and it was the only probe in that chain that paid for the
+/// privilege, resolving the receiver's class `Symbol` to an owned `String` and
+/// walking its MRO looking for `IO::Handle` before it could decline. That cost
+/// a heap allocation, a string hash and an MRO walk on, for example, every
+/// `$o.m()` on a plain user class declared three lines above.
+///
+/// The probe's own final condition is `!has_write && !has_read`, and
+/// `has_user_method` reads the reverse index that `reindex_user_method_name`
+/// maintains. So a clear latch here is a proof that the probe would decline:
+/// there is no class it could answer for. Same shape and same soundness
+/// argument as `crate::value::ANY_DESTROY_DECLARED`.
+///
+/// Monotonic and never cleared; an over-set only makes the (correct) probe run.
+static IO_HANDLE_USER_METHOD_SEEN: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+/// Record that a user `WRITE` or `READ` method now exists (see
+/// [`IO_HANDLE_USER_METHOD_SEEN`]). Idempotent; never cleared.
+pub(crate) fn note_io_handle_user_method_declared() {
+    IO_HANDLE_USER_METHOD_SEEN.store(true, std::sync::atomic::Ordering::Release);
+}
+
+/// Whether any user `WRITE`/`READ` method has been registered.
+#[inline]
+pub(crate) fn io_handle_user_method_declared() -> bool {
+    IO_HANDLE_USER_METHOD_SEEN.load(std::sync::atomic::Ordering::Acquire)
+}
+
 impl Interpreter {
     /// Build a `Buf[uint8]` value from raw bytes (for a user `WRITE(Blob)` arg).
     fn make_uint8_buf(bytes: Vec<u8>) -> Value {
@@ -205,6 +238,13 @@ impl Interpreter {
         method: &str,
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
+        // No user `WRITE`/`READ` exists anywhere, so the `!has_write &&
+        // !has_read` bail below is already decided — answer it for one relaxed
+        // load instead of an owned `String` and an MRO walk. See
+        // `IO_HANDLE_USER_METHOD_SEEN`.
+        if !io_handle_user_method_declared() {
+            return None;
+        }
         let class_name = match target.view() {
             ValueView::Instance { class_name, .. } => class_name.resolve(),
             _ => return None,

@@ -250,6 +250,14 @@ impl Registry {
         if live && name.with_str(|n| n == "DESTROY") {
             crate::value::note_destroy_method_declared();
         }
+        // Same bargain for the user `IO::Handle` subclass probe, which runs on
+        // every method call on every instance and whose own bail is "this class
+        // overrides neither WRITE nor READ". `has_user_method` reads the very
+        // index this function maintains, so arming here covers every way one
+        // can appear -- a class body, `augment`, `.^add_method`.
+        if live && name.with_str(|n| n == "WRITE" || n == "READ") {
+            crate::vm::note_io_handle_user_method_declared();
+        }
         if live {
             let names = self.owner_method_names.entry(owner).or_default();
             if !names.contains(&name) {
