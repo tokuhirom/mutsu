@@ -137,7 +137,14 @@ impl Interpreter {
         let call = chunk.calls[site as usize].clone();
         let nbase = frame.nbase as usize;
         let obase = frame.obase as usize;
-        let rw_mask = self.trir_callee_rw_mask(&call.name.resolve());
+        // Only a by-variable argument can be handed over as a container, so a
+        // call whose arguments are all already-evaluated values needs no
+        // signature lookup at all — which is most of them (`die "..."`).
+        let rw_mask = if call.args.iter().any(|a| !matches!(a, TrArg::Value(_))) {
+            self.trir_callee_rw_mask(&call.name.resolve())
+        } else {
+            0
+        };
         let mut args: Vec<Value> = vec![Value::NIL; call.args.len()];
         for (i, arg) in call.args.iter().enumerate().rev() {
             let wants_container = rw_mask >> i.min(63) & 1 == 1;

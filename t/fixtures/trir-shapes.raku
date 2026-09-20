@@ -239,6 +239,25 @@ my sub after-if(int $n) {
 }
 say "sink-if={after-if(1)},{after-if(1)},{after-if(-1)}";
 
+# --- Stage 2: a parameter is read-only unless `is rw` ----------------------
+# A typed slot store cannot raise `X::Assignment::RO`, so a body that writes
+# one of its own read-only parameters has to decline to the general binder
+# rather than quietly writing the slot. Called twice: the first call runs
+# untyped, so a TRIR-only regression hides behind it.
+my sub writes-param($x) { $x = 1; 'wrote' }
+say "ro-param-1={(try writes-param(1)) // 'FAILED'}";
+say "ro-param-2={(try writes-param(1)) // 'FAILED'}";
+my sub bumps-param(int $n) { $n++; $n }
+say "ro-param-incr-1={(try bumps-param(1)) // 'FAILED'}";
+say "ro-param-incr-2={(try bumps-param(1)) // 'FAILED'}";
+# The `is rw` counterpart still writes.
+my sub writes-rw($x is rw) { $x = 5 }
+my $rw = 0;
+writes-rw($rw);
+my $rw2 = 0;
+writes-rw($rw2);
+say "rw-param={$rw},{$rw2}";
+
 # --- `.wrap` (ADR-0110 §3.3's run-time guard) ------------------------------
 # A statically linked call site would step straight past the wrapper, so the
 # guard has to send the call back to the ordinary dispatch. Kept LAST: once

@@ -357,6 +357,12 @@ impl<'a> TrirCompiler<'a> {
                         self.note_decline(|| format!("assignment to non-local {name}"));
                         None
                     })?;
+                    if self.slot_is_readonly_param(slot, kind) {
+                        self.note_decline(|| {
+                            format!("assignment to the read-only parameter {name}")
+                        });
+                        return None;
+                    }
                     let got = self.compile_expr(expr)?;
                     self.coerce(got, kind)?;
                     self.store(slot, kind);
@@ -626,6 +632,24 @@ impl<'a> TrirCompiler<'a> {
     /// Whether a native slot holds a REFERENCE rather than a value — true
     /// exactly for this routine's own `is rw` native parameters, which are
     /// bound to the caller's slot (ADR-0110 §3.3).
+    /// Whether `slot` holds one of this routine's READ-ONLY parameters.
+    ///
+    /// A Raku parameter is readonly unless declared `is rw`, and writing one
+    /// is `X::Assignment::RO` — which the general binder raises and a typed
+    /// slot store cannot. TRIR therefore declines the routine and lets the
+    /// untyped path raise it, rather than accepting `sub f($x) { $x = 1 }` and
+    /// quietly writing the slot (roast's `S06-traits/misc.t` pins exactly
+    /// that: the assignment form must die, and it stopped dying).
+    ///
+    /// The kind is part of the identity: the native and boxed banks number
+    /// their slots independently, so native slot 0 and boxed slot 0 are
+    /// different bindings.
+    pub(super) fn slot_is_readonly_param(&self, slot: u16, kind: TrKind) -> bool {
+        self.params
+            .iter()
+            .any(|p| !p.is_rw && p.slot == slot && p.kind == kind)
+    }
+
     pub(super) fn slot_is_ref(&self, slot: u16, kind: TrKind) -> bool {
         kind.is_native()
             && self

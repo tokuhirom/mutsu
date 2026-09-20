@@ -223,6 +223,11 @@ impl TrirCompiler<'_> {
                     self.note_decline(|| format!("++/-- on a {kind:?} variable"));
                     return None;
                 }
+                if self.slot_is_readonly_param(slot, kind) {
+                    let n = name.clone();
+                    self.note_decline(|| format!("++/-- on the read-only parameter {n}"));
+                    return None;
+                }
                 let up = *op == TokenKind::PlusPlus;
                 let by_ref = self.slot_is_ref(slot, kind);
                 self.ops.push(match (up, sink, by_ref) {
@@ -433,6 +438,11 @@ impl TrirCompiler<'_> {
             self.note_decline(|| format!("assignment to non-local {n}"));
             return None;
         };
+        if self.slot_is_readonly_param(slot, kind) {
+            let n = name.to_string();
+            self.note_decline(|| format!("assignment to the read-only parameter {n}"));
+            return None;
+        }
         let got = self.compile_expr(expr)?;
         self.coerce(got, kind)?;
         self.store(slot, kind);
