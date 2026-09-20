@@ -18,7 +18,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.11,
+        "secs": 0.14,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -28,7 +28,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 2.53,
+        "secs": 2.01,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -37,11 +37,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "Odd number of elements found where hash initializer expected: found 1 element(s); last element seen: 79f3e1df-8744-4991-85f7-ee95475fc72d(7) c0b4e020-c1d7-4e4a-84cb-c8997dad666f(3) e4d2555d-8ea6-4628-",
+        "first_failure": "Odd number of elements found where hash initializer expected: found 1 element(s); last element seen: 01f53539-9851-4010-8210-1c90c819fa9d(3) da3a0d99-32f7-4af0-8c03-8520c99900ba(7) fa03cb9d-c057-47ff-",
         "nok": 24,
         "ok": 21,
         "plan": null,
-        "secs": 1.34,
+        "secs": 0.77,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -51,7 +51,7 @@
         "nok": 0,
         "ok": 38,
         "plan": 38,
-        "secs": 4.3,
+        "secs": 3.93,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -60,11 +60,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "Odd number of elements found where hash initializer expected: found 1 element(s); last element seen: 3fb4b22e-f2ac-4f10-bb44-5e735fea9e32 6f659f9e-c2f5-4832-8d9b-49ac4226dca9(17) e332993c-b0d4-451f-80",
+        "first_failure": "Odd number of elements found where hash initializer expected: found 1 element(s); last element seen: 8419bb90-df55-4a0e-892c-dd938423d5ca c4ef4a54-f4ae-44b8-a339-76d5ae380334(3) cfb3d539-5d5f-4577-b4e",
         "nok": 14,
         "ok": 28,
         "plan": null,
-        "secs": 0.78,
+        "secs": 0.64,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -74,7 +74,7 @@
         "nok": 0,
         "ok": 63,
         "plan": 63,
-        "secs": 4.46,
+        "secs": 3.2,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -87,7 +87,7 @@
         "nok": 8,
         "ok": 11,
         "plan": null,
-        "secs": 0.57,
+        "secs": 0.33,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -97,7 +97,7 @@
         "nok": 0,
         "ok": 27,
         "plan": 27,
-        "secs": 2.18,
+        "secs": 1.69,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -110,7 +110,7 @@
         "nok": 7,
         "ok": 7,
         "plan": null,
-        "secs": 0.49,
+        "secs": 0.28,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -120,7 +120,7 @@
         "nok": 0,
         "ok": 29,
         "plan": 29,
-        "secs": 2.45,
+        "secs": 1.96,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -133,7 +133,7 @@
         "nok": 10,
         "ok": 9,
         "plan": null,
-        "secs": 0.59,
+        "secs": 0.44,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -143,7 +143,7 @@
         "nok": 0,
         "ok": 41,
         "plan": 41,
-        "secs": 3.37,
+        "secs": 2.68,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -152,11 +152,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "Odd number of elements found where hash initializer expected: found 1 element(s); last element seen: c458dc0b-9117-4e6e-bc6f-b5bd5fc6ce7f",
+        "first_failure": "Odd number of elements found where hash initializer expected: found 1 element(s); last element seen: 41d264b4-7878-4391-9f4f-b6841bec6996",
         "nok": 3,
         "ok": 4,
         "plan": null,
-        "secs": 0.28,
+        "secs": 0.18,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -166,7 +166,7 @@
         "nok": 0,
         "ok": 43,
         "plan": 43,
-        "secs": 4.3,
+        "secs": 3.48,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -179,7 +179,7 @@
         "nok": 6,
         "ok": 10,
         "plan": 16,
-        "secs": 25.22,
+        "secs": 19.8,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -189,7 +189,7 @@
         "nok": 0,
         "ok": 12,
         "plan": 12,
-        "secs": 2.19,
+        "secs": 1.46,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -202,7 +202,7 @@
         "nok": 2,
         "ok": 8,
         "plan": 10,
-        "secs": 0.65,
+        "secs": 0.39,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -212,7 +212,7 @@
         "nok": 0,
         "ok": 10,
         "plan": 10,
-        "secs": 8.46,
+        "secs": 6.73,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -222,10 +222,10 @@
       "cmp": "regression",
       "mutsu": {
         "first_failure": "No such method 'set' for invocant of type 'Hash'",
-        "nok": 10,
-        "ok": 16,
+        "nok": 12,
+        "ok": 14,
         "plan": null,
-        "secs": 1.01,
+        "secs": 0.84,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -235,7 +235,7 @@
         "nok": 0,
         "ok": 54,
         "plan": 54,
-        "secs": 3.25,
+        "secs": 2.41,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -257,10 +257,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-19",
+    "date": "2026-09-20",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "5d2e9a2",
+    "mutsu_commit": "fb8ac07",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -275,7 +275,7 @@
   "totals": {
     "baseline_assertions": 318,
     "baseline_files": 10,
-    "mutsu_assertions": 115,
+    "mutsu_assertions": 113,
     "parity_files": 1,
     "regressed_files": 9
   },

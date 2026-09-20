@@ -9,69 +9,23 @@
   "dist": "Test::Script",
   "files": [
     {
-      "cmp": "partial",
+      "cmp": "regression",
       "mutsu": {
-        "first_failure": "Environment",
-        "nok": 1,
+        "first_failure": "Type check failed in binding to parameter '$script'; expected Test::Script but got Str (\"t/env.p6\")",
+        "nok": 0,
         "ok": 0,
-        "plan": 1,
-        "secs": 0.09,
+        "plan": null,
+        "secs": 0.14,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "die"
       },
       "path": "t/00-output-env.t",
       "raku": {
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.9,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "partial",
-      "mutsu": {
-        "first_failure": "Simple",
-        "nok": 3,
-        "ok": 0,
-        "plan": 3,
-        "secs": 0.15,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "fail"
-      },
-      "path": "t/00-output-is.t",
-      "raku": {
-        "nok": 0,
-        "ok": 3,
-        "plan": 3,
-        "secs": 0.35,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "partial",
-      "mutsu": {
-        "first_failure": "Tests regex",
-        "nok": 1,
-        "ok": 0,
-        "plan": 1,
-        "secs": 0.08,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "fail"
-      },
-      "path": "t/00-output-like.t",
-      "raku": {
-        "nok": 0,
-        "ok": 1,
-        "plan": 1,
-        "secs": 0.29,
+        "secs": 1.53,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -80,11 +34,57 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "No such method 'load-source-file' for invocant of type 'CompUnit::Loader'",
+        "first_failure": "Type check failed in binding to parameter '$script'; expected Test::Script but got Str (\"t/hello.p6\")",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.06,
+        "secs": 0.08,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/00-output-is.t",
+      "raku": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 0.59,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Type check failed in binding to parameter '$script'; expected Test::Script but got Str (\"t/random.p6\")",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.08,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/00-output-like.t",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.38,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Type check failed in binding to parameter '$script'; expected Test::Script but got Str (\"t/args-in-var.p6\")",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.08,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -94,53 +94,53 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 0.31,
+        "secs": 0.41,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "partial",
+      "cmp": "regression",
       "mutsu": {
-        "first_failure": "Tests regex with bad script",
-        "nok": 1,
+        "first_failure": "Type check failed in binding to parameter '$script'; expected Test::Script but got Str (\"t/exit-hello.p6\")",
+        "nok": 0,
         "ok": 0,
-        "plan": 1,
-        "secs": 0.07,
+        "plan": null,
+        "secs": 0.08,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "die"
       },
       "path": "t/02-error-like.t",
       "raku": {
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.29,
+        "secs": 0.39,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "partial",
+      "cmp": "regression",
       "mutsu": {
-        "first_failure": "Tests regex with bad script",
-        "nok": 1,
+        "first_failure": "Type check failed in binding to parameter '$script'; expected Test::Script but got Str (\"t/bad-hello.p6\")",
+        "nok": 0,
         "ok": 0,
-        "plan": 1,
-        "secs": 0.07,
+        "plan": null,
+        "secs": 0.08,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "die"
       },
       "path": "t/03-error-exit-like.t",
       "raku": {
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.29,
+        "secs": 0.39,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -152,10 +152,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-19",
+    "date": "2026-09-20",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "5d2e9a2",
+    "mutsu_commit": "fb8ac07",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",

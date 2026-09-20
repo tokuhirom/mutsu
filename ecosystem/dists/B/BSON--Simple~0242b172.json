@@ -26,7 +26,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.2,
+        "secs": 0.36,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -36,7 +36,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 10.17,
+        "secs": 14.52,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -49,7 +49,7 @@
         "nok": 55,
         "ok": 37,
         "plan": 92,
-        "secs": 6.21,
+        "secs": 9.92,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -59,7 +59,7 @@
         "nok": 0,
         "ok": 92,
         "plan": 92,
-        "secs": 27.74,
+        "secs": 42.47,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -69,11 +69,11 @@
       "cmp": "no_baseline",
       "path": "t/02-special.rakutest",
       "raku": {
-        "first_failure": "Cannot locate native library '/root/.cache/mutsu-ecosystem/deps/Base64__Native/Base64-Native-0.0.10/resources/libraries/base64.dll': /root/.cache/mutsu-ecosystem/deps/Base64__Native/Base64-Native-0.0.",
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/deps/Base64__Native/Base64-Native-0.0.10/resources/libraries/base64.dll': /home/runner/.cache/mutsu-ecosystem/deps/Base64__Native/Base",
         "nok": 0,
         "ok": 1,
         "plan": 101,
-        "secs": 36.67,
+        "secs": 39.93,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -87,8 +87,8 @@
     "attempts": 3,
     "date": "2026-09-20",
     "harness": 2,
-    "host": "linux-x86_64",
-    "mutsu_commit": "f0ddc3de",
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "fb8ac07",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",

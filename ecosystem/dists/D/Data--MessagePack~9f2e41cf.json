@@ -14,7 +14,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.28,
+        "secs": 0.26,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -24,7 +24,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 4.14,
+        "secs": 5.55,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -36,7 +36,7 @@
         "nok": 0,
         "ok": 7,
         "plan": 7,
-        "secs": 0.21,
+        "secs": 0.24,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -46,7 +46,348 @@
         "nok": 0,
         "ok": 7,
         "plan": 7,
-        "secs": 0.74,
+        "secs": 0.72,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 2,
+        "plan": 2,
+        "secs": 0.23,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/101-pack-bool.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 2,
+        "plan": 2,
+        "secs": 0.81,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 27,
+        "plan": 27,
+        "secs": 0.24,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/102-pack-int.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 27,
+        "plan": 27,
+        "secs": 1.04,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "Double packed correcly",
+        "nok": 3,
+        "ok": 1,
+        "plan": 4,
+        "secs": 0.22,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/103-pack-float.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 4,
+        "plan": 4,
+        "secs": 0.73,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 0.25,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/104-pack-string.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 1.21,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 0.22,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/105-pack-bin.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 1.02,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "Array packed correctly",
+        "nok": 1,
+        "ok": 9,
+        "plan": 10,
+        "secs": 0.26,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/106-pack-array.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 10,
+        "plan": 10,
+        "secs": 1.04,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Parameter '$position' expects a writable container (variable) as an argument,",
+        "nok": 0,
+        "ok": 0,
+        "plan": 3,
+        "secs": 0.22,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/107-pack-hash.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 0.81,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Parameter '$position' expects a writable container (variable) as an argument,",
+        "nok": 0,
+        "ok": 0,
+        "plan": 1,
+        "secs": 0.22,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/200-unpack-undef.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.72,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Parameter '$position' expects a writable container (variable) as an argument,",
+        "nok": 0,
+        "ok": 0,
+        "plan": 4,
+        "secs": 0.22,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/201-unpack-bool.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 4,
+        "plan": 4,
+        "secs": 0.81,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Parameter '$position' expects a writable container (variable) as an argument,",
+        "nok": 0,
+        "ok": 0,
+        "plan": 40,
+        "secs": 0.21,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/202-unpack-int.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 40,
+        "plan": 40,
+        "secs": 1.17,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Parameter '$position' expects a writable container (variable) as an argument,",
+        "nok": 0,
+        "ok": 0,
+        "plan": 8,
+        "secs": 0.19,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/203-unpack-float.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 8,
+        "plan": 8,
+        "secs": 0.71,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Parameter '$position' expects a writable container (variable) as an argument,",
+        "nok": 0,
+        "ok": 0,
+        "plan": 8,
+        "secs": 0.23,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/204-unpack-string.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 8,
+        "plan": 8,
+        "secs": 0.94,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Parameter '$position' expects a writable container (variable) as an argument,",
+        "nok": 0,
+        "ok": 0,
+        "plan": 3,
+        "secs": 0.24,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/205-unpack-bin.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 0.99,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Parameter '$position' expects a writable container (variable) as an argument,",
+        "nok": 0,
+        "ok": 0,
+        "plan": 3,
+        "secs": 0.19,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/206-unpack-array.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 0.75,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Parameter '$position' expects a writable container (variable) as an argument,",
+        "nok": 0,
+        "ok": 0,
+        "plan": 3,
+        "secs": 0.23,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/207-unpack-hash.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 0.73,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -63,12 +404,12 @@
         "todo": 0,
         "verdict": "pass"
       },
-      "path": "t/101-pack-bool.rakutest",
+      "path": "t/300-stream-unpack-undef.rakutest",
       "raku": {
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 0.68,
+        "secs": 1.94,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -78,19 +419,19 @@
       "cmp": "parity",
       "mutsu": {
         "nok": 0,
-        "ok": 27,
-        "plan": 27,
-        "secs": 0.22,
+        "ok": 2,
+        "plan": 2,
+        "secs": 0.15,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       },
-      "path": "t/102-pack-int.rakutest",
+      "path": "t/301-stream-unpack-bool.rakutest",
       "raku": {
         "nok": 0,
-        "ok": 27,
-        "plan": 27,
-        "secs": 0.77,
+        "ok": 2,
+        "plan": 2,
+        "secs": 0.8,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -99,21 +440,21 @@
     {
       "cmp": "partial",
       "mutsu": {
-        "first_failure": "Double packed correcly",
-        "nok": 3,
-        "ok": 1,
-        "plan": 4,
-        "secs": 0.25,
+        "first_failure": "Expected value received",
+        "nok": 4,
+        "ok": 19,
+        "plan": 23,
+        "secs": 0.61,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
       },
-      "path": "t/103-pack-float.rakutest",
+      "path": "t/302-stream-unpack-int.rakutest",
       "raku": {
         "nok": 0,
-        "ok": 4,
-        "plan": 4,
-        "secs": 0.63,
+        "ok": 23,
+        "plan": 23,
+        "secs": 0.58,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -123,19 +464,41 @@
       "cmp": "parity",
       "mutsu": {
         "nok": 0,
-        "ok": 6,
-        "plan": 6,
-        "secs": 0.21,
+        "ok": 4,
+        "plan": 4,
+        "secs": 0.18,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       },
-      "path": "t/104-pack-string.rakutest",
+      "path": "t/303-stream-unpack-float.rakutest",
       "raku": {
         "nok": 0,
-        "ok": 6,
-        "plan": 6,
-        "secs": 1.25,
+        "ok": 4,
+        "plan": 4,
+        "secs": 0.73,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 4,
+        "plan": 4,
+        "secs": 31.51,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/304-stream-unpack-string.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 4,
+        "plan": 4,
+        "secs": 1.66,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -147,242 +510,56 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 0.21,
+        "secs": 30.09,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       },
-      "path": "t/105-pack-bin.rakutest",
+      "path": "t/305-stream-unpack-bin.rakutest",
       "raku": {
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 1.06,
+        "secs": 1.58,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "partial",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Array packed correctly",
-        "nok": 6,
-        "ok": 4,
-        "plan": 10,
-        "secs": 0.43,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "fail"
-      },
-      "path": "t/106-pack-array.rakutest",
-      "raku": {
         "nok": 0,
-        "ok": 10,
-        "plan": 10,
-        "secs": 0.83,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "Parameter '$position' expects a writable container (variable) as an argument,",
-        "nok": 0,
-        "ok": 0,
+        "ok": 3,
         "plan": 3,
-        "secs": 0.23,
+        "secs": 0.18,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
-      "path": "t/107-pack-hash.rakutest",
+      "path": "t/306-stream-unpack-array.rakutest",
       "raku": {
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 0.59,
+        "secs": 0.9,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Parameter '$position' expects a writable container (variable) as an argument,",
-        "nok": 0,
-        "ok": 0,
-        "plan": 1,
-        "secs": 0.21,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/200-unpack-undef.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 1,
-        "plan": 1,
-        "secs": 0.64,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "Parameter '$position' expects a writable container (variable) as an argument,",
-        "nok": 0,
-        "ok": 0,
-        "plan": 4,
-        "secs": 0.19,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/201-unpack-bool.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 4,
-        "plan": 4,
-        "secs": 0.64,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "Parameter '$position' expects a writable container (variable) as an argument,",
-        "nok": 0,
-        "ok": 0,
-        "plan": 40,
-        "secs": 0.24,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/202-unpack-int.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 40,
-        "plan": 40,
-        "secs": 0.96,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "Parameter '$position' expects a writable container (variable) as an argument,",
-        "nok": 0,
-        "ok": 0,
-        "plan": 8,
-        "secs": 0.3,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/203-unpack-float.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 8,
-        "plan": 8,
-        "secs": 0.77,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "Parameter '$position' expects a writable container (variable) as an argument,",
-        "nok": 0,
-        "ok": 0,
-        "plan": 8,
-        "secs": 0.22,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/204-unpack-string.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 8,
-        "plan": 8,
-        "secs": 1.06,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "Parameter '$position' expects a writable container (variable) as an argument,",
-        "nok": 0,
-        "ok": 0,
-        "plan": 3,
-        "secs": 0.21,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/205-unpack-bin.rakutest",
-      "raku": {
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 0.98,
+        "secs": 0.2,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "Parameter '$position' expects a writable container (variable) as an argument,",
-        "nok": 0,
-        "ok": 0,
-        "plan": 3,
-        "secs": 0.24,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
       },
-      "path": "t/206-unpack-array.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 3,
-        "plan": 3,
-        "secs": 0.82,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "Parameter '$position' expects a writable container (variable) as an argument,",
-        "nok": 0,
-        "ok": 0,
-        "plan": 3,
-        "secs": 0.32,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/207-unpack-hash.rakutest",
+      "path": "t/307-stream-unpack-hash.rakutest",
       "raku": {
         "nok": 0,
         "ok": 3,
@@ -397,199 +574,19 @@
       "cmp": "parity",
       "mutsu": {
         "nok": 0,
-        "ok": 2,
-        "plan": 2,
-        "secs": 0.18,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/300-stream-unpack-undef.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 2,
-        "plan": 2,
-        "secs": 2.25,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 2,
-        "plan": 2,
-        "secs": 0.17,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/301-stream-unpack-bool.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 2,
-        "plan": 2,
-        "secs": 0.7,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "partial",
-      "mutsu": {
-        "first_failure": "Expected value received",
-        "nok": 4,
-        "ok": 19,
-        "plan": 23,
-        "secs": 0.63,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "fail"
-      },
-      "path": "t/302-stream-unpack-int.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 23,
-        "plan": 23,
-        "secs": 0.77,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 4,
-        "plan": 4,
-        "secs": 0.17,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/303-stream-unpack-float.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 4,
-        "plan": 4,
-        "secs": 0.92,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 4,
-        "plan": 4,
-        "secs": 34.32,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/304-stream-unpack-string.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 4,
-        "plan": 4,
-        "secs": 1.57,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 35.0,
+        "secs": 0.21,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
-      },
-      "path": "t/305-stream-unpack-bin.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 3,
-        "plan": 3,
-        "secs": 1.42,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "partial",
-      "mutsu": {
-        "first_failure": "Expected value received",
-        "nok": 2,
-        "ok": 2,
-        "plan": 3,
-        "secs": 0.23,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "fail"
-      },
-      "path": "t/306-stream-unpack-array.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 3,
-        "plan": 3,
-        "secs": 0.81,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "partial",
-      "mutsu": {
-        "first_failure": "Expected value received",
-        "nok": 40,
-        "ok": 0,
-        "plan": 3,
-        "secs": 1.34,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "fail"
-      },
-      "path": "t/307-stream-unpack-hash.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 3,
-        "plan": 3,
-        "secs": 0.95,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "partial",
-      "mutsu": {
-        "first_failure": "Expected value received",
-        "nok": 5,
-        "ok": 0,
-        "plan": 3,
-        "secs": 0.28,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "fail"
       },
       "path": "t/308-stream-unpack-from-blob.rakutest",
       "raku": {
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 0.88,
+        "secs": 0.9,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -604,10 +601,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-19",
+    "date": "2026-09-20",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "5d2e9a2",
+    "mutsu_commit": "fb8ac07",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -622,9 +619,9 @@
   "totals": {
     "baseline_assertions": 180,
     "baseline_files": 26,
-    "mutsu_assertions": 87,
-    "parity_files": 11,
-    "regressed_files": 15
+    "mutsu_assertions": 99,
+    "parity_files": 14,
+    "regressed_files": 12
   },
   "version": "0.1.4"
 }

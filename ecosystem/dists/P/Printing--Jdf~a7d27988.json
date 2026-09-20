@@ -16,7 +16,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.11,
+        "secs": 0.12,
         "skip": 1,
         "todo": 0,
         "verdict": "pass"
@@ -26,7 +26,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.6,
+        "secs": 0.54,
         "skip": 1,
         "todo": 0,
         "verdict": "pass"
@@ -39,7 +39,7 @@
         "nok": 0,
         "ok": 10,
         "plan": 31,
-        "secs": 9.75,
+        "secs": 10.42,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -49,7 +49,7 @@
         "nok": 0,
         "ok": 31,
         "plan": 31,
-        "secs": 10.19,
+        "secs": 8.95,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -62,7 +62,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 7,
-        "secs": 27.95,
+        "secs": 35.07,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -72,7 +72,7 @@
         "nok": 0,
         "ok": 7,
         "plan": 7,
-        "secs": 0.66,
+        "secs": 0.63,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -84,7 +84,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 28.69,
+        "secs": 34.3,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -94,7 +94,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 0.69,
+        "secs": 0.61,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -107,7 +107,7 @@
         "nok": 1,
         "ok": 2,
         "plan": 3,
-        "secs": 6.23,
+        "secs": 7.46,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -117,7 +117,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 0.54,
+        "secs": 0.52,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -129,10 +129,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-19",
+    "date": "2026-09-20",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "5d2e9a2",
+    "mutsu_commit": "fb8ac07",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",

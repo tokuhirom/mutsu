@@ -9,46 +9,44 @@
   "dist": "Docker::File",
   "files": [
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Cannot resolve caller Str(Docker::File::Label:D: ); none of these signatures matches:",
         "nok": 0,
-        "ok": 29,
+        "ok": 37,
         "plan": 37,
-        "secs": 0.32,
+        "secs": 0.28,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/generate.rakutest",
       "raku": {
         "nok": 0,
         "ok": 37,
         "plan": 37,
-        "secs": 4.3,
+        "secs": 3.17,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Type Array does not support associative indexing.",
         "nok": 0,
-        "ok": 36,
+        "ok": 49,
         "plan": 49,
-        "secs": 0.74,
+        "secs": 0.7,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/parse-basic.rakutest",
       "raku": {
         "nok": 0,
         "ok": 49,
         "plan": 49,
-        "secs": 3.11,
+        "secs": 2.52,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -60,7 +58,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 0.26,
+        "secs": 0.25,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -82,10 +80,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-19",
+    "date": "2026-09-20",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "5d2e9a2",
+    "mutsu_commit": "fb8ac07",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -96,13 +94,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/D/OC/DOCKER_FILE/542465f8bf3ba68ab04f417ac63741eb6ef698a0.tar.gz"
   },
-  "status": "partial",
+  "status": "green",
   "totals": {
     "baseline_assertions": 89,
     "baseline_files": 3,
-    "mutsu_assertions": 68,
-    "parity_files": 1,
-    "regressed_files": 2
+    "mutsu_assertions": 89,
+    "parity_files": 3,
+    "regressed_files": 0
   },
   "version": "1.1"
 }

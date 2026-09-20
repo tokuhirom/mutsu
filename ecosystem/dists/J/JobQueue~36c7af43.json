@@ -15,21 +15,21 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "Unknown function: uuid-v4",
+        "first_failure": "SWEEP-TIMEOUT",
         "nok": 0,
         "ok": 0,
-        "plan": 24,
-        "secs": 0.25,
+        "plan": null,
+        "secs": 240.1,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "timeout"
       },
       "path": "t/01-queue.rakutest",
       "raku": {
         "nok": 0,
         "ok": 24,
         "plan": 24,
-        "secs": 12.23,
+        "secs": 18.57,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -38,44 +38,43 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "Unknown function: uuid-v4",
+        "first_failure": "SWEEP-TIMEOUT",
         "nok": 0,
         "ok": 0,
-        "plan": 12,
-        "secs": 0.23,
+        "plan": null,
+        "secs": 240.01,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "timeout"
       },
       "path": "t/02-coordinator.rakutest",
       "raku": {
         "nok": 0,
         "ok": 12,
         "plan": 12,
-        "secs": 3.63,
+        "secs": 2.36,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Unknown function: uuid-v4",
         "nok": 0,
-        "ok": 0,
+        "ok": 7,
         "plan": 7,
         "secs": 0.15,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/03-failed-registry.rakutest",
       "raku": {
         "nok": 0,
         "ok": 7,
         "plan": 7,
-        "secs": 1.81,
+        "secs": 1.15,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -84,21 +83,21 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "Unknown function: uuid-v4",
+        "first_failure": "SWEEP-TIMEOUT",
         "nok": 0,
         "ok": 0,
-        "plan": 8,
-        "secs": 0.22,
+        "plan": null,
+        "secs": 240.05,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "timeout"
       },
       "path": "t/04-injection.rakutest",
       "raku": {
         "nok": 0,
         "ok": 8,
         "plan": 8,
-        "secs": 2.28,
+        "secs": 1.51,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -116,10 +115,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-19",
+    "date": "2026-09-20",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "5d2e9a2",
+    "mutsu_commit": "fb8ac07",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -130,13 +129,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/J/OB/JOBQUEUE/7ddc5816bf1db6f0ccd69c417dd354229fa003f3.tar.gz"
   },
-  "status": "red",
+  "status": "partial",
   "totals": {
     "baseline_assertions": 51,
     "baseline_files": 4,
-    "mutsu_assertions": 0,
-    "parity_files": 0,
-    "regressed_files": 4
+    "mutsu_assertions": 7,
+    "parity_files": 1,
+    "regressed_files": 3
   },
   "version": "0.1.1"
 }

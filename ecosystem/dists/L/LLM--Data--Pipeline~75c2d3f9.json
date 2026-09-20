@@ -22,7 +22,7 @@
         "nok": 0,
         "ok": 15,
         "plan": 15,
-        "secs": 0.36,
+        "secs": 0.34,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -32,7 +32,7 @@
         "nok": 0,
         "ok": 15,
         "plan": 15,
-        "secs": 3.93,
+        "secs": 4.08,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -44,7 +44,7 @@
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 0.32,
+        "secs": 0.28,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -54,7 +54,7 @@
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 1.49,
+        "secs": 1.58,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -66,7 +66,7 @@
         "nok": 0,
         "ok": 12,
         "plan": 12,
-        "secs": 0.46,
+        "secs": 0.4,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -76,7 +76,7 @@
         "nok": 0,
         "ok": 12,
         "plan": 12,
-        "secs": 2.2,
+        "secs": 2.7,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -90,7 +90,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 14,
-        "secs": 17.58,
+        "secs": 18.04,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -104,7 +104,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 3,
-        "secs": 1.91,
+        "secs": 2.38,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -118,7 +118,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 13,
-        "secs": 2.44,
+        "secs": 2.43,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -132,7 +132,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 12,
-        "secs": 2.3,
+        "secs": 2.48,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -146,7 +146,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 10,
-        "secs": 3.88,
+        "secs": 4.4,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -160,7 +160,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 5,
-        "secs": 2.08,
+        "secs": 1.85,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -174,7 +174,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 4,
-        "secs": 1.92,
+        "secs": 1.93,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -188,7 +188,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 10,
-        "secs": 2.98,
+        "secs": 2.8,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -202,7 +202,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 8,
-        "secs": 2.26,
+        "secs": 2.56,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -216,7 +216,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 10,
-        "secs": 2.14,
+        "secs": 2.59,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -230,7 +230,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 4,
-        "secs": 2.08,
+        "secs": 2.25,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -244,7 +244,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 5,
-        "secs": 1.41,
+        "secs": 1.48,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -258,7 +258,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 5,
-        "secs": 1.83,
+        "secs": 1.95,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -272,7 +272,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 8,
-        "secs": 2.24,
+        "secs": 2.37,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -292,10 +292,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-19",
+    "date": "2026-09-20",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "5d2e9a2",
+    "mutsu_commit": "fb8ac07",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
