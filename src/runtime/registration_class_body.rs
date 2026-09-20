@@ -310,6 +310,46 @@ impl Interpreter {
                             .or_default()
                             .insert(fq, Value::TRUE);
                     }
+                } else if matches!(
+                    op,
+                    crate::opcode::ClassBodyOp::Other {
+                        raw: Stmt::Use { .. } | Stmt::Import { .. },
+                        ..
+                    }
+                ) {
+                    // A class-body `use`/`import` installs its exports under
+                    // THIS class's own package (`import_module`'s `target_pkg`
+                    // is `current_package()`, already the class while its body
+                    // runs) -- but there is no single known sub name to probe
+                    // for, unlike a `sub` declaration above. Diff the whole
+                    // function-key set instead: any key newly registered under
+                    // `cx.name::` is one of the statement's imports. Without
+                    // this, `has_class_scoped_subs` stayed false for a class
+                    // whose only class-scoped routine came from a `use`
+                    // (rather than its own `sub`), so method dispatch never
+                    // anchored `current_package` to the class and an imported
+                    // sub was "Unknown function" from the class's own methods
+                    // (#8883).
+                    let prefix = format!("{}::", cx.name);
+                    let new_keys: Vec<String> = {
+                        let registry = self.registry();
+                        registry
+                            .functions
+                            .keys()
+                            .filter_map(|k| {
+                                let ks = k.resolve();
+                                (ks.starts_with(&prefix) && !saved_functions_keys.contains(&ks))
+                                    .then_some(ks)
+                            })
+                            .collect()
+                    };
+                    if !new_keys.is_empty() {
+                        let mut registry = self.registry_mut();
+                        let entry = registry.class_subs.entry(cx.name.to_string()).or_default();
+                        for fq in new_keys {
+                            entry.insert(fq, Value::TRUE);
+                        }
+                    }
                 }
                 self.registry_mut()
                     .classes
