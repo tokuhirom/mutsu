@@ -68,13 +68,6 @@ pub(crate) fn qualified(pkg: Symbol, name: Symbol) -> Symbol {
     sym
 }
 
-/// [`qualified`] for a caller holding only `&str`s. Interns both operands
-/// before the memo lookup, so it costs two string hashes per call — the wrong
-/// entry point for a hot loop, right where the caller genuinely has no symbol.
-pub(crate) fn qualified_strs(pkg: &str, name: &str) -> Symbol {
-    qualified(Symbol::intern(pkg), Symbol::intern(name))
-}
-
 /// `pkg` with its last `::` segment removed, or `None` when it has only one.
 ///
 /// This is `rsplit_once("::")` decided once per package rather than per walk
@@ -177,7 +170,11 @@ mod tests {
         assert_eq!(first.as_str(), "Foo::Bar::Baz");
         // The memo hands back the identical symbol, not an equal rebuild.
         assert_eq!(first.id(), qualified(pkg, name).id());
-        assert_eq!(first.id(), qualified_strs("Foo::Bar", "Baz").id());
+        // ...including when the pair is reached from freshly interned copies.
+        assert_eq!(
+            first.id(),
+            qualified(Symbol::intern("Foo::Bar"), Symbol::intern("Baz")).id()
+        );
     }
 
     #[test]

@@ -906,9 +906,14 @@ impl Interpreter {
     /// outer type inside its declaring class, so the qualified probe runs
     /// first; an unresolvable name is returned unchanged.
     pub(crate) fn resolve_type_name_for_owner(&self, owner: &str, name: String) -> String {
-        if name.contains("::") || name.is_empty() {
+        if name.is_empty() {
             return name;
         }
+        let name_sym = crate::symbol::Symbol::intern(&name);
+        if crate::qualified::is_qualified(name_sym) {
+            return name;
+        }
+        let owner_sym = crate::symbol::Symbol::intern(owner);
         // Skipping the probe for an unshadowed core name is what keeps this
         // from allocating an `Owner::Int` candidate for every ordinary
         // attribute on every `.new` (see
@@ -922,18 +927,10 @@ impl Interpreter {
             // attribute to the owning class itself. Keep the package walk
             // for a real package-local type that shadows this builtin,
             // but never let that self-reference win.
-            let mut pkg = owner;
-            loop {
-                if pkg.is_empty() {
-                    break;
-                }
-                let qualified = format!("{pkg}::{name}");
-                if qualified != owner && self.has_type_direct(&qualified) {
-                    return qualified;
-                }
-                match pkg.rsplit_once("::") {
-                    Some((parent, _)) => pkg = parent,
-                    None => break,
+            for pkg in crate::qualified::package_ancestors(owner_sym) {
+                let qualified = crate::qualified::qualified(pkg, name_sym).as_str();
+                if qualified != owner && self.has_type_direct(qualified) {
+                    return qualified.to_string();
                 }
             }
             if let Some(ValueView::Package(target)) = self
@@ -947,12 +944,8 @@ impl Interpreter {
             }
             return name;
         }
-        let mut pkg = owner;
-        loop {
-            if pkg.is_empty() {
-                break;
-            }
-            let qualified = format!("{pkg}::{name}");
+        for pkg in crate::qualified::package_ancestors(owner_sym) {
+            let qualified = crate::qualified::qualified(pkg, name_sym).as_str();
             // Same footgun `resolve_type_in_current_package` guards against:
             // `pkg` here can be a prefix obtained by stripping the LAST
             // segment off a compound *declared name* (`class Foo::Bar::Supply`
@@ -962,14 +955,10 @@ impl Interpreter {
             // `qualified` reconstructs the class's OWN full name and this loop
             // would "resolve" the attribute's `Supply` type constraint to the
             // enclosing class itself instead of the real core `Supply` type.
-            if !self.compound_name_segment_is_not_a_scope(&qualified)
-                && self.has_type_direct(&qualified)
+            if !self.compound_name_segment_is_not_a_scope(qualified)
+                && self.has_type_direct(qualified)
             {
-                return qualified;
-            }
-            match pkg.rsplit_once("::") {
-                Some((parent, _)) => pkg = parent,
-                None => break,
+                return qualified.to_string();
             }
         }
         if let Some(ValueView::Package(target)) = self
