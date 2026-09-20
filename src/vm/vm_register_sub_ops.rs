@@ -761,7 +761,7 @@ impl Interpreter {
                         crate::vm::vm_stats::record_mainline_lexical_box();
                         boxed
                     };
-                    crate::runtime::cow_table_mut(&mut self.unit_lexicals)
+                    self.unit_lexicals_cow_mut()
                         .entry(unit_key.clone())
                         .or_default()
                         .insert(name, cell);

@@ -1138,11 +1138,17 @@ mod helpers_sub_body;
 pub(crate) mod lex_scope;
 mod nqp_forms;
 mod stmt;
+mod trir_call;
 
 #[derive(Clone)]
 pub(crate) struct Compiler {
     code: CompiledCode,
     local_map: HashMap<String, u32>,
+    /// ADR-0110 §3.3: routines this compile registered with a TRIR chunk,
+    /// keyed by (name, positional arity), so a later call site in the same
+    /// compile can resolve the callee without a name. Populated by the single
+    /// site that attaches a chunk (`helpers_sub_body.rs`).
+    trir_routines: HashMap<(String, usize), (crate::symbol::Symbol, u64)>,
     /// Lexical scope stack for local-slot allocation (§1.4 groundwork). Pushed and
     /// popped at every block boundary (`push_dynamic_scope_lexical` /
     /// `pop_dynamic_scope_lexical`); each frame records the names declared in that
@@ -1701,6 +1707,7 @@ impl Compiler {
         Self {
             code: CompiledCode::new(),
             local_map: HashMap::new(),
+            trir_routines: HashMap::new(),
             // Frame 0 = compilation-unit / routine top level; never popped.
             local_scopes: vec![HashMap::new()],
             enclosing_scopes: Vec::new(),

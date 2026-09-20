@@ -3372,6 +3372,9 @@ impl Interpreter {
             // former `VM::new` installed.
             stack: Vec::new(),
             locals: crate::runtime::locals::Locals::new(),
+            trir_scratch: None,
+            unit_lexical_gen: 0,
+            trir_outer_cache: rustc_hash::FxHashMap::default(),
             upvalues: Vec::new(),
             frame_authoritative: Vec::new(),
             frame_owned: Vec::new(),

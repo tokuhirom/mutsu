@@ -719,6 +719,13 @@ pub(crate) enum WhenMatcherKind {
 /// Bytecode operations for the VM.
 #[derive(Debug, Clone)]
 pub(crate) enum OpCode {
+    /// ADR-0110 §3.3: call a statically resolved TRIR routine whose arguments
+    /// are all plain caller lexicals. The operand indexes
+    /// [`CompiledCode::trir_call_sites`]; the opcode takes NOTHING from the
+    /// operand stack, because the arguments are read from the caller's frame
+    /// slots directly — the whole of a `nom-ws($text, $pos)` call site, which
+    /// is otherwise seven opcodes ending in a by-name `CallFunc`.
+    CallTrir(u32),
     // -- Constants --
     LoadConst(u32),
     /// Load a *code-bearing* regex literal as the closure it is.
@@ -4642,6 +4649,9 @@ pub(crate) struct CompiledCode {
     /// The single declaration-registration operand pool. `RegisterDecl(i)` selects one tagged
     /// typed plan here; declaration-specific metadata stays out of the hot opcode enum.
     pub(crate) decl_plans: Vec<CompiledDeclPlanRef>,
+    /// ADR-0110 §3.3: the compile-time-resolved TRIR call sites this chunk
+    /// contains, indexed by [`OpCode::CallTrir`]'s operand.
+    pub(crate) trir_call_sites: Vec<crate::trir::TrCallSite>,
     pub(crate) locals: Vec<String>,
     /// Pre-interned Symbol for each local name. Avoids Symbol::intern()
     /// on every env sync in hot paths.
@@ -5836,6 +5846,7 @@ impl CompiledCode {
             proto_decl_plans: Vec::new(),
             token_decl_plans: Vec::new(),
             decl_plans: Vec::new(),
+            trir_call_sites: Vec::new(),
             locals: Vec::new(),
             locals_sym: Vec::new(),
             binding_descs: Vec::new(),
@@ -9718,6 +9729,12 @@ pub(crate) struct CompiledFunction {
     /// Deprecation info: (kind, name, package, message).
     /// When set, every call records a deprecation event.
     pub(crate) deprecated_info: Option<(String, String, String, String)>,
+    /// This routine's typed, resolved IR (ADR-0110), when the compiler could
+    /// prove every one of its variables, types and operand kinds. `None` —
+    /// the overwhelming majority today — means the routine takes the untyped
+    /// path unchanged, which is correct; TRIR never has to prove a negative
+    /// about the rest of the program to decline (ADR-0110 §4).
+    pub(crate) trir: Option<std::sync::Arc<crate::trir::TrChunk>>,
     /// Set of variable names declared locally in this function (via `my`).
     /// Used by the positional light call path to distinguish function-local vars
     /// (which should be restored after recursive calls) from captured outer vars
@@ -10280,6 +10297,7 @@ mod compiled_fns_identity {
             declares_inner_routines: false,
             named_call_plan: None,
             deprecated_info: None,
+            trir: None,
             declared_locals: None,
             param_name_syms: Vec::new(),
             param_fast_types: Vec::new(),

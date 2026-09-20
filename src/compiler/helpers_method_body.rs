@@ -217,6 +217,7 @@ impl Compiler {
             declares_inner_routines: false,
             named_call_plan: None,
             deprecated_info: None,
+            trir: None,
             declared_locals: None,
             param_name_syms: Vec::new(),
             param_fast_types: Vec::new(),

@@ -1127,7 +1127,7 @@ impl Interpreter {
                         } else {
                             value.clone().into_container_ref()
                         };
-                        crate::runtime::cow_table_mut(&mut self.unit_lexicals)
+                        self.unit_lexicals_cow_mut()
                             .entry(unit.to_string())
                             .or_default()
                             .insert(name.clone(), cell);
@@ -1159,7 +1159,7 @@ impl Interpreter {
                     } else {
                         value.into_container_ref()
                     };
-                    crate::runtime::cow_table_mut(&mut self.unit_lexicals)
+                    self.unit_lexicals_cow_mut()
                         .entry(unit.to_string())
                         .or_default()
                         .insert(name.clone(), cell);

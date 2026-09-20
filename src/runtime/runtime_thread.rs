@@ -918,6 +918,9 @@ impl Interpreter {
             // `VM::new(thread_interp)` did for a spawned thread.
             stack: Vec::new(),
             locals: crate::runtime::locals::Locals::new(),
+            trir_scratch: None,
+            unit_lexical_gen: 0,
+            trir_outer_cache: rustc_hash::FxHashMap::default(),
             upvalues: Vec::new(),
             frame_authoritative: Vec::new(),
             frame_owned: Vec::new(),

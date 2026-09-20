@@ -713,6 +713,29 @@ impl Interpreter {
                         // caller's container -> fall through to the slow path.
                         let share_into_scalar =
                             Self::call_shares_container_into_scalar_param(cf, stack_args);
+                        // ADR-0110: a routine the compiler proved typed and
+                        // resolved runs its own chunk, which needs none of
+                        // the binder, frame, overlay and metadata work the
+                        // light path below performs. Tried FIRST, and before
+                        // the light path's own admissions, because those
+                        // admissions exist to make the general binder
+                        // affordable and TRIR does not use it. Declining
+                        // touches nothing, so the light chain below is
+                        // reached exactly as it was.
+                        if cf.trir.is_some()
+                            && !has_junction
+                            && !call_has_slip
+                            && !call_has_named
+                            && !share_into_scalar
+                            && cl.is_none()
+                        {
+                            let start = self.stack.len() - arity_usize;
+                            if let Some(result) = self.try_call_trir(cf, start, Some(code)) {
+                                self.stack.push(result?);
+                                self.drain_and_reconcile_after_cached_call(code);
+                                return Ok(());
+                            }
+                        }
                         if !has_junction
                             && !call_has_slip
                             && !call_has_named
@@ -744,7 +767,7 @@ impl Interpreter {
                                                 &self.stack[self.stack.len() - 1],
                                             ))
                                             as usize,
-                                    stack_args,
+                                    &self.stack[self.stack.len() - arity_usize..],
                                 ))
                             // ADR-0109 (#8686 Phase 2): same per-call
                             // re-check as `light_full_arity_only` just above,
@@ -755,7 +778,10 @@ impl Interpreter {
                             // whichever call first populated this entry. Free
                             // for the overwhelming majority of routines
                             // (`has_rw_positional_param` is false).
-                            && Self::positional_light_rw_args_admitted(cf, stack_args)
+                            && Self::positional_light_rw_args_admitted(
+                                cf,
+                                &self.stack[self.stack.len() - arity_usize..],
+                            )
                         {
                             // Bind straight out of the stack (no args buffer):
                             // the callee takes the arguments in place from

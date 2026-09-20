@@ -390,6 +390,15 @@ impl Compiler {
             );
             return;
         }
+        // ADR-0110 §3.3: a call whose callee is a statically resolved TRIR
+        // routine and whose arguments are all plain caller lexicals is ONE
+        // opcode. Placed after the `my &f` shadow checks above, which are the
+        // only way a bare name can mean something other than the routine this
+        // compile just registered, and before every rewrite below, none of
+        // which applies to a user routine call.
+        if self.try_compile_trir_direct_call(name, args) {
+            return;
+        }
         let suppress_listop_rewrite =
             suppress_listop_rewrite || self.user_listop_shadows.contains(&name.resolve());
         // `callframe`/`caller` inside N enclosing `for` blocks must report the

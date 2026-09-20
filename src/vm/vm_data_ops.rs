@@ -353,7 +353,7 @@ impl Interpreter {
     /// `key => $var` must alias `$var` even when `$var` is an *uninitialized*
     /// declared scalar holding a bare type object, because that is still a
     /// container in raku and `$p.value = X` writes through to it.
-    pub(super) fn capture_var_cell_boxing_type_objects(
+    pub(crate) fn capture_var_cell_boxing_type_objects(
         &mut self,
         code: &CompiledCode,
         name: &str,

@@ -631,6 +631,7 @@ impl Compiler {
             declares_inner_routines: false,
             named_call_plan: None,
             deprecated_info,
+            trir: None,
             declared_locals: None,
             param_name_syms: Vec::new(),
             param_fast_types: Vec::new(),
@@ -654,6 +655,23 @@ impl Compiler {
         cf.precompute_param_name_syms();
         cf.detect_inner_subs();
         cf.compute_declared_locals();
+        // ADR-0110: the typed, resolved IR, when this routine's variables,
+        // types and operand kinds are all statically known. The single site
+        // that attaches one, so the eligibility gate and the chunk can never
+        // disagree about which routines have it. A `multi` declines because
+        // dispatch picks its candidate by signature at the call site, which
+        // is exactly the by-name resolution TRIR replaces; `is rw`/`is raw`
+        // on the ROUTINE decline because the caller then owns the returned
+        // container.
+        if !multi && !is_rw && !is_raw && !is_cached && !cf.has_inner_subs {
+            cf.trir = crate::trir::entry::compile_routine(
+                crate::symbol::Symbol::intern(name),
+                param_defs,
+                params,
+                return_type.map(String::as_str),
+                body,
+            );
+        }
         // Contribute this directly-nested named sub's cell-requiring capture set
         // to the enclosing scope. Besides writes, a scalar fed to WrapVarRef
         // (`key => $value`, `Pair.new(..., $value)`, captures/list aliases) must
@@ -730,6 +748,11 @@ impl Compiler {
             self.code.escaping_our_sub_captures.push(esc);
         }
         let key = crate::symbol::Symbol::intern(&key);
+        // ADR-0110 §3.3: make this routine's chunk resolvable from a later
+        // call site in the same compile.
+        if cf.trir.is_some() {
+            self.record_trir_routine(name, param_defs.len(), key, fingerprint);
+        }
         self.compiled_functions.insert(key, cf);
         Some(key)
     }

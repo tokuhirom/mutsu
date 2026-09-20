@@ -201,6 +201,20 @@ impl Interpreter {
         // that mutated a captured-outer lexical (Slice F). See `current_code`.
         self.current_code = code as *const CompiledCode as usize;
         match &code.ops[*ip] {
+            // ADR-0110 §3.3: a statically resolved call into a typed routine.
+            // First arm because it is the whole of a hot call site.
+            OpCode::CallTrir(site_idx) => {
+                let site = &code.trir_call_sites[*site_idx as usize];
+                let result = match self.exec_call_trir_site(site, compiled_fns, code) {
+                    Some(r) => r?,
+                    None => {
+                        let site = code.trir_call_sites[*site_idx as usize].clone();
+                        self.exec_call_trir_fallback(&site, code)?
+                    }
+                };
+                self.stack.push(result);
+                *ip += 1;
+            }
             // -- Constants --
             OpCode::LoadConst(idx) => {
                 self.stack.push(code.constants[*idx as usize].clone());

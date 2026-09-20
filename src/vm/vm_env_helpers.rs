@@ -667,7 +667,7 @@ impl Interpreter {
     ///   what an END phaser declared in a `unit module` does. Resolved only when the
     ///   qualifier IS the current package: an explicitly written `$Other::x` is a
     ///   package variable and must never reach a `my` lexical.
-    pub(super) fn unit_lexical_slot(&self, name: &str) -> Option<&Value> {
+    pub(crate) fn unit_lexical_slot(&self, name: &str) -> Option<&Value> {
         if self.unit_lexicals.is_empty() || name.is_empty() {
             return None;
         }
@@ -763,7 +763,7 @@ impl Interpreter {
             // `get_value_mut` keeps the table's name filter: the entry was
             // proved to exist above and only its value is handed out, so
             // nothing about the key set changes here.
-            return crate::runtime::cow_table_mut(&mut self.unit_lexicals)
+            return self.unit_lexicals_cow_mut()
                 .get_value_mut(&bucket, name);
         }
         // `&'static str` off the atomic symbol mirror: `current_package()` takes
@@ -781,7 +781,7 @@ impl Interpreter {
             }
             let bare = bare.to_string();
             return Self::lookup_in_package_chain_mut(
-                crate::runtime::cow_table_mut(&mut self.unit_lexicals),
+                self.unit_lexicals_cow_mut(),
                 cur,
                 &bare,
             );
@@ -815,7 +815,7 @@ impl Interpreter {
             }
             if Self::lookup_in_package_chain(&self.unit_lexicals, &candidate, name).is_some() {
                 return Self::lookup_in_package_chain_mut(
-                    crate::runtime::cow_table_mut(&mut self.unit_lexicals),
+                    self.unit_lexicals_cow_mut(),
                     &candidate,
                     name,
                 );
