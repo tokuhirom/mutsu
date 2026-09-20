@@ -174,6 +174,21 @@ impl Interpreter {
         // drops, so only the dispatch work itself can still be holding one
         // (`crate::profile::region`).
         let _region = crate::profile::enter(crate::profile::Region::MethodDispatch);
+        // A `VarRef` (the value `Variable.var` hands back, e.g. inside a
+        // `trait_mod:<is>(Variable:D \v, ...)` body calling `v.var.keyof`) is a
+        // transient wrapper around the variable's real value, not a type of
+        // its own -- a container is transparent for ordinary method dispatch
+        // (the same principle ADR-0064 states for the `.VAR` descriptor).
+        // Every OTHER call site that constructs a `VarRef` consumes it
+        // directly (argument binding, assignment writeback) without routing
+        // back through this dispatcher, so the only method name that must see
+        // the wrapper itself here is `VAR`, handled below via `varref_parts`.
+        if let ValueView::VarRef { value, .. } = target.view()
+            && method != "VAR"
+        {
+            let inner = value.clone();
+            return self.call_method_with_values(inner, method, args);
+        }
         // `Any` is not a `Cool`, so it does not answer `Cool`'s methods. Gated
         // here, ahead of every native/instance handler, because the by-name
         // native cascades below recognize the NAME and then stringify the
