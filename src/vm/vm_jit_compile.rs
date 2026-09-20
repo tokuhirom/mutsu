@@ -10,7 +10,7 @@
 use super::vm_jit::JitEntryFn;
 use super::vm_jit_helpers as helpers;
 use super::vm_jit_support::{noarg_shim, step_supported};
-use super::vm_jit_tier_b::{IntArith, IntDivMod, NumCmp, TierB};
+use super::vm_jit_tier_b::{IntArith, IntDivMod, NqpIntOp, NumCmp, TierB};
 use super::*;
 
 use cranelift_codegen::ir::{AbiParam, Block, InstBuilder, SigRef, Type, types};
@@ -621,7 +621,26 @@ fn build(
                 b.switch_to_block(next);
             }
             op => {
-                if let Some(f) = noarg_shim(op) {
+                // Tier B inline `nqp::*_i`. Which op a site means is settled at
+                // bytecode-compile time (the opcode carries a dense registry
+                // index, not a callee string), so the whitelist is resolved
+                // here, once per JIT compilation, rather than per execution.
+                if let Some(tb) = &tier_b
+                    && let Some(pending_line) = tb.lay.pending_line_tag
+                    && let OpCode::NqpOp { id, arity: 2 } = op
+                    && let Some(nqp_op) =
+                        NqpIntOp::from_name(crate::runtime::nqp_op_ids::nqp_op_name(*id))
+                {
+                    tb.emit_nqp_int_binop(
+                        &mut b,
+                        nqp_op,
+                        pending_line,
+                        sigs.s_call,
+                        helpers::step as *const () as usize,
+                        i as u32,
+                        fnsp,
+                    );
+                } else if let Some(f) = noarg_shim(op) {
                     // Dedicated payload-free shim (arith / compare / Return —
                     // for Return, OK status = a rebound `&return` ran and
                     // execution falls through; otherwise the parked return
