@@ -462,6 +462,7 @@ impl Interpreter {
     /// `compose` hook must fire (see the call site below) instead of invoking
     /// it inline — `run_class_body` drains it once the whole class body has
     /// registered (#8845).
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn apply_attribute_traits(
         &mut self,
         unknown_traits: &[(String, String, Option<crate::ast::Expr>)],
