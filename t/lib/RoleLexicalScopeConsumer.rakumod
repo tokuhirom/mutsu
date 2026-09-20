@@ -1,0 +1,2 @@
+use RoleLexicalScopeRole;
+unit class RoleLexicalScopeConsumer does RoleLexicalScopeRole;

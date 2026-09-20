@@ -13,60 +13,66 @@
   "dist": "Selkie::UI",
   "files": [
     {
-      "cmp": "no_baseline",
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 21,
+        "plan": 21,
+        "secs": 15.69,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
       "path": "t/01-button-textinput.rakutest",
       "raku": {
-        "first_failure": "SWEEP-TIMEOUT",
         "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 240.11,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "timeout"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "X::TypeCheck::Binding::Parameter: Type check failed in binding to parameter 'child'; expected Selkie::Widget, got Nil",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 26.0,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/02-layout-structure.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 12,
-        "plan": 12,
-        "secs": 17.46,
+        "ok": 21,
+        "plan": 21,
+        "secs": 85.78,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Cannot resolve caller subtest(Bool:D, Str:D); none of these signatures matches:",
         "nok": 0,
-        "ok": 4,
-        "plan": null,
-        "secs": 26.93,
+        "ok": 12,
+        "plan": 12,
+        "secs": 13.29,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
+      },
+      "path": "t/02-layout-structure.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 12,
+        "plan": 12,
+        "secs": 3.48,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 15,
+        "plan": 15,
+        "secs": 14.1,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
       },
       "path": "t/03-text-stream-collection.rakutest",
       "raku": {
         "nok": 0,
         "ok": 15,
         "plan": 15,
-        "secs": 5.13,
+        "secs": 3.73,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -79,7 +85,7 @@
         "nok": 0,
         "ok": 6,
         "plan": null,
-        "secs": 26.16,
+        "secs": 13.64,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -89,76 +95,73 @@
         "nok": 0,
         "ok": 9,
         "plan": 9,
-        "secs": 4.42,
+        "secs": 3.37,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "X::Assignment::RO: cannot assign through .parent on non-instance",
         "nok": 0,
-        "ok": 2,
-        "plan": null,
-        "secs": 26.95,
+        "ok": 5,
+        "plan": 5,
+        "secs": 14.34,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/05-system-helpers.rakutest",
       "raku": {
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 4.43,
+        "secs": 3.48,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "partial",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "ReactiveArray Positional",
-        "nok": 1,
-        "ok": 4,
+        "nok": 0,
+        "ok": 5,
         "plan": 5,
-        "secs": 26.1,
+        "secs": 14.88,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "pass"
       },
       "path": "t/06-reactive-state.rakutest",
       "raku": {
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 4.49,
+        "secs": 3.63,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Cannot resolve caller subtest(Bool:D, Str:D); none of these signatures matches:",
         "nok": 0,
-        "ok": 1,
-        "plan": null,
-        "secs": 25.3,
+        "ok": 4,
+        "plan": 4,
+        "secs": 15.81,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/08-builder-extensions.rakutest",
       "raku": {
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 4.2,
+        "secs": 3.54,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -214,10 +217,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-19",
+    "date": "2026-09-20",
     "harness": 2,
-    "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "5d2e9a2",
+    "host": "linux-x86_64",
+    "mutsu_commit": "36a4c7c5",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -228,13 +231,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/S/EL/SELKIE_UI/94159aef61f1935117c1575b39a04d8ed5ee8674.tar.gz"
   },
-  "status": "red",
+  "status": "partial",
   "totals": {
-    "baseline_assertions": 50,
-    "baseline_files": 6,
-    "mutsu_assertions": 17,
-    "parity_files": 0,
-    "regressed_files": 6
+    "baseline_assertions": 71,
+    "baseline_files": 7,
+    "mutsu_assertions": 68,
+    "parity_files": 6,
+    "regressed_files": 1
   },
   "version": "0.0.4"
 }

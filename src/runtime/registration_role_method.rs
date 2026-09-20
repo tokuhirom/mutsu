@@ -276,8 +276,24 @@ impl Interpreter {
         let installed_compiled_code =
             matched_compiled_fn.map(|cf| std::sync::Arc::new(cf.code.clone()));
         let installed_compiled_fns = matched_compiled_fn.and_then(|cf| cf.compiled_fns.clone());
+        // A role method is lexically inside the ROLE, and that is the only
+        // anchor a lookup from its body can use: composition rewrites
+        // `owner_class` to the COMPOSING class, and `current_package` while a
+        // `unit role` body registers is GLOBAL, which anchors nothing. Without
+        // the role here, the role compunit's own bare names — imported
+        // `constant`s and enum keys, which live in `module_scope_lexicals`
+        // keyed by the declaring package — were unreachable from every composed
+        // method, and a bareword like `AlphaOpaque` silently degraded to the
+        // string `"AlphaOpaque"` (Selkie's `Selkie::Widget` role).
+        // `lookup_in_package_chain` walks up the `::` chain, so a role nested
+        // in a package still reaches that package's entries too.
+        let lexical_package = if name.is_empty() {
+            self.current_package_sym()
+        } else {
+            crate::symbol::Symbol::intern(name)
+        };
         let def = MethodDef {
-            lexical_package: self.current_package_sym(),
+            lexical_package,
             params: effective_params,
             param_defs: effective_param_defs,
             body: std::sync::Arc::new(decl.body.clone()),

@@ -302,6 +302,12 @@ impl Interpreter {
     /// candidate: the already-built instance for BUILDALL/POPULATE (mutsu's
     /// native build ran before the user hook — see `run_user_buildall_hook`),
     /// and the native attribute-copying clone for `clone`.
+    ///
+    /// `new` is the same shape and by far the most common one: `Mu.new
+    /// (*%attrinit)` is always the final candidate of a user `method new`'s
+    /// MRO, but mutsu implements it natively (`bless`), so it never appears
+    /// among the `MethodDef` candidates. `push_method_dispatch_frame`'s
+    /// `new_base_override` is what guarantees the frame this leg exhausts.
     fn native_mu_base_next_candidate(
         &mut self,
         override_args: Option<&[Value]>,
@@ -310,7 +316,10 @@ impl Interpreter {
             .samewith_context_stack
             .last()
             .map(|ctx| ctx.name.clone())?;
-        if !matches!(method_name.as_str(), "BUILDALL" | "POPULATE" | "clone") {
+        if !matches!(
+            method_name.as_str(),
+            "BUILDALL" | "POPULATE" | "clone" | "new"
+        ) {
             return None;
         }
         let frame = self.method_dispatch_stack.last()?;
@@ -325,6 +334,17 @@ impl Interpreter {
             "clone" => {
                 let args: Vec<Value> = override_args.map(<[Value]>::to_vec).unwrap_or(frame_args);
                 self.native_instance_clone_value(&invocant, &args)
+            }
+            "new" => {
+                let args: Vec<Value> = override_args.map(<[Value]>::to_vec).unwrap_or(frame_args);
+                // The nearest builtin ancestor's native constructor comes
+                // before `Mu.new`/`bless` (`class LoggedVersion is Version {
+                // method new(|c) { nextsame } }`) — same order as the
+                // no-frame fallback at the end of `dispatch_next_candidate`.
+                if let Some(res) = self.native_builtin_new_next_candidate(&invocant, &args) {
+                    return Some(res);
+                }
+                Some(self.call_method_with_values(invocant, "bless", args))
             }
             _ => None,
         }
