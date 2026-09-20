@@ -462,18 +462,17 @@ impl Interpreter {
     /// `compose` hook must fire (see the call site below) instead of invoking
     /// it inline — `run_class_body` drains it once the whole class body has
     /// registered (#8845).
-    #[allow(clippy::too_many_arguments)]
     pub(crate) fn apply_attribute_traits(
         &mut self,
-        unknown_traits: &[(String, String, Option<crate::ast::Expr>)],
+        decl: &crate::opcode::CompiledAttrDecl,
         attr_name_str: &str,
-        sigil: char,
-        is_public: bool,
         owner: &str,
-        type_constraint: Option<&str>,
         pending_composes: &mut Vec<String>,
     ) -> Result<(), RuntimeError> {
-        for (kind, trait_name, trait_arg) in unknown_traits {
+        let sigil = decl.sigil;
+        let is_public = decl.is_public;
+        let type_constraint = decl.type_constraint.as_deref();
+        for (kind, trait_name, trait_arg) in &decl.unknown_traits {
             // `has $.x does Foo` — record the role so construction mixes it into
             // the attribute's value (its container does the role). Not a
             // `trait_mod:<does>` dispatch.
