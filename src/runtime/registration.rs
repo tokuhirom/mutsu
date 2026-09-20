@@ -184,15 +184,45 @@ impl Interpreter {
     /// candidates, not the same one under a different spelling (#8119): a
     /// role's `:U:`-invocant candidate and a composing class's own
     /// `:D:`-invocant candidate must both survive composition.
-    pub(super) fn method_signatures_match_with_invocant(
+    fn method_signatures_match_with_invocant(required: &MethodDef, candidate: &MethodDef) -> bool {
+        Self::method_signatures_match(required, candidate)
+            && (!required.is_multi
+                || !candidate.is_multi
+                || Self::invocant_type_constraint(required)
+                    == Self::invocant_type_constraint(candidate))
+    }
+
+    /// The definedness smiley on a method's invocant (`::?ROLE:U:` -> `U`),
+    /// or `None` when it carries none.
+    ///
+    /// This is the part of an invocant constraint that is comparable ACROSS
+    /// owners. The type-name part is not: composition rewrites `::?CLASS` /
+    /// `::?ROLE` to whichever type is composing, so a parent role's candidate
+    /// and a child's always disagree on it even when one genuinely replaces
+    /// the other. Only the smiley says "these two select on different
+    /// invocants and are therefore distinct candidates".
+    pub(super) fn invocant_definedness(def: &MethodDef) -> Option<char> {
+        let constraint = Self::invocant_type_constraint(def)?;
+        match constraint.rsplit_once(':') {
+            Some((_, "U")) => Some('U'),
+            Some((_, "D")) => Some('D'),
+            _ => None,
+        }
+    }
+
+    /// [`Self::method_signatures_match`], but ALSO requires the two candidates
+    /// to select on the same invocant definedness — see
+    /// [`Self::invocant_definedness`] for why only the smiley is compared.
+    /// A child role that overrides one half of a `:U:`/`:D:` pair leaves the
+    /// other half alone.
+    pub(super) fn method_signatures_match_with_invocant_definedness(
         required: &MethodDef,
         candidate: &MethodDef,
     ) -> bool {
         Self::method_signatures_match(required, candidate)
             && (!required.is_multi
                 || !candidate.is_multi
-                || Self::invocant_type_constraint(required)
-                    == Self::invocant_type_constraint(candidate))
+                || Self::invocant_definedness(required) == Self::invocant_definedness(candidate))
     }
 
     fn stub_is_nullary(def: &MethodDef) -> bool {

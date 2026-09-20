@@ -1350,34 +1350,61 @@ impl Interpreter {
         // registered so a self-reference in it (`R.some-method`) resolves
         // against the class it just became. A dying body rejects the pun
         // exactly as it rejects a `does` composition (X::Role::Instantiation).
-        if self
+        self.run_pun_role_bodies(role_name)
+    }
+
+    /// Run a role's own body, and its composed ancestors' bodies, as the
+    /// composition that punning it performs — then persist what they declared
+    /// as the pun's own package lexicals.
+    ///
+    /// Split out of [`Interpreter::ensure_role_punned_to_class`] because
+    /// running the bodies and *registering a pun class* are separable, and the
+    /// VM's compiled dispatch path needs only the first. A method call on a
+    /// role type object must observe the body's declarations, but making that
+    /// path register the class as well would put the role into
+    /// `registry.classes`, which `.isa`, `.^methods` and candidate-list
+    /// introspection all read — a role would start reporting itself as a
+    /// class the moment anything called a method on it.
+    ///
+    /// The memo key is shared with the full pun, so whichever happens first
+    /// runs the bodies exactly once. `registry.classes` is not a sufficient
+    /// memo on its own: a construction path that puns a role only to build one
+    /// instance drops the pun class again afterwards, which would re-run the
+    /// body on the next `R.new`.
+    pub(crate) fn run_pun_role_bodies(&mut self, role_name: &str) -> Result<(), RuntimeError> {
+        let Some(role_def) = self.registry().roles.get(role_name).cloned() else {
+            return Ok(());
+        };
+        if !self
             .registry_mut()
             .composed_role_bodies
             .insert(format!("pun:{role_name}"))
         {
-            let decl_file = role_def.decl_file.clone();
-            // The pun IS the class these bodies' lexicals belong to, so
-            // record what they declare the same way `compose_role_body`
-            // records it for a `does` consumer — otherwise the bindings live
-            // only in the frame that happened to trigger the pun and every
-            // method of the punned role loses its own body scope.
-            let env_before: HashSet<Symbol> = self.env.keys().copied().collect();
-            let mut declared: HashSet<String> = HashSet::new();
-            Self::collect_role_body_declared_names(&role_def.deferred_body, &mut declared);
-            for ancestor in self.role_ancestor_names(role_name) {
-                if let Some(parent) = self.registry().roles.get(&ancestor).cloned() {
-                    Self::collect_role_body_declared_names(&parent.deferred_body, &mut declared);
-                }
-            }
-            self.run_role_body_for_composition(
-                role_name,
-                role_name,
-                &role_def.deferred_body,
-                decl_file.as_deref(),
-            )?;
-            self.run_composed_role_ancestor_bodies(role_name, role_name)?;
-            self.persist_role_body_lexicals(role_name, &env_before, &declared);
+            return Ok(());
         }
+        let decl_file = role_def.decl_file.clone();
+        // The pun IS the type these bodies' lexicals belong to, so record what
+        // they declare the same way `compose_role_body` records it for a `does`
+        // consumer — otherwise the bindings live only in the frame that
+        // happened to trigger the composition (for `Hash::Agnostic`, inside its
+        // own `method new`, discarded on return) and every method of the role
+        // loses its own body scope.
+        let env_before: HashSet<Symbol> = self.env.keys().copied().collect();
+        let mut declared: HashSet<String> = HashSet::new();
+        Self::collect_role_body_declared_names(&role_def.deferred_body, &mut declared);
+        for ancestor in self.role_ancestor_names(role_name) {
+            if let Some(parent) = self.registry().roles.get(&ancestor).cloned() {
+                Self::collect_role_body_declared_names(&parent.deferred_body, &mut declared);
+            }
+        }
+        self.run_role_body_for_composition(
+            role_name,
+            role_name,
+            &role_def.deferred_body,
+            decl_file.as_deref(),
+        )?;
+        self.run_composed_role_ancestor_bodies(role_name, role_name)?;
+        self.persist_role_body_lexicals(role_name, &env_before, &declared);
         Ok(())
     }
 

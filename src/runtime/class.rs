@@ -290,7 +290,9 @@ impl Interpreter {
                     // died with "Cannot resolve caller Str(Hash::Ordered:U:)"
                     // — rakudo answers the parent's `:U:` candidate there.
                     if !other.is_multi
-                        || !Self::method_signatures_match_with_invocant(candidate, other)
+                        || !Self::method_signatures_match_with_invocant_definedness(
+                            candidate, other,
+                        )
                         || Self::multi_constraints_distinguish(candidate, other)
                     {
                         return false;
@@ -335,7 +337,7 @@ impl Interpreter {
                 // overrides only the `:D:` half of a `:U:`/`:D:` multi pair
                 // does not shadow the parent's `:U:` half.
                 other.is_multi
-                    && Self::method_signatures_match_with_invocant(candidate, other)
+                    && Self::method_signatures_match_with_invocant_definedness(candidate, other)
                     && !Self::multi_constraints_distinguish(candidate, other)
             })
             .filter_map(|other| {
