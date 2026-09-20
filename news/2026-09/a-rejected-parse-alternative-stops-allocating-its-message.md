@@ -50,33 +50,52 @@ next section. The saving is concentrated in work that happens *once*, so a
 document seven times larger dilutes it by roughly seven, well under this box's
 run-to-run spread. The deterministic counts above are the evidence.
 
-## An unexpected finding: the parser runs *inside* `from-json`
+## An unexpected finding: a fixed 668M cost in the first `from-json` call
 
-The change was expected to pay off at module-load time. It does not — a
-load-only script (`use JSON::Fast` and nothing else) is unchanged by it,
-65,913,860 instructions before and 66,074,346 after. The whole 76.8M saving
-lands in the `from-json` call itself.
+This was expected to pay off at **module-load** time. It does not. A load-only
+script (`use JSON::Fast` and nothing else) is unchanged by it: **65,913,860**
+instructions before, **66,074,346** after. The whole 76.8M saving lands in the
+run that calls `from-json`.
 
-So mutsu's **Raku parser is running during a JSON parse**, to the tune of
-roughly 120M instructions — `mutsu::parser::*` is 183.9M in the benchmark
-against at most 66M for the entire load-only run. `keyword_literal` alone is
-entered 43,814 times and `parse_prefixed_radix` 11,087.
+Chasing that produced a larger finding, and one limit on it. What is measured:
 
-The likely cause is one of the lazily-parsed preludes in
-`runtime/run_prelude.rs` (the Rational role is the obvious suspect for a
-document full of numbers) being parsed on first use, which happens to fall
-inside the timed region. That would make it a one-off cost a larger document
-amortizes — but it is ~5% of this 100-record profile, and it means **a share
-of every percentage measured on the 100-record reproduction is a fixed
-startup-shaped cost, not per-record work**. Worth confirming and filing
-separately; it is not this slice's to fix.
+- Adding a single `from-json('[1]')` — a **three-character** document — to the
+  load-only script takes it from 65,901,767 to **733,759,960** instructions.
+  That is **668M for parsing three characters**, so it is a fixed cost of the
+  first call, not per-record work.
+- `mutsu::parser::*` accounts for **152,065,101** of it, against **31,624** in
+  the load-only run. So the Raku parser is doing real work triggered by that
+  call.
+- It is **not** a precompilation cache miss: a second run of the same script is
+  735,201,391, and `touch`ing the load-only script leaves it at 65,912,976.
+- It is **not** a pathological parse of the call expression:
+  `--dump-ast -e "my \$d = from-json('[1]');"` is 1,663,027 instructions, and
+  the same line with a plain identifier (`f`), without the hyphen, or with a
+  non-string argument are all within 0.3% of that.
 
-It also explains this slice's own wall clock. If the parser cost is a one-off,
-then so is most of what this change removes: at 100 records it is 3% of the
-run, at 727 records roughly a seventh of that, and a 0.4% difference is not
-something seven runs on this box can see. The consequence for whoever takes
-the next slice is that **the 100-record reproduction over-weights startup** —
-either measure at 727 records, or subtract a load-only run first.
+**What is not established is the cause**, and it is worth recording what has
+been ruled out so the next attempt does not repeat it. Under `rust-gdb`,
+`mutsu::parser::parse_program` is entered exactly **once** (the script itself)
+and `parse_dispatch::parse_source` **once** (the `Enumeration` role prelude,
+which the load-only script triggers too, so it is not the difference);
+`parse_program_with_operators_and_user_subs` and
+`parse_program_partial_with_operators` are never entered at all. JSON::Fast
+declares no regex, so runtime regex compilation is not it either. The 152M is
+reached through an entry point I did not identify. It wants its own issue and a
+fresh look, not a guess.
+
+Two consequences that do follow from the measurements alone:
+
+1. **It explains this slice's wall clock.** What this change removes is
+   concentrated in that fixed cost, so it is 3% of a 100-record run and
+   roughly a seventh of that at 727 records — and a 0.4% difference is not
+   something seven runs on this box can see.
+2. **The 100-record reproduction over-weights fixed cost.** 668M of its
+   2,472M — **27%** — is the first `from-json` call regardless of document
+   size. A share of *every* percentage measured on it, including the ones in
+   #8830's own body and in the three earlier slices, is that fixed cost rather
+   than per-record work. Measure at 727 records, or subtract a load-only run
+   first.
 
 Pinned by the existing parser tests — `merge_expected_messages`'s two unit
 tests in `parser/stmt/tests_3.rs` cover the merge directly, and the parse-error
