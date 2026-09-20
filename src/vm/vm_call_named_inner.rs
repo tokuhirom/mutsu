@@ -674,9 +674,16 @@ impl Interpreter {
         self.pop_routine();
         self.pop_test_assertion_context(pushed_assertion);
         self.pop_block();
-        let effective_return_spec = return_spec
-            .as_deref()
-            .map(|spec| loan_env!(self, resolved_type_capture_name(spec)));
+        // A plan-compiled module sub can still carry the declaration's bare
+        // return type here even though registration has installed a
+        // package-qualified signature on its FunctionDef. Resolve against the
+        // callee's declaring package before restoring the caller package;
+        // otherwise a return such as `PinterestURL:D` is checked from GLOBAL
+        // and is compared as an unknown type name.
+        let effective_return_spec = return_spec.as_deref().map(|spec| {
+            let resolved = self.resolve_method_type_name(def_package, spec);
+            loan_env!(self, resolved_type_capture_name(&resolved))
+        });
 
         let frame = self.pop_call_frame();
         let restored_env = frame.saved_env;
