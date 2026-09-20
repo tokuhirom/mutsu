@@ -338,9 +338,27 @@ impl Compiler {
                 *chunk = Some(self.compile_decl_stmts_chunk_in_package(phaser_body, package_name));
                 continue;
             }
+            if let crate::opcode::ClassBodyOp::ClassSub {
+                chunk,
+                hoist_chunk,
+                raw,
+                ..
+            } = op
+            {
+                *chunk =
+                    Some(self.compile_decl_stmts_chunk_in_package(
+                        std::slice::from_ref(raw),
+                        package_name,
+                    ));
+                let hoisted_raw = Self::hoisted_class_sub_decl(raw);
+                *hoist_chunk = Some(self.compile_decl_stmts_chunk_in_package(
+                    std::slice::from_ref(&hoisted_raw),
+                    package_name,
+                ));
+                continue;
+            }
             let (chunk, raw) = match op {
                 crate::opcode::ClassBodyOp::Other { chunk, raw, .. }
-                | crate::opcode::ClassBodyOp::ClassSub { chunk, raw, .. }
                 | crate::opcode::ClassBodyOp::CodeAlias { chunk, raw }
                 | crate::opcode::ClassBodyOp::ProtoMethod { chunk, raw } => (chunk, raw),
                 _ => continue,
@@ -350,6 +368,28 @@ impl Compiler {
             );
         }
         ops
+    }
+
+    /// Clone a class-body `Stmt::SubDecl` with the `__hoisted` marker set and
+    /// user-defined custom traits stripped, mirroring the per-statement hoist
+    /// copy `Compiler::hoist_sub_decls` builds at the compilation-unit level
+    /// (`lexical_hoist: false` — a class body is a package scope, not a
+    /// nested lexical one, so `__lexical_hoist`'s local-slot writeback does
+    /// not apply here). A custom trait like `is native(LIB)` may depend on a
+    /// `use` that has not run yet this early; the in-sequence registration
+    /// (the unmarked `chunk`, still compiled from `raw` unchanged) validates
+    /// traits for real once every preceding class-body statement has run.
+    fn hoisted_class_sub_decl(raw: &Stmt) -> Stmt {
+        let mut hoisted = raw.clone();
+        if let Stmt::SubDecl { custom_traits, .. } = &mut hoisted {
+            if !custom_traits.iter().any(|(t, _)| t == "__hoisted") {
+                custom_traits.push(("__hoisted".to_string(), None));
+            }
+            custom_traits.retain(|(t, _)| {
+                t.starts_with("__") || t == "default" || t.starts_with("DEPRECATED")
+            });
+        }
+        hoisted
     }
 
     /// Compile each top-level `method`/`submethod` declaration's body to

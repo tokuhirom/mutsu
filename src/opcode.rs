@@ -3865,6 +3865,18 @@ pub(crate) enum ClassBodyOp {
     ClassSub {
         name: Symbol,
         chunk: Option<CompiledDeclExpr>,
+        /// A `__hoisted`-marked copy of `chunk` (mirrors
+        /// `Compiler::hoist_sub_decls` at the compilation-unit level, ADR-0041
+        /// §9), registered by `run_class_body` before any class-body statement
+        /// runs. Raku hoists a `sub`'s name to the top of its enclosing scope
+        /// at compile time regardless of what kind of scope that is, so a
+        /// class-body statement above the `sub`'s textual position must be
+        /// able to call it — e.g. `Date::Calendar::Hijri`'s
+        /// `my ($f0, $g0) = make-fct(...)` above `sub make-fct(...) {...}`.
+        /// `chunk` itself still runs at its normal position, unchanged, and
+        /// performs the real (non-hoisted) registration that later BEGIN-time
+        /// code sees as "reached" (`Interpreter::mark_hoisted_decl_reached`).
+        hoist_chunk: Option<CompiledDeclExpr>,
         raw: Stmt,
         /// See [`ClassBodyOp::Other::is_swallowable`]. Always `false` for a
         /// `sub` declaration (a `Stmt::SubDecl` never matches the
@@ -4101,6 +4113,7 @@ fn classify_class_body_stmt(stmt: &Stmt, decl_line: Option<i64>) -> ClassBodyOp 
         Stmt::SubDecl { name, .. } => ClassBodyOp::ClassSub {
             name: *name,
             chunk: None,
+            hoist_chunk: None,
             raw: stmt.clone(),
             is_swallowable: is_swallowable_class_body_stmt(stmt),
             is_compile_time_phaser: is_compile_time_phaser_stmt(stmt),
