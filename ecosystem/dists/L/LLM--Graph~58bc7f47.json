@@ -43,23 +43,22 @@
   "dist": "LLM::Graph",
   "files": [
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "No such method 'clone' for invocant of type 'Slip'",
         "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 3.27,
+        "ok": 6,
+        "plan": 6,
+        "secs": 3.15,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/01-initialization.rakutest",
       "raku": {
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 33.55,
+        "secs": 42.82,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -68,11 +67,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "No such method 'clone' for invocant of type 'Slip'",
+        "first_failure": "Type check failed in binding to parameter '$fun1'; expected Str:D but got Any (Any)",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 3.16,
+        "secs": 3.28,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -82,30 +81,30 @@
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 5.69,
+        "secs": 5.29,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "partial",
       "mutsu": {
-        "first_failure": "No such method 'clone' for invocant of type 'Slip'",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 3.19,
+        "first_failure": "ad-hoc Promise functions (no-LLM)",
+        "nok": 2,
+        "ok": 1,
+        "plan": 3,
+        "secs": 4.46,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "fail"
       },
       "path": "t/03-evaluation-async.rakutest",
       "raku": {
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 5.36,
+        "secs": 5.51,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -114,11 +113,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "No such method 'clone' for invocant of type 'Slip'",
+        "first_failure": "X::TypeCheck::Binding::Parameter: Type check failed in binding to parameter '&sub'; expected Callable but got Package ((Any))",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 3.13,
+        "secs": 3.06,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -128,7 +127,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 4.73,
+        "secs": 4.83,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -141,10 +140,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-19",
+    "date": "2026-09-20",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "5d2e9a2",
+    "mutsu_commit": "fb8ac07",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -155,13 +154,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/L/LM/LLM_GRAPH/619556bb84540b661e1b7e3fc4d0431a97ff2ea5.tar.gz"
   },
-  "status": "red",
+  "status": "partial",
   "totals": {
     "baseline_assertions": 16,
     "baseline_files": 4,
-    "mutsu_assertions": 0,
-    "parity_files": 0,
-    "regressed_files": 4
+    "mutsu_assertions": 7,
+    "parity_files": 1,
+    "regressed_files": 3
   },
   "version": "0.1.1"
 }

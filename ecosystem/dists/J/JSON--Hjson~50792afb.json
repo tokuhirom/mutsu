@@ -26,7 +26,7 @@
         "nok": 1,
         "ok": 0,
         "plan": 1,
-        "secs": 0.11,
+        "secs": 0.16,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -36,30 +36,30 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 2.83,
+        "secs": 3.89,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "partial",
+      "cmp": "regression",
       "mutsu": {
-        "first_failure": "strings_test.hjson",
-        "nok": 5,
-        "ok": 42,
-        "plan": 47,
-        "secs": 134.82,
+        "first_failure": "SWEEP-TIMEOUT",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 240.1,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "timeout"
       },
       "path": "t/02-testcases.t",
       "raku": {
         "nok": 0,
         "ok": 47,
         "plan": 47,
-        "secs": 2.38,
+        "secs": 4.16,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -71,7 +71,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.1,
+        "secs": 0.22,
         "skip": 1,
         "todo": 0,
         "verdict": "pass"
@@ -81,7 +81,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.25,
+        "secs": 0.52,
         "skip": 1,
         "todo": 0,
         "verdict": "pass"
@@ -95,10 +95,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-19",
+    "date": "2026-09-20",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "5d2e9a2",
+    "mutsu_commit": "fb8ac07",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -113,7 +113,7 @@
   "totals": {
     "baseline_assertions": 49,
     "baseline_files": 3,
-    "mutsu_assertions": 43,
+    "mutsu_assertions": 1,
     "parity_files": 1,
     "regressed_files": 2
   },

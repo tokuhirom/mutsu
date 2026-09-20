@@ -11,46 +11,45 @@
   "dist": "HTML::Functional",
   "files": [
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Unknown function: h1",
         "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 0.16,
+        "ok": 6,
+        "plan": 6,
+        "secs": 0.15,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/01-basic.rakutest",
       "raku": {
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 1.82,
+        "secs": 2.54,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "partial",
       "mutsu": {
-        "first_failure": "Unknown function: h1",
-        "nok": 0,
+        "first_failure": "all-body",
+        "nok": 1,
         "ok": 0,
-        "plan": null,
-        "secs": 0.17,
+        "plan": 1,
+        "secs": 0.14,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "fail"
       },
       "path": "t/02-body.rakutest",
       "raku": {
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.53,
+        "secs": 0.65,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -62,10 +61,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-19",
+    "date": "2026-09-20",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "5d2e9a2",
+    "mutsu_commit": "fb8ac07",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -76,13 +75,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/H/TM/HTML_FUNCTIONAL/4761bf14d2b5e36cf51cb3997ac3bebb74e821c0.tar.gz"
   },
-  "status": "red",
+  "status": "partial",
   "totals": {
     "baseline_assertions": 7,
     "baseline_files": 2,
-    "mutsu_assertions": 0,
-    "parity_files": 0,
-    "regressed_files": 2
+    "mutsu_assertions": 6,
+    "parity_files": 1,
+    "regressed_files": 1
   },
   "version": "0.0.8"
 }

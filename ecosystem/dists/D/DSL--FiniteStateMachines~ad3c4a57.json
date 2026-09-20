@@ -60,7 +60,7 @@
   "files": [],
   "load": {
     "DSL::FiniteStateMachines": "raku_also_fails",
-    "DSL::FiniteStateMachines::AddressBookCaller": "Could not instantiate role 'DSL::Shared::Roles::English::CommonSpeechParts' because it died with X::Redeclaration; exception details:",
+    "DSL::FiniteStateMachines::AddressBookCaller": "raku_also_fails",
     "DSL::FiniteStateMachines::AddressBookCaller::AddressBookActions": "ok",
     "DSL::FiniteStateMachines::AddressBookCaller::AddressBookGrammar": "ok",
     "DSL::FiniteStateMachines::AddressBookCaller::FSMGlobalCommand": "Could not instantiate role 'DSL::Shared::Roles::English::PipelineCommand' because it died with X::Redeclaration; exception details:",
@@ -75,10 +75,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-19",
+    "date": "2026-09-20",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "5d2e9a2",
+    "mutsu_commit": "fb8ac07",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",

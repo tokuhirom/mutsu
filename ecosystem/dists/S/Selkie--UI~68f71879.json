@@ -11,216 +11,60 @@
     "unresolved": []
   },
   "dist": "Selkie::UI",
-  "files": [
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 21,
-        "plan": 21,
-        "secs": 15.69,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/01-button-textinput.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 21,
-        "plan": 21,
-        "secs": 85.78,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 12,
-        "plan": 12,
-        "secs": 13.29,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/02-layout-structure.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 12,
-        "plan": 12,
-        "secs": 3.48,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 15,
-        "plan": 15,
-        "secs": 14.1,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/03-text-stream-collection.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 15,
-        "plan": 15,
-        "secs": 3.73,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "Type check failed in assignment to $!applied-fg-alpha; expected AlphaMode but got Str (\"AlphaOpaque\")",
-        "nok": 0,
-        "ok": 6,
-        "plan": null,
-        "secs": 13.64,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/04-data-visualization.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 9,
-        "plan": 9,
-        "secs": 3.37,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 5,
-        "plan": 5,
-        "secs": 14.34,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/05-system-helpers.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 5,
-        "plan": 5,
-        "secs": 3.48,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 5,
-        "plan": 5,
-        "secs": 14.88,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/06-reactive-state.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 5,
-        "plan": 5,
-        "secs": 3.63,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 4,
-        "plan": 4,
-        "secs": 15.81,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/08-builder-extensions.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 4,
-        "plan": 4,
-        "secs": 3.54,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    }
-  ],
+  "files": [],
   "load": {
-    "Selkie::UI": "ok",
-    "Selkie::UI::AppBuilder": "ok",
-    "Selkie::UI::AxisBuilder": "ok",
-    "Selkie::UI::BarChartBuilder": "ok",
-    "Selkie::UI::Base": "ok",
-    "Selkie::UI::BorderBuilder": "ok",
-    "Selkie::UI::ButtonBuilder": "ok",
-    "Selkie::UI::CardListBuilder": "ok",
-    "Selkie::UI::CheckboxBuilder": "ok",
-    "Selkie::UI::CommandPaletteBuilder": "ok",
-    "Selkie::UI::ConfirmModalBuilder": "ok",
-    "Selkie::UI::FileBrowserBuilder": "ok",
-    "Selkie::UI::HBoxBuilder": "ok",
-    "Selkie::UI::HeatmapBuilder": "ok",
-    "Selkie::UI::HelpOverlayBuilder": "ok",
+    "Selkie::UI": "raku_also_fails",
+    "Selkie::UI::AppBuilder": "Type check failed for return value; expected Notcurses::Native::Str but got Str (\"libc.so.6\")",
+    "Selkie::UI::AxisBuilder": "Type check failed for return value; expected Notcurses::Native::Str but got Str (\"libc.so.6\")",
+    "Selkie::UI::BarChartBuilder": "Type check failed for return value; expected Notcurses::Native::Str but got Str (\"libc.so.6\")",
+    "Selkie::UI::Base": "Type check failed for return value; expected Notcurses::Native::Str but got Str (\"libc.so.6\")",
+    "Selkie::UI::BorderBuilder": "Type check failed for return value; expected Notcurses::Native::Str but got Str (\"libc.so.6\")",
+    "Selkie::UI::ButtonBuilder": "Type check failed for return value; expected Notcurses::Native::Str but got Str (\"libc.so.6\")",
+    "Selkie::UI::CardListBuilder": "Type check failed for return value; expected Notcurses::Native::Str but got Str (\"libc.so.6\")",
+    "Selkie::UI::CheckboxBuilder": "Type check failed for return value; expected Notcurses::Native::Str but got Str (\"libc.so.6\")",
+    "Selkie::UI::CommandPaletteBuilder": "Type check failed for return value; expected Notcurses::Native::Str but got Str (\"libc.so.6\")",
+    "Selkie::UI::ConfirmModalBuilder": "Type check failed for return value; expected Notcurses::Native::Str but got Str (\"libc.so.6\")",
+    "Selkie::UI::FileBrowserBuilder": "Type check failed for return value; expected Notcurses::Native::Str but got Str (\"libc.so.6\")",
+    "Selkie::UI::HBoxBuilder": "Type check failed for return value; expected Notcurses::Native::Str but got Str (\"libc.so.6\")",
+    "Selkie::UI::HeatmapBuilder": "Type check failed for return value; expected Notcurses::Native::Str but got Str (\"libc.so.6\")",
+    "Selkie::UI::HelpOverlayBuilder": "Type check failed for return value; expected Notcurses::Native::Str but got Str (\"libc.so.6\")",
     "Selkie::UI::Helpers": "ok",
-    "Selkie::UI::HistogramBuilder": "ok",
-    "Selkie::UI::ImageBuilder": "ok",
-    "Selkie::UI::LegendBuilder": "ok",
-    "Selkie::UI::LineChartBuilder": "ok",
-    "Selkie::UI::ListViewBuilder": "ok",
-    "Selkie::UI::ModalBuilder": "ok",
-    "Selkie::UI::MultiLineInputBuilder": "ok",
-    "Selkie::UI::PasswordStrengthBuilder": "ok",
-    "Selkie::UI::PlotBuilder": "ok",
-    "Selkie::UI::ProgressBarBuilder": "ok",
-    "Selkie::UI::RadioGroupBuilder": "ok",
+    "Selkie::UI::HistogramBuilder": "Type check failed for return value; expected Notcurses::Native::Str but got Str (\"libc.so.6\")",
+    "Selkie::UI::ImageBuilder": "Type check failed for return value; expected Notcurses::Native::Str but got Str (\"libc.so.6\")",
+    "Selkie::UI::LegendBuilder": "Type check failed for return value; expected Notcurses::Native::Str but got Str (\"libc.so.6\")",
+    "Selkie::UI::LineChartBuilder": "Type check failed for return value; expected Notcurses::Native::Str but got Str (\"libc.so.6\")",
+    "Selkie::UI::ListViewBuilder": "Type check failed for return value; expected Notcurses::Native::Str but got Str (\"libc.so.6\")",
+    "Selkie::UI::ModalBuilder": "Type check failed for return value; expected Notcurses::Native::Str but got Str (\"libc.so.6\")",
+    "Selkie::UI::MultiLineInputBuilder": "Type check failed for return value; expected Notcurses::Native::Str but got Str (\"libc.so.6\")",
+    "Selkie::UI::PasswordStrengthBuilder": "Type check failed for return value; expected Notcurses::Native::Str but got Str (\"libc.so.6\")",
+    "Selkie::UI::PlotBuilder": "Type check failed for return value; expected Notcurses::Native::Str but got Str (\"libc.so.6\")",
+    "Selkie::UI::ProgressBarBuilder": "Type check failed for return value; expected Notcurses::Native::Str but got Str (\"libc.so.6\")",
+    "Selkie::UI::RadioGroupBuilder": "Type check failed for return value; expected Notcurses::Native::Str but got Str (\"libc.so.6\")",
     "Selkie::UI::ReactiveArray": "ok",
     "Selkie::UI::ReactiveHash": "ok",
-    "Selkie::UI::RichTextBuilder": "ok",
-    "Selkie::UI::ScatterPlotBuilder": "ok",
-    "Selkie::UI::ScreenBuilder": "ok",
-    "Selkie::UI::ScrollViewBuilder": "ok",
-    "Selkie::UI::SelectBuilder": "ok",
-    "Selkie::UI::SparklineBuilder": "ok",
-    "Selkie::UI::SpinnerBuilder": "ok",
-    "Selkie::UI::SplitBuilder": "ok",
-    "Selkie::UI::TabBarBuilder": "ok",
-    "Selkie::UI::TableBuilder": "ok",
-    "Selkie::UI::TextBuilder": "ok",
-    "Selkie::UI::TextInputBuilder": "ok",
-    "Selkie::UI::TextStreamBuilder": "ok",
-    "Selkie::UI::ToastBuilder": "ok",
-    "Selkie::UI::VBoxBuilder": "ok",
-    "Selkie::UI::ViewportedCardListBuilder": "ok"
+    "Selkie::UI::RichTextBuilder": "Type check failed for return value; expected Notcurses::Native::Str but got Str (\"libc.so.6\")",
+    "Selkie::UI::ScatterPlotBuilder": "Type check failed for return value; expected Notcurses::Native::Str but got Str (\"libc.so.6\")",
+    "Selkie::UI::ScreenBuilder": "Type check failed for return value; expected Notcurses::Native::Str but got Str (\"libc.so.6\")",
+    "Selkie::UI::ScrollViewBuilder": "Type check failed for return value; expected Notcurses::Native::Str but got Str (\"libc.so.6\")",
+    "Selkie::UI::SelectBuilder": "Type check failed for return value; expected Notcurses::Native::Str but got Str (\"libc.so.6\")",
+    "Selkie::UI::SparklineBuilder": "Type check failed for return value; expected Notcurses::Native::Str but got Str (\"libc.so.6\")",
+    "Selkie::UI::SpinnerBuilder": "Type check failed for return value; expected Notcurses::Native::Str but got Str (\"libc.so.6\")",
+    "Selkie::UI::SplitBuilder": "Type check failed for return value; expected Notcurses::Native::Str but got Str (\"libc.so.6\")",
+    "Selkie::UI::TabBarBuilder": "Type check failed for return value; expected Notcurses::Native::Str but got Str (\"libc.so.6\")",
+    "Selkie::UI::TableBuilder": "Type check failed for return value; expected Notcurses::Native::Str but got Str (\"libc.so.6\")",
+    "Selkie::UI::TextBuilder": "Type check failed for return value; expected Notcurses::Native::Str but got Str (\"libc.so.6\")",
+    "Selkie::UI::TextInputBuilder": "Type check failed for return value; expected Notcurses::Native::Str but got Str (\"libc.so.6\")",
+    "Selkie::UI::TextStreamBuilder": "Type check failed for return value; expected Notcurses::Native::Str but got Str (\"libc.so.6\")",
+    "Selkie::UI::ToastBuilder": "Type check failed for return value; expected Notcurses::Native::Str but got Str (\"libc.so.6\")",
+    "Selkie::UI::VBoxBuilder": "Type check failed for return value; expected Notcurses::Native::Str but got Str (\"libc.so.6\")",
+    "Selkie::UI::ViewportedCardListBuilder": "Type check failed for return value; expected Notcurses::Native::Str but got Str (\"libc.so.6\")"
   },
   "measured": {
     "attempts": 3,
     "date": "2026-09-20",
     "harness": 2,
-    "host": "linux-x86_64",
-    "mutsu_commit": "36a4c7c5",
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "fb8ac07",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -231,13 +75,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/S/EL/SELKIE_UI/94159aef61f1935117c1575b39a04d8ed5ee8674.tar.gz"
   },
-  "status": "partial",
+  "status": "blocked_load",
   "totals": {
-    "baseline_assertions": 71,
-    "baseline_files": 7,
-    "mutsu_assertions": 68,
-    "parity_files": 6,
-    "regressed_files": 1
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
   },
   "version": "0.0.4"
 }

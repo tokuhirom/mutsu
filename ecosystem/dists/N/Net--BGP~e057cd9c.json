@@ -38,7 +38,7 @@
   "dist": "Net::BGP",
   "files": [],
   "load": {
-    "Net::BGP": "raku_also_fails",
+    "Net::BGP": "Runtime error: Failed to parse module 'Net::BGP::Conversions': X::Undeclared::Symbols: Undeclared routine:",
     "Net::BGP::AFI": "ok",
     "Net::BGP::AFI-SAFI": "ok",
     "Net::BGP::AS-List": "Runtime error: Failed to parse module 'Net::BGP::Conversions': X::Undeclared::Symbols: Undeclared routine:",
@@ -131,10 +131,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-19",
+    "date": "2026-09-20",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "5d2e9a2",
+    "mutsu_commit": "fb8ac07",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",

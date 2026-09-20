@@ -38,7 +38,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 18.81,
+        "secs": 18.56,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -50,7 +50,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 18.89,
+        "secs": 16.56,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -60,30 +60,29 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 24.23,
+        "secs": 24.08,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Type check failed for return value; expected Str but got Any (Any)",
         "nok": 0,
-        "ok": 21,
+        "ok": 51,
         "plan": 51,
-        "secs": 0.41,
+        "secs": 0.45,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/03-accessors.rakutest",
       "raku": {
         "nok": 0,
         "ok": 51,
         "plan": 51,
-        "secs": 3.62,
+        "secs": 3.54,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -98,10 +97,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-19",
+    "date": "2026-09-20",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "5d2e9a2",
+    "mutsu_commit": "fb8ac07",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -112,13 +111,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/D/AT/DATE_CALENDAR_PERSIAN/ecb0a59c461d630798a9436592c3710d4833175b.tar.gz"
   },
-  "status": "partial",
+  "status": "green",
   "totals": {
     "baseline_assertions": 53,
     "baseline_files": 3,
-    "mutsu_assertions": 23,
-    "parity_files": 2,
-    "regressed_files": 1
+    "mutsu_assertions": 53,
+    "parity_files": 3,
+    "regressed_files": 0
   },
   "version": "0.1.0"
 }
