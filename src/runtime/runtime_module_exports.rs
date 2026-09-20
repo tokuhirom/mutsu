@@ -178,6 +178,33 @@ impl Interpreter {
         }
     }
 
+    /// Register a value assigned directly into an `EXPORT::<tag>` stash.
+    ///
+    /// Modules such as Interval use `BEGIN EXPORT::refine::<DateTime> :=
+    /// Interval` rather than an `is export` declaration.  The assignment
+    /// creates the stash entry, but the import table still needs the module's
+    /// exported-variable metadata and a durable module-qualified value.
+    pub(crate) fn register_manual_export_var(&mut self, target: &str, value: &Value) {
+        let Some((tag, name)) = (if let Some(rest) = target.strip_prefix("EXPORT::") {
+            rest.split_once("::")
+        } else if let Some((_, rest)) = target.split_once("::EXPORT::") {
+            rest.split_once("::")
+        } else {
+            None
+        }) else {
+            return;
+        };
+        if tag.is_empty() || name.is_empty() || tag.contains("::") || name.contains("::") {
+            return;
+        }
+        let Some(module) = self.module_load_stack.last().cloned() else {
+            return;
+        };
+        self.env_mut()
+            .insert(format!("{module}::{name}"), value.clone());
+        self.register_exported_var(module, name.to_string(), vec![tag.to_string()]);
+    }
+
     /// Companion to [`Self::register_our_code_alias`] for the plainer half of
     /// the same "manual EXPORT stash" idiom: an ordinary `our sub`/
     /// `our multi sub` declared directly inside `my package EXPORT::<tag>

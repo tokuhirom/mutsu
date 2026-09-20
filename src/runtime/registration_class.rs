@@ -18,7 +18,7 @@ pub(super) fn is_non_composable_builtin(name: &str) -> bool {
     )
 }
 
-pub(super) fn type_value_name(value: &Value) -> String {
+pub(crate) fn type_value_name(value: &Value) -> String {
     match value.view() {
         ValueView::Package(name) => name.resolve(),
         ValueView::ParametricRole {

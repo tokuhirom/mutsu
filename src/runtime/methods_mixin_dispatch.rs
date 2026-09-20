@@ -379,6 +379,28 @@ impl Interpreter {
                 }
                 continue;
             };
+            // Role-body lexicals are persisted with the concrete punned role
+            // class during parameterized composition, while the role method's
+            // lexical package remains the enclosing declaration package.
+            // Inject both stores before executing a role method so bare role
+            // lexicals such as `my \\value = T` resolve to this composition's
+            // value rather than to a bareword.
+            self.inject_class_body_statics(def.lexical_package.as_str());
+            if let Some(ValueView::Array(type_args, _)) = mixins
+                .get(&MetaNs::RoleTypeargs.owned_key_for_str(&role_name))
+                .map(Value::view)
+            {
+                let punned_name = format!(
+                    "{}[{}]",
+                    role_name,
+                    type_args
+                        .iter()
+                        .map(crate::runtime::registration_class::type_value_name)
+                        .collect::<Vec<_>>()
+                        .join(",")
+                );
+                self.inject_class_body_statics(&punned_name);
+            }
             // Build the attribute set visible to the role method body.
             // Start with the inner instance's own attributes (e.g. class
             // attributes like `@.order`) so that `$.attr` accessors inside

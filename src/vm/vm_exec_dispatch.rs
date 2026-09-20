@@ -1412,6 +1412,9 @@ impl Interpreter {
                 if is_rebind && name_str.starts_with("&OUR::") {
                     self.register_our_code_alias(name_str, &raw_val);
                 }
+                if is_rebind {
+                    self.register_manual_export_var(name_str, &raw_val);
+                }
                 let mut val = if raw_mode && name.starts_with('@') {
                     // Constants with @ sigil coerce to List (not Array).
                     // `constant @x = 42` gives `(42,)`, not `[42]`.
