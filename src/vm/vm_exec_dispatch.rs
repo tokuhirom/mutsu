@@ -703,6 +703,21 @@ impl Interpreter {
                     .or_else(|| self.module_scope_lexical(name).cloned())
                     // Class-body outer-lexical fallback — see the GetHashVar twin.
                     .or_else(|| self.auto_qualified_bare_env_read(name))
+                    // Last resort before the undeclared-variable default: a
+                    // package-block/class-body `my @a` static persisted in
+                    // `package_lexicals` (persist_class_body_statics /
+                    // exec_package_scope_op) after its bare `env` key was
+                    // deliberately removed — the class-body case has no live
+                    // `env` binding left to find above, so this is the only
+                    // remaining source of the initialized value. Kept LAST
+                    // (not ahead of `env`, unlike the scalar `GetGlobal`
+                    // ordering) because a package-block array/hash that is
+                    // still `env`-live (e.g. mutated in place via `.push`
+                    // across calls) must keep resolving through that live
+                    // binding — package_lexicals only holds this name's
+                    // declaration-time snapshot, taken once at block exit
+                    // (#8869).
+                    .or_else(|| self.package_scope_lexical(name))
                     .unwrap_or_else(|| {
                         // A never-declared `@*`-twigil (dynamic) variable is
                         // `X::Dynamic::NotFound` territory in Raku -- the
@@ -831,7 +846,15 @@ impl Interpreter {
                     // (`%C::predef`) while the declaration flushed to env under the
                     // bare sigiled name (`%predef`). Strip the qualifier and retry
                     // when it names the current package.
-                    .or_else(|| self.auto_qualified_bare_env_read(name));
+                    .or_else(|| self.auto_qualified_bare_env_read(name))
+                    // Last resort: a package-block/class-body `my %h` static
+                    // persisted in `package_lexicals` after its bare `env` key
+                    // was deliberately removed — see the `GetArrayVar` twin's
+                    // comment (#8869). Kept LAST so a package-block hash that
+                    // is still `env`-live (mutated in place across calls)
+                    // keeps resolving through that live binding instead of
+                    // this store's one-time declaration-time snapshot.
+                    .or_else(|| self.package_scope_lexical(name));
                 match val {
                     // Decontainerize a top-level `ContainerRef` cell from a
                     // whole-container `:=` bind (`my %h2 := %h`); the read
