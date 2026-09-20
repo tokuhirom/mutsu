@@ -471,7 +471,14 @@ impl Interpreter {
             args.push(Value::varref_slotted(sym, value, None, Some(slot)));
         }
         let name = site.name.resolve();
-        self.call_function(&name, args)
+        // Mirror `exec_call_func_op`'s save/restore. A statically linked site's
+        // arguments are all plain lexicals, never literals, so the mask this
+        // call publishes for multi-candidate selection is empty — but it must
+        // be published, or the callee's dispatch would read the CALLER's.
+        let saved = std::mem::replace(&mut self.literal_native_args, 0);
+        let result = self.call_function(&name, args);
+        self.literal_native_args = saved;
+        result
     }
 
     /// Borrow the pooled TRIR frame buffers. A nested call (which Stage 1
