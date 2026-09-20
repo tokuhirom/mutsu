@@ -368,12 +368,47 @@ impl Interpreter {
                 _ => None,
             })
             .collect();
+        // `self.bless(:$buffer, ...)` binds named arguments before evaluating
+        // attribute initializers.  A default may therefore read an attribute
+        // supplied by the caller (for example, `has Int $!size = $!buffer.elems`).
+        // Seed those supplied attributes first; the existing override pass
+        // below keeps the final assignment semantics and handles unknown names.
+        let provided_attrs: Vec<Option<Value>> = plan
+            .class_attrs
+            .iter()
+            .enumerate()
+            .map(|(i, attr)| {
+                args.iter()
+                    .zip(arg_attr_idx.iter())
+                    .filter_map(|(arg, attr_idx)| {
+                        if *attr_idx != Some(i as u32) {
+                            return None;
+                        }
+                        let ValueView::Pair(key, value) = arg.view() else {
+                            return None;
+                        };
+                        let coerced = if let Some(type_name) = plan.attr_is_types.get(key.as_str())
+                        {
+                            self.coerce_value_to_is_type(type_name, attr.sigil, value.clone())
+                                .ok()?
+                        } else {
+                            Self::coerce_provided_attr_value_by_sigil(value.clone(), attr.sigil)
+                        };
+                        Some(coerced)
+                    })
+                    .last()
+            })
+            .collect();
         for (i, (attr, &attr_sym)) in plan
             .class_attrs
             .iter()
             .zip(plan.attr_syms.iter())
             .enumerate()
         {
+            if let Some(provided) = provided_attrs[i].clone() {
+                attributes.insert(attr_sym, provided);
+                continue;
+            }
             let attr_name = &attr.name;
             let default = &attr.default;
             let sigil = &attr.sigil;
@@ -600,6 +635,25 @@ impl Interpreter {
             .cloned()
             .collect();
         super::seed_native_subclass_payloads(&mut attributes, &class_mro, &args, &positional_args);
+        // `bless` can receive a typed `@`/`%` attribute through a custom
+        // constructor (`self.bless(|%args)`).  Apply the same element checks
+        // and container metadata as the native `.new` path before the
+        // attribute map becomes the instance's backing storage.
+        for (attr, &attr_sym) in plan.class_attrs.iter().zip(plan.attr_syms.iter()) {
+            if !matches!(attr.sigil, '@' | '%') {
+                continue;
+            }
+            let Some(elem_type) =
+                super::attribute_type_constraint(&plan.class_attrs, attr, &plan.type_constraints)
+            else {
+                continue;
+            };
+            if let Some(value) = attributes.get(attr_sym).cloned() {
+                let tagged =
+                    self.finalize_typed_container_attr(&attr.name, attr.sigil, &elem_type, value)?;
+                attributes.insert(attr_sym, tagged);
+            }
+        }
         // See `quanthash_subclass`: a `Set`/`Bag`/`Mix` (or `*Hash`) subclass
         // keeps its entries in `__baggy_data__`.
         self.seed_quanthash_storage(cn_resolved, &mut attributes, &positional_args)?;

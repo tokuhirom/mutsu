@@ -26,7 +26,7 @@ impl Interpreter {
     /// that key is shared with a same-named `$`-sigiled lexical, and the whole
     /// point of the callers is to decide whether such a lexical's value is
     /// shadowing a type.
-    pub(super) fn resolve_bareword_type_name(&self, name: &str) -> Option<String> {
+    pub(crate) fn resolve_bareword_type_name(&self, name: &str) -> Option<String> {
         if self.has_type_direct(name) || Self::is_builtin_type(name) {
             return Some(Self::resolve_type_alias(name).to_string());
         }

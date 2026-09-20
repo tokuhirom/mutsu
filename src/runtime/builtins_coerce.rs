@@ -75,6 +75,21 @@ impl Interpreter {
         } {
             return Ok(Value::package(Symbol::intern(&format!("{name}({source})"))));
         }
+        if matches!(
+            name,
+            "Buf"
+                | "Blob"
+                | "buf8"
+                | "buf16"
+                | "buf32"
+                | "buf64"
+                | "blob8"
+                | "blob16"
+                | "blob32"
+                | "blob64"
+        ) {
+            return Ok(Self::build_native_buf_value(Symbol::intern(name), args));
+        }
         let coerced = match name {
             // `Rat($x)` / `FatRat($x)` / `Complex($x)` delegate to the method
             // form (`$x.Rat` …), which carries the full native coercion logic
