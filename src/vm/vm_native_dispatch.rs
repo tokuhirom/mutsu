@@ -60,7 +60,9 @@ impl Interpreter {
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
         use crate::runtime::utils::collection_contains_instance;
-        let method_name = method_sym.resolve();
+        // `as_str`, not `resolve`: see `native_method_0arg`. An owned copy of
+        // an already-`&'static str` per native method call.
+        let method_name: &str = method_sym.as_str();
         // `X::Promise::Broken` (composed into a broken promise's cause by
         // `Promise.result`) overrides `gist` alone. The role carries no method
         // table, so the native exception-gist arm below would answer with the
@@ -78,7 +80,7 @@ impl Interpreter {
         // `Iterable` (#8547); a native impl (e.g. `flat`) would treat the
         // instance as one opaque item instead, so decline it here.
         if matches!(
-            method_name.as_str(),
+            method_name,
             "grep" | "map" | "first" | "sort" | "head" | "tail" | "flat"
         ) {
             let cn = match target.view() {
@@ -95,7 +97,7 @@ impl Interpreter {
             };
             if let Some(cn) = cn
                 && self.has_user_method(&cn, "iterator")
-                && !self.has_user_method(&cn, method_name.as_str())
+                && !self.has_user_method(&cn, method_name)
             {
                 return None;
             }
@@ -113,8 +115,8 @@ impl Interpreter {
         if target.is_seq_value()
             && let ValueView::Seq(body) = target.view()
             && body.needs_touch()
-            && !matches!(method_name.as_str(), "cache" | "raku" | "perl" | "sink")
-            && !crate::value::seq_method_never_touches(method_name.as_str())
+            && !matches!(method_name, "cache" | "raku" | "perl" | "sink")
+            && !crate::value::seq_method_never_touches(method_name)
         {
             return None;
         }
@@ -125,8 +127,8 @@ impl Interpreter {
         // trusted an honest `.REPR` would go on to *dereference* that hash.
         // (Measured: doing this the other way round segfaults.)
         if args.is_empty()
-            && matches!(method_name.as_str(), "REPR" | "WHERE")
-            && let Some(v) = self.try_native_handle_repr_where(target, method_name.as_str())
+            && matches!(method_name, "REPR" | "WHERE")
+            && let Some(v) = self.try_native_handle_repr_where(target, method_name)
         {
             return Some(Ok(v));
         }
@@ -138,7 +140,7 @@ impl Interpreter {
         // `.$m`/`."$m"()` dynamic, hyper `».WHICH`): when the receiver's class
         // defines its own WHICH/WHY, defer to the interpreter so the override
         // wins over the native identity hash / default Pod-doc answer.
-        if matches!(method_name.as_str(), "WHICH" | "WHY") {
+        if matches!(method_name, "WHICH" | "WHY") {
             let class_name = match target.view() {
                 ValueView::Instance { class_name, .. } => Some(class_name.resolve()),
                 ValueView::Package(name) => Some(name.resolve()),
@@ -168,7 +170,7 @@ impl Interpreter {
         // demand. Defer.
         if target.is_lazy_list_value()
             && Self::is_lazy_pipe_source(target)
-            && matches!(method_name.as_str(), "map" | "grep")
+            && matches!(method_name, "map" | "grep")
         {
             return None;
         }
@@ -189,7 +191,7 @@ impl Interpreter {
         if target.is_lazy_list_value()
             && let ValueView::LazyList(ll) = target.view()
             && ll.lazy_pipe.is_some()
-            && Self::lazy_pipe_preserving_coercion(method_name.as_str())
+            && Self::lazy_pipe_preserving_coercion(method_name)
             // A pipe with a finite source must reify for strict coercions such
             // as `.cache`. In particular, Test.rakumod's Seq `is-deeply`
             // candidate recursively calls `.cache`; returning the same finite
@@ -200,7 +202,7 @@ impl Interpreter {
             // the reported type immediately (Rakudo: type changes, laziness
             // does not) — tag the context marker the same way `.^name`/`.WHAT`
             // read it. `.Seq`/`.lazy` leave the value unchanged.
-            let retagged = match method_name.as_str() {
+            let retagged = match method_name {
                 "Array" => Value::lazy_list(crate::gc::Gc::new(ll.with_array_context())),
                 "List" | "list" | "values" => {
                     Value::lazy_list(crate::gc::Gc::new(ll.with_list_context()))
@@ -213,15 +215,13 @@ impl Interpreter {
         // Eager list operations cannot run on a lazy/infinite source: throw
         // X::Cannot::Lazy instead of hanging while the native impl materializes
         // it (matches raku). Shared with the interpreter dispatch path.
-        if let Some(err) =
-            crate::runtime::Interpreter::lazy_guard_error(method_name.as_str(), target)
-        {
+        if let Some(err) = crate::runtime::Interpreter::lazy_guard_error(method_name, target) {
             return Some(Err(err));
         }
         // Early exit for Proxy containers
         if target.is_proxy_value()
             && !matches!(
-                method_name.as_str(),
+                method_name,
                 "VAR" | "WHAT" | "WHICH" | "WHERE" | "HOW" | "WHY" | "REPR" | "DEFINITE"
             )
         {
@@ -275,16 +275,14 @@ impl Interpreter {
             // A grammar cursor's dispatch owner is the grammar's own class, not
             // `Match` — see `should_bypass_native_fastpath`'s twin of this gate.
             let owner = target.match_dispatch_class();
-            let is_pure_render = matches!(
-                method_name.as_str(),
-                "gist" | "Str" | "Stringy" | "raku" | "perl"
-            );
+            let is_pure_render =
+                matches!(method_name, "gist" | "Str" | "Stringy" | "raku" | "perl");
             let render_overridden = is_pure_render && self.has_user_method(owner, &method_name);
             if (!is_pure_render || render_overridden) && self.has_user_method(owner, "Bridge") {
                 return None;
             }
             if matches!(
-                method_name.as_str(),
+                method_name,
                 "throw" | "rethrow" | "gist" | "Str" | "Stringy"
             ) && self.exception_render_needs_interpreter(target, owner)
             {
@@ -301,7 +299,7 @@ impl Interpreter {
                 // Supply methods
                 if cn == "Supply"
                     && matches!(
-                        method_name.as_str(),
+                        method_name,
                         "max"
                             | "min"
                             | "lines"
@@ -347,10 +345,8 @@ impl Interpreter {
                 // user numeric class that overrides one of these keeps the
                 // bypass so its method runs; unknown numeric instances return
                 // `None` from native and still fall through to the interpreter.
-                let is_pure_render = matches!(
-                    method_name.as_str(),
-                    "gist" | "Str" | "Stringy" | "raku" | "perl"
-                );
+                let is_pure_render =
+                    matches!(method_name, "gist" | "Str" | "Stringy" | "raku" | "perl");
                 let render_overridden = is_pure_render && self.has_user_method(&cn, &method_name);
                 // The probe (`~~ Real`, `~~ Numeric`, own `Bridge` method)
                 // is a property of the receiver's CLASS, not of the call, so
@@ -373,7 +369,7 @@ impl Interpreter {
                 // the literal text `(Any)`. Only the interpreter can see the
                 // class registry, so defer the decision to it.
                 if matches!(
-                    method_name.as_str(),
+                    method_name,
                     "throw" | "rethrow" | "gist" | "Str" | "Stringy"
                 ) && self.exception_render_needs_interpreter(target, &cn)
                 {
@@ -410,7 +406,7 @@ impl Interpreter {
             }
         } else if matches!(target.view(), ValueView::Package(name) if name == "Supply")
             && matches!(
-                method_name.as_str(),
+                method_name,
                 "max"
                     | "min"
                     | "lines"
@@ -443,7 +439,7 @@ impl Interpreter {
         // reachable through method dispatch (a user instance, a built-in object
         // type) must be rendered by the interpreter — the pure renderer would
         // fall back to `Foo()` (see `runtime::methods_raku_dispatch`).
-        if matches!(method_name.as_str(), "raku" | "perl")
+        if matches!(method_name, "raku" | "perl")
             && args.is_empty()
             && crate::runtime::container_needs_raku_dispatch(target)
         {
@@ -461,7 +457,7 @@ impl Interpreter {
             && matches!(target.view(), ValueView::Hash(_))
             && args.is_empty()
         {
-            let mn = method_name.as_str();
+            let mn = method_name;
             if (mn == "raku" || mn == "perl" || mn == "keyof")
                 && self.container_type_metadata(target).is_some()
             {
@@ -473,7 +469,7 @@ impl Interpreter {
         }
         // Typed array .raku/.perl bypass (method-name gate first: the `view()`
         // probe would materialize a lazy Match on every other method call)
-        if matches!(method_name.as_str(), "raku" | "perl")
+        if matches!(method_name, "raku" | "perl")
             && args.is_empty()
             && matches!(target.view(), ValueView::Array(..))
             && self
@@ -497,7 +493,7 @@ impl Interpreter {
         // them past the arity-keyed dispatch below. Handle the case-insensitive forms
         // natively (mirror dispatch_prefix_suffix_check / dispatch_substr_eq); the bare
         // forms keep their 1-/2-arg arms, and `:m`/out-of-range fall through.
-        if matches!(method_name.as_str(), "starts-with" | "ends-with")
+        if matches!(method_name, "starts-with" | "ends-with")
             && let Some(result) = crate::builtins::native_prefix_suffix_with_options(
                 target,
                 args,
@@ -536,7 +532,7 @@ impl Interpreter {
         // `substr-eq`) or declared in `builtins::accepted_nameds`; for anything
         // it declares, the cascade is named-blind. See that module for why the
         // declaration is partial and why `None` is the safe default.
-        let stripped = crate::builtins::strip_undeclared_nameds(method_name.as_str(), args);
+        let stripped = crate::builtins::strip_undeclared_nameds(method_name, args);
         let args: &[Value] = stripped.as_deref().unwrap_or(args);
         let mut result = if args.len() == 2 {
             crate::builtins::native_method_2arg(target, method_sym, &args[0], &args[1])
@@ -561,7 +557,7 @@ impl Interpreter {
         if result.is_none()
             && let ValueView::LazyList(ll) = target.view()
             && ll.coroutine.is_some()
-            && matches!(method_name.as_str(), "List" | "values")
+            && matches!(method_name, "List" | "values")
         {
             return Some(Ok(target.clone()));
         }
@@ -570,11 +566,11 @@ impl Interpreter {
         if result.is_none()
             && let ValueView::LazyList(ll) = target.view()
             && ll.scan_spec.is_some()
-            && matches!(method_name.as_str(), "Slip" | "List" | "Seq" | "Array")
+            && matches!(method_name, "Slip" | "List" | "Seq" | "Array")
         {
             match self.force_lazy_list_vm(&ll) {
                 Ok(items) => {
-                    let val = match method_name.as_str() {
+                    let val = match method_name {
                         "Slip" => Value::slip(items),
                         "List" => Value::array(items),
                         "Seq" => Value::seq(items),
@@ -602,7 +598,7 @@ impl Interpreter {
         // to use Map.new((...)) format instead of {...} format. (Method-name
         // gate first: the Hash `view()` probe would materialize a lazy Match
         // on every other method call.)
-        if matches!(method_name.as_str(), "gist" | "raku" | "perl")
+        if matches!(method_name, "gist" | "raku" | "perl")
             && let ValueView::Hash(map) = target.view()
         {
             let is_map = self
@@ -682,9 +678,9 @@ impl Interpreter {
         // Instance-arg bail below because a cas/store value may legitimately be an
         // Instance (e.g. `cas($x, $old, $obj)`).
         {
-            let name = name_sym.resolve();
+            let name: &str = name_sym.as_str();
             if (name.starts_with("__mutsu_atomic_") || name.starts_with("__mutsu_cas_"))
-                && let Some(result) = self.try_native_atomic_function(name.as_str(), args)
+                && let Some(result) = self.try_native_atomic_function(name, args)
             {
                 return Some(result);
             }
@@ -721,10 +717,10 @@ impl Interpreter {
             // type, so an Instance argument is safe to handle natively; every
             // other native function bails out on Instance args (they may need
             // method dispatch) and falls through to the interpreter.
-            let name = name_sym.resolve();
+            let name: &str = name_sym.as_str();
             // `unpack(Blob, Str)` takes a Blob (Instance) argument and is
             // handled natively; everything else bails out on Instance args.
-            if !matches!(name.as_str(), "any" | "all" | "one" | "none" | "unpack") {
+            if !matches!(name, "any" | "all" | "one" | "none" | "unpack") {
                 return None;
             }
         }
