@@ -137,7 +137,7 @@ impl Interpreter {
     /// branch below without this split cost bench-array ~16% of its
     /// instruction count, almost entirely `String` alloc/free churn, even
     /// though the benchmark never uses a package-scoped nested type).
-    fn try_resolved_type_capture_name(&self, constraint: &str) -> Option<String> {
+    pub(crate) fn try_resolved_type_capture_name(&self, constraint: &str) -> Option<String> {
         if let Some(inner) = constraint
             .strip_prefix("::(")
             .and_then(|s| s.strip_suffix(')'))

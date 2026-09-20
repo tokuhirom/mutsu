@@ -24,20 +24,34 @@ impl Interpreter {
         scoped: bool,
         hoisted: bool,
     ) -> Result<(), RuntimeError> {
-        let name = Self::const_str(code, name_idx).to_string();
-        let raw_constraint = Self::const_str(code, tc_idx).to_string();
-        self.save_type_meta_for_scope_exit(&name);
+        // Both operands are constant-pool `&str`s owned by `code`, which is not
+        // borrowed from `self` — so they need no copy. Taking one anyway cost
+        // two heap allocations (and two frees) on EVERY execution of a typed
+        // declaration; this op was the single largest identified allocation
+        // site on a `JSON::Fast.from-json` parse at 172,747 allocations per 100
+        // records (#8830).
+        let name: &str = Self::const_str(code, name_idx);
+        let raw_constraint: &str = Self::const_str(code, tc_idx);
+        self.save_type_meta_for_scope_exit(name);
         // Empty constraint = CLEAR: an untyped expression-position
         // declaration dropping a stale same-named constraint (the
         // compiler never emits an empty string for a real type).
         if raw_constraint.is_empty() {
-            self.vm_set_var_type_constraint(&name, None);
+            self.vm_set_var_type_constraint(name, None);
             *ip += 1;
             return Ok(());
         }
         // Resolve type capture variables (e.g., `T` → `Int` when `::T`
-        // was captured earlier in the signature).
-        let constraint = loan_env!(self, resolved_type_capture_name(&raw_constraint));
+        // was captured earlier in the signature). Through the `try_` form
+        // (#8815's split) so the overwhelmingly common case -- a plain
+        // constraint like `int` or `Str` with no capture, generic or package
+        // alias to resolve -- borrows the constant-pool string instead of
+        // allocating a copy of it to immediately compare and drop.
+        let constraint: std::borrow::Cow<'_, str> =
+            match loan_env!(self, try_resolved_type_capture_name(raw_constraint)) {
+                Some(resolved) => std::borrow::Cow::Owned(resolved),
+                None => std::borrow::Cow::Borrowed(raw_constraint),
+            };
         // Container metadata is later rendered as `Array[T]`/`Hash[T]`, so a
         // user type used unqualified inside a module must retain the same
         // package-qualified identity as the type checker.  Keeping the raw
@@ -52,26 +66,33 @@ impl Interpreter {
         // 43 `my int`/`my str` declarations doubled bench-json-fast
         // (3.35G -> 6.91G simulated instructions, 22% of the run in `memcmp`
         // alone) — `news/2026-09/typed-decl-package-probe-regression.md`.
-        let constraint = if !constraint.contains("::")
-            && !constraint.contains('[')
-            && !self.unshadowed_builtin_type_name(&constraint)
-        {
-            self.resolve_type_in_current_package(&constraint)
-                .unwrap_or(constraint)
-        } else {
-            constraint
-        };
+        //
+        // Both probes are byte scans (`str_scan.rs`): `contains("::")` builds a
+        // `StrSearcher` and `contains('[')` a `CharSearcher`, per execution, for
+        // two fixed one- and two-byte needles.
+        let constraint: std::borrow::Cow<'_, str> =
+            if !crate::runtime::utils::has_double_colon(constraint.as_ref())
+                && !crate::runtime::utils::has_bracket(constraint.as_ref())
+                && !self.unshadowed_builtin_type_name(&constraint)
+            {
+                match self.resolve_type_in_current_package(&constraint) {
+                    Some(resolved) => std::borrow::Cow::Owned(resolved),
+                    None => constraint,
+                }
+            } else {
+                constraint
+            };
         // Clear stale atomic CAS state when an @-variable is
         // (re-)declared with a type constraint like atomicint. Not on the
         // hoist: the state belongs to whatever container is bound right now,
         // which is the enclosing scope's, not this declaration's.
         if !hoisted && name.starts_with('@') && constraint == "atomicint" {
-            self.clear_atomic_array_state(&name);
+            self.clear_atomic_array_state(name);
         }
         if scoped {
-            self.loan_env_for(|i| i.set_var_type_constraint_routine_scoped(&name, &constraint));
+            self.loan_env_for(|i| i.set_var_type_constraint_routine_scoped(name, &constraint));
         } else {
-            self.vm_set_var_type_constraint_decl(&name, Some(constraint.clone()));
+            self.vm_set_var_type_constraint_decl(name, Some(constraint.clone().into_owned()));
         }
         // For scalar variables, if the current value is Nil, set it to the type object.
         // Exception: if the constraint is "Nil", keep the value as Nil
@@ -82,10 +103,10 @@ impl Interpreter {
             // (the block-exit restore only puts the metadata back). Seed only a
             // name nothing has bound — the shape the hoist exists for.
             let is_nil = if hoisted {
-                self.env().get(&name).is_none()
+                self.env().get(name).is_none()
             } else {
                 matches!(
-                    self.env().get(&name).map(Value::view),
+                    self.env().get(name).map(Value::view),
                     Some(ValueView::Nil) | None
                 )
             };
@@ -105,22 +126,23 @@ impl Interpreter {
             // "Unknown method ... new on C". Re-seeding an already-correct value
             // is a no-op: the seed is a pure function of the constraint.
             let is_dead_seed = matches!(
-                self.env().get(&name).map(Value::view),
+                self.env().get(name).map(Value::view),
                 Some(ValueView::Package(p)) if !self.type_name_is_known(&p.resolve())
             );
             if is_nil || is_dead_seed {
-                let init_val = self.typed_scalar_nil_seed_value(&name, &constraint);
-                self.set_env_with_main_alias(&name, init_val.clone());
-                self.update_local_if_exists(code, &name, &init_val);
+                let init_val = self.typed_scalar_nil_seed_value(name, &constraint);
+                self.set_env_with_main_alias(name, init_val.clone());
+                self.update_local_if_exists(code, name, &init_val);
             }
         } else if let Some(value) = (!hoisted)
-            .then(|| self.get_env_with_main_alias(&name))
+            .then(|| self.get_env_with_main_alias(name))
             .flatten()
         {
             let info = crate::runtime::ContainerTypeInfo {
-                value_type: loan_env!(self, var_type_constraint(&name)).unwrap_or(constraint),
+                value_type: loan_env!(self, var_type_constraint(name))
+                    .unwrap_or_else(|| constraint.into_owned()),
                 key_type: if name.starts_with('%') {
-                    loan_env!(self, var_hash_key_constraint(&name))
+                    loan_env!(self, var_hash_key_constraint(name))
                 } else {
                     None
                 },
@@ -131,8 +153,8 @@ impl Interpreter {
             // Tagging an object hash also re-keys it by `.WHICH`
             // (see `tag_container_metadata`).
             let tagged = self.tag_container_metadata(value, info);
-            self.set_env_with_main_alias(&name, tagged.clone());
-            self.update_local_if_exists(code, &name, &tagged);
+            self.set_env_with_main_alias(name, tagged.clone());
+            self.update_local_if_exists(code, name, &tagged);
         }
         *ip += 1;
         Ok(())
