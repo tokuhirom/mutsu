@@ -225,6 +225,16 @@ pub(crate) mod flags {
     /// makes it a single memoized lookup instead of two `as_str()` round trips
     /// plus two `starts_with` scans per key.
     pub(crate) const CODE_ENV_ENTRY: u16 = 1 << 9;
+    /// This symbol has been used as an env key **somewhere in this process**.
+    ///
+    /// Unlike every other bit here this is NOT a property of the symbol's
+    /// string: it is a monotonic, one-way latch set by
+    /// [`crate::symbol::mark_env_key`] at the (closed) set of sites that can put
+    /// a key into an env tier. It answers the question every speculative
+    /// metadata probe asks — "can this name be in any env at all?" — without
+    /// walking a chain, and a clear bit is a *proof* of absence, so the walk can
+    /// be skipped entirely. See [`crate::symbol::maybe_env_key`].
+    pub(crate) const EVER_ENV_KEY: u16 = 1 << 7;
     /// Set once the flag word has been computed (so a symbol with no flags is
     /// not recomputed on every lookup).
     pub(crate) const COMPUTED: u16 = 1 << 15;
@@ -326,6 +336,52 @@ fn store_flags(idx: usize, f: u16) {
     };
     let chunk = cell.get_or_init(|| Box::new([const { AtomicU16::new(0) }; FLAG_CHUNK_LEN]));
     chunk[idx & (FLAG_CHUNK_LEN - 1)].store(f, Ordering::Relaxed);
+}
+
+/// Record that `sym` has been used as an env key.
+///
+/// Call this from every site that can put a key into an env tier — the set is
+/// closed and small precisely because [`crate::env_tier::Tier`] keeps its map
+/// private (see that module's doc comment), and the two base tiers are
+/// installed once each. Over-marking is free; under-marking is not, so a new
+/// key-adding path must come through here.
+///
+/// The latch is monotonic and never cleared. A key that is removed from the
+/// only env that held it keeps its bit, which only means the (correct) walk
+/// still runs for it.
+///
+/// `flags()` is called first, deliberately: it guarantees the slot is stored
+/// and [`flags::COMPUTED`], so the later plain `store` in
+/// [`Symbol::compute_and_store_flags`] — the one path that would clobber this
+/// bit — can no longer be reached for this id.
+pub(crate) fn mark_env_key(sym: Symbol) {
+    let f = sym.flags();
+    if f & flags::EVER_ENV_KEY != 0 {
+        return;
+    }
+    let idx = sym.0 as usize;
+    match flag_slot(idx) {
+        Some(slot) => {
+            slot.fetch_or(flags::EVER_ENV_KEY, Ordering::Relaxed);
+        }
+        // Beyond the table's reach: unmemoized, so `maybe_env_key` answers
+        // `true` for it anyway and there is nothing to record.
+        None => {}
+    }
+}
+
+/// Whether `sym` *may* be a key in some env.
+///
+/// `false` is a proof of absence: no env in the process has ever held this
+/// symbol as a key, so a chain walk for it cannot find anything. `true` means
+/// only "look properly" — a symbol whose id is beyond [`FLAG_TABLE`]'s reach,
+/// or one whose sole holder has since dropped it, both answer `true`.
+#[inline]
+pub(crate) fn maybe_env_key(sym: Symbol) -> bool {
+    match flag_slot(sym.0 as usize) {
+        Some(slot) => slot.load(Ordering::Relaxed) & flags::EVER_ENV_KEY != 0,
+        None => true,
+    }
 }
 
 /// The "not computed yet" sentinel of [`TYPE_META_SUBJECT_TABLE`]. Symbol id 0

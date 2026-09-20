@@ -173,8 +173,13 @@ const CANDIDATE_MEMO_MIN_KEYS: usize = 32;
 
 impl Tier {
     /// Wrap an already-built map. Every whole-map rebuild goes through here, so
-    /// the indexes start empty exactly as they must.
+    /// the indexes start empty exactly as they must — and every key in it is
+    /// latched as an env key, which is what lets [`crate::symbol::maybe_env_key`]
+    /// treat a clear bit as a proof of absence.
     pub(crate) fn new(map: SymMap) -> Self {
+        for key in map.keys() {
+            crate::symbol::mark_env_key(*key);
+        }
         Self {
             map,
             capture_candidates: OnceLock::new(),
@@ -293,6 +298,10 @@ impl Tier {
     pub(crate) fn insert(&mut self, key: Symbol, value: Value) -> Option<Value> {
         let prev = self.map.insert(key, value);
         if prev.is_none() {
+            // A key that was already here was latched when it arrived, so the
+            // mark rides along with the index invalidation on the rare
+            // (genuinely new key) side rather than costing every value write.
+            crate::symbol::mark_env_key(key);
             self.invalidate_key_set();
         }
         prev
@@ -329,12 +338,23 @@ impl Tier {
         self.map.reserve(additional);
     }
 
-    /// Raw mutable access, for the bulk paths that add keys without naming
-    /// them. Drops the indexes up front, since it cannot report what it did.
-    #[inline]
-    pub(crate) fn map_mut(&mut self) -> &mut SymMap {
+    /// Raw mutable access, for a bulk path that adds keys without naming them.
+    /// Drops the indexes up front, since it cannot report what it did, and
+    /// latches every key afterwards for the same reason.
+    ///
+    /// Test-only, and deliberately so: an escape hatch that hands out `&mut
+    /// SymMap` is the one shape that could add an env key without
+    /// [`crate::symbol::mark_env_key`] seeing it, which is exactly the
+    /// invariant [`crate::symbol::maybe_env_key`] rests on. The closure form is
+    /// what closes it — there is no borrow to hold past the marking pass.
+    #[cfg(test)]
+    pub(crate) fn with_map_mut<R>(&mut self, f: impl FnOnce(&mut SymMap) -> R) -> R {
         self.invalidate_key_set();
-        &mut self.map
+        let out = f(&mut self.map);
+        for key in self.map.keys() {
+            crate::symbol::mark_env_key(*key);
+        }
+        out
     }
 
     /// Unwrap the tier back into its map (`Env::into_iter`).
@@ -434,9 +454,33 @@ mod tests {
         let mut tier = Tier::default();
         tier.insert(s("$x"), Value::int(1));
         let _ = tier.capture_candidates();
-        tier.map_mut().insert(s("$z"), Value::int(9));
+        tier.with_map_mut(|m| m.insert(s("$z"), Value::int(9)));
         assert!(candidates_are_exact(&tier));
         assert_eq!(tier.capture_candidates().len(), 2);
+        // The bulk path cannot name what it added, so it latches the whole key
+        // set afterwards -- without which `maybe_env_key` would answer `false`
+        // for a key that is genuinely in an env.
+        assert!(crate::symbol::maybe_env_key(s("$z")));
+    }
+
+    /// The latch every env lookup's early-out rests on: a key that reached a
+    /// tier is marked, and one that never did is not.
+    #[test]
+    fn a_key_that_reaches_a_tier_is_latched_and_one_that_never_does_is_not() {
+        let mut tier = Tier::default();
+        let present = s("$env_key_latch_present");
+        let absent = s("$env_key_latch_absent");
+        assert!(
+            !crate::symbol::maybe_env_key(absent),
+            "a freshly interned name nothing has stored under must be provably absent"
+        );
+        tier.insert(present, Value::int(1));
+        assert!(crate::symbol::maybe_env_key(present));
+        // Monotonic: removing the only holder does NOT clear the latch, which
+        // only means the (correct) walk still runs for it.
+        tier.remove(&present);
+        assert!(crate::symbol::maybe_env_key(present));
+        assert!(!crate::symbol::maybe_env_key(absent));
     }
 
     fn container_ref(inner: i64) -> Value {

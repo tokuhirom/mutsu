@@ -45,6 +45,11 @@ pub(crate) fn set_global_base(map: HashMap<Symbol, Value>) {
     if map.contains_key(&crate::symbol::wk::rebound_return()) {
         RETURN_REBOUND_SEEN.store(true, Ordering::Relaxed);
     }
+    // A base-tier key is answerable by `get_sym`, so it has to be latched like
+    // any overlay key or the early-out would prove it absent.
+    for key in map.keys() {
+        crate::symbol::mark_env_key(*key);
+    }
     let _ = GLOBAL_BASE.set(map.into_iter().collect());
 }
 
@@ -366,7 +371,7 @@ static PLACEHOLDER_KEY_SEEN: AtomicBool = AtomicBool::new(false);
 /// Rebinding `&return` is vanishingly rare, and the binding can only become
 /// visible to a return by first being *inserted* into an env — every insert path
 /// funnels through [`Env::insert_sym`] (`insert` / `insert_through*` /
-/// `entry_or_insert*` all delegate to it, and `inner_mut` has no callers), so
+/// `entry_or_insert*` all delegate to it), so
 /// latching the flag there catches every creation site. Same soundness argument
 /// as [`CLOSURE_META_KEY_SEEN`]: the flag is monotonic, the insert runs earlier in
 /// program order than any return that could observe the binding, and an over-set
@@ -632,10 +637,8 @@ pub struct Env {
     /// A *superset* index, never a subset: it may name a key that has since
     /// been removed (removals do not prune it), so every consumer re-reads the
     /// overlay through the key. It must never MISS a present key, which is why
-    /// the two bulk paths that can add keys without passing `insert_sym`
-    /// ([`Self::inner_mut`]) and every whole-map rebuild (`flattened`,
-    /// `filtered_flat`, `From<HashMap>`) reset it to `None` rather than carry a
-    /// stale one forward.
+    /// every whole-map rebuild (`flattened`, `filtered_flat`, `From<HashMap>`)
+    /// resets it to `None` rather than carry a stale one forward.
     ///
     /// `Arc` for the same reason as `frame_writes`: an env clone stays a
     /// refcount bump.
@@ -784,6 +787,11 @@ impl Env {
             for (k, v) in global.iter() {
                 base.entry(*k).or_insert_with(|| v.clone());
             }
+        }
+        // Same reason as `set_global_base`: this tier answers `get_sym`, so
+        // every key in it has to be latched.
+        for key in base.keys() {
+            crate::symbol::mark_env_key(*key);
         }
         self.dyn_base = Some(Arc::new(base));
     }
@@ -1798,8 +1806,48 @@ impl Env {
         }
     }
 
+    /// Look `key` up in this env: overlay, then the parent chain, then the base
+    /// tier (then any capture fallback).
+    ///
+    /// Answers `None` without touching a single map when `key` has never been
+    /// an env key anywhere in the process. That case is not a curiosity — it is
+    /// the VM's *dominant* lookup. Every `my`, every store and every call entry
+    /// speculatively probes a handful of `__mutsu_*` metadata keys derived from
+    /// the variable's own name (`MetaNs`), and a program that uses one
+    /// namespace for one variable pays the full walk for that namespace on
+    /// *every other* variable too, because the per-namespace latches in this
+    /// module are process-global booleans. `maybe_env_key` is the same idea
+    /// made exact: per name, not per namespace.
+    ///
+    /// A miss is the expensive direction — it walks every tier, the base, and
+    /// each capture fallback before it can say `None` — so this is the one
+    /// early-out worth having.
     #[inline]
     pub fn get_sym(&self, key: Symbol) -> Option<&Value> {
+        // The running frame's own overlay first. A name it owns answers here,
+        // and asking the filter before it would tax every ordinary lexical read
+        // with a question only a *miss* needs answered — measured at ~31 Ir per
+        // iteration of a typed-native loop, whose probes are all for keys that
+        // do exist (`my int $i` really does create `__mutsu_type::$i`).
+        if let Some(v) = self.inner.get(&key) {
+            return Some(v);
+        }
+        if !crate::symbol::maybe_env_key(key) {
+            debug_assert!(
+                self.get_sym_walk(key).is_none(),
+                "`{}` is in an env although nothing latched it as an env key: a \
+                 key-adding path has escaped `symbol::mark_env_key`, and this \
+                 early-out is now silently hiding real bindings",
+                key.as_str()
+            );
+            return None;
+        }
+        self.get_sym_walk(key)
+    }
+
+    /// [`Self::get_sym`] without the never-an-env-key filter — the walk itself.
+    #[inline]
+    fn get_sym_walk(&self, key: Symbol) -> Option<&Value> {
         // One predictable branch for every env in the process that has no
         // capture below it, which is nearly all of them. The fallback walk is
         // a separate copy of this loop rather than a flag inside it, so the
@@ -1880,8 +1928,28 @@ impl Env {
         self.contains_key_sym(Symbol::intern(key))
     }
 
+    /// Membership probe, with the same never-an-env-key early-out as
+    /// [`Self::get_sym`] — see there for why it is worth having.
     #[inline]
     pub fn contains_key_sym(&self, key: Symbol) -> bool {
+        // Own overlay first — see [`Self::get_sym`].
+        if self.inner.contains_key(&key) {
+            return true;
+        }
+        if !crate::symbol::maybe_env_key(key) {
+            debug_assert!(
+                !self.contains_key_sym_walk(key),
+                "`{}` is in an env although nothing latched it as an env key",
+                key.as_str()
+            );
+            return false;
+        }
+        self.contains_key_sym_walk(key)
+    }
+
+    /// [`Self::contains_key_sym`] without the filter — the walk itself.
+    #[inline]
+    fn contains_key_sym_walk(&self, key: Symbol) -> bool {
         if self.chain_has_fallback {
             return self.get_sym_with_fallback(key).is_some();
         }
@@ -2361,17 +2429,6 @@ impl Env {
         if !self.contains_key_sym(sym) {
             self.insert_sym(sym, f());
         }
-    }
-
-    /// Direct access to the inner HashMap (for bulk mutation).
-    ///
-    /// The one write path that can add a key without passing through
-    /// [`Self::insert_sym`], so it drops the code-entry index rather than let a
-    /// bulk insert make it miss a key — see [`Self::code_entries`].
-    #[allow(dead_code)]
-    pub(crate) fn inner_mut(&mut self) -> &mut SymMap {
-        self.code_entries = None;
-        self.cow_mut().map_mut()
     }
 
     /// Direct read access to the inner HashMap (this env's OWN tier only — it
