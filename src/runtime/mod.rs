@@ -1955,6 +1955,17 @@ pub(crate) fn cow_table_mut<T: Clone>(table: &mut std::sync::Arc<T>) -> &mut T {
     std::sync::Arc::make_mut(table)
 }
 
+impl Interpreter {
+    /// The single mutation funnel for `unit_lexicals`, bumping
+    /// [`Interpreter::unit_lexical_gen`] so caches keyed on it invalidate.
+    /// Every `cow_table_mut(&mut self.unit_lexicals)` goes through here.
+    #[inline]
+    pub(crate) fn unit_lexicals_cow_mut(&mut self) -> &mut PackageLexicals {
+        self.unit_lexical_gen = self.unit_lexical_gen.wrapping_add(1);
+        cow_table_mut(&mut self.unit_lexicals)
+    }
+}
+
 /// The interpreter.
 ///
 /// **On the `Arc<...>` collection fields.** A large group of this struct's
@@ -3131,6 +3142,14 @@ pub struct Interpreter {
     /// snapshot keeping a module's bare names reachable once the loading frame is
     /// gone; this store is authoritative and consulted BEFORE `env`.
     pub(crate) unit_lexicals: std::sync::Arc<PackageLexicals>,
+    /// Bumped by [`Interpreter::unit_lexicals_cow_mut`], the single funnel
+    /// through which `unit_lexicals` is mutated. TRIR's per-routine
+    /// free-variable cache (`trir_outer_cache`) is keyed on it, so a bucket
+    /// or binding added anywhere invalidates every cached resolution.
+    /// Writing *through* a cell already in the table does not bump it, and
+    /// must not: the cell is what the cache holds, so such a write is
+    /// visible without re-resolving.
+    pub(crate) unit_lexical_gen: u64,
     /// Named subs that captured at least one enclosing-scope `my` free
     /// variable into `unit_lexicals` at registration time (ADR-0024), mapped to
     /// the `unit_lexicals` bucket key holding their cells.
@@ -3738,6 +3757,20 @@ pub struct Interpreter {
     // former `VM` struct). The Interpreter IS the bytecode VM now. ===
     pub(crate) stack: Vec<Value>,
     pub(crate) locals: Locals,
+    /// Pooled TRIR frame buffers (ADR-0110). A TRIR invocation needs five
+    /// vectors; allocating them per call cost more than the body it was
+    /// opening a frame for, so one set is kept here and handed round.
+    pub(crate) trir_scratch: Option<Box<crate::trir::exec::TrScratch>>,
+    /// ADR-0110 §3.1: each TRIR chunk's free variables, resolved once and
+    /// kept as the `unit_lexicals` CELLS they live in — so a write from
+    /// anywhere is seen without re-resolving. Keyed by the chunk's address
+    /// and validated against [`Interpreter::unit_lexical_gen`]; resolving
+    /// them per call cost three string-keyed hash lookups plus two
+    /// thread-local interner hits, which is more than `nom-ws`'s whole body.
+    /// Keyed by [`crate::trir::TrChunk::id`] — a monotonic counter, not the
+    /// chunk's address, which the allocator may reuse after an `EVAL`'s
+    /// compiled routines are dropped.
+    pub(crate) trir_outer_cache: rustc_hash::FxHashMap<u64, (u64, Vec<Value>)>,
     /// Current frame's captured upvalue array, indexed by the running
     /// `CompiledCode::upvalue_syms` order. Read by `GetUpvalue(i)`. Set from
     /// `SubData::upvalues` on closure entry and saved/restored across call frames

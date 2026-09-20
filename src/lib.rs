@@ -33,6 +33,7 @@ pub(crate) mod scan_cache;
 pub mod symbol;
 mod token_kind;
 mod trace;
+pub(crate) mod trir;
 pub(crate) mod type_id;
 pub(crate) mod unit_source_file;
 mod value;

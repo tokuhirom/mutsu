@@ -1,6 +1,6 @@
 # ADR-0110: Statically typed routines compile to a typed, resolved IR — on the existing stack machine, not a register-machine rewrite
 
-- Status: Accepted (2026-09-20, approved by tokuhirom; implementation not started — see "Implementation status")
+- Status: Accepted (2026-09-20, approved by tokuhirom; Stage 1 landed 2026-09-20 — see "Implementation status")
 - Date: 2026-09-20
 - Deciders: tokuhirom, Claude
 - Tracked by: [#8895](https://github.com/tokuhirom/mutsu/issues/8895)
@@ -249,4 +249,30 @@ Bytecode: `target/release/mutsu --dump-bytecode <file>`. Opcode histogram: `MUTS
 
 ## Implementation status
 
-Not started. Record each stage's measured gate result here when it lands (or the falsification, if Stage 1 misses).
+### Stage 1 — landed 2026-09-20
+
+**Result: the iteration gate is met; the call gate is missed at 1.31x rakudo where it asked for 0.74x. The kill criterion is not triggered.**
+
+§7's gates are absolutes taken on a box whose rakudo measured 204 ns on the call benchmark and ~21 ns per iteration. This box's rakudo measures 237 ns and 14.2 ns on the same scripts, so the gates are restated here as ratios to a rakudo run taken in the same session, which is what `.agents/skills/perf-tuning/SKILL.md` §6 requires of any cross-box figure. Release build, warm precomp cache, loop skeleton subtracted, medians of 7 runs each, `MUTSU_TRIR=off` as the A/B control.
+
+| | TRIR off | TRIR on | rakudo (same box) | speedup | vs rakudo | gate |
+|---|---:|---:|---:|---:|---:|---|
+| `nom-ws`-shaped call, free variable | 9,025 ns | 310 ns | 237 ns | 29x | **1.31x** | ≤ 150 ns there = 0.74x — **missed** |
+| same, no free variable | 2,104 ns | 297 ns | 250 ns | 7.1x | 1.19x | — |
+| one `nqp::while` iteration | 812 ns | 17.7 ns | 14.2 ns | 46x | **1.25x** | ≤ 30 ns there = 1.43x — **met** |
+
+The kill criterion (§7: stop if a faithful Stage 1 cannot reach ≤ 300 ns on the call, = 1.47x rakudo there) is not triggered at 1.31x.
+
+**Where the missing ~1.8x is.** Not in the typed body: the loop iteration is 46x faster, and at 17.7 ns a three-iteration `nom-ws` body is ~50 ns of the 310. The remainder is the fixed per-call cost that Stage 1 left in place — the `CompiledFns` probe and fingerprint check that re-establish the callee, seeding and tearing down the frame buffers, and reading the `is rw` argument through its container and writing it back at the end. Stage 2 has to replace the last of those anyway: once a TRIR body may call another TRIR routine, copy-in/copy-out stops being sound and the native `is rw` parameter becomes a real slot reference into a shared native frame (§3.3's `getlexref_i`), which removes the container round-trip rather than optimizing it.
+
+`JSON::Fast` itself is unmoved, as expected: every one of its routines still declines, `nom-ws` included, because the real one ends by calling `nom-comment($text, ++$pos)` and Stage 1 admits no call inside a TRIR body. That is Stage 2's subject.
+
+**Deviation from §3.2, recorded deliberately.** The ADR describes native operands as raw words sharing the untyped operand stack, with a debug-build stack-kind verifier as the soundness gate (§5's first risk row). The implementation keeps the typing and drops the sharing: native `int`/`num` operands live in their own `Vec<i64>` bank (`src/trir/exec.rs`), boxed ones in the interpreter's existing `Value` frame and stack. No raw word is ever stored where a `Value` lives, so "a raw word misread as a `Value`" is removed structurally rather than contained by a check, and GC and frame teardown need no change at all. Tier B (Stage 3) is unaffected: a bank whose element kind is static is exactly what Cranelift wants for `def_var`/`use_var`.
+
+**Deviation from §2, recorded deliberately.** TRIR executes in its own small loop (`src/trir/exec.rs`) rather than as new arms in `exec_one`. The concern §2 names — "TRIR is not a second VM" — is met by the eligibility gate instead: the loop executes only operations whose operand kinds the compiler proved, and the compiler declines the whole routine at the first construct it cannot prove, so there is no fallback arm and no second copy of any Raku semantic. Sharing `exec_one` would have added its per-instruction bookkeeping (the `current_code` store, the stats/trace probes, the `pending_where_exception` check, the backtrace check, the poll and halt tests) to operations whose whole budget is a handful of instructions.
+
+**One bug worth recording**, because it is the general hazard in collapsing a sequence of opcodes into one: `CallTrir` initially dropped the argument-source table its `CallFunc` carried, and the post-compile analysis reads exactly that table to learn that a local reaches a call and may be written back through an `is rw` parameter. Without it, a closure over such a variable was vouched for as by-value-capturable and reported the pre-call value. The opcodes a call site emits are inputs to compile-time analyses, not only instructions. The differential test (§5) caught it on its first run.
+
+### Stages 2-4
+
+Not started.
