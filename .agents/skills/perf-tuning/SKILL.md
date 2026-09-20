@@ -167,11 +167,64 @@ for a fixed two-byte needle — `src/runtime/utils/str_scan.rs` has the byte sca
 
 One coherent change per PR, each with its own measurement. A `todo:perf` issue's headline
 problem usually needs an ADR; the bounded slices under it do not, and landing four of them beat
-waiting for the big one.
+waiting for the big one — **when the slices can actually reach the target**. Section 5a is the
+case where they cannot, and it is the more common one once the obvious wins are gone.
 
 **Do not close the issue from the PR that does one slice.** Deciding a perf issue's scope is
 satisfied is the maintainer's call. (Got this wrong on #8673 — closed it via `Closes` in a PR
 that merely removed one of its costs.)
+
+## 5a. State the required multiple first, or slicing becomes avoidance
+
+**Before the first slice, write down the multiple the goal needs, and check that the plan's
+slices multiply to it.** A goal stated as a ratio — "get `JSON::Fast` under 10x rakudo", from
+59x — needs **6x**. A slice worth 3% contributes 1.03. Sixty of them, with no interaction,
+would be 5.9. That arithmetic is the whole decision, and it takes one line to do.
+
+Skipping it has a specific failure mode, and it is seductive rather than obviously wrong:
+
+1. You profile, and the top entry is real.
+2. You fix it soundly, with a measurement, and it lands. It is worth 1-4%.
+3. You profile again. A different entry is on top. Go to 2.
+
+Every step is defensible. The sequence goes nowhere, and it feels like progress the entire time
+because each PR is green, measured, and general. **The tell is that your own write-up keeps
+concluding "the structure is the cost" while your next commit keeps not changing the structure.**
+
+This happened over one long session (2026-09-20). The analysis was right every time and was
+ignored every time:
+
+| landed | measured |
+| --- | ---: |
+| six name-resolution slices against #8830 | 2,975,774,664 → 1,843,258,057 Ir, and the last removed **65.8% of the profile's single largest entry for 4.3% overall** |
+| #8879, the `DESTROY` sweep | -3.9% on a loop |
+| #8886, the dispatch chain's **most expensive probe**, removed outright | **3.1%** of a method call |
+| #8890, `as_str` instead of `resolve` on the native dispatch path | **393** instructions of 22,528 |
+| pure-tag gating of the `native_method_0arg` prologue | **1.17%**, reverted |
+
+The write-up for #8886 said, in its own PR body, *"there is no ordering of probe removals that
+reaches a method call worth calling fast, because the chain is the design"* — and the next two
+commits removed another cost from the chain.
+
+Three rules follow.
+
+**Count the layers before you optimize one.** `@a.elems` is 8,314 instructions and *fifteen*
+layers of 100-900 each. Knowing that first would have ruled out the last three rows of that
+table. `callgrind_annotate --tree=caller` plus `cg-summary.py` gives you the list in one run;
+read the whole list before picking.
+
+**An existing per-layer cache is evidence against adding another one.** When every layer already
+carries a memo from a previous campaign — `native_lever_a_user_override_sym` is address-keyed to
+avoid an intern and cites two campaigns in its doc comment, and still costs 87 instructions on a
+*hit*, twice per call; `vm_call_method_compiled_cache.rs` is 849 lines of caching; `Symbol::intern`,
+`MetaNs::key`, `type_meta_key_cache` and `capture_candidates` all memoize — and the path is still
+slow, the answer is not a sixteenth memo. It is a cache **in front of** the layers instead of
+inside each of them. Fifteen layers of cache lookups is what "make each layer cheap" converges to.
+
+**A negative result is a deliverable; a small win is not a reason to stop.** Reverting the
+tag-gating experiment and writing down *why* (7 of 57 decodes bought 1.17%; all 57 caps at 12%)
+was worth more than landing it would have been. Publish that, then go and do the structural
+change.
 
 ## 6. Reporting
 
