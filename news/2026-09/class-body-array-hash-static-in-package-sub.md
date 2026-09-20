@@ -39,4 +39,4 @@ Found via `Date::Calendar::Hijri` 0.1.0's `lib/Date/Calendar/Hijri/Names.rakumod
 whose `unit class` declares a `my @month-abbr = (...)` array static read back
 by an `our sub month-abbr`.
 
-Regression test: `t/oo/class/class-body-static-in-package-sub.t`.
+Regression test: `t/oo/class/class-body-static-in-named-sub.t`.
