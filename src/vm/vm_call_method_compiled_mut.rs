@@ -10,6 +10,29 @@ impl Interpreter {
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
         let method: &str = method_sym.as_str();
+        // Calling a method on a role TYPE OBJECT puns the role, and punning is
+        // a composition: the role's body runs. This fast path dispatched the
+        // role's method straight off the role, so the body never ran at all —
+        // `role R { my $x = 7; method gx { $x } }` answered `Nil` from `R.gx`,
+        // and a body `my class KV` reported `Undeclared name: KV` because
+        // nothing had ever declared it.
+        //
+        // Only the BODIES are run here, not the full
+        // `ensure_role_punned_to_class`: registering the pun class would put
+        // the role into `registry.classes`, which `.isa`, `.^methods` and
+        // candidate-list introspection read, so a role would start reporting
+        // itself as a class as soon as anything called a method on it. The
+        // full pun still happens on the paths that genuinely need the class.
+        //
+        // Ordered cheapest-first: an ordinary class receiver fails the
+        // `classes` probe outright, and `run_pun_role_bodies` is memoized so
+        // every later call on the same role is one `HashSet` hit.
+        if let ValueView::Package(name) = target.view() {
+            let pkg = name.as_str();
+            if !self.registry().classes.contains_key(pkg) && self.is_role(pkg) {
+                self.run_pun_role_bodies(pkg)?;
+            }
+        }
         // Native default construction (see `try_compiled_method_or_interpret`).
         if method == "new"
             && let ValueView::Package(class_name) = target.view()

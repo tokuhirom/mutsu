@@ -14,6 +14,71 @@ use crate::symbol::Symbol;
 use crate::value::ValueMap;
 
 impl Interpreter {
+    /// Persist the lexicals a just-run role body added to `env` as
+    /// `package_lexicals[owner]`, so a method that closes over one still
+    /// resolves it once the composing frame's env is gone.
+    ///
+    /// `env_before` is the env key set captured immediately before the body
+    /// ran; `declared` names what the body itself declared (each
+    /// `DeferredBodyOp::declared_vars`, plus the role's bound type params).
+    /// A declared name counts as a body lexical even when a same-named
+    /// binding already leaked into the outer env, and it is the only way a
+    /// type object (`my class KV { ... }`) is kept — an undeclared package
+    /// value in scope belongs to the surrounding compunit, not to this body.
+    ///
+    /// Both role-composition routes need this. A `class C does R` runs the
+    /// body through `compose_role_body`; punning the role instead
+    /// (`R.method`, `my %h is R`) runs it through
+    /// `ensure_role_punned_to_class`, which used to leave the lexicals in
+    /// the composing frame's env only — so every method of a punned role
+    /// lost its own body scope, reporting `Undeclared name: KV` for a body
+    /// `my class` and reading a body `my $x` back as `Nil`.
+    pub(crate) fn persist_role_body_lexicals(
+        &mut self,
+        owner: &str,
+        env_before: &HashSet<Symbol>,
+        declared: &HashSet<String>,
+    ) {
+        let new_lexicals: Vec<(String, Value)> = self
+            .env
+            .iter()
+            .filter_map(|(k, v)| {
+                let bare = k.resolve();
+                if env_before.contains(k) && !declared.contains(bare.as_str()) {
+                    return None;
+                }
+                if bare.contains("::")
+                    || bare.starts_with("__")
+                    || bare.starts_with('?')
+                    || bare.starts_with('!')
+                    || bare == "self"
+                    || bare == "_"
+                {
+                    return None;
+                }
+                if !declared.contains(bare.as_str()) && matches!(v.view(), ValueView::Package(_)) {
+                    return None;
+                }
+                Some((bare, v.clone()))
+            })
+            .collect();
+        if new_lexicals.is_empty() {
+            return;
+        }
+        let marks = crate::runtime::cow_table_mut(&mut self.class_body_static_names)
+            .entry(owner.to_string())
+            .or_default();
+        for (bare, _) in &new_lexicals {
+            marks.insert(bare.clone());
+        }
+        let store = crate::runtime::cow_table_mut(&mut self.package_lexicals)
+            .entry(owner.to_string())
+            .or_default();
+        for (bare, v) in new_lexicals {
+            store.insert(bare, v);
+        }
+    }
+
     /// Apply a role through the ClassHOW add_role MOP operation.
     ///
     /// Dynamically-created classes (the metamodel pattern used by
@@ -393,56 +458,14 @@ impl Interpreter {
         // name the body explicitly declared counts even when a
         // same-named lexical already leaked into the outer env.
         {
-            let declared: HashSet<&str> = role
+            let mut declared: HashSet<String> = role
                 .deferred_body
                 .iter()
                 .flat_map(|op| op.declared_vars.iter())
-                .map(|s| s.as_str())
+                .map(|s| s.resolve().to_string())
                 .collect();
-            let new_lexicals: Vec<(String, Value)> = self
-                .env
-                .iter()
-                .filter_map(|(k, v)| {
-                    let bare = k.resolve();
-                    let is_role_param = role_param_values.contains_key(bare.as_str());
-                    if body_env_before.contains(k)
-                        && !declared.contains(bare.as_str())
-                        && !is_role_param
-                    {
-                        return None;
-                    }
-                    if bare.contains("::")
-                        || bare.starts_with("__")
-                        || bare.starts_with('?')
-                        || bare.starts_with('!')
-                        || bare == "self"
-                        || bare == "_"
-                    {
-                        return None;
-                    }
-                    if !declared.contains(bare.as_str())
-                        && !is_role_param
-                        && matches!(v.view(), ValueView::Package(_))
-                    {
-                        return None;
-                    }
-                    Some((bare, v.clone()))
-                })
-                .collect();
-            if !new_lexicals.is_empty() {
-                let marks = crate::runtime::cow_table_mut(&mut self.class_body_static_names)
-                    .entry(cx.name.to_string())
-                    .or_default();
-                for (bare, _) in &new_lexicals {
-                    marks.insert(bare.clone());
-                }
-                let store = crate::runtime::cow_table_mut(&mut self.package_lexicals)
-                    .entry(cx.name.to_string())
-                    .or_default();
-                for (bare, v) in new_lexicals {
-                    store.insert(bare, v);
-                }
-            }
+            declared.extend(role_param_values.keys().map(|k| k.to_string()));
+            self.persist_role_body_lexicals(cx.name, &body_env_before, &declared);
         }
         // Rename each newly-declared nested class to its
         // per-composition parameterized name and record an alias so a
