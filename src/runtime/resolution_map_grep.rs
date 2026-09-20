@@ -387,7 +387,8 @@ impl Interpreter {
                     || pd.outer_sub_signature.is_some()
                     || pd.code_signature.is_some()
                     || pd.shape_constraints.is_some()
-            });
+            }) || !data.assumed_positional.is_empty()
+                || !data.assumed_named.is_empty();
             // A routine callback (`map $f, @xs` / `@xs.map($f)` where `$f` is a
             // `sub`) must run through the real call path so a `return` in its
             // body ends THAT call with the returned value (routine semantics).
@@ -459,8 +460,13 @@ impl Interpreter {
                     // "Too few positionals" (matching raku); an optional trailing
                     // parameter binds the missing slot to its default / `Any`.
                     last_call_args = Some(chunk.clone());
+                    let callable = Value::sub_value(data.clone());
                     let value =
-                        self.call_sub_value(Value::sub_value(data.clone()), chunk, false)?;
+                        if !data.assumed_positional.is_empty() || !data.assumed_named.is_empty() {
+                            self.vm_call_on_value(callable, chunk, None)?
+                        } else {
+                            self.call_sub_value(callable, chunk, false)?
+                        };
                     let value = self.reify_finite_pipe_value(value)?;
                     match value.view() {
                         ValueView::Slip(elems) => result.extend(elems.iter().cloned()),
@@ -866,7 +872,13 @@ impl Interpreter {
         if let Some(func) = func {
             let mut result = Vec::new();
             for item in list_items {
-                let value = self.call_sub_value(func.clone(), vec![item], false)?;
+                let value = if let ValueView::Sub(data) = func.view()
+                    && (!data.assumed_positional.is_empty() || !data.assumed_named.is_empty())
+                {
+                    self.vm_call_on_value(func.clone(), vec![item], None)?
+                } else {
+                    self.call_sub_value(func.clone(), vec![item], false)?
+                };
                 let value = self.reify_finite_pipe_value(value)?;
                 match value.view() {
                     ValueView::Slip(elems) => result.extend(elems.iter().cloned()),

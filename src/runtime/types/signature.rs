@@ -631,9 +631,9 @@ pub(in crate::runtime) fn sub_signature_matches_value(
     // `__mutsu_`-prefixed key instead, because a varref *was* a `Capture` whose
     // named map held the wrapper's magic keys.
     if let ValueView::Capture { named, .. } = value.unwrap_varref().view() {
-        let has_named_slurpy = sub_params
-            .iter()
-            .any(|p| p.slurpy && (p.named || p.name.starts_with('%')));
+        let has_named_slurpy = sub_params.iter().any(|p| {
+            p.slurpy && (p.named || p.name.starts_with('%') || p.name == "_capture" || p.sigilless)
+        });
         if !has_named_slurpy {
             for key in named.keys() {
                 let consumed = sub_params.iter().any(|p| {

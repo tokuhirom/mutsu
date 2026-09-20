@@ -6,7 +6,7 @@ use super::super::{ident, keyword};
 use super::destructure::parse_destructuring_decl;
 use super::helpers::{
     is_supported_variable_trait, parse_array_shape_suffix, parse_export_trait_tags,
-    register_term_symbol_from_decl_name,
+    register_term_symbol_from_decl_name, strip_variable_trait_smiley,
 };
 use super::my_decl_assign::my_decl_assign_or_default;
 use super::my_decl_dispatch::try_keyword_dispatch;
@@ -459,6 +459,7 @@ fn parse_variable_traits<'a>(
             // `my %h is Hash::str` keeps its full name (plain `ident` would
             // truncate it to `Hash`, breaking tied-hash backing).
             let (r2, trait_name) = qualified_ident(r2)?;
+            let r2 = strip_variable_trait_smiley(r2);
             // Captured before any whitespace is skipped: `is TraitName<a b>`
             // sugar (for `is TraitName(<a b>)`) requires the `<...>`
             // word-list to be strictly adjacent to the trait name, matching
@@ -593,6 +594,7 @@ fn parse_variable_traits<'a>(
             } else {
                 r2
             };
+            let r2 = strip_variable_trait_smiley(r2);
             let include_in_traits = !is_builtin
                 || trait_name == "default"
                 || is_buf_trait
@@ -711,6 +713,7 @@ fn parse_variable_traits<'a>(
         while let Some(after_is) = keyword("is", rest) {
             let (r2, _) = ws1(after_is)?;
             let (r2, trait_name) = ident(r2)?;
+            let r2 = strip_variable_trait_smiley(r2);
             // Captured before whitespace is skipped, same adjacency rule as
             // in the first `is`-trait loop above.
             let r2_immediate = r2;
