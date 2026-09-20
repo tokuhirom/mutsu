@@ -126,6 +126,22 @@ slot, and the existing check only recognised `Any` as unset.
 
 `Air::Plugin::Donate` 0.0.1: 1/1 baseline files, 17/17 assertions, `red` -> `green`.
 
+Four neighbours were re-measured on the same root causes, and two of them moved without being
+worked on:
+
+| distribution | before | after |
+| --- | --- | --- |
+| `Hash::Ordered` 0.0.9 | `red`, 0/18 assertions, `Ambiguous call to 'gist(Hash::Ordered: )'` | `red`, 4/18, now blocked on an unrelated `Undeclared name:` |
+| `Map::Ordered` 0.0.9 | `red`, 0/18 assertions, `Ambiguous call to 'gist(Map::Ordered: )'` | `red`, 4/18, same unrelated residue |
+| `Air` 0.1.32 | `blocked_load`, `Air::Base::Tools`: "no such tag 'BASE-TAGS' declared" | `blocked_load`, `Air::Base::Tools`: `Unknown role: Tag[Regular]` |
+| `immutable` 0.0.3 | `red`, `Ambiguous call to 'new(ValueList 5: )'` | unchanged -- a different root cause |
+
+The first three are the same fixes reaching past the distribution they were found in: the
+duplicate-candidate one for the two ordered-hash modules, and the export-stash one for `Air`'s own
+`EXPORT::BASE-TAGS` package, which now gets past the tag and fails on a deeper parameterised-role
+gap instead. `immutable`'s ambiguity survives, so it was a different bug wearing the same error
+message -- worth knowing, and the reason the neighbour re-measure is not optional.
+
 Each fix is pinned by its own test, all five verified against `raku` as the oracle:
 
 - `t/oo/role/role-parent-multi-shadowed-on-pun.t`
