@@ -1232,6 +1232,30 @@ impl Interpreter {
                     // Shared with the VM's native fast path (pure component build).
                     return Ok(Self::build_native_complex_value(&args));
                 }
+                "Parameter" => {
+                    // `Parameter`/`Signature` are ordinarily only materialized
+                    // by the runtime from a real declaration, but Raku exposes
+                    // both as constructible types so code can synthesize a
+                    // signature at runtime and reconstruct it back into
+                    // declaration syntax via `.perl`/`.raku` (the actual
+                    // argument binding always goes through the ordinary
+                    // declaration path once that syntax is `EVAL`ed — this
+                    // constructed value is never itself bound against, see
+                    // `Template::Classic`'s `template(Signature $sig, ...)`).
+                    let sig_param = crate::value::signature::sig_param_from_named_args(&args);
+                    return Ok(crate::value::signature::make_parameter_value(
+                        sig_param,
+                        Some(self),
+                    ));
+                }
+                "Signature" => {
+                    // See "Parameter" above.
+                    let info = crate::value::signature::sig_info_from_new_args(&args);
+                    return Ok(crate::value::signature::make_signature_value(
+                        info,
+                        Some(self),
+                    ));
+                }
                 "Backtrace" => {
                     // Backtrace.new captures the current call stack;
                     // Backtrace.new($offset) skips the first $offset frames.
