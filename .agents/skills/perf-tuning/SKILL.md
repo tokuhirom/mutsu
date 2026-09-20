@@ -89,6 +89,43 @@ where release takes ~5min. Do not default to release just because the task is pe
 reserve it for the final wall-clock measurement. (`[profile.release]` sets `debug = false`,
 which is why line-level profiling needs `--profile profiling`.)
 
+### The raw `perf` CLI: path, sudo, hybrid CPU
+
+This box's `perf` binary and its sudoers entry break every time the kernel updates. `perf` lives
+under a kernel-version-specific path, and until the `7.1.5-76070105` kernel that path was
+`/usr/lib/linux-tools/<uname -r>/perf` from the `linux-tools-<version>-generic` package; as of
+that kernel, `perf` was split out into its own `linux-perf` package and installs to plain
+`/usr/bin/perf` instead. The sudoers `NOPASSWD` rule is pinned to one exact path, so it silently
+stops matching on every kernel bump. When `perf` "stops working" after a `uname -r` change,
+check this before suspecting a real regression:
+
+```sh
+uname -r
+which perf                     # or: ls /usr/lib/linux-tools/$(uname -r)/
+sudo -n -l | grep perf         # does the NOPASSWD path match `which perf`?
+apt-cache policy linux-perf    # not installed at all? sudo apt install linux-perf
+```
+
+Updating the sudoers path (`visudo`) is the maintainer's call, not something to script around.
+
+`/proc/sys/kernel/perf_event_paranoid` on this box is `2`, so **`perf stat`/`perf record` work
+without sudo for userspace-only counters** — no need to chase the sudoers entry just to take a
+measurement. Fall back to `sudo perf ...` only if a run reports `<not counted>` for a
+kernel-level event.
+
+This CPU is **hybrid (P-core/E-core)**: an unqualified `perf stat -e cycles,instructions` splits
+each counter into separate `cpu_atom/…/` and `cpu_core/…/` rows, and whichever core the process
+didn't run on that sample prints `<not counted>`. Pin to a P-core and name the event's PMU
+explicitly instead:
+
+```sh
+taskset -c 2 perf stat -e cpu_core/cycles/,cpu_core/instructions/ -- ./target/release/mutsu bench.raku
+```
+
+`perf record`/`report` for call-graph work does not work in this container at all (§7 below has
+the reason) — use callgrind (§2) for anything that needs a call tree. Flat `perf stat` counter
+readings are fine.
+
 ### Counting allocations: `alloc_scope!` + the `alloc-stats` feature
 
 When the question is "how many allocations does *this region* cost" rather than "where does
