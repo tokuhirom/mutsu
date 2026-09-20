@@ -40,7 +40,19 @@ impl Interpreter {
         name_idx: u32,
         compiled_fns: &CompiledFns,
     ) -> Result<(), RuntimeError> {
-        let name = Self::const_str(code, name_idx);
+        self.push_bare_word_value(Self::const_str(code, name_idx), compiled_fns)
+    }
+
+    /// Resolve a bareword term and push it.
+    ///
+    /// Split out of the opcode arm so a caller holding the name in something
+    /// other than a `CompiledCode` constant pool can use it — TRIR's
+    /// `LoadBareWord` (ADR-0110), whose chunk has a pool of its own.
+    pub(crate) fn push_bare_word_value(
+        &mut self,
+        name: &str,
+        compiled_fns: &CompiledFns,
+    ) -> Result<(), RuntimeError> {
         // A no-paren 0-arg `nqp::`-op term (`my $t = nqp::time;`, written that
         // way all over rakudo's own Test.rakumod) dispatches straight to the op
         // table. The `nqp::` namespace is reserved, so none of the bareword

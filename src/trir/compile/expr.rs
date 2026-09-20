@@ -6,7 +6,7 @@
 //! kinds. No flow-sensitive inference, no speculation.
 
 use super::{Binding, TrirCompiler};
-use crate::ast::Expr;
+use crate::ast::{Expr, Stmt};
 use crate::token_kind::TokenKind;
 use crate::trir::{TrKind, TrOp};
 use crate::value::{Value, ValueView};
@@ -15,16 +15,71 @@ use crate::value::{Value, ValueView};
 /// kind it yields. `(op, [operand kinds], result)`.
 type NqpForm = (&'static [TrKind], TrKind, &'static [TrOp]);
 
-impl TrirCompiler {
+impl TrirCompiler<'_> {
     /// Compile `e` for its value, answering the bank/kind it left it on.
     pub(super) fn compile_expr(&mut self, e: &Expr) -> Option<TrKind> {
+        self.nqp_sourced = false;
         match e {
             // Transparent, exactly as the untyped compiler treats it: the
             // marker exists for the junction chain-flattener, not for
             // evaluation.
             Expr::Grouped(inner) => self.compile_expr(inner),
+            // `(my int $end = EXPR)` in expression position: the parser wraps
+            // the declaration as a statement, and its value is the bound
+            // value. JSON::Fast's scanners are written almost entirely this
+            // way.
+            Expr::DoStmt(stmt) => match stmt.as_ref() {
+                Stmt::VarDecl { .. } => self.compile_var_decl(stmt, true)?,
+                _ => None,
+            },
+            Expr::Ternary {
+                cond,
+                then_expr,
+                else_expr,
+            } => self.compile_ternary(cond, then_expr, else_expr),
             Expr::Literal(v) => self.compile_literal(v),
+            // A bareword term: a type object (`Map`, `NFD`), a constant, a
+            // package. It appears as an argument to `nqp::getattr`/`istype`/
+            // `create` throughout JSON::Fast.
+            Expr::BareWord(name) => {
+                if name.starts_with("nqp::") {
+                    // A no-paren zero-argument nqp term.
+                    return self.compile_nqp_value_op(name, &[]);
+                }
+                let idx = self.add_const(Value::str(name.clone()));
+                self.ops.push(TrOp::LoadBareWord(idx));
+                Some(TrKind::Obj)
+            }
             Expr::Var(name) => self.compile_var(name),
+            // `%result` / `@result`: the same slot the declaration made,
+            // keyed by the sigiled name.
+            Expr::ArrayLiteral(items) => {
+                if items.len() > u16::MAX as usize {
+                    return None;
+                }
+                for it in items {
+                    let k = self.compile_expr(it)?;
+                    self.coerce(k, TrKind::Obj)?;
+                }
+                self.ops.push(TrOp::MakeListN(items.len() as u16));
+                Some(TrKind::Obj)
+            }
+            Expr::HashVar(n) => self.compile_sigiled_var('%', n),
+            Expr::ArrayVar(n) => self.compile_sigiled_var('@', n),
+            // `"at $pos: ..."` — the pieces, concatenated. Every `die` helper
+            // in a hand-written scanner is one of these, and refusing them
+            // would refuse the routine that raises the error.
+            Expr::StringInterpolation(parts) => {
+                if parts.len() > u16::MAX as usize {
+                    return None;
+                }
+                for p in parts {
+                    let k = self.compile_expr(p)?;
+                    self.coerce(k, TrKind::Obj)?;
+                }
+                self.ops.push(TrOp::ConcatN(parts.len() as u16));
+                Some(TrKind::Obj)
+            }
             Expr::Unary { op, expr } => self.compile_unary(op, expr, false),
             Expr::Binary { left, op, right } => self.compile_binary(left, op, right),
             Expr::Call { name, args } => self.compile_call(&name.resolve(), args),
@@ -38,7 +93,25 @@ impl TrirCompiler {
                 }
                 self.compile_assign(name, expr)
             }
-            _ => None,
+            other => {
+                self.note_decline(|| {
+                    let rendered = format!("{other:?}")
+                        .split_whitespace()
+                        .collect::<Vec<_>>()
+                        .join(" ");
+                    // Truncate on a char boundary: an `Expr` debug rendering
+                    // embeds source text, which need not be ASCII.
+                    let cut = rendered
+                        .char_indices()
+                        .map(|(i, _)| i)
+                        .chain(std::iter::once(rendered.len()))
+                        .take_while(|i| *i <= 160)
+                        .last()
+                        .unwrap_or(0);
+                    format!("expression {}", &rendered[..cut])
+                });
+                None
+            }
         }
     }
 
@@ -62,6 +135,15 @@ impl TrirCompiler {
         Some(())
     }
 
+    /// Emit a bare `++`/`--` on `name` for its side effect, discarding the
+    /// value. Used by a call argument that is an increment
+    /// (`nom-ws($text, ++$pos)`), where the callee binds the VARIABLE.
+    pub(super) fn compile_unary_sink(&mut self, op: &TokenKind, name: &str) -> Option<()> {
+        let e = Expr::Var(name.to_string());
+        self.compile_unary(op, &e, true)?;
+        Some(())
+    }
+
     fn compile_literal(&mut self, v: &Value) -> Option<TrKind> {
         match v.view() {
             ValueView::Int(i) => {
@@ -81,10 +163,32 @@ impl TrirCompiler {
         }
     }
 
+    /// A `%`/`@`-sigiled read of one of this frame's own containers.
+    fn compile_sigiled_var(&mut self, sigil: char, bare: &str) -> Option<TrKind> {
+        let key = format!("{sigil}{bare}");
+        let Some(Binding { slot, kind }) = self.binding_of(&key) else {
+            self.note_decline(|| format!("container {key} is not this frame's"));
+            return None;
+        };
+        self.load(slot, kind);
+        Some(kind)
+    }
+
     fn compile_var(&mut self, name: &str) -> Option<TrKind> {
         if let Some(Binding { slot, kind }) = self.binding_of(name) {
             self.load(slot, kind);
             return Some(kind);
+        }
+        // A dynamic variable (`$*ALLOW-JSONC` arrives as `*ALLOW-JSONC`) is
+        // a by-name read of the dynamic scope, which no slot can stand in
+        // for; read it where it is.
+        if let Some(bare) = name.strip_prefix('*')
+            && !bare.is_empty()
+            && bare.starts_with(|c: char| c.is_alphabetic() || c == '_')
+        {
+            let idx = self.add_const(Value::str(name.to_string()));
+            self.ops.push(TrOp::LoadDynamic(idx));
+            return Some(TrKind::Obj);
         }
         // A free variable: resolved once per invocation rather than per
         // access (ADR-0110 §3.1). Only a plain, unqualified, sigil-less
@@ -95,6 +199,7 @@ impl TrirCompiler {
             || name.contains("::")
             || name.starts_with(['$', '@', '%', '&', '*', '?', '!', '.', '='])
         {
+            self.note_decline(|| format!("free variable {name}"));
             return None;
         }
         let idx = self.outer(name);
@@ -105,18 +210,42 @@ impl TrirCompiler {
     fn compile_unary(&mut self, op: &TokenKind, expr: &Expr, sink: bool) -> Option<TrKind> {
         match op {
             TokenKind::PlusPlus | TokenKind::MinusMinus => {
-                let Expr::Var(name) = expr else { return None };
-                let Binding { slot, kind } = self.binding_of(name)?;
+                let Expr::Var(name) = expr else {
+                    self.note_decline(|| "++/-- on something other than a variable".to_string());
+                    return None;
+                };
+                let Some(Binding { slot, kind }) = self.binding_of(name) else {
+                    let n = name.clone();
+                    self.note_decline(|| format!("++/-- on non-local {n}"));
+                    return None;
+                };
                 if kind != TrKind::Int {
+                    self.note_decline(|| format!("++/-- on a {kind:?} variable"));
+                    return None;
+                }
+                if self.slot_is_readonly_param(slot, kind) {
+                    let n = name.clone();
+                    self.note_decline(|| format!("++/-- on the read-only parameter {n}"));
                     return None;
                 }
                 let up = *op == TokenKind::PlusPlus;
-                self.ops.push(match (up, sink) {
-                    (true, false) => TrOp::IncI(slot),
-                    (true, true) => TrOp::IncIVoid(slot),
-                    (false, false) => TrOp::DecI(slot),
-                    (false, true) => TrOp::DecIVoid(slot),
+                let by_ref = self.slot_is_ref(slot, kind);
+                self.ops.push(match (up, sink, by_ref) {
+                    (true, false, false) => TrOp::IncI(slot),
+                    (true, true, false) => TrOp::IncIVoid(slot),
+                    (false, false, false) => TrOp::DecI(slot),
+                    (false, true, false) => TrOp::DecIVoid(slot),
+                    (true, false, true) => TrOp::IncRefI(slot),
+                    (true, true, true) => TrOp::IncRefIVoid(slot),
+                    (false, false, true) => TrOp::DecRefI(slot),
+                    (false, true, true) => TrOp::DecRefIVoid(slot),
                 });
+                Some(TrKind::Int)
+            }
+            TokenKind::Bang => {
+                let k = self.compile_expr(expr)?;
+                self.truthy(k)?;
+                self.ops.push(TrOp::NotI);
                 Some(TrKind::Int)
             }
             TokenKind::Minus => {
@@ -126,24 +255,134 @@ impl TrirCompiler {
                         self.ops.push(TrOp::NegI);
                         Some(TrKind::Int)
                     }
-                    _ => None,
+                    other => {
+                        self.note_decline(|| format!("unary minus on {other:?}"));
+                        None
+                    }
                 }
             }
-            _ => None,
+            other => {
+                self.note_decline(|| format!("prefix operator {other:?}"));
+                None
+            }
         }
     }
 
+    /// `a ?? b !! c`, and the shared lowering behind `&&`/`||`.
+    fn compile_ternary(&mut self, c: &Expr, t: &Expr, e: &Expr) -> Option<TrKind> {
+        let ck = self.compile_expr(c)?;
+        self.truthy(ck)?;
+        let branch_at = self.ops.len();
+        self.ops.push(TrOp::JumpIfFalseI(0));
+        let tk = self.compile_expr(t)?;
+        let jump_end_at = self.ops.len();
+        self.ops.push(TrOp::Jump(0));
+        let else_at = self.ops.len() as u32;
+        let ek = self.compile_expr(e)?;
+        // `unify_arms` may have inserted a box before the `then` arm's jump,
+        // which moves everything at or past it — including that jump.
+        let (unified, shifted) = self.unify_arms(tk, ek, jump_end_at)?;
+        let jump_end_at = jump_end_at + shifted;
+        let else_at = else_at + shifted as u32;
+        let end = self.ops.len() as u32;
+        match &mut self.ops[branch_at] {
+            TrOp::JumpIfFalseI(x) => *x = else_at,
+            _ => return None,
+        }
+        match &mut self.ops[jump_end_at] {
+            TrOp::Jump(x) => *x = end,
+            _ => return None,
+        }
+        Some(unified)
+    }
+
+    /// Unbox a value an `nqp::` op just produced, where `iarg` coercion IS
+    /// the op's semantics. Leaves anything else alone.
+    pub(super) fn narrow_nqp_result(&mut self, kind: TrKind) -> TrKind {
+        if kind == TrKind::Obj && self.nqp_sourced {
+            self.ops.push(TrOp::UnboxI);
+            self.nqp_sourced = false;
+            return TrKind::Int;
+        }
+        kind
+    }
+
+    /// Reduce the top of a bank to an int-bank 0/1 truth value.
+    ///
+    /// Only for kinds whose truth Raku settles without dispatch: a native
+    /// number is false at 0. A boxed operand declines, because `.Bool` on one
+    /// is a method call.
+    pub(super) fn truthy(&mut self, kind: TrKind) -> Option<()> {
+        match kind {
+            TrKind::Int => Some(()),
+            TrKind::Num => {
+                self.ops.push(TrOp::NumToInt);
+                Some(())
+            }
+            // A boxed condition's truth is the interpreter's own rule, not
+            // one TRIR reproduces: `eval_truthy` is what `JumpIfFalse` uses,
+            // including a `.Bool` override and a `Failure` being marked
+            // handled.
+            TrKind::Obj => {
+                self.ops.push(TrOp::TruthyObj);
+                Some(())
+            }
+        }
+    }
+
+    /// `a && b` / `a || b`, short-circuiting, on native operands.
+    fn compile_short_circuit(&mut self, and: bool, l: &Expr, r: &Expr) -> Option<TrKind> {
+        let lk = self.compile_expr(l)?;
+        self.truthy(lk)?;
+        // The jump PEEKS: Raku's `&&`/`||` yield an OPERAND rather than a
+        // boolean, and on the int bank the operand is its own truth value, so
+        // the short-circuit result is the value already there.
+        let jump_at = self.ops.len();
+        self.ops.push(if and {
+            TrOp::JumpIfFalseKeepI(0)
+        } else {
+            TrOp::JumpIfTrueKeepI(0)
+        });
+        self.ops.push(TrOp::PopI);
+        let rk = self.compile_expr(r)?;
+        self.truthy(rk)?;
+        let end = self.ops.len() as u32;
+        match &mut self.ops[jump_at] {
+            TrOp::JumpIfFalseKeepI(x) | TrOp::JumpIfTrueKeepI(x) => *x = end,
+            _ => return None,
+        }
+        Some(TrKind::Int)
+    }
+
     fn compile_binary(&mut self, left: &Expr, op: &TokenKind, right: &Expr) -> Option<TrKind> {
+        if matches!(op, TokenKind::AndAnd | TokenKind::OrOr) {
+            return self.compile_short_circuit(*op == TokenKind::AndAnd, left, right);
+        }
+        // `~` goes through the interpreter's own `Concat`, which is where a
+        // user `infix:<~>` override is honoured — so TRIR neither reproduces
+        // that rule nor has to prove nobody declared one.
+        if matches!(op, TokenKind::Tilde) {
+            let lk = self.compile_expr(left)?;
+            self.coerce(lk, TrKind::Obj)?;
+            let rk = self.compile_expr(right)?;
+            self.coerce(rk, TrKind::Obj)?;
+            self.ops.push(TrOp::ConcatBin);
+            return Some(TrKind::Obj);
+        }
         // Only arithmetic and comparison on operands the compiler already
         // proved native. A boxed operand declines: `+` on two boxed values is
         // full Raku multi-dispatch (a user `infix:<+>` may override it), and
         // reproducing that is not TRIR's job.
         let lk = self.compile_expr(left)?;
+        let lk = self.narrow_nqp_result(lk);
         if !lk.is_native() {
+            self.note_decline(|| format!("boxed left operand of {op:?}"));
             return None;
         }
         let rk = self.compile_expr(right)?;
+        let rk = self.narrow_nqp_result(rk);
         if !rk.is_native() {
+            self.note_decline(|| format!("boxed right operand of {op:?}"));
             return None;
         }
         // Widen to `num` when either side is one, exactly as Raku's own
@@ -184,14 +423,26 @@ impl TrirCompiler {
             (TrKind::Num, TokenKind::Gte) => (&[TrOp::GeN], TrKind::Int),
             // `int / int` is a `Rat` in Raku, not an integer division — it is
             // deliberately absent here.
-            _ => return None,
+            _ => {
+                self.note_decline(|| format!("operator {op:?} on {want:?}"));
+                return None;
+            }
         };
         self.ops.extend_from_slice(ops);
         Some(result)
     }
 
     fn compile_assign(&mut self, name: &str, expr: &Expr) -> Option<TrKind> {
-        let Binding { slot, kind } = self.binding_of(name)?;
+        let Some(Binding { slot, kind }) = self.binding_of(name) else {
+            let n = name.to_string();
+            self.note_decline(|| format!("assignment to non-local {n}"));
+            return None;
+        };
+        if self.slot_is_readonly_param(slot, kind) {
+            let n = name.to_string();
+            self.note_decline(|| format!("assignment to the read-only parameter {n}"));
+            return None;
+        }
         let got = self.compile_expr(expr)?;
         self.coerce(got, kind)?;
         self.store(slot, kind);
@@ -208,7 +459,32 @@ impl TrirCompiler {
             "nqp::if" | "nqp::unless" if args.len() == 2 || args.len() == 3 => {
                 self.compile_nqp_if(name == "nqp::if", args)
             }
-            _ => self.compile_nqp_value_op(name, args),
+            // `nqp::ifnull(a, b)` is lazy in `b`: rakudo's idiom installs a
+            // fresh store only when there is none, and evaluating both arms
+            // would install one over a live store.
+            "nqp::ifnull" if args.len() == 2 => {
+                let ak = self.compile_expr(&args[0])?;
+                self.coerce(ak, TrKind::Obj)?;
+                self.ops.push(TrOp::DupObj);
+                self.ops.push(TrOp::TruthyDefined);
+                let keep_at = self.ops.len();
+                self.ops.push(TrOp::JumpIfTrueI(0));
+                self.ops.push(TrOp::PopObj);
+                let bk = self.compile_expr(&args[1])?;
+                self.coerce(bk, TrKind::Obj)?;
+                let end = self.ops.len() as u32;
+                match &mut self.ops[keep_at] {
+                    TrOp::JumpIfTrueI(x) => *x = end,
+                    _ => return None,
+                }
+                Some(TrKind::Obj)
+            }
+            _ => {
+                if name.starts_with("nqp::") {
+                    return self.compile_nqp_value_op(name, args);
+                }
+                self.compile_routine_call(name, args)
+            }
         }
     }
 
@@ -227,9 +503,7 @@ impl TrirCompiler {
     fn compile_nqp_loop(&mut self, while_form: bool, cond: &Expr, body: &Expr) -> Option<TrKind> {
         let start = self.ops.len() as u32;
         let ck = self.compile_expr(cond)?;
-        if ck != TrKind::Int {
-            return None;
-        }
+        self.truthy(ck)?;
         let exit_at = self.ops.len();
         self.ops.push(if while_form {
             TrOp::JumpIfFalseI(0)
@@ -253,9 +527,7 @@ impl TrirCompiler {
 
     fn compile_nqp_if(&mut self, if_form: bool, args: &[Expr]) -> Option<TrKind> {
         let ck = self.compile_expr(&args[0])?;
-        if ck != TrKind::Int {
-            return None;
-        }
+        self.truthy(ck)?;
         let branch_at = self.ops.len();
         self.ops.push(if if_form {
             TrOp::JumpIfFalseI(0)
@@ -277,9 +549,9 @@ impl TrirCompiler {
         // Both arms must leave the same kind on the same bank. A mismatch
         // would need the `then` arm boxed BEFORE its jump, which Stage 1
         // declines rather than patching after the fact.
-        if then_kind != else_kind {
-            return None;
-        }
+        let (unified, shifted) = self.unify_arms(then_kind, else_kind, jump_end_at)?;
+        let jump_end_at = jump_end_at + shifted;
+        let else_at = else_at + shifted as u32;
         let end = self.ops.len() as u32;
         match &mut self.ops[branch_at] {
             TrOp::JumpIfFalseI(t) | TrOp::JumpIfTrueI(t) => *t = else_at,
@@ -289,7 +561,7 @@ impl TrirCompiler {
             TrOp::Jump(t) => *t = end,
             _ => return None,
         }
-        Some(then_kind)
+        Some(unified)
     }
 
     /// The `nqp::` VALUE ops TRIR lowers to typed instructions.
@@ -318,17 +590,45 @@ impl TrirCompiler {
             self.ops.push(TrOp::CharsLocal(slot));
             return Some(TrKind::Int);
         }
-        let form = nqp_form(op)?;
-        let (want, result, emit) = form;
-        if args.len() != want.len() {
+        if let Some((want, result, emit)) = nqp_form(op)
+            && args.len() == want.len()
+        {
+            for (a, k) in args.iter().zip(want) {
+                let got = self.compile_expr(a)?;
+                self.coerce(got, *k)?;
+            }
+            self.ops.extend_from_slice(emit);
+            self.nqp_sourced = true;
+            return Some(result);
+        }
+        // `nqp::const::CCLASS_WORD` and friends are compile-time integers,
+        // not ops.
+        if let Some(v) = crate::compiler::nqp_forms::nqp_const_value(name) {
+            self.ops.push(TrOp::ConstI(v));
+            return Some(TrKind::Int);
+        }
+        // Everything else in the namespace goes through the ordinary
+        // implementation with boxed operands. That is not a fallback arm: an
+        // `nqp::` op is a primitive either way, and boxing its operands is
+        // not what the untyped path's ~211 ns per opcode was spent on.
+        let Some(id) = crate::runtime::nqp_op_ids::nqp_op_id(op) else {
+            let o = op.to_string();
+            self.note_decline(|| format!("unknown nqp op {o}"));
+            return None;
+        };
+        if args.len() > u8::MAX as usize {
             return None;
         }
-        for (a, k) in args.iter().zip(want) {
+        for a in args {
             let got = self.compile_expr(a)?;
-            self.coerce(got, *k)?;
+            self.coerce(got, TrKind::Obj)?;
         }
-        self.ops.extend_from_slice(emit);
-        Some(result)
+        self.ops.push(TrOp::NqpOpGen {
+            id,
+            arity: args.len() as u8,
+        });
+        self.nqp_sourced = true;
+        Some(TrKind::Obj)
     }
 
     /// The operand-direct form of a two-operand string/list read whose first

@@ -663,7 +663,7 @@ impl Interpreter {
         RuntimeError::typed("X::OutOfRange", attrs)
     }
 
-    pub(super) fn exec_string_concat_op(&mut self, n: u32) -> Result<(), RuntimeError> {
+    pub(crate) fn exec_string_concat_op(&mut self, n: u32) -> Result<(), RuntimeError> {
         let n = n as usize;
         let start = self.stack.len() - n;
         let values: Vec<Value> = self.stack.drain(start..).collect();

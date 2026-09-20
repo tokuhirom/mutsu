@@ -53,6 +53,38 @@ fn positional_light_type_error(
     RuntimeError::typed("X::TypeCheck::Argument", attrs)
 }
 
+/// The value a positional argument's type constraint applies to: through the
+/// `VarRef` tag a call site wraps a named variable in, and through a `Scalar`
+/// container if one arrived.
+///
+/// A container's type, for parameter binding, is its value's type — `f($x)`
+/// binds `$x`'s value whether or not the call site handed over the container.
+/// The ordinary call path decontainerizes before it gets here, so this only
+/// bites where something replays arguments verbatim: a `proto`'s `{*}`
+/// stashes the caller's argument list and hands it to the winning candidate
+/// untouched, so a container argument reached the check below as itself and
+/// failed its own constraint ("expected Str, got Str" — `value_type_name`
+/// looks through the container and [`Interpreter::fast_type_check`] did not).
+/// A TRIR generic call passes every by-variable argument as a container,
+/// because it cannot see whether the callee wants to write it, which is what
+/// made the shape reachable.
+///
+/// `is rw` parameters never reach here — the alias pre-pass has already
+/// promoted their slots and validated them.
+#[inline]
+fn arg_binding_value(arg: &Value) -> std::borrow::Cow<'_, Value> {
+    let v = arg.unwrap_varref();
+    if !v.is_container_ref() {
+        return std::borrow::Cow::Borrowed(v);
+    }
+    match v.view() {
+        ValueView::ContainerRef(cell) => {
+            std::borrow::Cow::Owned(cell.lock().unwrap_or_else(|e| e.into_inner()).clone())
+        }
+        _ => std::borrow::Cow::Borrowed(v),
+    }
+}
+
 impl Interpreter {
     /// Slice-taking wrapper over [`Self::call_compiled_function_positional_light_at`]
     /// for the cold call sites that already hold an owned argument vector
@@ -457,16 +489,16 @@ impl Interpreter {
                 Some(crate::opcode::FastParamCheck::Unconstrained) => continue,
                 Some(&crate::opcode::FastParamCheck::Fast { kind, name_sym }) => {
                     is_native_int = kind == crate::opcode::FastParamType::NativeInt;
-                    let val = self.stack[args_base + param_idx].unwrap_varref();
-                    Self::fast_type_check_tagged(val, kind, name_sym)
+                    let val = arg_binding_value(&self.stack[args_base + param_idx]);
+                    Self::fast_type_check_tagged(&val, kind, name_sym)
                 }
                 None => {
                     let Some(tc) = cf.param_defs[param_idx].type_constraint.as_ref() else {
                         continue;
                     };
                     is_native_int = tc == "int";
-                    let val = self.stack[args_base + param_idx].unwrap_varref();
-                    Self::fast_type_check(val, tc)
+                    let val = arg_binding_value(&self.stack[args_base + param_idx]);
+                    Self::fast_type_check(&val, tc)
                 }
             };
             if ok && is_native_int {
@@ -475,7 +507,7 @@ impl Interpreter {
                 // Bool-unbox/range-check/wrap the general binder applies to
                 // a native `int` parameter -- the only way it can still fail
                 // here is a `BigInt` outside `int`'s i64 range.
-                let val = self.stack[args_base + param_idx].unwrap_varref().clone();
+                let val = arg_binding_value(&self.stack[args_base + param_idx]).into_owned();
                 match crate::runtime::types::wrap_native_int_for_binding("int", val) {
                     Ok(coerced) => self.stack[args_base + param_idx] = coerced,
                     Err(e) => {
@@ -487,8 +519,8 @@ impl Interpreter {
                 continue;
             }
             if !ok {
-                let val = self.stack[args_base + param_idx].unwrap_varref();
-                type_failure = Some((param_idx, runtime::value_type_name(val)));
+                let val = arg_binding_value(&self.stack[args_base + param_idx]);
+                type_failure = Some((param_idx, runtime::value_type_name(&val)));
                 break;
             }
         }

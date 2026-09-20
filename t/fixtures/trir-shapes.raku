@@ -144,6 +144,120 @@ my $box = Attributive.new;
 $box.set('bound');
 say "attributive-param={$box.get}";
 
+# --- Stage 2: a TRIR body that calls out -----------------------------------
+# The resolved form (`CallTr`). `bump` is already compiled when `bump-twice`
+# is, so its signature is known and its native `is rw` parameter takes a
+# reference to the CALLER's slot rather than a copy.
+my sub bump(int $pos is rw --> Nil) { ++$pos }
+my sub bump-twice(int $pos is rw --> Nil) { nqp::stmts(bump($pos), bump($pos)) }
+my int $b = 10;
+bump-twice($b);
+say "call-tr-rw={$b}";
+
+# Three frames deep, so the reference is PASSED ON rather than only handed
+# down once — the case an in-and-out copy would get wrong.
+my sub bump-thrice(int $pos is rw --> Nil) { nqp::stmts(bump-twice($pos), bump($pos)) }
+$b = 0;
+bump-thrice($b);
+say "call-tr-rw-deep={$b}";
+
+# Recursion through the resolved form: a routine's own chunk is registered
+# before its body compiles, which is what `parse-thing` needs.
+my sub fact(int $n) {
+    nqp::if(nqp::islt_i($n, 2), 1, nqp::mul_i($n, fact(nqp::sub_i($n, 1))))
+}
+say "recursion={fact(10)}";
+
+# The generic form (`CallGen`): `late` is declared AFTER `early`, so at the
+# call site there is no signature to compile against — exactly `nom-ws`
+# calling `nom-comment`.
+my sub early(int $n) { late($n) + 1 }
+my sub late(int $n) { $n * 2 }
+say "call-gen-forward={early(5)}";
+
+# A generic callee that WRITES its argument: with no signature to consult the
+# caller must pass the variable as a container and read it back.
+my sub gen-bump($pos is rw) { $pos = $pos + 7 }
+my sub via-gen(int $pos is rw --> Nil) { gen-bump($pos) }
+my int $g = 1;
+via-gen($g);
+say "call-gen-rw={$g}";
+
+# --- Stage 2: declarations inside a TRIR body ------------------------------
+my sub span-of-spaces(str $text, int $pos is rw) {
+    nqp::stmts(
+      (my int $start = $pos),
+      nqp::while(nqp::iseq_i(nqp::ordat($text, $pos), 32), ++$pos),
+      nqp::sub_i($pos, $start)
+    )
+}
+my int $d = 0;
+say "decl-int={span-of-spaces('   x', $d)},{$d}";
+
+# --- Stage 2: throwing out of a TRIR frame ---------------------------------
+# Every one of `JSON::Fast`'s scanners ends in a `die` helper, so the cold
+# path has to unwind a TRIR frame correctly — and leave the frame stacks in a
+# state the NEXT call can still use.
+my sub boom(str $text, int $pos) { die "boom at $pos in $text" }
+my sub scan-or-die(str $text, int $pos is rw) {
+    nqp::stmts(
+      nqp::while(nqp::iseq_i(nqp::ordat($text, $pos), 32), ++$pos),
+      nqp::if(nqp::iseq_i(nqp::ordat($text, $pos), 33), boom($text, $pos), $pos)
+    )
+}
+my int $s1 = 0;
+say "scan-ok={scan-or-die('  a', $s1)}";
+my int $s2 = 0;
+say "scan-die={(try scan-or-die('  !', $s2)) // 'FAILED: ' ~ $!.Str}";
+my int $s3 = 0;
+say "scan-after-die={scan-or-die('   b', $s3)},{$s3}";
+
+# --- Stage 2: a dynamic variable read --------------------------------------
+my $*TRIR-SCALE = 3;
+my sub reads-dyn(int $n) { $*TRIR-SCALE * $n }
+say "dyn-read={reads-dyn(4)}";
+
+# --- Stage 2: a list literal in value position -----------------------------
+my sub pair-of(int $n) { ($n, nqp::add_i($n, 1)) }
+say "list-literal={pair-of(4).join(',')}";
+
+# --- Stage 2: a trailing `if` is the routine's value ------------------------
+# Compiling the branches for effect and returning `Nil` is a wrong answer, not
+# a missing optimization. Called twice on purpose: the first call runs untyped,
+# because a call site is linked to TRIR only once it has executed.
+my sub sel2($a, $b) { if $a && $b { 'both' } elsif $a || $b { 'one' } else { 'none' } }
+say "trailing-if={sel2(True, True)},{sel2(True, False)},{sel2(False, False)}";
+say "trailing-if-again={sel2(True, True)},{sel2(True, False)},{sel2(False, False)}";
+my sub sel0($a) { if $a { 'yes' } }
+say "trailing-if-no-else={sel0(True)},{sel0(False).raku},{sel0(True)}";
+
+# An `if` in SINK position is still compiled, and the routine's value is the
+# statement after it.
+my sub after-if(int $n) {
+    if $n > 0 { my $unused = 1 }
+    nqp::add_i($n, 1)
+}
+say "sink-if={after-if(1)},{after-if(1)},{after-if(-1)}";
+
+# --- Stage 2: a parameter is read-only unless `is rw` ----------------------
+# A typed slot store cannot raise `X::Assignment::RO`, so a body that writes
+# one of its own read-only parameters has to decline to the general binder
+# rather than quietly writing the slot. Called twice: the first call runs
+# untyped, so a TRIR-only regression hides behind it.
+my sub writes-param($x) { $x = 1; 'wrote' }
+say "ro-param-1={(try writes-param(1)) // 'FAILED'}";
+say "ro-param-2={(try writes-param(1)) // 'FAILED'}";
+my sub bumps-param(int $n) { $n++; $n }
+say "ro-param-incr-1={(try bumps-param(1)) // 'FAILED'}";
+say "ro-param-incr-2={(try bumps-param(1)) // 'FAILED'}";
+# The `is rw` counterpart still writes.
+my sub writes-rw($x is rw) { $x = 5 }
+my $rw = 0;
+writes-rw($rw);
+my $rw2 = 0;
+writes-rw($rw2);
+say "rw-param={$rw},{$rw2}";
+
 # --- `.wrap` (ADR-0110 §3.3's run-time guard) ------------------------------
 # A statically linked call site would step straight past the wrapper, so the
 # guard has to send the call back to the ordinary dispatch. Kept LAST: once

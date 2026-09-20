@@ -1,37 +1,23 @@
-//! Entering and leaving a TRIR routine.
+//! Entering and leaving a TRIR routine from the ordinary VM.
 //!
 //! Two doors. [`Interpreter::exec_call_trir_site`] is ADR-0110 §3.3's static
 //! call linkage: the call site resolved the callee at compile time and the
 //! arguments are read straight out of the caller's frame slots, so there is
 //! no name, no dispatch key, no binder and no pushed argument. The other,
 //! [`Interpreter::try_call_trir`], is §4's generic prologue for a `CallFunc`
-//! that reaches a TRIR routine by name and hands it arguments on the VM
-//! stack.
+//! that reaches a TRIR routine by name with its arguments on the VM stack.
 //!
 //! Declining is free everywhere: every `None` below leaves the VM state
 //! exactly as it was, and the caller takes its ordinary path.
 
 use super::compile::TrirCompiler;
-use super::exec::{TrExecState, TrOutcome, TrScratch};
+use super::exec::TrOutcome;
+use super::frame::TrFrame;
 use super::{TrChunk, TrKind};
 use crate::opcode::{CompiledCode, CompiledFns, CompiledFunction};
 use crate::runtime::Interpreter;
 use crate::symbol::Symbol;
 use crate::value::{RuntimeError, Value, ValueView};
-
-/// A binding's current value: the contents of a shared container cell, or
-/// the value itself.
-///
-/// By reference rather than `Value::into_deref`, which takes the container by
-/// value and so pays an atomic increment and a matching decrement just to
-/// look inside it — 290 instructions per call for one free variable.
-#[inline]
-fn deref_cell(v: &Value) -> Value {
-    match v.view() {
-        ValueView::ContainerRef(cell) => cell.lock().unwrap_or_else(|e| e.into_inner()).clone(),
-        _ => v.clone(),
-    }
-}
 
 /// Where a native `is rw` parameter's result goes when the routine returns.
 #[derive(Clone, Copy)]
@@ -43,18 +29,33 @@ enum RwTarget {
     Cell(u32),
 }
 
-/// The bound `is rw` parameters: which native slot holds each, and where it
-/// goes back. Four is well past any Stage 1 signature, and a fixed array
-/// keeps the per-call path free of a heap allocation.
+/// One bound `is rw` parameter at the OUTER boundary: the spill slot holding
+/// its value for the duration of the call, and where it goes back.
 type RwPlan = ([(u16, RwTarget); 4], usize);
+
+/// The package a TRIR body must resolve names in: the routine's own declaring
+/// package, exactly as `call_compiled_function_named_inner` establishes it for
+/// an untyped call.
+///
+/// A TRIR frame is not a `RoutineFrame`, so nothing else sets this. Without
+/// it, a body declared inside `module C` resolved `CallGen` callees and free
+/// variables against whatever package was current at the CALLER — which is
+/// `GLOBAL` for `C::call-mm(1)` — and a package-scoped `multi` was then not
+/// found at all. A routine-scoped mangled package (`Pkg::&sub/arity`, used for
+/// nested subs) is skipped for the same reason the untyped path skips it: it
+/// is not a package name.
+pub(super) fn trir_body_package(cf: &CompiledFunction) -> Option<Symbol> {
+    (!cf.package.is_empty() && !cf.package_is_routine_scoped() && cf.package != "GLOBAL")
+        .then(|| cf.package_sym())
+}
 
 impl Interpreter {
     /// Execute a compile-time-resolved TRIR call site (ADR-0110 §3.3).
     ///
     /// `None` means the site could not be served — the callee has been
-    /// replaced since it was resolved, or an argument has a shape the chunk's
-    /// proof does not cover. The caller then takes the cold by-name fallback,
-    /// which reproduces the untyped call site exactly.
+    /// replaced or wrapped since it was resolved, or an argument has a shape
+    /// the chunk's proof does not cover. The caller then takes the cold
+    /// by-name fallback, which reproduces the untyped call site exactly.
     pub(crate) fn exec_call_trir_site(
         &mut self,
         site: &crate::trir::TrCallSite,
@@ -75,9 +76,10 @@ impl Interpreter {
         if chunk.params.len() != site.arg_slots.len() {
             return None;
         }
-        let mut st = TrExecState::new(&chunk, self.take_trir_scratch());
-        let plan = self.trir_bind_from_slots(&chunk, &mut st, site, caller_code);
-        self.trir_run_and_finish(&chunk, st, plan)
+        let pkg = trir_body_package(cf);
+        self.run_trir_from_outside(&chunk, pkg, compiled_fns, |me, frame| {
+            me.trir_bind_from_slots(&chunk, frame, site, caller_code)
+        })
     }
 
     /// Run `cf`'s chunk with the arguments at `stack[args_base..]`.
@@ -89,74 +91,98 @@ impl Interpreter {
         cf: &CompiledFunction,
         args_base: usize,
         caller_code: Option<&CompiledCode>,
+        compiled_fns: &CompiledFns,
     ) -> Option<Result<Value, RuntimeError>> {
+        if self.any_routine_wrapped() {
+            return None;
+        }
         let chunk = cf.trir.as_ref()?.clone();
         if self.stack.len() - args_base != chunk.params.len() {
             return None;
         }
-        let mut st = TrExecState::new(&chunk, self.take_trir_scratch());
-        let plan = self.trir_bind_from_stack(&chunk, &mut st, args_base, caller_code);
-        let out = self.trir_run_and_finish(&chunk, st, plan)?;
+        let pkg = trir_body_package(cf);
+        let out = self.run_trir_from_outside(&chunk, pkg, compiled_fns, |me, frame| {
+            me.trir_bind_from_stack(&chunk, frame, args_base, caller_code)
+        })?;
         self.stack.truncate(args_base);
         Some(out)
     }
 
-    /// Resolve the free variables, run the chunk, and write the `is rw`
-    /// results back. Shared by both doors, so the recycle-on-every-exit
-    /// bookkeeping exists once.
-    fn trir_run_and_finish(
+    /// Open a frame, let `bind` fill it, run the chunk, write back the
+    /// `is rw` parameters, and close the frame — on every exit path.
+    ///
+    /// Shared by both doors so the frame bookkeeping exists once.
+    fn run_trir_from_outside(
         &mut self,
         chunk: &TrChunk,
-        mut st: TrExecState<'_>,
-        plan: Option<RwPlan>,
+        pkg: Option<Symbol>,
+        compiled_fns: &CompiledFns,
+        bind: impl FnOnce(&mut Self, TrFrame) -> Option<RwPlan>,
     ) -> Option<Result<Value, RuntimeError>> {
-        let Some((rw, rw_len)) = plan else {
-            self.recycle_trir_scratch(st.finish());
+        // The frame carries one SPILL slot per `is rw` parameter above its own
+        // native slots: the caller's variable lives in a `Value`, which has no
+        // index a reference could name, so its value is copied into a spill,
+        // the parameter is pointed at the spill, and the spill is copied back
+        // below. That is copy-in/copy-out again — but expressed as a reference,
+        // so a callee that passes the parameter on writes the same place.
+        let spills = chunk.params.iter().filter(|p| p.is_rw).count() as u16;
+        let frame = self.trir.push_frame(chunk.n_native + spills, chunk.n_obj);
+        let Some((rw, rw_len)) = bind(self, frame) else {
+            self.trir.pop_frame(frame);
             return None;
         };
-        // Stage 1 bodies contain no calls at all (the compiler admits no call
-        // form), so nothing running inside the chunk can read or write a free
-        // variable — which is what makes reading them once at entry exactly
-        // equivalent to reading them per access, with no cell handle and no
-        // invalidation to get wrong. When a later stage admits a body that
-        // calls out, this has to become the pre-resolved cell of §3.1.
-        if !chunk.outers.is_empty() && !self.trir_push_outers(chunk, &mut st) {
-            self.recycle_trir_scratch(st.finish());
+        // The body's own package, for the duration of the body only: seeding
+        // the free variables resolves the callee's lexicals by name, and so
+        // does every `CallGen` the body makes.
+        let guard = pkg.map(|p| self.enter_package_guarded_sym(p));
+        if !self.trir_seed_outers(chunk, frame) {
+            drop(guard);
+            self.trir.pop_frame(frame);
             return None;
         }
-        let TrOutcome::Value(result) = st.run() else {
-            // A checked boundary op met a shape the compiler's proof did not
-            // cover. Nothing observable has happened yet — the `is rw`
-            // writeback is below, and a Stage 1 body has no other effect — so
-            // the untyped path can run the call from the beginning.
-            self.recycle_trir_scratch(st.finish());
-            return None;
+        let outcome = self.run_trir_chunk(chunk, frame, compiled_fns);
+        drop(guard);
+        let result = match outcome {
+            Ok(TrOutcome::Value(v)) => v,
+            Ok(TrOutcome::Bail) => {
+                // A checked op met a shape the compiler's proof did not cover.
+                // The compiler only admits a bail-capable op where re-running
+                // the routine from the beginning is equivalent to never having
+                // started it, so the untyped path can take the call whole.
+                self.trir.pop_frame(frame);
+                return None;
+            }
+            Err(e) => {
+                self.trir.pop_frame(frame);
+                return Some(Err(e));
+            }
         };
-        let mut failure = None;
-        for &(native_slot, target) in &rw[..rw_len] {
-            let v = Value::int(st.native_slot(native_slot));
+        // Read the spills back BEFORE the frame is closed.
+        let mut writes: [(i64, RwTarget); 4] = [(0, RwTarget::Slot(0)); 4];
+        for i in 0..rw_len {
+            let (spill, target) = rw[i];
+            writes[i] = (self.trir.nl[frame.nbase as usize + spill as usize], target);
+        }
+        self.trir.pop_frame(frame);
+        for &(raw, target) in &writes[..rw_len] {
+            let v = Value::int(raw);
             match target {
                 RwTarget::Cell(slot) => {
                     if let ValueView::ContainerRef(cell) = self.locals[slot as usize].view() {
                         *cell.lock().unwrap_or_else(|e| e.into_inner()) = v;
                     } else {
-                        // The bind pass proved this slot held a cell, and
-                        // nothing in a Stage 1 body can have replaced it — an
+                        // The bind pass proved this slot held a cell — an
                         // internal invariant, so report rather than panic
                         // (#8186).
-                        failure = Some(RuntimeError::new(
+                        return Some(Err(RuntimeError::new(
                             "internal error: a TRIR `is rw` slot lost its container".to_string(),
-                        ));
+                        )));
                     }
                 }
                 RwTarget::Slot(slot) => self.locals[slot as usize] = v,
             }
         }
-        self.recycle_trir_scratch(st.finish());
-        match failure {
-            Some(e) => Some(Err(e)),
-            None => Some(Ok(result)),
-        }
+        Some(Ok(result))
     }
 
     /// Bind the parameters of a statically resolved call site from the
@@ -164,12 +190,13 @@ impl Interpreter {
     fn trir_bind_from_slots(
         &mut self,
         chunk: &TrChunk,
-        st: &mut TrExecState<'_>,
+        frame: TrFrame,
         site: &crate::trir::TrCallSite,
         caller_code: &CompiledCode,
     ) -> Option<RwPlan> {
         let mut rw = [(0u16, RwTarget::Slot(0)); 4];
         let mut rw_len = 0usize;
+        let mut next_spill = chunk.n_native;
         for (i, p) in chunk.params.iter().enumerate() {
             let caller_slot = site.arg_slots[i];
             if p.is_rw {
@@ -179,16 +206,16 @@ impl Interpreter {
                 // Two `is rw` parameters bound to the SAME caller variable
                 // (`f($p, $p)`) share one container on the untyped path, so a
                 // write through one is visible to the other inside the body.
-                // Copy-in/copy-out cannot reproduce that, so decline.
-                if rw[..rw_len]
-                    .iter()
-                    .any(|(_, t)| matches!(t, RwTarget::Slot(s) | RwTarget::Cell(s) if *s == caller_slot))
-                {
+                // Two spills cannot reproduce that, so decline.
+                if rw[..rw_len].iter().any(|(_, t)| {
+                    matches!(t, RwTarget::Slot(s) | RwTarget::Cell(s) if *s == caller_slot)
+                }) {
                     return None;
                 }
                 let (raw, target) = self.bind_rw_slot(caller_slot, caller_code)?;
-                st.set_native_slot(p.slot, raw);
-                rw[rw_len] = (p.slot, target);
+                self.seed_rw_spill(frame, p.slot, next_spill, raw);
+                rw[rw_len] = (next_spill, target);
+                next_spill += 1;
                 rw_len += 1;
                 continue;
             }
@@ -200,7 +227,7 @@ impl Interpreter {
                 self.locals[idx] = cell;
             }
             let val = deref_cell(&self.locals[idx]);
-            Self::bind_ro_param(st, p, &val)?;
+            self.bind_ro_param(frame, p, &val)?;
         }
         Some((rw, rw_len))
     }
@@ -209,12 +236,13 @@ impl Interpreter {
     fn trir_bind_from_stack(
         &mut self,
         chunk: &TrChunk,
-        st: &mut TrExecState<'_>,
+        frame: TrFrame,
         args_base: usize,
         caller_code: Option<&CompiledCode>,
     ) -> Option<RwPlan> {
         let mut rw = [(0u16, RwTarget::Slot(0)); 4];
         let mut rw_len = 0usize;
+        let mut next_spill = chunk.n_native;
         for (i, p) in chunk.params.iter().enumerate() {
             if p.is_rw {
                 if rw_len == rw.len() {
@@ -229,22 +257,29 @@ impl Interpreter {
                     return None;
                 }
                 let caller_slot = arg.varref_slot().filter(|s| *s != u32::MAX)?;
-                // Same aliasing refusal as the statically linked door.
                 if rw[..rw_len].iter().any(|(_, t)| {
                     matches!(t, RwTarget::Slot(s) | RwTarget::Cell(s) if *s == caller_slot)
                 }) {
                     return None;
                 }
                 let (raw, target) = self.bind_rw_slot(caller_slot, caller_code?)?;
-                st.set_native_slot(p.slot, raw);
-                rw[rw_len] = (p.slot, target);
+                self.seed_rw_spill(frame, p.slot, next_spill, raw);
+                rw[rw_len] = (next_spill, target);
+                next_spill += 1;
                 rw_len += 1;
                 continue;
             }
             let val = self.stack[args_base + i].unwrap_varref().clone();
-            Self::bind_ro_param(st, p, &val)?;
+            self.bind_ro_param(frame, p, &val)?;
         }
         Some((rw, rw_len))
+    }
+
+    /// Put `raw` in the frame's spill slot and point the parameter at it.
+    fn seed_rw_spill(&mut self, frame: TrFrame, param_slot: u16, spill: u16, raw: i64) {
+        let nbase = frame.nbase as usize;
+        self.trir.nl[nbase + spill as usize] = raw;
+        self.trir.nl[nbase + param_slot as usize] = (nbase + spill as usize) as i64;
     }
 
     /// Bind one read-only parameter, mirroring the general binder's
@@ -254,7 +289,8 @@ impl Interpreter {
     /// everything else decline, so the untyped path raises the error the
     /// program should see.
     fn bind_ro_param(
-        st: &mut TrExecState<'_>,
+        &mut self,
+        frame: TrFrame,
         p: &crate::trir::TrParam,
         val: &Value,
     ) -> Option<()> {
@@ -265,7 +301,7 @@ impl Interpreter {
                     ValueView::Bool(b) => b as i64,
                     _ => return None,
                 };
-                st.set_native_slot(p.slot, n);
+                self.trir.nl[frame.nbase as usize + p.slot as usize] = n;
             }
             TrKind::Num => {
                 let n = match val.view() {
@@ -273,13 +309,13 @@ impl Interpreter {
                     ValueView::Int(i) => i as f64,
                     _ => return None,
                 };
-                st.set_native_slot(p.slot, n.to_bits() as i64);
+                self.trir.nl[frame.nbase as usize + p.slot as usize] = n.to_bits() as i64;
             }
             TrKind::Obj => {
                 if p.type_name == "str" && val.as_str().is_none() {
                     return None;
                 }
-                st.set_obj_slot(p.slot, val.clone());
+                self.trir.ol[frame.obase as usize + p.slot as usize] = val.clone();
             }
         }
         Some(())
@@ -288,18 +324,11 @@ impl Interpreter {
     /// Read a native `is rw` parameter out of the caller's slot, and settle
     /// where its result goes back.
     ///
-    /// A slot the caller also mirrors by name (`needs_env_sync`) is promoted
-    /// ONCE to a shared `ContainerRef` cell — the same promotion the untyped
-    /// `is rw` path performs (`capture_var_cell_boxing_type_objects`) — after
-    /// which both halves are the same container and the writeback is one
-    /// store through it. Writing the slot and the env mirror separately on
-    /// every call was the alternative, and it cost a hash insert per call.
-    ///
-    /// Copy-in/copy-out over the call is sound *because a Stage 1 body cannot
-    /// call anything*: the caller's frame is suspended and no other code runs
-    /// between the read and the write, so nothing exists that could observe
-    /// the two diverge. A later stage admitting a body that calls out must
-    /// replace this with a real slot reference.
+    /// A slot the caller also mirrors by name (`needs_env_sync`), or that an
+    /// inner closure captured, is resolved or promoted to a shared
+    /// `ContainerRef` cell — the same promotion the untyped `is rw` path
+    /// performs — after which both halves are the same container and the
+    /// writeback is one store through it.
     fn bind_rw_slot(&mut self, slot: u32, caller_code: &CompiledCode) -> Option<(i64, RwTarget)> {
         let idx = slot as usize;
         if idx >= caller_code.locals.len() || idx >= self.locals.len() {
@@ -308,8 +337,7 @@ impl Interpreter {
         // A variable an inner closure captured has its authoritative
         // container in the ENV, not in the frame slot — `WrapVarRef` resolves
         // exactly this before handing a caller lexical to an `is rw`
-        // parameter, and skipping it made a closure over the same variable
-        // keep reporting the pre-call value.
+        // parameter.
         if let Some(cell) = self.trir_captured_cell(caller_code, idx) {
             self.locals[idx] = cell;
         }
@@ -319,15 +347,11 @@ impl Interpreter {
             return Some((raw, RwTarget::Cell(slot)));
         }
         let raw = Self::trir_rw_int(&self.locals[idx])?;
-        // ALWAYS promote, exactly as the untyped `is rw` path does
-        // (`capture_var_cell_boxing_type_objects` in the positional-light
-        // bind). Writing the slot in place instead looks equivalent and is
-        // not: a closure that captured the same variable, or an env mirror
-        // the caller keeps, holds a container this write would never reach —
-        // `t/fixtures/trir-shapes.raku`'s `rw-through-cell` case caught
-        // exactly that, reporting the pre-call value from inside the
-        // closure. The promotion happens once per variable; every later call
-        // takes the cell branch above.
+        // ALWAYS promote, exactly as the untyped `is rw` path does. Writing
+        // the slot in place instead looks equivalent and is not: a closure
+        // that captured the same variable, or an env mirror the caller keeps,
+        // holds a container this write would never reach. The promotion
+        // happens once per variable; every later call takes the cell branch.
         let name = caller_code.locals[idx].clone();
         let inner = self.locals[idx].clone();
         let cell = self.capture_var_cell_boxing_type_objects(caller_code, &name, inner, Some(slot));
@@ -340,11 +364,6 @@ impl Interpreter {
 
     /// The shared container an inner closure captured this caller local
     /// into, when the slot itself does not already hold it.
-    ///
-    /// The same resolution `Interpreter::exec_wrap_var_ref_op` performs: a
-    /// name in `container_ref_capture_syms` whose env entry is a
-    /// `ContainerRef` IS the variable, and the frame slot is a stale copy.
-    /// `None` when the slot is already the authority.
     fn trir_captured_cell(&self, caller_code: &CompiledCode, idx: usize) -> Option<Value> {
         if self.locals[idx].is_container_ref() || caller_code.container_ref_capture_syms.is_empty()
         {
@@ -367,84 +386,6 @@ impl Interpreter {
             ValueView::Bool(b) => Some(b as i64),
             _ => None,
         }
-    }
-
-    /// Seed this invocation's free variables, answering whether all of them
-    /// resolved.
-    ///
-    /// The *bindings* are resolved once per chunk and memoized
-    /// (`trir_outer_cache`, invalidated by `unit_lexical_gen`); what is read
-    /// per call is the binding's current value. `unit_lexicals` holds shared
-    /// cells rather than snapshots, so a cached cell stays live — a write
-    /// through it from anywhere is seen here without re-resolving.
-    fn trir_push_outers(&mut self, chunk: &TrChunk, st: &mut TrExecState<'_>) -> bool {
-        let key = chunk.id;
-        let cache_gen = self.unit_lexical_gen;
-        // One probe on the hot path. `st` borrows nothing from `self`, so the
-        // cache entry can stay borrowed while the values are pushed.
-        if let Some((g, bindings)) = self.trir_outer_cache.get(&key)
-            && *g == cache_gen
-        {
-            for v in bindings {
-                st.push_outer(deref_cell(v));
-            }
-            return true;
-        }
-        {
-            let mut bindings = Vec::with_capacity(chunk.outers.len());
-            let mut all_celled = true;
-            for o in &chunk.outers {
-                match self.trir_outer_binding(chunk.name, o.name.as_str()) {
-                    Some(v) => {
-                        all_celled &= v.is_container_ref();
-                        bindings.push(v);
-                    }
-                    None => return false,
-                }
-            }
-            if !all_celled {
-                // At least one free variable resolved to a plain environment
-                // VALUE rather than a shared cell, so caching it would freeze
-                // it: re-resolve on every call instead. (The capture pass
-                // gives a mainline `my` a cell as soon as a named sub reads
-                // it, so this is the uncommon shape.)
-                for v in &bindings {
-                    st.push_outer(deref_cell(v));
-                }
-                return true;
-            }
-            // Every entry is a shared cell, so reading THROUGH it on later
-            // calls is what makes a write from anywhere visible without
-            // re-resolving.
-            for v in &bindings {
-                st.push_outer(deref_cell(v));
-            }
-            self.trir_outer_cache.insert(key, (cache_gen, bindings));
-        }
-        true
-    }
-
-    /// The BINDING (the `unit_lexicals` cell, or the environment entry) a
-    /// TRIR chunk's free variable names.
-    ///
-    /// Resolved against the CALLEE's own captured-lexical bucket (ADR-0024's
-    /// `mainline_lexical_subs`), not against the running frame:
-    /// `Interpreter::unit_lexical_slot` asks the routine stack which bucket is
-    /// active, and TRIR pushes no routine frame, so it would answer for the
-    /// caller. Asking by the callee's name is what the frame would have said,
-    /// without the frame.
-    fn trir_outer_binding(&self, callee: Symbol, name: &str) -> Option<Value> {
-        if let Some(bucket) = self.mainline_lexical_subs.get(callee.as_str())
-            && let Some(v) = self.unit_lexicals.get(bucket).and_then(|m| m.get(name))
-        {
-            return Some(v.clone());
-        }
-        // A free variable the capture pass did not put in a bucket is an
-        // ordinary environment name (a mainline `my` the sub reads while the
-        // mainline frame is still live). It may well be a plain value rather
-        // than a cell, which is why the caller refuses to cache a binding
-        // that is not celled.
-        self.env().get(name).cloned()
     }
 
     /// The cold path of a `CallTrir` site: rebuild the argument shape the
@@ -471,35 +412,30 @@ impl Interpreter {
             args.push(Value::varref_slotted(sym, value, None, Some(slot)));
         }
         let name = site.name.resolve();
-        // Mirror `exec_call_func_op`'s save/restore. A statically linked site's
-        // arguments are all plain lexicals, never literals, so the mask this
-        // call publishes for multi-candidate selection is empty — but it must
-        // be published, or the callee's dispatch would read the CALLER's.
+        // Mirror `exec_call_func_op`'s save/restore. A statically linked
+        // site's arguments are all plain lexicals, never literals, so the
+        // mask this call publishes for multi-candidate selection is empty —
+        // but it must be published, or the callee's dispatch would read the
+        // CALLER's.
         let saved = std::mem::replace(&mut self.literal_native_args, 0);
         let result = self.call_function(&name, args);
         self.literal_native_args = saved;
         result
     }
-
-    /// Borrow the pooled TRIR frame buffers. A nested call (which Stage 1
-    /// cannot make, but a later stage will) simply gets a fresh set.
-    fn take_trir_scratch(&mut self) -> Box<TrScratch> {
-        self.trir_scratch.take().unwrap_or_default()
-    }
-
-    /// Hand the buffers back, keeping their allocations for the next call.
-    fn recycle_trir_scratch(&mut self, mut buf: Box<TrScratch>) {
-        buf.reset();
-        self.trir_scratch = Some(buf);
-    }
 }
 
-/// Whether `MUTSU_TRIR_DUMP` asked for the eligibility decisions to be
-/// reported. Read once: this runs per routine declaration.
-fn dump_enabled() -> bool {
-    use std::sync::OnceLock;
-    static ON: OnceLock<bool> = OnceLock::new();
-    *ON.get_or_init(|| std::env::var("MUTSU_TRIR_DUMP").is_ok())
+/// A binding's current value: the contents of a shared container cell, or
+/// the value itself.
+///
+/// By reference rather than `Value::into_deref`, which takes the container by
+/// value and so pays an atomic increment and a matching decrement just to
+/// look inside it.
+#[inline]
+pub(super) fn deref_cell(v: &Value) -> Value {
+    match v.view() {
+        ValueView::ContainerRef(cell) => cell.lock().unwrap_or_else(|e| e.into_inner()).clone(),
+        _ => v.clone(),
+    }
 }
 
 /// Compile a routine to TRIR at declaration time, or answer `None`.
@@ -512,20 +448,31 @@ pub(crate) fn compile_routine(
     params: &[String],
     return_type: Option<&str>,
     body: &[crate::ast::Stmt],
+    routines: Option<&crate::trir::compile::TrirRoutineMap>,
+    fns: Option<&CompiledFns>,
 ) -> Option<std::sync::Arc<TrChunk>> {
-    let chunk = TrirCompiler::compile(name, param_defs, params, return_type, body);
+    let chunk = TrirCompiler::compile(name, param_defs, params, return_type, body, routines, fns);
     if dump_enabled() {
         match &chunk {
             Some(c) => eprintln!(
-                "trir: {} accepted ({} ops, {} native slots, {} obj slots, {} outers)",
+                "trir: {} accepted ({} ops, {} native slots, {} obj slots, {} outers, {} calls)",
                 name.as_str(),
                 c.ops.len(),
                 c.n_native,
                 c.n_obj,
                 c.outers.len(),
+                c.calls.len(),
             ),
             None => eprintln!("trir: {} declined", name.as_str()),
         }
     }
     chunk.map(std::sync::Arc::new)
+}
+
+/// Whether `MUTSU_TRIR_DUMP` asked for the eligibility decisions to be
+/// reported. Read once: this runs per routine declaration.
+fn dump_enabled() -> bool {
+    use std::sync::OnceLock;
+    static ON: OnceLock<bool> = OnceLock::new();
+    *ON.get_or_init(|| std::env::var("MUTSU_TRIR_DUMP").is_ok())
 }
