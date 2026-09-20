@@ -661,7 +661,8 @@ impl Interpreter {
             "nextcallee" => self.builtin_nextcallee(),
             // Type coercion
             "Int" | "Num" | "Str" | "Bool" | "Uni" | "Rat" | "FatRat" | "Complex" | "Real"
-            | "Numeric" => self.builtin_coerce(name, &args),
+            | "Numeric" | "Buf" | "Blob" | "buf8" | "buf16" | "buf32" | "buf64" | "blob8"
+            | "blob16" | "blob32" | "blob64" => self.builtin_coerce(name, &args),
             "Array" | "List" | "Hash" => self.builtin_container_coerce(name, &args),
             "Map" => self.builtin_map_coerce(&args),
             "UNBASE" => self.builtin_unbase(&args),

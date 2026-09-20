@@ -16,46 +16,44 @@
   "dist": "Protocol::Postgres",
   "files": [
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Impossible coercion from 'Int' into 'Blob': no acceptable coercion method found",
         "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 0.47,
+        "ok": 5,
+        "plan": 5,
+        "secs": 0.37,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/02-roundtrip.rakutest",
       "raku": {
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 6.64,
+        "secs": 4.73,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Unknown function: Int32",
         "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 0.57,
+        "ok": 11,
+        "plan": 11,
+        "secs": 0.42,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/03-vectors.rakutest",
       "raku": {
         "nok": 0,
         "ok": 11,
         "plan": 11,
-        "secs": 0.6,
+        "secs": 0.36,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -67,10 +65,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-19",
+    "date": "2026-09-20",
     "harness": 2,
-    "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "5d2e9a2",
+    "host": "linux-x86_64",
+    "mutsu_commit": "62f466835",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -81,13 +79,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/P/RO/PROTOCOL_POSTGRES/53dbb5d1e0854f606ca1d8b6d22334db5f77c9f5.tar.gz"
   },
-  "status": "red",
+  "status": "green",
   "totals": {
     "baseline_assertions": 16,
     "baseline_files": 2,
-    "mutsu_assertions": 0,
-    "parity_files": 0,
-    "regressed_files": 2
+    "mutsu_assertions": 16,
+    "parity_files": 2,
+    "regressed_files": 0
   },
   "version": "0.0.13"
 }

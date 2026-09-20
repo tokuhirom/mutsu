@@ -162,6 +162,16 @@ impl Interpreter {
                 | "BagHash"
                 | "Mix"
                 | "MixHash"
+                | "Buf"
+                | "Blob"
+                | "buf8"
+                | "buf16"
+                | "buf32"
+                | "buf64"
+                | "blob8"
+                | "blob16"
+                | "blob32"
+                | "blob64"
         )
     }
 

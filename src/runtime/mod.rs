@@ -250,7 +250,7 @@ pub(crate) fn flatten_splice_replacement_args(args: &[Value]) -> Vec<Value> {
 
 /// Split a string by commas while respecting bracket/paren depth.
 /// Returns the trimmed, non-empty parts.
-fn split_balanced_comma_list(input: &str) -> Vec<String> {
+pub(crate) fn split_balanced_comma_list(input: &str) -> Vec<String> {
     let mut args = Vec::new();
     let mut depth = 0i32;
     let mut start = 0;

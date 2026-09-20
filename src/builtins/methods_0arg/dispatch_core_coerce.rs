@@ -375,7 +375,9 @@ pub(super) fn dispatch(
             if let ValueView::Junction { kind, values } = target.view() {
                 fn value_defined(v: &Value) -> bool {
                     match v.view() {
-                        ValueView::Nil | ValueView::Package(_) => false,
+                        ValueView::Nil
+                        | ValueView::Package(_)
+                        | ValueView::ParametricRole { .. } => false,
                         ValueView::Slip(items) if items.is_empty() => false,
                         ValueView::Instance { class_name, .. } if class_name == "Failure" => false,
                         ValueView::Junction { kind, values } => {
@@ -399,7 +401,9 @@ pub(super) fn dispatch(
                 Some(Some(Ok(Value::truth(collapsed))))
             } else {
                 Some(Some(Ok(Value::truth(match target.view() {
-                    ValueView::Nil | ValueView::Package(_) => false,
+                    ValueView::Nil | ValueView::Package(_) | ValueView::ParametricRole { .. } => {
+                        false
+                    }
                     ValueView::Slip(items) if items.is_empty() => false,
                     ValueView::Instance { class_name, .. } if class_name == "Failure" => false,
                     _ => true,

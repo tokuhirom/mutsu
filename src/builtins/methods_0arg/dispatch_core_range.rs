@@ -594,8 +594,16 @@ pub(super) fn dispatch(
                         base,
                         "Bag" | "Set" | "Mix" | "BagHash" | "SetHash" | "MixHash" | "Hash"
                     ) {
-                        let param = n[bracket_pos + 1..].trim_end_matches(']');
-                        Some(Ok(Value::package(Symbol::intern(param))))
+                        let inner = n[bracket_pos + 1..].trim_end_matches(']');
+                        let param = if base == "Hash" {
+                            crate::runtime::split_balanced_comma_list(inner)
+                                .get(1)
+                                .cloned()
+                                .unwrap_or_else(|| "Str(Any)".to_string())
+                        } else {
+                            inner.to_string()
+                        };
+                        Some(Ok(Value::package(Symbol::intern(&param))))
                     } else {
                         None
                     }

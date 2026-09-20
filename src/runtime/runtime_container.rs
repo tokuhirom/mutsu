@@ -483,6 +483,40 @@ impl Interpreter {
         // `ValueType{KeyType}`; the element type is the value part, and the key
         // part is tagged onto the container as the key constraint.
         let (elem_type, key_type) = crate::runtime::types::split_object_hash_constraint(elem_type);
+        // Assigning an object hash to an ordinary `%` attribute stringifies
+        // its keys.  A typed source hash may already store `.WHICH` keys (for
+        // example `%result{Any}`); retaining that backing map while clearing
+        // the destination's key constraint would expose `Str|user` instead
+        // of `user`.  Rebuild the plain hash from its typed pairs before
+        // applying the destination value-type metadata.
+        let value = if sigil == '%' && key_type.is_none() {
+            if let ValueView::Hash(map) = value.view() {
+                let existing_default = map.default.as_deref().cloned();
+                let pairs = map
+                    .iter()
+                    .map(|(key, stored)| {
+                        // Use the source key object's string value, but build
+                        // an ordinary Pair with that text.  Feeding a
+                        // ValuePair through the generic hash builder would
+                        // re-encode an already-decoded `Str` key as its
+                        // object-hash spelling (`Str|user`).
+                        Value::pair(
+                            map.typed_key(key).to_string_value(),
+                            stored.deref_container(),
+                        )
+                    })
+                    .collect();
+                let rebuilt = crate::runtime::utils::build_hash_from_items(pairs).unwrap_or(value);
+                match existing_default {
+                    Some(default) => self.tag_container_default(rebuilt, default),
+                    None => rebuilt,
+                }
+            } else {
+                value
+            }
+        } else {
+            value
+        };
         if elem_type != "Mu" && elem_type != "Any" {
             let display = format!("{}!{}", sigil, attr_name);
             // Collect the values to type-check. A shaped array (`has Int @.g[2;2]`)

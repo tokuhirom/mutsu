@@ -111,7 +111,7 @@ pub(crate) fn split_object_hash_constraint(constraint: &str) -> (&str, Option<&s
 /// Type objects (Package) are undefined; concrete values and instances are defined.
 pub(crate) fn value_is_defined(value: &Value) -> bool {
     match value.view() {
-        ValueView::Nil | ValueView::Package(_) => false,
+        ValueView::Nil | ValueView::Package(_) | ValueView::ParametricRole { .. } => false,
         ValueView::Slip(items) if items.is_empty() => false,
         ValueView::Instance { class_name, .. } if class_name == "Failure" => false,
         // An unmaterialized deferred bind token reads as undefined until it is

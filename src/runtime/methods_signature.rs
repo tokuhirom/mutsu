@@ -14,6 +14,12 @@ impl Interpreter {
     /// is safe for any Instance. `Match` keeps its dedicated `%(...)` handling
     /// in `coerce_to_hash`.
     pub(crate) fn coerce_object_to_hash(&mut self, value: Value) -> Value {
+        // `%hash = map { ... }, @items` is eager in Raku, even when the map
+        // itself is represented by a deferred Seq.  The ordinary assignment
+        // path reifies this before coercion; state-variable initialization
+        // reaches this helper directly, so do the same here or the empty
+        // deferred seed is stored in the hash.
+        let _ = self.reify_map_grep_seq(&value);
         // A role mixed into a Hash is still an associative value. Coercing the
         // wrapper itself would stringify its raku representation into one
         // bogus key; assignment to a % variable must see the wrapped Hash's

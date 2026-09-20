@@ -997,10 +997,10 @@ impl Interpreter {
         // live. The sub paths already do this before popping the frame; the
         // method paths resolved it after the env had been restored, which left
         // the literal `T` as the expected type (#7984).
-        let effective_return_spec = method_def
-            .return_type
-            .as_deref()
-            .map(|spec| loan_env!(self, resolved_type_capture_name(spec)));
+        let effective_return_spec = method_def.return_type.as_deref().map(|spec| {
+            let spec = loan_env!(self, resolved_type_capture_name(spec));
+            self.resolve_method_type_name(owner_class, &spec)
+        });
 
         // Sync state variables back
         for (slot, key) in &cc.state_locals {
@@ -2221,10 +2221,10 @@ impl Interpreter {
 
         // Resolve a capture-valued `--> T` before the env teardown below (see
         // the slow path's note, #7984).
-        let effective_return_spec = method_def
-            .return_type
-            .as_deref()
-            .map(|spec| loan_env!(self, resolved_type_capture_name(spec)));
+        let effective_return_spec = method_def.return_type.as_deref().map(|spec| {
+            let spec = loan_env!(self, resolved_type_capture_name(spec));
+            self.resolve_method_type_name(owner_class, &spec)
+        });
 
         // Sync state variables
         for (slot, key) in &cc.state_locals {

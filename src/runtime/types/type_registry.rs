@@ -995,12 +995,28 @@ impl Interpreter {
                 return format!("{resolved}{smiley}");
             }
         }
-        if name.contains("::")
-            || name.is_empty()
+        if name.is_empty()
             || name == "Grammar"
             || is_builtin_role_name(name)
             || self.has_type_capture_binding(name)
         {
+            return name.to_string();
+        }
+        if name.contains("::") {
+            if name.starts_with("::") || self.has_type_direct(name) {
+                return name.to_string();
+            }
+            let mut pkg = owner;
+            while !pkg.is_empty() {
+                let qualified = format!("{pkg}::{name}");
+                if self.has_type_direct(&qualified) {
+                    return qualified;
+                }
+                match pkg.rsplit_once("::") {
+                    Some((parent, _)) => pkg = parent,
+                    None => break,
+                }
+            }
             return name.to_string();
         }
         // The declaring class's shell is not necessarily published yet while

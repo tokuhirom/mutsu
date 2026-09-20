@@ -1024,7 +1024,10 @@ impl Interpreter {
         {
             let name = sym.resolve();
             if !self.class_has_method(&name, "CALL-ME")
-                && (self.has_class(&name) || self.has_role(&name) || Self::is_builtin_type(&name))
+                && (self.has_class(&name)
+                    || self.has_role(&name)
+                    || self.registry().enum_types.contains_key(&name)
+                    || Self::is_builtin_type(&name))
             {
                 return self.call_function(&name, args);
             }

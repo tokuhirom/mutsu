@@ -848,7 +848,14 @@ impl Interpreter {
         // under `unit module M` registers `M::R`, and the snippet's own `R(...)`
         // still has to find it. Resolve once here, before every branch below
         // that keys the registry by `name`.
-        let qualified_type = self.resolve_bare_type_name(name);
+        let qualified_type = self
+            .resolve_bare_type_name(name)
+            // `resolve_bareword_type_name` also consults the current package
+            // chain used by bareword reads.  A lexical class declared inside
+            // a loaded module can be visible there even when the module's
+            // routine call frame reports GLOBAL to ordinary routine lookup;
+            // its coercion call must resolve the same type object as `Foo.^name`.
+            .or_else(|| self.resolve_bareword_type_name(name));
         let name: &str = qualified_type.as_deref().unwrap_or(name);
 
         // Invoking a *class* type object coerces: `Foo($x)` is `Foo.COERCE($x)`
