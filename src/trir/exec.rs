@@ -318,7 +318,14 @@ impl Interpreter {
                     .trir
                     .os
                     .push(Value::hash(crate::value::ValueMap::default())),
-                TrOp::NewArray => self.trir.os.push(Value::array(Vec::new())),
+                TrOp::NewArray => self.trir.os.push(Value::real_array(Vec::new())),
+                TrOp::MakeListN(n) => {
+                    let base = self.trir.os.len().saturating_sub(*n as usize);
+                    let items: Vec<Value> = self.trir.os.drain(base..).collect();
+                    // `Value::array` IS the `List` kind (see its definition);
+                    // `real_array` is the `Array` kind `my @a` declares.
+                    self.trir.os.push(Value::array(items));
+                }
                 TrOp::TruthyObj => {
                     let v = self.opop();
                     let t = self.eval_truthy(&v);

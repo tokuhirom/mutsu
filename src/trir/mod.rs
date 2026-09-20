@@ -221,6 +221,13 @@ pub(crate) enum TrOp {
     NewHash,
     /// Push a fresh empty `Array`, for the same reason.
     NewArray,
+    /// Pop `n` boxed values and push them as a `List`.
+    ///
+    /// A comma list in value position. `JSON::Fast`'s `parse-obj` has one:
+    /// the parser reads `nqp::stmts(my $d := ..., nqp::stmts(...))` as a
+    /// single list-valued argument, and the untyped path builds the list
+    /// too — the elements' side effects, not the list, are the point.
+    MakeListN(u16),
     /// Pop a boxed value and push its truth as an int-bank 0/1, through the
     /// interpreter's own `eval_truthy` — so a `.Bool` override, a `Failure`
     /// being marked handled, and every other rule behave exactly as they do

@@ -53,6 +53,17 @@ impl TrirCompiler<'_> {
             Expr::Var(name) => self.compile_var(name),
             // `%result` / `@result`: the same slot the declaration made,
             // keyed by the sigiled name.
+            Expr::ArrayLiteral(items) => {
+                if items.len() > u16::MAX as usize {
+                    return None;
+                }
+                for it in items {
+                    let k = self.compile_expr(it)?;
+                    self.coerce(k, TrKind::Obj)?;
+                }
+                self.ops.push(TrOp::MakeListN(items.len() as u16));
+                Some(TrKind::Obj)
+            }
             Expr::HashVar(n) => self.compile_sigiled_var('%', n),
             Expr::ArrayVar(n) => self.compile_sigiled_var('@', n),
             // `"at $pos: ..."` — the pieces, concatenated. Every `die` helper
@@ -84,12 +95,20 @@ impl TrirCompiler<'_> {
             }
             other => {
                 self.note_decline(|| {
-                    let rendered = format!("{other:?}");
-                    let head = rendered
-                        .split(|c: char| c == ' ' || c == '(' || c == '{')
-                        .next()
-                        .unwrap_or("?");
-                    format!("expression {head}")
+                    let rendered = format!("{other:?}")
+                        .split_whitespace()
+                        .collect::<Vec<_>>()
+                        .join(" ");
+                    // Truncate on a char boundary: an `Expr` debug rendering
+                    // embeds source text, which need not be ASCII.
+                    let cut = rendered
+                        .char_indices()
+                        .map(|(i, _)| i)
+                        .chain(std::iter::once(rendered.len()))
+                        .take_while(|i| *i <= 160)
+                        .last()
+                        .unwrap_or(0);
+                    format!("expression {}", &rendered[..cut])
                 });
                 None
             }
