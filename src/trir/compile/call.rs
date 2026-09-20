@@ -26,6 +26,7 @@ impl TrirCompiler<'_> {
     /// Compile `name(args)`, answering the kind it leaves on a bank.
     pub(super) fn compile_routine_call(&mut self, name: &str, args: &[Expr]) -> Option<TrKind> {
         if args.len() > u8::MAX as usize || args.iter().any(Self::is_named_arg) {
+            self.note_decline(|| format!("call to {name} with a named or spread argument"));
             return None;
         }
         let callee = self.resolve_trir_callee(name, args.len());
@@ -40,11 +41,14 @@ impl TrirCompiler<'_> {
                 Some(ps) => ps.get(i).map(|p| p.is_rw).unwrap_or(false),
                 None => true,
             };
-            plan.push(self.compile_call_arg(
-                a,
-                wants_ref,
-                params.as_deref().and_then(|p| p.get(i).map(|p| p.kind)),
-            )?);
+            let want_kind = params.as_deref().and_then(|p| p.get(i).map(|p| p.kind));
+            match self.compile_call_arg(a, wants_ref, want_kind) {
+                Some(arg) => plan.push(arg),
+                None => {
+                    self.note_decline(|| format!("argument {} of the call to {name}", i + 1));
+                    return None;
+                }
+            }
         }
         let (kind, site_callee, sym) = match callee {
             Some((key, fingerprint, _)) => (

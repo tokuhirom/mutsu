@@ -559,35 +559,44 @@ impl<'a> TrirCompiler<'a> {
     }
 
     /// Reconcile two branch arms that left different kinds, answering the
-    /// common kind. `then_end` is where the `then` arm's jump to the join
-    /// sits, so a box for that arm goes immediately before it.
+    /// common kind and how many ops were inserted AT OR BEFORE `then_end` —
+    /// which every index the caller recorded from `then_end` onwards has to
+    /// be shifted by. `then_end` is where the `then` arm's jump to the join
+    /// sits, so a box for that arm goes immediately before it; a box for the
+    /// `else` arm goes on the end and shifts nothing, and reading the shift
+    /// off `then_kind != else_kind` got that second case wrong — the caller
+    /// then found something other than its own `Jump` under the shifted index
+    /// and declined the whole routine. `JSON::Fast`'s scanners are exactly
+    /// that shape (`nqp::if(cond, die-helper(...), $pos)`: a boxed `then`
+    /// against a native `else`), so the slip cost the routine that motivated
+    /// the stage.
     pub(super) fn unify_arms(
         &mut self,
         then_kind: TrKind,
         else_kind: TrKind,
         then_end: usize,
-    ) -> Option<TrKind> {
+    ) -> Option<(TrKind, usize)> {
         if then_kind == else_kind {
-            return Some(then_kind);
+            return Some((then_kind, 0));
         }
         // Box whichever arm is native. An `int`/`num` pair is not unified:
         // widening one side would change which arithmetic the consumer does.
         match (then_kind, else_kind) {
             (TrKind::Int, TrKind::Obj) => {
                 self.insert_op(then_end, TrOp::BoxI);
-                Some(TrKind::Obj)
+                Some((TrKind::Obj, 1))
             }
             (TrKind::Num, TrKind::Obj) => {
                 self.insert_op(then_end, TrOp::BoxN);
-                Some(TrKind::Obj)
+                Some((TrKind::Obj, 1))
             }
             (TrKind::Obj, TrKind::Int) => {
                 self.ops.push(TrOp::BoxI);
-                Some(TrKind::Obj)
+                Some((TrKind::Obj, 0))
             }
             (TrKind::Obj, TrKind::Num) => {
                 self.ops.push(TrOp::BoxN);
-                Some(TrKind::Obj)
+                Some((TrKind::Obj, 0))
             }
             _ => {
                 self.note_decline(|| {

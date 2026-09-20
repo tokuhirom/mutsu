@@ -274,15 +274,11 @@ impl TrirCompiler<'_> {
         self.ops.push(TrOp::Jump(0));
         let else_at = self.ops.len() as u32;
         let ek = self.compile_expr(e)?;
-        let unified = self.unify_arms(tk, ek, jump_end_at)?;
         // `unify_arms` may have inserted a box before the `then` arm's jump,
         // which moves everything at or past it — including that jump.
-        let jump_end_at = if tk == ek {
-            jump_end_at
-        } else {
-            jump_end_at + 1
-        };
-        let else_at = if tk == ek { else_at } else { else_at + 1 };
+        let (unified, shifted) = self.unify_arms(tk, ek, jump_end_at)?;
+        let jump_end_at = jump_end_at + shifted;
+        let else_at = else_at + shifted as u32;
         let end = self.ops.len() as u32;
         match &mut self.ops[branch_at] {
             TrOp::JumpIfFalseI(x) => *x = else_at,
@@ -547,8 +543,7 @@ impl TrirCompiler<'_> {
         // Both arms must leave the same kind on the same bank. A mismatch
         // would need the `then` arm boxed BEFORE its jump, which Stage 1
         // declines rather than patching after the fact.
-        let unified = self.unify_arms(then_kind, else_kind, jump_end_at)?;
-        let shifted = (then_kind != else_kind) as usize;
+        let (unified, shifted) = self.unify_arms(then_kind, else_kind, jump_end_at)?;
         let jump_end_at = jump_end_at + shifted;
         let else_at = else_at + shifted as u32;
         let end = self.ops.len() as u32;

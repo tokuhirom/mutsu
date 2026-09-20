@@ -273,6 +273,37 @@ The kill criterion (§7: stop if a faithful Stage 1 cannot reach ≤ 300 ns on t
 
 **One bug worth recording**, because it is the general hazard in collapsing a sequence of opcodes into one: `CallTrir` initially dropped the argument-source table its `CallFunc` carried, and the post-compile analysis reads exactly that table to learn that a local reaches a call and may be written back through an `is rw` parameter. Without it, a closure over such a variable was vouched for as by-value-capturable and reported the pre-call value. The opcodes a call site emits are inputs to compile-time analyses, not only instructions. The differential test (§5) caught it on its first run.
 
-### Stages 2-4
+### Stage 2 — landed 2026-09-20
 
-Not started.
+**Result: the gate is missed by a wide margin, and the measurement falsifies §1.3's causal model. The pillars work; the thing they remove is not what this workload pays for.**
+
+Stage 2 does what §7 asked of it. A TRIR body may now call out, resolved (`CallTr`, signature known at the call site, binder compiled away, a native `is rw` parameter passed as the absolute index of the caller's slot) or generic (`CallGen`, arguments boxed, ordinary dispatch — what `nom-ws` needs to reach `nom-comment`, declared eleven lines later). Frames nest in one contiguous pair of native/boxed stacks with the boxed halves visited as GC roots; container declarations, `nqp::ifnull`, list literals, string concatenation, hash and array construction, dynamic-variable reads and branch-arm unification compile. In `JSON::Fast` that means `nom-ws`, `parse-thing`, `parse-obj`, `parse-array`, `parse-string`, `parse-true` and `parse-false` — the whole hot decode — run as TRIR, with only `parse-numeric` still declining on the hot path.
+
+`from-json` did not get measurably faster.
+
+Wall clock is too noisy to carry this, so the number comes from callgrind, differencing two runs that differ only in how many times `from-json` runs (1 vs 10) so that startup and module compilation cancel. 200-record document, `--profile profiling`:
+
+| | marginal Ir per decode | gate |
+|---|---:|---|
+| `MUTSU_TRIR=off` | 2,715,806,457 | — |
+| TRIR on | 2,456,666,797 | **9.5% fewer instructions; ≤ 0.045 s wanted ~24x — missed** |
+
+And 8.2 of those 9.5 points are `memcpy` (6.09% → 1.65%) and `core::str::count::do_count_chars` (3.02% → ~0) — the per-frame codepoint memo, not the typed opcodes.
+
+**What §1.3 got wrong.** It divided wall clock by opcode count, got ~211 ns per opcode, and read the quotient as the cost of untyped dispatch. Measured directly, with TRIR **off**, `exec_one` plus `exec_one_dispatch` self cost is **4.6% of the decode**. An opcode's cost is overwhelmingly what its *handler* does — allocate, hash a name, intern a symbol, copy a string — and TRIR removes the dispatch, not the handler. Inside `run_trir_chunk`, 96% of the time is in calls back out of it (`exec_trir_inner_call`/`exec_trir_generic_call`, inclusive 1.398 G of 1.459 G on the Stage 2 profile) and the TRIR loop itself is ~1.2% of the program. TRIR made the interpretation of `JSON::Fast`'s control flow nearly free and the decode did not move, because the control flow was never the cost.
+
+**Where the decode's time is**, marginal, TRIR on, nothing above 4.2% and a very long tail: the allocator ~11.6%, `memcpy`/`memcmp`/`memchr` ~5%, the dispatch loop ~4.6%, hashing and hash-table probes ~3.3%, thread-local access (the `Symbol` interner, `MetaNs`) ~2.8%, NaN-box encode/decode ~3%, run-time type-name resolution ~1.5%. By inclusive cost: `nqp::` op bodies 16.9%, the general binder 16.1%, `Env::get_sym` 9.3%, `Symbol::intern` 4.3%. The allocation count is the standout — **1,628,921 heap allocations per decode of 200 records** (1,659,471 with TRIR off), about 8,100 per JSON record of seven fields and a two-element array.
+
+It is a constant factor, not an asymptotic bug: across 25 KB to 210 KB documents mutsu decodes at a flat ~6.2 µs/byte and rakudo at ~0.15 µs/byte, 41x, unchanged by an eightfold size change.
+
+**Consequences for §7's remaining stages.** Stage 3 lowers TRIR chunks to Cranelift, and those chunks are 96% callouts, so it would compile away the ~1.2% that is left — its `≤ 1x rakudo` gate is unreachable by itself for this workload, on the same measurement. Stage 2's own remaining half (typed forms for the hot `nqp::` string/hash ops, which would remove the boxing and the id-indexed dispatch) is worth up to the 16.9% those bodies cost, not the 24x the gate asks for. **Whether to supersede this ADR is a decision for the maintainer** (CLAUDE.md reserves new and superseding ADRs to them); what the measurement supports is that the 70x gap on `JSON::Fast` is a flat per-primitive cost spread across allocation, name resolution and value representation, and that it has to be attacked there.
+
+The three costs that measurement names are filed on their own, so they survive whatever is decided about this ADR: [#8898](https://github.com/tokuhirom/mutsu/issues/8898) (1.63 M heap allocations per decode), [#8899](https://github.com/tokuhirom/mutsu/issues/8899) (13.6% in run-time name resolution), [#8900](https://github.com/tokuhirom/mutsu/issues/8900) (`nqp::` op bodies 16.9%, the general binder 16.1%).
+
+**What Stage 2 is still worth.** TRIR is correct (the differential fixture agrees exactly with `MUTSU_TRIR=off` across every shape, including a `die` thrown out of a TRIR frame followed by a successful call through the same routine), it is the substrate any later JIT needs, and its micro-gates from Stage 1 stand. It is kept, default on.
+
+**One real bug fixed on the way**, and it is the general hazard in patching jump targets after the fact: branch-arm unification computed its op-index shift from `then_kind != else_kind`. That is right when the `then` arm is the native one — the box is *inserted* before its jump, shifting everything after — and wrong when the `else` arm is, because that box goes on the end and shifts nothing. In the second case the caller looked for its own `Jump` one slot too far along, did not find it, and declined the whole routine, silently. `nqp::if(cond, die-helper(...), $pos)` is exactly that shape, and it is the shape of every `JSON::Fast` scanner's error check. `unify_arms` now answers the shift it actually applied.
+
+### Stages 3-4
+
+Not started; see the consequences recorded under Stage 2 before starting either.
