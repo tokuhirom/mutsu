@@ -246,10 +246,12 @@ impl Interpreter {
                         results.push(Value::array(vec![left_iter.nth(i), right_iter.nth(i)]));
                     }
                 } else if op == "=>" {
-                    // ADR-0021 I2: data-minted pairs default positional.
+                    // ADR-0021 I2: data-minted pairs default positional, and
+                    // the key keeps its own value/type — including a List
+                    // key produced by `cross()`/tuple-valued left operands,
+                    // which stringifying here would flatten into `"1 2 3"`.
                     for i in 0..len {
-                        let key = left_iter.nth(i).to_string_value();
-                        results.push(Value::value_pair(Value::str(key), right_iter.nth(i)));
+                        results.push(Value::value_pair(left_iter.nth(i), right_iter.nth(i)));
                     }
                 } else {
                     // Check for 3-way zip reduction case ([Z+] a, b, c)
