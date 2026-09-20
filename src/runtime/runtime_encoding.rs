@@ -408,8 +408,20 @@ impl Interpreter {
         if !fq_name.contains("::") {
             return false;
         }
-        let prefix = format!("{fq_name}\u{0}");
         let registry = self.registry();
+        // The scan can only match a key that is either `fq_name` itself or
+        // carries `fq_name` before its first NUL. When neither exists there is
+        // nothing to find, and this runs on every `has_type` of a qualified
+        // name — see `Registry::has_lexical_type_key_for`.
+        if !registry.has_lexical_type_key_for(fq_name)
+            && !registry.classes.contains_key(fq_name)
+            && !registry.roles.contains_key(fq_name)
+            && !registry.enum_types.contains_key(fq_name)
+            && !registry.subsets.contains_key(fq_name)
+        {
+            return false;
+        }
+        let prefix = format!("{fq_name}\u{0}");
         registry
             .classes
             .keys()

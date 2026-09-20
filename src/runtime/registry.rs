@@ -491,6 +491,60 @@ pub(crate) struct Registry {
             Option<Arc<crate::opcode::CompiledFns>>,
         ),
     >,
+    /// The source-facing names of the lexically-mangled type keys the four
+    /// type maps hold — i.e. `key[..first NUL]` for every key that carries the
+    /// ADR-0047 P1 `Foo\u{0}<decl-id>` suffix. Built on first query and
+    /// dropped by [`RegistryWriteGuard`]'s `DerefMut`; see
+    /// [`Registry::has_lexical_type_key_for`].
+    lexical_type_names: std::sync::OnceLock<rustc_hash::FxHashSet<Box<str>>>,
+}
+
+impl Registry {
+    /// Whether any key in `classes` / `roles` / `enum_types` / `subsets` is a
+    /// lexically-mangled storage name whose source-facing part is exactly
+    /// `unmangled` — that is, whether a `key.starts_with("{unmangled}\u{0}")`
+    /// scan over those maps could find anything.
+    ///
+    /// Three call sites run that scan (`resolve_lexical_type_key`,
+    /// `is_my_scoped_type_name`, `my_scoped_type_visible_here`), each on a
+    /// miss path, and each walks EVERY key in all four maps. On a
+    /// `JSON::Fast.from-json` parse that was 125.5M instructions — 4.2% of the
+    /// run — for 7,236 `resolve_lexical_type_key` calls, ~17,000 instructions
+    /// apiece ([#8830]).
+    ///
+    /// A key matches `"{unmangled}\u{0}"` exactly when its segment before the
+    /// FIRST NUL is `unmangled`, so the set of those segments answers the
+    /// question exactly rather than approximately, in one hash probe. Programs
+    /// that declare no `my class`/`my grammar` at all have an empty set and
+    /// never scan again.
+    ///
+    /// Kept coherent the same way [`crate::runtime::PackageKeyed`]'s name
+    /// filter is: the cache is a `OnceLock` that [`RegistryWriteGuard`]'s
+    /// `DerefMut` drops, and that guard is the only path to a `&mut Registry`,
+    /// so a registration that adds a mangled key cannot fail to invalidate it.
+    ///
+    /// [#8830]: https://github.com/tokuhirom/mutsu/issues/8830
+    pub(crate) fn has_lexical_type_key_for(&self, unmangled: &str) -> bool {
+        self.lexical_type_names
+            .get_or_init(|| {
+                self.classes
+                    .keys()
+                    .chain(self.roles.keys())
+                    .chain(self.enum_types.keys())
+                    .chain(self.subsets.keys())
+                    .filter_map(|key| key.split_once('\u{0}'))
+                    .map(|(bare, _)| Box::<str>::from(bare))
+                    .collect()
+            })
+            .contains(unmangled)
+    }
+
+    /// Drop the [`Self::has_lexical_type_key_for`] cache. Called from the
+    /// write guard's `DerefMut`, which is the only way to reach `&mut
+    /// Registry`.
+    fn invalidate_lexical_type_names(&mut self) {
+        self.lexical_type_names.take();
+    }
 }
 
 impl Registry {
@@ -1680,7 +1734,13 @@ impl std::ops::DerefMut for RegistryWriteGuard<'_> {
         if Arc::strong_count(arc) > 1 {
             crate::vm::vm_stats::record_registry_cow_clone();
         }
-        Arc::make_mut(arc)
+        let registry = Arc::make_mut(arc);
+        // This is the ONLY way to reach a `&mut Registry`, so dropping the
+        // derived name caches here is what makes them impossible to
+        // desynchronise from the maps they summarise. See
+        // `Registry::has_lexical_type_key_for`.
+        registry.invalidate_lexical_type_names();
+        registry
     }
 }
 
@@ -1901,5 +1961,86 @@ mod tests {
         assert!(registry.method_entry_proto("Base", "greet").is_some());
         assert!(registry.method_entry_proto("Child", "greet").is_none());
         assert!(registry.method_entry_proto("Base", "other").is_none());
+    }
+
+    /// The `has_lexical_type_key_for` filter must agree with the scan it
+    /// fronts, and must be dropped by the write guard that can invalidate it.
+    /// Driven through a real `RegistryWriteGuard` rather than a bare `&mut`,
+    /// because the guard's `DerefMut` IS the invalidation mechanism.
+    #[test]
+    fn lexical_type_key_filter_tracks_the_maps_through_the_write_guard() {
+        let lock = std::sync::RwLock::new(Arc::new(Registry::default()));
+        let scan = |reg: &Registry, name: &str| {
+            let prefix = format!("{name}\u{0}");
+            reg.classes
+                .keys()
+                .chain(reg.roles.keys())
+                .chain(reg.enum_types.keys())
+                .chain(reg.subsets.keys())
+                .any(|key| key.starts_with(&prefix))
+        };
+
+        // Nothing mangled registered yet: the filter declines, and so does the
+        // scan it stands in for.
+        {
+            let reg = RegistryReadGuard::new(&lock, "test");
+            assert!(!reg.has_lexical_type_key_for("Foo"));
+            assert!(!scan(&reg, "Foo"));
+        }
+
+        // A mangled key added through the guard is visible to the next query.
+        {
+            let mut reg = RegistryWriteGuard::new(&lock, "test");
+            reg.enum_types.insert("Foo\u{0}12".to_string(), Vec::new());
+        }
+        {
+            let reg = RegistryReadGuard::new(&lock, "test");
+            assert!(reg.has_lexical_type_key_for("Foo"));
+            assert!(scan(&reg, "Foo"));
+            // An UNmangled key is not a lexical type key, and a partial
+            // segment is not the segment.
+            assert!(!reg.has_lexical_type_key_for("Fo"));
+            assert!(!reg.has_lexical_type_key_for("Foo\u{0}12"));
+        }
+
+        // A plain (unmangled) registration does not make the filter answer
+        // yes -- the scan would not match it either.
+        {
+            let mut reg = RegistryWriteGuard::new(&lock, "test");
+            reg.enum_types.insert("Bare".to_string(), Vec::new());
+        }
+        {
+            let reg = RegistryReadGuard::new(&lock, "test");
+            assert!(!reg.has_lexical_type_key_for("Bare"));
+            assert!(!scan(&reg, "Bare"));
+            assert!(reg.has_lexical_type_key_for("Foo"));
+        }
+
+        // Removal through the guard invalidates too.
+        {
+            let mut reg = RegistryWriteGuard::new(&lock, "test");
+            reg.enum_types.remove("Foo\u{0}12");
+        }
+        {
+            let reg = RegistryReadGuard::new(&lock, "test");
+            assert!(!reg.has_lexical_type_key_for("Foo"));
+            assert!(!scan(&reg, "Foo"));
+        }
+    }
+
+    /// A key with more than one NUL segment (`Store\u{0}1::Session\u{0}2`)
+    /// belongs to its FIRST segment, which is what `starts_with("{name}\0")`
+    /// tests.
+    #[test]
+    fn lexical_type_key_filter_uses_the_first_nul_segment() {
+        let lock = std::sync::RwLock::new(Arc::new(Registry::default()));
+        {
+            let mut reg = RegistryWriteGuard::new(&lock, "test");
+            reg.enum_types
+                .insert("Store\u{0}1::Session\u{0}2".to_string(), Vec::new());
+        }
+        let reg = RegistryReadGuard::new(&lock, "test");
+        assert!(reg.has_lexical_type_key_for("Store"));
+        assert!(!reg.has_lexical_type_key_for("Store\u{0}1::Session"));
     }
 }
