@@ -10,7 +10,7 @@ use Test;
 # distribution, whose `method kv` returns `Seq.new(KV.new(...))` over a
 # `my class KV does Iterator` declared in the role body.
 
-plan 8;
+plan 10;
 
 role PlainLexical {
     my $answer = 42;
@@ -54,8 +54,13 @@ role Tied does Assoc { }
 my %h is Tied;
 is %h.marker, 'marked', 'a tied container reaches a grandparent role body type';
 
-# NOT pinned here: a role body's assignment to an OUTER lexical
-# (`my $side; role R { $side = 1 }; R.new; say $side` -- rakudo answers 1)
-# still does not reach the enclosing scope under mutsu. The body does run
-# (everything above proves it); the write is lost on the way out, which is the
-# locals/env dual store, not this fix. Tracked separately.
+# A role body's assignment to an OUTER lexical must reach the enclosing scope,
+# same as it does for a class body (#8862). Punning happens deep inside method
+# dispatch (`ensure_role_punned_to_class`, reached from `Base.kv` below), with
+# the actual method dispatch that follows composition as an intervening call
+# -- unlike the direct decl-time `does` composition case, which is one hop
+# away from the frame that owns the lexical.
+my $side;
+role Base { $side = 'BODY RAN'; method kv() { 'method' } }
+is Base.kv, 'method', 'the punned method itself still runs';
+is $side, 'BODY RAN', "the role body's write to an outer lexical reaches the enclosing scope";
