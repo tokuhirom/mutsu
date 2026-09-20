@@ -847,7 +847,25 @@ impl Interpreter {
         // that scope. A later local `sub` replaces the alias; once replaced,
         // the alias marker is consumed so another local declaration still
         // raises X::Redeclaration.
-        let imported_routine_alias = !is_our_scoped && self.imported_routine_alias(&package, name);
+        //
+        // The alias itself is recorded under whichever package was current at
+        // `use` time (usually the file's top-level package), but a bare `sub`
+        // written inside a nested block -- a `class`/`role`/`package` body --
+        // registers under THAT block's own package. A plain `&name` env
+        // binding the import installed is not package-scoped at all, so the
+        // exemption must walk the same enclosing-package chain a bare name
+        // would actually resolve through (`bare_name_packages()`), not just
+        // the literal declaration-site package. Without this, re-exporting an
+        // already-imported multi via `OUR::{'&name'} := &name` (the
+        // `JSON::Class`/`META6` re-export idiom) made a class body's own
+        // `multi sub` of that name a false "Redeclaration", because the
+        // import landed under the file's package while the class-body
+        // `multi sub` registers under the class's own package.
+        let imported_routine_alias = !is_our_scoped
+            && self
+                .bare_name_packages()
+                .iter()
+                .any(|pkg| self.imported_routine_alias(pkg, name));
         // `constant &infix:<alias> := &infix:<target>` installs a routine
         // value in the lexical environment, but Rakudo permits later `multi`
         // candidates on that alias and makes them visible through both names.
