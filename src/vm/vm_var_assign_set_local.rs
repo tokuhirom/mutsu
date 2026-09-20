@@ -515,8 +515,12 @@ impl Interpreter {
     /// The narrower widths (`int8`, `uint32`, `num32`, ...) are deliberately
     /// NOT here: each wraps or truncates, so the store is not the identity and
     /// the cascade has real work to do.
-    fn native_typed_store_is_identity(&self, code: &CompiledCode, idx: usize, value: &Value) -> bool
-    {
+    fn native_typed_store_is_identity(
+        &self,
+        code: &CompiledCode,
+        idx: usize,
+        value: &Value,
+    ) -> bool {
         // A subset anywhere in the program can redirect a constraint name, so
         // the constraint below would no longer be self-describing.
         if !self.registry().subsets.is_empty() {
