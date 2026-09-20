@@ -10,7 +10,7 @@
 use super::vm_jit::JitEntryFn;
 use super::vm_jit_helpers as helpers;
 use super::vm_jit_support::{noarg_shim, step_supported};
-use super::vm_jit_tier_b::{IntArith, IntDivMod, NumCmp, TierB};
+use super::vm_jit_tier_b::{IntArith, IntDivMod, NqpIntOp, NumCmp, TierB};
 use super::*;
 
 use cranelift_codegen::ir::{AbiParam, Block, InstBuilder, SigRef, Type, types};
@@ -390,6 +390,28 @@ fn build(
             OpCode::NumNe if tier_b.is_some() => {
                 let tb = tier_b.as_ref().unwrap();
                 tb.emit_compare(&mut b, NumCmp::Ne, helpers::num_ne as *const () as usize);
+            }
+            // Tier B inline `nqp::*_i`: the op name is settled at compile time
+            // (the opcode carries a registry index, not a callee string), so
+            // the whitelist is resolved here, once, rather than per execution.
+            OpCode::NqpOp { id, arity: 2 }
+                if tier_b.is_some()
+                    && tier_b.as_ref().unwrap().lay.pending_line_tag.is_some()
+                    && NqpIntOp::from_name(crate::runtime::nqp_op_ids::nqp_op_name(*id))
+                        .is_some() =>
+            {
+                let tb = tier_b.as_ref().unwrap();
+                let nqp_op =
+                    NqpIntOp::from_name(crate::runtime::nqp_op_ids::nqp_op_name(*id)).unwrap();
+                tb.emit_nqp_int_binop(
+                    &mut b,
+                    nqp_op,
+                    tb.lay.pending_line_tag.unwrap(),
+                    sigs.s_call,
+                    helpers::step as *const () as usize,
+                    i as u32,
+                    fnsp,
+                );
             }
             OpCode::GetLocal(idx) => {
                 if let Some(tb) = &tier_b

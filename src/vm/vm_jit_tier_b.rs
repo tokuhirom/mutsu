@@ -39,6 +39,69 @@ pub(super) enum IntDivMod {
     Mod,
 }
 
+/// The `nqp::*_i` binary ops Tier B emits inline.
+///
+/// All of them are *native int* ops: two i64 operands, an i64 result, and no
+/// user-overridable operator behind them (`nqp::` is a reserved namespace), so
+/// they need neither the `no_user_infix` guard that `Add` carries nor a Num
+/// path. Comparisons yield nqp's int `0`/`1`, not a `Bool` — `bool_int` in
+/// `runtime/nqp_ops.rs`.
+#[derive(Clone, Copy)]
+pub(super) enum NqpIntOp {
+    Add,
+    Sub,
+    Mul,
+    BitAnd,
+    BitOr,
+    BitXor,
+    Eq,
+    Ne,
+    Lt,
+    Le,
+    Gt,
+    Ge,
+}
+
+impl NqpIntOp {
+    /// The op this nqp name means, for the names Tier B inlines.
+    ///
+    /// Deliberately a small whitelist rather than a family rule: every entry
+    /// has been read against its arm in `runtime/nqp_ops.rs` and is the
+    /// identity on two small-Int operands. `div_i`/`mod_i` are absent because
+    /// they are *floor* division with a zero check, `bitshift*_i` because they
+    /// clamp their shift count, and the `_I` (bigint) family because it is not
+    /// native at all.
+    pub(super) fn from_name(name: &str) -> Option<NqpIntOp> {
+        Some(match name {
+            "add_i" => NqpIntOp::Add,
+            "sub_i" => NqpIntOp::Sub,
+            "mul_i" => NqpIntOp::Mul,
+            "bitand_i" => NqpIntOp::BitAnd,
+            "bitor_i" => NqpIntOp::BitOr,
+            "bitxor_i" => NqpIntOp::BitXor,
+            "iseq_i" => NqpIntOp::Eq,
+            "isne_i" => NqpIntOp::Ne,
+            "islt_i" => NqpIntOp::Lt,
+            "isle_i" => NqpIntOp::Le,
+            "isgt_i" => NqpIntOp::Gt,
+            "isge_i" => NqpIntOp::Ge,
+            _ => return None,
+        })
+    }
+
+    fn cmp_cc(self) -> Option<IntCC> {
+        Some(match self {
+            NqpIntOp::Eq => IntCC::Equal,
+            NqpIntOp::Ne => IntCC::NotEqual,
+            NqpIntOp::Lt => IntCC::SignedLessThan,
+            NqpIntOp::Le => IntCC::SignedLessThanOrEqual,
+            NqpIntOp::Gt => IntCC::SignedGreaterThan,
+            NqpIntOp::Ge => IntCC::SignedGreaterThanOrEqual,
+            _ => return None,
+        })
+    }
+}
+
 #[derive(Clone, Copy)]
 pub(super) enum NumCmp {
     Lt,
@@ -307,6 +370,122 @@ impl TierB {
         // -- Slow path: the Tier A shim reruns the full interpreter arm --
         b.switch_to_block(slow_blk);
         self.call_status(b, slow_fn);
+        b.ins().jump(done, &[]);
+
+        b.switch_to_block(done);
+    }
+
+    /// A binary `nqp::*_i` op: pop two small-Int words, push the result.
+    ///
+    /// `OpCode::NqpOp` is on the `step_supported` whitelist, so until now even
+    /// a JIT-compiled numeric loop paid a `helpers::step` call *and* the whole
+    /// `exec_nqp_op` protocol for it — a `Vec` drain into a scratch buffer, a
+    /// `VarRef` unwrap and a `Proxy` probe per operand, a dispatch through the
+    /// op registry, and a push. Measured at ~654 instructions per iteration of
+    /// `while nqp::islt_i($i, N) { $i = nqp::add_i($i, 1) }`, against the
+    /// handful of instructions the op itself is. `OpCode::Add` has had an
+    /// inline path since ADR-0004 J4; this gives the same treatment to the ops
+    /// that exist precisely to BE single instructions.
+    ///
+    /// The fast path fires only when both operands are small inline Ints and —
+    /// for the arithmetic ops — the result stays in the small-Int range.
+    /// Everything else (a boxed Int, `BigInt`, `Num`, `Str`, a `ContainerRef`,
+    /// a `Proxy`) falls to the unchanged shim, which re-runs `exec_nqp_op` on
+    /// the still-untouched stack. That is what keeps `iarg`'s coercion of a
+    /// non-Int operand, and `add_i`'s i64 wrapping, exactly as they were: this
+    /// path never sees a case where they differ from the plain i64 op.
+    ///
+    /// `pending_line` is the absolute offset of
+    /// `Interpreter::test_pending_callsite_line`'s discriminant word:
+    /// `exec_nqp_op` sets that field to `None` on every op, so the inline path
+    /// does too, with one store. Without it a JIT-compiled nqp op would leave a
+    /// stale assertion line behind for the next reader.
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn emit_nqp_int_binop(
+        &self,
+        b: &mut FunctionBuilder,
+        op: NqpIntOp,
+        pending_line: i32,
+        step_sig: SigRef,
+        step_fn: usize,
+        opidx: u32,
+        fnsp: CVal,
+    ) {
+        let ptr = self.stack_ptr(b);
+        let len = self.stack_len(b);
+        let a_addr = self.slot_addr(b, ptr, len, 2);
+        let b_addr = self.slot_addr(b, ptr, len, 1);
+        let wa = b.ins().load(types::I64, Self::mf(), a_addr, 0);
+        let wb = b.ins().load(types::I64, Self::mf(), b_addr, 0);
+        let pa = self.page(b, wa);
+        let pb = self.page(b, wb);
+        let a_int = self.is_int_page(b, pa);
+        let b_int = self.is_int_page(b, pb);
+        let both_int = b.ins().band(a_int, b_int);
+
+        let int_blk = b.create_block();
+        let slow_blk = b.create_block();
+        let done = b.create_block();
+        b.ins().brif(both_int, int_blk, &[], slow_blk, &[]);
+
+        b.switch_to_block(int_blk);
+        let av = self.sx48(b, wa);
+        let bv = self.sx48(b, wb);
+        let (res, needs_range_check) = match op.cmp_cc() {
+            // A comparison yields 0 or 1, which is always in range.
+            Some(cc) => {
+                let c = b.ins().icmp(cc, av, bv);
+                (b.ins().uextend(types::I64, c), false)
+            }
+            None => match op {
+                // 48-bit operands cannot overflow an i64 add/sub; only the
+                // result's small-Int range needs checking.
+                NqpIntOp::Add => (b.ins().iadd(av, bv), true),
+                NqpIntOp::Sub => (b.ins().isub(av, bv), true),
+                NqpIntOp::Mul => (b.ins().imul(av, bv), true),
+                // Bitwise ops on two sign-extended 48-bit values: bits 47..63
+                // are a single repeated value on each side, so they are on the
+                // result too, and it is always back in range. Checked anyway --
+                // the check is four instructions and the alternative is an
+                // argument in a comment.
+                NqpIntOp::BitAnd => (b.ins().band(av, bv), true),
+                NqpIntOp::BitOr => (b.ins().bor(av, bv), true),
+                NqpIntOp::BitXor => (b.ins().bxor(av, bv), true),
+                _ => unreachable!("comparison handled above"),
+            },
+        };
+        let store_blk = b.create_block();
+        if needs_range_check {
+            let hi = b.ins().ishl_imm(res, 16);
+            let back = b.ins().sshr_imm(hi, 16);
+            let fits = b.ins().icmp(IntCC::Equal, back, res);
+            b.ins().brif(fits, store_blk, &[], slow_blk, &[]);
+        } else {
+            b.ins().jump(store_blk, &[]);
+        }
+        b.switch_to_block(store_blk);
+        let word = self.pack_int(b, res);
+        b.ins().store(Self::mf(), word, a_addr, 0);
+        self.adjust_len(b, len, -1);
+        // `exec_nqp_op`'s `set_pending_callsite_line(None)`, inline.
+        let zero = b.ins().iconst(types::I64, 0);
+        b.ins().store(Self::mf(), zero, self.interp, pending_line);
+        b.ins().jump(done, &[]);
+
+        // -- Slow path: the generic step shim reruns `exec_nqp_op` --
+        b.switch_to_block(slow_blk);
+        let callee = b.ins().iconst(self.ptr_ty, step_fn as i64);
+        let idx = b.ins().iconst(types::I32, opidx as i64);
+        let call = b
+            .ins()
+            .call_indirect(step_sig, callee, &[self.interp, self.codep, idx, fnsp]);
+        let status = b.inst_results(call)[0];
+        let err = b.create_block();
+        let cont = b.create_block();
+        b.ins().brif(status, err, &[], cont, &[]);
+        b.switch_to_block(err);
+        b.ins().return_(&[status]);
+        b.switch_to_block(cont);
         b.ins().jump(done, &[]);
 
         b.switch_to_block(done);

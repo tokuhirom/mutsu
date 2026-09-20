@@ -2328,7 +2328,14 @@ pub struct Interpreter {
     /// prefers this slot over the by-name resolution only at that depth, so a
     /// nested frame with a same-named local cannot consume the pending writeback.
     pub(crate) pending_rw_writeback_slots: std::collections::HashMap<String, (u32, usize)>,
-    test_pending_callsite_line: Option<i64>,
+    /// The callsite line a pending test assertion should report, set by every
+    /// call dispatch and cleared by `exec_nqp_op`.
+    ///
+    /// `pub(crate)` only so `vm_jit_layout` can take its `offset_of!`: the Tier
+    /// B `nqp::*_i` fast path clears it with one inline store rather than
+    /// letting a JIT-compiled nqp op leave a stale line behind. Everything else
+    /// still goes through `set_pending_callsite_line`.
+    pub(crate) test_pending_callsite_line: Option<i64>,
     /// One-entry memo for a name symbol's `__mutsu_type::<name>` env key, the
     /// probe every typed store makes (`var_type_constraint_value_sym`). The
     /// mapping is a pure function of the name, so caching it is sound
