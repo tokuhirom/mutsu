@@ -34,6 +34,20 @@ pub(super) fn is_supported_variable_trait(trait_name: &str) -> bool {
         .is_some_and(|c| c.is_ascii_uppercase())
 }
 
+/// Consume a definedness smiley attached to a variable-trait type name.
+///
+/// Raku accepts forms such as `my @items is List:D = ...`; the smiley
+/// qualifies the type named by the trait, but does not change which variable
+/// trait is applied.  Keep the trait name itself bare so the runtime trait
+/// handler sees the same `List`/user-class name as it does without the smiley.
+pub(super) fn strip_variable_trait_smiley(input: &str) -> &str {
+    if input.starts_with(":D") || input.starts_with(":U") || input.starts_with(":_") {
+        &input[2..]
+    } else {
+        input
+    }
+}
+
 pub(super) fn parse_export_trait_tags(input: &str) -> PResult<'_, Vec<String>> {
     let (mut rest, _) = ws(input)?;
     let mut tags = Vec::new();

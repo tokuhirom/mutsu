@@ -491,6 +491,8 @@ impl Interpreter {
                 .param_defs
                 .iter()
                 .any(|pd| pd.sub_signature.is_some() || pd.outer_sub_signature.is_some())
+                || !data.assumed_positional.is_empty()
+                || !data.assumed_named.is_empty()
                 // A body-less routine Sub (plan-derived, ADR-0019 C6e-3)
                 // carries only bytecode — the compile-the-AST fast path below
                 // would evaluate an empty predicate; run the real call path.
@@ -498,11 +500,13 @@ impl Interpreter {
             if needs_full_binding {
                 let mut matched = Vec::new();
                 for (i, item) in list_items.iter().enumerate() {
-                    let pred = self.call_sub_value(
-                        Value::sub_value(data.clone()),
-                        vec![item.clone()],
-                        false,
-                    )?;
+                    let callable = Value::sub_value(data.clone());
+                    let pred =
+                        if !data.assumed_positional.is_empty() || !data.assumed_named.is_empty() {
+                            self.vm_call_on_value(callable, vec![item.clone()], None)?
+                        } else {
+                            self.call_sub_value(callable, vec![item.clone()], false)?
+                        };
                     if self.eval_predicate_truthy(&pred) {
                         result.push(item.clone());
                         matched.push(i);

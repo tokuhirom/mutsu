@@ -266,6 +266,13 @@ pub(crate) fn is_listop(name: &str) -> bool {
             | "take"
             | "take-rw"
             | "emit"
+            // Multi-dispatch redispatch primitives accept listop arguments,
+            // including topic method calls such as `samewith .contents`.
+            | "samewith"
+            | "callwith"
+            | "callsame"
+            | "nextwith"
+            | "nextsame"
             | "split"
             | "index"
             | "indices"
