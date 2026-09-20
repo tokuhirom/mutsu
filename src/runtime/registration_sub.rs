@@ -959,6 +959,15 @@ impl Interpreter {
         if metadata.is_none() {
             Self::validate_callable_param_return_redeclaration(param_defs)?;
         }
+        // A routine declared inside a module keeps running after the module's
+        // loading frame has gone away.  Resolve its bare user-defined type
+        // constraints while that declaring package is still current; leaving
+        // `Result` in `sub make(--> Result)` makes the later caller-side check
+        // look for a global `Result` instead of `Module::Result`.
+        let effective_return_type = return_type.map(|rt| {
+            let resolved = rt.replace("::?CLASS", &package);
+            self.resolve_method_type_name(&package, &resolved)
+        });
         if let Some(spec) = return_type
             // Prefer the plan-lowered classification when available: it was
             // decided once at compile time against the parser's (already
@@ -1055,12 +1064,25 @@ impl Interpreter {
         let raw_param_defs_for_key_check = effective_param_defs.clone();
         let current_package = self.current_package();
         let is_class_scoped = self.registry().classes.contains_key(&current_package);
-        if is_class_scoped {
-            for pd in &mut effective_param_defs {
-                if let Some(tc) = &pd.type_constraint
-                    && tc.contains("::?CLASS")
-                {
-                    pd.type_constraint = Some(tc.replace("::?CLASS", &current_package));
+        for pd in &mut effective_param_defs {
+            if let Some(tc) = &pd.type_constraint {
+                let resolved = if is_class_scoped {
+                    tc.replace("::?CLASS", &current_package)
+                } else {
+                    tc.clone()
+                };
+                // Multi candidates use their parameter spellings as part of
+                // the dispatch key. Keep their existing names here: the
+                // ordinary-sub path is the one whose stored signature must
+                // survive a module-scope teardown, while changing a multi's
+                // key also perturbs operator dispatch in EVAL.
+                let resolved = if multi {
+                    resolved
+                } else {
+                    self.resolve_method_type_name(&current_package, &resolved)
+                };
+                if resolved != *tc {
+                    pd.type_constraint = Some(resolved);
                 }
             }
         }
@@ -1120,7 +1142,7 @@ impl Interpreter {
                 || Self::is_stub_routine_body(body),
                 |metadata| metadata.is_stub,
             ),
-            return_type: return_type.cloned(),
+            return_type: effective_return_type,
             is_default: custom_traits.iter().any(|(t, _)| t == "default"),
             deprecated_message,
             source_file: self.executing_source_file_for_module_load(),
