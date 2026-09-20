@@ -67,12 +67,48 @@ Never quote an absolute from one session against an absolute from another.
 
 | Question | Tool |
 | --- | --- |
-| Where do the instructions go? | `callgrind` + `cg-summary.py` (below) |
+| Where do the instructions go? | `callgrind` + `cg-summary.py` (§2) |
 | How many times is this called? | `cg-summary.py --callers NAME` |
 | How many allocations, and from where? | `cg-summary.py --allocs`, or `alloc_scope!` + `--features alloc-stats` |
 | Which code path actually ran? | `rust-gdb -batch` breakpoint + `bt` — never an `eprintln!` |
-| How many VM events? | `MUTSU_VM_STATS=1`, identical in debug and release, so iterate on the **debug** build |
+| How many VM events? | `MUTSU_VM_STATS=1` on the **debug** build |
 | Is it faster? | averaged paired wall clock, 7+ runs each, second-run-or-later |
+
+### Which build
+
+| Profile | Use it for |
+| --- | --- |
+| `cargo build` (debug) | iterating against `MUTSU_VM_STATS` / `alloc-stats` counters |
+| `cargo build --release` | wall clock, and the number that reflects what ships |
+| `cargo build --profile profiling` | callgrind line attribution (release opt + debuginfo) |
+
+**Iterate on the debug build when the metric is a counter.** `MUTSU_VM_STATS=1`'s dual-store
+counters (`locals_pulls`, `env_flushes`, `env_deep_copies`, `clone_env`, ...) count VM events,
+not time, so they are **byte-identical in debug and release** — and debug builds in ~30-70s
+where release takes ~5min. Do not default to release just because the task is perf-related;
+reserve it for the final wall-clock measurement. (`[profile.release]` sets `debug = false`,
+which is why line-level profiling needs `--profile profiling`.)
+
+### Counting allocations: `alloc_scope!` + the `alloc-stats` feature
+
+When the question is "how many allocations does *this region* cost" rather than "where does
+wall clock go":
+
+```sh
+cargo build --release --features alloc-stats
+MUTSU_ALLOC_STATS=1 ./target/release/mutsu benchmarks/bench-ctor.raku
+```
+
+`alloc_scope!("label")` (`src/alloc_stats.rs`) opens an accounting region for the rest of its
+block; `alloc_scope_named!` / `alloc_scope_end!` close one early so a function can be split into
+phases. The stderr report gives per-scope allocations and bytes, inclusive and exclusive of
+nested scopes. Counts are exact and load-independent. **Wall clock from an `alloc-stats` build
+is meaningless** — time with an ordinary release build. With the feature off (every normal build,
+and CI) the macro expands to nothing and the counting allocator is not installed, so call sites
+are free to leave in place.
+
+`cg-summary.py --allocs` answers the same question from a callgrind run without a rebuild, at
+whole-function granularity; `alloc_scope!` is what you want for a region smaller than a function.
 
 ## 2. The callgrind recipe
 
@@ -145,9 +181,13 @@ that merely removed one of its costs.)
 - Give the deterministic counts as the evidence and the wall clock as the reading, with the run
   count.
 - When a percentage's denominator includes something the steady state does not do, say that too.
-- Numbers that go into `PERFORMANCE.md` / `PLAN.md` / long-lived docs come from the **bench CI**
-  (`git show origin/bench-data:bench-history.tsv`, median of 7 with a same-runner raku ratio),
-  citing the main commit. Local A/B is for PR bodies and in-flight decisions only.
+- **Numbers in `PERFORMANCE.md` / `PLAN.md` / `news/` come from the bench CI, not local runs.**
+  `git show origin/bench-data:bench-history.tsv` — appended on every main push, median of 7 runs
+  plus a same-runner raku ratio that normalizes runner speed — citing the main commit hash the
+  row belongs to. The `<bench>+jit` rows are the JIT-on series (the default since J5,
+  2026-07-13); the plain rows pin `MUTSU_JIT=off` as the interpreter baseline. Local A/B is fine
+  for PR bodies and in-flight decisions, but it drifts with thermals and binary layout (±5% is
+  common), so it is not the source of truth for a document.
 - If a published number turns out wrong, correct it in place and leave the mistake visible
   rather than deleting it — the correction is worth more than the original claim was.
 
@@ -163,4 +203,5 @@ that merely removed one of its costs.)
   the pre-commit hook.
 - Pushing to a PR branch cancels its in-flight CI run, and the aggregator jobs report that
   cancellation as `failure`. Check the run's `conclusion` before treating it as a real break.
-- `perf --call-graph` has never worked in this container. Use callgrind.
+- `perf --call-graph` has never worked in this container — a stale `/root/.debug`
+  build-id store breaks `dwarf`, and `fp` yields garbage stacks. Use callgrind.

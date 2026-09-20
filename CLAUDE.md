@@ -423,39 +423,13 @@ suites are a pre-publication gate, not an inner loop:
 
 ## Build profiles and benchmark numbers
 
-### Use the DEBUG build to iterate on `MUTSU_VM_STATS` counters — release is for wall-clock only
-
-The `MUTSU_VM_STATS=1` dual-store counters (`locals_pulls`, `env_flushes`, `env_deep_copies`, `clone_env`, ...) are **deterministic and independent of the optimization level** — they count VM events, not time. So when tuning a perf/decoupling change against those counters, **iterate with the debug build** (`cargo build`, ~30-70s) and read the counters off `target/debug/mutsu`; the numbers are identical to release. Reserve `cargo build --release` for the **final wall-clock measurement** only. Do NOT default to release just because the task is perf-related — that wastes build time per iteration for byte-identical counter output. (Release is `debug = false` by default; for `perf`/flamegraph profiling that needs symbols, build `cargo build --profile profiling` — a release-optimized binary that keeps debuginfo.)
-
-### Counting allocations: `alloc_scope!` + the `alloc-stats` feature
-
-When the question is "how many allocations does *this region* cost" (not "where does wall-clock
-go"), use the deterministic counter rather than a profiler — `perf --call-graph` has never worked in
-this container (stale `/root/.debug` build-id store for `dwarf`, garbage stacks for `fp`):
-
-```
-cargo build --release --features alloc-stats
-MUTSU_ALLOC_STATS=1 ./target/release/mutsu benchmarks/bench-ctor.raku
-```
-
-`alloc_scope!("label")` (in `src/alloc_stats.rs`) opens an accounting region for the rest of its
-block; `alloc_scope_named!`/`alloc_scope_end!` close one early so a function can be split into
-sequential phases. The stderr report gives per-scope allocations and bytes, both inclusive and
-exclusive of nested scopes. Counts are exact and load-independent, so — like the `MUTSU_VM_STATS`
-counters — they are the right thing to iterate a change against. **Wall-clock from an `alloc-stats`
-build is meaningless**; time with an ordinary release build. With the feature off (every normal
-build, and CI) the macro expands to nothing and the counting allocator is not installed, so call
-sites are free to leave in place. `callgrind` also works here (`valgrind` + `callgrind_annotate` are
-installed) and `callgrind_annotate --tree=caller` gives the caller attribution `perf` could not —
-run it on a reduced-iteration copy of the benchmark, it is ~50x slower than native. **Read
-[`.agents/skills/perf-tuning/SKILL.md`](.agents/skills/perf-tuning/SKILL.md) before measuring
-anything**: it carries the recipe, the caller-count aggregator, and the warm/cold
-precompilation trap that is worth 650M instructions (34% of `bench_json`) if you compare a
-first run against a later one.
-
-### Benchmark numbers in documents come from the bench CI, not local runs
-
-Numbers recorded in PERFORMANCE.md / PLAN.md / news must come from the **bench CI history** (`bench-history.tsv` on the `bench-data` branch, appended on every main push: median of 7 runs plus a same-runner raku ratio that normalizes runner speed), citing the main commit hash the row belongs to. Read it with `git show origin/bench-data:bench-history.tsv`. The `<bench>+jit` rows are the JIT-on series — the default configuration since J5 (2026-07-13); the plain rows pin `MUTSU_JIT=off` as the interpreter baseline. Local `perf stat` A/B measurements are fine for PR descriptions and in-flight development decisions, but they drift with thermals and binary layout (±5% is common), so they are NOT the source of truth for documents.
+**Read [`.agents/skills/perf-tuning/SKILL.md`](.agents/skills/perf-tuning/SKILL.md) before
+measuring anything.** It carries which build to use for which metric (debug for
+`MUTSU_VM_STATS` / `alloc-stats` counters, `--profile profiling` for callgrind line
+attribution), the callgrind recipe and its caller-count aggregator, the `alloc_scope!`
+recipe, where document-facing numbers come from (the bench CI, not local runs), and the
+measurement contract — above all the warm/cold precompilation trap, worth 650M instructions
+(34% of `bench_json`) if a first run is compared against a later one.
 
 ## Checking `make test` / `make roast` results
 
@@ -708,5 +682,5 @@ When working through the issue backlog (as opposed to a single focused task), ru
 - **A ticket does not always end in a code fix.** A large fraction of investigations correctly conclude one of: the ticket is stale (already fixed by something else) — verify, close the issue, write it up in `news/`, and pin a regression test so it can't silently regress; the ticket needs a priority/scope judgment call before any code (e.g. "is deep MOP machinery worth it for one dist?") — grep the available corpus for other consumers of the same gap and let that evidence decide implement-vs-defer; or the real fix is genuinely bigger than the ticket assumed — file a narrower, better-scoped issue (or write an ADR) recording exactly what was learned, rather than forcing an undersized fix through. All of these are legitimate, valuable outcomes — do not treat "closed the ticket without shipping code" as a failure.
 - **The orchestrator monitors PRs itself (via `gh` or the MCP tools), not by trusting an agent's self-report of "still waiting."** A known harness quirk: a worktree-subagent's own `run_in_background` jobs (its `cargo build`/`prove t/` chains) don't reliably notify it back, so it can report "completed" while stuck re-polling its own build with no new information, burning tokens each cycle. When a `<task-notification>` says "still waiting" with no new evidence, check the PR's checks (`gh pr checks <n>`, or `pull_request_read` method `get_check_runs`) and `git log`/`ps` in that agent's worktree yourself first. If genuinely still building, just wait — schedule the next check no sooner than 30 minutes out (the polling floor), and don't nudge. If the agent seems to have lost track of a job that's actually done, `SendMessage` it a nudge with what you observed. If CI has actually finished (merged or clearly green/red) and the agent is *still* polling redundantly, `SendMessage` it to stand down — you're handling it directly.
 - **Rebase-on-`DIRTY` is common and expected** when several of these agents land PRs in the same rough time window, especially when two tickets touch overlapping files (e.g. two slices of the same ADR). Handle it by messaging the specific agent whose PR went `DIRTY` — it understands its own diff best — asking it to rebase onto `main`, resolve conflicts by composing both changes (not blindly picking one side), re-verify, force-push, and re-arm its CI watch.
-- **`todo:perf` is worked separately, and its implementation agent runs SOLO**, and it reads [`.agents/skills/perf-tuning/SKILL.md`](.agents/skills/perf-tuning/SKILL.md) first. Never put a perf finding into the parallel batch above: two perf agents on one box produce measurements that drift and never converge, and the whole point of a perf finding is a trustworthy number. Batch several `todo:perf` issues into one profiling-heavy session instead, so the profiler setup is amortized. Numbers that end up in a document must come from the bench CI (see "Benchmark numbers in documents come from the bench CI" above), not from that session's local runs.
+- **`todo:perf` is worked separately, and its implementation agent runs SOLO**, and it reads [`.agents/skills/perf-tuning/SKILL.md`](.agents/skills/perf-tuning/SKILL.md) first. Never put a perf finding into the parallel batch above: two perf agents on one box produce measurements that drift and never converge, and the whole point of a perf finding is a trustworthy number. Batch several `todo:perf` issues into one profiling-heavy session instead, so the profiler setup is amortized. Numbers that end up in a document must come from the bench CI (see the perf-tuning skill), not from that session's local runs.
 - **Clean up worktrees between batches**, once every agent in the round has either merged or been confirmed stopped — `git worktree remove --force` each `.claude/worktrees/agent-*`, then `git worktree prune`.
