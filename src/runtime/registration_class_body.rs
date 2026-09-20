@@ -42,6 +42,9 @@ pub(super) struct ClassBodyCx<'a> {
     pub(super) compiled_fns: &'a crate::opcode::CompiledFns,
     /// See [`super::registration_class::ClassDeclModifiers::is_hoisted_shell`].
     pub(super) is_hoisted_shell: bool,
+    /// Owner class names queued by `apply_attribute_traits` for a deferred
+    /// `compose` call (#8845) — see `Interpreter::run_pending_attr_composes`.
+    pub(super) pending_attr_composes: Vec<String>,
 }
 
 impl ClassBodyCx<'_> {
@@ -145,6 +148,7 @@ impl Interpreter {
             method_name_chunk_idx: 0,
             compiled_fns,
             is_hoisted_shell,
+            pending_attr_composes: Vec::new(),
         };
         let saved_functions_keys: HashSet<String> = self
             .registry()
@@ -289,6 +293,7 @@ impl Interpreter {
                 self.registry_mut()
                     .sync_accessor_entries(Symbol::intern(cx.name));
             }
+            self.run_pending_attr_composes(&mut cx)?;
             self.run_class_body_leave_phasers(&cx, &class_leave_phasers)?;
             self.persist_class_body_statics(&cx, declared_static_names);
             self.restore_nested_type_short_names(&cx);
@@ -313,6 +318,34 @@ impl Interpreter {
             None => self.env.remove("_"),
         };
         Ok(cx.class_def)
+    }
+
+    /// Fire the `compose` hooks `apply_attribute_traits` queued while
+    /// processing this class body's `has` declarations (#8845), now that
+    /// every class-body statement -- attributes AND methods -- has
+    /// registered. Mirrors the EXPORTHOW/DECLARE `pending_class_compose`
+    /// drain in `vm_typedecl_ops.rs`: re-reads the owner's current HOW from
+    /// the registry at call time (rather than the value captured when the
+    /// mixin first happened) so a `compose` call after further mixins still
+    /// sees the fully-composed HOW.
+    fn run_pending_attr_composes(&mut self, cx: &mut ClassBodyCx<'_>) -> Result<(), RuntimeError> {
+        for owner in std::mem::take(&mut cx.pending_attr_composes) {
+            let Some(how_val) = self.registry().class_how_values.get(&owner).cloned() else {
+                continue;
+            };
+            let type_obj = Value::package(Symbol::intern(&owner));
+            // While this hook runs, `owner`'s own auto-generated accessors
+            // are not yet in `.^method_table` — see
+            // `classes_composing_accessors`'s doc comment (#8836).
+            self.classes_composing_accessors.insert(owner.clone());
+            let result = self.call_method_with_values(how_val, "compose", vec![type_obj]);
+            self.classes_composing_accessors.remove(&owner);
+            result?;
+        }
+        if let Some(updated) = self.registry().classes.get(cx.name).cloned() {
+            cx.class_def = updated;
+        }
+        Ok(())
     }
 
     /// Run a class-body statement's side effects, using its precompiled

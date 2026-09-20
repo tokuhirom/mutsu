@@ -425,6 +425,7 @@ impl Interpreter {
             decl.is_public,
             cx.name,
             decl.type_constraint.as_deref(),
+            &mut cx.pending_attr_composes,
         ) {
             self.set_current_package(cx.saved_package.clone());
             self.env = cx.saved_env.clone();

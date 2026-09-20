@@ -1812,6 +1812,18 @@ impl Interpreter {
                 let type_name = self.mop_receiver_owner(&args[0]);
                 Ok(Value::hash(self.class_private_method_table(&type_name)))
             }
+            // `Metamodel::ClassHOW.roles_to_compose`: the roles a class
+            // still has queued for the native composer to flatten in,
+            // as opposed to `.^roles` (already-composed roles). A custom
+            // `compose` override that runs before `callsame` (AttrX::Lazy's
+            // `LazyAttributeContainerHOW.compose`, which checks this to warn
+            // about a name collision with a not-yet-composed role) observes
+            // it empty even once real composition has finished (verified
+            // against `raku`: `role R {}; class C does R {}; say
+            // C.^roles_to_compose` is `()`, same as an empty class) -- mutsu
+            // has no intermediate "queued, not yet flattened" state to
+            // report, so this always answers empty.
+            "roles_to_compose" if !args.is_empty() => Ok(Value::array(Vec::new())),
             "submethod_table" if !args.is_empty() => {
                 // ADR-0019 F4c-1: enumerate via the canonical reverse index
                 // instead of `class_def.methods.keys()` (zero-mismatch
