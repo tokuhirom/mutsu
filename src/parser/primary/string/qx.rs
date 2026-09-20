@@ -36,7 +36,7 @@ pub(crate) fn qx_string(input: &str) -> PResult<'_, Expr> {
         let body = &after_qx[delim.len_utf8()..];
         let end = body
             .find(delim)
-            .ok_or_else(|| PError::expected(&format!("closing '{delim}'")))?;
+            .ok_or_else(|| PError::expected(format!("closing '{delim}'")))?;
         (&body[end + delim.len_utf8()..], &body[..end])
     };
 

@@ -331,7 +331,7 @@ fn statement_memo_hits_on_reparse() {
 fn merge_expected_messages_deduplicates() {
     let merged = super::super::parse_result::merge_expected_messages(
         "expected foo",
-        &["foo".to_string(), "bar".to_string()],
+        &["foo".into(), "bar".into()],
     );
     assert_eq!(merged, vec!["foo", "bar"]);
 }
@@ -340,7 +340,7 @@ fn merge_expected_messages_deduplicates() {
 fn merge_expected_messages_strips_prefix_consistently() {
     let merged = super::super::parse_result::merge_expected_messages(
         "expected alpha",
-        &["beta".to_string(), "gamma".to_string()],
+        &["beta".into(), "gamma".into()],
     );
     assert_eq!(merged, vec!["alpha", "beta", "gamma"]);
 }

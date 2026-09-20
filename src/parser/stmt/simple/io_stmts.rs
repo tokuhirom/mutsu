@@ -254,9 +254,12 @@ fn parse_io_expr_list(input: &str) -> PResult<'_, Vec<Expr>> {
                 .iter()
                 .any(|msg| msg.contains("comma or statement end after argument")) =>
         {
-            Err(PError::fatal(err.messages.first().cloned().unwrap_or_else(
-                || "comma or statement end after argument".to_string(),
-            )))
+            Err(PError::fatal(
+                err.messages
+                    .first()
+                    .map(|m| m.clone().into_owned())
+                    .unwrap_or_else(|| "comma or statement end after argument".to_string()),
+            ))
         }
         Err(err) => Err(err),
     }

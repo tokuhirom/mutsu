@@ -808,7 +808,7 @@ pub(in crate::parser) enum ExprMode {
 
 pub(super) fn enrich_expected_error(
     err: PError,
-    context: &str,
+    context: impl Into<std::borrow::Cow<'static, str>>,
     remaining_len_fallback: usize,
 ) -> PError {
     // Preserve fatal errors (non-recoverable parse errors)

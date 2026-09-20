@@ -116,7 +116,7 @@ pub(crate) fn sequence_only_expr(input: &str) -> PResult<'_, Expr> {
                 comparison_expr_mode(r2, ExprMode::NoSequence).map_err(|err| {
                     enrich_expected_error(
                         err,
-                        format!("expected expression after '{op_str}'").as_str(),
+                        format!("expected expression after '{op_str}'"),
                         r2.len(),
                     )
                 })?;
@@ -176,7 +176,7 @@ pub(crate) fn sequence_expr(input: &str) -> PResult<'_, Expr> {
             let (r2, mut right) = comparison_expr_mode(r2, ExprMode::ListopArg).map_err(|err| {
                 enrich_expected_error(
                     err,
-                    format!("expected expression after '{op_str}'").as_str(),
+                    format!("expected expression after '{op_str}'"),
                     r2.len(),
                 )
             })?;
