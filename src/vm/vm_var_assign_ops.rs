@@ -126,6 +126,28 @@ impl Interpreter {
             )
             && let ValueView::Hash(hash) = inner.view()
         {
+            // A role mixed onto the Hash that overrides `ASSIGN-KEY` (the
+            // standard idiom for an LRU cache, a restricted-key hash, a
+            // validating hash, ...) must run that override on `%h<k> = v`,
+            // not have the subscript write straight into the backing
+            // storage and skip it entirely. `nextsame`/`callsame` inside the
+            // override reaches the real Hash via
+            // `native_mixin_base_next_candidate`.
+            if self.mixin_role_has_method(target, "ASSIGN-KEY") {
+                let key = if hash.key_type.is_some() {
+                    idx.clone()
+                } else if matches!(idx.view(), ValueView::Package(_)) {
+                    Value::str(self.coerce_type_object_hash_key(idx)?)
+                } else {
+                    idx.clone()
+                };
+                self.call_method_with_values(
+                    target.clone(),
+                    "ASSIGN-KEY",
+                    vec![key, Self::itemize_value(val.clone())],
+                )?;
+                return Ok(Some(target.clone()));
+            }
             let object_hash = hash.key_type.is_some();
             let key = if object_hash {
                 crate::runtime::utils::value_which_key(idx)

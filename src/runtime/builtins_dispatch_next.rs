@@ -583,6 +583,35 @@ impl Interpreter {
                 .or_else(|| ctx.as_ref().and_then(|c| c.args.clone()))
                 .unwrap_or_default(),
         };
+        // `ASSIGN-KEY`/`DELETE-KEY` mutate the hash in place, which
+        // `try_native_method` below cannot do (it dispatches pure `&Value`
+        // native methods with no mutation story for a bare `Hash`). Write
+        // through the inner Gc node directly, mirroring the storage mutation
+        // in `native_hash_storage_next_candidate` — the `Mixin`'s inner value
+        // IS the hash's real backing storage, so this is the same "aliased
+        // shared write" as that attribute-cell case, just reached through the
+        // Mixin's `Arc<Value>` instead of an instance attribute.
+        if matches!(method_name.as_str(), "ASSIGN-KEY" | "DELETE-KEY")
+            && !args.is_empty()
+            && let ValueView::Hash(gc_ref) = inner.view()
+        {
+            let key = args[0].to_string_value();
+            let is_assign = method_name == "ASSIGN-KEY";
+            let value = if is_assign {
+                args.get(1).cloned().unwrap_or(Value::NIL)
+            } else {
+                Value::NIL
+            };
+            // SAFETY: no other borrow into this node is held live across the
+            // write; single-threaded VM mutation path (see `aliased_mut.rs`).
+            let data = unsafe { crate::gc::gc_contents_mut(&gc_ref) };
+            if is_assign {
+                data.insert(key, value.clone());
+            } else {
+                data.remove(&key);
+            }
+            return Some(Ok(value));
+        }
         self.try_native_method(inner, Symbol::intern(&method_name), &args)
     }
 
