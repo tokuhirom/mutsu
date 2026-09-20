@@ -75,7 +75,6 @@ impl TrirCompiler<'_> {
         } else {
             TrOp::CallGen(idx)
         });
-        self.has_calls = true;
         Some(kind)
     }
 

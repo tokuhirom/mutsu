@@ -15,7 +15,7 @@ use crate::value::Value;
 
 /// Where a name resolves inside the routine being compiled.
 #[derive(Debug, Clone, Copy)]
-struct Binding {
+pub(super) struct Binding {
     slot: u16,
     kind: TrKind,
 }
@@ -33,8 +33,6 @@ pub(crate) struct TrirCompiler<'a> {
     obj_written: Vec<bool>,
     /// The calls this body makes, indexed by `CallTr`/`CallGen`.
     pub(super) calls: Vec<crate::trir::TrInnerCall>,
-    /// Whether any call has been emitted — see [`TrChunk::has_calls`].
-    pub(super) has_calls: bool,
     /// Routines this compile has already registered with a chunk, so a call
     /// to one can be linked statically (ADR-0110 §3.3).
     pub(super) routines: Option<&'a TrirRoutineMap>,
@@ -58,7 +56,7 @@ pub(crate) struct TrirCompiler<'a> {
 fn discriminant_of(s: &Stmt) -> String {
     let rendered = format!("{s:?}");
     rendered
-        .split(|c: char| c == ' ' || c == '(' || c == '{')
+        .split([' ', '(', '{'])
         .next()
         .unwrap_or("?")
         .to_string()
@@ -144,7 +142,6 @@ impl<'a> TrirCompiler<'a> {
             params: Vec::new(),
             obj_written: Vec::new(),
             calls: Vec::new(),
-            has_calls: false,
             routines,
             fns,
             why: None,
@@ -175,7 +172,6 @@ impl<'a> TrirCompiler<'a> {
             outers: c.outers,
             name,
             calls: c.calls,
-            has_calls: c.has_calls,
         })
     }
 
@@ -376,6 +372,19 @@ impl<'a> TrirCompiler<'a> {
                     binding_var: None,
                     ..
                 } => {
+                    // Only in sink position. A trailing `if`/`elsif`/`else`
+                    // IS the routine's value in Raku, and compiling its
+                    // branches for effect and then returning `Nil` is a wrong
+                    // answer, not a missing optimization — `sub sel($a, $b) {
+                    // if $a && $b { "both" } elsif ... }` answered `Nil` for
+                    // every call after the first (the first runs untyped,
+                    // before the call site is linked to TRIR).
+                    if !sink_all && Some(i) == final_idx {
+                        self.note_decline(|| {
+                            "a trailing `if` statement, whose value is the routine's".to_string()
+                        });
+                        return None;
+                    }
                     self.compile_if(cond, then_branch, else_branch)?;
                 }
                 // `die EXPR` is a call, and compiling it as one is what lets a
@@ -548,10 +557,10 @@ impl<'a> TrirCompiler<'a> {
                 | TrOp::JumpIfFalseI(t)
                 | TrOp::JumpIfTrueI(t)
                 | TrOp::JumpIfFalseKeepI(t)
-                | TrOp::JumpIfTrueKeepI(t) => {
-                    if *t >= at {
-                        *t += 1;
-                    }
+                | TrOp::JumpIfTrueKeepI(t)
+                    if *t >= at =>
+                {
+                    *t += 1;
                 }
                 _ => {}
             }

@@ -33,6 +33,22 @@ enum RwTarget {
 /// its value for the duration of the call, and where it goes back.
 type RwPlan = ([(u16, RwTarget); 4], usize);
 
+/// The package a TRIR body must resolve names in: the routine's own declaring
+/// package, exactly as `call_compiled_function_named_inner` establishes it for
+/// an untyped call.
+///
+/// A TRIR frame is not a `RoutineFrame`, so nothing else sets this. Without
+/// it, a body declared inside `module C` resolved `CallGen` callees and free
+/// variables against whatever package was current at the CALLER — which is
+/// `GLOBAL` for `C::call-mm(1)` — and a package-scoped `multi` was then not
+/// found at all. A routine-scoped mangled package (`Pkg::&sub/arity`, used for
+/// nested subs) is skipped for the same reason the untyped path skips it: it
+/// is not a package name.
+pub(super) fn trir_body_package(cf: &CompiledFunction) -> Option<Symbol> {
+    (!cf.package.is_empty() && !cf.package_is_routine_scoped() && cf.package != "GLOBAL")
+        .then(|| cf.package_sym())
+}
+
 impl Interpreter {
     /// Execute a compile-time-resolved TRIR call site (ADR-0110 §3.3).
     ///
@@ -60,7 +76,8 @@ impl Interpreter {
         if chunk.params.len() != site.arg_slots.len() {
             return None;
         }
-        self.run_trir_from_outside(&chunk, compiled_fns, |me, frame| {
+        let pkg = trir_body_package(cf);
+        self.run_trir_from_outside(&chunk, pkg, compiled_fns, |me, frame| {
             me.trir_bind_from_slots(&chunk, frame, site, caller_code)
         })
     }
@@ -83,7 +100,8 @@ impl Interpreter {
         if self.stack.len() - args_base != chunk.params.len() {
             return None;
         }
-        let out = self.run_trir_from_outside(&chunk, compiled_fns, |me, frame| {
+        let pkg = trir_body_package(cf);
+        let out = self.run_trir_from_outside(&chunk, pkg, compiled_fns, |me, frame| {
             me.trir_bind_from_stack(&chunk, frame, args_base, caller_code)
         })?;
         self.stack.truncate(args_base);
@@ -97,6 +115,7 @@ impl Interpreter {
     fn run_trir_from_outside(
         &mut self,
         chunk: &TrChunk,
+        pkg: Option<Symbol>,
         compiled_fns: &CompiledFns,
         bind: impl FnOnce(&mut Self, TrFrame) -> Option<RwPlan>,
     ) -> Option<Result<Value, RuntimeError>> {
@@ -112,11 +131,17 @@ impl Interpreter {
             self.trir.pop_frame(frame);
             return None;
         };
+        // The body's own package, for the duration of the body only: seeding
+        // the free variables resolves the callee's lexicals by name, and so
+        // does every `CallGen` the body makes.
+        let guard = pkg.map(|p| self.enter_package_guarded_sym(p));
         if !self.trir_seed_outers(chunk, frame) {
+            drop(guard);
             self.trir.pop_frame(frame);
             return None;
         }
         let outcome = self.run_trir_chunk(chunk, frame, compiled_fns);
+        drop(guard);
         let result = match outcome {
             Ok(TrOutcome::Value(v)) => v,
             Ok(TrOutcome::Bail) => {

@@ -493,9 +493,7 @@ impl TrirCompiler<'_> {
     fn compile_nqp_loop(&mut self, while_form: bool, cond: &Expr, body: &Expr) -> Option<TrKind> {
         let start = self.ops.len() as u32;
         let ck = self.compile_expr(cond)?;
-        if self.truthy(ck).is_none() {
-            return None;
-        }
+        self.truthy(ck)?;
         let exit_at = self.ops.len();
         self.ops.push(if while_form {
             TrOp::JumpIfFalseI(0)
@@ -519,9 +517,7 @@ impl TrirCompiler<'_> {
 
     fn compile_nqp_if(&mut self, if_form: bool, args: &[Expr]) -> Option<TrKind> {
         let ck = self.compile_expr(&args[0])?;
-        if self.truthy(ck).is_none() {
-            return None;
-        }
+        self.truthy(ck)?;
         let branch_at = self.ops.len();
         self.ops.push(if if_form {
             TrOp::JumpIfFalseI(0)

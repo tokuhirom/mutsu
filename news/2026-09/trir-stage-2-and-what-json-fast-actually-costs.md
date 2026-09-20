@@ -99,22 +99,57 @@ run-time name resolution, and
 [#8900](https://github.com/tokuhirom/mutsu/issues/8900) for the `nqp::` op
 bodies and the general binder.
 
-## One real bug fixed on the way
+## Four real bugs fixed on the way
 
-Branch-arm unification computed its op-index shift from `then_kind !=
-else_kind`. That is right when the `then` arm is the native one (the box is
-*inserted* before its jump, shifting everything after) and wrong when the
-`else` arm is (the box goes on the end and shifts nothing). In the second case
-the caller then looked for its own `Jump` one slot too far along, did not find
-it, and declined the whole routine — silently, with no recorded reason.
+Each of these has the same tell, and it is worth naming because it makes every
+TRIR bug look intermittent: a call site is linked to TRIR only once it has
+executed, so the **first** call to a routine runs untyped and every call after
+it runs typed. A broken TRIR path therefore produces a right answer followed
+by wrong ones, which reads like flakiness and is not. Every regression test
+added here calls its routine at least twice.
 
-`nqp::if(cond, die-helper(...), $pos)` is exactly that shape: a boxed `then`
-against a native `else`. It is the shape of every `JSON::Fast` scanner's error
+**A trailing `if` returned `Nil`.** In Raku a routine's final
+`if`/`elsif`/`else` *is* its value. TRIR compiled the branches for effect and
+emitted `ReturnNil`, so `sub sel($a, $b) { if $a && $b { 'both' } elsif ... }`
+answered `both` on its first call and `Nil` for ever after. A wrong answer, not
+a missing optimization — such a routine now declines.
+
+**A generic call resolved names in the wrong package.** A TRIR frame is not a
+`RoutineFrame`, so nothing set `current_package` to the routine's own
+declaring package the way an untyped call does. A body declared inside
+`module C` resolved its callees against the *caller's* package, and a
+package-scoped `multi` was then not found at all ("Unknown function: mm").
+
+**Every generic-call argument was handed over as a container.** A TRIR body
+cannot see whether its callee will write an argument, so it containerized all
+of them and read them back. That is not transparent: a container argument
+reaches a `proto`'s `{*}` re-dispatch as itself and fails the winning
+candidate's type check against its own type ("expected Str, got Str"), and
+`nativecast`'s "type object as its first argument" check rejects it too. The
+callee's `is rw` positionals are now looked up by name and only those
+arguments are containerized — which is where an untyped call site ends up as
+well, by a different route.
+
+**Branch-arm unification shifted jump targets it had not moved.** The op-index
+shift was computed from `then_kind != else_kind`. That is right when the
+`then` arm is the native one (the box is *inserted* before its jump, shifting
+everything after) and wrong when the `else` arm is (the box goes on the end
+and shifts nothing). In the second case the caller looked for its own `Jump`
+one slot too far along, did not find it, and declined the whole routine —
+silently, with no recorded reason. `nqp::if(cond, die-helper(...), $pos)` is
+exactly that shape, and it is the shape of every `JSON::Fast` scanner's error
 check. `unify_arms` now answers the shift it actually applied.
 
-The decline diagnostics grew alongside: `MUTSU_TRIR_WHY=1` now names the
-argument and the callee for a call it cannot compile, and reports an
-unsupported expression's whole rendering rather than only its variant name.
+The decline diagnostics grew alongside, because the fourth bug produced no
+reason at all: `MUTSU_TRIR_WHY=1` now names the argument and the callee for a
+call it cannot compile, and reports an unsupported expression's whole
+rendering rather than only its variant name.
+
+One general fix fell out: `call_function` — the by-name entry every caller
+that is not a `CallFunc` opcode goes through — did not carry the three
+`__mutsu_`-prefixed NativeCall helpers that the VM's own call opcode resolves
+through its fallback chain, so `nativecast()` reached from a TRIR body
+reported `Unknown function: __mutsu_nativecast`. It carries them now.
 
 ## Tests
 

@@ -9,8 +9,12 @@
 //! Reading once per invocation is exactly right only while nothing can write
 //! the variable during the call. A body with no calls cannot — it has no way
 //! to reach any other code — so Stage 1's snapshot was sound by construction.
-//! A body that calls out can, so `has_calls` chunks re-read after every call
-//! instead (see `TrChunk::has_calls`).
+//! A Stage 2 body can call out, so the snapshot is taken only for a free
+//! variable that resolved to a shared CELL, whose reads follow the cell and
+//! therefore see any write the call made. A free variable that resolves to a
+//! plain environment value is re-resolved on each read instead, which needs
+//! no per-chunk "does it call" flag: the distinction is a property of the
+//! binding, not of the body.
 
 use super::TrChunk;
 use super::frame::TrFrame;

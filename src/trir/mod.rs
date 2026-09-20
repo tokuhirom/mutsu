@@ -412,11 +412,6 @@ pub(crate) struct TrChunk {
     pub(crate) name: Symbol,
     /// The calls this body makes, indexed by `CallTr`/`CallGen`.
     pub(crate) calls: Vec<TrInnerCall>,
-    /// True when the body contains any call at all. A body that makes none
-    /// cannot observe a free variable changing under it, which is what lets
-    /// its free variables be read once at entry instead of re-read after
-    /// every call.
-    pub(crate) has_calls: bool,
 }
 
 /// The next chunk identity. Wrapping is unreachable in practice (a program

@@ -48,6 +48,7 @@ impl Interpreter {
         let Some(callee) = cf.trir.clone() else {
             return Ok(None);
         };
+        let callee_pkg = super::entry::trir_body_package(cf);
         if callee.params.len() != call.args.len() {
             return Ok(None);
         }
@@ -104,11 +105,17 @@ impl Interpreter {
                 }
             }
         }
+        // The callee's own package, for its body only — see
+        // `trir_body_package`. A resolved call may cross packages, and the
+        // callee's free variables and `CallGen` sites resolve by name.
+        let guard = callee_pkg.map(|p| self.enter_package_guarded_sym(p));
         if !self.trir_seed_outers(&callee, callee_frame) {
+            drop(guard);
             self.trir.pop_frame(callee_frame);
             return Ok(None);
         }
         let outcome = self.run_trir_chunk(&callee, callee_frame, compiled_fns);
+        drop(guard);
         self.trir.pop_frame(callee_frame);
         match outcome? {
             TrOutcome::Value(v) => {
@@ -130,26 +137,56 @@ impl Interpreter {
         let call = chunk.calls[site as usize].clone();
         let nbase = frame.nbase as usize;
         let obase = frame.obase as usize;
+        let rw_mask = self.trir_callee_rw_mask(&call.name.resolve());
         let mut args: Vec<Value> = vec![Value::NIL; call.args.len()];
         for (i, arg) in call.args.iter().enumerate().rev() {
+            let wants_container = rw_mask >> i.min(63) & 1 == 1;
             args[i] = match arg {
                 TrArg::Value(TrKind::Int) => Value::int(self.ipop()),
                 TrArg::Value(TrKind::Num) => Value::num(f64::from_bits(self.ipop() as u64)),
                 TrArg::Value(TrKind::Obj) => self.opop(),
-                // A named variable, passed as a container: the callee's
-                // signature is unknown here, so it may have an `is rw`
-                // parameter, and a by-value argument would silently drop the
-                // write. Copied back below.
+                // A named variable. It is handed over as a BARE container
+                // only where `rw_mask` says the callee declares that
+                // parameter `is rw` — the shape the `is rw` alias pre-pass
+                // calls "already a shared cell relayed from an outer `is rw`
+                // parameter" and passes through unchanged — and as its plain
+                // value everywhere else.
+                //
+                // Containerizing unconditionally is what a call site does not
+                // know enough to do: it is NOT transparent. A container
+                // argument reaches a `proto`'s `{*}` re-dispatch as itself
+                // and fails the winning candidate's type check against its
+                // own type, and `nativecast`'s "type object as its first
+                // argument" check rejects it too. An untyped call site emits
+                // `WrapVarRef`, whose value is the container only when the
+                // variable is genuinely captured; the mask is how a TRIR
+                // frame — which has no caller local for `capture_var_cell` to
+                // alias — reaches the same place.
                 TrArg::Native(s) => {
-                    Value::int(self.trir.nl[nbase + *s as usize]).into_container_ref()
+                    let v = Value::int(self.trir.nl[nbase + *s as usize]);
+                    if wants_container {
+                        v.into_container_ref()
+                    } else {
+                        v
+                    }
                 }
                 TrArg::Ref(s) => {
                     let r = self.trir.nl[nbase + *s as usize] as usize;
-                    Value::int(self.trir.nl[r]).into_container_ref()
+                    let v = Value::int(self.trir.nl[r]);
+                    if wants_container {
+                        v.into_container_ref()
+                    } else {
+                        v
+                    }
                 }
-                TrArg::Obj(s) => self.trir.ol[obase + *s as usize]
-                    .clone()
-                    .into_container_ref(),
+                TrArg::Obj(s) => {
+                    let v = self.trir.ol[obase + *s as usize].clone();
+                    if wants_container {
+                        v.into_container_ref()
+                    } else {
+                        v
+                    }
+                }
             };
         }
         let name = call.name.resolve();
@@ -185,6 +222,35 @@ impl Interpreter {
         }
         self.push_trir_result(result, call.result);
         Ok(())
+    }
+
+    /// Which of the routine named `name`'s first 64 positional parameters are
+    /// `is rw`, as a bitmask — the arguments a generic call must hand over as
+    /// containers so the callee's write reaches this frame's slot.
+    ///
+    /// `0` for everything this cannot resolve to a single routine: a builtin,
+    /// an interpreter hook, an unresolved multi. That is the right default —
+    /// those take values, and handing one a container is what broke
+    /// `nativecast` and every `proto` candidate's type check.
+    fn trir_callee_rw_mask(&self, name: &str) -> u64 {
+        let Some(def) = self.resolve_function(name) else {
+            return 0;
+        };
+        let mut mask = 0u64;
+        let mut positional = 0usize;
+        for pd in &def.param_defs {
+            if pd.named {
+                continue;
+            }
+            if positional >= 64 {
+                break;
+            }
+            if pd.traits.iter().any(|t| t == "rw") {
+                mask |= 1 << positional;
+            }
+            positional += 1;
+        }
+        mask
     }
 
     /// Put a call's result on the bank the compiler expects it on.

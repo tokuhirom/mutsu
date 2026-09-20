@@ -207,7 +207,6 @@ fn an_unresolved_callee_compiles_to_the_generic_call() {
         .expect("a call to an unknown routine must still be admitted");
     let ops: Vec<String> = chunk.ops.iter().map(sketch).collect();
     assert_eq!(ops, vec!["CallGen(0)", "ReturnObj"]);
-    assert!(chunk.has_calls);
     assert_eq!(chunk.calls.len(), 1);
     assert!(matches!(
         chunk.calls[0].callee,

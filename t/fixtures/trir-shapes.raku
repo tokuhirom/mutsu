@@ -221,6 +221,24 @@ say "dyn-read={reads-dyn(4)}";
 my sub pair-of(int $n) { ($n, nqp::add_i($n, 1)) }
 say "list-literal={pair-of(4).join(',')}";
 
+# --- Stage 2: a trailing `if` is the routine's value ------------------------
+# Compiling the branches for effect and returning `Nil` is a wrong answer, not
+# a missing optimization. Called twice on purpose: the first call runs untyped,
+# because a call site is linked to TRIR only once it has executed.
+my sub sel2($a, $b) { if $a && $b { 'both' } elsif $a || $b { 'one' } else { 'none' } }
+say "trailing-if={sel2(True, True)},{sel2(True, False)},{sel2(False, False)}";
+say "trailing-if-again={sel2(True, True)},{sel2(True, False)},{sel2(False, False)}";
+my sub sel0($a) { if $a { 'yes' } }
+say "trailing-if-no-else={sel0(True)},{sel0(False).raku},{sel0(True)}";
+
+# An `if` in SINK position is still compiled, and the routine's value is the
+# statement after it.
+my sub after-if(int $n) {
+    if $n > 0 { my $unused = 1 }
+    nqp::add_i($n, 1)
+}
+say "sink-if={after-if(1)},{after-if(1)},{after-if(-1)}";
+
 # --- `.wrap` (ADR-0110 §3.3's run-time guard) ------------------------------
 # A statically linked call site would step straight past the wrapper, so the
 # guard has to send the call back to the ordinary dispatch. Kept LAST: once
