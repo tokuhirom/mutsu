@@ -50,6 +50,20 @@ next section. The saving is concentrated in work that happens *once*, so a
 document seven times larger dilutes it by roughly seven, well under this box's
 run-to-run spread. The deterministic counts above are the evidence.
 
+> **Correction.** Everything below this line about a "fixed 668M cost in the
+> first `from-json` call" is **wrong**, and so is the 27% figure drawn from it.
+> It compared a warm run against a cold one. Rebuilding the interpreter
+> invalidates the module precompilation cache and the next run pays ~650M
+> instructions to recompile `JSON::Fast`; `tmp/load_only.raku` had been run
+> many times and `tmp/load_plus_tiny.raku` was new. Measured warm on both
+> sides, adding `from-json('[1]')` costs **24.3M instructions**, about 4ms.
+> See `news/2026-09/the-benchmark-first-run-pays-650m-to-recompile-the-module.md`
+> for the measurements and for what it means for this slice — in short, what
+> this change removes is parser allocation, and the parser is in the compile
+> pass, so the win is to *compilation* rather than to parsing a large
+> document. The section is kept rather than deleted so the mistake and its
+> correction stay findable together.
+
 ## An unexpected finding: a fixed 668M cost in the first `from-json` call
 
 This was expected to pay off at **module-load** time. It does not. A load-only
