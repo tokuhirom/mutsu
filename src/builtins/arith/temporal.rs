@@ -13,15 +13,25 @@ use crate::value::{Value, ValueView, make_big_rat_arith};
 /// own constructor) is recognized as a Date arithmetic operand too, matching
 /// Rakudo.
 fn is_date_like(value: &Value) -> bool {
-    matches!(value.view(), ValueView::Instance { attributes, .. }
-        if attributes.contains_key("days") && attributes.contains_key("year"))
+    match value.view() {
+        ValueView::Mixin(inner, _) => is_date_like(inner),
+        ValueView::Instance { attributes, .. } => {
+            attributes.contains_key("days") && attributes.contains_key("year")
+        }
+        _ => false,
+    }
 }
 
 /// Check if a value is a Date, Instant, or Duration instance (temporal operand for arithmetic).
 pub(crate) fn is_temporal_operand(value: &Value) -> bool {
     is_date_like(value)
-        || matches!(value.view(), ValueView::Instance { class_name, .. }
-            if class_name == "Instant" || class_name == "Duration")
+        || match value.view() {
+            ValueView::Mixin(inner, _) => is_temporal_operand(inner),
+            ValueView::Instance { class_name, .. } => {
+                class_name == "Instant" || class_name == "Duration"
+            }
+            _ => false,
+        }
 }
 
 pub(crate) fn instance_days(value: &Value) -> Option<i64> {
@@ -132,6 +142,7 @@ pub(crate) fn instance_datetime_parts(
     value: &Value,
 ) -> Option<(i64, i64, i64, i64, i64, f64, i64)> {
     match value.view() {
+        ValueView::Mixin(inner, _) => instance_datetime_parts(inner),
         ValueView::Instance { attributes, .. }
             if attributes.contains_key("year")
                 && attributes.contains_key("month")
@@ -146,6 +157,50 @@ pub(crate) fn instance_datetime_parts(
             ))
         }
         _ => None,
+    }
+}
+
+/// Build a new DateTime-shaped instance for an arithmetic result while
+/// retaining the operand's concrete class and any subclass attributes.
+/// DateTime arithmetic is defined in terms of cloning the receiver, so a
+/// `DateTime` subclass (for example `Interval`) must remain that subclass.
+pub(crate) fn rebuild_datetime_like(
+    original: &Value,
+    parts: (i64, i64, i64, i64, i64, f64, i64),
+) -> Value {
+    let (year, month, day, hour, minute, second, timezone) = parts;
+    let mixin_state = match original.view() {
+        ValueView::Mixin(_, mixins) => Some(mixins.clone()),
+        _ => None,
+    };
+    let source = match original.view() {
+        ValueView::Mixin(inner, _) => inner.as_ref(),
+        _ => original,
+    };
+    let (class_name, mut attrs) = match source.view() {
+        ValueView::Instance {
+            class_name,
+            attributes,
+            ..
+        } => (class_name, attributes.to_map()),
+        _ => (Symbol::intern("DateTime"), crate::value::AttrMap::new()),
+    };
+    attrs.insert("year", Value::int(year));
+    attrs.insert("month", Value::int(month));
+    attrs.insert("day", Value::int(day));
+    attrs.insert("hour", Value::int(hour));
+    attrs.insert("minute", Value::int(minute));
+    attrs.insert("second", Value::num(second));
+    attrs.insert("timezone", Value::int(timezone));
+    let epoch_days = crate::builtins::methods_0arg::temporal::civil_to_epoch_days(year, month, day);
+    let epoch_secs =
+        epoch_days as f64 * 86_400.0 + hour as f64 * 3_600.0 + minute as f64 * 60.0 + second
+            - timezone as f64;
+    attrs.insert("epoch", Value::num(epoch_secs));
+    let rebuilt = Value::make_instance(class_name, attrs);
+    match mixin_state {
+        Some(mixins) => Value::mixin_with_state(rebuilt, (*mixins).clone()),
+        None => rebuilt,
     }
 }
 

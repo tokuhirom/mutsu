@@ -358,8 +358,15 @@ impl Interpreter {
             role_names.sort();
             let mut result = base_instance;
             for role_name in role_names {
-                result =
-                    self.eval_does_values(result, Value::package(Symbol::intern(&role_name)))?;
+                let role = if let Some(ValueView::Array(args, _)) = mixins
+                    .get(&MetaNs::RoleTypeargs.owned_key_for_str(&role_name))
+                    .map(Value::view)
+                {
+                    Value::parametric_role(Symbol::intern(&role_name), args.to_vec())
+                } else {
+                    Value::package(Symbol::intern(&role_name))
+                };
+                result = self.eval_does_values(result, role)?;
             }
             return Ok(result);
         }

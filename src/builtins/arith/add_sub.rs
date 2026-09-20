@@ -7,7 +7,7 @@ use super::rat::{
 };
 use super::temporal::{
     instance_datetime_parts, instance_days, instance_duration_value, instance_instant_raw,
-    instance_instant_value, make_duration, rebuild_date_like, value_sub,
+    instance_instant_value, make_duration, rebuild_date_like, rebuild_datetime_like, value_sub,
 };
 use crate::symbol::Symbol;
 use crate::value::{RuntimeError, Value, ValueView, make_big_fat_rat, make_big_rat_arith};
@@ -120,7 +120,7 @@ pub(crate) fn arith_add(left: Value, right: Value) -> Result<Value, RuntimeError
         let instant = temporal::datetime_to_instant_leap_aware(y, m, d, h, mi, s, tz);
         let (ny, nm, nd, nh, nmi, ns) =
             temporal::instant_to_datetime_leap_aware(instant + delta, tz);
-        return Ok(temporal::make_datetime(ny, nm, nd, nh, nmi, ns, tz));
+        return Ok(rebuild_datetime_like(&left, (ny, nm, nd, nh, nmi, ns, tz)));
     }
     if let Some(delta) = instance_duration_value(&left)
         && let Some((y, m, d, h, mi, s, tz)) = instance_datetime_parts(&right)
@@ -129,7 +129,7 @@ pub(crate) fn arith_add(left: Value, right: Value) -> Result<Value, RuntimeError
         let instant = temporal::datetime_to_instant_leap_aware(y, m, d, h, mi, s, tz);
         let (ny, nm, nd, nh, nmi, ns) =
             temporal::instant_to_datetime_leap_aware(instant + delta, tz);
-        return Ok(temporal::make_datetime(ny, nm, nd, nh, nmi, ns, tz));
+        return Ok(rebuild_datetime_like(&right, (ny, nm, nd, nh, nmi, ns, tz)));
     }
     let (l, r) = crate::runtime::coerce_numeric(left, right);
     Ok(arith_add_coerced(l, r))
@@ -281,7 +281,7 @@ pub(crate) fn arith_sub(left: Value, right: Value) -> Value {
         let instant = temporal::datetime_to_instant_leap_aware(y, m, d, h, mi, s, tz);
         let (ny, nm, nd, nh, nmi, ns) =
             temporal::instant_to_datetime_leap_aware(instant - delta, tz);
-        return temporal::make_datetime(ny, nm, nd, nh, nmi, ns, tz);
+        return rebuild_datetime_like(&left, (ny, nm, nd, nh, nmi, ns, tz));
     }
     if let (Some(a), Some(b)) = (instance_days(&left), instance_days(&right)) {
         return Value::int(a - b);
