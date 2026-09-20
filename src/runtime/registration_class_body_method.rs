@@ -198,10 +198,14 @@ impl Interpreter {
             // Language/grammars.rakudoc uses) exactly as in the parameter
             // constraints substituted above. Left literal, the return check
             // tried to resolve a type literally named `::?CLASS:D`.
-            return_type: decl
-                .return_type
-                .as_ref()
-                .map(|rt| rt.replace("::?CLASS", cx.name)),
+            return_type: decl.return_type.as_ref().map(|rt| {
+                let resolved = rt.replace("::?CLASS", cx.name);
+                // Return constraints have the same declaring-class lexical
+                // scope as parameter constraints.  Resolve a nested short
+                // name here so a class such as `class Attribute` shadows a
+                // core type with the same leaf name in `--> Attribute`.
+                self.resolve_method_type_name(cx.name, &resolved)
+            }),
             compiled_code: installed_compiled_code,
             compiled_fns: installed_compiled_fns,
             delegation: None,

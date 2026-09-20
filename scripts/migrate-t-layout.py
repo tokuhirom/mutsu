@@ -98,6 +98,9 @@ RULES = [
 # Basename (without `.t`) -> category. Judgment calls and rule mistakes.
 # Keep sorted; every entry should be obvious from the file's subject.
 OVERRIDES: dict[str, str] = {
+    # A method return constraint must resolve a nested class in its declaring
+    # class, including when its leaf name shadows a core type.
+    "nested-class-return-type": "oo/class",
     # Type-matching against a core type name that a lexical shadows: the
     # question is which type the matcher resolves, not the shadowing itself.
     "core-type-not-shadowed-in-typematch": "types",

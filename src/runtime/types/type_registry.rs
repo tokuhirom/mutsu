@@ -990,10 +990,19 @@ impl Interpreter {
         // The declaring class's shell is not necessarily published yet while
         // its body is registering methods.  Still recognize its own short
         // name (including a core name such as `Label`) as a self-reference.
-        if owner.rsplit_once("::").map(|(_, last)| last == name) == Some(true) || owner == name {
+        // A compound declared name such as `class Grault::Supply` is the
+        // exception: its `Grault` prefix is not a lexical scope, so bare
+        // `Supply` inside the body still means the core type rather than the
+        // class itself.
+        let is_compound_declared = self.compound_name_segment_is_not_a_scope(owner);
+        if !is_compound_declared
+            && (owner.rsplit_once("::").map(|(_, last)| last == name) == Some(true)
+                || owner == name)
+        {
             return owner.to_string();
         }
-        if self.has_type_direct(owner)
+        if !is_compound_declared
+            && self.has_type_direct(owner)
             && crate::value::user_facing_type_name(owner).as_ref() == name
         {
             return owner.to_string();
