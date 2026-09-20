@@ -419,7 +419,7 @@ pub(crate) fn parse_q_quoted_content(
         let rest = &input[first.len_utf8()..];
         let end = rest
             .find(first)
-            .ok_or_else(|| PError::expected(&format!("closing '{first}'")))?;
+            .ok_or_else(|| PError::expected(format!("closing '{first}'")))?;
         let content = &rest[..end];
         let rest = &rest[end + first.len_utf8()..];
         return Ok((

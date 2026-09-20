@@ -159,7 +159,7 @@ pub(crate) fn list_infix_top(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
             let (r2, mut right) = item_expr(r2, mode).map_err(|err| {
                 enrich_expected_error(
                     err,
-                    format!("expected expression after '{op_str}'").as_str(),
+                    format!("expected expression after '{op_str}'"),
                     r2.len(),
                 )
             })?;

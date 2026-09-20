@@ -193,14 +193,14 @@ pub(crate) fn read_bracketed(
     allow_escape: bool,
 ) -> PResult<'_, &str> {
     if !input.starts_with(open) {
-        return Err(PError::expected(&format!("'{}'", open)));
+        return Err(PError::expected(format!("'{}'", open)));
     }
     let mut rest = &input[open.len_utf8()..];
     let start = rest;
     let mut depth = 1u32;
     loop {
         if rest.is_empty() {
-            return Err(PError::expected(&format!("closing '{}'", close)));
+            return Err(PError::expected(format!("closing '{}'", close)));
         }
         let ch = rest.chars().next().unwrap();
         if allow_escape && ch == '\\' && rest.len() > 1 {
@@ -254,14 +254,14 @@ pub(crate) fn read_multi_bracketed<'a>(
     is_qq: bool,
 ) -> PResult<'a, &'a str> {
     if !input.starts_with(open_str) {
-        return Err(PError::expected(&format!("'{}'", open_str)));
+        return Err(PError::expected(format!("'{}'", open_str)));
     }
     let mut rest = &input[open_str.len()..];
     let start = rest;
     let mut depth = 1u32;
     loop {
         if rest.is_empty() {
-            return Err(PError::expected(&format!("closing '{}'", close_str)));
+            return Err(PError::expected(format!("closing '{}'", close_str)));
         }
         if allow_escape && rest.starts_with('\\') && rest.len() > 1 {
             // Skip escape sequence (backslash + next char)

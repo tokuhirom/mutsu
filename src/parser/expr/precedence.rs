@@ -88,7 +88,7 @@ mod tests {
     fn mixed_cross_and_sequence_are_non_list_associative() {
         let err = expression("4 X+> 1...2").unwrap_err();
         assert!(err.messages.iter().any(|msg| {
-            msg.as_str()
+            msg.as_ref()
                 .contains("Only identical operators may be list associative")
         }));
     }

@@ -6,7 +6,17 @@ pub(super) type PResult<'a, T> = Result<(&'a str, T), PError>;
 pub(super) struct PError {
     /// Expected-alternative descriptions (without "expected " prefix).
     /// Display joins them as "expected A or B or C".
-    pub messages: Vec<String>,
+    ///
+    /// `Cow<'static, str>`, not `String`: essentially every one of the 442
+    /// construction sites names its alternative with a string literal
+    /// (`PError::expected("closing paren")`), and a parse of one ~700-line
+    /// module built 525,110 heap copies of those literals -- 28% of every
+    /// allocation the process made -- only to drop them again when an
+    /// alternative that did match made the error irrelevant (#8830). A parser
+    /// that backtracks constructs a failure per rejected alternative, so this
+    /// is the one place where the cost of describing an error is paid on the
+    /// SUCCESS path.
+    pub messages: Vec<std::borrow::Cow<'static, str>>,
     pub remaining_len: Option<usize>,
     /// Optional structured exception (e.g., X::Attribute::Regex) to propagate through parsing.
     pub exception: Option<Box<crate::value::Value>>,
@@ -45,26 +55,29 @@ impl PError {
 }
 
 impl PError {
-    pub fn expected(what: &str) -> Self {
+    pub fn expected(what: impl Into<std::borrow::Cow<'static, str>>) -> Self {
         PError {
-            messages: vec![what.to_string()],
+            messages: vec![what.into()],
             remaining_len: None,
             exception: None,
         }
     }
 
-    pub fn expected_at(what: &str, input: &str) -> Self {
+    pub fn expected_at(what: impl Into<std::borrow::Cow<'static, str>>, input: &str) -> Self {
         PError {
-            messages: vec![what.to_string()],
+            messages: vec![what.into()],
             remaining_len: Some(input.len()),
             exception: None,
         }
     }
 
     /// Build a PError from a pre-formatted full message (no "expected " prefix added by Display).
-    pub fn raw(message: String, remaining_len: Option<usize>) -> Self {
+    pub fn raw(
+        message: impl Into<std::borrow::Cow<'static, str>>,
+        remaining_len: Option<usize>,
+    ) -> Self {
         PError {
-            messages: vec![message],
+            messages: vec![message.into()],
             remaining_len,
             exception: None,
         }
@@ -93,7 +106,7 @@ impl PError {
         let exception =
             crate::value::Value::make_instance(crate::symbol::Symbol::intern(class_name), attrs);
         PError {
-            messages: vec![message],
+            messages: vec![message.into()],
             remaining_len,
             exception: Some(Box::new(exception)),
         }
@@ -130,7 +143,7 @@ impl PError {
             attrs,
         );
         PError {
-            messages: vec![format!("X::Syntax::InfixInTermPosition: {text}")],
+            messages: vec![format!("X::Syntax::InfixInTermPosition: {text}").into()],
             remaining_len: Some(input.len()),
             exception: Some(Box::new(exception)),
         }
@@ -140,7 +153,7 @@ impl PError {
     /// Fatal errors are not swallowed by the statement dispatcher.
     pub fn fatal(message: String) -> Self {
         PError {
-            messages: vec![format!("{}{}", FATAL_PREFIX, message)],
+            messages: vec![format!("{}{}", FATAL_PREFIX, message).into()],
             remaining_len: None,
             exception: None,
         }
@@ -151,7 +164,7 @@ impl PError {
     /// source line/column like it does for recoverable errors.
     pub fn fatal_at(message: String, input: &str) -> Self {
         PError {
-            messages: vec![format!("{}{}", FATAL_PREFIX, message)],
+            messages: vec![format!("{}{}", FATAL_PREFIX, message).into()],
             remaining_len: Some(input.len()),
             exception: None,
         }
@@ -160,7 +173,7 @@ impl PError {
     /// Build a fatal parse error with a structured exception.
     pub fn fatal_with_exception(message: String, exception: Box<crate::value::Value>) -> Self {
         PError {
-            messages: vec![format!("{}{}", FATAL_PREFIX, message)],
+            messages: vec![format!("{}{}", FATAL_PREFIX, message).into()],
             remaining_len: None,
             exception: Some(exception),
         }
@@ -181,7 +194,7 @@ impl PError {
         input: &str,
     ) -> Self {
         PError {
-            messages: vec![format!("{}{}", FATAL_PREFIX, message)],
+            messages: vec![format!("{}{}", FATAL_PREFIX, message).into()],
             remaining_len: Some(input.len()),
             exception: Some(exception),
         }
@@ -332,13 +345,13 @@ impl PError {
         }
         self.messages
             .iter()
-            .filter(|m| m.as_str() != MISSING_BLOCK)
+            .filter(|m| m.as_ref() != MISSING_BLOCK)
             .find_map(|m| typed(m))
             .or_else(|| {
                 self.messages
                     .first()
-                    .filter(|m| m.as_str() == MISSING_BLOCK)
-                    .map(|m| m.as_str())
+                    .filter(|m| m.as_ref() == MISSING_BLOCK)
+                    .map(|m| m.as_ref())
             })
     }
 
@@ -371,17 +384,37 @@ fn strip_expected_prefix(s: &str) -> &str {
 /// diagnosis inside an "expected A or B or FATAL:…" list and silently demote
 /// the error to a recoverable one, so the enclosing alternation would go on to
 /// try other productions and report something unrelated.
-pub(super) fn merge_expected_messages(context: &str, existing: &[String]) -> Vec<String> {
+pub(super) fn merge_expected_messages(
+    context: impl Into<std::borrow::Cow<'static, str>>,
+    existing: &[std::borrow::Cow<'static, str>],
+) -> Vec<std::borrow::Cow<'static, str>> {
     if existing
         .first()
         .is_some_and(|m| m.starts_with(FATAL_PREFIX))
     {
         return existing.to_vec();
     }
-    let key = strip_expected_prefix(context).trim();
-    let mut result: Vec<String> = Vec::with_capacity(1 + existing.len());
+    // A `&'static str` context (which is what all but three call sites pass)
+    // keeps borrowing after the prefix strip and the trim, because a subslice
+    // of a `'static` str is itself `'static` -- so the merged message copies
+    // nothing, exactly as `PError::expected` no longer does. Only a context
+    // built with `format!` owns, and only that case can allocate here.
+    let key: std::borrow::Cow<'static, str> = match context.into() {
+        std::borrow::Cow::Borrowed(s) => {
+            std::borrow::Cow::Borrowed(strip_expected_prefix(s).trim())
+        }
+        std::borrow::Cow::Owned(s) => {
+            let stripped = strip_expected_prefix(&s).trim();
+            if stripped.len() == s.len() {
+                std::borrow::Cow::Owned(s)
+            } else {
+                std::borrow::Cow::Owned(stripped.to_string())
+            }
+        }
+    };
+    let mut result: Vec<std::borrow::Cow<'static, str>> = Vec::with_capacity(1 + existing.len());
     if !key.is_empty() {
-        result.push(key.to_string());
+        result.push(key);
     }
     for msg in existing {
         if !result.iter().any(|p| p == msg) {
@@ -431,7 +464,7 @@ impl std::fmt::Display for PError {
 }
 
 /// Match a literal string tag at the beginning of input.
-pub(super) fn parse_tag<'a>(input: &'a str, tag: &str) -> PResult<'a, &'a str> {
+pub(super) fn parse_tag<'a>(input: &'a str, tag: &'static str) -> PResult<'a, &'a str> {
     if let Some(rest) = input.strip_prefix(tag) {
         Ok((rest, &input[..tag.len()]))
     } else {
@@ -444,7 +477,7 @@ pub(super) fn parse_char(input: &str, c: char) -> PResult<'_, char> {
     if input.starts_with(c) {
         Ok((&input[c.len_utf8()..], c))
     } else {
-        Err(PError::expected_at(&format!("'{}'", c), input))
+        Err(PError::expected_at(format!("'{}'", c), input))
     }
 }
 
