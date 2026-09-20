@@ -253,6 +253,12 @@ pub(crate) struct TrCallSite {
 /// A routine compiled to TRIR.
 #[derive(Debug, Clone)]
 pub(crate) struct TrChunk {
+    /// This chunk's identity, for the interpreter's per-chunk free-variable
+    /// cache. A monotonic counter rather than the chunk's ADDRESS: a dropped
+    /// `CompiledFunction` (an `EVAL`, an on-the-fly compile) frees its chunk,
+    /// and the allocator may hand the same address to the next one — which
+    /// would silently serve one routine's cached bindings to another.
+    pub(crate) id: u64,
     pub(crate) ops: Vec<TrOp>,
     /// Boxed constants the ops index.
     pub(crate) constants: Vec<Value>,
@@ -266,6 +272,15 @@ pub(crate) struct TrChunk {
     pub(crate) outers: Vec<TrOuter>,
     /// The routine's name, for error messages.
     pub(crate) name: Symbol,
+}
+
+/// The next chunk identity. Wrapping is unreachable in practice (a program
+/// would have to compile 2^64 routines), and `TrChunk` ids are only ever
+/// compared for equality within one process.
+pub(crate) fn next_chunk_id() -> u64 {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static NEXT: AtomicU64 = AtomicU64::new(1);
+    NEXT.fetch_add(1, Ordering::Relaxed)
 }
 
 impl TrChunk {

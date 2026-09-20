@@ -122,6 +122,7 @@ impl TrirCompiler {
             (false, Some(TrKind::Obj)) => c.ops.push(TrOp::ReturnObj),
         }
         Some(TrChunk {
+            id: super::next_chunk_id(),
             ops: c.ops,
             constants: c.constants,
             n_native: c.n_native,

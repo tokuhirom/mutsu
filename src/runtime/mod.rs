@@ -3767,7 +3767,10 @@ pub struct Interpreter {
     /// and validated against [`Interpreter::unit_lexical_gen`]; resolving
     /// them per call cost three string-keyed hash lookups plus two
     /// thread-local interner hits, which is more than `nom-ws`'s whole body.
-    pub(crate) trir_outer_cache: rustc_hash::FxHashMap<usize, (u64, Vec<Value>)>,
+    /// Keyed by [`crate::trir::TrChunk::id`] — a monotonic counter, not the
+    /// chunk's address, which the allocator may reuse after an `EVAL`'s
+    /// compiled routines are dropped.
+    pub(crate) trir_outer_cache: rustc_hash::FxHashMap<u64, (u64, Vec<Value>)>,
     /// Current frame's captured upvalue array, indexed by the running
     /// `CompiledCode::upvalue_syms` order. Read by `GetUpvalue(i)`. Set from
     /// `SubData::upvalues` on closure entry and saved/restored across call frames

@@ -378,7 +378,7 @@ impl Interpreter {
     /// cells rather than snapshots, so a cached cell stays live — a write
     /// through it from anywhere is seen here without re-resolving.
     fn trir_push_outers(&mut self, chunk: &TrChunk, st: &mut TrExecState<'_>) -> bool {
-        let key = chunk as *const TrChunk as usize;
+        let key = chunk.id;
         let cache_gen = self.unit_lexical_gen;
         // One probe on the hot path. `st` borrows nothing from `self`, so the
         // cache entry can stay borrowed while the values are pushed.
