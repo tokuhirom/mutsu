@@ -563,6 +563,7 @@ impl Interpreter {
                 | "pun"
                 | "language-revision"
                 | "method_table"
+                | "private_method_table"
                 | "submethod_table"
         ) {
             return Some(Value::str(method_name.to_string()));

@@ -3546,6 +3546,18 @@ pub struct Interpreter {
     /// candidate — the native part of `new_type` (creating and registering the
     /// type) has already run by the time the user hook is called.
     pending_declare_new_type: Option<Value>,
+    /// Classes whose custom-HOW `compose` hook is currently running, before
+    /// the native accessor-installation step it reaches via `callsame`
+    /// (`methods_classhow_dispatch.rs`'s `"compose"` arm) has executed. Raku
+    /// installs a public attribute's auto-generated reader into
+    /// `.^method_table` as part of that native step, not at attribute
+    /// declaration time — a custom `compose` override that inspects
+    /// `type.^method_table` before calling `callsame` (AttrX::Lazy's
+    /// `LazyAttributeContainerHOW.compose`) must see it still absent (#8836).
+    /// `class_method_table`/`collect_class_methods` consult this set to hide
+    /// a class's own auto-accessors while it is composing; entries are
+    /// removed once the hook call returns, whether it succeeded or not.
+    pub(crate) classes_composing_accessors: HashSet<String>,
     /// Wrap chains: sub_id -> stack of (handle_id, wrapper_sub). Outermost is last.
     wrap_chains: std::sync::Arc<HashMap<u64, Vec<(u64, Value)>>>,
     /// Maps sub_id to function name for named call wrap chain lookup.

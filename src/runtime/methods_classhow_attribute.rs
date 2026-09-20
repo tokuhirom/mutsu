@@ -638,11 +638,17 @@ impl Interpreter {
                         _ => false,
                     };
                     if has_compose_hook {
-                        self.call_method_with_values(
+                        // While this hook runs, `owner`'s own auto-generated
+                        // accessors are not yet in `.^method_table` — see
+                        // `classes_composing_accessors`'s doc comment (#8836).
+                        self.classes_composing_accessors.insert(owner.to_string());
+                        let result = self.call_method_with_values(
                             mixin_val.clone(),
                             "compose",
                             vec![Value::package(Symbol::intern(owner))],
-                        )?;
+                        );
+                        self.classes_composing_accessors.remove(owner);
+                        result?;
                     }
                 }
                 // Raku dispatches `trait_mod:<is>` as an ordinary multi: the

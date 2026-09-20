@@ -1807,6 +1807,10 @@ impl Interpreter {
                 };
                 Ok(Value::hash(self.class_method_table(&type_name)))
             }
+            "private_method_table" if !args.is_empty() => {
+                let type_name = self.mop_receiver_owner(&args[0]);
+                Ok(Value::hash(self.class_private_method_table(&type_name)))
+            }
             "submethod_table" if !args.is_empty() => {
                 // ADR-0019 F4c-1: enumerate via the canonical reverse index
                 // instead of `class_def.methods.keys()` (zero-mismatch
