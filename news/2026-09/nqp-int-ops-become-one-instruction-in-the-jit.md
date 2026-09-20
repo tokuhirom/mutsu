@@ -79,6 +79,18 @@ per iteration**. The plain loop contains no nqp op and the JSON parse barely
 uses them, which is exactly why they do not move: this is a targeted win, not a
 general one.
 
+In wall clock, on a release build and a 100-million-iteration loop — long
+enough that subtracting process startup is not the measurement:
+
+| | total | startup | per iteration |
+| --- | ---: | ---: | ---: |
+| mutsu | 10.036s | 0.008s | **100.3 ns** |
+| `raku` | 0.434s | 0.218s | **2.16 ns** |
+
+So the loop is **~46x rakudo**, from ~87x before this change. rakudo's 2.16 ns
+is a JIT-compiled native register loop — roughly five cycles — which is what
+the register-residency work below has to aim at.
+
 ## Correctness
 
 Output is byte-identical with `MUTSU_JIT` on and off across every boundary the
