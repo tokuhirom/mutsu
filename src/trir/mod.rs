@@ -15,16 +15,17 @@
 //! ADR-0110 §3.2 describes native operands as raw words sharing the untyped
 //! operand stack, with a debug-build stack-kind verifier as the soundness
 //! gate. This implementation keeps the *typing* and drops the sharing: native
-//! `int`/`num` operands live in their own `Vec<i64>` bank
-//! ([`exec::TrScratch::ints`]), boxed operands in the interpreter's own
-//! `Vec<Value>` stack and frame. Nothing ever reads a raw word as a `Value`,
-//! because no raw word is ever stored where a `Value` lives — the top risk in
-//! ADR-0110 §5 is removed structurally rather than contained by a verifier,
-//! which is what CLAUDE.md's definition of risk ("a mechanism that cannot go
-//! flaky" over "an optimization correct only under a static analysis") asks
-//! for. GC needs no change either: the int bank holds no references, and
-//! boxed slots stay in [`crate::runtime::locals::Locals`], which is already a
-//! root. The deviation is recorded in ADR-0110's implementation status.
+//! `int`/`num` operands live in their own `Vec<i64>` banks
+//! ([`frame::TrStacks::nl`] and [`frame::TrStacks::ns`]), boxed ones in
+//! `Vec<Value>` banks beside them. Nothing ever reads a raw word as a
+//! `Value`, because no raw word is ever stored where a `Value` lives — the
+//! top risk in ADR-0110 §5 is removed structurally rather than contained by a
+//! verifier, which is what CLAUDE.md's definition of risk ("a mechanism that
+//! cannot go flaky" over "an optimization correct only under a static
+//! analysis") asks for. GC needs no change either: the native banks hold no
+//! references, and the boxed ones are visited as roots
+//! ([`frame::TrStacks::boxed_slots`]). The deviation is recorded in
+//! ADR-0110's implementation status.
 //!
 //! # What is NOT here
 //!

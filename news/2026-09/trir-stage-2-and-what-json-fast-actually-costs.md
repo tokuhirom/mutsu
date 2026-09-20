@@ -35,24 +35,39 @@ compile. In `JSON::Fast` the result is that `nom-ws`, `parse-thing`,
 the entire hot decode — run as TRIR. Only `parse-numeric` still declines on
 the hot path.
 
-## The gate is missed, and the reason is the interesting part
+## The gate is missed by a factor of 24, and the reason is the interesting part
 
-`from-json` on the 727-record document did not get measurably faster.
+Stage 2 IS faster. It is nowhere near the gate.
 
-Instruction counts are exact where wall clock is noisy, so the honest number
-comes from callgrind, differencing two runs that differ only in how many times
-`from-json` runs (1 vs 10) so that startup and module compilation cancel:
+Release build, warm precomp cache, medians of 7 runs each, with rakudo taken
+in the same session (the perf skill's rule for any figure that leaves this
+box):
+
+| | `from-json`, 727 records | gate |
+|---|---:|---|
+| `MUTSU_TRIR=off` | 1.3834 s | — |
+| TRIR on | **1.0820 s** | ≤ 0.045 s — **missed**, at 38x rakudo |
+| rakudo, same session | 0.0283 s | — |
+
+A real 1.28x, and the gate asked for ~24x more.
+
+Where it came from is the part that matters. Instruction counts are exact
+where wall clock is noisy, so: callgrind, differencing two runs that differ
+only in how many times `from-json` runs (1 vs 10) so that startup and module
+compilation cancel.
 
 | | marginal Ir per decode (200 records) |
 |---|---:|
 | `MUTSU_TRIR=off` | 2,715,806,457 |
 | TRIR on | 2,456,666,797 |
 
-**9.5% fewer instructions, and no measurable wall-clock change** — the removed
-instructions are cheap, high-IPC ones. Worse, they are not the ones the ADR
-predicted: of the 9.5%, 8.2 points are `memcpy` (6.09% → 1.65%) and
-`core::str::count::do_count_chars` (3.02% → ~0), which is the per-frame
-codepoint memo, not the typed opcodes.
+**9.5% fewer instructions for 22% less time** — so the instructions TRIR
+removed cost more than an average one, and they are not the ones the ADR
+predicted. Of the 9.5%, 8.2 points are `memcpy` (6.09% → 1.65%) and
+`core::str::count::do_count_chars` (3.02% → ~0): re-walking the document's
+UTF-8, which the per-frame codepoint memo avoids. That is cache traffic over a
+191 KB string, which is why it is worth more in wall clock than in issue
+slots, and it is a string cache — not the typed opcodes the ADR is about.
 
 The measurement that settles it: with TRIR **off**, the interpreter's own
 dispatch loop (`exec_one` plus `exec_one_dispatch`, self cost) is **4.6% of the
@@ -63,8 +78,10 @@ symbol, copy a string — and TRIR removes the dispatch, not the handler. So
 inside `run_trir_chunk`, 96% of the time is in calls back out of it, and TRIR's
 own loop is about 1.2% of the program.
 
-TRIR made the interpretation of `JSON::Fast`'s control flow nearly free. The
-decode did not get faster, because the control flow was never the cost.
+TRIR made the interpretation of `JSON::Fast`'s control flow nearly free, and
+the decode got 1.28x faster — most of it from a string cache that came along
+for the ride. The control flow was never the cost, so removing it could not be
+the 24x.
 
 ## Where the decode's time actually is
 
@@ -88,10 +105,11 @@ decode of 200 records** (against 1,659,471 with TRIR off), i.e. about 8,100
 allocations per JSON record of seven fields and a two-element array.
 
 And it is a constant factor, not an asymptotic bug. Across documents from
-25 KB to 210 KB, mutsu decodes at a flat ~6.2 µs/byte and rakudo at
-~0.15 µs/byte — 41x, unchanged by an eightfold change in size.
+25 KB to 210 KB, mutsu decodes at a flat 6.4-7.4 µs/byte and rakudo at
+0.10-0.18 µs/byte — the ratio does not move over an eightfold change in
+size, so there is no super-linear term to find and remove.
 
-Each of those three costs is filed on its own so it survives whatever is
+The three biggest of those are filed on their own so they survive whatever is
 decided about ADR-0110 itself:
 [#8898](https://github.com/tokuhirom/mutsu/issues/8898) for the allocation
 traffic, [#8899](https://github.com/tokuhirom/mutsu/issues/8899) for the
