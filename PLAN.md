@@ -190,6 +190,11 @@ This section used to open "mutsu beats raku on the whole roast whitelist and on 
 one-shot wall clock, which charges rakudo its warm-up, and does not hold on steady-state or marginal
 cost. Compare warm before asserting a win.
 
+- [ ] **`JSON::Fast` at rakudo parity (~70x today; it is `mzef`'s perceived speed)** — a structural
+      change, not a slice campaign: statically typed routines compile to a typed, resolved IR on the
+      existing stack machine. Design, staged gates and the Stage 1 kill criterion are in
+      [ADR-0110](docs/adr/0110-typed-resolved-ir-for-statically-typed-routines.md); tracked by
+      [#8895](https://github.com/tokuhirom/mutsu/issues/8895). Worked solo.
 - [ ] **The interpreter function-call path in hot loops** (the JIT bails at the call boundary) —
       until 2026-09-13 this bullet read "the one axis where mutsu is genuinely slower than raku";
       [ADR-0099](docs/adr/0099-regex-engine-performance-strategy.md) found two more (grammar parsing
