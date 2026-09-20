@@ -19,6 +19,13 @@ pub(super) struct LexicalScopeSnapshot {
     dynamic_scope_all: bool,
     dynamic_scope_names: Option<std::collections::HashSet<String>>,
     user_listop_shadows: std::collections::HashSet<String>,
+    /// ADR-0110 §3.3: the TRIR routines a call site may resolve statically.
+    /// A `my sub` declared inside the entered block is lexical to it, so its
+    /// chunk must stop being resolvable when the block exits — otherwise a
+    /// LATER same-named routine's call site would be linked to the inner
+    /// block's body (pinned by `t/vm/codegen/adr0110-trir-differential.t`'s
+    /// sibling, `t/routines/lexical-sub-shadow-static-link.t`).
+    trir_routines: std::collections::HashMap<(String, usize), (crate::symbol::Symbol, u64)>,
     /// See [`crate::compiler::Compiler`]'s `provably_bare_receiver_vars` field
     /// doc — cloned rather than reset so a nested block still sees an outer
     /// `:=`-bound/`Seq`-holding variable's fact, and restored on exit so a
@@ -63,6 +70,7 @@ impl Compiler {
             dynamic_scope_all: self.dynamic_scope_all,
             dynamic_scope_names: self.dynamic_scope_names.clone(),
             user_listop_shadows: self.user_listop_shadows.clone(),
+            trir_routines: self.trir_routines.clone(),
             provably_bare_receiver_vars: self.provably_bare_receiver_vars.clone(),
             constant_vars_in_scope: self.constant_vars_in_scope.clone(),
             constant_vars_current_scope: std::mem::take(&mut self.constant_vars_current_scope),
@@ -111,6 +119,7 @@ impl Compiler {
         self.dynamic_scope_all = saved.dynamic_scope_all;
         self.dynamic_scope_names = saved.dynamic_scope_names;
         self.user_listop_shadows = saved.user_listop_shadows;
+        self.trir_routines = saved.trir_routines;
         self.provably_bare_receiver_vars = saved.provably_bare_receiver_vars;
         // Constants declared inside the exiting block are `our`-scoped: they stay
         // installed in the package, but their lexical local slot is no longer

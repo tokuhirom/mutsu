@@ -723,6 +723,10 @@ impl Interpreter {
                         // touches nothing, so the light chain below is
                         // reached exactly as it was.
                         if cf.trir.is_some()
+                            // ADR-0110 §3.3's run-time guard, as on the
+                            // statically linked door: a wrapped routine must
+                            // reach its wrapper.
+                            && !self.any_routine_wrapped()
                             && !has_junction
                             && !call_has_slip
                             && !call_has_named

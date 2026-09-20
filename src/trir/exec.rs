@@ -18,6 +18,14 @@ use crate::value::{Value, ValueView};
 /// teardown is a `truncate`.
 pub(crate) struct TrExecState<'a> {
     pub(crate) chunk: &'a TrChunk,
+    /// Bit `n` is set once slot `n`'s character memo has been validated
+    /// against the slot's current value in THIS frame. The memo survives the
+    /// frame (see [`TrScratch::reset`]), so without this every
+    /// `OrdAtLocal` would re-prove the same identity — 65 instructions to
+    /// answer a question already answered this call.
+    chars_checked: u64,
+    /// The same, for the outer lexicals.
+    outer_chars_checked: u64,
     /// The reusable buffers this invocation borrowed from the interpreter's
     /// pool. A TRIR frame is five vectors; allocating them per call cost more
     /// than the whole of `nom-ws`'s loop.
@@ -120,7 +128,12 @@ impl<'a> TrExecState<'a> {
             buf.chars.resize_with(chunk.n_obj as usize, || None);
         }
         buf.outers.reserve(chunk.outers.len());
-        TrExecState { chunk, buf }
+        TrExecState {
+            chunk,
+            chars_checked: 0,
+            outer_chars_checked: 0,
+            buf,
+        }
     }
 
     /// Record one resolved outer lexical, in [`TrChunk::outers`] order.
@@ -182,6 +195,11 @@ impl<'a> TrExecState<'a> {
     /// holds a string at all.
     fn fill_slot_chars(&mut self, n: u16) -> bool {
         let i = n as usize;
+        let bit = 1u64 << (i & 63);
+        if self.chars_checked & bit != 0 {
+            return self.buf.chars[i].is_some();
+        }
+        self.chars_checked |= bit;
         if let Some(m) = &self.buf.chars[i]
             && same_string(&m.src, &self.buf.objs[i])
         {
@@ -203,6 +221,11 @@ impl<'a> TrExecState<'a> {
     /// The same memo for an outer lexical.
     fn fill_outer_chars(&mut self, n: u16) -> bool {
         let i = n as usize;
+        let bit = 1u64 << (i & 63);
+        if self.outer_chars_checked & bit != 0 {
+            return self.buf.outer_chars[i].is_some();
+        }
+        self.outer_chars_checked |= bit;
         if let Some(m) = &self.buf.outer_chars[i]
             && same_string(&m.src, &self.buf.outers[i])
         {
@@ -228,6 +251,13 @@ impl<'a> TrExecState<'a> {
         let Ok(i) = usize::try_from(idx) else {
             return Some(0);
         };
+        // A plain `nqp::list_i` IS an array, and that is what every scanner's
+        // lookup table is. Reading it directly skips `nqp_backing_array`'s
+        // walk through the Buf/IterationBuffer/Uni shapes, which cost more
+        // than the read (106 instructions of 177).
+        if let ValueView::Array(items, _) = v.view() {
+            return Some(items.get(i).and_then(|e| e.as_int()).unwrap_or(0));
+        }
         let elem = crate::runtime::Interpreter::nqp_elem_at(v, i);
         Some(match elem {
             Some(e) => e.as_int().unwrap_or_else(|| crate::runtime::to_int(&e)),
@@ -353,8 +383,9 @@ impl<'a> TrExecState<'a> {
                 TrOp::StoreObj(n) => {
                     let v = self.buf.ostack.pop().unwrap_or(Value::NIL);
                     self.buf.objs[*n as usize] = v;
-                    // The memo re-validates against the slot's value, so a
-                    // store needs no explicit invalidation.
+                    // Force the memo to re-prove itself against the new value
+                    // the next time this slot is read as a string.
+                    self.chars_checked &= !(1u64 << (*n as usize & 63));
                 }
                 TrOp::BoxI => {
                     let v = self.ipop();
@@ -369,14 +400,6 @@ impl<'a> TrExecState<'a> {
                     match v.as_int() {
                         Some(i) => self.ipush(i),
                         None => return TrOutcome::Bail,
-                    }
-                }
-                TrOp::UnboxN => {
-                    let v = self.buf.ostack.pop().unwrap_or(Value::NIL);
-                    match v.view() {
-                        ValueView::Num(n) => self.ipush(b(n)),
-                        ValueView::Int(i) => self.ipush(b(i as f64)),
-                        _ => return TrOutcome::Bail,
                     }
                 }
                 TrOp::PopObj => {

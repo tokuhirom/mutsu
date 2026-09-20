@@ -14,17 +14,29 @@ use super::*;
 use crate::trir::TrCallSite;
 
 impl Compiler {
-    /// Record that `key` names a routine with a TRIR chunk, so a later call
-    /// site can resolve it. Called from the single site that attaches a chunk.
+    /// Record what a bare call to `name` at this arity now resolves to.
+    ///
+    /// `Some` when the routine just declared has a TRIR chunk, `None` when it
+    /// does not — and the `None` is load-bearing, not tidiness: a later
+    /// routine of the same name and arity SHADOWS the earlier one, so leaving
+    /// a stale entry would statically link a call site to a body the name no
+    /// longer denotes. (`{ my sub f(int $a) {...} }; sub f($a) { $a * 100 }`
+    /// answered 4 instead of 300 before this.) Block scoping is handled by
+    /// `LexicalScopeSnapshot`, which restores the whole map on block exit.
     pub(super) fn record_trir_routine(
         &mut self,
         name: &str,
         arity: usize,
-        key: crate::symbol::Symbol,
-        fingerprint: u64,
+        chunk: Option<(crate::symbol::Symbol, u64)>,
     ) {
-        self.trir_routines
-            .insert((name.to_string(), arity), (key, fingerprint));
+        match chunk {
+            Some(target) => {
+                self.trir_routines.insert((name.to_string(), arity), target);
+            }
+            None => {
+                self.trir_routines.remove(&(name.to_string(), arity));
+            }
+        }
     }
 
     /// Emit the direct call, answering whether it was emitted.
@@ -52,6 +64,12 @@ impl Compiler {
             };
             arg_slots.push(slot);
         }
+        // The argument-source table the `CallFunc` this replaces would have
+        // carried. The post-compile analyses read it to learn that these
+        // locals reach a call and so may be written back through an `is rw`
+        // parameter; without it a closure over one of them captures it by
+        // value and never sees the writeback.
+        let arg_sources_idx = self.add_arg_sources_constant(args);
         let site_idx = self.code.trir_call_sites.len() as u32;
         self.code.trir_call_sites.push(TrCallSite {
             key,
@@ -59,7 +77,10 @@ impl Compiler {
             name: *name,
             arg_slots,
         });
-        self.code.emit(OpCode::CallTrir(site_idx));
+        self.code.emit(OpCode::CallTrir {
+            site: site_idx,
+            arg_sources_idx,
+        });
         true
     }
 }

@@ -203,7 +203,7 @@ impl Interpreter {
         match &code.ops[*ip] {
             // ADR-0110 §3.3: a statically resolved call into a typed routine.
             // First arm because it is the whole of a hot call site.
-            OpCode::CallTrir(site_idx) => {
+            OpCode::CallTrir { site: site_idx, .. } => {
                 let site = &code.trir_call_sites[*site_idx as usize];
                 let result = match self.exec_call_trir_site(site, compiled_fns, code) {
                     Some(r) => r?,

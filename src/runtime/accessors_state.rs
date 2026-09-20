@@ -267,6 +267,22 @@ impl Interpreter {
         None
     }
 
+    /// Whether ANY routine has been `.wrap`ped in this program.
+    ///
+    /// ADR-0110 §3.3's run-time guard: a statically linked TRIR call site must
+    /// step aside for a wrapper, and a program that has never wrapped anything
+    /// — every program, almost always — pays one emptiness test for the
+    /// question.
+    #[inline]
+    pub(crate) fn any_routine_wrapped(&self) -> bool {
+        !self.wrap_name_to_sub.is_empty()
+    }
+
+    /// Whether the routine `name` currently carries a wrapper.
+    pub(crate) fn routine_is_wrapped(&self, name: &str) -> bool {
+        self.wrap_name_to_sub.contains_key(name)
+    }
+
     /// Get the original wrapped Sub value for a function name.
     /// Returns the Sub value stored when wrap was called, preserving the original sub_id.
     pub(crate) fn get_wrapped_sub(&self, name: &str) -> Option<Value> {

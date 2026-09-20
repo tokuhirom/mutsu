@@ -40,6 +40,8 @@ use crate::value::Value;
 pub(crate) mod compile;
 pub(crate) mod entry;
 pub(crate) mod exec;
+#[cfg(test)]
+mod tests;
 
 /// The kind of a TRIR slot or operand, as the compiler proved it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -144,8 +146,6 @@ pub(crate) enum TrOp {
     /// Pop a boxed value, push its integer. Errors if it is not one — the
     /// checked boundary op of ADR-0110 §3.2.
     UnboxI,
-    /// Pop a boxed value, push its double.
-    UnboxN,
     /// Drop the top of the boxed bank.
     PopObj,
     /// Drop the top of the int bank.

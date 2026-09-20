@@ -19,6 +19,10 @@ impl TrirCompiler {
     /// Compile `e` for its value, answering the bank/kind it left it on.
     pub(super) fn compile_expr(&mut self, e: &Expr) -> Option<TrKind> {
         match e {
+            // Transparent, exactly as the untyped compiler treats it: the
+            // marker exists for the junction chain-flattener, not for
+            // evaluation.
+            Expr::Grouped(inner) => self.compile_expr(inner),
             Expr::Literal(v) => self.compile_literal(v),
             Expr::Var(name) => self.compile_var(name),
             Expr::Unary { op, expr } => self.compile_unary(op, expr, false),
@@ -44,6 +48,9 @@ impl TrirCompiler {
     /// `++$pos` — where emitting the value-yielding form and popping it costs
     /// two extra instructions per ITERATION.
     pub(super) fn compile_expr_sink(&mut self, e: &Expr) -> Option<()> {
+        if let Expr::Grouped(inner) = e {
+            return self.compile_expr_sink(inner);
+        }
         if let Expr::Unary { op, expr } = e
             && matches!(op, TokenKind::PlusPlus | TokenKind::MinusMinus)
         {
@@ -336,7 +343,10 @@ impl TrirCompiler {
             _ => unreachable!("the match above admitted only these two"),
         };
         match self.binding_of(n) {
-            Some(Binding { slot, kind }) if kind == TrKind::Obj => {
+            Some(Binding {
+                slot,
+                kind: TrKind::Obj,
+            }) => {
                 // The per-frame character memo assumes the slot's value does
                 // not change under it.
                 if self.obj_slot_written(slot) {

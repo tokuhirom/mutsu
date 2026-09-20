@@ -749,10 +749,13 @@ impl Compiler {
         }
         let key = crate::symbol::Symbol::intern(&key);
         // ADR-0110 §3.3: make this routine's chunk resolvable from a later
-        // call site in the same compile.
-        if cf.trir.is_some() {
-            self.record_trir_routine(name, param_defs.len(), key, fingerprint);
-        }
+        // call site in the same compile — and, when it has none, UNmake any
+        // earlier same-named routine's, because this declaration shadows it.
+        self.record_trir_routine(
+            name,
+            param_defs.len(),
+            cf.trir.is_some().then_some((key, fingerprint)),
+        );
         self.compiled_functions.insert(key, cf);
         Some(key)
     }

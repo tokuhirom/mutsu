@@ -19,6 +19,20 @@ use crate::runtime::Interpreter;
 use crate::symbol::Symbol;
 use crate::value::{RuntimeError, Value, ValueView};
 
+/// A binding's current value: the contents of a shared container cell, or
+/// the value itself.
+///
+/// By reference rather than `Value::into_deref`, which takes the container by
+/// value and so pays an atomic increment and a matching decrement just to
+/// look inside it — 290 instructions per call for one free variable.
+#[inline]
+fn deref_cell(v: &Value) -> Value {
+    match v.view() {
+        ValueView::ContainerRef(cell) => cell.lock().unwrap_or_else(|e| e.into_inner()).clone(),
+        _ => v.clone(),
+    }
+}
+
 /// Where a native `is rw` parameter's result goes when the routine returns.
 #[derive(Clone, Copy)]
 enum RwTarget {
@@ -47,6 +61,13 @@ impl Interpreter {
         compiled_fns: &CompiledFns,
         caller_code: &CompiledCode,
     ) -> Option<Result<Value, RuntimeError>> {
+        // ADR-0110 §3.3's run-time guard. A `.wrap`ped routine must reach its
+        // wrapper, which a statically linked call site would step straight
+        // past; the emptiness test costs nothing in a program that has never
+        // wrapped anything.
+        if self.any_routine_wrapped() && self.routine_is_wrapped(&site.name.resolve()) {
+            return None;
+        }
         let cf = compiled_fns
             .get(&site.key)
             .filter(|cf| cf.fingerprint == site.fingerprint)?;
@@ -155,13 +176,30 @@ impl Interpreter {
                 if rw_len == rw.len() {
                     return None;
                 }
+                // Two `is rw` parameters bound to the SAME caller variable
+                // (`f($p, $p)`) share one container on the untyped path, so a
+                // write through one is visible to the other inside the body.
+                // Copy-in/copy-out cannot reproduce that, so decline.
+                if rw[..rw_len]
+                    .iter()
+                    .any(|(_, t)| matches!(t, RwTarget::Slot(s) | RwTarget::Cell(s) if *s == caller_slot))
+                {
+                    return None;
+                }
                 let (raw, target) = self.bind_rw_slot(caller_slot, caller_code)?;
                 st.set_native_slot(p.slot, raw);
                 rw[rw_len] = (p.slot, target);
                 rw_len += 1;
                 continue;
             }
-            let val = self.locals.get(caller_slot as usize)?.clone().into_deref();
+            let idx = caller_slot as usize;
+            if idx >= self.locals.len() {
+                return None;
+            }
+            if let Some(cell) = self.trir_captured_cell(caller_code, idx) {
+                self.locals[idx] = cell;
+            }
+            let val = deref_cell(&self.locals[idx]);
             Self::bind_ro_param(st, p, &val)?;
         }
         Some((rw, rw_len))
@@ -261,17 +299,29 @@ impl Interpreter {
         if idx >= caller_code.locals.len() || idx >= self.locals.len() {
             return None;
         }
+        // A variable an inner closure captured has its authoritative
+        // container in the ENV, not in the frame slot — `WrapVarRef` resolves
+        // exactly this before handing a caller lexical to an `is rw`
+        // parameter, and skipping it made a closure over the same variable
+        // keep reporting the pre-call value.
+        if let Some(cell) = self.trir_captured_cell(caller_code, idx) {
+            self.locals[idx] = cell;
+        }
         if let ValueView::ContainerRef(cell) = self.locals[idx].view() {
             let inner = cell.lock().unwrap_or_else(|e| e.into_inner()).clone();
             let raw = Self::trir_rw_int(&inner)?;
             return Some((raw, RwTarget::Cell(slot)));
         }
         let raw = Self::trir_rw_int(&self.locals[idx])?;
-        if !caller_code.needs_env_sync.get(idx).copied().unwrap_or(true) {
-            return Some((raw, RwTarget::Slot(slot)));
-        }
-        // Promote, so every later call through this site writes one container
-        // that both the slot and the env mirror already denote.
+        // ALWAYS promote, exactly as the untyped `is rw` path does
+        // (`capture_var_cell_boxing_type_objects` in the positional-light
+        // bind). Writing the slot in place instead looks equivalent and is
+        // not: a closure that captured the same variable, or an env mirror
+        // the caller keeps, holds a container this write would never reach —
+        // `t/fixtures/trir-shapes.raku`'s `rw-through-cell` case caught
+        // exactly that, reporting the pre-call value from inside the
+        // closure. The promotion happens once per variable; every later call
+        // takes the cell branch above.
         let name = caller_code.locals[idx].clone();
         let inner = self.locals[idx].clone();
         let cell = self.capture_var_cell_boxing_type_objects(caller_code, &name, inner, Some(slot));
@@ -280,6 +330,28 @@ impl Interpreter {
         }
         self.locals[idx] = cell;
         Some((raw, RwTarget::Cell(slot)))
+    }
+
+    /// The shared container an inner closure captured this caller local
+    /// into, when the slot itself does not already hold it.
+    ///
+    /// The same resolution `Interpreter::exec_wrap_var_ref_op` performs: a
+    /// name in `container_ref_capture_syms` whose env entry is a
+    /// `ContainerRef` IS the variable, and the frame slot is a stale copy.
+    /// `None` when the slot is already the authority.
+    fn trir_captured_cell(&self, caller_code: &CompiledCode, idx: usize) -> Option<Value> {
+        if self.locals[idx].is_container_ref() || caller_code.container_ref_capture_syms.is_empty()
+        {
+            return None;
+        }
+        let sym = *caller_code.locals_sym.get(idx)?;
+        if !caller_code.container_ref_capture_syms.contains(&sym) {
+            return None;
+        }
+        self.env()
+            .get_sym(sym)
+            .filter(|v| v.is_container_ref())
+            .cloned()
     }
 
     /// The raw `i64` a native `is rw` parameter binds from.
@@ -302,10 +374,16 @@ impl Interpreter {
     fn trir_push_outers(&mut self, chunk: &TrChunk, st: &mut TrExecState<'_>) -> bool {
         let key = chunk as *const TrChunk as usize;
         let cache_gen = self.unit_lexical_gen;
-        if !self
-            .trir_outer_cache
-            .get(&key)
-            .is_some_and(|(g, _)| *g == cache_gen)
+        // One probe on the hot path. `st` borrows nothing from `self`, so the
+        // cache entry can stay borrowed while the values are pushed.
+        if let Some((g, bindings)) = self.trir_outer_cache.get(&key)
+            && *g == cache_gen
+        {
+            for v in bindings {
+                st.push_outer(deref_cell(v));
+            }
+            return true;
+        }
         {
             let mut bindings = Vec::with_capacity(chunk.outers.len());
             let mut all_celled = true;
@@ -324,19 +402,18 @@ impl Interpreter {
                 // it: re-resolve on every call instead. (The capture pass
                 // gives a mainline `my` a cell as soon as a named sub reads
                 // it, so this is the uncommon shape.)
-                for v in bindings {
-                    st.push_outer(v.into_deref());
+                for v in &bindings {
+                    st.push_outer(deref_cell(v));
                 }
                 return true;
             }
+            // Every entry is a shared cell, so reading THROUGH it on later
+            // calls is what makes a write from anywhere visible without
+            // re-resolving.
+            for v in &bindings {
+                st.push_outer(deref_cell(v));
+            }
             self.trir_outer_cache.insert(key, (cache_gen, bindings));
-        }
-        // Cached: every entry is a shared cell, so reading THROUGH it here is
-        // what makes a write from anywhere visible without re-resolving. The
-        // borrow ends inside the loop, so the vector itself is not cloned.
-        for i in 0..chunk.outers.len() {
-            let v = self.trir_outer_cache[&key].1[i].clone().into_deref();
-            st.push_outer(v);
         }
         true
     }
@@ -375,7 +452,11 @@ impl Interpreter {
     ) -> Result<Value, RuntimeError> {
         let mut args = Vec::with_capacity(site.arg_slots.len());
         for &slot in &site.arg_slots {
-            let value = self.locals.get(slot as usize).cloned().unwrap_or(Value::NIL);
+            let value = self
+                .locals
+                .get(slot as usize)
+                .cloned()
+                .unwrap_or(Value::NIL);
             let sym = caller_code
                 .locals_sym
                 .get(slot as usize)
@@ -400,6 +481,14 @@ impl Interpreter {
     }
 }
 
+/// Whether `MUTSU_TRIR_DUMP` asked for the eligibility decisions to be
+/// reported. Read once: this runs per routine declaration.
+fn dump_enabled() -> bool {
+    use std::sync::OnceLock;
+    static ON: OnceLock<bool> = OnceLock::new();
+    *ON.get_or_init(|| std::env::var("MUTSU_TRIR_DUMP").is_ok())
+}
+
 /// Compile a routine to TRIR at declaration time, or answer `None`.
 ///
 /// One call site (`compiler/helpers_sub_body.rs`), so the eligibility gate
@@ -412,7 +501,7 @@ pub(crate) fn compile_routine(
     body: &[crate::ast::Stmt],
 ) -> Option<std::sync::Arc<TrChunk>> {
     let chunk = TrirCompiler::compile(name, param_defs, params, return_type, body);
-    if std::env::var("MUTSU_TRIR_DUMP").is_ok() {
+    if dump_enabled() {
         match &chunk {
             Some(c) => eprintln!(
                 "trir: {} accepted ({} ops, {} native slots, {} obj slots, {} outers)",

@@ -9,10 +9,9 @@
 use std::collections::HashMap;
 
 use super::{TrChunk, TrKind, TrOp, TrOuter, TrParam};
-use crate::ast::{Expr, ParamDef, Stmt};
+use crate::ast::{ParamDef, Stmt};
 use crate::symbol::Symbol;
-use crate::token_kind::TokenKind;
-use crate::value::{Value, ValueView};
+use crate::value::Value;
 
 /// Where a name resolves inside the routine being compiled.
 #[derive(Debug, Clone, Copy)]

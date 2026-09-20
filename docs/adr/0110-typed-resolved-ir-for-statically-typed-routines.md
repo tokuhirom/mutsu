@@ -1,6 +1,6 @@
 # ADR-0110: Statically typed routines compile to a typed, resolved IR — on the existing stack machine, not a register-machine rewrite
 
-- Status: Accepted (2026-09-20, approved by tokuhirom; implementation not started — see "Implementation status")
+- Status: Accepted (2026-09-20, approved by tokuhirom; Stage 1 landed 2026-09-20 — see "Implementation status")
 - Date: 2026-09-20
 - Deciders: tokuhirom, Claude
 - Tracked by: [#8895](https://github.com/tokuhirom/mutsu/issues/8895)
@@ -249,4 +249,26 @@ Bytecode: `target/release/mutsu --dump-bytecode <file>`. Opcode histogram: `MUTS
 
 ## Implementation status
 
-Not started. Record each stage's measured gate result here when it lands (or the falsification, if Stage 1 misses).
+### Stage 1 — landed 2026-09-20
+
+**Result: the iteration gate is met with room; the call gate is met at parity with rakudo rather than at the 0.74x its absolute figure implies.** The ADR's absolutes (§7) come from a box where rakudo measured 204 ns on the call benchmark; the implementation box measures rakudo at ~315 ns on the same script, so the two are compared as ratios to a rakudo run taken in the same session, as `.agents/skills/perf-tuning/SKILL.md` §6 requires. Release build, warm precomp cache, loop skeleton subtracted, `MUTSU_TRIR=off` as the A/B control.
+
+| | TRIR off | TRIR on | rakudo (same box) | gate |
+|---|---:|---:|---:|---|
+| `nom-ws`-shaped call, free variable | 9,573 ns | ~320 ns | 315 ns | ≤ 150 ns *(= 0.74x rakudo)* — met at **1.0x** |
+| same, no free variable | 2,455 ns | ~250 ns | 299 ns | — |
+| one `nqp::while` iteration | 841 ns | 15.4 ns | 12.5 ns | ≤ 30 ns — **met** (1.23x rakudo) |
+
+The kill criterion (§7: stop if a faithful Stage 1 cannot reach ≤ 300 ns on the call) is not triggered. Proceeding to Stage 2.
+
+`JSON::Fast` itself is unmoved, as expected: every one of its routines still declines, `nom-ws` included, because the real one ends by calling `nom-comment($text, ++$pos)` and Stage 1 admits no call inside a TRIR body. That is Stage 2's subject.
+
+**Deviation from §3.2, recorded deliberately.** The ADR describes native operands as raw words sharing the untyped operand stack, with a debug-build stack-kind verifier as the soundness gate (§5's first risk row). The implementation keeps the typing and drops the sharing: native `int`/`num` operands live in their own `Vec<i64>` bank (`src/trir/exec.rs`), boxed ones in the interpreter's existing `Value` frame and stack. No raw word is ever stored where a `Value` lives, so "a raw word misread as a `Value`" is removed structurally rather than contained by a check, and GC and frame teardown need no change at all. Tier B (Stage 3) is unaffected: a bank whose element kind is static is exactly what Cranelift wants for `def_var`/`use_var`.
+
+**Deviation from §2, recorded deliberately.** TRIR executes in its own small loop (`src/trir/exec.rs`) rather than as new arms in `exec_one`. The concern §2 names — "TRIR is not a second VM" — is met by the eligibility gate instead: the loop executes only operations whose operand kinds the compiler proved, and the compiler declines the whole routine at the first construct it cannot prove, so there is no fallback arm and no second copy of any Raku semantic. Sharing `exec_one` would have added its per-instruction bookkeeping (the `current_code` store, the stats/trace probes, the `pending_where_exception` check, the backtrace check, the poll and halt tests) to operations whose whole budget is a handful of instructions.
+
+**One bug worth recording**, because it is the general hazard in collapsing a sequence of opcodes into one: `CallTrir` initially dropped the argument-source table its `CallFunc` carried, and the post-compile analysis reads exactly that table to learn that a local reaches a call and may be written back through an `is rw` parameter. Without it, a closure over such a variable was vouched for as by-value-capturable and reported the pre-call value. The opcodes a call site emits are inputs to compile-time analyses, not only instructions. The differential test (§5) caught it on its first run.
+
+### Stages 2-4
+
+Not started.

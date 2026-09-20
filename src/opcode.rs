@@ -720,12 +720,22 @@ pub(crate) enum WhenMatcherKind {
 #[derive(Debug, Clone)]
 pub(crate) enum OpCode {
     /// ADR-0110 §3.3: call a statically resolved TRIR routine whose arguments
-    /// are all plain caller lexicals. The operand indexes
+    /// are all plain caller lexicals. `site` indexes
     /// [`CompiledCode::trir_call_sites`]; the opcode takes NOTHING from the
     /// operand stack, because the arguments are read from the caller's frame
     /// slots directly — the whole of a `nom-ws($text, $pos)` call site, which
     /// is otherwise seven opcodes ending in a by-name `CallFunc`.
-    CallTrir(u32),
+    ///
+    /// `arg_sources_idx` is the SAME argument-source table the `CallFunc` this
+    /// replaces would have carried, and it is not optional bookkeeping: the
+    /// post-compile analyses read it to learn that these locals reach a call
+    /// (`own_call_arg_sources`), which is what stops a closure over one of
+    /// them from capturing it by value and missing an `is rw` writeback.
+    /// Dropping it made exactly that closure report the pre-call value.
+    CallTrir {
+        site: u32,
+        arg_sources_idx: Option<u32>,
+    },
     // -- Constants --
     LoadConst(u32),
     /// Load a *code-bearing* regex literal as the closure it is.
@@ -7216,7 +7226,10 @@ impl CompiledCode {
     /// the analysis's back and must never be vouched for.
     fn op_arg_sources_idx(op: &OpCode) -> Option<u32> {
         match op {
-            OpCode::CallFunc {
+            OpCode::CallTrir {
+                arg_sources_idx, ..
+            }
+            | OpCode::CallFunc {
                 arg_sources_idx, ..
             }
             | OpCode::CallFuncNamed {
