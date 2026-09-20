@@ -10,6 +10,24 @@ impl Interpreter {
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
         let method: &str = method_sym.as_str();
+        // Calling a method on a role TYPE OBJECT puns the role into a class,
+        // and punning is a composition: the role's body runs. This fast path
+        // used to dispatch the role's method directly off the role, so the
+        // body never ran at all — `role R { my $x = 7; method gx { $x } }`
+        // answered `Nil` from `R.gx`, and a body `my class KV` reported
+        // `Undeclared name: KV` because nothing had ever declared it. The slow
+        // path (`call_method_with_values`) already puns here; only the
+        // compiled path skipped it.
+        //
+        // Ordered cheapest-first: after the first pun a class IS registered
+        // under the name, so the `classes` probe short-circuits every later
+        // call, and an ordinary class receiver fails it outright.
+        if let ValueView::Package(name) = target.view() {
+            let pkg = name.as_str();
+            if !self.registry().classes.contains_key(pkg) && self.is_role(pkg) {
+                self.ensure_role_punned_to_class(pkg)?;
+            }
+        }
         // Native default construction (see `try_compiled_method_or_interpret`).
         if method == "new"
             && let ValueView::Package(class_name) = target.view()

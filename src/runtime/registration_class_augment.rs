@@ -1356,6 +1356,19 @@ impl Interpreter {
             .insert(format!("pun:{role_name}"))
         {
             let decl_file = role_def.decl_file.clone();
+            // The pun IS the class these bodies' lexicals belong to, so
+            // record what they declare the same way `compose_role_body`
+            // records it for a `does` consumer — otherwise the bindings live
+            // only in the frame that happened to trigger the pun and every
+            // method of the punned role loses its own body scope.
+            let env_before: HashSet<Symbol> = self.env.keys().copied().collect();
+            let mut declared: HashSet<String> = HashSet::new();
+            Self::collect_role_body_declared_names(&role_def.deferred_body, &mut declared);
+            for ancestor in self.role_ancestor_names(role_name) {
+                if let Some(parent) = self.registry().roles.get(&ancestor).cloned() {
+                    Self::collect_role_body_declared_names(&parent.deferred_body, &mut declared);
+                }
+            }
             self.run_role_body_for_composition(
                 role_name,
                 role_name,
@@ -1363,8 +1376,40 @@ impl Interpreter {
                 decl_file.as_deref(),
             )?;
             self.run_composed_role_ancestor_bodies(role_name, role_name)?;
+            self.persist_role_body_lexicals(role_name, &env_before, &declared);
         }
         Ok(())
+    }
+
+    /// Names a role body declares as its own lexicals, for
+    /// [`Interpreter::persist_role_body_lexicals`].
+    ///
+    /// `DeferredBodyOp::declared_vars` covers plain `my $x` only. A body-scoped
+    /// TYPE (`my class KV does Iterator { ... }`, as `Hash::Agnostic` declares
+    /// for its `.kv` iterator) is a `ClassDecl`/`RoleDecl` op, so it is absent
+    /// there — and a type object that is not recognized as declared is dropped
+    /// by the package-value filter, on the assumption that it belongs to the
+    /// surrounding compunit. That left a punned role's `.kv` reporting
+    /// `Undeclared name: KV`. Only a LEXICAL declaration counts: an `our class`
+    /// is a package symbol, already reachable by its qualified name.
+    fn collect_role_body_declared_names(
+        ops: &[crate::opcode::DeferredBodyOp],
+        out: &mut HashSet<String>,
+    ) {
+        for op in ops {
+            out.extend(op.declared_vars.iter().map(|s| s.as_str().to_string()));
+            match &op.raw {
+                Stmt::ClassDecl {
+                    name,
+                    is_lexical: true,
+                    ..
+                }
+                | Stmt::RoleDecl { name, .. } => {
+                    out.insert(name.as_str().to_string());
+                }
+                _ => {}
+            }
+        }
     }
 
     /// Composing a role composes the roles it composes, so their bodies run

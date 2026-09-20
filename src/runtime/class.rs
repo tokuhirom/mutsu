@@ -280,8 +280,17 @@ impl Interpreter {
                 };
                 let source = Self::role_base_name(source);
                 !all.iter().any(|other| {
+                    // The invocant's own constraint is part of what makes a
+                    // multi candidate distinct: `multi method Str(::?ROLE:U:)`
+                    // and `multi method Str(::?ROLE:D:)` are two candidates,
+                    // not one shadowing the other. Comparing without it
+                    // (`method_signatures_match`) let a child role that
+                    // overrode only the `:D:` half delete the parent's `:U:`
+                    // half as well, so `Hash::Ordered.Str` on the TYPE object
+                    // died with "Cannot resolve caller Str(Hash::Ordered:U:)"
+                    // — rakudo answers the parent's `:U:` candidate there.
                     if !other.is_multi
-                        || !Self::method_signatures_match(candidate, other)
+                        || !Self::method_signatures_match_with_invocant(candidate, other)
                         || Self::multi_constraints_distinguish(candidate, other)
                     {
                         return false;
@@ -321,8 +330,12 @@ impl Interpreter {
         let sources: Vec<String> = defs
             .iter()
             .filter(|other| {
+                // Invocant-aware, for the same reason as
+                // `prune_role_parent_shadowed_multis`: a child role that
+                // overrides only the `:D:` half of a `:U:`/`:D:` multi pair
+                // does not shadow the parent's `:U:` half.
                 other.is_multi
-                    && Self::method_signatures_match(candidate, other)
+                    && Self::method_signatures_match_with_invocant(candidate, other)
                     && !Self::multi_constraints_distinguish(candidate, other)
             })
             .filter_map(|other| {

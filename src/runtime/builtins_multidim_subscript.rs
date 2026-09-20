@@ -244,14 +244,25 @@ impl Interpreter {
         } else {
             None
         };
+        // The instance's OWN key order, kept for the `*`/zen expansion below.
+        // The snapshot is a plain `ValueMap`, whose iteration order has nothing
+        // to do with the order `keys` returned, so expanding the slice from the
+        // snapshot handed an ordered Associative (`Hash::Ordered`) its values
+        // shuffled — `%h{}:v` and `%h{*}:v` disagreed with `%h.values` and with
+        // the equivalent explicit key slice.
+        let mut assoc_keys: Option<Vec<Value>> = None;
         let target = if let Some(inst) = assoc_instance.as_ref() {
             let keys_val = self.call_method_with_values(inst.clone(), "keys", vec![])?;
             let mut map = ValueMap::default();
+            let mut ordered = Vec::new();
             for key in crate::runtime::utils::value_to_list(&keys_val) {
                 let value =
                     self.call_method_with_values(inst.clone(), "AT-KEY", vec![key.clone()])?;
-                map.insert(key.to_string_value(), value);
+                let key_str = key.to_string_value();
+                map.insert(key_str.clone(), value);
+                ordered.push(Value::str(key_str));
             }
+            assoc_keys = Some(ordered);
             Value::hash(map)
         } else {
             target
@@ -383,15 +394,20 @@ impl Interpreter {
         if matches!(indices.first().map(Value::view), Some(ValueView::Whatever))
             || matches!(indices.first().map(Value::view), Some(ValueView::Num(f)) if f.is_infinite() && f > 0.0)
         {
-            indices = match target.view() {
-                ValueView::Array(items, ..) => (0..items.len())
-                    .map(|i| Value::int(i as i64))
-                    .collect::<Vec<_>>(),
-                ValueView::Hash(map) => map
-                    .keys()
-                    .map(|k| Value::str(k.clone()))
-                    .collect::<Vec<_>>(),
-                _ => Vec::new(),
+            indices = match assoc_keys.take() {
+                // An Associative instance names its elements in the order its
+                // own `keys` method returns, not in the snapshot's.
+                Some(ordered) => ordered,
+                None => match target.view() {
+                    ValueView::Array(items, ..) => (0..items.len())
+                        .map(|i| Value::int(i as i64))
+                        .collect::<Vec<_>>(),
+                    ValueView::Hash(map) => map
+                        .keys()
+                        .map(|k| Value::str(k.clone()))
+                        .collect::<Vec<_>>(),
+                    _ => Vec::new(),
+                },
             };
         }
         // Lazy-subscript truncation: keep only in-range indices of the array.

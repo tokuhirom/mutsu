@@ -184,7 +184,10 @@ impl Interpreter {
     /// candidates, not the same one under a different spelling (#8119): a
     /// role's `:U:`-invocant candidate and a composing class's own
     /// `:D:`-invocant candidate must both survive composition.
-    fn method_signatures_match_with_invocant(required: &MethodDef, candidate: &MethodDef) -> bool {
+    pub(super) fn method_signatures_match_with_invocant(
+        required: &MethodDef,
+        candidate: &MethodDef,
+    ) -> bool {
         Self::method_signatures_match(required, candidate)
             && (!required.is_multi
                 || !candidate.is_multi
