@@ -490,6 +490,14 @@ pub(crate) fn value_to_list(val: &Value) -> Vec<Value> {
             })
             .collect(),
         ValueView::Slip(items) => items.to_vec(),
+        // A Uni (and its NFC/NFD/NFKC/NFKD forms) does `Positional[uint32]`:
+        // in list context it flattens to its codepoints, not to itself as one
+        // scalar (`for $str.NFC { }` / `$str.NFC.map(&wcwidth)` iterate Ints).
+        ValueView::Uni(u) => u
+            .codepoints()
+            .into_iter()
+            .map(|c| Value::int(c as i64))
+            .collect(),
         ValueView::Instance {
             class_name,
             attributes,
