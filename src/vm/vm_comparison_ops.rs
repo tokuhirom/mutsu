@@ -78,7 +78,7 @@ pub(super) fn is_neg_inf(v: &Value) -> bool {
 }
 
 /// Extract range components (start, end, excl_start, excl_end) from a range value.
-fn extract_range_parts(v: &Value) -> Option<(Value, Value, bool, bool)> {
+pub(super) fn extract_range_parts(v: &Value) -> Option<(Value, Value, bool, bool)> {
     match v.view() {
         ValueView::Range(a, b) => Some((Value::int(a), Value::int(b), false, false)),
         ValueView::RangeExcl(a, b) => Some((Value::int(a), Value::int(b), false, true)),
@@ -102,27 +102,43 @@ fn extract_range_parts(v: &Value) -> Option<(Value, Value, bool, bool)> {
 /// Compare two ranges using Raku cmp semantics:
 /// min first, then excludes-min (False < True), then max, then excludes-max (True < False).
 pub(super) fn range_cmp(left: &Value, right: &Value) -> std::cmp::Ordering {
-    let (l_start, l_end, l_excl_start, l_excl_end) = extract_range_parts(left).unwrap();
-    let (r_start, r_end, r_excl_start, r_excl_end) = extract_range_parts(right).unwrap();
+    range_cmp_parts(
+        &extract_range_parts(left).unwrap(),
+        &extract_range_parts(right).unwrap(),
+    )
+}
+
+/// The structural comparison [`range_cmp`] performs, factored out so a
+/// caller that already has `(min, max, excludes-min, excludes-max)` from
+/// somewhere other than a native `Range` variant — an `is Range` instance's
+/// accessor methods, read via dispatch so a delegated/inherited one
+/// participates just like a native Range's own fields (see
+/// `Interpreter::instance_range_cmp`) — can reuse the same ordering rules.
+pub(super) fn range_cmp_parts(
+    left: &(Value, Value, bool, bool),
+    right: &(Value, Value, bool, bool),
+) -> std::cmp::Ordering {
+    let (l_start, l_end, l_excl_start, l_excl_end) = left;
+    let (r_start, r_end, r_excl_start, r_excl_end) = right;
 
     // Compare min values using cmp semantics
-    let start_cmp = cmp_values(&l_start, &r_start);
+    let start_cmp = cmp_values(l_start, r_start);
     if start_cmp != std::cmp::Ordering::Equal {
         return start_cmp;
     }
     // Compare excludes-min: False < True (excluding min means higher effective start)
-    let excl_start_cmp = l_excl_start.cmp(&r_excl_start);
+    let excl_start_cmp = l_excl_start.cmp(r_excl_start);
     if excl_start_cmp != std::cmp::Ordering::Equal {
         return excl_start_cmp;
     }
     // Compare max values
-    let end_cmp = cmp_values(&l_end, &r_end);
+    let end_cmp = cmp_values(l_end, r_end);
     if end_cmp != std::cmp::Ordering::Equal {
         return end_cmp;
     }
     // Compare excludes-max: True < False (excluding max means lower effective end)
     // Note: we reverse the comparison here
-    r_excl_end.cmp(&l_excl_end)
+    r_excl_end.cmp(l_excl_end)
 }
 
 /// Unwrap an allomorph / runtime mixin (`<5.0>` RatStr, `42 but Role`) to its

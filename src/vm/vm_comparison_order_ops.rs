@@ -1,7 +1,8 @@
 //! String comparison and ordering ops (`cmp`/`leg`/`<=>`/`eqv`/before/after).
 use super::vm_comparison_ops::{
-    cmp_values, expand_range_to_list, get_list_elements, is_nan_value, is_neg_inf, is_pos_inf,
-    is_range_value, is_rationalish, range_cmp, value_to_f64,
+    cmp_values, expand_range_to_list, extract_range_parts, get_list_elements, is_nan_value,
+    is_neg_inf, is_pos_inf, is_range_value, is_rationalish, range_cmp, range_cmp_parts,
+    value_to_f64,
 };
 use super::*;
 use crate::value::SeqTaken;
@@ -517,6 +518,79 @@ impl Interpreter {
         Ok(())
     }
 
+    /// Whether `v` is an `is Range` instance (not a native `Range` variant —
+    /// callers check that separately). Used to decide whether `cmp` needs the
+    /// dispatch-based structural path in [`Self::instance_range_cmp`] at all.
+    /// `v` is descalarized first: a scalar-assigned range/instance
+    /// (`my $r = 3..6`) is itemized into a `Scalar` container to survive list
+    /// context, which is transparent to `cmp` the same way it is to method
+    /// dispatch.
+    fn is_range_mro_instance(&mut self, v: &Value) -> bool {
+        let v = v.descalarize();
+        matches!(v.view(), ValueView::Instance { class_name, .. }
+            if self.class_mro(&class_name.resolve()).iter().any(|s| s.as_str() == "Range"))
+    }
+
+    /// `(min, max, excludes-min, excludes-max)` for a range-like value: a
+    /// native `Range` variant is read directly (no dispatch); an `is Range`
+    /// instance is read via `min`/`max`/`excludes-min`/`excludes-max` method
+    /// calls, so a delegated (`has Range $!r handles <min max ...>`) or
+    /// inherited accessor participates the same way a native Range's own
+    /// fields do. `Ok(None)` when `v` is not range-like at all.
+    fn range_parts_via_dispatch(
+        &mut self,
+        v: &Value,
+    ) -> Result<Option<(Value, Value, bool, bool)>, RuntimeError> {
+        let v = v.descalarize();
+        if let Some(parts) = extract_range_parts(v) {
+            return Ok(Some(parts));
+        }
+        let ValueView::Instance { class_name, .. } = v.view() else {
+            return Ok(None);
+        };
+        if !self
+            .class_mro(&class_name.resolve())
+            .iter()
+            .any(|s| s.as_str() == "Range")
+        {
+            return Ok(None);
+        }
+        let min = self.call_method_with_values(v.clone(), "min", vec![])?;
+        let max = self.call_method_with_values(v.clone(), "max", vec![])?;
+        let excl_min = self
+            .call_method_with_values(v.clone(), "excludes-min", vec![])?
+            .truthy();
+        let excl_max = self
+            .call_method_with_values(v.clone(), "excludes-max", vec![])?
+            .truthy();
+        Ok(Some((min, max, excl_min, excl_max)))
+    }
+
+    /// `cmp` between two range-like values, extended to cover an `is Range`
+    /// instance on either side. A native `Range` vs `Range` already goes
+    /// through the pure-value `range_cmp` path below; this is only reached
+    /// when at least one side needs method dispatch to read its structural
+    /// fields (tokuhirom/mutsu#8814 — an `Interval is Range` compared
+    /// against a plain `Range` fell back to identity/type-based ordering
+    /// instead of Range's own min/max/excludes-* comparison). `Ok(None)`
+    /// unless both sides turn out to be range-like; the caller then falls
+    /// through to the existing scalar/list handling.
+    fn instance_range_cmp(
+        &mut self,
+        left: &Value,
+        right: &Value,
+    ) -> Result<Option<std::cmp::Ordering>, RuntimeError> {
+        if !self.is_range_mro_instance(left) && !self.is_range_mro_instance(right) {
+            return Ok(None);
+        }
+        let l = self.range_parts_via_dispatch(left)?;
+        let r = self.range_parts_via_dispatch(right)?;
+        let (Some(l), Some(r)) = (l, r) else {
+            return Ok(None);
+        };
+        Ok(Some(range_cmp_parts(&l, &r)))
+    }
+
     pub(super) fn exec_cmp_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
@@ -534,6 +608,10 @@ impl Interpreter {
         // NaN in cmp context: compare as string "NaN"
         if is_nan_value(&left) || is_nan_value(&right) {
             let ord = left.to_string_value().cmp(&right.to_string_value());
+            self.stack.push(runtime::make_order(ord));
+            return Ok(());
+        }
+        if let Some(ord) = self.instance_range_cmp(&left, &right)? {
             self.stack.push(runtime::make_order(ord));
             return Ok(());
         }
