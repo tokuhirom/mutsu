@@ -94,6 +94,9 @@ impl Interpreter {
         if self.stack.len() < arity {
             return Err(RuntimeError::new("Interpreter stack underflow in NqpOp"));
         }
+        if self.exec_nqp_pure_op(id, arity) {
+            return Ok(());
+        }
         let mut args = std::mem::take(&mut self.nqp_arg_scratch);
         args.clear();
         let start = self.stack.len() - arity;
@@ -112,6 +115,48 @@ impl Interpreter {
         self.nqp_arg_scratch = args;
         self.stack.push(result?);
         Ok(())
+    }
+
+    /// The direct form of [`Self::exec_nqp_op`] for the `nqp::` ops that are
+    /// pure functions of native operands — `add_i`, `iseq_i`, `bitand_i`,
+    /// `add_n`, ... (`crate::runtime::nqp_pure`).
+    ///
+    /// `true` means the op ran and its result is on the stack. `false` means
+    /// this is not one of those ops, or its operands are not already native,
+    /// and the caller keeps the general path.
+    ///
+    /// Everything the general path does around the op body is dropped here,
+    /// and each one because the op's OWN definition makes it a no-op rather
+    /// than because it was found unnecessary in practice:
+    ///
+    /// * the argument list — the operands are read where the caller's opcodes
+    ///   left them, on the stack, and a pure op keeps no reference to them;
+    /// * the `VarRef` unwrap, the container deref and the `Proxy` FETCH —
+    ///   `try_eval_native` declines every one of those operand shapes, so the
+    ///   general path is still the only place they are normalized;
+    /// * `set_pending_callsite_line(None)` — that clears a marker line so the
+    ///   next test assertion does not inherit it, and a pure op cannot reach
+    ///   an assertion: it dispatches nowhere. The general path still clears it
+    ///   for every op that can;
+    /// * the `literal_native_args` save/clear/restore — that mask ranks a
+    ///   `multi`'s native-vs-boxed candidates for whatever an op dispatches
+    ///   into, and a pure op dispatches into nothing.
+    ///
+    /// The `MUTSU_VM_STATS` dispatch tally is still bumped, so the counter
+    /// stays comparable across this change.
+    fn exec_nqp_pure_op(&mut self, id: u16, arity: usize) -> bool {
+        let Some(op) = crate::runtime::nqp_pure::pure_op(id) else {
+            return false;
+        };
+        let start = self.stack.len() - arity;
+        let Some(result) = crate::runtime::nqp_pure::try_eval_native(op, &self.stack[start..])
+        else {
+            return false;
+        };
+        crate::vm::vm_stats::record_function_dispatch();
+        self.stack.truncate(start);
+        self.stack.push(result);
+        true
     }
 
     /// FETCH any `Proxy` operand in place. The general call path rebuilt the

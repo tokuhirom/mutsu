@@ -374,9 +374,26 @@ impl Interpreter {
                 TrOp::NqpOpGen { id, arity } => {
                     let n = *arity as usize;
                     let base = self.trir.os.len().saturating_sub(n);
-                    let args: Vec<Value> = self.trir.os.drain(base..).collect();
-                    let v = self.dispatch_nqp_op_by_id(*id, &args)?;
-                    self.trir.os.push(v);
+                    // The pure native ops (`crate::runtime::nqp_pure`) run
+                    // straight off the boxed bank: no argument vector, no
+                    // name, no table walk. TRIR has typed forms for most of
+                    // these already, so what reaches here is the residue a
+                    // chunk could not type — an `nqp::iseq_i` whose operand
+                    // came back boxed from a `CallGen`, say (#8900).
+                    let direct = crate::runtime::nqp_pure::pure_op(*id).and_then(|op| {
+                        crate::runtime::nqp_pure::try_eval_native(op, &self.trir.os[base..])
+                    });
+                    match direct {
+                        Some(v) => {
+                            self.trir.os.truncate(base);
+                            self.trir.os.push(v);
+                        }
+                        None => {
+                            let args: Vec<Value> = self.trir.os.drain(base..).collect();
+                            let v = self.dispatch_nqp_op_by_id(*id, &args)?;
+                            self.trir.os.push(v);
+                        }
+                    }
                 }
 
                 // ---- calls ----
