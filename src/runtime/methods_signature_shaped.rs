@@ -233,7 +233,7 @@ impl Interpreter {
                     .method_class_stack
                     .last()
                     .cloned()
-                    .or_else(|| Some(self.current_package().to_string()));
+                    .or_else(|| Some(self.current_package()));
                 // Resolve: owner-qualified (!Owner::method) or unqualified (!method)
                 let resolved = if let Some((owner_class, pm_name)) = private_rest.split_once("::") {
                     // Canonicalize the source-written owner name relative to

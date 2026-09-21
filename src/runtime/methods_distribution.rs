@@ -361,8 +361,7 @@ impl Interpreter {
         })?;
         // Set the file context
         let saved_file = self.env.get("?FILE").cloned();
-        self.env
-            .insert("?FILE".to_string(), Value::str(path_str.clone()));
+        self.env.insert("?FILE".to_string(), Value::str(path_str));
         // Snapshot the function registry before loading the script so we can restore it
         // after MAIN dispatch (preventing MAIN from leaking into the parent scope).
         let registry_snapshot = self.snapshot_routine_registry();

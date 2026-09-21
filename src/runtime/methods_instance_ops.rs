@@ -99,7 +99,7 @@ impl Interpreter {
         else {
             return false;
         };
-        let self_cls = self_cls.resolve().to_string();
+        let self_cls = self_cls.resolve();
         self_cls == resolved_owner
             || self
                 .class_mro(&self_cls)
@@ -554,7 +554,7 @@ impl Interpreter {
                     .method_class_stack
                     .last()
                     .cloned()
-                    .or_else(|| Some(self.current_package().to_string()));
+                    .or_else(|| Some(self.current_package()));
                 // An unqualified external private call (`$o!meth` where `$o` is
                 // not `self`) must name the defining package — Raku reports
                 // X::Method::Private::Unqualified rather than the Permission
@@ -1841,7 +1841,7 @@ impl Interpreter {
                                 let info = crate::runtime::ContainerTypeInfo {
                                     value_type: tc.clone(),
                                     key_type: None,
-                                    declared_type: Some(tc.clone()),
+                                    declared_type: Some(tc),
                                 };
                                 return Ok(self.tag_container_metadata(val, info));
                             }
@@ -2064,7 +2064,7 @@ impl Interpreter {
                     .method_class_stack
                     .last()
                     .cloned()
-                    .or_else(|| Some(self.current_package().to_string()));
+                    .or_else(|| Some(self.current_package()));
                 // Split at the LAST `::` so a nested owner class name
                 // (`$c!Jar::Cookie::secret` → owner `Jar::Cookie`, method `secret`)
                 // resolves correctly.
@@ -3149,14 +3149,11 @@ impl Interpreter {
                 }
                 // The calculator returns the method body (a Callable) for this
                 // name; invoke it with the invocant (and any call args).
-                let method_code = match self.call_sub_value(
-                    calculator,
-                    vec![target.clone(), name_val.clone()],
-                    false,
-                ) {
-                    Ok(v) => v,
-                    Err(e) => return Some(Err(e)),
-                };
+                let method_code =
+                    match self.call_sub_value(calculator, vec![target.clone(), name_val], false) {
+                        Ok(v) => v,
+                        Err(e) => return Some(Err(e)),
+                    };
                 let mut call_args = vec![target.clone()];
                 call_args.extend_from_slice(args);
                 return Some(self.call_sub_value(method_code, call_args, false));

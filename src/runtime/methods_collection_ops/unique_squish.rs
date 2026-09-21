@@ -382,8 +382,8 @@ impl Interpreter {
                 seq_id,
                 super::super::SquishIteratorMeta {
                     source_items,
-                    as_func: as_func.clone(),
-                    with_func: with_func.clone(),
+                    as_func,
+                    with_func,
                     revert_values,
                     revert_remove,
                 },

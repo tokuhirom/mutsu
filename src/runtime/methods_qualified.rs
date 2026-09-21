@@ -74,7 +74,7 @@ impl Interpreter {
                 .method_class_stack
                 .last()
                 .cloned()
-                .or_else(|| Some(self.current_package().to_string()));
+                .or_else(|| Some(self.current_package()));
             let (canonical_owner, caller_allowed) =
                 self.resolve_and_check_private_owner(caller_class.as_deref(), owner_class);
             if !caller_allowed {
@@ -345,7 +345,7 @@ impl Interpreter {
                     for def in overloads {
                         if !def.is_private && self.method_args_match(&args, &def.param_defs) {
                             let attrs_map = attributes.to_map();
-                            let inst_cn = inst_cn_str.to_string();
+                            let inst_cn = inst_cn_str;
                             // Bind THIS concretization's type parameters (`T`=`Int`)
                             // under the qualifier role name for the duration of the
                             // call. The method body reads `T` from the role-param
@@ -482,7 +482,7 @@ impl Interpreter {
                     && self.method_args_match(&args, &def.param_defs)
                 {
                     let attrs_map = attributes.to_map();
-                    let inst_cn = inst_cn_str.to_string();
+                    let inst_cn = inst_cn_str;
                     let (result, updated) = match self.run_resolved_method_compiled_or_treewalk(
                         &inst_cn,
                         qualifier,
@@ -516,7 +516,7 @@ impl Interpreter {
             for def in overloads {
                 if !def.is_private && self.method_args_match(&args, &def.param_defs) {
                     let attrs_map = attributes.to_map();
-                    let inst_cn = inst_cn_str.to_string();
+                    let inst_cn = inst_cn_str;
                     let (result, updated) = match self.run_resolved_method_compiled_or_treewalk(
                         &inst_cn,
                         qualifier,
@@ -945,7 +945,7 @@ impl Interpreter {
         // which fails the inheritance check below; resolve against the package's
         // own name instead and run the qualifier-class method on the type object.
         if let ValueView::Package(pkg) = target.view() {
-            let pkg_name = pkg.resolve().to_string();
+            let pkg_name = pkg.resolve();
             // Mirror the instance path: the qualifier must be reachable through the
             // type's MRO (or a composed role), using the same `class_mro` lookup
             // rather than `type_inherits` (which does not resolve the hierarchy the

@@ -384,7 +384,7 @@ impl Interpreter {
             }
             // `is_individual_role_type_object` only matches a `Package` or
             // `Instance` target, so `how_cache_key` is always `Some` here.
-            if let Some(key) = how_cache_key.clone() {
+            if let Some(key) = how_cache_key {
                 self.registry_mut()
                     .class_how_values
                     .insert(key, how.clone());
@@ -503,10 +503,7 @@ impl Interpreter {
         };
         let mut attrs = HashMap::new();
         attrs.insert("name".to_string(), Value::str(type_name.clone()));
-        attrs.insert(
-            "__mutsu_how_target".to_string(),
-            Value::str(type_name.clone()),
-        );
+        attrs.insert("__mutsu_how_target".to_string(), Value::str(type_name));
         let mut how = Value::make_instance(Symbol::intern(&how_name), attrs);
 
         // Rakudo composes anonymous implementation roles into the metaobjects

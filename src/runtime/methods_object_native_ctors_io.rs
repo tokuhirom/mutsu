@@ -107,8 +107,8 @@ impl Interpreter {
             .as_ref()
             .map(|s| {
                 let name = match s.view() {
-                    ValueView::Package(n) => n.resolve().to_string(),
-                    ValueView::Instance { class_name, .. } => class_name.resolve().to_string(),
+                    ValueView::Package(n) => n.resolve(),
+                    ValueView::Instance { class_name, .. } => class_name.resolve(),
                     _ => String::new(),
                 };
                 name == "IO::Spec::Win32" || name.ends_with("Win32")

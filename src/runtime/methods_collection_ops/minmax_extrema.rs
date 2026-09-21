@@ -272,8 +272,7 @@ impl Interpreter {
                 }
             }
         } else {
-            let mut best_key =
-                self.call_sub_value(compare_or_key_fn.clone(), vec![best.clone()], true)?;
+            let mut best_key = self.call_sub_value(compare_or_key_fn.clone(), vec![best], true)?;
             for item in values.into_iter().skip(1) {
                 let key =
                     self.call_sub_value(compare_or_key_fn.clone(), vec![item.clone()], true)?;

@@ -237,7 +237,7 @@ impl Interpreter {
             if matches!(inner.view(), ValueView::Hash(_) | ValueView::Nil)
                 || matches!(inner.view(), ValueView::Package(n) if matches!(n.resolve().as_str(), "Any" | "Mu"))
             {
-                let old_meta = self.container_type_metadata(inner).clone();
+                let old_meta = self.container_type_metadata(inner);
                 // Enforce the declared element type, so
                 // `my Str %a; %a.AT-KEY("K") = 1` raises X::TypeCheck::Assignment
                 // just like `%a<K> = 1` does.
@@ -296,7 +296,7 @@ impl Interpreter {
                     };
                     insert_entry(&mut data, &method_args[0], value.clone());
                     let mut new_hash = Value::hash_with_data(crate::gc::Gc::new(data));
-                    if let Some(m) = old_meta.clone() {
+                    if let Some(m) = old_meta {
                         new_hash = self.tag_container_metadata(new_hash, m);
                     }
                     self.write_self_attr_cell(var_name, new_hash);
@@ -718,7 +718,7 @@ impl Interpreter {
                 .method_class_stack
                 .last()
                 .cloned()
-                .or_else(|| Some(self.current_package().to_string()));
+                .or_else(|| Some(self.current_package()));
             let (owner_class, attr_name) =
                 if let Some((owner, attr)) = private_rest.split_once("::") {
                     (owner.to_string(), attr.to_string())

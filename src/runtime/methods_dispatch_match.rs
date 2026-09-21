@@ -569,18 +569,17 @@ impl Interpreter {
         }
 
         if matches!(target.view(), ValueView::Instance { .. }) {
-            let coerced = if let Ok(v) =
-                self.call_method_with_values(target.clone(), "Numeric", vec![])
-            {
-                v
-            } else if let Ok(v) = self.call_method_with_values(target.clone(), "Bridge", vec![]) {
-                v
-            } else {
-                return Some(Err(RuntimeError::new(format!(
-                    "Cannot coerce to numeric for {}",
-                    method
-                ))));
-            };
+            let coerced =
+                if let Ok(v) = self.call_method_with_values(target.clone(), "Numeric", vec![]) {
+                    v
+                } else if let Ok(v) = self.call_method_with_values(target, "Bridge", vec![]) {
+                    v
+                } else {
+                    return Some(Err(RuntimeError::new(format!(
+                        "Cannot coerce to numeric for {}",
+                        method
+                    ))));
+                };
             return Some(self.call_method_with_values(coerced, method, args));
         }
 

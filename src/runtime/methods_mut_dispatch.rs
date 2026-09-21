@@ -1324,7 +1324,7 @@ impl Interpreter {
                                                         &expected_name,
                                                     ))
                                                 } else {
-                                                    Value::str(expected_name.clone())
+                                                    Value::str(expected_name)
                                                 },
                                             ),
                                         ]
@@ -1350,16 +1350,15 @@ impl Interpreter {
                         let constraint = info.value_type;
                         for v in &splice_new_items {
                             if !self.type_matches_value(&constraint, v) {
-                                let expected_name = info
-                                        .declared_type
-                                        .clone()
-                                        .unwrap_or_else(|| {
-                                            if crate::runtime::native_types::is_native_array_element_type(&constraint) {
-                                                format!("array[{constraint}]")
-                                            } else {
-                                                format!("Array[{constraint}]")
-                                            }
-                                        });
+                                let expected_name = info.declared_type.unwrap_or_else(|| {
+                                    if crate::runtime::native_types::is_native_array_element_type(
+                                        &constraint,
+                                    ) {
+                                        format!("array[{constraint}]")
+                                    } else {
+                                        format!("Array[{constraint}]")
+                                    }
+                                });
                                 return Err(RuntimeError::typed(
                                     "X::TypeCheck::Splice",
                                     [
@@ -1379,7 +1378,7 @@ impl Interpreter {
                                                 &crate::runtime::utils::got_type_name(v),
                                             )),
                                         ),
-                                        ("expected".to_string(), Value::str(expected_name.clone())),
+                                        ("expected".to_string(), Value::str(expected_name)),
                                     ]
                                     .into_iter()
                                     .collect(),
@@ -2155,7 +2154,7 @@ impl Interpreter {
                 }
             }
             let new_elements: std::collections::HashSet<String> = elements.into_iter().collect();
-            let mut new_originals = set_data.original_keys.clone().unwrap_or_default();
+            let mut new_originals = set_data.original_keys.unwrap_or_default();
             new_originals.retain(|k, _| new_elements.contains(k));
             let new_set = Value::set_parts(
                 crate::gc::Gc::new(crate::value::SetData::with_original_keys(
@@ -2285,7 +2284,7 @@ impl Interpreter {
                 }
             }
             // Update the original variable (keep the surviving element objects)
-            let mut new_originals = bag_data.original_keys.clone().unwrap_or_default();
+            let mut new_originals = bag_data.original_keys.unwrap_or_default();
             new_originals.retain(|k, _| remaining.contains_key(k));
             let new_bag = Value::bag_parts(
                 crate::gc::Gc::new(crate::value::BagData::with_original_keys(
@@ -2671,8 +2670,7 @@ impl Interpreter {
                     updated.insert("squish_initialized".to_string(), Value::truth(initialized));
                     let updated_instance =
                         Value::write_back_sharing(&attributes, class_name, updated, target_id);
-                    self.env
-                        .insert(target_var.to_string(), updated_instance.clone());
+                    self.env.insert(target_var.to_string(), updated_instance);
                     return Ok(ret);
                 }
 
@@ -2720,9 +2718,9 @@ impl Interpreter {
                 }
 
                 let ret = match method {
-                    "count-only" => known_count
-                        .clone()
-                        .unwrap_or_else(|| Value::int(len.saturating_sub(index) as i64)),
+                    "count-only" => {
+                        known_count.unwrap_or_else(|| Value::int(len.saturating_sub(index) as i64))
+                    }
                     "bool-only" => match &known_count {
                         Some(c) => Value::truth(c.to_f64() > 0.0),
                         None => Value::truth(index < len),

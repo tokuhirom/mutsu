@@ -123,7 +123,7 @@ impl Interpreter {
                         deprecated_message: None,
                         is_submethod: false,
                         captured_env: None,
-                        source_file: proto.source_file.clone(),
+                        source_file: proto.source_file,
                         role_param_bindings: None,
                     }]
                 } else {

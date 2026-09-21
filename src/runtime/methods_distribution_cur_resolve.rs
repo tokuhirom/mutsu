@@ -230,7 +230,7 @@ impl Interpreter {
                     let mut meta_map = ValueMap::default();
                     meta_map.insert("name".to_string(), Value::str(short_name.clone()));
                     let mut provides_map = ValueMap::default();
-                    provides_map.insert(short_name.clone(), Value::str(format!("{relative}{ext}")));
+                    provides_map.insert(short_name, Value::str(format!("{relative}{ext}")));
                     meta_map.insert(
                         "provides".to_string(),
                         Value::hash_with_data(Value::hash_arc(provides_map)),
