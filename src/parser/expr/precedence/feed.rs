@@ -204,7 +204,7 @@ pub(crate) fn build_append_feed_expr(source: Expr, sink: Expr) -> Expr {
             is_bind: false,
         },
         Expr::ArrayVar(name) => Expr::AssignExpr {
-            name: format!("@{}", name.clone()),
+            name: format!("@{}", name),
             expr: Box::new(Expr::Call {
                 name: Symbol::intern("__mutsu_feed_append"),
                 args: vec![Expr::ArrayVar(name), source],
@@ -212,7 +212,7 @@ pub(crate) fn build_append_feed_expr(source: Expr, sink: Expr) -> Expr {
             is_bind: false,
         },
         Expr::HashVar(name) => Expr::AssignExpr {
-            name: format!("%{}", name.clone()),
+            name: format!("%{}", name),
             expr: Box::new(Expr::Call {
                 name: Symbol::intern("__mutsu_feed_append"),
                 args: vec![Expr::HashVar(name), source],

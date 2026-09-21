@@ -269,9 +269,9 @@ pub(in crate::parser) fn try_parse_assign_expr(input: &str) -> PResult<'_, Expr>
                 Err(_) => expression(rest)?,
             };
             let target = match sigil {
-                b'@' => Expr::ArrayVar(var.to_string()),
-                b'%' => Expr::HashVar(var.to_string()),
-                _ => Expr::Var(var.to_string()),
+                b'@' => Expr::ArrayVar(var),
+                b'%' => Expr::HashVar(var),
+                _ => Expr::Var(var),
             };
             // Wrap the RHS in the `__mutsu_bind_index_value` marker so the
             // IndexAssign VM path takes *bind* semantics (write-time values, no
@@ -313,9 +313,9 @@ pub(in crate::parser) fn try_parse_assign_expr(input: &str) -> PResult<'_, Expr>
                 Err(_) => expression_no_word_logical(rest)?,
             };
             let target = match sigil {
-                b'@' => Expr::ArrayVar(var.to_string()),
-                b'%' => Expr::HashVar(var.to_string()),
-                _ => Expr::Var(var.to_string()),
+                b'@' => Expr::ArrayVar(var),
+                b'%' => Expr::HashVar(var),
+                _ => Expr::Var(var),
             };
             let assigned = Expr::IndexAssign {
                 target: Box::new(target),
@@ -341,9 +341,9 @@ pub(in crate::parser) fn try_parse_assign_expr(input: &str) -> PResult<'_, Expr>
         let (r, _) = ws(stripped)?;
         let name = format!("{}{}", prefix, var);
         let method_target = match sigil {
-            b'@' => Expr::ArrayVar(var.to_string()),
-            b'%' => Expr::HashVar(var.to_string()),
-            _ => Expr::Var(var.to_string()),
+            b'@' => Expr::ArrayVar(var),
+            b'%' => Expr::HashVar(var),
+            _ => Expr::Var(var),
         };
         // Check for quoted method name: .="method"() or .='method'()
         if let Some((r_after_quote, qname)) = parse_quoted_method_name(r) {
@@ -485,9 +485,9 @@ pub(in crate::parser) fn try_parse_assign_expr(input: &str) -> PResult<'_, Expr>
         // / `@a ,= 3` treat the LHS as a Hash/Array container (not a scalar
         // `Var("h")`), letting the comma operator merge/append the two containers.
         let lhs_expr = match sigil {
-            b'@' => Expr::ArrayVar(var.to_string()),
-            b'%' => Expr::HashVar(var.to_string()),
-            _ => Expr::Var(var.to_string()),
+            b'@' => Expr::ArrayVar(var),
+            b'%' => Expr::HashVar(var),
+            _ => Expr::Var(var),
         };
         if sigil == b'$'
             && let Some(short) =
@@ -516,7 +516,7 @@ pub(in crate::parser) fn try_parse_assign_expr(input: &str) -> PResult<'_, Expr>
                 Expr::AssignExpr {
                     name,
                     expr: Box::new(compound_assigned_value_expr(
-                        Expr::Var(var.to_string()),
+                        Expr::Var(var),
                         compound_op,
                         rhs,
                     )),
@@ -525,8 +525,8 @@ pub(in crate::parser) fn try_parse_assign_expr(input: &str) -> PResult<'_, Expr>
             ));
         }
         let var_expr = match sigil {
-            b'@' => Expr::ArrayVar(var.to_string()),
-            b'%' => Expr::HashVar(var.to_string()),
+            b'@' => Expr::ArrayVar(var),
+            b'%' => Expr::HashVar(var),
             _ => Expr::Var(name.clone()),
         };
         // The reverse meta-op assignment `$x R op= $y` assigns to its RIGHT
@@ -565,8 +565,8 @@ pub(in crate::parser) fn try_parse_assign_expr(input: &str) -> PResult<'_, Expr>
         };
         let name = format!("{}{}", prefix, var);
         let var_expr = match sigil {
-            b'@' => Expr::ArrayVar(var.to_string()),
-            b'%' => Expr::HashVar(var.to_string()),
+            b'@' => Expr::ArrayVar(var),
+            b'%' => Expr::HashVar(var),
             _ => Expr::Var(name.clone()),
         };
         return Ok((

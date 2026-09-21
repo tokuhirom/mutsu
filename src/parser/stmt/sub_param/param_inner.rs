@@ -861,14 +861,14 @@ fn parse_single_param_inner(input: &str) -> PResult<'_, ParamDef> {
                 && sub_params[0].sub_signature.is_none()
                 && (!sub_params[0].name.starts_with("__") || sub_params[0].name == "__ANON_STATE__")
             {
-                let mut p = super::helpers::make_param(alias_name.clone());
+                let mut p = super::helpers::make_param(alias_name);
                 p.named = true;
                 p.named_alias = true;
                 p.slurpy = slurpy;
                 p.double_slurpy = double_slurpy;
                 p.onearg = onearg;
                 p.type_constraint = type_constraint;
-                p.sub_signature = Some(sub_params.clone());
+                p.sub_signature = Some(sub_params);
                 // Check for a sub-signature after the alias: :x($r) (Str $g, Any $i).
                 // An optional `!`/`?` required marker may sit between the alias and
                 // the sub-signature (`:function($)! (Str :$over)`), so consume it

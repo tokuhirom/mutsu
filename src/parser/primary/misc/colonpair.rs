@@ -500,7 +500,7 @@ pub(crate) fn colonpair_expr(input: &str) -> PResult<'_, Expr> {
             return Ok((
                 r,
                 Expr::Binary {
-                    left: Box::new(Expr::Literal(Value::str(name.to_string()))),
+                    left: Box::new(Expr::Literal(Value::str(name))),
                     op: crate::token_kind::TokenKind::FatArrow,
                     right: Box::new(Expr::ArrayLiteral(Vec::new())),
                 },
@@ -531,7 +531,7 @@ pub(crate) fn colonpair_expr(input: &str) -> PResult<'_, Expr> {
             return Ok((
                 r,
                 Expr::Binary {
-                    left: Box::new(Expr::Literal(Value::str(name.to_string()))),
+                    left: Box::new(Expr::Literal(Value::str(name))),
                     op: crate::token_kind::TokenKind::FatArrow,
                     right: Box::new(value),
                 },
@@ -542,7 +542,7 @@ pub(crate) fn colonpair_expr(input: &str) -> PResult<'_, Expr> {
         return Ok((
             r,
             Expr::Binary {
-                left: Box::new(Expr::Literal(Value::str(name.to_string()))),
+                left: Box::new(Expr::Literal(Value::str(name))),
                 op: crate::token_kind::TokenKind::FatArrow,
                 right: Box::new(value),
             },
@@ -578,7 +578,7 @@ pub(crate) fn colonpair_expr(input: &str) -> PResult<'_, Expr> {
         return Ok((
             r,
             Expr::Binary {
-                left: Box::new(Expr::Literal(Value::str(name.to_string()))),
+                left: Box::new(Expr::Literal(Value::str(name))),
                 op: crate::token_kind::TokenKind::FatArrow,
                 right: Box::new(Expr::BracketArray(items, trailing_comma)),
             },
@@ -590,7 +590,7 @@ pub(crate) fn colonpair_expr(input: &str) -> PResult<'_, Expr> {
         return Ok((
             r,
             Expr::Binary {
-                left: Box::new(Expr::Literal(Value::str(name.to_string()))),
+                left: Box::new(Expr::Literal(Value::str(name))),
                 op: crate::token_kind::TokenKind::FatArrow,
                 right: Box::new(block_or_hash),
             },
@@ -623,7 +623,7 @@ pub(crate) fn colonpair_expr(input: &str) -> PResult<'_, Expr> {
                 return Ok((
                     r,
                     Expr::Binary {
-                        left: Box::new(Expr::Literal(Value::str(name.to_string()))),
+                        left: Box::new(Expr::Literal(Value::str(name))),
                         op: crate::token_kind::TokenKind::FatArrow,
                         right: Box::new(Expr::ArrayLiteral(Vec::new())),
                     },
@@ -649,7 +649,7 @@ pub(crate) fn colonpair_expr(input: &str) -> PResult<'_, Expr> {
                 return Ok((
                     r,
                     Expr::Binary {
-                        left: Box::new(Expr::Literal(Value::str(name.to_string()))),
+                        left: Box::new(Expr::Literal(Value::str(name))),
                         op: crate::token_kind::TokenKind::FatArrow,
                         right: Box::new(val_expr),
                     },
@@ -663,7 +663,7 @@ pub(crate) fn colonpair_expr(input: &str) -> PResult<'_, Expr> {
         return Ok((
             r,
             Expr::Binary {
-                left: Box::new(Expr::Literal(Value::str(name.to_string()))),
+                left: Box::new(Expr::Literal(Value::str(name))),
                 op: crate::token_kind::TokenKind::FatArrow,
                 right: Box::new(val_expr),
             },
@@ -675,7 +675,7 @@ pub(crate) fn colonpair_expr(input: &str) -> PResult<'_, Expr> {
         return Ok((
             r,
             Expr::Binary {
-                left: Box::new(Expr::Literal(Value::str(name.to_string()))),
+                left: Box::new(Expr::Literal(Value::str(name))),
                 op: crate::token_kind::TokenKind::FatArrow,
                 right: Box::new(val_expr),
             },
@@ -685,7 +685,7 @@ pub(crate) fn colonpair_expr(input: &str) -> PResult<'_, Expr> {
     Ok((
         rest,
         Expr::Binary {
-            left: Box::new(Expr::Literal(Value::str(name.to_string()))),
+            left: Box::new(Expr::Literal(Value::str(name))),
             op: crate::token_kind::TokenKind::FatArrow,
             right: Box::new(Expr::Literal(Value::TRUE)),
         },

@@ -247,7 +247,7 @@ pub(crate) fn build_compound_assign_target_expr(target: Expr, op_name: &str, val
                 })
         }
         Expr::ArrayVar(name) => Expr::AssignExpr {
-            name: format!("@{}", name.clone()),
+            name: format!("@{}", name),
             expr: Box::new(compound_assigned_value_expr(
                 Expr::ArrayVar(name),
                 op,
@@ -256,7 +256,7 @@ pub(crate) fn build_compound_assign_target_expr(target: Expr, op_name: &str, val
             is_bind: false,
         },
         Expr::HashVar(name) => Expr::AssignExpr {
-            name: format!("%{}", name.clone()),
+            name: format!("%{}", name),
             expr: Box::new(compound_assigned_value_expr(Expr::HashVar(name), op, value)),
             is_bind: false,
         },

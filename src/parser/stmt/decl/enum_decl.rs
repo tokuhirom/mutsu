@@ -403,7 +403,7 @@ pub(super) fn parse_enum_decl_body_with_type(
                         is_export,
                         export_tags,
                         is_my,
-                        base_type: base_type.clone(),
+                        base_type,
                         roles,
                         language_version: super::super::simple::current_language_version(),
                     },

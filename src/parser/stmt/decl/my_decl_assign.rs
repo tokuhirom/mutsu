@@ -930,7 +930,7 @@ fn handle_binding(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
             // Return the bound variable so the expression evaluates to the
             // bound value (important for `+my @a := ...` which expects the
             // list count).
-            stmts.push(Stmt::Expr(Expr::Var(bound_name.clone())));
+            stmts.push(Stmt::Expr(Expr::Var(bound_name)));
         }
         Stmt::SyntheticBlock(stmts)
     } else if mark_scalar_readonly {

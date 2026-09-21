@@ -332,7 +332,7 @@ pub(crate) fn try_custom_infix_word<'a>(
         }
         "non" if args.len() > 2 => return Err(non_associative_error(&name)),
         _ => Expr::InfixFunc {
-            name: name.clone(),
+            name,
             left: Box::new(args[0].clone()),
             right: args[1..].to_vec(),
             modifier: None,

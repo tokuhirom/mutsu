@@ -97,7 +97,7 @@ pub(crate) fn parse_pointy_param(input: &str) -> PResult<'_, ParamDef> {
                 );
                 "Bool".to_string()
             } else {
-                tc.clone()
+                tc
             };
             return Ok((
                 r2,

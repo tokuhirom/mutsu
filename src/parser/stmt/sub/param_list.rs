@@ -107,7 +107,7 @@ pub(crate) fn check_duplicate_params(params: &[ParamDef]) -> Result<(), PError> 
                 display_name
             );
             let mut attrs = std::collections::HashMap::new();
-            attrs.insert("symbol".to_string(), Value::str(display_name.clone()));
+            attrs.insert("symbol".to_string(), Value::str(display_name));
             attrs.insert("what".to_string(), Value::str("symbol".to_string()));
             let ex = Value::make_instance(Symbol::intern("X::Redeclaration"), attrs);
             return Err(PError::fatal_with_exception(msg, Box::new(ex)));

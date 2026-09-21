@@ -109,7 +109,7 @@ pub(crate) fn anon_class_expr(input: &str) -> PResult<'_, Expr> {
                 break;
             }
         }
-        (r, class_name.to_string(), parents, does_roles)
+        (r, class_name, parents, does_roles)
     } else {
         return Err(PError::expected("'{' for anonymous class"));
     };

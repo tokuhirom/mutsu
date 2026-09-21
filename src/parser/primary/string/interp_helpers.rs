@@ -472,7 +472,7 @@ where
 
     // For @/$ context without postcircumfix, also check for {} and method calls
     if !consumed && matches!(outer_sigil, '$' | '@') {
-        let (expr, r) = parse_postcircumfix_index(remainder, inner_expr.clone());
+        let (expr, r) = parse_postcircumfix_index(remainder, inner_expr);
         if r.len() < remainder.len() {
             if !current.is_empty() {
                 parts.push(Expr::Literal(literal_str(std::mem::take(current))));

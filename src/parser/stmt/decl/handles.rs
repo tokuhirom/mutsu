@@ -179,7 +179,7 @@ pub(in crate::parser) fn parse_handle_specs<'a>(
     } else {
         // Bare identifier: could be a method name or type name
         let (r_name, method_name) = ident(r)?;
-        specs.push(HandleSpec::Name(method_name.to_string()));
+        specs.push(HandleSpec::Name(method_name));
         *rest_out = r_name;
     }
     Ok(())

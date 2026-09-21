@@ -337,7 +337,7 @@ pub(crate) fn temp_stmt(input: &str) -> PResult<'_, Stmt> {
             return parse_statement_modifier(
                 rhs_rest,
                 Stmt::Let {
-                    name: var_name.clone(),
+                    name: var_name,
                     index: None,
                     value: Some(Box::new(rhs_expr)),
                     is_temp: true,
@@ -431,7 +431,7 @@ pub(crate) fn temp_stmt(input: &str) -> PResult<'_, Stmt> {
     // Build full env key including twigil
     let full_name = if sigil == '$' {
         if twigil.is_empty() {
-            var_name.clone()
+            var_name
         } else {
             format!("{}{}", twigil, var_name)
         }

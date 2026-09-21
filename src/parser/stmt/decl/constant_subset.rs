@@ -167,7 +167,7 @@ pub(in crate::parser::stmt) fn constant_decl(input: &str) -> PResult<'_, Stmt> {
                 is_dynamic: false,
                 is_export,
                 export_tags: export_tags.clone(),
-                custom_traits: constant_traits.clone(),
+                custom_traits: constant_traits,
                 where_constraint: None,
             },
         ));
@@ -203,7 +203,7 @@ pub(in crate::parser::stmt) fn constant_decl(input: &str) -> PResult<'_, Stmt> {
                 is_dynamic: false,
                 is_export,
                 export_tags: export_tags.clone(),
-                custom_traits: constant_traits.clone(),
+                custom_traits: constant_traits,
                 where_constraint: None,
             },
         ));

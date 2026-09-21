@@ -351,7 +351,7 @@ fn build_outer_redeclaration_error(symbol: &str, line: i64) -> RuntimeError {
     if line > 0 {
         attrs.insert("line".to_string(), Value::int(line));
     }
-    let mut err = RuntimeError::new(message.to_string());
+    let mut err = RuntimeError::new(message);
     err.set_code(Some(RuntimeErrorCode::ParseGeneric));
     if line > 0 {
         err.set_line(Some(line as usize));

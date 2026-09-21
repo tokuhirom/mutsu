@@ -2223,7 +2223,7 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
             && name.contains('-');
         if is_user_prefix_sub {
             if let Ok((r2, arg)) = expression_no_sequence(r) {
-                return Ok((r2, make_call_expr(call_name.clone(), input, vec![arg])));
+                return Ok((r2, make_call_expr(call_name, input, vec![arg])));
             }
         } else if is_user_sub
             && let Ok((r2, expr)) = make_call_expr_from_listop_args(r, input, call_name.clone())

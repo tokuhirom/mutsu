@@ -268,7 +268,7 @@ pub(crate) fn sub_decl_body(
     // Detect forward declaration: `sub name(...);`.
     if let Some(rest) = rest.strip_prefix(';') {
         // Merge return type for forward declarations too
-        let fwd_return_type = return_type.clone().or(traits.return_type.clone());
+        let fwd_return_type = return_type.or(traits.return_type.clone());
         if allow_main_semicolon_decl && name == "MAIN" && !multi {
             return Ok((
                 rest,
@@ -289,7 +289,7 @@ pub(crate) fn sub_decl_body(
                     export_tags: traits.export_tags.clone(),
                     is_test_assertion: traits.is_test_assertion,
                     supersede,
-                    custom_traits: traits.custom_traits.clone(),
+                    custom_traits: traits.custom_traits,
                 },
             ));
         }
@@ -334,7 +334,7 @@ pub(crate) fn sub_decl_body(
                 export_tags: traits.export_tags.clone(),
                 is_test_assertion: traits.is_test_assertion,
                 supersede,
-                custom_traits: traits.custom_traits.clone(),
+                custom_traits: traits.custom_traits,
             },
         ));
     }
@@ -477,7 +477,7 @@ pub(crate) fn sub_decl_body(
             name, inner
         );
         let mut attrs = std::collections::HashMap::new();
-        attrs.insert("symbol".to_string(), Value::str(name.clone()));
+        attrs.insert("symbol".to_string(), Value::str(name));
         attrs.insert("what".to_string(), Value::str("return type".to_string()));
         let _ = trait_rt;
         let ex = Value::make_instance(Symbol::intern("X::Redeclaration"), attrs);

@@ -337,7 +337,7 @@ pub(crate) fn scalar_var(input: &str) -> PResult<'_, Expr> {
     let (rest, name) = parse_qualified_ident_prefix_with_hyphens(rest)?;
     if rest.starts_with("::(") {
         let (rest, combined) =
-            parse_symbolic_deref_segments(rest, Expr::Literal(Value::str(name.clone())))?;
+            parse_symbolic_deref_segments(rest, Expr::Literal(Value::str(name)))?;
         return Ok((
             rest,
             Expr::SymbolicDeref {

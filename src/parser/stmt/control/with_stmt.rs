@@ -230,7 +230,7 @@ pub(crate) fn with_stmt(input: &str) -> PResult<'_, Stmt> {
     // evaluates cond_expr once, declares $tmp in the current scope, and
     // returns the value. Then .defined() checks it. The body uses $tmp
     // for topicalization instead of re-evaluating cond_expr.
-    let cond = crate::with_desugar::defined_condition(is_without, &tmp_name, cond_expr.clone());
+    let cond = crate::with_desugar::defined_condition(is_without, &tmp_name, cond_expr);
     // Parse orwith / else chains
     let rest_before_ws = rest;
     let (rest, _) = ws(rest)?;
@@ -306,7 +306,7 @@ pub(crate) fn with_stmt(input: &str) -> PResult<'_, Stmt> {
             }
             else_given_body.extend(else_body);
             let else_with_topic = vec![Stmt::Given {
-                topic: tmp_var.clone(),
+                topic: tmp_var,
                 body: else_given_body,
                 is_statement_modifier: false,
                 with_kind: Some(if else_param.is_none() {

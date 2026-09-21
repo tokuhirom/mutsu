@@ -91,7 +91,7 @@ pub(super) fn parse_sigilless_decl(
     if let Some(r) = r.strip_prefix("::=").or_else(|| r.strip_prefix(":=")) {
         let (r, _) = ws(r)?;
         let (r, expr) = parse_assign_expr_or_comma(r)?;
-        let stmt = build_sigilless_bind_stmt(name, expr, type_constraint.clone(), is_state, is_our);
+        let stmt = build_sigilless_bind_stmt(name, expr, type_constraint, is_state, is_our);
         if apply_modifier {
             return parse_statement_modifier(r, stmt);
         }
@@ -134,7 +134,7 @@ pub(super) fn parse_sigilless_decl(
         let decl = Stmt::VarDecl {
             name: name.clone(),
             expr,
-            type_constraint: type_constraint.clone(),
+            type_constraint,
             is_state,
             is_our,
             is_dynamic: false,
@@ -153,7 +153,7 @@ pub(super) fn parse_sigilless_decl(
         let r = &r[1..];
         let (r, _) = ws(r)?;
         let (r, expr) = parse_assign_expr_or_comma(r)?;
-        let stmt = build_sigilless_bind_stmt(name, expr, type_constraint.clone(), is_state, is_our);
+        let stmt = build_sigilless_bind_stmt(name, expr, type_constraint, is_state, is_our);
         if apply_modifier {
             return parse_statement_modifier(r, stmt);
         }
