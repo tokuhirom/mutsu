@@ -3726,10 +3726,10 @@ impl Interpreter {
         // hook above the dispatch" shape the single-subscript op uses. A `:=`
         // bind is installing a container, not storing, so it is excluded.
         if !is_bind_value
-            && let Some(proxy) = self.nested_element_store_proxy(
+            && let Some(proxy) = self.chained_element_store_proxy(
                 &var_name,
-                &inner_key,
-                inner_positional,
+                std::slice::from_ref(&inner_key),
+                std::slice::from_ref(&inner_positional),
                 &outer_idx,
                 outer_positional,
             )
@@ -4719,36 +4719,42 @@ impl Interpreter {
         ))
     }
 
-    /// Step one subscript level down a container **by value**, for the
-    /// read-only pre-pass that resolves `*-1`-style subscripts in
-    /// [`Interpreter::exec_index_assign_deep_nested_op`]. Returns `None` when
-    /// that level does not exist (or is not a container), which the caller
-    /// treats as "length 0".
-    /// The `Proxy` a chained subscript store would land ON, if any.
+    /// The `Proxy` a chained subscript store would land ON, if any -- for a
+    /// chain of any depth, so both chained-store ops share one probe.
     ///
-    /// Walks the root variable one step through the INNER subscript and then
-    /// probes the OUTER subscript's slot with the single-subscript path's own
-    /// probe (`existing_element_container`, which unwraps alias cells so both
-    /// `:=` bind spellings -- `@a[0][0] := Proxy.new(...)` and
-    /// `@a[0][0] := $p` -- find the same mediating container). Returns the
-    /// `Proxy` only when it can actually take a store; a storer-less `Proxy`
-    /// falls through to the ordinary arms, exactly as the single-subscript
-    /// twin leaves it to them.
-    fn nested_element_store_proxy(
+    /// Walks the root variable down `path_keys` (every subscript BUT the last,
+    /// paired positionally with `path_positional`) and then probes the leaf
+    /// subscript's slot with the single-subscript path's own probe
+    /// (`existing_element_container`, which unwraps alias cells so both `:=`
+    /// bind spellings -- `@a[0][0] := Proxy.new(...)` and `@a[0][0] := $p` --
+    /// find the same mediating container). Returns the `Proxy` only when it
+    /// can actually take a store; a storer-less `Proxy` falls through to the
+    /// ordinary arms, exactly as the single-subscript twin leaves it to them.
+    ///
+    /// The two callers pass the slices they already hold, so neither
+    /// allocates: the two-level op a one-element path, the 3+-level op
+    /// `indices[..depth - 1]`.
+    fn chained_element_store_proxy(
         &self,
         var_name: &str,
-        inner_key: &str,
-        inner_positional: bool,
-        outer_idx: &Value,
-        outer_positional: bool,
+        path_keys: &[String],
+        path_positional: &[bool],
+        leaf_idx: &Value,
+        leaf_positional: bool,
     ) -> Option<Value> {
-        let root = self.env().get(var_name)?;
-        let inner = Self::subscript_peek_step(root, inner_key, inner_positional)?;
-        let existing = Self::existing_element_container(&inner, outer_idx, outer_positional)?;
+        let mut current = self.env().get(var_name)?.clone();
+        for (key, is_positional) in path_keys.iter().zip(path_positional) {
+            current = Self::subscript_peek_step(&current, key, *is_positional)?;
+        }
+        let existing = Self::existing_element_container(&current, leaf_idx, leaf_positional)?;
         matches!(existing.view(), ValueView::Proxy { storer, .. } if !storer.is_nil())
             .then_some(existing)
     }
 
+    /// Step one subscript level down a container **by value**, for the
+    /// read-only pre-passes that resolve `*-1`-style subscripts and probe for
+    /// a mediating `Proxy`. Returns `None` when that level does not exist (or
+    /// is not a container), which the `*-1` caller treats as "length 0".
     fn subscript_peek_step(container: &Value, key: &str, is_positional: bool) -> Option<Value> {
         let container = container.deref_container();
         match container.view() {
@@ -4924,6 +4930,14 @@ impl Interpreter {
         // `\0idx\0`) is a separate slice. A cell survives COW of any enclosing
         // container, so a later write to either side reaches the other — which
         // the old `BOUND_ARRAY_REF_SENTINEL` by-name back-reference lost at depth.
+        // Whether this is a `:=` at all is the MARKER's presence, not
+        // `bind_source`/`bind_cell`'s: a bind whose RHS is a literal
+        // (`@a[0][0][0] := Proxy.new(...)`) carries no source variable, so
+        // those two stay `None` while the statement is still a bind. The
+        // junction re-dispatch above already keys on the marker for the same
+        // reason; the hooks below need the same answer.
+        let is_bind_value =
+            matches!(val.view(), ValueView::Pair(n, _) if n == "__mutsu_bind_index_value");
         let (val, bind_source) = Self::unwrap_bind_index_value(val);
         let bind_source = bind_source.filter(|s| !s.contains("\x00idx\x00"));
         let bind_cell: Option<crate::gc::Gc<crate::value::ContainerCell>> = bind_source
@@ -4946,13 +4960,41 @@ impl Interpreter {
             val.itemize_for_element_store()
         };
 
+        // ADR-0040 §9 seen from the DESTINATION side, 3+-level twin of the
+        // two-level op's probe (#8965). The addressed leaf slot can itself BE
+        // a `Proxy` container (`@a[0][0][0] := Proxy.new(...)`), and such an
+        // element mediates its own store: `@a[0][0][0] = 7` must fire that
+        // `Proxy`'s `STORE`, not overwrite it. Checked here, above the
+        // raw-pointer walk below, because that walk ends in a plain
+        // element-slot write which would replace it -- the same "one hook
+        // above the dispatch" shape both other ops use. Above the `Nil` decay
+        // too: a `Proxy` is not a `Scalar`, so its `STORE` takes the raw
+        // rvalue. A `:=` bind is installing a container, not storing, so it is
+        // excluded.
+        if !is_bind_value
+            && let Some(proxy) = self.chained_element_store_proxy(
+                &var_name,
+                &indices[..depth - 1],
+                &positional_flags[..depth - 1],
+                &indices_val[depth - 1],
+                positional_flags[depth - 1],
+            )
+        {
+            loan_env!(self, assign_proxy_lvalue(proxy, val.clone()))?;
+            // The STORE may have written a caller lexical by name (the same
+            // drain the other two store sites run).
+            self.apply_pending_rw_writeback(code);
+            self.stack.push(val);
+            return Ok(());
+        }
+
         // ADR-0049 at the chained store, 3+-level twin of the two-level op's
         // hook. The owning row is the container the chain reaches after every
         // subscript but the LAST, so walk to it read-only (the same by-value
         // step the `*-1` resolution above takes) and decay against that. A
         // level that does not exist yet stops the walk, and `None` then means
         // the row is about to be walk-created untyped.
-        let val = if val.is_nil() && bind_cell.is_none() {
+        let val = if val.is_nil() && !is_bind_value {
             let mut row = self.env().get(&var_name).cloned();
             for level in 0..depth - 1 {
                 let Some(current) = row.as_ref() else { break };
