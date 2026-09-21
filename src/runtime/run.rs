@@ -1204,6 +1204,21 @@ impl Interpreter {
         // caller's local slot (and the copied-back env entry) is the bare
         // `tracker`. Strip the active package prefix so the drain matches the
         // caller slot.
+        //
+        // Use the retain-on-miss caller-var list (`record_caller_var_writeback`),
+        // not the drop-on-miss `pending_rw_writeback_sources`: this body does not
+        // always run one hop away from the frame that owns the outer lexical. A
+        // role punned during method dispatch (`ensure_role_punned_to_class`,
+        // reached from a bare `Role.method` call arbitrarily deep inside
+        // `call_method_with_values`) runs this same body, but the actual method
+        // dispatch that follows composition is an intervening call whose own
+        // `call_compiled_method` unconditionally clears
+        // `pending_rw_writeback_sources` before the outer call site ever drains
+        // it — silently dropping the write (#8862). The retain-on-miss list
+        // survives that intervening call and is claimed by whichever frame's
+        // call site actually owns the slot, exactly like the `where`-clause /
+        // `EVAL` carriers in `resolution_eval.rs` that record free-var writes
+        // the same way.
         let pkg_prefix = {
             let pkg = self.current_package();
             if pkg == "GLOBAL" {
@@ -1220,8 +1235,7 @@ impl Interpreter {
                     fname
                 };
                 if unqualified != "_" && unqualified != "@_" && unqualified != "%_" {
-                    self.pending_rw_writeback_sources
-                        .push(unqualified.to_string());
+                    self.record_caller_var_writeback(unqualified);
                 }
             });
         }
