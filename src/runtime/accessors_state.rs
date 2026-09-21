@@ -15,7 +15,7 @@ impl Interpreter {
                     return (def.params.clone(), def.param_defs.clone());
                 }
                 if let Some(def) = self.resolve_proto_function(&name.resolve()) {
-                    return (def.params.clone(), def.param_defs.clone());
+                    return (def.params.clone(), def.param_defs);
                 }
                 if let Some(arity) = Self::inferred_operator_arity(&name.resolve()) {
                     let params = (0..arity).map(|i| format!("arg{}", i)).collect();

@@ -204,7 +204,7 @@ impl Interpreter {
         };
         self.proto_dispatch_stack.pop();
         self.routine_stack.pop();
-        let mut restored_env = saved_env.clone();
+        let mut restored_env = saved_env;
         self.apply_rw_bindings_to_env(&rw_bindings, &mut restored_env);
         self.restore_env_preserving_existing(&restored_env, &def.params);
         self.exit_readonly_frame(saved_readonly);
@@ -269,7 +269,7 @@ impl Interpreter {
             deprecated_message: None,
             is_submethod: false,
             captured_env: None,
-            source_file: proto.source_file.clone(),
+            source_file: proto.source_file,
             role_param_bindings: None,
         };
         // ADR-0019 D3-8 never compiled proto method bodies at plan-lowering

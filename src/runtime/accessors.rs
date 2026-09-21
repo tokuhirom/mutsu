@@ -144,7 +144,7 @@ impl Interpreter {
         } else {
             "Died".to_string()
         };
-        let mut err = RuntimeError::new(message.to_string());
+        let mut err = RuntimeError::new(message);
         // Carry the fail-site backtrace (recorded on the exception when `fail`
         // ran) so the throw site renders rakudo's dual-backtrace form.
         if let Some(orig) = Self::exception_backtrace_text(exception) {
@@ -376,7 +376,7 @@ impl Interpreter {
         let mut err = RuntimeError::new(message.to_string());
         let mut attrs = std::collections::HashMap::new();
         attrs.insert("message".to_string(), Value::str(message.clone()));
-        attrs.insert("payload".to_string(), Value::str(message.to_string()));
+        attrs.insert("payload".to_string(), Value::str(message));
         err.exception = Some(Box::new(Value::make_instance(
             Symbol::intern("X::AdHoc"),
             attrs,
@@ -533,7 +533,7 @@ impl Interpreter {
     /// Get the display type name for error messages (Package shows its name)
     fn display_type_name(value: &Value) -> String {
         match value.view() {
-            ValueView::Package(name) => name.resolve().to_string(),
+            ValueView::Package(name) => name.resolve(),
             _ => super::utils::value_type_name(value).to_string(),
         }
     }
@@ -541,7 +541,7 @@ impl Interpreter {
     /// Get a gist-like representation for error messages
     fn display_gist(value: &Value) -> String {
         match value.view() {
-            ValueView::Package(name) => name.resolve().to_string(),
+            ValueView::Package(name) => name.resolve(),
             ValueView::Str(s) => format!("\"{}\"", *s),
             ValueView::Int(i) => i.to_string(),
             ValueView::BigInt(n) => n.to_string(),
