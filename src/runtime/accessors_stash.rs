@@ -180,7 +180,7 @@ impl Interpreter {
         if let ValueView::Instance { attributes, .. } = stash.view() {
             attributes.insert(
                 Self::STASH_ORIGIN_UNIT_ATTR.to_string(),
-                Value::str(unit.resolve().to_string()),
+                Value::str(unit.resolve()),
             );
         }
     }
@@ -223,7 +223,7 @@ impl Interpreter {
                 (!Self::is_pseudo_package_name(&name)).then_some(name)
             }
             ValueView::Package(sym) => {
-                let name = sym.resolve().to_string();
+                let name = sym.resolve();
                 (!Self::is_pseudo_package_name(&name)).then_some(name)
             }
             _ => None,

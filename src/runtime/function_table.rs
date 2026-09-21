@@ -64,6 +64,13 @@
 //! debug-only audit ([`FunctionTableTransitions::audit`]) re-derives a content
 //! hash for every stamp it hands out and panics if one ever names two different
 //! maps, so a mistake in that reasoning fails CI instead of mis-dispatching.
+//!
+//! "The same content" is decided by an `Arc<FunctionDef>`'s address, which is
+//! only sound while that address cannot be handed to a different, unrelated
+//! `Arc<FunctionDef>` -- so [`FunctionTableTransitions::seen`] keeps a clone of
+//! every definition it has memoized alive for as long as its entry lives,
+//! rather than trusting the bare address to keep meaning the same thing after
+//! every other owner drops it.
 
 use std::ops::Deref;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -166,8 +173,22 @@ impl FunctionTable {
 /// content). See the module docs for why it exists and why reuse is sound.
 #[derive(Clone, Default)]
 pub(crate) struct FunctionTableTransitions {
-    /// `(version before, key, definition identity) -> version after`.
-    seen: FxHashMap<(u64, Symbol, usize), u64>,
+    /// `(version before, key, definition identity) -> (definition kept alive, version after)`.
+    ///
+    /// "Definition identity" is the `Arc<FunctionDef>`'s address. An address is
+    /// only a sound stand-in for "this exact definition" while the allocation
+    /// behind it cannot be freed and handed to an unrelated `Arc<FunctionDef>`
+    /// — otherwise a later, different definition can land on the same address
+    /// and collide with a stale entry here
+    /// ([#8932](https://github.com/tokuhirom/mutsu/issues/8932),
+    /// [#8934](https://github.com/tokuhirom/mutsu/issues/8934)). Retaining a
+    /// clone of the `Arc` alongside its entry pins that allocation for as long
+    /// as the entry is live, so no other `Arc<FunctionDef>` can ever be
+    /// allocated at the same address in the meantime: the address a fresh
+    /// `Arc::new` receives is therefore guaranteed to differ from every
+    /// address already claimed by a live entry, and a memo hit's address can
+    /// only ever mean "this is a clone of the very `Arc` recorded here".
+    seen: FxHashMap<(u64, Symbol, usize), (std::sync::Arc<FunctionDef>, u64)>,
     /// Debug-only: the content hash each version has been observed to name.
     /// Empty (and untouched) in a release build.
     #[cfg(debug_assertions)]
@@ -190,16 +211,23 @@ impl FunctionTableTransitions {
         def: std::sync::Arc<FunctionDef>,
     ) {
         let memo_key = (table.version(), key, std::sync::Arc::as_ptr(&def) as usize);
-        let known = self.seen.get(&memo_key).copied();
-        table.map_mut().insert(key, def);
+        let known = self.seen.get(&memo_key).map(|(_, version)| *version);
         crate::vm::vm_stats::record_fn_table_transition(known.is_some());
         match known {
-            Some(version) => table.set_version(version),
+            Some(version) => {
+                table.map_mut().insert(key, def);
+                table.set_version(version);
+            }
             None => {
                 if self.seen.len() >= TRANSITION_MEMO_CAP {
                     self.seen.clear();
                 }
-                self.seen.insert(memo_key, table.version());
+                // Retain a clone so this address can never be freed and
+                // reused by an unrelated `Arc<FunctionDef>` while this entry
+                // is live -- see the field doc on `seen`.
+                let retained = def.clone();
+                table.map_mut().insert(key, def);
+                self.seen.insert(memo_key, (retained, table.version()));
             }
         }
         self.audit(table);
