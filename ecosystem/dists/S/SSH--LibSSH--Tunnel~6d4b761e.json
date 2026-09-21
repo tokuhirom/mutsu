@@ -22,16 +22,61 @@
     "unresolved": []
   },
   "dist": "SSH::LibSSH::Tunnel",
-  "files": [],
+  "files": [
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 2,
+        "plan": 2,
+        "secs": 10.18,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/01-basic.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 2,
+        "plan": 2,
+        "secs": 12.35,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.13,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/02-ssh-tunnel.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 3.85,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
   "load": {
-    "SSH::LibSSH::Tunnel": "Error while importing from 'NativeCall': no such tag 'types' declared"
+    "SSH::LibSSH::Tunnel": "ok"
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-20",
+    "date": "2026-09-21",
     "harness": 2,
-    "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "fb8ac07",
+    "host": "linux-x86_64",
+    "mutsu_commit": "8e278fce9",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -42,12 +87,12 @@
     "index": "fez",
     "url": "https://360.zef.pm/S/SH/SSH_LIBSSH_TUNNEL/c5b32928231b13064a1317c482abac07153c2246.tar.gz"
   },
-  "status": "blocked_load",
+  "status": "green",
   "totals": {
-    "baseline_assertions": 0,
-    "baseline_files": 0,
-    "mutsu_assertions": 0,
-    "parity_files": 0,
+    "baseline_assertions": 3,
+    "baseline_files": 2,
+    "mutsu_assertions": 3,
+    "parity_files": 2,
     "regressed_files": 0
   },
   "version": "0.0.11"
