@@ -1,3 +1,4 @@
+use super::registration_class_body::PendingAttrCompose;
 use super::*;
 use crate::runtime::meta_ns::MetaNs;
 use crate::symbol::Symbol;
@@ -454,20 +455,41 @@ impl Interpreter {
         .then(|| current.clone())
     }
 
+    /// Whether a `does`-mixin value carries a non-private `compose` method on
+    /// any role it mixes in — the "does this need a deferred `compose` hook
+    /// call" test shared by both the attribute-level and `$class.HOW`-level
+    /// paths in [`Interpreter::apply_attribute_traits`].
+    fn mixin_has_compose_hook(&self, value: &Value) -> bool {
+        match value.view() {
+            ValueView::Mixin(_, mixins) => mixins.keys().any(|key| {
+                key.strip_prefix("__mutsu_role__").is_some_and(|role_name| {
+                    self.role_def_for_mixin_role(mixins, role_name)
+                        .is_some_and(|role| {
+                            role.methods
+                                .get("compose")
+                                .is_some_and(|defs| defs.iter().any(|def| !def.is_private))
+                        })
+                })
+            }),
+            _ => false,
+        }
+    }
+
     /// Dispatch unknown attribute traits to user-defined `trait_mod:<...>` subs,
     /// or raise X::Comp::Trait::Unknown if no handler is registered. Called at
     /// class registration for each `has` declaration that carries unknown traits.
     ///
-    /// `pending_composes` collects the owner class name for every mixin whose
-    /// `compose` hook must fire (see the call site below) instead of invoking
-    /// it inline — `run_class_body` drains it once the whole class body has
-    /// registered (#8845).
-    pub(crate) fn apply_attribute_traits(
+    /// `pending_composes` collects, for every mixin whose `compose` hook must
+    /// fire (see the call site below), which object it must fire on — either
+    /// the attribute itself or the composing class's `.HOW` — instead of
+    /// invoking it inline: `run_class_body` drains it once the whole class
+    /// body has registered (#8845).
+    pub(super) fn apply_attribute_traits(
         &mut self,
         decl: &crate::opcode::CompiledAttrDecl,
         attr_name_str: &str,
         owner: &str,
-        pending_composes: &mut Vec<String>,
+        pending_composes: &mut Vec<PendingAttrCompose>,
     ) -> Result<(), RuntimeError> {
         let sigil = decl.sigil;
         let is_public = decl.is_public;
@@ -613,37 +635,45 @@ impl Interpreter {
                 // seeing the pre-mixin object while `compose` ran, so a
                 // `.grep(LazyAttribute)` inside `compose` always came back
                 // empty and the lazy accessor was never installed (#8815).
+                //
+                // It is also, independently, one of the two places a
+                // `compose` hook itself can live (Attribute::Lazy's `Builder`
+                // role: `$attr does Builder[$block]`, with no `$class.HOW`
+                // involved at all -- real Rakudo's `Attribute` has a native
+                // no-op `compose(Mu $package)` that every attribute's own
+                // mixed-in override polymorphically replaces). Queue it the
+                // same deferred way as the `$class.HOW` mixin below, so
+                // `run_pending_attr_composes` fires it once the whole class
+                // body has registered.
                 if let Some(attr_mixin_val) = &attr_mixin_val {
                     self.registry_mut().class_attribute_trait_objects.insert(
                         (owner.to_string(), attr_name_str.to_string()),
                         attr_mixin_val.clone(),
                     );
+                    if self.mixin_has_compose_hook(attr_mixin_val) {
+                        pending_composes.push(PendingAttrCompose::Attribute(
+                            owner.to_string(),
+                            attr_name_str.to_string(),
+                        ));
+                    }
                 }
                 if let Some(mixin_val) = self.trait_mod_writeback_value.take() {
                     // Attribute traits may compose a role whose `compose`
                     // method edits the declaring class's method table. This
                     // is how AttrX::Lazy installs its lazy accessor: a role is
-                    // mixed into `$class.HOW` (or, elsewhere, directly into
-                    // the Attribute meta-object), then its compose hook is
+                    // mixed into `$class.HOW`, then its compose hook is
                     // called with the owning class. `mixin_val` is whichever
                     // `does` ran LAST in the handler, not necessarily the
                     // attribute's own value -- see `attr_mixin_val` above for
-                    // that.
-                    let has_compose_hook = match mixin_val.view() {
-                        ValueView::Mixin(_, mixins) => mixins.keys().any(|key| {
-                            key.strip_prefix("__mutsu_role__").is_some_and(|role_name| {
-                                self.role_def_for_mixin_role(mixins, role_name).is_some_and(
-                                    |role| {
-                                        role.methods.get("compose").is_some_and(|defs| {
-                                            defs.iter().any(|def| !def.is_private)
-                                        })
-                                    },
-                                )
-                            })
-                        }),
-                        _ => false,
-                    };
-                    if has_compose_hook {
+                    // that (and for the direct-on-the-attribute mechanism).
+                    // Only a `$class.HOW` mixin belongs here: an
+                    // attribute-own mixin was already queued above, and
+                    // queuing it again here (it can also be `mixin_val` when
+                    // no HOW `does` followed it in the same handler) would
+                    // fire its `compose` hook twice.
+                    if let Some(how_owner) = Self::how_target_from_value(&mixin_val)
+                        && self.mixin_has_compose_hook(&mixin_val)
+                    {
                         // Do NOT call `compose` here: at this point in the
                         // class-body walk, statements after this `has`
                         // declaration (in particular later `method`
@@ -658,7 +688,7 @@ impl Interpreter {
                         // owner's current HOW from the registry so a compose
                         // that runs after further mixins still sees the
                         // fully-composed HOW.
-                        pending_composes.push(owner.to_string());
+                        pending_composes.push(PendingAttrCompose::How(how_owner));
                     }
                 }
                 // Raku dispatches `trait_mod:<is>` as an ordinary multi: the
