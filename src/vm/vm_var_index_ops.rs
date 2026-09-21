@@ -841,7 +841,7 @@ impl Interpreter {
                 target.view(),
                 ValueView::Array(..) | ValueView::Seq(_) | ValueView::Slip(_)
             )
-            && self.has_user_method(&class_name.resolve().to_string(), "Int")
+            && self.has_user_method(&class_name.resolve(), "Int")
         {
             let caller_code = self.current_code;
             let coerced = self.try_compiled_method_or_interpret(index.clone(), "Int", vec![]);

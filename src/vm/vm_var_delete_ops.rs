@@ -803,7 +803,6 @@ impl Interpreter {
             && let Some(container) = self.env().get(&var_name).cloned()
             && self.container_type_metadata(&container).is_none()
         {
-            let container = container.clone();
             let tagged = self.tag_container_metadata(container, info);
             self.env_mut().insert(var_name.to_string(), tagged.clone());
             self.write_local_slot_or_name(code, slot, &var_name, tagged);

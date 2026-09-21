@@ -1634,7 +1634,7 @@ impl Interpreter {
             }
         }
         let invocant = match target.view() {
-            ValueView::Package(sym) => sym.resolve().to_string(),
+            ValueView::Package(sym) => sym.resolve(),
             _ => "Any".to_string(),
         };
         let args = dims

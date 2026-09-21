@@ -1095,7 +1095,7 @@ impl Interpreter {
                         self.write_back_to_source_vars(code, spec, &param_name, idx, arity);
                         if let Some(v) = e.return_value {
                             if let Some(ref mut coll) = collected {
-                                Self::collect_loop_value(coll, v.clone());
+                                Self::collect_loop_value(coll, v);
                             } else {
                                 self.set_loop_topic(topic_local, v.clone());
                                 // Push return value on stack so enclosing compiled
@@ -1201,7 +1201,7 @@ impl Interpreter {
                         // the old by-value snapshot that preceded promotion.
                         let mut resume_items = items.to_vec();
                         if let Some(slot) = resume_items.get_mut(idx) {
-                            *slot = item.clone();
+                            *slot = item;
                         }
                         self.gather_for_loop_resume =
                             Some(crate::value::ForLoopResumeState::List {
@@ -1228,7 +1228,7 @@ impl Interpreter {
                             self.unmark_readonly(name);
                         }
                         self.topic_source_var = saved_topic_source;
-                        self.quanthash_bind_params = saved_quanthash_bind.clone();
+                        self.quanthash_bind_params = saved_quanthash_bind;
                         self.restore_loop_topic(saved_topic, saved_topic_local);
                         self.pop_loop_local_scope(code);
                         self.unmask_for_params(&masked_params);
@@ -1269,7 +1269,7 @@ impl Interpreter {
                                 }
                             }
                         }
-                        self.restore_loop_topic(saved_topic.clone(), saved_topic_local.clone());
+                        self.restore_loop_topic(saved_topic, saved_topic_local);
                         self.pop_loop_local_scope(code);
                         self.unmask_for_params(&masked_params);
                         return Err(e);
@@ -1372,7 +1372,7 @@ impl Interpreter {
             self.locals[slot] = val;
         }
         self.topic_source_var = saved_topic_source;
-        self.quanthash_bind_params = saved_quanthash_bind.clone();
+        self.quanthash_bind_params = saved_quanthash_bind;
         self.restore_loop_topic(saved_topic, saved_topic_local);
         if let Some(coll) = collected {
             self.stack.push(Value::array(coll));

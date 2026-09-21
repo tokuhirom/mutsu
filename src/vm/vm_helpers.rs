@@ -523,7 +523,6 @@ impl Interpreter {
             frame_attrs.insert(
                 "file".to_string(),
                 current_file
-                    .clone()
                     .map(Value::str)
                     .unwrap_or(Value::str(String::new())),
             );

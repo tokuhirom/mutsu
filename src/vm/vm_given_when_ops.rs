@@ -60,7 +60,7 @@ impl Interpreter {
         // lvalue element: the final `$_` is written back to that element below,
         // so `$_ = ...` (whole reassign) AND `.push` both propagate. Don't set
         // `topic_source_var` (that is for whole-variable writeback).
-        let element_source = saved_element_source.clone();
+        let element_source = saved_element_source;
         if element_source.is_none() {
             self.topic_source_var = container_binding.clone();
         }
@@ -169,7 +169,7 @@ impl Interpreter {
                         src,
                         &pointy_param,
                         element_orig.as_ref(),
-                        captured.clone(),
+                        captured,
                     );
                 } else {
                     this.write_back_given_topic(
@@ -177,7 +177,7 @@ impl Interpreter {
                         &container_binding,
                         container_source_slot,
                         &pointy_param,
-                        captured.clone(),
+                        captured,
                     );
                 }
             }
@@ -359,7 +359,7 @@ impl Interpreter {
                     self.env_mut().remove("_");
                 }
                 if let Some(slot) = topic_local_slot {
-                    self.locals[slot] = saved_local_topic.clone().unwrap_or(Value::NIL);
+                    self.locals[slot] = saved_local_topic.unwrap_or(Value::NIL);
                 }
                 self.topic_source_var = saved_topic_source;
                 self.topic_container_source = saved_container_source;
@@ -416,7 +416,7 @@ impl Interpreter {
             // topic. Postfix `when` must match the current loop element (for
             // example `$_ = lookup($_) when Str`), so prefer the compiled
             // topic slot when one is present.
-            let topic = topic_snapshot.clone();
+            let topic = topic_snapshot;
             match cond_val.view() {
                 ValueView::Sub(_) | ValueView::Routine { .. } => {
                     let (_params, param_defs) = self.callable_signature(&cond_val);

@@ -289,7 +289,7 @@ impl Interpreter {
     ) -> Result<(), RuntimeError> {
         let name = Self::const_str(code, name_idx).to_string();
         let body_end = body_end as usize;
-        let saved = self.current_package().to_string();
+        let saved = self.current_package();
         let saved_env = self.env().clone();
         let saved_locals = self.locals.to_vec();
         self.set_current_package(name.clone());

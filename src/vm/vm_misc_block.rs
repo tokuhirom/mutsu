@@ -203,7 +203,7 @@ impl Interpreter {
                     new_vars.push((*name, value.clone()));
                 }
             }
-            let restored_env = saved_env.clone();
+            let restored_env = saved_env;
             *self.env_mut() = restored_env;
             // Re-insert newly declared user variables
             for (name, value) in new_vars {

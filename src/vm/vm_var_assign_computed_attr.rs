@@ -527,7 +527,7 @@ impl Interpreter {
                 };
                 if let Some(key) = key {
                     self.record_build_attr_write(&attributes, key);
-                    attributes.store_through_container(key, val.clone());
+                    attributes.store_through_container(key, val);
                     return;
                 }
             }

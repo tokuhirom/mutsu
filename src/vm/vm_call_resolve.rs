@@ -330,7 +330,7 @@ impl Interpreter {
             // Cache the resolution result for future lookups
             let cached_pkg = resolved_def
                 .map(|def| def.package.resolve())
-                .unwrap_or_else(|| self.current_package().to_string());
+                .unwrap_or_else(|| self.current_package());
             if let Some(cache_key) = cache_key {
                 self.fn_resolve_cache.insert(
                     self.fn_resolve_gen,

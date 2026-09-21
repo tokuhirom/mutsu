@@ -592,7 +592,7 @@ impl Interpreter {
             // of the `exec_assign_expr_local_op_inner` write-through — reached
             // when the assignment happens inside a closure that captured
             // `target`, e.g. a `subtest { ... }` block).
-            if let Some(holder) = current.clone()
+            if let Some(holder) = current
                 && let Some(res) = self.distribute_bound_multidim_slice(&name, &holder, &val)
             {
                 res?;

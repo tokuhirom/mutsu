@@ -450,7 +450,7 @@ impl Interpreter {
         let store_name = if let Some(bare) = name.strip_prefix('$') {
             bare.to_string()
         } else {
-            name.to_string()
+            name
         };
         // Write THROUGH an existing `ContainerRef` cell — see the matching
         // comment in `exec_symbolic_deref_store_op`, which this mirrors for

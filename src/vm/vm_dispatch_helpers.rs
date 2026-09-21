@@ -316,11 +316,11 @@ impl Interpreter {
                         return Ok(v);
                     }
                     if let Some(callable) = self.env().get(&format!("&{}", infix_name)).cloned() {
-                        return self.vm_call_on_value(callable, args.clone(), None);
+                        return self.vm_call_on_value(callable, args, None);
                     }
                     if let Some(callable) = self.env().get(&format!("&{}", normalized_op)).cloned()
                     {
-                        return self.vm_call_on_value(callable, args.clone(), None);
+                        return self.vm_call_on_value(callable, args, None);
                     }
                 }
                 Err(err)
@@ -496,7 +496,7 @@ impl Interpreter {
         let _ = self.reify_map_grep_seq(val);
         match val.view() {
             ValueView::Package(name) => {
-                let class_name = name.resolve().to_string();
+                let class_name = name.resolve();
                 if loan_env!(self, resolve_method_with_owner(&class_name, "Bool", &[])).is_some() {
                     // Slice F: a user `Bool` method run by this internal coercion
                     // can mutate a captured-outer caller lexical; drain its
@@ -511,7 +511,7 @@ impl Interpreter {
                 val.truthy()
             }
             ValueView::Instance { class_name, .. } => {
-                let cn = class_name.resolve().to_string();
+                let cn = class_name.resolve();
                 if loan_env!(self, resolve_method_with_owner(&cn, "Bool", &[])).is_some() {
                     let caller_code = self.current_code;
                     let result = self.try_compiled_method_or_interpret(val.clone(), "Bool", vec![]);
@@ -575,7 +575,7 @@ impl Interpreter {
         let has_override = match val.view() {
             ValueView::Mixin(..) => self.mixin_role_has_method(val, "defined"),
             ValueView::Instance { class_name, .. } => {
-                let cn = class_name.resolve().to_string();
+                let cn = class_name.resolve();
                 self.has_user_method(&cn, "defined")
             }
             _ => false,

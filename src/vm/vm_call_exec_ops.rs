@@ -90,7 +90,7 @@ impl Interpreter {
             return Ok(());
         }
         if let Some(cf) = self.find_compiled_function(compiled_fns, &name, name_sym, &args) {
-            self.set_pending_call_arg_sources(arg_sources.clone());
+            self.set_pending_call_arg_sources(arg_sources);
             let pkg_sym = self.current_package_sym();
             let call_result =
                 self.call_compiled_function_named(cf, args, compiled_fns, pkg_sym, name_sym);

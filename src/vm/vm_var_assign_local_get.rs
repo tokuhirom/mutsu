@@ -743,7 +743,7 @@ impl Interpreter {
         self.locals[idx] = container.clone();
         self.env_mut().insert(name.clone(), container.clone());
         if self.shared_vars_active {
-            loan_env!(self, set_shared_var(&name, container.clone()));
+            loan_env!(self, set_shared_var(&name, container));
         }
     }
 }

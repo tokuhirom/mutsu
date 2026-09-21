@@ -135,7 +135,7 @@ impl Interpreter {
                         self.stack.truncate(stack_base);
                         if let Some(v) = e.return_value {
                             if let Some(ref mut coll) = collected {
-                                Self::collect_loop_value(coll, v.clone());
+                                Self::collect_loop_value(coll, v);
                             } else {
                                 self.env_mut().insert("_".to_string(), v);
                             }

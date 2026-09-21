@@ -2222,10 +2222,10 @@ impl Interpreter {
                             if let Some(ref kt) = info.key_type {
                                 format!("{}{{{}}}", info.value_type, kt)
                             } else {
-                                info.value_type.clone()
+                                info.value_type
                             }
                         } else {
-                            info.value_type.clone()
+                            info.value_type
                         };
                         self.vm_set_var_type_constraint(name, Some(constraint_str));
                     } else {
@@ -2594,10 +2594,10 @@ impl Interpreter {
                 if let Some(ref kt) = info.key_type {
                     format!("{}{{{}}}", info.value_type, kt)
                 } else {
-                    info.value_type.clone()
+                    info.value_type
                 }
             } else {
-                info.value_type.clone()
+                info.value_type
             };
             self.vm_set_var_type_constraint(name, Some(constraint_str));
         }
@@ -2781,7 +2781,7 @@ impl Interpreter {
         }
         if let Some(symbol) = Self::term_symbol_from_name(name) {
             self.env_mut().insert(symbol.to_string(), val.clone());
-            let pkg = self.current_package().to_string();
+            let pkg = self.current_package();
             if pkg != "GLOBAL" {
                 self.env_mut()
                     .insert(format!("{pkg}::term:<{symbol}>"), val.clone());

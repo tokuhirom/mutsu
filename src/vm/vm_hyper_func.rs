@@ -220,7 +220,7 @@ impl Interpreter {
             } else {
                 // No mutation happened; restore the original left value so the
                 // compiler-emitted store is a harmless no-op.
-                left.clone()
+                left
             };
             self.stack.push(finish(wrap(results)));
             self.stack.push(writeback_val);
@@ -396,7 +396,7 @@ impl Interpreter {
             let writeback_val = if do_writeback {
                 tagged_hash(mutated)
             } else {
-                left.clone()
+                left
             };
             self.stack.push(result_hash);
             self.stack.push(writeback_val);

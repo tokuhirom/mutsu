@@ -379,7 +379,7 @@ impl Interpreter {
     pub(crate) fn typed_container_default(&mut self, target: &Value) -> Value {
         // Check for explicit `is default(...)` on the container first.
         if let Some(def) = self.container_default(target) {
-            return def.clone();
+            return def;
         }
         if let Some(info) = self.container_type_metadata(target) {
             // Native typed arrays default their elements to the native type's
@@ -508,7 +508,7 @@ impl Interpreter {
         } else {
             "Died".to_string()
         };
-        let mut err = RuntimeError::new(message.to_string());
+        let mut err = RuntimeError::new(message);
         err.exception = Some(Box::new(exception.clone()));
         err
     }

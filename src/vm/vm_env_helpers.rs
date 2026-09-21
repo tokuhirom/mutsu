@@ -347,7 +347,7 @@ impl Interpreter {
         // method new(:$h = Lists)` reads `Lists` as `EnumC::Lists`).
         let invocant_class = match self.env().get("self").map(|v| v.view()) {
             Some(ValueView::Instance { class_name, .. }) => Some(class_name.to_string()),
-            Some(ValueView::Package(p)) => Some(p.resolve().to_string()),
+            Some(ValueView::Package(p)) => Some(p.resolve()),
             _ => None,
         }?;
         probe_chain(&invocant_class)

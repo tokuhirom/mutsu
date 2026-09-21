@@ -265,7 +265,7 @@ impl Interpreter {
                 _ => None,
             })
             .unwrap_or_else(|| vec!["DEFAULT".to_string()]);
-        self.register_exported_var(self.current_package().to_string(), name, tags);
+        self.register_exported_var(self.current_package(), name, tags);
         Ok(())
     }
 }

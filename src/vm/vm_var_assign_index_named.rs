@@ -2575,7 +2575,7 @@ impl Interpreter {
                                 let mut weights = HashMap::new();
                                 let weight = Self::mix_assignment_weight(&val)?;
                                 if weight != 0.0 {
-                                    weights.insert(key.clone(), weight);
+                                    weights.insert(key, weight);
                                 }
                                 Value::mix_hash(weights)
                             }
@@ -2584,14 +2584,14 @@ impl Interpreter {
                                 if let ValueView::Int(n) = val.view()
                                     && n > 0
                                 {
-                                    counts.insert(key.clone(), n);
+                                    counts.insert(key, n);
                                 }
                                 Value::bag_hash(counts)
                             }
                             "SetHash" => {
                                 let mut items = std::collections::HashSet::new();
                                 if val.truthy() {
-                                    items.insert(key.clone());
+                                    items.insert(key);
                                 }
                                 Value::set_parts(
                                     crate::gc::Gc::new(crate::value::SetData::new(items)),
@@ -3569,11 +3569,7 @@ impl Interpreter {
                         "ASSIGN-KEY"
                     };
                     if self.has_user_method(&icn, assign) {
-                        self.call_method_with_values(
-                            inner,
-                            assign,
-                            vec![outer_idx.clone(), val.clone()],
-                        )?;
+                        self.call_method_with_values(inner, assign, vec![outer_idx, val.clone()])?;
                         self.stack.push(val);
                         return Ok(());
                     }
@@ -3626,9 +3622,9 @@ impl Interpreter {
                     // A `*-1`-style subscript resolves against the container it
                     // indexes, which is only known now the step produced it.
                     let outer_idx = if matches!(outer_idx.view(), ValueView::Sub(_)) {
-                        self.resolve_whatever_index_for_target(outer_idx.clone(), Some(&container))
+                        self.resolve_whatever_index_for_target(outer_idx, Some(&container))
                     } else {
-                        outer_idx.clone()
+                        outer_idx
                     };
                     Self::assign_into_nested_container(
                         &mut container,

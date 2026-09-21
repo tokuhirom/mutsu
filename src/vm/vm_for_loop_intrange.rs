@@ -307,7 +307,7 @@ impl Interpreter {
                         if !was_topic_readonly {
                             self.unmark_readonly("_");
                         }
-                        self.restore_loop_topic(saved_topic.clone(), saved_topic_local.clone());
+                        self.restore_loop_topic(saved_topic, saved_topic_local);
                         self.pop_loop_local_scope(code);
                         return Err(e);
                     }

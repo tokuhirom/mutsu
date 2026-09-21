@@ -467,7 +467,7 @@ impl Interpreter {
                     }
                 }
                 if *is_export && !self.suppress_exports {
-                    let pkg = self.current_package().to_string();
+                    let pkg = self.current_package();
                     self.register_exported_sub(
                         pkg.clone(),
                         resolved_name.clone(),
@@ -1250,7 +1250,7 @@ impl Interpreter {
     /// another compilation unit), preserving the previous behavior.
     fn registered_native_class_name(&mut self, name: &str) -> String {
         if let Some(ValueView::Package(sym)) = self.env().get(name).map(Value::view) {
-            let resolved = sym.resolve().to_string();
+            let resolved = sym.resolve();
             if self.registry().classes.contains_key(&resolved) {
                 return resolved;
             }
@@ -1356,7 +1356,7 @@ impl Interpreter {
         // `sub foo is export` installs a Sub, so it is recorded in the same
         // export table and `use`-ing the module imports it by name.
         if plan.is_export && !self.suppress_exports {
-            let pkg = self.current_package().to_string();
+            let pkg = self.current_package();
             let tags = plan.export_tags.clone();
             let key = Symbol::intern(&format!("{}::{}", pkg, name));
             let defs = self.registry().token_defs.get(&key).cloned();
@@ -1431,7 +1431,7 @@ impl Interpreter {
             // family. A `proto … is export` exports its candidates too (raku),
             // e.g. zef's `proto MAIN(|) is export` over `multi sub MAIN(…)`.
             if !self.suppress_exports {
-                let pkg = self.current_package().to_string();
+                let pkg = self.current_package();
                 self.register_exported_sub(pkg, name_str.clone(), export_tags.clone());
             }
         }
