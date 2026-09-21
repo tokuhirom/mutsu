@@ -49,3 +49,36 @@ coverage: `t/routines/dispatch/callmethodmut-fast-dispatch-cache.t`
 (repeated calls across cache hits, alternating receiver instances, a
 method-wrap/unwrap across a warm cache, and a multi method, which
 `fast_method_cache` never caches).
+
+## A latent correctness gap this uncovered
+
+Wiring `CallMethodMut` into `fast_method_cache` exposed a real, previously
+latent bug in `try_populate_fast_cache`'s eligibility gate: it excludes an
+attributive parameter (`$!x`, which mutates `self`) but not a *sigilless
+raw-capture* parameter (`\x`), which binds the **argument's own container**,
+not a copy. A constructor shaped like
+
+```raku
+method !SET-SELF (\v) { $!x := v; self }
+method new       (\v) { self.bless!SET-SELF: v }
+```
+
+called repeatedly on a bareword/type-object receiver (always
+`CallMethodMut`) lost the alias from the second (cache-hit) call onward —
+the built instance's `$!x` stopped tracking the caller's container. This is
+exactly the shape `roast/S32-list/skip.t`'s ".skip-all and .push-all on
+slipping slippy iterators" subtest exercises via a custom `Iterator`, which
+is how it was caught: that whitelisted roast test started failing in CI on
+this PR.
+
+The gap was already latent on the non-mut `CallMethod` entry too (same
+shared cache, same eligibility gate, same `call_compiled_method_fast`) — it
+was simply never exercised there, since a bareword-receiver constructor
+call always compiles to `CallMethodMut`. Excluding `pd.sigilless` params
+from the shared eligibility gate fixes both entries at once. Also hardened:
+the `has_attr_aliases` check now scans attribute *values*
+(`is_container_ref`) in addition to the existing declaration-time
+`__mutsu_attr_alias::` metadata scan, so a runtime-bound alias is caught
+even when it isn't the parameter-binding shape above.
+
+Regression coverage: `t/routines/signature/fast-cache-sigilless-param-alias.t`.
