@@ -338,6 +338,19 @@ fn walk_stmt(stmt: &Stmt, scan: &mut Scan) {
         Stmt::Return(e) | Stmt::Die(e) | Stmt::Fail(e) | Stmt::Goto(e) | Stmt::Take(e, _) => {
             walk_expr(e, scan)
         }
+        // A bare lowercase identifier standing alone as a whole statement
+        // (`dead;`) is, syntactically, the exact same "no-args routine
+        // reference" `record_call` already recognizes for `Stmt::Call` --
+        // rakudo's parser resolves an unrecognized bare lowercase term this
+        // way and reports the same "Undeclared routine" error for it
+        // (verified against `raku`: a `unit class Foo; dead` body dies with
+        // "Undeclared routine:\n    dead used at line N"), where mutsu
+        // previously fell through the runtime's bareword resolution to a
+        // plain Str. `self` is the one common legitimate bare statement this
+        // parses to (a method's own bare `self` statement) and is excluded
+        // explicitly: it is never a registered name any of the tables below
+        // would recognize.
+        Stmt::Expr(Expr::BareWord(name)) if name != "self" => scan.record_call(name),
         Stmt::Expr(e) => walk_expr(e, scan),
         Stmt::Say(es) | Stmt::Put(es) | Stmt::Print(es) | Stmt::Note(es) => {
             for e in es {

@@ -839,6 +839,15 @@ impl Interpreter {
         // module: a member named `<directive>::<declarator>` must use a known
         // directive (DECLARE/SUPERSEDE/COMPOSE), else X::EXPORTHOW::InvalidDirective.
         Self::validate_exporthow_directives(&stmts)?;
+        // A loaded module is its own compilation unit: rakudo rejects a call
+        // to a routine declared nowhere in it at CHECK time
+        // (X::Undeclared::Symbols), before the module body runs -- the same
+        // check the top-level program's own mainline gets (`run()`). This is
+        // also the path a bareword-named `require ::($name)` reaches (a
+        // non-path-like require target loads via `use_module`, not
+        // `require_load_from_file`), so it is the one place that covers both
+        // `use` and `require` of an installed/on-path module name.
+        self.check_undeclared_routines_mainline(&stmts)?;
         let mut module_scope_names: ValueMap = ValueMap::default();
         let mut module_type_aliases: HashMap<String, String> = HashMap::new();
         let mut imported_lexical_names: HashSet<String> = HashSet::new();
