@@ -4293,6 +4293,21 @@ pub struct Interpreter {
     pub(crate) last_method_resolve: Option<(Symbol, Symbol, Symbol, Arc<MethodDef>)>,
     pub(crate) fast_method_cache:
         rustc_hash::FxHashMap<(Symbol, Symbol), crate::vm::FastMethodCacheEntry>,
+    /// #8880: `(receiver class, method name)` pairs whose `CallMethodMut`
+    /// dispatch has been observed to walk the entire pre-dispatch probe chain
+    /// without a single probe claiming the call, so the chain can be skipped.
+    /// Written only from the dispatch tail that proves it, and cleared with the
+    /// other method caches on a registry generation change. See
+    /// [`crate::vm::vm_call_method_plain_lane`].
+    pub(crate) plain_method_lane: rustc_hash::FxHashSet<(Symbol, Symbol)>,
+    /// The key the *current* `CallMethodMut` dispatch may install into
+    /// [`Interpreter::plain_method_lane`]. Set (or cleared) by that opcode's
+    /// gate on every dispatch, so it always describes the innermost one.
+    pub(crate) plain_method_lane_candidate: Option<(Symbol, Symbol)>,
+    /// One-shot flag handing a proven-inert dispatch straight to the
+    /// user-method tail; consumed by
+    /// `try_compiled_method_mut_or_interpret_sym`.
+    pub(crate) plain_method_lane_active: bool,
     /// Memoized `class -> NativeCtorPlan` for the native default constructor.
     /// Cleared wherever `fast_method_cache` is cleared, plus the MOP class-shape
     /// mutators (`Attribute.set_build`, `^add_attribute`, `^add_method`,
