@@ -316,7 +316,13 @@ impl Interpreter {
         }
         let val = self.normalize_incdec_source_with_type_for(name, Some(name_sym), raw_val);
         let new_val = self.increment_value_smart(&val)?;
-        let new_val = self.wrap_native_int_arithmetic_result_for(name, Some(name_sym), new_val);
+        let new_val = self.wrap_native_int_arithmetic_result_for_slot(
+            code,
+            slot,
+            name,
+            Some(name_sym),
+            new_val,
+        );
         self.store_named_scalar_rmw_result(code, name, Some(name_sym), slot, new_val)?;
         self.stack.push(val);
         Ok(())
@@ -409,7 +415,13 @@ impl Interpreter {
         }
         let val = self.normalize_incdec_source_with_type_for(name, Some(name_sym), raw_val);
         let new_val = self.decrement_value_smart(&val)?;
-        let new_val = self.wrap_native_int_arithmetic_result_for(name, Some(name_sym), new_val);
+        let new_val = self.wrap_native_int_arithmetic_result_for_slot(
+            code,
+            slot,
+            name,
+            Some(name_sym),
+            new_val,
+        );
         self.store_named_scalar_rmw_result(code, name, Some(name_sym), slot, new_val)?;
         self.stack.push(val);
         Ok(())
