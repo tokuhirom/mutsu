@@ -487,14 +487,23 @@ impl Interpreter {
         {
             return None;
         }
+        // Cheap existence probe first: `lookup_in_running_package`'s own
+        // `contains_name` guard is one `HashSet` lookup against the union of
+        // every package's alias keys, memoized once (`PackageKeyed::names`).
+        // The overwhelming majority of names this is asked about — every
+        // builtin type constraint (`Str`, `int`, `Bool`, ...) in a program
+        // that aliases nothing under that name — never appear in that union
+        // at all, so this answers "no" in one probe. Running `has_type_direct`
+        // unconditionally first paid its four-table `contains_key` (a `Str`
+        // constraint checked on every typed binding) even though the lookup
+        // below was going to answer `None` anyway (#8899).
+        let target = self.lookup_in_running_package(&self.package_type_aliases, name)?;
         // A directly registered name is its own resolution; the module alias is
         // only ever the fallback for a short name nothing else accounts for.
         if self.has_type_direct(name) {
             return None;
         }
-        self.lookup_in_running_package(&self.package_type_aliases, name)
-            .filter(|target| self.has_type_direct(target))
-            .cloned()
+        self.has_type_direct(target).then(|| target.clone())
     }
 
     /// The bare `constant` / sigilless declaration a module made in its own file
