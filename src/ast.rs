@@ -193,11 +193,16 @@ impl ParamDef {
     /// The decision has to be made from `sigilless`, not from the name: a scalar
     /// parameter's env key drops its `$`, so `$p` and `\p` reach the binder
     /// spelled identically.
-    pub(crate) fn assignment_type_constraint(&self) -> Option<String> {
+    ///
+    /// Borrowed from the `ParamDef`, which outlives every binder use of it:
+    /// the binder only ever reads the text and hands it to the env, so copying
+    /// it made a `String` per typed parameter bind — the single largest source
+    /// of `String::clone` in a `JSON::Fast` decode (#8898).
+    pub(crate) fn assignment_type_constraint(&self) -> Option<&str> {
         if self.sigilless {
             return None;
         }
-        self.type_constraint.clone()
+        self.type_constraint.as_deref()
     }
 
     /// True when the *source* declares a parameter spelled `$self` — an explicit

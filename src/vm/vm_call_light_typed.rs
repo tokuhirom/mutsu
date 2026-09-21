@@ -267,7 +267,7 @@ impl Interpreter {
                             self.bind_param_type_constraint_sym(
                                 &cf.param_defs[i].name,
                                 name_sym,
-                                Some(base.to_string()),
+                                Some(base),
                             );
                         }
                         let val = Self::bind_itemize_param(cf, i, val);

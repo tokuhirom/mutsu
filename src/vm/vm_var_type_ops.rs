@@ -92,7 +92,7 @@ impl Interpreter {
         if scoped {
             self.loan_env_for(|i| i.set_var_type_constraint_routine_scoped(name, &constraint));
         } else {
-            self.vm_set_var_type_constraint_decl(name, Some(constraint.clone().into_owned()));
+            self.vm_set_var_type_constraint_decl(name, Some(constraint.as_ref()));
         }
         // For scalar variables, if the current value is Nil, set it to the type object.
         // Exception: if the constraint is "Nil", keep the value as Nil
@@ -195,9 +195,22 @@ impl Interpreter {
             Interpreter::type_meta_key_for_sym(name_sym),
             Interpreter::hash_key_meta_key_for_sym(name_sym),
         ] {
+            // First write wins, so once this scope has recorded the key there
+            // is nothing left to do — and in particular no reason to copy the
+            // key's bytes to build the `entry()` argument, nor to clone the
+            // env value that `or_insert` would drop again. A loop body that
+            // re-declares on every iteration takes this exit on all but the
+            // first, which is the shape the save exists for (#8898).
+            if self
+                .loop_local_saved_env
+                .last()
+                .is_some_and(|scope| scope.contains_key(key.as_str()))
+            {
+                continue;
+            }
             let prev = self.env().get_sym(key).cloned();
             if let Some(scope) = self.loop_local_saved_env.last_mut() {
-                scope.entry(key.as_str().to_string()).or_insert(prev);
+                scope.insert(key.as_str().to_string(), prev);
             }
         }
     }

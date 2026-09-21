@@ -3009,9 +3009,19 @@ impl Interpreter {
                     // container and is checked against that container's `of`,
                     // never against the alias's own declared type. See
                     // [`crate::ast::ParamDef::assignment_type_constraint`].
-                    let bound_type_constraint = source_type_constraint
-                        .clone()
-                        .or_else(|| pd.assignment_type_constraint());
+                    // `Cow`, so the parameter's own declared type — the case
+                    // that actually fires on a typed signature — is borrowed
+                    // straight out of the `ParamDef` instead of copied per
+                    // bind (#8898). Only the source variable's constraint,
+                    // which is read out of the env, is owned.
+                    let bound_type_constraint: Option<std::borrow::Cow<'_, str>> =
+                        source_type_constraint
+                            .clone()
+                            .map(std::borrow::Cow::Owned)
+                            .or_else(|| {
+                                pd.assignment_type_constraint()
+                                    .map(std::borrow::Cow::Borrowed)
+                            });
                     let mut value = unwrap_varref_value(raw_arg.clone());
                     // Container identity (§3): an `is copy` container param owns
                     // a DISTINCT container. Mutations now write through the
@@ -3325,11 +3335,19 @@ impl Interpreter {
                     // Resolve type capture prefixes (e.g., `::T` → `Int`) so
                     // that the stored variable type constraint uses the
                     // concrete captured type name, not the raw `::T` token.
+                    // Through the `try_` form, so a plain constraint (`Int`,
+                    // `str`) with nothing to resolve keeps the borrow it
+                    // arrived with instead of being copied to be compared and
+                    // dropped -- the same split #8815 made on the type-check
+                    // path, for the same reason.
                     let bound_type_constraint = bound_type_constraint.map(|tc| {
                         if let Some(captured_name) = tc.strip_prefix("::") {
-                            self.resolved_type_capture_name(captured_name)
+                            std::borrow::Cow::Owned(self.resolved_type_capture_name(captured_name))
                         } else {
-                            self.resolved_type_capture_name(&tc)
+                            match self.try_resolved_type_capture_name(&tc) {
+                                Some(resolved) => std::borrow::Cow::Owned(resolved),
+                                None => tc,
+                            }
                         }
                     });
                     if !pd.name.is_empty()
@@ -3353,7 +3371,7 @@ impl Interpreter {
                             self.bind_param_type_constraint_sym(
                                 binding_name,
                                 pd_name_sym(),
-                                bound_type_constraint.clone(),
+                                bound_type_constraint.as_deref(),
                             );
                             if let Some(sub_params) = &pd.sub_signature {
                                 let target =
@@ -3455,7 +3473,7 @@ impl Interpreter {
                         self.bind_param_type_constraint_sym(
                             binding_name,
                             pd_name_sym(),
-                            bound_type_constraint.clone(),
+                            bound_type_constraint.as_deref(),
                         );
                     }
                     if let Some(sub_params) = &pd.sub_signature {
