@@ -484,7 +484,7 @@ impl Interpreter {
             Value::package(crate::symbol::Symbol::intern(&type_name)),
         );
         attrs.insert("message".to_string(), Value::str(msg.clone()));
-        let mut err = RuntimeError::new(msg.to_string());
+        let mut err = RuntimeError::new(msg);
         err.exception = Some(Box::new(Value::make_instance(
             crate::symbol::Symbol::intern("X::Str::Trans::InvalidArg"),
             attrs,
@@ -503,7 +503,7 @@ impl Interpreter {
         let mut attrs = std::collections::HashMap::new();
         attrs.insert("key".to_string(), key.clone());
         attrs.insert("message".to_string(), Value::str(msg.clone()));
-        let mut err = RuntimeError::new(msg.to_string());
+        let mut err = RuntimeError::new(msg);
         err.exception = Some(Box::new(Value::make_instance(
             crate::symbol::Symbol::intern("X::Str::Trans::IllegalKey"),
             attrs,

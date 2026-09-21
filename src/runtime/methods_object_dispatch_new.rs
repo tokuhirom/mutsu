@@ -397,7 +397,7 @@ impl Interpreter {
             let vt = if info.value_type.is_empty() {
                 "Any".to_string()
             } else {
-                info.value_type.clone()
+                info.value_type
             };
             let pkg = format!("Hash[{},{}]", vt, kt);
             return self.dispatch_new(Value::package(Symbol::intern(&pkg)), args);
@@ -564,7 +564,7 @@ impl Interpreter {
                     selected_param_names = candidate.type_params.clone();
                     selected_param_defs = candidate.type_param_defs.clone();
                     matched_lang_version = Some(candidate.language_version.clone());
-                    selected_role = Some(candidate.role_def.clone());
+                    selected_role = Some(candidate.role_def);
                 }
             }
             if let Some(role) = selected_role {
@@ -2300,7 +2300,7 @@ impl Interpreter {
                 }
                 // Restore env after default evaluation, but preserve side effects
                 // on variables that already existed in the caller environment.
-                let mut restored_env = saved_default_env.clone();
+                let mut restored_env = saved_default_env;
                 for (key, value) in self.env.iter() {
                     if restored_env.contains_key_sym(*key) {
                         restored_env.insert_sym(*key, value.clone());

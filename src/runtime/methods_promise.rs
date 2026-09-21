@@ -80,7 +80,7 @@ impl Interpreter {
             let (result, output, stderr) = orig.wait();
             let status = orig.status();
             if should_run(&status) {
-                let promise_val = Value::promise(orig.clone());
+                let promise_val = Value::promise(orig);
                 let cb_result = self.call_sub_value(block, vec![promise_val], true);
                 Self::resolve_promise_callback(&new_promise, cb_result, output, stderr);
             } else if propagate_kept {

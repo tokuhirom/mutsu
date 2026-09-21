@@ -106,9 +106,9 @@ impl Interpreter {
             if family == Some(3) {
                 // PF_UNIX / PF_LOCAL
                 let path = if !localhost.is_empty() {
-                    localhost.clone()
+                    localhost
                 } else if !host.is_empty() {
-                    host.clone()
+                    host
                 } else {
                     return Err(RuntimeError::new("PF_UNIX listen requires a socket path"));
                 };
@@ -208,7 +208,7 @@ impl Interpreter {
             if family == Some(3) {
                 // PF_UNIX / PF_LOCAL
                 let path = if !host.is_empty() {
-                    host.clone()
+                    host
                 } else {
                     return Err(RuntimeError::new("PF_UNIX connect requires a socket path"));
                 };

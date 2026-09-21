@@ -108,7 +108,7 @@ impl Interpreter {
         };
         let Some(count) = count else {
             if method == "pick" {
-                let mut items = pool.clone();
+                let mut items = pool;
                 let len = items.len();
                 for i in (1..len).rev() {
                     let j =
@@ -133,7 +133,7 @@ impl Interpreter {
             if count == 0 {
                 return Ok(Value::array(Vec::new()));
             }
-            let mut items = pool.clone();
+            let mut items = pool;
             let mut out = Vec::with_capacity(count.min(items.len()));
             for _ in 0..count.min(items.len()) {
                 let idx = (crate::builtins::rng::builtin_rand() * items.len() as f64) as usize

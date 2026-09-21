@@ -55,8 +55,8 @@ impl Interpreter {
         // `C` declares `method Str`). Dispatch on the mixin itself so `self`
         // inside the method is the mixed value, as raku has it.
         let class_name = match inner.view() {
-            ValueView::Instance { class_name, .. } => class_name.resolve().to_string(),
-            ValueView::Package(name) => name.resolve().to_string(),
+            ValueView::Instance { class_name, .. } => class_name.resolve(),
+            ValueView::Package(name) => name.resolve(),
             _ => return None,
         };
         for method in ["Stringy", "Str"] {
@@ -79,8 +79,8 @@ impl Interpreter {
             return Some(r);
         }
         let class_name = match inner.view() {
-            ValueView::Instance { class_name, .. } => class_name.resolve().to_string(),
-            ValueView::Package(name) => name.resolve().to_string(),
+            ValueView::Instance { class_name, .. } => class_name.resolve(),
+            ValueView::Package(name) => name.resolve(),
             _ => return None,
         };
         if self.has_user_method(&class_name, "Str") {
@@ -446,7 +446,7 @@ impl Interpreter {
             // method of the same name: `A.new but Role` where the role's
             // method calls `nextsame` must reach the class's original method.
             let base_class = match inner.as_ref().view() {
-                ValueView::Instance { class_name, .. } => Some(class_name.resolve().to_string()),
+                ValueView::Instance { class_name, .. } => Some(class_name.resolve()),
                 _ => None,
             };
             let base_remaining: Vec<super::DeferralEntry> = if let Some(bc) = &base_class {

@@ -1204,7 +1204,7 @@ impl Interpreter {
                         && let Some(exc) = attributes.as_map().get("exception").cloned()
                     {
                         let msg = self.exception_message_or_died_with(&exc);
-                        let mut err = crate::value::RuntimeError::new(msg.to_string());
+                        let mut err = crate::value::RuntimeError::new(msg);
                         err.exception = Some(Box::new(exc));
                         return Err(err);
                     }
@@ -1215,7 +1215,7 @@ impl Interpreter {
                 // the stored attribute), never the raw attribute — see
                 // `exception_message_text`.
                 let msg = self.exception_message_or_died_with(&target);
-                let mut err = crate::value::RuntimeError::new(msg.to_string());
+                let mut err = crate::value::RuntimeError::new(msg);
                 // Classes doing X::Control throw as control exceptions so
                 // CONTROL blocks catch them instead of CATCH.
                 if does_x_control {
@@ -1846,7 +1846,7 @@ impl Interpreter {
             let args = crate::builtins::strip_undeclared_nameds(method, &args).unwrap_or(args);
             // Type check values being pushed against container type metadata
             if let Some(info) = self.container_type_metadata(&target) {
-                let constraint = &info.value_type.clone();
+                let constraint = &info.value_type;
                 if constraint != "Mu" && constraint != "Any" {
                     for arg in &args {
                         let val = match arg.view() {
@@ -2086,7 +2086,7 @@ impl Interpreter {
                                 || after_vol.ends_with('/')
                                 || after_vol.ends_with('\\')
                             {
-                                (after_vol.to_string(), String::new())
+                                (after_vol, String::new())
                             } else {
                                 let last_sep = after_vol.rfind(['/', '\\']);
                                 let basename = last_sep
@@ -2181,7 +2181,7 @@ impl Interpreter {
                                     (".".to_string(), String::new())
                                 }
                             } else {
-                                (".".to_string(), rest.to_string())
+                                (".".to_string(), rest)
                             };
                             let mut hash = std::collections::HashMap::new();
                             hash.insert("volume".to_string(), Value::str(volume));
@@ -2200,7 +2200,7 @@ impl Interpreter {
                         let (volume, rest) = if is_cygwin {
                             Self::split_cygwin_volume(&path)
                         } else {
-                            ("".to_string(), path.clone())
+                            ("".to_string(), path)
                         };
                         let only_seps = !rest.is_empty() && rest.chars().all(|c| c == '/');
                         let (dirname, basename) = if only_seps {
@@ -2457,7 +2457,7 @@ impl Interpreter {
                                     false,
                                 )));
                             }
-                            let mut result = base_str.clone();
+                            let mut result = base_str;
                             if !result.ends_with('/') && !result.ends_with('\\') {
                                 result.push('\\');
                             }
@@ -2749,7 +2749,7 @@ impl Interpreter {
                 // type repr (`X::AdHoc()`), which `target.to_string_value()`
                 // would yield for an exception built without a `message` attr.
                 let msg = self.exception_message_or_died_with(&target);
-                let mut err = RuntimeError::new(msg.to_string());
+                let mut err = RuntimeError::new(msg);
                 err.exception = Some(Box::new(target.clone()));
                 return Err(err);
             }
@@ -4516,7 +4516,7 @@ impl Interpreter {
         if let ValueView::Mixin(inner, _) = target.view() {
             let inner_owned = inner.as_ref().clone();
             if let ValueView::Instance { class_name, .. } = inner_owned.view() {
-                let cls = class_name.resolve().to_string();
+                let cls = class_name.resolve();
                 if !self.class_has_user_method(&cls, method) && self.is_native_method(&cls, method)
                 {
                     return self.call_method_with_values(inner_owned, method, args);
@@ -4659,7 +4659,7 @@ impl Interpreter {
                     .role_attribute_by_name(method)
                     .or_else(|| mixins.get(&attr_key).cloned())
                 {
-                    return Ok(value.clone());
+                    return Ok(value);
                 }
             }
             // A user-declared method not overridden by the mixin roles is an
@@ -4679,7 +4679,7 @@ impl Interpreter {
                 ..
             } = inner.as_ref().view()
             {
-                let cls = class_name.resolve().to_string();
+                let cls = class_name.resolve();
                 // A private method (`self!inner`) on the mixin: resolve it on the
                 // inner class MRO and run it with `self` bound to the MIXIN wrapper
                 // (not the bare inner instance) so a nested `self.foo` inside the

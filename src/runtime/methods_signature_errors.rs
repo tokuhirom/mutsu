@@ -32,7 +32,7 @@ pub(super) fn make_private_permission_error(
     );
     attrs.insert("message".to_string(), Value::str(msg.clone()));
     let ex = Value::make_instance(Symbol::intern("X::Method::Private::Permission"), attrs);
-    let mut err = RuntimeError::new(msg.to_string());
+    let mut err = RuntimeError::new(msg);
     err.exception = Some(Box::new(ex));
     err
 }
@@ -49,7 +49,7 @@ pub(super) fn make_private_unqualified_error(method_name: &str) -> RuntimeError 
     attrs.insert("method".to_string(), Value::str(method_name.to_string()));
     attrs.insert("message".to_string(), Value::str(msg.clone()));
     let ex = Value::make_instance(Symbol::intern("X::Method::Private::Unqualified"), attrs);
-    let mut err = RuntimeError::new(msg.to_string());
+    let mut err = RuntimeError::new(msg);
     err.exception = Some(Box::new(ex));
     err
 }
@@ -107,7 +107,7 @@ pub(crate) fn make_x_immutable_error(method_name: &str, typename: &str) -> Runti
     attrs.insert("typename".to_string(), Value::str(typename.to_string()));
     attrs.insert("message".to_string(), Value::str(msg.clone()));
     let ex = Value::make_instance(Symbol::intern("X::Immutable"), attrs);
-    let mut err = RuntimeError::new(msg.to_string());
+    let mut err = RuntimeError::new(msg);
     err.exception = Some(Box::new(ex));
     err
 }
@@ -162,7 +162,7 @@ pub(crate) fn make_multi_no_match_error(method_name: &str) -> RuntimeError {
     let mut attrs = std::collections::HashMap::new();
     attrs.insert("message".to_string(), Value::str(msg.clone()));
     let ex = Value::make_instance(Symbol::intern("X::Multi::NoMatch"), attrs);
-    let mut err = RuntimeError::new(msg.to_string());
+    let mut err = RuntimeError::new(msg);
     err.exception = Some(Box::new(ex));
     err
 }
@@ -191,7 +191,7 @@ pub(crate) fn make_multi_ambiguous_error(
     let mut attrs = std::collections::HashMap::new();
     attrs.insert("message".to_string(), Value::str(msg.clone()));
     let ex = Value::make_instance(Symbol::intern("X::Multi::Ambiguous"), attrs);
-    let mut err = RuntimeError::new(msg.to_string());
+    let mut err = RuntimeError::new(msg);
     err.exception = Some(Box::new(ex));
     err
 }
@@ -229,7 +229,7 @@ pub(super) fn make_multi_no_match_error_detailed(
     let mut attrs = std::collections::HashMap::new();
     attrs.insert("message".to_string(), Value::str(msg.clone()));
     let ex = Value::make_instance(Symbol::intern("X::Multi::NoMatch"), attrs);
-    let mut err = RuntimeError::new(msg.to_string());
+    let mut err = RuntimeError::new(msg);
     err.exception = Some(Box::new(ex));
     err
 }

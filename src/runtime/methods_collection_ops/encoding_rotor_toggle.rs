@@ -58,7 +58,7 @@ impl Interpreter {
         };
 
         let entry = super::super::EncodingEntry {
-            name: enc_name_str.clone(),
+            name: enc_name_str,
             alternative_names: alt_names,
             user_type: Some(encoding_val),
         };

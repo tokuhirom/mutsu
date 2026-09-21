@@ -724,7 +724,7 @@ impl Interpreter {
             };
             let key = if want_max {
                 // Last element's index = elems - 1 (Inf stays Inf).
-                let elems = self.call_method_with_values(target.clone(), "elems", vec![])?;
+                let elems = self.call_method_with_values(target, "elems", vec![])?;
                 match elems.view() {
                     ValueView::Int(n) => Value::int(n - 1),
                     ValueView::Num(f) if f.is_infinite() => elems.clone(),
@@ -741,7 +741,7 @@ impl Interpreter {
                 _ => value,
             });
         }
-        let mut call_args = vec![target.clone()];
+        let mut call_args = vec![target];
         if let Some(first) = args.first() {
             if matches!(
                 first.view(),
@@ -834,7 +834,7 @@ impl Interpreter {
             // Fall through for 0-arg Supply.minmax
             return None;
         }
-        let mut call_args = vec![target.clone()];
+        let mut call_args = vec![target];
         if let Some(first) = args.first() {
             if matches!(
                 first.view(),

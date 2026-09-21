@@ -1413,7 +1413,7 @@ impl Interpreter {
                 if let Some(class_def) = self.registry_mut().classes.get_mut(&class_name)
                     && !class_def.parents.contains(&parent_name)
                 {
-                    class_def.parents.push(parent_name.clone());
+                    class_def.parents.push(parent_name);
                     changed = true;
                 }
                 if changed {

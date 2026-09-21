@@ -862,7 +862,7 @@ impl Interpreter {
             if method == "Str" {
                 // Rakudo: Code.Str is the routine's name (with a coercion
                 // warning, which mutsu does not emit).
-                return Some(Ok(Value::str(name.to_string())));
+                return Some(Ok(Value::str(name)));
             }
             // .raku / .perl — an empty signature is omitted entirely:
             // `sub foo { ... }`, `sub ($x) { ... }`, `sub { ... }`.
@@ -988,7 +988,7 @@ impl Interpreter {
                 .env
                 .get("__mutsu_wrap_name")
                 .map(Value::to_string_value)
-                .unwrap_or_else(|| data.name.resolve().to_string());
+                .unwrap_or_else(|| data.name.resolve());
             let current_callable_id = if !func_name.is_empty() {
                 let key = MetaNs::CallableId.key_pair_for_strs(&self.current_package(), &func_name);
                 self.env
@@ -1121,7 +1121,7 @@ impl Interpreter {
                 .env
                 .get("__mutsu_wrap_name")
                 .map(Value::to_string_value)
-                .unwrap_or_else(|| data.name.resolve().to_string());
+                .unwrap_or_else(|| data.name.resolve());
             let sub_id = self
                 .wrap_sub_names
                 .iter()
