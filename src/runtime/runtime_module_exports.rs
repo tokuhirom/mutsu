@@ -996,7 +996,26 @@ impl Interpreter {
             .clone()
             .or_else(|| self.unit_module_loading_stack.last().cloned())
             .unwrap_or_else(|| current_pkg.clone());
-
+        // Module bodies execute with the caller's runtime package, but their
+        // imports belong to the module's lexical compilation unit. Keep those
+        // aliases under the loading module's package so its methods can still
+        // resolve an imported multi after the temporary import scope is
+        // restored.
+        let module_import_pkg = if crate::qualified::is_global_package(self.current_package_sym()) {
+            // A bare one-segment module has no lexical package of its own: its
+            // top-level declarations and OUR aliases live in GLOBAL. A
+            // namespaced module, however, owns the package named by its load
+            // stack entry even before its later class/package declaration runs.
+            self.module_load_stack
+                .last()
+                .filter(|package| {
+                    crate::qualified::is_qualified(crate::symbol::Symbol::intern(package))
+                })
+                .cloned()
+                .unwrap_or_else(|| current_pkg.clone())
+        } else {
+            current_pkg.clone()
+        };
         // For a `unit module Foo`, the actual exports live in
         // `unit_module_exported_subs[Foo]` (runtime registration used the
         // GLOBAL package), while `exported_subs[Foo]` is empty. Merge both so a
@@ -1028,8 +1047,21 @@ impl Interpreter {
             if !import_all && !is_mandatory && symbol_tags.is_disjoint(&requested) {
                 continue;
             }
-            let target_pkg = if name.contains(":<") {
+            let is_operator = matches!(
+                name.split_once(":<").map(|(category, _)| category),
+                Some("prefix" | "postfix" | "infix" | "circumfix" | "postcircumfix")
+            );
+            // Non-operator categorical symbols such as `trait_mod:<is>` are
+            // package-qualified aliases too: a namespaced module can import
+            // one from a provider and re-export it from its own EXPORT stash.
+            // Plain routines keep the historical caller package; otherwise a
+            // nested `use OpenSSL::NativeLib` inside a bare-file module would
+            // move `gen-lib` out of the module's GLOBAL scope and break its
+            // NativeCall declarations.
+            let target_pkg = if is_operator {
                 &unit_pkg
+            } else if name.contains(":<") {
+                &module_import_pkg
             } else {
                 &current_pkg
             };

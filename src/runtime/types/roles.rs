@@ -609,10 +609,14 @@ impl Interpreter {
                 // body reads the latter. Same lookup `materialize_default_
                 // parametric_role` performs for the `.new` path.
                 let capture = candidate.type_param_defs[i].captured_type_name();
+                let declared = candidate.type_params.get(i).unwrap_or(sig_name);
+                let bare_sig_name = sig_name.trim_start_matches(['$', '@', '%', '&']);
                 let Some(value) = self
                     .env
                     .get(capture.unwrap_or(sig_name.as_str()))
+                    .or_else(|| self.env.get(declared))
                     .or_else(|| self.env.get(sig_name))
+                    .or_else(|| self.env.get(bare_sig_name))
                     .cloned()
                 else {
                     continue;
@@ -620,7 +624,6 @@ impl Interpreter {
                 // Key by the role's declared parameter spelling (what the role
                 // body reads), recording the signature spelling too when they
                 // differ — the same convention `bind_role_type_params` uses.
-                let declared = candidate.type_params.get(i).unwrap_or(sig_name);
                 bindings.push((declared.clone(), value.clone()));
                 if declared != sig_name {
                     bindings.push((sig_name.clone(), value));

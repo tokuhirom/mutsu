@@ -214,6 +214,12 @@ pub(crate) fn builtin_type_attributes(type_name: &str) -> &'static [(&'static st
             ("day", "Int"),
             ("daycount", "Int"),
         ],
+        "Backtrace::Frame" => &[
+            ("file", "Str"),
+            ("line", "Int"),
+            ("code", "Code"),
+            ("subname", "Str"),
+        ],
         _ => &[],
     }
 }
@@ -221,7 +227,7 @@ pub(crate) fn builtin_type_attributes(type_name: &str) -> &'static [(&'static st
 /// Whether a modelled built-in attribute has a public accessor (`.year` on
 /// DateTime, ...). The numeric internals (`Rat.$!numerator`, ...) stay private.
 pub(crate) fn builtin_type_attr_has_accessor(type_name: &str, _attr_name: &str) -> bool {
-    matches!(type_name, "DateTime")
+    matches!(type_name, "DateTime" | "Backtrace::Frame")
 }
 
 #[cfg(test)]

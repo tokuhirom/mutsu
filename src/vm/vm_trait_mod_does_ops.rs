@@ -102,6 +102,24 @@ impl Interpreter {
     /// call returns using its own `code`/slot context to perform the real
     /// local-slot write.
     fn apply_trait_mod_does(&mut self, doee: Value, role: Value) -> Result<Value, RuntimeError> {
+        let attribute_target = match doee.view() {
+            ValueView::Instance {
+                class_name,
+                attributes,
+                ..
+            } if class_name == "Attribute" => {
+                let map = attributes.as_map();
+                match (map.get("__mutsu_attr_owner"), map.get("__mutsu_attr_name")) {
+                    (Some(owner), Some(attr)) => {
+                        let owner = owner.to_string_value();
+                        let attr = attr.to_string_value();
+                        (!owner.is_empty() && !attr.is_empty()).then_some((owner, attr))
+                    }
+                    _ => None,
+                }
+            }
+            _ => None,
+        };
         if let Some(var_name) = Self::var_target_from_meta_value(&doee) {
             let current = self.env().get(&var_name).cloned().unwrap_or(Value::NIL);
             let mixed = self.vm_does_values(current, role)?;
@@ -116,6 +134,13 @@ impl Interpreter {
             return Ok(mixed);
         }
         let mixed = self.vm_does_values(doee, role)?;
+        if let Some((owner, attr_name)) = attribute_target
+            && matches!(mixed.view(), ValueView::Mixin(..))
+        {
+            self.registry_mut()
+                .class_attribute_trait_objects
+                .insert((owner, attr_name), mixed.clone());
+        }
         if self.trait_mod_writeback_key.is_some() && matches!(mixed.view(), ValueView::Mixin(..)) {
             self.trait_mod_writeback_value = Some(mixed.clone());
             if Self::how_target_from_value(&mixed).is_none() {

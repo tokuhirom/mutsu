@@ -30,6 +30,26 @@ impl Interpreter {
                 return Err(err);
             }
         }
+        // Keep the class-method spelling on the same live-source path as an
+        // instance-method merge.  A class call such as
+        // `Supply.merge($supplier.Supply, supply { })` is common in modules
+        // that combine a live source with an empty optional source.  The
+        // materialized path below loses the supplier identity and closes as
+        // soon as the empty source completes, dropping later emissions from
+        // the live source.
+        let has_live_source = args.iter().any(|arg| {
+            matches!(
+                arg.view(),
+                ValueView::Instance { attributes, .. }
+                    if attributes.contains_key("supplier_id")
+            )
+        });
+        if has_live_source
+            && let Some((first, rest)) = args.split_first()
+            && let ValueView::Instance { attributes, .. } = first.view()
+        {
+            return self.native_supply(&(attributes).as_map(), "merge", rest.to_vec());
+        }
         if args.len() == 1 {
             // Merging one supply is a noop — return the same supply
             return Ok(args[0].clone());

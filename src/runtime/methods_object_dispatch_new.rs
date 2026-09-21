@@ -671,6 +671,32 @@ impl Interpreter {
             } else {
                 (cn_resolved.as_str(), None)
             };
+            // Backtrace::Frame is a VM-provided value rather than a user
+            // registered class, but Raku exposes its four-field constructor
+            // to code such as JSON::Class's custom backtrace unmarshaller.
+            // Keep the same instance shape as frames created by the VM and
+            // accept both the documented positional form and named fields.
+            if cn_resolved == "Backtrace::Frame" {
+                let mut attrs = HashMap::new();
+                attrs.insert("file".to_string(), Value::str(String::new()));
+                attrs.insert("line".to_string(), Value::int(0));
+                attrs.insert("code".to_string(), Value::package(Symbol::intern("Code")));
+                attrs.insert("subname".to_string(), Value::str(String::new()));
+                let mut positional = args.iter().filter(|arg| {
+                    !matches!(arg.view(), ValueView::Pair(..) | ValueView::ValuePair(..))
+                });
+                for key in ["file", "line", "code", "subname"] {
+                    if let Some(value) = positional.next() {
+                        attrs.insert(key.to_string(), value.clone());
+                    }
+                }
+                for arg in &args {
+                    if let ValueView::Pair(key, value) = arg.view() {
+                        attrs.insert(key.clone(), value.clone());
+                    }
+                }
+                return Ok(Value::make_instance(*class_name, attrs));
+            }
             // `IO::Path::Parts` is a parts container, not an `IO::Path` subclass —
             // build it directly before the `IO::Path::`-prefix rule below would
             // register it with an `IO::Path` parent and route `.new` through path

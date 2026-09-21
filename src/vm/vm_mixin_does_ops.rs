@@ -331,6 +331,34 @@ impl Interpreter {
         Some((owner, attr))
     }
 
+    /// Return the declaring class and attribute name for an Attribute meta
+    /// object. Runtime attribute traits (for example JSON::Marshal's
+    /// `marshalled-by`) apply `does` directly to this object; preserve the
+    /// resulting mixin so later `.^attributes` calls see its trait metadata.
+    fn attribute_trait_target(value: &Value) -> Option<(String, String)> {
+        if let ValueView::Mixin(inner, _) = value.view() {
+            return Self::attribute_trait_target(inner);
+        }
+        let ValueView::Instance {
+            class_name,
+            attributes,
+            ..
+        } = value.view()
+        else {
+            return None;
+        };
+        if class_name != "Attribute" {
+            return None;
+        }
+        let map = attributes.as_map();
+        let owner = map.get("__mutsu_attr_owner")?.to_string_value();
+        let attr = map.get("__mutsu_attr_name")?.to_string_value();
+        if owner.is_empty() || attr.is_empty() {
+            return None;
+        }
+        Some((owner, attr))
+    }
+
     /// Record the role-mixin overrides produced by `$attr.container.VAR does
     /// Role(...)` so instance construction mixes the role into the attribute's
     /// value (see `apply_attribute_does_role_mixins`).
@@ -449,9 +477,17 @@ impl Interpreter {
         // record the role mixin against the owning attribute so construction
         // applies it to each instance's attribute value.
         let attr_container = Self::attr_container_target(&left);
+        let attr_trait = Self::attribute_trait_target(&left);
         let result = self.vm_does_values(left, right)?;
         if let Some((owner, attr_name)) = attr_container {
             self.record_attr_container_mixin(&owner, &attr_name, &result);
+        }
+        if let Some((owner, attr_name)) = attr_trait
+            && matches!(result.view(), ValueView::Mixin(..))
+        {
+            self.registry_mut()
+                .class_attribute_trait_objects
+                .insert((owner, attr_name), result.clone());
         }
         // Sync back: BUILD submethods may have modified closure variables, so the
         // captured-outer writes reach the caller's slots.
@@ -495,7 +531,24 @@ impl Interpreter {
         // caller lexical (`my $n=0; role R { submethod TWEAK { $n++ } }; $x does R`).
         // Snapshot the overwritable slots so the precise diff reconciles them.
         let pre_env = self.snapshot_carrier_overwritable_env(code);
-        let updated = self.vm_does_values(left, right)?;
+        let attr_trait = Self::attribute_trait_target(&left);
+        let composition_left = attr_trait
+            .as_ref()
+            .and_then(|key| {
+                self.registry()
+                    .class_attribute_trait_objects
+                    .get(key)
+                    .cloned()
+            })
+            .unwrap_or(left);
+        let updated = self.vm_does_values(composition_left, right)?;
+        if let Some((owner, attr_name)) = attr_trait
+            && matches!(updated.view(), ValueView::Mixin(..))
+        {
+            self.registry_mut()
+                .class_attribute_trait_objects
+                .insert((owner, attr_name), updated.clone());
+        }
         // Sync back: BUILD submethods may have modified closure variables.
         self.carrier_writeback_changed_aggregates(code, &pre_env);
         let name = Self::const_str(code, name_idx).to_string();
