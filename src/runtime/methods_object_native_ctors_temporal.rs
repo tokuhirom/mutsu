@@ -24,22 +24,24 @@ impl Interpreter {
         let mut has_named = false;
         let mut formatter: Option<Value> = None;
         for arg in args {
+            let arg = arg.deref_container();
             if let ValueView::Pair(key, value) = arg.view() {
+                let value = value.deref_container();
                 match key.as_str() {
                     "year" => {
-                        year = to_int(value);
+                        year = to_int(&value);
                         has_named = true;
                     }
                     "month" => {
-                        month = to_int(value);
+                        month = to_int(&value);
                         has_named = true;
                     }
                     "day" => {
-                        day = to_int(value);
+                        day = to_int(&value);
                         has_named = true;
                     }
                     "formatter" => {
-                        formatter = Some(value.clone());
+                        formatter = Some(value);
                     }
                     _ => {}
                 }
@@ -143,40 +145,42 @@ impl Interpreter {
         let mut positional = Vec::new();
         let mut has_named = false;
         for arg in args {
+            let arg = arg.deref_container();
             if let ValueView::Pair(key, value) = arg.view() {
+                let value = value.deref_container();
                 match key.as_str() {
                     "year" => {
-                        year = to_int(value);
+                        year = to_int(&value);
                         has_named = true;
                         has_component_named = true;
                     }
                     "month" => {
-                        month = to_int(value);
+                        month = to_int(&value);
                         has_named = true;
                         has_component_named = true;
                     }
                     "day" => {
-                        day = to_int(value);
+                        day = to_int(&value);
                         has_named = true;
                         has_component_named = true;
                     }
                     "hour" => {
-                        hour = to_int(value);
+                        hour = to_int(&value);
                         has_named = true;
                         has_component_named = true;
                     }
                     "minute" => {
-                        minute = to_int(value);
+                        minute = to_int(&value);
                         has_named = true;
                         has_component_named = true;
                     }
                     "second" => {
-                        second = to_float_value(value).unwrap_or(0.0);
+                        second = to_float_value(&value).unwrap_or(0.0);
                         has_named = true;
                         has_component_named = true;
                     }
                     "timezone" => {
-                        timezone = to_int(value);
+                        timezone = to_int(&value);
                         timezone_set = true;
                         has_named = true;
                     }
@@ -201,7 +205,7 @@ impl Interpreter {
                         // JSON round-tripping a null formatter) means "no
                         // formatter", same as rakudo.
                         if !matches!(value.view(), ValueView::Package(_) | ValueView::Nil) {
-                            formatter = Some(value.clone());
+                            formatter = Some(value);
                         }
                         has_named = true;
                     }
@@ -217,12 +221,12 @@ impl Interpreter {
             ));
         }
         if positional.len() >= 6 {
-            year = to_int(positional[0]);
-            month = to_int(positional[1]);
-            day = to_int(positional[2]);
-            hour = to_int(positional[3]);
-            minute = to_int(positional[4]);
-            second = to_float_value(positional[5]).unwrap_or(0.0);
+            year = to_int(&positional[0]);
+            month = to_int(&positional[1]);
+            day = to_int(&positional[2]);
+            hour = to_int(&positional[3]);
+            minute = to_int(&positional[4]);
+            second = to_float_value(&positional[5]).unwrap_or(0.0);
             has_named = true;
         } else if let Some(v) = positional.first() {
             match v.view() {

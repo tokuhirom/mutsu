@@ -11,7 +11,7 @@ use Test;
 # check. Measured against Rakudo v2026.06 (2026-09-04); raku is the oracle and
 # this file passes verbatim under both.
 
-plan 10;
+plan 11;
 
 # --- 1. a typed array refuses an autovivified intermediate ------------------
 dies-ok { my Int @a; @a[0][1] = 5 },
@@ -60,3 +60,12 @@ dies-ok { my Str @s; @s[2][0] = "x" },
 # --- 6. the hash-rooted twin keeps dying -----------------------------------
 dies-ok { my Int %h; %h<a><b> = 5 },
     "a typed hash still refuses an autovivified inner Hash";
+
+# A typed hash whose values are Arrays must autovivify an Array for a
+# positional second subscript, rather than probing the default Hash shape.
+{
+    my Array %h;
+    %h<a>[0] = 5;
+    is %h<a>[0], 5,
+        "a typed hash autovivifies an Array for a positional inner subscript";
+}
