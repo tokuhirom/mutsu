@@ -398,6 +398,28 @@ impl Interpreter {
             }
         }
         // Try running the actual method on the qualifier class
+        // A runtime `does` on an instance reblesses it into a synthesized
+        // class, while a qualified call resolves against the role named in
+        // the source.  The synthesized class owns the default bindings, so
+        // seed the role lexicals for this direct qualified-resolution path as
+        // well.  Keep the overlay scoped to resolution and execution.
+        let saved_role_default_env = if self.registry().roles.contains_key(qualifier) {
+            let defaults = match self.role_default_type_param_bindings(qualifier) {
+                Ok(defaults) => defaults,
+                Err(err) => return Some(Err(err)),
+            };
+            if defaults.is_empty() {
+                None
+            } else {
+                let saved = self.env.clone();
+                for (name, value) in defaults {
+                    self.env.insert(name, value);
+                }
+                Some(saved)
+            }
+        } else {
+            None
+        };
         let resolved = self.resolve_method_with_owner(qualifier, actual_method, &args);
         // ADR-0019 Phase E box E7 (second consumer family, qualified dispatch —
         // see `todo/deep/adr0019-e5-e7-entry-routing.md` "E7 step 2"):
@@ -445,7 +467,7 @@ impl Interpreter {
             // of re-deriving it a second time inside `run_instance_method`'s
             // own ad-hoc walk (ADR-0019 F6, mirroring the role-punned branch
             // above which already avoids the same double-resolve).
-            let (result, updated) = match self.run_resolved_method_compiled_or_treewalk(
+            let run = self.run_resolved_method_compiled_or_treewalk(
                 qualifier,
                 &owner.resolve(),
                 actual_method,
@@ -453,7 +475,11 @@ impl Interpreter {
                 attrs_map,
                 args,
                 Some(target.clone()),
-            ) {
+            );
+            if let Some(saved) = saved_role_default_env {
+                self.env = saved;
+            }
+            let (result, updated) = match run {
                 Ok(v) => v,
                 Err(e) => return Some(Err(e)),
             };
@@ -465,6 +491,9 @@ impl Interpreter {
                 return Some(self.proxy_fetch(fetcher, None, qualifier, &attributes.to_map(), 0));
             }
             return Some(Ok(result));
+        }
+        if let Some(saved) = saved_role_default_env {
+            self.env = saved;
         }
         // Fallback: find a method with matching role_origin in the instance's class.
         // Hoist clone to a `let` so the guard drops before re-entry (&mut self).
@@ -755,13 +784,29 @@ impl Interpreter {
             && let Some(role) = self.role_def_for_mixin_role(mixins, qualifier)
             && let Some(overloads) = role.methods.get(actual_method).cloned()
         {
-            let role_param_bindings: Vec<(String, Value)> = mixins
+            let mut role_param_bindings: Vec<(String, Value)> = mixins
                 .iter()
                 .filter_map(|(key, value)| {
                     key.strip_prefix("__mutsu_role_param__")
                         .map(|name| (name.to_string(), value.clone()))
                 })
                 .collect();
+            // A runtime mixin can name a parametric role without explicit
+            // arguments (`$value does JSON::Class`).  The ordinary mixin
+            // dispatch path materializes that role's defaults while resolving
+            // the method, but qualified role dispatch reaches this branch
+            // directly. Fill any missing bindings here so a qualified call
+            // sees the same defaults as its unqualified counterpart.
+            match self.role_default_type_param_bindings(qualifier) {
+                Ok(defaults) => {
+                    for (name, value) in defaults {
+                        if !role_param_bindings.iter().any(|(bound, _)| bound == &name) {
+                            role_param_bindings.push((name, value));
+                        }
+                    }
+                }
+                Err(err) => return Some(Err(err)),
+            }
             for def in overloads {
                 if def.is_private || !self.method_args_match(&args, &def.param_defs) {
                     continue;

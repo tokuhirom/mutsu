@@ -1,6 +1,6 @@
 use Test;
 
-plan 14;
+plan 18;
 
 # Backtrace::Frame methods and Backtrace list-iteration.
 
@@ -15,6 +15,16 @@ plan 14;
         nok $bt.list[0].is-setting, '.is-setting is False';
         is-deeply $bt.flat, $bt.list, '.flat returns the same as .list';
     }}
+}
+
+# Backtrace::Frame is a VM-provided class, but its public constructor is used
+# by serializers such as JSON::Unmarshal's custom frame handler.
+{
+    my $frame = Backtrace::Frame.new('file.raku', 42, Code, 'routine');
+    isa-ok $frame, Backtrace::Frame, 'the public frame constructor returns a frame';
+    is $frame.file, 'file.raku', 'constructor stores the file';
+    is $frame.line, 42, 'constructor stores the line';
+    is $frame.subname, 'routine', 'constructor stores the subname';
 }
 
 {

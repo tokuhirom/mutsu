@@ -6,7 +6,7 @@ use Test;
 # produces an empty Supply that fires `done` immediately and silently drops
 # every later emission.
 
-plan 13;
+plan 15;
 
 # `live` is a real method (`method live(Supply:D: --> Bool:D)`), not an
 # attribute accessor: every Supply answers it, whatever built it.
@@ -36,6 +36,22 @@ plan 13;
     $s2.done;
     is-deeply @res, [1, 'a', 2, 'b'], 'a merge forwards every live source';
     is $done, 1, 'a merge is done once every source is';
+}
+
+# The class-method spelling must preserve a live source too.  This is the
+# shape used by Lumberjack::Dispatcher::EventSource: its event source merges
+# a live Supplier with an empty optional Supply.
+{
+    my $source = Supplier.new;
+    my $merged = Supply.merge($source.Supply, supply { });
+    my $channel = $merged.Channel;
+    $source.emit('class merge');
+    is $channel.receive, 'class merge', 'class-method merge keeps a live source open';
+}
+
+{
+    my $source = Supply.from-list(1, 2, 3);
+    is Supply.merge($source), $source, 'class-method merge keeps a static singleton unchanged';
 }
 
 # reduce: folds as the source emits, and delivers the single result at done.

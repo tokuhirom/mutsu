@@ -264,20 +264,44 @@ impl Interpreter {
         if let Some(pattern) = self.eval_token_call_values(name, args)? {
             return Ok(Value::regex(pattern));
         }
-        let variants = self.registry().enum_types.get(name).cloned();
+        // An enum declared inside a module is stored by its bare declarator
+        // name, while calls in that module may use the package-qualified name
+        // (`Lumberjack::Level($value)`). Resolve that spelling before looking
+        // up its variants so qualified enum coercions retain their enum type.
+        let enum_name = if self.registry().enum_types.contains_key(name) {
+            Some(Symbol::intern(name))
+        } else {
+            let qualified_name = Symbol::intern(name);
+            let short = crate::qualified::unqualified_part(qualified_name);
+            let owner_known =
+                crate::qualified::package_parent(qualified_name).is_some_and(|owner| {
+                    let owner = owner.as_str();
+                    self.has_class(owner) || self.has_role(owner) || self.is_declared_package(owner)
+                });
+            (owner_known && self.registry().enum_types.contains_key(short.as_str()))
+                .then_some(short)
+        };
+        let variants = enum_name
+            .and_then(|enum_name| self.registry().enum_types.get(enum_name.as_str()).cloned());
         if let Some(variants) = variants {
             let Some(first) = args.first().cloned() else {
                 return Ok(Value::NIL);
             };
-            if let Some(enum_value) = self.coerce_to_enum_variant(name, &variants, first.clone()) {
+            let enum_name = enum_name.map(|name| name.as_str()).unwrap_or(name);
+            if let Some(enum_value) =
+                self.coerce_to_enum_variant(enum_name, &variants, first.clone())
+            {
                 return Ok(enum_value);
             }
             // Return a Failure wrapping X::Enum::NoValue (lazy exception, like Raku)
             let value_str = first.to_string_value();
-            let msg = format!("No value '{}' found in enum {}", value_str, name);
+            let msg = format!("No value '{}' found in enum {}", value_str, enum_name);
             let mut attrs = std::collections::HashMap::new();
             attrs.insert("message".to_string(), Value::str(msg));
-            attrs.insert("type".to_string(), Value::package(Symbol::intern(name)));
+            attrs.insert(
+                "type".to_string(),
+                Value::package(Symbol::intern(enum_name)),
+            );
             attrs.insert("value".to_string(), first);
             let ex = Value::make_instance(Symbol::intern("X::Enum::NoValue"), attrs);
             let mut failure_attrs = std::collections::HashMap::new();
