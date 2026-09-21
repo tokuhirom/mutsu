@@ -35,7 +35,7 @@
         "nok": 0,
         "ok": 15,
         "plan": 15,
-        "secs": 0.34,
+        "secs": 0.32,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -45,7 +45,7 @@
         "nok": 0,
         "ok": 15,
         "plan": 15,
-        "secs": 2.84,
+        "secs": 2.87,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -58,7 +58,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 7,
-        "secs": 0.4,
+        "secs": 0.44,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -68,7 +68,7 @@
         "nok": 0,
         "ok": 7,
         "plan": 7,
-        "secs": 10.76,
+        "secs": 8.73,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -80,7 +80,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 0.43,
+        "secs": 0.47,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -90,7 +90,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 0.85,
+        "secs": 0.86,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -103,7 +103,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 7,
-        "secs": 0.41,
+        "secs": 0.47,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -113,7 +113,7 @@
         "nok": 0,
         "ok": 7,
         "plan": 7,
-        "secs": 0.93,
+        "secs": 1.11,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -126,7 +126,7 @@
         "nok": 1,
         "ok": 11,
         "plan": 12,
-        "secs": 0.56,
+        "secs": 0.66,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -136,7 +136,7 @@
         "nok": 0,
         "ok": 12,
         "plan": 12,
-        "secs": 1.29,
+        "secs": 1.69,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -145,11 +145,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "Type Parameter can not be auto converted to json type. Please, use `is mcp-type` for that type.",
+        "first_failure": "Type check failed in binding; expected Associative but got Package",
         "nok": 0,
         "ok": 0,
         "plan": 18,
-        "secs": 0.55,
+        "secs": 0.61,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -159,7 +159,7 @@
         "nok": 0,
         "ok": 18,
         "plan": 18,
-        "secs": 4.17,
+        "secs": 5.05,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -168,11 +168,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "Type Parameter can not be auto converted to json type. Please, use `is mcp-type` for that type.",
+        "first_failure": "Type check failed in binding; expected Associative but got Package",
         "nok": 0,
         "ok": 0,
         "plan": 13,
-        "secs": 0.53,
+        "secs": 0.51,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -182,7 +182,7 @@
         "nok": 0,
         "ok": 13,
         "plan": 13,
-        "secs": 1.33,
+        "secs": 1.65,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -191,11 +191,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "Type Parameter can not be auto converted to json type. Please, use `is mcp-type` for that type.",
+        "first_failure": "Type check failed in binding; expected Associative but got List",
         "nok": 0,
         "ok": 4,
         "plan": 30,
-        "secs": 0.52,
+        "secs": 0.59,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -205,7 +205,7 @@
         "nok": 0,
         "ok": 30,
         "plan": 30,
-        "secs": 2.22,
+        "secs": 2.39,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -214,11 +214,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "Type Parameter can not be auto converted to json type. Please, use `is mcp-type` for that type.",
+        "first_failure": "Type check failed in binding; expected Associative but got List",
         "nok": 0,
-        "ok": 0,
+        "ok": 1,
         "plan": 25,
-        "secs": 0.51,
+        "secs": 0.53,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -228,7 +228,7 @@
         "nok": 0,
         "ok": 25,
         "plan": 25,
-        "secs": 2.17,
+        "secs": 1.71,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -241,7 +241,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 9,
-        "secs": 0.47,
+        "secs": 0.41,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -251,7 +251,7 @@
         "nok": 0,
         "ok": 9,
         "plan": 9,
-        "secs": 2.91,
+        "secs": 2.64,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -264,7 +264,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 8,
-        "secs": 0.4,
+        "secs": 0.43,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -274,7 +274,7 @@
         "nok": 0,
         "ok": 8,
         "plan": 8,
-        "secs": 1.04,
+        "secs": 1.15,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -288,7 +288,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 8,
-        "secs": 0.92,
+        "secs": 1.11,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -302,30 +302,30 @@
         "nok": 0,
         "ok": 5,
         "plan": 10,
-        "secs": 2.44,
+        "secs": 2.53,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "partial",
       "mutsu": {
-        "first_failure": "Type Parameter can not be auto converted to json type. Please, use `is mcp-type` for that type.",
-        "nok": 0,
+        "first_failure": "An mcp class is a toolkit",
+        "nok": 1,
         "ok": 0,
         "plan": 6,
-        "secs": 0.49,
+        "secs": 0.56,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "fail"
       },
       "path": "t/14-dsl-toolkit.rakutest",
       "raku": {
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 1.43,
+        "secs": 1.38,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -338,7 +338,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 9,
-        "secs": 0.42,
+        "secs": 0.43,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -348,7 +348,7 @@
         "nok": 0,
         "ok": 9,
         "plan": 9,
-        "secs": 1.19,
+        "secs": 1.29,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -361,7 +361,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 7,
-        "secs": 0.43,
+        "secs": 0.47,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -371,7 +371,7 @@
         "nok": 0,
         "ok": 7,
         "plan": 7,
-        "secs": 1.18,
+        "secs": 1.12,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -384,7 +384,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 7,
-        "secs": 0.29,
+        "secs": 0.44,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -394,7 +394,7 @@
         "nok": 0,
         "ok": 7,
         "plan": 7,
-        "secs": 0.9,
+        "secs": 1.23,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -406,7 +406,7 @@
         "nok": 0,
         "ok": 12,
         "plan": 12,
-        "secs": 0.28,
+        "secs": 0.23,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -416,7 +416,7 @@
         "nok": 0,
         "ok": 12,
         "plan": 12,
-        "secs": 2.27,
+        "secs": 2.41,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -430,7 +430,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 10.63,
+        "secs": 10.61,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -443,7 +443,7 @@
         "nok": 1,
         "ok": 6,
         "plan": 7,
-        "secs": 0.75,
+        "secs": 0.78,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -453,20 +453,21 @@
         "nok": 0,
         "ok": 7,
         "plan": 7,
-        "secs": 1.65,
+        "secs": 1.73,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "partial",
+      "cmp": "no_baseline",
+      "flaky": true,
       "mutsu": {
         "first_failure": "The retry finishes the call",
         "nok": 3,
         "ok": 1,
         "plan": 12,
-        "secs": 0.77,
+        "secs": 0.84,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -476,7 +477,7 @@
         "nok": 0,
         "ok": 12,
         "plan": 12,
-        "secs": 2.57,
+        "secs": 3.15,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -489,7 +490,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 6,
-        "secs": 0.44,
+        "secs": 0.46,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -499,7 +500,7 @@
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 1.16,
+        "secs": 1.18,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -513,7 +514,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 6.91,
+        "secs": 7.05,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -526,7 +527,7 @@
         "nok": 0,
         "ok": 7,
         "plan": 8,
-        "secs": 0.44,
+        "secs": 0.62,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -536,7 +537,7 @@
         "nok": 0,
         "ok": 8,
         "plan": 8,
-        "secs": 0.78,
+        "secs": 1.07,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -550,7 +551,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 3,
-        "secs": 1.03,
+        "secs": 1.1,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -563,7 +564,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 8,
-        "secs": 0.46,
+        "secs": 0.57,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -573,7 +574,7 @@
         "nok": 0,
         "ok": 8,
         "plan": 8,
-        "secs": 1.3,
+        "secs": 2.37,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -585,7 +586,7 @@
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 0.53,
+        "secs": 0.65,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -595,7 +596,7 @@
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 1.06,
+        "secs": 1.6,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -607,7 +608,7 @@
         "nok": 0,
         "ok": 13,
         "plan": 13,
-        "secs": 3.19,
+        "secs": 3.51,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -617,7 +618,7 @@
         "nok": 0,
         "ok": 13,
         "plan": 13,
-        "secs": 3.53,
+        "secs": 4.88,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -644,10 +645,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-20",
+    "date": "2026-09-21",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "fb8ac07",
+    "mutsu_commit": "ae07b22",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -660,11 +661,11 @@
   },
   "status": "partial",
   "totals": {
-    "baseline_assertions": 249,
-    "baseline_files": 23,
+    "baseline_assertions": 237,
+    "baseline_files": 22,
     "mutsu_assertions": 85,
     "parity_files": 5,
-    "regressed_files": 18
+    "regressed_files": 17
   },
   "version": "0.6.0"
 }

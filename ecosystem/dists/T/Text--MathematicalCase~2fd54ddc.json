@@ -9,23 +9,23 @@
   "dist": "Text::MathematicalCase",
   "files": [
     {
-      "cmp": "regression",
+      "cmp": "partial",
       "mutsu": {
-        "first_failure": "Type check failed in binding to parameter '$needle'; expected int but got NFD",
-        "nok": 0,
-        "ok": 1,
+        "first_failure": "lc(mixed)",
+        "nok": 26,
+        "ok": 42,
         "plan": 70,
-        "secs": 0.15,
+        "secs": 0.6,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "fail"
       },
       "path": "t/01-basic.rakutest",
       "raku": {
         "nok": 0,
         "ok": 70,
         "plan": 70,
-        "secs": 2.04,
+        "secs": 1.9,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -37,10 +37,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-20",
+    "date": "2026-09-21",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "fb8ac07",
+    "mutsu_commit": "ae07b22",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -55,7 +55,7 @@
   "totals": {
     "baseline_assertions": 70,
     "baseline_files": 1,
-    "mutsu_assertions": 1,
+    "mutsu_assertions": 42,
     "parity_files": 0,
     "regressed_files": 1
   },
