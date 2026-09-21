@@ -28,6 +28,7 @@ orphan. That trades away self-containedness, which is why it is opt-in.
 import argparse
 import html
 import json
+import re
 import sys
 
 COLUMNS = [
@@ -497,9 +498,14 @@ function render() {
    four history entries to back out of. */
 const DEFAULTS = { metric: 'seconds', window: '0', view: 'charts', sort: 'name', dir: 'asc' };
 const VALID = {
-  // `instr` is only offered when the deterministic series exists, so a stale
-  // link to it must fall back rather than render an empty page.
-  metric: (v) => v === 'seconds' || v === 'ratio' || (v === 'instr' && DATA.hasDet),
+  // `instr` and `allocs` are only offered when the series behind them exists, so
+  // a stale link to one must fall back rather than render an empty page. Keep
+  // this list in step with the buttons in the `metric` group: a metric that has
+  // a button but is missing here cannot be linked to or survive a reload, which
+  // is silent, and is the shape #8959's `allocs` was in when it met this
+  // validator. The generator asserts the two agree (see `_assert_metrics_valid`).
+  metric: (v) => v === 'seconds' || v === 'ratio'
+    || (v === 'instr' && DATA.hasDet) || (v === 'allocs' && DATA.hasAllocs),
   window: (v) => v === '0' || v === '50' || v === '150',
   view: (v) => v === 'charts' || v === 'table',
   sort: (v) => v === 'name' || v === 'base' || v === 'jit' || v === 'dpct',
@@ -641,6 +647,47 @@ CHROME_FOOTER = """<footer class="site-footer"></footer>
 </script>"""
 
 
+def _assert_metrics_valid(doc):
+    """Every metric button must be a metric the URL state accepts.
+
+    The two lists live ~230 lines apart in the template -- the buttons in the
+    `metric` group, and the `VALID.metric` predicate that decides whether a
+    `#metric=...` in the URL is honoured -- and they were added by different
+    changes: the URL state (#8963) was written against the file as it stood
+    before the `allocations` metric (#8959) existed, so it silently rejected
+    `allocs`. The button worked and wrote the hash; reloading that hash threw the
+    selection away, which is precisely what the URL state exists to prevent.
+
+    A textual merge cannot catch that, and neither can any test of either change
+    on its own, so assert it here: this function runs on every render, which
+    includes the pages.yml deploy.
+    """
+    seg = re.search(r'id="metric"(.*?)</div>', doc, re.S)
+    valid = re.search(r"\n  metric: \(v\) =>(.*?),\n  window:", doc, re.S)
+    if not seg or not valid:
+        raise SystemExit(
+            "bench-visualize: cannot find the metric buttons or the VALID.metric "
+            "predicate -- the template changed shape; update _assert_metrics_valid."
+        )
+    buttons = set(re.findall(r'data-v="([^"]+)"', seg.group(1)))
+    accepted = set(re.findall(r"v === '([^']+)'", valid.group(1)))
+    missing = buttons - accepted
+    if missing:
+        raise SystemExit(
+            "bench-visualize: metric button(s) "
+            + ", ".join(sorted(missing))
+            + " are not accepted by VALID.metric, so a link to them cannot be "
+            "reopened and a reload would fall back to the default. Add them there."
+        )
+    stale = accepted - buttons
+    if stale:
+        raise SystemExit(
+            "bench-visualize: VALID.metric accepts "
+            + ", ".join(sorted(stale))
+            + " with no button to select it. Remove it, or add the button."
+        )
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("input", nargs="?", help="bench-history.tsv (default: stdin)")
@@ -694,6 +741,8 @@ def main():
     )
     if args.standalone:
         doc = '<!DOCTYPE html>\n<meta charset="utf-8">\n' + doc
+
+    _assert_metrics_valid(doc)
 
     if args.output:
         with open(args.output, "w", encoding="utf-8") as f:
