@@ -772,6 +772,20 @@ impl Interpreter {
                 || pd.sub_signature.is_some()
                 || pd.outer_sub_signature.is_some()
                 || pd.code_signature.is_some()
+                // A sigilless raw-capture parameter (`\x`) binds the
+                // ARGUMENT'S OWN CONTAINER, not a copy -- the callee sees
+                // (and can rebind into, e.g. `$!attr := x`) the caller's
+                // live container. Confirmed by direct repro (#8880 PR
+                // follow-up): a constructor `method new (\v) { self.bless
+                // !SET-SELF: v }` with `method !SET-SELF (\v) { $!x := v;
+                // self }`, called repeatedly on a bareword/type-object
+                // receiver (always `CallMethodMut`), loses the alias from
+                // the second (cached) call onward -- the built instance's
+                // `$!x` stops tracking the caller's variable. Whatever in
+                // `call_compiled_method_fast`'s param binding drops this is
+                // unfixed; exclude the shape from the fast cache instead of
+                // trying to make the fast path handle it.
+                || pd.sigilless
                 || pd
                     .type_constraint
                     .as_ref()
