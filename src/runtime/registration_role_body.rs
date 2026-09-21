@@ -595,11 +595,12 @@ impl Interpreter {
     /// role's own package, exactly like a module's own private top-level
     /// helper already is.
     ///
-    /// Only `SubDecl` is widened this way. Every other deferred statement
-    /// kind (`my class`, `my grammar`, closures over role attributes, …) stays
-    /// composition-only: those either need a composed instance or are only
-    /// safe to re-evaluate per parameterization, per the existing
-    /// `RoleBodyOp::Deferred` contract in `walk_role_body`.
+    /// `SubDecl` is the only *executable* statement widened this way — a
+    /// plain (or side-effecting) statement stays composition-only, since
+    /// re-running it eagerly AND again at every composition would replay its
+    /// side effects. Lexical TYPE declarations (`my class`, `my grammar`, …)
+    /// get the equivalent treatment for a non-parameterized role in
+    /// [`Self::register_role_body_lexical_types`], right below.
     ///
     /// Like an exported subset, an exported routine is a declaration that a
     /// consumer can import immediately.  Deferring it until composition loses
@@ -615,6 +616,67 @@ impl Interpreter {
         self.set_current_package(role_name.to_string());
         for op in deferred_body_ops {
             if !matches!(&op.raw, Stmt::SubDecl { .. }) {
+                continue;
+            }
+            if let Err(error) = self.run_block_raw(std::slice::from_ref(&op.raw)) {
+                self.set_current_package(saved_package);
+                return Err(error);
+            }
+        }
+        self.set_current_package(saved_package);
+        Ok(())
+    }
+
+    /// Register every lexical TYPE declaration (`my class`, `my grammar`, `my
+    /// role`, `my token`/`rule`/`regex`, `my enum`) declared directly in a
+    /// role body when the role is declared, rather than waiting for a later
+    /// composition — the type-declaration counterpart of
+    /// [`Self::register_role_body_exported_subs`], for the same reason.
+    ///
+    /// A `my class`/`my grammar` in a role body is, like a plain `sub`, a
+    /// lexical declaration of the role's own compilation unit: Rakudo makes
+    /// it resolvable the moment the role loads, with no class ever composing
+    /// it. `Date::Calendar::Strftime`'s private `_strftime` helper parses
+    /// with a `my grammar prt-format {...}` and builds results with a `my
+    /// class re-format {...}`, both declared alongside it in the role body —
+    /// without this, `prt-format`/`re-format` stayed undeclared (resolving
+    /// as a bare `Str`, `No such method 'parse'...`) for exactly the same
+    /// reason `_strftime` itself used to be unresolvable (#8950).
+    ///
+    /// Restricted to a role with **no type parameters**. A parameterized
+    /// role's body may reference the role's own type parameters (`role
+    /// R[::T] { my class C { has T $x } }`), which are not bound to a
+    /// concrete type until composition — re-evaluating the body with real
+    /// bindings is exactly what `run_composed_role_deferred_body` already
+    /// does at every composition site, and this eager pass must not
+    /// pre-empt that with an unbound `T`. A non-parameterized role has no
+    /// such binding to wait for, so declaring its types once, here, is
+    /// unconditionally safe and (like the exported-sub pass) idempotent
+    /// with a later composition re-running the same declaration.
+    ///
+    /// Only declarative statement kinds are eagerly run — never a plain
+    /// statement or expression, whose side effects must not replay both here
+    /// and at composition.
+    pub(crate) fn register_role_body_lexical_types(
+        &mut self,
+        role_name: &str,
+        deferred_body_ops: &[crate::opcode::DeferredBodyOp],
+        type_params: &[String],
+    ) -> Result<(), RuntimeError> {
+        if !type_params.is_empty() {
+            return Ok(());
+        }
+        let saved_package = self.current_package().to_string();
+        self.set_current_package(role_name.to_string());
+        for op in deferred_body_ops {
+            if !matches!(
+                &op.raw,
+                Stmt::ClassDecl { .. }
+                    | Stmt::RoleDecl { .. }
+                    | Stmt::TokenDecl { .. }
+                    | Stmt::EnumDecl { .. }
+                    | Stmt::SubsetDecl { .. }
+            ) {
                 continue;
             }
             if let Err(error) = self.run_block_raw(std::slice::from_ref(&op.raw)) {
