@@ -2010,9 +2010,12 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                     .unwrap_or_else(|| Value::array(Vec::new()))));
             }
             "hash" | "Hash" => {
-                return Some(Ok(target
-                    .match_named()
-                    .unwrap_or_else(|| Value::hash(ValueMap::default()))));
+                let named = if method == "hash" {
+                    target.match_named_map()
+                } else {
+                    target.match_named()
+                };
+                return Some(Ok(named.unwrap_or_else(|| Value::hash(ValueMap::default()))));
             }
             "keys" => {
                 let mut keys = Vec::new();
