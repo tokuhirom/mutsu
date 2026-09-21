@@ -862,7 +862,15 @@ impl Interpreter {
             vec!["TEST".to_string()],
         );
         for name in TYPES {
-            self.register_exported_var("NativeCall".to_string(), name.to_string(), Vec::new());
+            // Rakudo exposes the C type objects through both the DEFAULT
+            // export and the explicit `:types` tag.  Keep the default import
+            // surface intact while allowing NativeCall consumers such as
+            // SSH::LibSSH to request only the type exports.
+            self.register_exported_var(
+                "NativeCall".to_string(),
+                name.to_string(),
+                vec!["DEFAULT".to_string(), "types".to_string()],
+            );
         }
         // `::('NativeCall')` must resolve to the package rather than failing:
         // `NativeLibs`' own `EXPORT` sub passes `NativeCall` through as a value.
