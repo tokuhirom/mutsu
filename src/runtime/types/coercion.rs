@@ -224,6 +224,28 @@ impl Interpreter {
         {
             return Ok(coerced);
         }
+        // A Str-inheriting instance constructed the OTHER way -- `SStr.new:
+        // :value("42")`, storing the string as an ordinary (undeclared)
+        // attribute literally named "value" rather than through the COERCE
+        // protocol above -- re-coerces from that attribute the same way
+        // (`roast/S12-coercion/coercion-types.t`'s "coercions from a Str
+        // subclass works", predating `coerce_into_builtin_inheriting_class`).
+        if let ValueView::Instance {
+            class_name,
+            attributes,
+            ..
+        } = value.view()
+            && self
+                .class_mro(&class_name.resolve())
+                .iter()
+                .any(|c| c == "Str")
+            && let Some(inner) = attributes.as_map().get("value").cloned()
+            && !inner.is_nil()
+            && let Ok(coerced) = self.try_coerce_value_with_method(target, inner)
+            && self.type_matches_value(base_target, &coerced)
+        {
+            return Ok(coerced);
+        }
         let variants = self.registry().enum_types.get(base_target).cloned();
         if let Some(variants) = variants
             && let Some(enum_value) =
