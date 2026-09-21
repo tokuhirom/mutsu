@@ -263,6 +263,15 @@ impl Interpreter {
 
     pub(super) fn eval_eval_string(&mut self, code: &str) -> Result<Value, RuntimeError> {
         let routine_snapshot = self.snapshot_routine_registry();
+        // An EVAL'd `use` may load a module whose exported MAIN is recorded as
+        // a module-owned GLOBAL routine.  The EVAL rollback deliberately
+        // reinstates module-owned routines so a later re-use can find the
+        // module's helpers, but an imported MAIN must not become the outer
+        // program's implicit command-line entry point.  Remember the pre-EVAL
+        // routine keys so the restore below can remove only newly introduced
+        // GLOBAL::MAIN candidates.
+        let eval_function_keys: std::collections::HashSet<Symbol> =
+            routine_snapshot.0.keys().copied().collect();
         let roles_snapshot = self.registry().roles.clone();
         let user_declared_roles_snapshot =
             std::mem::take(&mut self.registry_mut().user_declared_roles);
@@ -451,6 +460,25 @@ impl Interpreter {
         self.fatal_mode = saved_fatal_mode;
         self.monkey_typing = saved_monkey_typing;
         self.restore_routine_registry_eval(routine_snapshot);
+        let eval_main_keys: Vec<Symbol> = self
+            .registry()
+            .functions
+            .keys()
+            .filter(|key| {
+                let name = key.resolve();
+                (name == "GLOBAL::MAIN" || name.starts_with("GLOBAL::MAIN/"))
+                    && !eval_function_keys.contains(key)
+            })
+            .copied()
+            .collect();
+        if !eval_main_keys.is_empty() {
+            let mut registry = self.registry_mut();
+            for key in &eval_main_keys {
+                registry.functions_mut().remove(key);
+            }
+            drop(registry);
+            self.invalidate_fn_resolution_for_keys(eval_main_keys);
+        }
         let current_env = self.env.clone();
         let eval_role_names: std::collections::HashSet<String> = current_env
             .keys()
