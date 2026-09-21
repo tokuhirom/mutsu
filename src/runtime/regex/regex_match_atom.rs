@@ -484,6 +484,23 @@ impl Interpreter {
             out.reverse();
             return out;
         }
+        if let RegexAtom::CaptureIsolatedGroupScoped(pattern, scope) = atom {
+            // Same as the plain `CaptureIsolatedGroup` arm above, but the
+            // interpolated regex closed over a defining scope of its own
+            // (issue #8951) — install it for the duration of this atom's
+            // match so any embedded code resolves its free variables there,
+            // not against whatever is live at the outer match site.
+            let saved = self.install_env_scope(scope);
+            let mut out = Vec::new();
+            for (end, _inner_caps) in
+                self.regex_match_ends_from_caps_in_pkg(pattern, chars, pos, pkg)
+            {
+                out.push((end, RegexCaptures::default()));
+            }
+            self.uninstall_regex_closure_scope(Some(saved));
+            out.reverse();
+            return out;
+        }
         if let RegexAtom::GoalMatch {
             goal,
             inner,

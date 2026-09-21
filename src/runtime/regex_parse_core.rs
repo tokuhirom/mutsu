@@ -535,7 +535,16 @@ impl Interpreter {
                     elt.view(),
                     ValueView::Regex(_) | ValueView::RegexWithAdverbs(_)
                 ) {
-                    super::regex::regex_helpers::wrap_capture_isolated(parsed)
+                    // A Regex-valued element that is itself a closure (its
+                    // pattern embeds `@(...)`/`$(...)`/`{...}` code) needs
+                    // its own defining scope installed at match time, same
+                    // as the `<$var>` form — see issue #8951.
+                    match elt.regex_closure_scope() {
+                        Some(scope) => {
+                            super::regex::regex_helpers::wrap_capture_isolated_scoped(parsed, scope)
+                        }
+                        None => super::regex::regex_helpers::wrap_capture_isolated(parsed),
+                    }
                 } else {
                     parsed
                 };
@@ -3427,6 +3436,23 @@ impl Interpreter {
                                             return None;
                                         }
                                     };
+                                    // A genuine `Regex`/`RegexWithAdverbs` value can only
+                                    // have been built by actual regex literal syntax
+                                    // (rx//, m//, token/rule/regex) — its embedded
+                                    // `@(...)`/`$(...)`/`{...}` code was written by that
+                                    // trusted source, not smuggled in through runtime
+                                    // string concatenation. The security check below
+                                    // exists for the OTHER case: a plain `Str` whose
+                                    // *contents* happen to look like dangerous regex
+                                    // syntax (`roast/S05-interpolation/regex-in-variable.t`
+                                    // uses `my $x = '...'` throughout, never a `Regex`
+                                    // value) — so it must not fire on a value that is
+                                    // already a compiled regex (issue #8951).
+                                    let is_regex_value = matches!(
+                                        value.view(),
+                                        ValueView::Regex(_) | ValueView::RegexWithAdverbs(_)
+                                    );
+                                    let closure_scope = value.regex_closure_scope();
                                     let pat_str = match value.view() {
                                         ValueView::Regex(pat) => pat.to_string(),
                                         ValueView::RegexWithAdverbs(a) => a.pattern.to_string(),
@@ -3440,14 +3466,25 @@ impl Interpreter {
                                         });
                                         return None;
                                     }
-                                    // Security check: reject dangerous patterns
-                                    if Self::contains_dangerous_regex_code(&pat_str) {
+                                    // Security check: reject dangerous patterns (skipped
+                                    // for a genuine Regex value — see above)
+                                    if !is_regex_value
+                                        && Self::contains_dangerous_regex_code(&pat_str)
+                                    {
                                         PENDING_REGEX_ERROR.with(|e| {
                                             *e.borrow_mut() =
                                                 Some(Self::make_security_policy_error());
                                         });
                                         return None;
                                     }
+                                    // `$re`'s own defining scope, active for the rest of
+                                    // this arm: re-resolving/re-parsing its pattern text
+                                    // must see the lexicals it closed over, not this call's
+                                    // ambient env (issue #8951) — see
+                                    // `RegexInterpClosureScopeGuard`.
+                                    let _closure_scope_guard = closure_scope.clone().map(
+                                        super::regex::regex_helpers::RegexInterpClosureScopeGuard::activate,
+                                    );
                                     // Check for undeclared variables in the resolved string
                                     if let Some(err) =
                                         self.check_undeclared_vars_in_pattern(&pat_str)
@@ -3490,14 +3527,12 @@ impl Interpreter {
                                         // stored-regex-loses-its-defining-scope-lexicals.md`
                                         // bug 2).
                                         //
-                                        // TODO: this only isolates the OUTER pattern's
-                                        // own capture groups; if `value` was itself a
-                                        // `RegexCaptured` (a regex that closed over its
-                                        // defining scope — bug 1), only its pattern
-                                        // TEXT was extracted above, so any lexicals it
-                                        // closed over are lost here too. Fixing that
-                                        // needs installing the inner regex's own
-                                        // closure scope around this Group's match.
+                                        // When `value` is itself a `RegexCaptured` (a
+                                        // regex that closed over its defining scope —
+                                        // issue #8951), `CaptureIsolatedGroupScoped`
+                                        // additionally installs that scope for the
+                                        // duration of `parsed`'s own MATCH (this
+                                        // arm's guard above only covers its PARSE).
                                         // ADR-0046 Slice 1 / ADR §2.1 probe S:
                                         // the `<$var>` regex-value reroute
                                         // terminates the declarative LTM
@@ -3508,7 +3543,12 @@ impl Interpreter {
                                         // too, unlike the plain `$`-scalar
                                         // textual-splice case.
                                         runtime_value_atom = true;
-                                        RegexAtom::CaptureIsolatedGroup(parsed)
+                                        match closure_scope {
+                                            Some(scope) => {
+                                                RegexAtom::CaptureIsolatedGroupScoped(parsed, scope)
+                                            }
+                                            None => RegexAtom::CaptureIsolatedGroup(parsed),
+                                        }
                                     } else {
                                         continue;
                                     }

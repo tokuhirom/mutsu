@@ -107,7 +107,10 @@ pub(super) fn chain_atom_once(an: &mut Analyzer, atom: &RegexAtom, ctx: Ctx) -> 
         // is a fixed one-character consumer.
         RegexAtom::Any | RegexAtom::NotNewline => Some(Piece::final_step(FirstSet::universal())),
         RegexAtom::WsRule => None,
-        RegexAtom::Group(p) | RegexAtom::CaptureGroup(p) | RegexAtom::CaptureIsolatedGroup(p) => {
+        RegexAtom::Group(p)
+        | RegexAtom::CaptureGroup(p)
+        | RegexAtom::CaptureIsolatedGroup(p)
+        | RegexAtom::CaptureIsolatedGroupScoped(p, _) => {
             chain_pattern(an, p, ctx.pkg, deeper.depth)
         }
         RegexAtom::Alternation(branches) | RegexAtom::SequentialAlternation(branches) => {

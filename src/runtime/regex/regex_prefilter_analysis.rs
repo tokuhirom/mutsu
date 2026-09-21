@@ -375,7 +375,10 @@ fn analyze_atom(an: &mut Analyzer, atom: &RegexAtom, ctx: Ctx) -> Option<Info> {
             nullable: true,
             min_len: 0,
         }),
-        RegexAtom::Group(p) | RegexAtom::CaptureGroup(p) | RegexAtom::CaptureIsolatedGroup(p) => {
+        RegexAtom::Group(p)
+        | RegexAtom::CaptureGroup(p)
+        | RegexAtom::CaptureIsolatedGroup(p)
+        | RegexAtom::CaptureIsolatedGroupScoped(p, _) => {
             let seq = walk_pattern(an, p, ctx.pkg, deeper.depth)?;
             Some(Info {
                 first: seq.first,
@@ -483,9 +486,10 @@ fn atom_runs_code(atom: &RegexAtom, depth: u32) -> bool {
         | RegexAtom::Named(_)
         | RegexAtom::RecurseSelf(_)
         | RegexAtom::CompositeClass { .. } => true,
-        RegexAtom::Group(p) | RegexAtom::CaptureGroup(p) | RegexAtom::CaptureIsolatedGroup(p) => {
-            pattern_runs_code(p, depth + 1)
-        }
+        RegexAtom::Group(p)
+        | RegexAtom::CaptureGroup(p)
+        | RegexAtom::CaptureIsolatedGroup(p)
+        | RegexAtom::CaptureIsolatedGroupScoped(p, _) => pattern_runs_code(p, depth + 1),
         RegexAtom::Alternation(v)
         | RegexAtom::SequentialAlternation(v)
         | RegexAtom::Conjunction(v) => v.iter().any(|p| pattern_runs_code(p, depth + 1)),

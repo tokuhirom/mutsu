@@ -138,6 +138,16 @@ impl Interpreter {
         regex: &Value,
     ) -> Option<Vec<RegexClosureBinding>> {
         let scope = regex.regex_closure_scope()?;
+        Some(self.install_env_scope(&scope))
+    }
+
+    /// The bare mechanism [`Self::install_regex_closure_scope`] wraps: splice
+    /// `scope`'s bindings into `env`, returning what they shadowed. Shared
+    /// with [`RegexAtom::CaptureIsolatedGroupScoped`]'s match-time install,
+    /// which already holds the scope as a plain `ValueMap` (read off the
+    /// atom, not off a `Value`) and has no `Value` to call
+    /// `regex_closure_scope` on.
+    pub(crate) fn install_env_scope(&mut self, scope: &ValueMap) -> Vec<RegexClosureBinding> {
         let saved: Vec<RegexClosureBinding> = scope
             .iter()
             .map(|(k, v)| RegexClosureBinding {
@@ -149,7 +159,7 @@ impl Interpreter {
         for (k, v) in scope.iter() {
             self.env.insert(k.clone(), v.clone());
         }
-        Some(saved)
+        saved
     }
 
     /// Undo [`Self::install_regex_closure_scope`].

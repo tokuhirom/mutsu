@@ -39,7 +39,10 @@ const QUANT_ALT_BUDGET: u32 = 20_000;
 fn quantifier_atom_needs_candidate_backtracking(atom: &RegexAtom) -> bool {
     matches!(
         atom,
-        RegexAtom::Group(_) | RegexAtom::CaptureGroup(_) | RegexAtom::CaptureIsolatedGroup(_)
+        RegexAtom::Group(_)
+            | RegexAtom::CaptureGroup(_)
+            | RegexAtom::CaptureIsolatedGroup(_)
+            | RegexAtom::CaptureIsolatedGroupScoped(_, _)
     )
 }
 

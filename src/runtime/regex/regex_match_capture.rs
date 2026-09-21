@@ -286,6 +286,17 @@ impl Interpreter {
                     .regex_match_end_from_caps_in_pkg(pattern, chars, pos, pkg)
                     .map(|(next, _inner_caps)| (next, RegexCaptures::default()));
             }
+            RegexAtom::CaptureIsolatedGroupScoped(pattern, scope) => {
+                // Same as `CaptureIsolatedGroup` above, but the interpolated
+                // regex closed over its own defining scope (issue #8951) —
+                // install it for the duration of this atom's match.
+                let saved = self.install_env_scope(scope);
+                let result = self
+                    .regex_match_end_from_caps_in_pkg(pattern, chars, pos, pkg)
+                    .map(|(next, _inner_caps)| (next, RegexCaptures::default()));
+                self.uninstall_regex_closure_scope(Some(saved));
+                return result;
+            }
             RegexAtom::GoalMatch {
                 goal,
                 inner,

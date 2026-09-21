@@ -96,6 +96,26 @@ impl Interpreter {
                         GroupShape::Isolated,
                     );
                 }
+                RegexAtom::CaptureIsolatedGroupScoped(pattern, scope) => {
+                    // Same as the plain `CaptureIsolatedGroup` arm above, but
+                    // the interpolated regex closed over its own defining
+                    // scope (issue #8951) — install it for the duration of
+                    // this atom's whole driven walk.
+                    let saved = self.install_env_scope(scope);
+                    let result = self.drive_subpattern_candidates(
+                        atom,
+                        pattern,
+                        chars,
+                        pos,
+                        store,
+                        pkg,
+                        ratchet,
+                        on,
+                        GroupShape::Isolated,
+                    );
+                    self.uninstall_regex_closure_scope(Some(saved));
+                    return result;
+                }
                 RegexAtom::Conjunction(branches) => {
                     return self.drive_conjunction_candidates(
                         branches, chars, pos, store, pkg, ratchet, on,

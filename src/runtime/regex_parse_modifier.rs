@@ -490,6 +490,11 @@ impl Interpreter {
                     // marker of the same bare name.
                     let is_overlay = overlay_value.is_some();
                     let value = overlay_value
+                        // A `<$re>` reference re-resolving `$re`'s OWN
+                        // pattern text (issue #8951) must see `$re`'s
+                        // defining scope before this call's ambient
+                        // `self.env` — see `REGEX_INTERP_CLOSURE_SCOPE`.
+                        .or_else(|| super::regex::regex_helpers::interp_closure_scope_get(&name))
                         .or_else(|| self.env.get(&name).cloned())
                         .or_else(|| self.env.get(&format!("${name}")).cloned())
                         .unwrap_or(Value::NIL);
@@ -647,12 +652,11 @@ impl Interpreter {
                         i = j;
                         continue;
                     }
-                    let value = self
-                        .env
-                        .get(&sigiled_name)
-                        .cloned()
-                        .or_else(|| self.env.get(&bare_name).cloned())
-                        .unwrap_or(Value::NIL);
+                    let value =
+                        super::regex::regex_helpers::interp_closure_scope_get(&sigiled_name)
+                            .or_else(|| self.env.get(&sigiled_name).cloned())
+                            .or_else(|| self.env.get(&bare_name).cloned())
+                            .unwrap_or(Value::NIL);
                     // Slice 2a: a `=`-array-shared source (`my $r = @var`) promotes
                     // `@var` to a `ContainerRef` cell; deref it so the array
                     // interpolates as alternation instead of stringifying the cell.
@@ -771,7 +775,14 @@ impl Interpreter {
                         end += 1;
                     }
                     let name: String = chars[name_start..end].iter().collect();
-                    if self.env.get(&name).is_none() && self.env.get(&format!("${name}")).is_none()
+                    // A `<$re>` reference re-resolving `$re`'s own pattern
+                    // text (issue #8951) must check `$re`'s defining scope
+                    // too, or a legitimately-captured lexical is reported as
+                    // undeclared just because it is absent from THIS call's
+                    // ambient `self.env` — see `REGEX_INTERP_CLOSURE_SCOPE`.
+                    if super::regex::regex_helpers::interp_closure_scope_get(&name).is_none()
+                        && self.env.get(&name).is_none()
+                        && self.env.get(&format!("${name}")).is_none()
                     {
                         let symbol = format!("${name}");
                         let msg = format!("Variable '{symbol}' is not declared");
