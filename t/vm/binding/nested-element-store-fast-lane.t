@@ -147,13 +147,12 @@ plan 20;
     is @w.raku, '[[1, 2, 99], [4, 5, 6]]', 'a *-1 second subscript still resolves';
 }
 
-# --- two pre-existing divergences, pinned as `todo` -----------------------
+# --- two divergences found while writing this file ------------------------
 #
-# Both were found while writing this file and neither is reachable by the fast
-# lane: `Nil` is absent from its rvalue allow-list and a `Proxy` element is on
-# its destination reject-list, so in both cases it declines and the unchanged
-# body runs. They are recorded here rather than dropped so the gap stays
-# visible; see the issues named on each.
+# Neither is reachable by the fast lane: `Nil` is absent from its rvalue
+# allow-list and a `Proxy` element is on its destination reject-list, so in
+# both cases it declines and the unchanged body runs. The `Nil` one is fixed
+# and pinned outright below; the `Proxy` one is still `todo`.
 
 {
     # A Proxy element mediates its own store. rakudo fires its STORE; mutsu
@@ -168,12 +167,12 @@ plan 20;
 }
 
 {
-    # `is default` decides what a Nil store writes: rakudo decays it to the
-    # container default (ADR-0049), mutsu stores Nil itself at the second
-    # level. https://github.com/tokuhirom/mutsu/issues/8966
+    # `is default` decides what a Nil store writes: the store decays it to the
+    # default of the container it lands in (ADR-0049). The row is a plain
+    # Array, so that default is `Any`, not the root's 42 (#8966). The wider
+    # pin is t/vm/binding/nil-decay-chained-element-store.t.
     my @d is default(42);
     @d[0] = [1, 2];
     @d[0][0] = Nil;
-    todo 'Nil does not decay to the container default at a chained store (#8966)';
     is @d[0][0], Any, 'a Nil store into a row of a defaulted array still takes the full path';
 }
