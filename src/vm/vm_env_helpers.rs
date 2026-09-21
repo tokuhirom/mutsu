@@ -387,13 +387,16 @@ impl Interpreter {
         if crate::runtime::utils::has_double_colon(name) {
             return None;
         }
-        // `&'static str` off the atomic symbol mirror: `current_package()` takes
-        // the `RwLock` and clones the `String` on every free-variable read.
-        let cur: &str = self.current_package_sym().as_str();
-        if cur.is_empty() || cur == "GLOBAL" || crate::runtime::utils::has_routine_scope_marker(cur)
+        // Both questions are decided by the package name's TEXT, so they are
+        // asked of the symbol once rather than re-scanned on every
+        // free-variable read (#8899).
+        let cur_sym = self.current_package_sym();
+        if crate::qualified::is_global_package(cur_sym)
+            || crate::qualified::is_routine_scoped_package(cur_sym)
         {
             return None;
         }
+        let cur: &str = cur_sym.as_str();
         let bare_first = name.trim_start_matches(['$', '@', '%', '&']);
         let first_ch = bare_first.chars().next()?;
         if matches!(first_ch, '_' | '/' | '!' | '?' | '*' | '.' | '=') || first_ch.is_ascii_digit()
@@ -448,13 +451,16 @@ impl Interpreter {
         if self.package_lexicals.is_empty() {
             return None;
         }
-        // `&'static str` off the atomic symbol mirror: `current_package()` takes
-        // the `RwLock` and clones the `String` on every free-variable read.
-        let cur: &str = self.current_package_sym().as_str();
-        if cur.is_empty() || cur == "GLOBAL" || crate::runtime::utils::has_routine_scope_marker(cur)
+        // Both questions are decided by the package name's TEXT, so they are
+        // asked of the symbol once rather than re-scanned on every
+        // free-variable read (#8899).
+        let cur_sym = self.current_package_sym();
+        if crate::qualified::is_global_package(cur_sym)
+            || crate::qualified::is_routine_scoped_package(cur_sym)
         {
             return None;
         }
+        let cur: &str = cur_sym.as_str();
         // `package_lexicals` is keyed by the package's own env name for the
         // lexical: scalars sigil-less (`CONFIG`), `@`/`%`/`&` keep their sigil
         // (`@a`). A free-var read reaches this with the name in one of two shapes:
@@ -512,12 +518,11 @@ impl Interpreter {
     /// (`%Other::h`) never matches `current_package`, so `my` lexicals stay
     /// invisible across packages.
     pub(super) fn auto_qualified_bare_env_read(&self, name: &str) -> Option<Value> {
-        // `&'static str` off the atomic symbol mirror: `current_package()` takes
-        // the `RwLock` and clones the `String` on every free-variable read.
-        let cur: &str = self.current_package_sym().as_str();
-        if cur.is_empty() || cur == "GLOBAL" {
+        let cur_sym = self.current_package_sym();
+        if crate::qualified::is_global_package(cur_sym) {
             return None;
         }
+        let cur: &str = cur_sym.as_str();
         let (sigil, rest) = match name.as_bytes().first() {
             Some(b @ (b'@' | b'%')) => (*b as char, &name[1..]),
             _ => return None,
@@ -688,7 +693,8 @@ impl Interpreter {
         }
         // `&'static str` off the atomic symbol mirror: `current_package()` takes
         // the `RwLock` and clones the `String` on every free-variable read.
-        let cur: &str = self.current_package_sym().as_str();
+        let cur_sym = self.current_package_sym();
+        let cur: &str = cur_sym.as_str();
         if qualified {
             // Only scalars are in the store (see `collect_unit_lexical_names`) and
             // a scalar is keyed sigil-less, so the only sigil that can appear here
@@ -696,7 +702,7 @@ impl Interpreter {
             let (pkg, bare) = crate::runtime::utils::rsplit_once_double_colon(
                 name.strip_prefix('$').unwrap_or(name),
             )?;
-            if pkg != cur || cur.is_empty() || cur == "GLOBAL" {
+            if pkg != cur || crate::qualified::is_global_package(cur_sym) {
                 return None;
             }
             return Self::lookup_in_package_chain(&self.unit_lexicals, cur, bare);
@@ -767,7 +773,8 @@ impl Interpreter {
         }
         // `&'static str` off the atomic symbol mirror: `current_package()` takes
         // the `RwLock` and clones the `String` on every free-variable read.
-        let cur: &str = self.current_package_sym().as_str();
+        let cur_sym = self.current_package_sym();
+        let cur: &str = cur_sym.as_str();
         if qualified {
             // Only scalars are in the store (see `collect_unit_lexical_names`) and
             // a scalar is keyed sigil-less, so the only sigil that can appear here
@@ -775,7 +782,7 @@ impl Interpreter {
             let (pkg, bare) = crate::runtime::utils::rsplit_once_double_colon(
                 name.strip_prefix('$').unwrap_or(name),
             )?;
-            if pkg != cur || cur.is_empty() || cur == "GLOBAL" {
+            if pkg != cur || crate::qualified::is_global_package(cur_sym) {
                 return None;
             }
             let bare = bare.to_string();
@@ -1006,10 +1013,9 @@ impl Interpreter {
                 return None;
             }
         }
-        // `&'static str` off the atomic symbol mirror: `current_package()` takes
-        // the `RwLock` and clones the `String` on every free-variable read.
-        let cur: &str = self.current_package_sym().as_str();
-        let qkey = if cur.is_empty() || cur == "GLOBAL" {
+        let cur_sym = self.current_package_sym();
+        let cur: &str = cur_sym.as_str();
+        let qkey = if crate::qualified::is_global_package(cur_sym) {
             format!("{sigil}{bare}")
         } else {
             format!("{sigil}{cur}::{bare}")
