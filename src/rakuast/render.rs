@@ -244,7 +244,7 @@ fn render_leaf(v: &Value) -> String {
         // `Parameter` gist shows `slurpy => RakuAST::Parameter::Slurpy::Flattened`
         // while `.slurpy.gist` alone is `(Flattened)`. See `slurpy_marker_value`
         // for why the field holds a type object at all (GH #8157).
-        ValueView::Package(name) => name.resolve().to_string(),
+        ValueView::Package(name) => name.resolve(),
         _ => v.to_string_value(),
     }
 }

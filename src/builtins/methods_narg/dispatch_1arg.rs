@@ -345,7 +345,7 @@ pub(crate) fn native_method_1arg(
                         crate::symbol::Symbol::intern("X::Multi::NoMatch"),
                         attrs,
                     );
-                    let mut err = RuntimeError::new(msg.to_string());
+                    let mut err = RuntimeError::new(msg);
                     err.exception = Some(Box::new(ex));
                     return Some(Err(err));
                 }
@@ -380,7 +380,7 @@ pub(crate) fn native_method_1arg(
                         crate::symbol::Symbol::intern("X::Multi::NoMatch"),
                         attrs,
                     );
-                    let mut err = RuntimeError::new(msg.to_string());
+                    let mut err = RuntimeError::new(msg);
                     err.exception = Some(Box::new(ex));
                     return Some(Err(err));
                 }

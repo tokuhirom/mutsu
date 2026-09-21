@@ -80,7 +80,7 @@ pub(crate) fn build_closure(expr: &Expr) -> Expr {
         let mut args_def = make_wc_param(args_name.clone());
         args_def.slurpy = true;
         return Expr::AnonSubParams {
-            params: vec![args_name.clone()],
+            params: vec![args_name],
             param_defs: vec![args_def],
             return_type: None,
             body: vec![Stmt::Expr(Expr::MethodCall {

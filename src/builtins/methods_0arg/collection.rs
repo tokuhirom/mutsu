@@ -1021,7 +1021,7 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                             crate::symbol::Symbol::intern("X::Str::Numeric"),
                             attrs,
                         );
-                        let mut err = RuntimeError::new(msg.to_string());
+                        let mut err = RuntimeError::new(msg);
                         err.exception = Some(Box::new(ex));
                         return Some(Err(err));
                     }

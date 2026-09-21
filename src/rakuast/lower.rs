@@ -698,7 +698,7 @@ fn lower_regex_declaration(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     };
     let source = tree.to_source();
     let execution_pattern = match node.class {
-        RakuAstClass::RegexDeclaration => source.clone(),
+        RakuAstClass::RegexDeclaration => source,
         RakuAstClass::TokenDeclaration => format!(":ratchet {source}"),
         RakuAstClass::RuleDeclaration => {
             let pattern = crate::parser::inject_implicit_rule_ws(&source);
@@ -2542,7 +2542,6 @@ fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
             let [only] = args.fields.as_slice() else {
                 return Err(unsupported(node));
             };
-            let op = op.to_string();
             Ok(Expr::Reduction {
                 op: if triangle { format!("\\{op}") } else { op },
                 expr: Box::new(lower_expr(child_node(&only.value)?)?),
