@@ -53,6 +53,17 @@ impl Interpreter {
         let saved_topic_source = self.topic_source_var.take();
         let saved_container_source = self.topic_container_source.take();
         let saved_element_source = self.element_source.take();
+        // A writable `given`/`with` topic must override an inherited readonly
+        // mark on `$_`. An outer `for 1..N` marks its bare-value topic
+        // immutable, but `with $x { $_ = ... }` aliases the mutable `$x` and
+        // is writable in raku. Keep the outer mark's full kind so nested
+        // scopes restore it after this topicalizer exits.
+        let clears_inherited_topic_readonly = !topic_readonly && pointy_param.is_none();
+        let saved_topic_readonly = clears_inherited_topic_readonly.then(|| {
+            let saved = self.readonly_kind("_");
+            self.unmark_readonly("_");
+            saved
+        });
         let container_binding_full = self.take_container_ref_for(code);
         let container_source_slot = container_binding_full.as_ref().and_then(|(_, s)| *s);
         let container_binding = container_binding_full.map(|(n, _)| n);
@@ -161,6 +172,9 @@ impl Interpreter {
             }
             if mark_ro {
                 this.unmark_readonly("_");
+            }
+            if let Some(saved) = saved_topic_readonly {
+                this.restore_topic_readonly(saved);
             }
             if write_back {
                 if let Some(src) = &element_source {
