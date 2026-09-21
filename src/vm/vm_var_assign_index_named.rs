@@ -3671,6 +3671,33 @@ impl Interpreter {
         };
         let outer_key = outer_idx.to_string_value();
 
+        // ADR-0040 §9, seen from the DESTINATION side -- the chained twin of
+        // the single-subscript probe in `vm_var_assign_element.rs`. An element
+        // can legitimately BE a `Proxy` container (`@a[0][0] := Proxy.new(...)`),
+        // and such an element mediates its own store: `@a[0][0] = 7` must fire
+        // that `Proxy`'s `STORE`, not overwrite the container with a plain
+        // value. Checked here, above every descent arm below, because each of
+        // them ends in a plain `Value::assign_element_slot` /
+        // `Value::hash_insert_through` that would replace it -- the same "one
+        // hook above the dispatch" shape the single-subscript op uses. A `:=`
+        // bind is installing a container, not storing, so it is excluded.
+        if !is_bind_value
+            && let Some(proxy) = self.nested_element_store_proxy(
+                &var_name,
+                &inner_key,
+                inner_positional,
+                &outer_idx,
+                outer_positional,
+            )
+        {
+            loan_env!(self, assign_proxy_lvalue(proxy, val.clone()))?;
+            // The STORE may have written a caller lexical by name (the same
+            // drain the single-subscript `Proxy`-store site runs).
+            self.apply_pending_rw_writeback(code);
+            self.stack.push(val);
+            return Ok(());
+        }
+
         // The ROOT is itself a `Pair` (`my $p = (c => [1,2]); $p<c>[0] = 9`).
         // The inner subscript addresses the Pair's value, and the outer one
         // then indexes THAT — neither arm below recognizes a Pair as a root, so
@@ -4632,6 +4659,31 @@ impl Interpreter {
     /// [`Interpreter::exec_index_assign_deep_nested_op`]. Returns `None` when
     /// that level does not exist (or is not a container), which the caller
     /// treats as "length 0".
+    /// The `Proxy` a chained subscript store would land ON, if any.
+    ///
+    /// Walks the root variable one step through the INNER subscript and then
+    /// probes the OUTER subscript's slot with the single-subscript path's own
+    /// probe (`existing_element_container`, which unwraps alias cells so both
+    /// `:=` bind spellings -- `@a[0][0] := Proxy.new(...)` and
+    /// `@a[0][0] := $p` -- find the same mediating container). Returns the
+    /// `Proxy` only when it can actually take a store; a storer-less `Proxy`
+    /// falls through to the ordinary arms, exactly as the single-subscript
+    /// twin leaves it to them.
+    fn nested_element_store_proxy(
+        &self,
+        var_name: &str,
+        inner_key: &str,
+        inner_positional: bool,
+        outer_idx: &Value,
+        outer_positional: bool,
+    ) -> Option<Value> {
+        let root = self.env().get(var_name)?;
+        let inner = Self::subscript_peek_step(root, inner_key, inner_positional)?;
+        let existing = Self::existing_element_container(&inner, outer_idx, outer_positional)?;
+        matches!(existing.view(), ValueView::Proxy { storer, .. } if !storer.is_nil())
+            .then_some(existing)
+    }
+
     fn subscript_peek_step(container: &Value, key: &str, is_positional: bool) -> Option<Value> {
         let container = container.deref_container();
         match container.view() {
