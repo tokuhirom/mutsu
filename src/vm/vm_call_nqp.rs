@@ -134,16 +134,20 @@ impl Interpreter {
     /// * the `VarRef` unwrap, the container deref and the `Proxy` FETCH —
     ///   `try_eval_native` declines every one of those operand shapes, so the
     ///   general path is still the only place they are normalized;
-    /// * `set_pending_callsite_line(None)` — that clears a marker line so the
-    ///   next test assertion does not inherit it, and a pure op cannot reach
-    ///   an assertion: it dispatches nowhere. The general path still clears it
-    ///   for every op that can;
     /// * the `literal_native_args` save/clear/restore — that mask ranks a
     ///   `multi`'s native-vs-boxed candidates for whatever an op dispatches
     ///   into, and a pure op dispatches into nothing.
     ///
-    /// The `MUTSU_VM_STATS` dispatch tally is still bumped, so the counter
-    /// stays comparable across this change.
+    /// What is NOT dropped is `set_pending_callsite_line(None)`. The marker is
+    /// a ONE-SHOT line a preceding call left for the next reader, and clearing
+    /// it on every nqp op is what makes it one-shot; skipping the clear would
+    /// let a stale marker survive an nqp op and reach a later test assertion.
+    /// The JIT's inline form of these same ops (`emit_nqp_int_binop` in
+    /// `vm_jit_tier_b.rs`, ADR-0004 J4) stores the `None` by hand for exactly
+    /// that reason — this path is its interpreter counterpart and owes the
+    /// same store. The `MUTSU_VM_STATS` dispatch
+    /// tally is bumped too, so the counter stays comparable across this
+    /// change.
     fn exec_nqp_pure_op(&mut self, id: u16, arity: usize) -> bool {
         let Some(op) = crate::runtime::nqp_pure::pure_op(id) else {
             return false;
@@ -153,6 +157,7 @@ impl Interpreter {
         else {
             return false;
         };
+        loan_env!(self, set_pending_callsite_line(None));
         crate::vm::vm_stats::record_function_dispatch();
         self.stack.truncate(start);
         self.stack.push(result);

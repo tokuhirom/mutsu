@@ -66,9 +66,10 @@ enum Operand {
 /// operands as numbers and returns a number, touching no interpreter state,
 /// allocating nothing, dispatching nowhere, and raising nothing. That is what
 /// lets [`crate::runtime::Interpreter::exec_nqp_op`] skip the call-shaped
-/// prologue — there is no pending callsite line for such a body to observe
-/// and no candidate for the literal mask to rank. `nqp::div_i` and
-/// `nqp::mod_i` are deliberately absent: they can raise a
+/// prologue: there is no candidate for the multi-dispatch literal mask to
+/// rank, because nothing is dispatched. (The pending callsite line is a
+/// different matter and is still cleared — see that function.) `nqp::div_i`
+/// and `nqp::mod_i` are deliberately absent: they can raise a
 /// division-by-zero error, so they are not total.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(crate) enum NqpPure {
