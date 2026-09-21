@@ -299,6 +299,7 @@ const DATA = JSON.parse(document.getElementById('data').textContent);
 const commits = DATA.commits, benches = DATA.benches;
 const N = commits.length;
 let metric = 'seconds', windowN = 0, view = 'charts';
+let sortKey = 'name', sortDir = 1;
 
 // A point is [commitIdx, seconds, ratio, instructions]. `instructions` is null
 // for every commit before the deterministic series started being recorded, so
@@ -431,7 +432,6 @@ function wireHover(card, b) {
   svg.addEventListener('pointerleave', () => { tip.style.opacity = 0; cross.style.opacity = 0; });
 }
 
-let sortKey = 'name', sortDir = 1;
 function renderTable() {
   const wrap = document.getElementById('tableWrap');
   const rows = benches.map(b => {
@@ -458,6 +458,7 @@ function renderTable() {
   wrap.innerHTML = h;
   wrap.querySelectorAll('th').forEach(t => t.onclick = () => {
     const k = t.dataset.k; if (k === sortKey) sortDir *= -1; else { sortKey = k; sortDir = k === 'name' ? 1 : -1; }
+    writeHash();
     renderTable();
   });
 }
@@ -468,18 +469,109 @@ function render() {
   if (view === 'charts') renderCharts(); else renderTable();
 }
 
+/* ---- URL state ----------------------------------------------------------
+   The controls above are the page's entire state, so they belong in the URL:
+   a link to "instructions, last 150 commits, as a table" has to reopen exactly
+   that, and a reload must not silently throw the reader's selection away.
+   `#metric=instr&window=150&view=table&sort=jit&dir=desc`, with defaults left
+   out so an untouched page keeps a bare URL. `replaceState` rather than
+   assigning to `location.hash`: clicking through four metrics is one page, not
+   four history entries to back out of. */
+const DEFAULTS = { metric: 'seconds', window: '0', view: 'charts', sort: 'name', dir: 'asc' };
+const VALID = {
+  // `instr` is only offered when the deterministic series exists, so a stale
+  // link to it must fall back rather than render an empty page.
+  metric: (v) => v === 'seconds' || v === 'ratio' || (v === 'instr' && DATA.hasDet),
+  window: (v) => v === '0' || v === '50' || v === '150',
+  view: (v) => v === 'charts' || v === 'table',
+  sort: (v) => v === 'name' || v === 'base' || v === 'jit' || v === 'dpct',
+  dir: (v) => v === 'asc' || v === 'desc',
+};
+
+function currentState() {
+  const st = { metric, window: String(windowN), view,
+               sort: sortKey, dir: sortDir > 0 ? 'asc' : 'desc' };
+  // The sort only exists in the table view; carrying it around in the charts
+  // URL would be noise a reader cannot act on.
+  if (view !== 'table') { delete st.sort; delete st.dir; }
+  return st;
+}
+
+function stateToHash() {
+  return Object.entries(currentState())
+    .filter(([k, v]) => v !== DEFAULTS[k])
+    .map(([k, v]) => k + '=' + encodeURIComponent(v))
+    .join('&');
+}
+
+// Our own writes must not look like a reader editing the URL, so remember what
+// we last wrote and ignore the `hashchange` it may produce.
+let lastHash = location.hash.replace(/^#/, '');
+
+function writeHash() {
+  lastHash = stateToHash();
+  // A `file://` copy (the point of --standalone) is an opaque origin in some
+  // browsers, where replaceState throws. The dashboard still works there; only
+  // the shareable URL does not, so this must never take the click handler with
+  // it.
+  try {
+    history.replaceState(null, '',
+      location.pathname + location.search + (lastHash ? '#' + lastHash : ''));
+  } catch (e) { /* no history API here: the controls still work */ }
+}
+
+function applyHash() {
+  const q = {};
+  for (const part of location.hash.replace(/^#/, '').split('&')) {
+    const i = part.indexOf('=');
+    if (i > 0) q[decodeURIComponent(part.slice(0, i))] = decodeURIComponent(part.slice(i + 1));
+  }
+  const pick = (k) => (q[k] != null && VALID[k](q[k])) ? q[k] : DEFAULTS[k];
+  metric = pick('metric');
+  windowN = +pick('window');
+  view = pick('view');
+  sortKey = pick('sort');
+  sortDir = pick('dir') === 'desc' ? -1 : 1;
+  syncButtons();
+}
+
+function syncButtons() {
+  const press = (id, v) => [...document.getElementById(id).children]
+    .forEach(b => b.setAttribute('aria-pressed', String(b.dataset.v === v)));
+  press('metric', metric);
+  press('window', String(windowN));
+  press('view', view);
+}
+
+// Adopt whatever the URL says, then normalize it: a hash that named something
+// impossible (`instr` with no deterministic series, a junk window) is ignored
+// above, and leaving it in the URL would describe a page that is not on screen.
+function adoptHash() {
+  applyHash();
+  if (stateToHash() !== lastHash) writeHash();
+}
+
 function seg(id, cb) {
   const el = document.getElementById(id);
   el.addEventListener('click', e => {
     const btn = e.target.closest('button'); if (!btn) return;
-    [...el.children].forEach(b => b.setAttribute('aria-pressed', b === btn));
-    cb(btn.dataset.v); render();
+    cb(btn.dataset.v); syncButtons(); writeHash(); render();
   });
 }
 if (DATA.hasDet) document.getElementById('metricInstr').hidden = false;
 seg('metric', v => metric = v);
 seg('window', v => windowN = +v);
 seg('view', v => view = v);
+
+// A hand-edited URL, or a back/forward step between two states, re-renders.
+window.addEventListener('hashchange', () => {
+  if (location.hash.replace(/^#/, '') === lastHash) return;
+  lastHash = location.hash.replace(/^#/, '');
+  adoptHash();
+  render();
+});
+
+adoptHash();
 
 const last = commits[N - 1], first = commits[0];
 document.getElementById('meta').textContent =
