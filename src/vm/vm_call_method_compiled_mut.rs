@@ -442,11 +442,22 @@ impl Interpreter {
                             result
                         })
                     };
+                // `has_attr_aliases` (the declaration-time `__mutsu_attr_alias::`
+                // metadata check, copied from the non-mut hit) only catches an
+                // attribute declared with the special alias-generating `has $x`
+                // form. It does NOT catch a plain `has $!x` attribute that a
+                // constructor or a body statement later binds to a caller's
+                // container at runtime (`method !SET-SELF (\v) { $!x := v;
+                // self }`) -- a `ContainerRef`-valued attribute either way, but
+                // invisible to a purely declaration-time check. Scanning the
+                // current values closes that gap for both spellings.
                 let has_attr_aliases = match target.view() {
-                    ValueView::Instance { attributes, .. } => attributes
-                        .as_map()
-                        .keys()
-                        .any(|k| k.starts_with(super::vm_method_dispatch::ATTR_ALIAS_META_PREFIX)),
+                    ValueView::Instance { attributes, .. } => {
+                        let map = attributes.as_map();
+                        map.keys().any(|k| {
+                            k.starts_with(super::vm_method_dispatch::ATTR_ALIAS_META_PREFIX)
+                        }) || map.values().any(Value::is_container_ref)
+                    }
                     _ => false,
                 };
                 let shares_scalar_container =
