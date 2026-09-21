@@ -210,6 +210,41 @@ try {
   await page.click('#view button[data-v="table"]');
   assert(await page.locator('#tableWrap tbody tr').count() === 2,
          'and the table view still works');
+
+  // The controls are the page's whole state, so a link has to carry them --
+  // otherwise "look at the instruction counts over the last 50 commits" cannot
+  // be sent to anyone, and a reload silently discards it.
+  console.log('Test: benchmark dashboard state lands in the URL');
+  assert(new URL(page.url()).hash === '#view=table',
+         'switching to the table view records it in the hash');
+  await page.click('#window button[data-v="50"]');
+  assert(new URL(page.url()).hash === '#window=50&view=table',
+         'and so does the commit window');
+  await page.click('#view button[data-v="charts"]');
+  assert(new URL(page.url()).hash === '#window=50',
+         'a control back at its default drops out of the hash again');
+
+  await page.goto(`${BASE}/bench-trend.html?lang=en#metric=ratio&view=table&sort=jit&dir=desc`,
+                  { waitUntil: 'networkidle' });
+  assert(await page.getAttribute('#view button[data-v="table"]', 'aria-pressed') === 'true',
+         'reopening such a link restores the view');
+  assert(await page.getAttribute('#metric button[data-v="ratio"]', 'aria-pressed') === 'true',
+         'and the metric');
+  assert(await page.locator('#tableWrap tbody tr').count() === 2,
+         'with the table actually rendered');
+  assert((await page.textContent('#tableWrap th[data-k="jit"]')).includes('↓'),
+         'and the table sorted the way the link asked');
+
+  // A link to a metric this history cannot show (no deterministic series here)
+  // must fall back rather than render an empty page -- and say so in the URL.
+  await page.goto(`${BASE}/bench-trend.html?lang=en#metric=instr`,
+                  { waitUntil: 'networkidle' });
+  assert(await page.getAttribute('#metric button[data-v="seconds"]', 'aria-pressed') === 'true',
+         'an impossible metric falls back to seconds');
+  assert(new URL(page.url()).hash === '',
+         'and the hash is rewritten to the state actually on screen');
+
+  await page.goto(`${BASE}/bench-trend.html?lang=en`, { waitUntil: 'networkidle' });
   assert(await page.evaluate(() =>
     getComputedStyle(document.body).backgroundImage.includes('gradient')),
     'it uses the site background rather than its own');
@@ -311,8 +346,44 @@ try {
            `searching for ${first} narrows the table to ${narrowed} row(s)`);
     assert((await page.textContent('table.eco tbody tr td')).includes(first.split('::')[0]),
            'and the match is the distribution searched for');
-    await page.fill('#eco-search', '');
+
+    // A filtered view is the thing people send each other ("is JSON::Fast
+    // green?", "here are the ones that do not load"), so it has to be a link.
+    console.log('Test: ecosystem filters land in the URL');
+    assert(new URL(page.url()).hash === '#q=' + encodeURIComponent(first),
+           'the search query is recorded in the hash');
+    await page.goto(`${BASE}/ecosystem.html?lang=en#q=${encodeURIComponent(first)}`,
+                    { waitUntil: 'networkidle' });
+    await page.waitForFunction(() => document.body.dataset.ready === '1', { timeout: 15000 });
+    assert(await page.inputValue('#eco-search') === first,
+           'reopening that link restores the search box');
+    assert(await page.locator('table.eco tbody tr.eco-row').count() === ecoMatching,
+           'and the rows it narrows to');
+
+    const ecoStatus = ecoManifest.distributions[0].status;
+    const ecoStatusRows = ecoManifest.distributions.filter(
+      (d) => d.status === ecoStatus).length;
+    await page.goto(`${BASE}/ecosystem.html?lang=en#status=${encodeURIComponent(ecoStatus)}`,
+                    { waitUntil: 'networkidle' });
+    await page.waitForFunction(() => document.body.dataset.ready === '1', { timeout: 15000 });
+    assert(await page.inputValue('#eco-status') === ecoStatus,
+           'a status link selects that status once the manifest has loaded');
+    assert(await page.locator('table.eco tbody tr.eco-row').count() === ecoStatusRows,
+           `and shows only its ${ecoStatusRows} distribution(s)`);
+
+    // A status this corpus does not have must not leave the URL describing a
+    // filter the page is not applying.
+    await page.goto(`${BASE}/ecosystem.html?lang=en#status=no-such-status`,
+                    { waitUntil: 'networkidle' });
+    await page.waitForFunction(() => document.body.dataset.ready === '1', { timeout: 15000 });
+    assert(new URL(page.url()).hash === '',
+           'an unknown status is dropped from the hash');
+    assert(await page.locator('table.eco tbody tr.eco-row').count() === ecoExpected,
+           'and the full table is shown');
   }
+
+  await page.goto(`${BASE}/ecosystem.html?lang=en`, { waitUntil: 'networkidle' });
+  await page.waitForFunction(() => document.body.dataset.ready === '1', { timeout: 15000 });
 
   console.log('Test: ecosystem page language switch');
   const ecoEnTitle = await page.textContent('#page-title');

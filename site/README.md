@@ -92,6 +92,33 @@ each snippet, keyed `<chapter>/<lesson>`; the per-language modules supply titles
 explanations for those same keys. That way a snippet can never drift between the two
 translations, and adding a language means adding prose only.
 
+## View state lives in the URL
+
+A page whose controls change what it shows records that state in
+`location.hash`, so the view on screen can be linked, bookmarked and survive a
+reload:
+
+| Page | Hash |
+| --- | --- |
+| `bench-trend.html` | `#metric=seconds\|ratio\|instr` · `window=0\|50\|150` · `view=charts\|table` · `sort=<column>` · `dir=asc\|desc` |
+| `ecosystem.html` | `#q=<search text>` · `status=<status>` |
+| `tutorial.html` | `#<chapter>/<lesson>` |
+| `playground.html` | `#code=<encoded program>` |
+
+Two rules keep the URL trustworthy, and `e2e.test.mjs` covers both:
+
+- **Defaults are left out**, so an untouched page keeps a bare URL and a link
+  names only what was actually chosen.
+- **The URL never describes a page that is not on screen.** A value the page
+  cannot honour — `metric=instr` against a history with no deterministic
+  series, a status this corpus does not contain — is ignored *and* rewritten
+  out of the hash, rather than left there claiming a filter is applied.
+
+Writes go through `history.replaceState`, not `location.hash = …`: clicking
+through four metrics is one page, not four entries to back out of. `hashchange`
+is still handled, so a hand-edited URL, and a step across a real history entry,
+both re-render.
+
 ## The snippet corpora
 
 `content/lessons.txt` and `content/highlights.txt` use one format:

@@ -293,11 +293,66 @@ function paintRows() {
   els.rows.appendChild(frag);
 }
 
-els.search.addEventListener('input', paintRows);
-els.status.addEventListener('change', paintRows);
-window.addEventListener('langchange', () => { paintChrome(); paintRows(); });
+/* ---- URL state ----------------------------------------------------------
+ * The search box and the status filter are the page's whole state, so they
+ * belong in the URL: "look at the blocked_load ones" should be a link, and a
+ * reload should not throw the reader's query away. `#q=JSON&status=partial`,
+ * with empty values left out so an untouched page keeps a bare URL.
+ * `replaceState` rather than assigning to `location.hash`, because typing a
+ * six-letter query must not push six entries onto the history stack. */
+function stateToHash() {
+  const parts = [];
+  const q = els.search.value.trim();
+  if (q) parts.push('q=' + encodeURIComponent(q));
+  if (els.status.value) parts.push('status=' + encodeURIComponent(els.status.value));
+  return parts.join('&');
+}
+
+// Our own writes must not read back as a reader editing the URL.
+let lastHash = location.hash.replace(/^#/, '');
+
+function writeHash() {
+  lastHash = stateToHash();
+  history.replaceState(null, '',
+    location.pathname + location.search + (lastHash ? '#' + lastHash : ''));
+}
+
+// Applied both at load and again once the manifest arrives: until then the
+// status <select> has no options, so assigning to it would silently drop a
+// status the link asked for.
+function applyHash() {
+  const q = {};
+  for (const part of location.hash.replace(/^#/, '').split('&')) {
+    const i = part.indexOf('=');
+    if (i > 0) q[decodeURIComponent(part.slice(0, i))] = decodeURIComponent(part.slice(i + 1));
+  }
+  els.search.value = q.q ?? '';
+  const wanted = q.status ?? '';
+  els.status.value = [...els.status.options].some(o => o.value === wanted) ? wanted : '';
+}
+
+// Adopt whatever the URL says, then normalize it: a status this corpus does not
+// have is ignored above, and leaving it in the URL would describe a filter the
+// page is not applying.
+function adoptHash() {
+  applyHash();
+  if (stateToHash() !== lastHash) writeHash();
+}
+
+els.search.addEventListener('input', () => { writeHash(); paintRows(); });
+els.status.addEventListener('change', () => { writeHash(); paintRows(); });
+window.addEventListener('hashchange', () => {
+  if (location.hash.replace(/^#/, '') === lastHash) return;
+  lastHash = location.hash.replace(/^#/, '');
+  adoptHash();
+  paintRows();
+});
+// paintChrome rebuilds the status <select>, which drops its selection, so the
+// hash is re-applied after it rather than the value being read back out.
+window.addEventListener('langchange', () => { paintChrome(); applyHash(); paintRows(); });
 
 paintChrome();
+applyHash();
 paintRows();
 
 const EMPTY = { distributions: [], counts: { green: 0, graded: 0 },
@@ -309,6 +364,9 @@ fetchData('content/ecosystem.json')
   .catch(() => { DATA = EMPTY; })
   .finally(() => {
     paintChrome();
+    // Now that the statuses exist, a `#status=` from the link can actually be
+    // selected -- and one this corpus does not have can be dropped.
+    adoptHash();
     paintRows();
     // The KPI chart only exists once a full sweep has appended to history.tsv.
     // The manifest says whether it does, so the page never requests a file that
