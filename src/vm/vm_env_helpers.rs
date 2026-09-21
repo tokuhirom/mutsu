@@ -693,7 +693,8 @@ impl Interpreter {
         }
         // `&'static str` off the atomic symbol mirror: `current_package()` takes
         // the `RwLock` and clones the `String` on every free-variable read.
-        let cur: &str = self.current_package_sym().as_str();
+        let cur_sym = self.current_package_sym();
+        let cur: &str = cur_sym.as_str();
         if qualified {
             // Only scalars are in the store (see `collect_unit_lexical_names`) and
             // a scalar is keyed sigil-less, so the only sigil that can appear here
@@ -701,7 +702,7 @@ impl Interpreter {
             let (pkg, bare) = crate::runtime::utils::rsplit_once_double_colon(
                 name.strip_prefix('$').unwrap_or(name),
             )?;
-            if pkg != cur || crate::qualified::is_global_package(self.current_package_sym()) {
+            if pkg != cur || crate::qualified::is_global_package(cur_sym) {
                 return None;
             }
             return Self::lookup_in_package_chain(&self.unit_lexicals, cur, bare);
@@ -772,7 +773,8 @@ impl Interpreter {
         }
         // `&'static str` off the atomic symbol mirror: `current_package()` takes
         // the `RwLock` and clones the `String` on every free-variable read.
-        let cur: &str = self.current_package_sym().as_str();
+        let cur_sym = self.current_package_sym();
+        let cur: &str = cur_sym.as_str();
         if qualified {
             // Only scalars are in the store (see `collect_unit_lexical_names`) and
             // a scalar is keyed sigil-less, so the only sigil that can appear here
@@ -780,7 +782,7 @@ impl Interpreter {
             let (pkg, bare) = crate::runtime::utils::rsplit_once_double_colon(
                 name.strip_prefix('$').unwrap_or(name),
             )?;
-            if pkg != cur || crate::qualified::is_global_package(self.current_package_sym()) {
+            if pkg != cur || crate::qualified::is_global_package(cur_sym) {
                 return None;
             }
             let bare = bare.to_string();
