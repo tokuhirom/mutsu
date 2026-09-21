@@ -971,8 +971,9 @@ pub(crate) enum RegexAtom {
     /// whatever happens to be live at the outer match site instead of the
     /// scope it actually closed over (issue #8951). The match-time execution
     /// sites install `scope` into `env` for the duration of this atom's
-    /// match, exactly like [`Interpreter::install_regex_closure_scope`] does
-    /// for a `RegexCaptured` matched directly.
+    /// match, exactly like
+    /// [`crate::runtime::Interpreter::install_regex_closure_scope`] does for
+    /// a `RegexCaptured` matched directly.
     CaptureIsolatedGroupScoped(RegexPattern, Arc<crate::value::ValueMap>),
     Alternation(Vec<RegexPattern>),
     SequentialAlternation(Vec<RegexPattern>),
