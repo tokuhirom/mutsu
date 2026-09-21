@@ -1061,11 +1061,15 @@ impl Interpreter {
             // into the caller's same-named `@x` (zef `!find-prereq-candidates`
             // `@needed`). The light-call merge already excludes these via
             // `declared_locals`.
+            let class_body_static_names = self.class_body_static_names.clone();
             let is_method_local = |s: &str| -> bool {
                 matches!(s, "self" | "__ANON_STATE__" | "?CLASS" | "?ROLE" | "_")
                     || method_def.params.iter().any(|p| p == s)
                     || cc.locals.iter().any(|l| !l.is_empty() && l == s)
                     || cc.env_only_decls.iter().any(|n| n == s)
+                    || class_body_static_names
+                        .get(owner_class)
+                        .is_some_and(|names| names.contains(s))
                     || attr_twigil_local(attributes, s)
                     || (has_attr_aliases && attr_alias_local(attributes, s))
                     // Sigilless alias/readonly markers for a method parameter
@@ -2311,6 +2315,7 @@ impl Interpreter {
                 // leak to the caller): frame fixtures, params, attribute twigil
                 // forms, and compiled locals. No alias arm — the fast-path gate
                 // excludes alias-carrying instances.
+                let class_body_static_names = self.class_body_static_names.clone();
                 let is_method_local = |s: &str| -> bool {
                     matches!(s, "self" | "__ANON_STATE__" | "?CLASS" | "?ROLE" | "_")
                         || method_def.params.iter().any(|p| p == s)
@@ -2320,6 +2325,9 @@ impl Interpreter {
                         // exclusion as the primary merge path above (Text::CSV's
                         // `method csv` clobbered a same-named caller `$file`).
                         || cc.env_only_decls.iter().any(|n| n == s)
+                        || class_body_static_names
+                            .get(owner_class)
+                            .is_some_and(|names| names.contains(s))
                         || attrs_cell
                             .as_ref()
                             .is_some_and(|c| attr_twigil_local(&c.as_map(), s))
