@@ -43,7 +43,7 @@ than in this file; read the matching one before starting such a task. Currently:
 `mutsu-ticket-flow`, `rakuast-implementation`, `ecosystem-dist-fix`
 (taking one zef distribution's own test suite from red to green), and
 `ecosystem-dist-roulette` (drawing a *random* distribution and locking it on
-issue #7884 first, so parallel agents never work the same one).
+issue #8977 first, so parallel agents never work the same one).
 
 ## Architecture
 
