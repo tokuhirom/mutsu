@@ -434,9 +434,7 @@ impl Interpreter {
                     .filter(|p| {
                         p.where_constraint.is_some()
                             || p.type_constraint.as_deref().is_some_and(|tc| {
-                                self.registry()
-                                    .subsets
-                                    .contains_key(Self::constraint_base_for_distance(tc))
+                                self.constraint_is_subset(Self::constraint_base_for_distance(tc))
                             })
                     })
                     .count();
