@@ -105,8 +105,13 @@ body down to 5,375 M, **-19.6%**. The array row moving by 5 instructions out of
 1,115 is the useful part of that table: it is the untouched control, and it says
 the difference is in the two lanes and not in the measurement.
 
-Instructions are not time, and `bench-history.tsv` remains the authority on the
-row itself.
+Instructions are not time. As a reading rather than as evidence, a paired
+seven-run wall clock on this container puts `bench-index-store` at **0.79x**
+rakudo (mutsu 0.669s median, raku 0.850s), against the 1.19-1.23x the row has
+been sitting at — same checksum on both. Local wall clock drifts by more than
+most single wins, so `bench-history.tsv` remains the authority on the row
+itself; a ratio flip of that size is quoted here only because it is far outside
+that drift.
 
 ## Two divergences found while pinning it
 
