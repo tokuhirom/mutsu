@@ -303,7 +303,7 @@ impl Interpreter {
         // Compare dispatch shapes as sorted multisets so that candidates with
         // the same set of typed parameters in a different order are still
         // detected as tied (e.g. `foo(S $a, T $b)` vs `foo(T $a, S $b)`).
-        let mut best_shape_sorted = best_shape.clone();
+        let mut best_shape_sorted = best_shape;
         best_shape_sorted.sort();
         if tied.len() > 1
             && !tied.iter().any(Self::candidate_has_typed_named_param)
