@@ -6,7 +6,7 @@ use Test;
 # `$/` from the match range only, dropping captures, so `$0`/`$1`/`$/[0]`
 # came back empty. (Language/regexes.rakudoc)
 
-plan 8;
+plan 11;
 
 {
     $_ = '2016-01-23 18:09:00';
@@ -26,4 +26,16 @@ plan 8;
     is $_, 'XXX', ':g substitution replaced all three pairs';
     is $/.map({ .[0] ~ '=' ~ .[1] }).join(','), 'a=1,b=2,c=3',
         'each :g match keeps its own positional captures';
+}
+
+# Direct capture reads after s/// must see Match objects, not only the
+# interpolation fallback through $/. This is the idiom used by Text::Markdown
+# when it passes `~$0` and `~$1` into a newly constructed link.
+{
+    $_ = '[category](https://en.wikipedia.org/wiki/Unicode_character_property#General_Category),';
+    s/ \[ (.+?) \] \( (.+?) \) (.*) //;
+    is ~$0, 'category', 'direct $0 reads the first capture after s///';
+    is ~$1, 'https://en.wikipedia.org/wiki/Unicode_character_property#General_Category',
+        'direct $1 reads the second capture after s///';
+    is ~$2, ',', 'direct $2 reads the trailing capture after s///';
 }

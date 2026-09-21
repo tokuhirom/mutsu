@@ -242,8 +242,9 @@ impl Interpreter {
         if outcome.matched {
             self.write_subst_topic_checked(code, Value::str(outcome.text))?;
         }
-        self.env_mut()
-            .insert("/".to_string(), outcome.slash.clone());
+        let slash = outcome.slash.clone();
+        self.env_mut().insert("/".to_string(), slash.clone());
+        self.publish_subst_capture_env(&slash);
         self.substitution_in_smartmatch = self.in_smartmatch_rhs;
         self.stack.push(if outcome.matched || outcome.is_list {
             outcome.slash
@@ -283,9 +284,42 @@ impl Interpreter {
         );
         let outcome = self.run_subst(&op)?;
         // S/// sets $/ to the match (without mutating $_) and yields the string.
-        self.env_mut().insert("/".to_string(), outcome.slash);
+        let slash = outcome.slash.clone();
+        self.env_mut().insert("/".to_string(), slash.clone());
+        self.publish_subst_capture_env(&slash);
         self.stack.push(Value::str(outcome.text));
         Ok(())
+    }
+
+    /// Publish the captures of the post-substitution match through the same
+    /// environment variables as an ordinary regex match. The `$/` Match is
+    /// enough for interpolation and subscripting, but direct reads such as
+    /// `~$0` use the numbered environment entry itself.
+    fn publish_subst_capture_env(&mut self, slash: &Value) {
+        let match_obj = if slash.is_match_instance() {
+            Some(slash.clone())
+        } else {
+            match slash.view() {
+                ValueView::Array(list, _) => {
+                    list.iter().find(|value| value.is_match_instance()).cloned()
+                }
+                _ => None,
+            }
+        };
+        let Some(match_obj) = match_obj else {
+            return;
+        };
+
+        if let Some(ValueView::Array(list, _)) = match_obj.match_list().as_ref().map(Value::view) {
+            for (index, value) in list.iter().enumerate() {
+                self.env_mut().insert(index.to_string(), value.clone());
+            }
+        }
+        if let Some(ValueView::Hash(named)) = match_obj.match_named().as_ref().map(Value::view) {
+            for (name, value) in named.iter() {
+                self.env_mut().insert(format!("<{}>", name), value.clone());
+            }
+        }
     }
 
     /// Write a destructive `s///` result back to the topic, throwing
