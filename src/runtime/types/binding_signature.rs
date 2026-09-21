@@ -518,6 +518,7 @@ impl Interpreter {
         if pd.name.starts_with('@')
             && let ValueView::LazyList(list) = value.view()
             && list.is_from_gather()
+            && !list.is_genuinely_lazy()
             && !list.env.iter().any(|(_, captured)| {
                 matches!(
                     captured.view(),
@@ -541,6 +542,32 @@ impl Interpreter {
                 crate::value::ArrayKind::List,
             );
         }
+        // A genuinely lazy Seq (for example an infinite `.grep` pipeline) is
+        // already a pullable Positional.  Plain `@` binding presents it as a
+        // List, but must retain the deferred body: routing it through the
+        // ordinary PositionalBindFailover coercion asks for `.iterator` and
+        // drains an infinite source before the callee starts.  The List view
+        // shares the SeqBody, so later indexed/first consumers still pull the
+        // original source incrementally.
+        let lazy_seq_array_context = if pd.name.starts_with('@') {
+            if let ValueView::LazyList(list) = value.view()
+                && list.is_genuinely_lazy()
+            {
+                let list = list.with_list_context();
+                value = Value::lazy_list(crate::gc::Gc::new(list));
+                true
+            } else if let ValueView::Seq(body) = value.view()
+                && body.is_lazy()
+            {
+                let body = std::sync::Arc::clone(&body);
+                value = Value::seq_list_view(&body);
+                true
+            } else {
+                false
+            }
+        } else {
+            false
+        };
         if pd.name.starts_with('@')
             && let ValueView::Seq(body) = value.view()
             && !body.is_lazy()
@@ -552,10 +579,11 @@ impl Interpreter {
                 crate::value::ArrayKind::List,
             );
         }
-        let is_builtin_seq = matches!(value.view(), ValueView::Seq(..));
+        let is_builtin_seq = matches!(value.view(), ValueView::Seq(body) if !body.is_lazy());
         let is_positional_bind_failover =
             is_builtin_seq || self.type_matches_value("PositionalBindFailover", &value);
         if pd.name.starts_with('@')
+            && !lazy_seq_array_context
             && is_positional_bind_failover
             && (is_builtin_seq || !self.type_matches_value("Positional", &value))
         {

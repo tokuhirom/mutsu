@@ -4,7 +4,7 @@ use Test;
 # the adjacent form (`2²`). Both mean `2 ** 2`. Previously mutsu parsed `.²` as
 # a method call and died with "No such method '²'".
 
-plan 10;
+plan 11;
 
 is 2.², 4, '2.² == 2 ** 2';
 is 2.³, 8, '2.³ == 2 ** 3';
@@ -16,6 +16,9 @@ my $x = 3;
 is $x.², 9, 'method-superscript on a variable';
 is (1 + 1).², 4, 'method-superscript on a parenthesized expression';
 is 2².³, 64, 'chained adjacent + method superscripts ((2**2)**3)';
+
+# List::Divvy uses this topic form inside a WhateverCode.
+is (3,).map({ .³ }).head, 27, 'topic superscript power works';
 
 # Adjacent form still works, and normal method calls are unaffected.
 is 2², 4, 'adjacent superscript still works';

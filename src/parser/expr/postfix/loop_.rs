@@ -3621,7 +3621,7 @@ fn postfix_expr_loop_from(
 }
 
 /// Parse superscript digits as an exponent. Returns (exponent_value, byte_length).
-fn parse_superscript_exp(input: &str) -> Option<(i64, usize)> {
+pub(in crate::parser) fn parse_superscript_exp(input: &str) -> Option<(i64, usize)> {
     fn superscript_digit(c: char) -> Option<i64> {
         match c {
             '\u{2070}' => Some(0), // ⁰

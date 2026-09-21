@@ -20,6 +20,7 @@ pub(crate) const BUILTIN_FUNCTION_NAMES: &[&str] = &[
     "exit",
     "RUN-MAIN",
     "abs",
+    "is-prime",
     "sign",
     "val",
     "sqrt",
