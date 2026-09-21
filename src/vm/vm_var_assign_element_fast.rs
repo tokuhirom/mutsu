@@ -147,8 +147,8 @@ impl Interpreter {
         self.try_fast_array_element_assign(code, name_idx, is_positional, target_slot, false)
     }
 
-    /// True when a recorded `:=` bind pair names the `@` variable this element
-    /// store is about to write, so the store may have to be reconciled with a
+    /// True when a recorded `:=` bind pair names the `@`/`%` variable this
+    /// element store is about to write, so the store may have to be reconciled with a
     /// second local slot holding a detached copy of the container.
     ///
     /// This replaces the lane's opening refusal, which declined whenever
@@ -200,7 +200,7 @@ impl Interpreter {
     /// A program with no `:=` binding pays one `is_empty` check on the `Vec` and
     /// reads nothing, exactly as before.
     #[inline]
-    fn bind_pair_names_array(&self, code: &CompiledCode, var_name: &str) -> bool {
+    pub(crate) fn bind_pair_names_container(&self, code: &CompiledCode, var_name: &str) -> bool {
         if self.local_bind_pairs.is_empty() {
             return false;
         }
@@ -278,9 +278,9 @@ impl Interpreter {
             return None;
         }
         // A `:=` bind pair that names THIS array; see
-        // [`Interpreter::bind_pair_names_array`] for why the frame-global
+        // [`Interpreter::bind_pair_names_container`] for why the frame-global
         // `is_empty` test this replaces was far wider than the question.
-        if self.bind_pair_names_array(code, var_name) {
+        if self.bind_pair_names_container(code, var_name) {
             return None;
         }
         // `env_root_descended_mut_tracked` -- the write chokepoint the full
