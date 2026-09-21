@@ -10,9 +10,9 @@ cargo build --release
 ```
 
 Every `benchmarks/*.raku` file is measured by the bench CI automatically (two
-configurations each, wall clock and simulated instruction counts — see
-`scripts/bench-ci.sh` and `scripts/bench-det.sh`), so adding a file is all it
-takes to add a series. Keep a new one deterministic, self-checking (print a
+configurations each, wall clock, simulated instruction counts and heap
+allocation counts — see `scripts/bench-ci.sh` and `scripts/bench-det.sh`), so
+adding a file is all it takes to add a series. Keep a new one deterministic, self-checking (print a
 checksum), and in the 0.1-0.4 s range on a release build: the deterministic
 series resolves ~0.1%, while the wall-clock series needs the file to be well
 clear of the ~8 ms startup without paying 90x for it under callgrind.

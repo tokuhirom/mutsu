@@ -70,6 +70,7 @@ Never quote an absolute from one session against an absolute from another.
 | Where do the instructions go? | `callgrind` + `cg-summary.py` (§2) |
 | How many times is this called? | `cg-summary.py --callers NAME` |
 | How many allocations, and from where? | `cg-summary.py --allocs`, or `alloc_scope!` + `--features alloc-stats` |
+| How many allocations does a whole benchmark make? | `scripts/bench-det.sh`'s `allocations` column (§1a) |
 | Which code path actually ran? | `rust-gdb -batch` breakpoint + `bt` — never an `eprintln!` |
 | How many VM events? | `MUTSU_VM_STATS=1` on the **debug** build |
 | Is it faster? | averaged paired wall clock, 7+ runs each, second-run-or-later |
@@ -146,6 +147,39 @@ are free to leave in place.
 
 `cg-summary.py --allocs` answers the same question from a callgrind run without a rebuild, at
 whole-function granularity; `alloc_scope!` is what you want for a region smaller than a function.
+
+### 1a. Whole-benchmark allocation counts, tracked per commit
+
+`scripts/bench-det.sh` prints `benchmark  instructions  allocations`, and the bench CI appends both
+to `bench-det-history.tsv` on `bench-data` (the trend page has an `allocations` metric button).
+The allocation count is the call count of the libc allocator entry points, read out of the *same*
+callgrind profile as the instruction count — so it costs nothing extra, and it is at least as
+reproducible as the instruction count. Measured over repeated runs of one binary: `bench-hash` gave
+**237,793 three times, to the allocation**, and `bench-grammar-parse` 38,862 / 38,858 / 38,861 —
+0.010%, against 0.016% for its own Ir in the same runs. (A benchmark that reproduces exactly is the
+common case; where it does not, the cause is the same per-process `HashMap` seeding that moves Ir,
+reaching the allocator through a string or table whose growth depends on iteration order.) That
+makes it the right acceptance criterion for a change whose whole point is to allocate less, and the
+right thing to check when a slice removes instructions and you want to know whether it removed the
+allocation too.
+
+Three limits, all of them real:
+
+- **It counts calls, not bytes.** The same number of larger blocks reads as unchanged. Bytes need
+  memcheck: `BENCH_DET_BYTES=1 scripts/bench-det.sh` adds a column for it, at roughly 3x the wall
+  time, which is why CI does not.
+- **It is whole-process**, so a C dependency's allocations are in there too, and it cannot say
+  *where* an allocation came from. That is what `cg-summary.py --allocs` and `alloc_scope!` are for.
+- **Fewer allocations is not automatically faster.** Same rule as instruction counts: it localizes
+  a change, the wall-clock series says whether it mattered.
+
+Locally, name the files you care about — no argument measures all 26, which is four minutes you
+rarely need:
+
+```sh
+cargo build --release
+scripts/bench-det.sh benchmarks/bench-hash.raku      # both lanes: MUTSU_JIT=off and +jit
+```
 
 ## 2. The callgrind recipe
 
