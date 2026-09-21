@@ -99,7 +99,7 @@ pub(crate) fn process_line(
     crate::parser::set_eval_value_tail();
     let display = match interpreter.run(accumulated) {
         Ok(_) => {
-            let output = interpreter.output().to_string();
+            let output = interpreter.output();
             let had_output = interpreter.has_output_emitted();
             let display = if !output.is_empty() {
                 Some(output)

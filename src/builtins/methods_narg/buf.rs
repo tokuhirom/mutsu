@@ -22,7 +22,7 @@ pub(crate) fn is_buf_like(val: &Value) -> bool {
 
 pub(crate) fn buf_class_name(val: &Value) -> String {
     if let ValueView::Instance { class_name, .. } = val.view() {
-        class_name.resolve().to_string()
+        class_name.resolve()
     } else {
         "Buf".to_string()
     }

@@ -390,7 +390,7 @@ fn run_doc_init_blocks(source: &str) -> Result<(String, i64, bool), RuntimeError
         i += 1;
     }
     Ok((
-        interpreter.output().to_string(),
+        interpreter.output(),
         interpreter.exit_code(),
         interpreter.is_halted(),
     ))

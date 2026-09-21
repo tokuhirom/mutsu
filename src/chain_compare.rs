@@ -77,7 +77,7 @@ fn build_chain_cmp_expr(
     let tmp_name = format!("__mutsu_chain_cmp_{tmp_idx}");
     let tmp_var = Expr::Var(tmp_name.clone());
     let cmp = make_chain_cmp(left, op, tmp_var.clone(), negated);
-    let rest = build_chain_cmp_expr(operands, ops, index + 1, tmp_var.clone());
+    let rest = build_chain_cmp_expr(operands, ops, index + 1, tmp_var);
     Expr::desugar_block(vec![
         Stmt::VarDecl {
             name: tmp_name,
