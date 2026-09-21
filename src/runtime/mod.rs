@@ -1484,6 +1484,15 @@ pub(crate) struct DocComment {
     pub trailing: Option<String>,
     /// The name of the thing this comment is attached to (for WHEREFORE).
     pub wherefore_name: String,
+    /// The key this comment is filed under in `doc_comments` -- the same name
+    /// as `wherefore_name` for an ordinary declaration, but uniquified for the
+    /// cases where one name covers several declarations (`&mm/multi.1`,
+    /// `&<anon>.2`, `R/role.1`) and scoped to its owner for a parameter
+    /// (`&doc-sub::$a`). `collect_pod_declarants` files its concrete declarant
+    /// values under the same keys, so this is what tells two multi candidates
+    /// -- or two same-named parameters of different routines -- apart when the
+    /// `$=pod` declarator entries are built.
+    pub declarant_key: Option<String>,
     /// Kind of declaration.
     pub kind: DocDeclKind,
     /// Whether this is a proto declaration (affects WHEREFORE type in $=pod).

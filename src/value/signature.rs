@@ -726,6 +726,19 @@ fn sig_param_to_parameter_instance(p: &SigParam, interp: Option<&Interpreter>) -
     Value::make_instance(parameter_class_for(p), attrs)
 }
 
+/// Build a standalone `Parameter` Value that knows which routine declared it,
+/// the same way one materialized from `.signature.params` does. Used to give a
+/// `#=`-documented parameter a concrete `WHEREFORE` in `$=pod` (see
+/// `Interpreter::collect_pod_declarants`), where no `Signature` has been
+/// materialized yet.
+pub(crate) fn make_parameter_value_for_owner(
+    param: &SigParam,
+    owner_key: &str,
+    interp: Option<&Interpreter>,
+) -> Value {
+    sig_param_to_parameter_instance_with_owner(param, &Some(owner_key.to_string()), interp)
+}
+
 /// The type a materialized `Parameter` is born as: `Parameter`, or the mixin
 /// type a custom trait on the declaration composed (see
 /// [`PARAM_TRAIT_MIXIN_TYPES`]).

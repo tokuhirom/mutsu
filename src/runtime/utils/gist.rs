@@ -584,6 +584,21 @@ pub(crate) fn gist_value(value: &Value) -> String {
         {
             "WhateverCode.new".to_string()
         }
+        // A Method/Submethod gists as its bare name, where a Sub gists as
+        // `&name` (rakudo: `C.^lookup('m').gist` is `m`). The method objects
+        // `.^lookup`/`.^methods` hand out are `Instance`s and already render
+        // that way; this arm covers the ones carried as a closure value with
+        // the `__mutsu_callable_type` marker -- above all the `WHEREFORE` of a
+        // `Pod::Block::Declarator`, which is built before the class is
+        // registered and so cannot be a real method object yet.
+        ValueView::Sub(data)
+            if matches!(
+                data.env.get("__mutsu_callable_type").map(Value::view),
+                Some(ValueView::Str(kind)) if matches!(kind.as_str(), "Method" | "Submethod")
+            ) && !data.name.is_empty() =>
+        {
+            data.name.resolve()
+        }
         _ => value.to_string_value(),
     }
 }

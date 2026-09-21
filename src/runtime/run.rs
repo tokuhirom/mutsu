@@ -502,10 +502,26 @@ impl Interpreter {
     /// A `:key<>` colonpair (empty angle brackets) in Pod config is a fatal
     /// compile error in Raku, so this surfaces it before the program runs.
     pub fn establish_pod_variables(&mut self, source: &str) -> Result<(), RuntimeError> {
-        self.collect_doc_comments(source);
-        self.collect_pod_blocks(source)?;
+        self.collect_pod_sources(source)?;
         self.add_declarator_pod_entries(None);
         Ok(())
+    }
+
+    /// The first half of [`Interpreter::establish_pod_variables`]: build the
+    /// doc-comment table and the ordinary `$=pod` blocks, stopping short of the
+    /// `Pod::Block::Declarator` entries.
+    ///
+    /// `run()` needs the two halves apart. The declarator entries want the
+    /// parsed AST (so each one gets a concrete routine/attribute `WHEREFORE`
+    /// rather than a bare type placeholder), but the fatal Pod-config error
+    /// this half raises has to reach the user *before* any parse error --
+    /// which is the order rakudo reports them in, and the order the
+    /// pre-existing `$=pod`-then-parse sequence produced. Running this half
+    /// first and [`Interpreter::add_pod_declarator_entries_from_stmts`] after
+    /// the parse keeps that order intact.
+    pub(crate) fn collect_pod_sources(&mut self, source: &str) -> Result<(), RuntimeError> {
+        self.collect_doc_comments(source);
+        self.collect_pod_blocks(source)
     }
 
     /// Populate Pod variables while tying declarator blocks to the concrete
@@ -515,15 +531,89 @@ impl Interpreter {
         source: &str,
         stmts: &[Stmt],
     ) -> Result<(), RuntimeError> {
-        let mut declarants = ValueMap::default();
-        Self::collect_pod_declarants(stmts, "GLOBAL", &mut declarants);
-        self.collect_doc_comments(source);
-        self.collect_pod_blocks(source)?;
-        self.add_declarator_pod_entries(Some(&declarants));
+        self.collect_pod_sources(source)?;
+        self.add_pod_declarator_entries_from_stmts(stmts);
         Ok(())
     }
 
-    fn collect_pod_declarants(stmts: &[Stmt], package: &str, out: &mut ValueMap) {
+    /// Append the `Pod::Block::Declarator` half of `$=pod`, giving every entry
+    /// the concrete routine, method, attribute or parameter object its
+    /// declaration describes instead of a `Sub`/`Method`/`Attribute` type
+    /// placeholder. Each such object is also recorded in `why_object_cache`,
+    /// so `$=pod[$i].WHEREFORE.WHY` resolves back to that exact declarator
+    /// block -- which is what `Pod::To::Man`'s `declarator2man` path tests
+    /// before it renders a method, attribute or subroutine.
+    pub(crate) fn add_pod_declarator_entries_from_stmts(&mut self, stmts: &[Stmt]) {
+        let mut declarants = ValueMap::default();
+        let mut multi_counters = HashMap::new();
+        Self::collect_pod_declarants(stmts, "GLOBAL", &mut declarants, &mut multi_counters);
+        self.add_declarator_pod_entries(Some(&declarants));
+    }
+
+    /// Carry a declaration's `--> T` / `returns T` constraint onto the
+    /// declarant value `collect_pod_declarants` synthesizes, under the same
+    /// `__mutsu_return_type` key a registered routine uses -- that key is what
+    /// `callable_return_type` (and therefore `.returns` / `.of`) reads, and
+    /// `Pod::To::Text`'s `signature2text` renders the `--> Bool` line from it.
+    fn record_declarant_return_type(env: &mut crate::env::Env, return_type: Option<&str>) {
+        if let Some(rt) = return_type {
+            env.insert("__mutsu_return_type".to_string(), Value::str_from(rt));
+        }
+    }
+
+    /// File a declarant under its plain key, and -- for a `multi` candidate --
+    /// under the `<key>/multi.<n>` form `collect_doc_comments` uses to keep one
+    /// candidate's `#|` comment from overwriting its siblings'. The counter map
+    /// spans the whole compilation unit, exactly as the one in
+    /// `collect_doc_comments` does, so the two agree on which candidate is
+    /// which.
+    fn insert_pod_declarant(
+        out: &mut ValueMap,
+        multi_counters: &mut HashMap<String, usize>,
+        key: String,
+        is_multi: bool,
+        value: Value,
+    ) {
+        if is_multi {
+            let counter = multi_counters.entry(key.clone()).or_insert(0);
+            let multi_key = format!("{key}/multi.{counter}");
+            *counter += 1;
+            out.insert(multi_key, value.clone());
+        }
+        out.insert(key, value);
+    }
+
+    /// File one concrete `Parameter` per declared parameter, under the
+    /// `<routine key>::<param name>` key `collect_doc_comments` scopes a `#=`
+    /// parameter comment by. Without these, a documented parameter's `$=pod`
+    /// entry falls back to the bare `Parameter` type object and its `.WHY` is
+    /// `Nil`.
+    fn collect_pod_param_declarants(owner_key: &str, param_defs: &[ParamDef], out: &mut ValueMap) {
+        for def in param_defs {
+            if def.name.is_empty() || def.name == "self" || def.name == "%_" {
+                continue;
+            }
+            let sig_param = crate::value::signature::param_def_to_sig_param(def);
+            // `collect_doc_comments` keys a parameter by the SIGILED name it
+            // reads off the source line (`$a`, or a bare `$`/`@`/`%` for an
+            // anonymous one), while `ParamDef::name` drops the `$`. Rebuild the
+            // source spelling from the `SigParam` so the two keys meet.
+            let key = format!("{owner_key}::{}{}", sig_param.sigil, sig_param.name);
+            out.insert(
+                key,
+                crate::value::signature::make_parameter_value_for_owner(
+                    &sig_param, owner_key, None,
+                ),
+            );
+        }
+    }
+
+    fn collect_pod_declarants(
+        stmts: &[Stmt],
+        package: &str,
+        out: &mut ValueMap,
+        multi_counters: &mut HashMap<String, usize>,
+    ) {
         for stmt in stmts {
             match stmt {
                 Stmt::SubDecl {
@@ -532,10 +622,19 @@ impl Interpreter {
                     param_defs,
                     body,
                     is_rw,
+                    return_type,
+                    multi,
                     ..
                 } => {
-                    out.insert(
-                        format!("&{}", name.resolve()),
+                    let mut sub_env = crate::env::Env::new();
+                    Self::record_declarant_return_type(&mut sub_env, return_type.as_deref());
+                    let key = format!("&{}", name.resolve());
+                    Self::collect_pod_param_declarants(&key, param_defs, out);
+                    Self::insert_pod_declarant(
+                        out,
+                        multi_counters,
+                        key,
+                        *multi,
                         Value::make_sub(
                             crate::symbol::Symbol::intern(package),
                             *name,
@@ -543,7 +642,7 @@ impl Interpreter {
                             param_defs.clone(),
                             body.clone(),
                             *is_rw,
-                            crate::env::Env::new(),
+                            sub_env,
                         ),
                     );
                 }
@@ -556,7 +655,7 @@ impl Interpreter {
                     } else {
                         format!("{package}::{declared}")
                     };
-                    Self::collect_pod_declarants(body, &nested, out);
+                    Self::collect_pod_declarants(body, &nested, out, multi_counters);
                 }
                 Stmt::MethodDecl {
                     name,
@@ -565,6 +664,8 @@ impl Interpreter {
                     body,
                     is_rw,
                     is_submethod,
+                    return_type,
+                    multi,
                     ..
                 } => {
                     let mut method_env = crate::env::Env::new();
@@ -572,6 +673,7 @@ impl Interpreter {
                         "__mutsu_callable_type".to_string(),
                         Value::str_from(if *is_submethod { "Submethod" } else { "Method" }),
                     );
+                    Self::record_declarant_return_type(&mut method_env, return_type.as_deref());
                     let mut method_params = vec!["self".to_string()];
                     method_params.extend(params.iter().filter(|p| p.as_str() != "self").cloned());
                     if !method_params.iter().any(|p| p == "%_") {
@@ -635,8 +737,13 @@ impl Interpreter {
                             trait_args: Vec::new(),
                         });
                     }
-                    out.insert(
-                        format!("{package}::{}", name.resolve()),
+                    let key = format!("{package}::{}", name.resolve());
+                    Self::collect_pod_param_declarants(&key, param_defs, out);
+                    Self::insert_pod_declarant(
+                        out,
+                        multi_counters,
+                        key,
+                        *multi,
                         Value::make_sub(
                             crate::symbol::Symbol::intern(package),
                             *name,
@@ -704,7 +811,12 @@ impl Interpreter {
         // the ~20 of them into its capture. Idempotent, so a REPL's second
         // `run()` is a no-op.
         self.hoist_builtin_dynamics();
-        self.establish_pod_variables(&preprocessed)?;
+        // Only the source-driven half of `$=pod` can be built here: the
+        // declarator half is appended once the AST exists, just below. This
+        // half still runs first so a fatal Pod-config error keeps beating a
+        // parse error to the user. Nothing between here and that append reads
+        // `$=pod`.
+        self.collect_pod_sources(&preprocessed)?;
         let file_name = self
             .program_path
             .clone()
@@ -753,6 +865,13 @@ impl Interpreter {
         // Emit any parse warnings (e.g. duplicate traits)
         self.emit_parse_warnings(crate::parser::take_parse_warnings());
         let (mut stmts, finish_content) = parse_result?;
+        // Finish `$=pod` now that the program's own declarations are known, and
+        // before any of them can be observed: the prelude injection below adds
+        // statements this compunit never wrote, and a BEGIN/DOC INIT phaser or
+        // the mainline itself may read `$=pod`. Built from the *user's*
+        // statements only, so an injected prelude role cannot contribute a
+        // declarator block.
+        self.add_pod_declarator_entries_from_stmts(&stmts);
         if let Some(content) = finish_content {
             self.env.insert("=finish".to_string(), Value::str(content));
         }
