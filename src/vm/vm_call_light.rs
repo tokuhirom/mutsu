@@ -669,11 +669,7 @@ impl Interpreter {
                         Some(&sym) => sym,
                         None => Symbol::intern(param_name),
                     };
-                    self.bind_param_type_constraint_sym(
-                        param_name,
-                        name_sym,
-                        Some(base.to_string()),
-                    );
+                    self.bind_param_type_constraint_sym(param_name, name_sym, Some(base));
                 }
             }
             // An `is rw` parameter must stay writable -- the body assigns

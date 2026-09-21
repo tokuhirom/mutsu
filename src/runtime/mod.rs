@@ -603,6 +603,7 @@ mod class_introspection;
 mod code_frame;
 pub(crate) use code_frame::{CodeFrame, LazyRoutineCode};
 mod compunit_scope;
+mod constraint_meta;
 mod container_element_proxy;
 mod ctor_phase_plan;
 mod nqp_char_cache;
@@ -4636,6 +4637,29 @@ pub(crate) struct ContainerTypeInfo {
     pub(crate) value_type: String,
     pub(crate) key_type: Option<String>,
     pub(crate) declared_type: Option<String>,
+}
+
+/// [`ContainerTypeInfo`] with its two type names still borrowed from the
+/// constraint text they were sliced out of — see
+/// [`Interpreter::container_constraint_parts`], which is where the reason
+/// lives.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct ContainerConstraintParts<'a> {
+    pub(crate) value_type: &'a str,
+    pub(crate) key_type: Option<&'a str>,
+    pub(crate) declared_type: Option<String>,
+}
+
+impl ContainerConstraintParts<'_> {
+    /// Copy the borrowed names out, for the callers that keep the answer past
+    /// the constraint text's borrow.
+    pub(crate) fn into_owned(self) -> ContainerTypeInfo {
+        ContainerTypeInfo {
+            value_type: self.value_type.to_string(),
+            key_type: self.key_type.map(str::to_string),
+            declared_type: self.declared_type,
+        }
+    }
 }
 
 /// Compiled bytecode for a subset `where` predicate (the predicate body plus any

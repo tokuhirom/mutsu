@@ -207,7 +207,7 @@ impl Interpreter {
     }
 
     pub(crate) fn set_var_type_constraint(&mut self, name: &str, constraint: Option<String>) {
-        self.set_var_type_constraint_impl(name, None, constraint, true);
+        self.set_var_type_constraint_impl(name, None, constraint.as_deref(), true);
     }
 
     /// [`Self::set_var_type_constraint`] for a caller that already holds the
@@ -221,7 +221,7 @@ impl Interpreter {
         name_sym: Option<Symbol>,
         constraint: Option<String>,
     ) {
-        self.set_var_type_constraint_impl(name, name_sym, constraint, true);
+        self.set_var_type_constraint_impl(name, name_sym, constraint.as_deref(), true);
     }
 
     /// [`Self::set_var_type_constraint`] for DECLARATION position (`my Int
@@ -234,7 +234,7 @@ impl Interpreter {
     /// `Array[CSV::Field].new(...)` (Text::CSV 46_eol_si). The declared
     /// variable's own value is tagged by the assignment/default paths, which
     /// consult the name-keyed constraint registered here.
-    pub(crate) fn set_var_type_constraint_decl(&mut self, name: &str, constraint: Option<String>) {
+    pub(crate) fn set_var_type_constraint_decl(&mut self, name: &str, constraint: Option<&str>) {
         self.set_var_type_constraint_impl(name, None, constraint, false);
     }
 
@@ -255,14 +255,14 @@ impl Interpreter {
     /// env value with container metadata; both write the same single
     /// env-scoped lane.
     pub(crate) fn set_var_type_constraint_routine_scoped(&mut self, name: &str, constraint: &str) {
-        let info = Self::parse_container_constraint(name, constraint);
+        let info = Self::container_constraint_parts(name, constraint);
         if info.value_type == "atomicint" || constraint.contains("atomicint") {
             self.mark_atomic_var_seen();
         }
         let name_sym = Symbol::intern(name);
         self.env.insert_sym_noting(
             Self::type_meta_key_for_sym(name_sym),
-            Value::str(info.value_type),
+            crate::runtime::constraint_meta::constraint_meta_value_str(info.value_type),
         );
         // ADR-0042 slice 1: an object-hash's key type (`my %h{Int}`) must be
         // scoped the same way its value type is. `var_hash_key_constraint`
@@ -274,7 +274,10 @@ impl Interpreter {
         // opcode) silently lost key-type enforcement.
         let hash_key_meta_key = Self::hash_key_meta_key_for_sym(name_sym);
         if let Some(key_type) = info.key_type {
-            self.env.insert_sym(hash_key_meta_key, Value::str(key_type));
+            self.env.insert_sym(
+                hash_key_meta_key,
+                crate::runtime::constraint_meta::constraint_meta_value_str(key_type),
+            );
         } else {
             self.env.remove_sym(hash_key_meta_key);
         }
@@ -285,7 +288,7 @@ impl Interpreter {
         &mut self,
         name: &str,
         name_sym: Option<Symbol>,
-        constraint: Option<String>,
+        constraint: Option<&str>,
         tag_env_value: bool,
     ) {
         // `lookup`, not `intern` -- see `baked_param_name_sym` (#7766).
@@ -293,16 +296,21 @@ impl Interpreter {
         if let Some(constraint) = constraint {
             let name_sym = name_sym.unwrap_or_else(|| Symbol::intern(name));
             let meta_key = Self::type_meta_key_for_sym(name_sym);
-            let info = Self::parse_container_constraint(name, &constraint);
+            let info = Self::container_constraint_parts(name, constraint);
             if info.value_type == "atomicint" || constraint.contains("atomicint") {
                 self.mark_atomic_var_seen();
             }
-            self.env
-                .insert_sym(meta_key, Value::str(info.value_type.clone()));
+            self.env.insert_sym(
+                meta_key,
+                crate::runtime::constraint_meta::constraint_meta_value_str(info.value_type),
+            );
             Self::mark_env_type_constraint_seen_for(name_sym);
             let hash_key_meta_key = Self::hash_key_meta_key_for_sym(name_sym);
-            if let Some(key_type) = info.key_type.clone() {
-                self.env.insert_sym(hash_key_meta_key, Value::str(key_type));
+            if let Some(key_type) = info.key_type {
+                self.env.insert_sym(
+                    hash_key_meta_key,
+                    crate::runtime::constraint_meta::constraint_meta_value_str(key_type),
+                );
             } else {
                 self.env.remove_sym(hash_key_meta_key);
             }
@@ -312,6 +320,10 @@ impl Interpreter {
             // would corrupt the caller's container type metadata via Arc pointer
             // keying (and Arc pointer reuse after drop).
             if tag_env_value && (name.starts_with('@') || name.starts_with('%')) {
+                // Only the container sigils need the owned form — the value
+                // tagging stores it on the container. The scalar path above
+                // never materialises one, which is the whole point.
+                let info = info.into_owned();
                 self.register_var_container_type_metadata(name, &info);
             }
         } else {
@@ -392,7 +404,7 @@ impl Interpreter {
     /// same-named outer lexical. Container parameters (`@a`/`%h`) go through
     /// the full `set_var_type_constraint`, which also tags the bound value so
     /// element checks can read the constraint off the container.
-    pub(crate) fn bind_param_type_constraint(&mut self, name: &str, constraint: Option<String>) {
+    pub(crate) fn bind_param_type_constraint(&mut self, name: &str, constraint: Option<&str>) {
         self.bind_param_type_constraint_sym(name, Symbol::intern(name), constraint);
     }
 
@@ -404,12 +416,14 @@ impl Interpreter {
         &mut self,
         name: &str,
         name_sym: Symbol,
-        constraint: Option<String>,
+        constraint: Option<&str>,
     ) {
         // `lookup`, not `intern` -- see `baked_param_name_sym` (#7766).
         debug_assert_eq!(Symbol::lookup(name), Some(name_sym));
         if name.starts_with('@') || name.starts_with('%') {
-            let constraint = self.keep_object_hash_key_type(name, constraint);
+            // The `@`/`%` path may *rewrite* the constraint (folding in an
+            // argument's key type), so it keeps the owned form.
+            let constraint = self.keep_object_hash_key_type(name, constraint.map(str::to_string));
             self.set_var_type_constraint(name, constraint);
             return;
         }
@@ -420,11 +434,14 @@ impl Interpreter {
         // that arm documents.
         match constraint {
             Some(c) => {
-                let info = Self::parse_container_constraint(name, &c);
+                let info = Self::container_constraint_parts(name, c);
                 if info.value_type == "atomicint" || c.contains("atomicint") {
                     self.mark_atomic_var_seen();
                 }
-                self.env.insert_sym(meta_key, Value::str(info.value_type));
+                self.env.insert_sym(
+                    meta_key,
+                    crate::runtime::constraint_meta::constraint_meta_value_str(info.value_type),
+                );
                 Self::mark_env_type_constraint_seen_for(name_sym);
             }
             None => {
