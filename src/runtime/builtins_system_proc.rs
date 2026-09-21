@@ -19,7 +19,7 @@ impl Interpreter {
                     .or_else(|| self.get_dynamic_string("$*CHROOT"))
             })
             .unwrap_or_else(|| ".".to_string());
-        let path_buf = PathBuf::from(path_str.clone());
+        let path_buf = PathBuf::from(path_str);
         if !path_buf.is_dir() {
             return Ok(Value::FALSE);
         }

@@ -573,7 +573,7 @@ impl crate::runtime::Interpreter {
                     Some(ValueView::Int(a)) if a > 0 => a as usize,
                     _ => return None,
                 };
-                (class_name.resolve().to_string(), addr)
+                (class_name.resolve(), addr)
             }
             _ => return None,
         };
@@ -656,7 +656,7 @@ impl crate::runtime::Interpreter {
                     Some(ValueView::Int(a)) if a > 0 => a as usize,
                     _ => return false,
                 };
-                (class_name.resolve().to_string(), addr)
+                (class_name.resolve(), addr)
             }
             _ => return false,
         };
@@ -765,8 +765,8 @@ impl crate::runtime::Interpreter {
         }
         let arg = crate::runtime::types::unwrap_varref_value(args[0].clone());
         let type_name = match arg.view() {
-            ValueView::Package(n) => n.resolve().to_string(),
-            ValueView::Instance { class_name, .. } => class_name.resolve().to_string(),
+            ValueView::Package(n) => n.resolve(),
+            ValueView::Instance { class_name, .. } => class_name.resolve(),
             _ => {
                 return Some(Err(RuntimeError::new(
                     "nativesizeof() expects a native type or a native object",
@@ -837,8 +837,8 @@ impl crate::runtime::Interpreter {
             return Some(self.native_callable_from_signature(id, &args[1]));
         }
         let target = match args[0].view() {
-            ValueView::Package(n) => n.resolve().to_string(),
-            ValueView::Instance { class_name, .. } => class_name.resolve().to_string(),
+            ValueView::Package(n) => n.resolve(),
+            ValueView::Instance { class_name, .. } => class_name.resolve(),
             _ => {
                 return Some(Err(RuntimeError::new(
                     "nativecast() expects a type object as its first argument",

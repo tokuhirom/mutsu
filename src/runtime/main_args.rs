@@ -544,7 +544,7 @@ impl Interpreter {
                 Ok(())
             }
             Err(e) if e.return_value.is_some() => {
-                if let Some(v) = e.return_value.clone() {
+                if let Some(v) = e.return_value {
                     self.sink_map_grep_seq(&v)?;
                 }
                 Ok(())
@@ -715,7 +715,7 @@ impl Interpreter {
                 let variants = self.registry().enum_types.get(tc).cloned();
                 if let Some(variants) = variants
                     && let Some(enum_val) =
-                        self.coerce_to_enum_variant(tc, &variants, Value::str(s.clone()))
+                        self.coerce_to_enum_variant(tc, &variants, Value::str(s))
                 {
                     return enum_val;
                 }

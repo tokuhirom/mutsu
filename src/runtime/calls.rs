@@ -541,7 +541,7 @@ impl Interpreter {
             && (err.exception.is_none() || is_binding_param_exception)
         {
             let mut attrs = std::collections::HashMap::new();
-            attrs.insert("message".to_string(), Value::str(enhanced_msg.clone()));
+            attrs.insert("message".to_string(), Value::str(enhanced_msg));
             attrs.insert("objname".to_string(), Value::str(func_name.to_string()));
             attrs.insert("signature".to_string(), Value::str(signature));
             let arg_type_values: Vec<Value> =

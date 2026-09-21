@@ -449,7 +449,7 @@ impl Interpreter {
             if (is_hash_attr || is_array_attr)
                 && let Some(info) = self.container_type_metadata(&current)
             {
-                let constraint = &info.value_type.clone();
+                let constraint = &info.value_type;
                 // An empty value_type means "no element constraint": a Map
                 // carries embedded metadata (declared_type) with no value
                 // type, and `hashdata_type_info` renders that as "" — checking
@@ -672,7 +672,7 @@ impl Interpreter {
                     }
                     r
                 } else {
-                    absent_default.clone().unwrap_or(Value::NIL)
+                    absent_default.unwrap_or(Value::NIL)
                 };
                 (
                     removed,

@@ -32,7 +32,7 @@ impl Interpreter {
                     Stmt::ClassDecl { name, .. }
                     | Stmt::RoleDecl { name, .. }
                     | Stmt::SubsetDecl { name, .. }
-                    | Stmt::EnumDecl { name, .. } => Some(name.resolve().to_string()),
+                    | Stmt::EnumDecl { name, .. } => Some(name.resolve()),
                     _ => None,
                 })
                 .collect()

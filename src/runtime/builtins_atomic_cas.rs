@@ -92,7 +92,7 @@ impl Interpreter {
                 current
             };
             if did_swap {
-                self.env.insert(name.clone(), coerced.clone());
+                self.env.insert(name.clone(), coerced);
                 if let Ok(mut dirty) = self.shared_vars_dirty.write() {
                     dirty.insert(value_key);
                     dirty.insert(name.clone());
@@ -392,7 +392,7 @@ impl Interpreter {
                     if attr_cell.is_none()
                         && let Ok(mut dirty) = self.shared_vars_dirty.write()
                     {
-                        dirty.insert(value_key.clone());
+                        dirty.insert(value_key);
                         dirty.insert(name.clone());
                     }
                     return Ok(coerced);

@@ -190,7 +190,7 @@ impl Interpreter {
                 }
             }
             ValueView::Instance { class_name, .. } => {
-                let cn = class_name.resolve().to_string();
+                let cn = class_name.resolve();
                 if self.has_user_method(&cn, "Str") {
                     let r = self.call_method_with_values(value.clone(), "Str", vec![])?;
                     return Ok(Some(Value::str(r.to_string_value())));

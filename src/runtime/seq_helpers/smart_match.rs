@@ -82,9 +82,9 @@ impl Interpreter {
         let ValueView::Package(name) = topic.view() else {
             return topic;
         };
-        let cn = name.resolve().to_string();
+        let cn = name.resolve();
         if self.has_user_method(&cn, "Str")
-            && let Ok(v) = self.call_method_with_values(topic.clone(), "Str", vec![])
+            && let Ok(v) = self.call_method_with_values(topic, "Str", vec![])
         {
             return Value::str(v.to_string_value());
         }
@@ -93,7 +93,7 @@ impl Interpreter {
 
     fn regex_match_text(&mut self, left: &Value) -> String {
         if let ValueView::Package(name) = left.view() {
-            let cn = name.resolve().to_string();
+            let cn = name.resolve();
             if self.has_user_method(&cn, "Str")
                 && let Ok(v) = self.call_method_with_values(left.clone(), "Str", vec![])
             {

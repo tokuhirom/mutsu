@@ -595,7 +595,7 @@ impl Interpreter {
                     name,
                     is_unit: true,
                     ..
-                } => return Some(name.resolve().to_string()),
+                } => return Some(name.resolve()),
                 // `unit class Foo;` (file-scoped body) has its own `is_unit`
                 // flag on `ClassDecl`, distinct from `Stmt::Package` — DBIish's
                 // driver classes (`unit class DBDish::Pg ... does
@@ -606,7 +606,7 @@ impl Interpreter {
                     name,
                     is_unit: true,
                     ..
-                } => return Some(name.resolve().to_string()),
+                } => return Some(name.resolve()),
                 _ => {}
             }
         }
@@ -1415,7 +1415,7 @@ impl Interpreter {
                 .collect();
             if !aliases.is_empty() {
                 let entry = crate::runtime::cow_table_mut(&mut self.package_type_aliases)
-                    .entry(importer_package.clone())
+                    .entry(importer_package)
                     .or_default();
                 for (short, qualified) in aliases {
                     entry.entry(short).or_insert(qualified);

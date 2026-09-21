@@ -1393,8 +1393,7 @@ impl Interpreter {
                 }
             }
             if is_nested_need {
-                crate::runtime::cow_table_mut(&mut self.need_hidden_classes)
-                    .insert(short_name.clone());
+                crate::runtime::cow_table_mut(&mut self.need_hidden_classes).insert(short_name);
             }
             crate::runtime::cow_table_mut(&mut self.loaded_modules).insert(module.to_string());
         }

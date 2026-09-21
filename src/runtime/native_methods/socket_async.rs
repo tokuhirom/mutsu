@@ -211,7 +211,7 @@ impl Interpreter {
                     .and_then(|_| tcp_listener.set_nonblocking(false));
 
                 let accept_host = host.clone();
-                let accept_enc = enc.clone();
+                let accept_enc = enc;
                 // Start a background thread to accept connections.
                 // Registered spawn: it builds `Gc` values (the connection
                 // Instance) whose drop on a failed send must not race a cycle
@@ -337,7 +337,7 @@ impl Interpreter {
                         last.push(sub);
                     }
                 } else if !matches!(callback.view(), ValueView::Nil) {
-                    let cb = callback.clone();
+                    let cb = callback;
                     let mut driver = self.clone_for_thread();
                     // Pooled (ADR-0020 slice 3): per-listener accept driver —
                     // warm reuse across short-lived listeners (Cro-style
@@ -366,10 +366,7 @@ impl Interpreter {
 
                 let mut tap_attrs = HashMap::new();
                 tap_attrs.insert("listener-id".to_string(), Value::int(listener_id as i64));
-                tap_attrs.insert(
-                    "socket-port".to_string(),
-                    Value::promise(socket_port.clone()),
-                );
+                tap_attrs.insert("socket-port".to_string(), Value::promise(socket_port));
                 tap_attrs.insert("socket-host".to_string(), Value::promise(socket_host));
                 Ok(Value::make_instance(Symbol::intern("Tap"), tap_attrs))
             }

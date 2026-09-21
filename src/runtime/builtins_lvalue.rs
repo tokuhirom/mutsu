@@ -399,7 +399,7 @@ impl Interpreter {
             self.call_sub_value(storer.clone(), vec![proxy.clone(), value.clone()], true);
         if let Err(err) = store_result {
             if err.message.contains("Too many positionals") {
-                self.call_sub_value(storer.clone(), vec![value.clone()], true)?;
+                self.call_sub_value(storer.clone(), vec![value], true)?;
             } else {
                 return Err(err);
             }
@@ -426,7 +426,7 @@ impl Interpreter {
         if fetcher.is_nil() {
             return Ok(Value::NIL);
         }
-        let fetched = self.call_sub_value(fetcher.clone(), vec![proxy.clone()], true);
+        let fetched = self.call_sub_value(fetcher.clone(), vec![proxy], true);
         match fetched {
             Ok(value) => Ok(value),
             Err(err) if err.message.contains("Too many positionals") => {

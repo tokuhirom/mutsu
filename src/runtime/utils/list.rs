@@ -442,7 +442,7 @@ pub(crate) fn value_to_list(val: &Value) -> Vec<Value> {
                         Vec::new()
                     } else {
                         let limit = MAX_RANGE_EXPAND as usize;
-                        vec![start_num.clone(); limit]
+                        vec![start_num; limit]
                     }
                 } else {
                     let mut result = Vec::new();

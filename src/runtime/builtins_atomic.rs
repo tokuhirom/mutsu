@@ -423,7 +423,7 @@ impl Interpreter {
         let current = self.atomic_current_value(&shared, &name, &value_key);
         let next = crate::builtins::arith_add(current.clone(), delta)?;
         self.env.insert(name.clone(), next.clone());
-        shared.insert(value_key.clone(), next.clone());
+        shared.insert(value_key.clone(), next);
         drop(shared);
         if let Ok(mut dirty) = self.shared_vars_dirty.write() {
             dirty.insert(value_key);

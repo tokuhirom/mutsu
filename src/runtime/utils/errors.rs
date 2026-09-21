@@ -46,7 +46,7 @@ pub(crate) fn value_short_repr(val: &Value) -> String {
 /// rakudo says `but got Int (Int)`.
 pub(crate) fn got_type_name(val: &Value) -> String {
     match val.view() {
-        ValueView::Package(sym) => sym.resolve().to_string(),
+        ValueView::Package(sym) => sym.resolve(),
         _ => value_type_name(val).to_string(),
     }
 }
@@ -211,7 +211,7 @@ pub(crate) fn type_check_binding_typed_error(expected: &str, val: &Value) -> Run
     );
     attrs.insert("got".to_string(), val.clone());
     attrs.insert("operation".to_string(), Value::str("bind".to_string()));
-    attrs.insert("message".to_string(), Value::str(msg.clone()));
+    attrs.insert("message".to_string(), Value::str(msg));
     RuntimeError::typed("X::TypeCheck::Binding", attrs)
 }
 
@@ -224,7 +224,7 @@ pub(crate) fn dynamic_not_found_error(display_name: &str) -> RuntimeError {
     let mut attrs = ValueMap::default();
     attrs.insert("name".to_string(), Value::str(display_name.to_string()));
     attrs.insert("symbol".to_string(), Value::str(display_name.to_string()));
-    attrs.insert("message".to_string(), Value::str(msg.clone()));
+    attrs.insert("message".to_string(), Value::str(msg));
     RuntimeError::typed("X::Dynamic::NotFound", attrs)
 }
 
@@ -239,7 +239,7 @@ pub(crate) fn caller_not_dynamic_error(name: &str) -> RuntimeError {
         format!("Cannot access '{symbol}' through CALLER, because it is not declared as dynamic");
     let mut attrs = ValueMap::default();
     attrs.insert("symbol".to_string(), Value::str(symbol));
-    attrs.insert("message".to_string(), Value::str(msg.clone()));
+    attrs.insert("message".to_string(), Value::str(msg));
     RuntimeError::typed("X::Caller::NotDynamic", attrs)
 }
 
@@ -316,7 +316,7 @@ pub(crate) fn type_check_element_typed_error(
     // matching Rakudo's X::TypeCheck.
     attrs.insert("got".to_string(), val.clone());
     attrs.insert("symbol".to_string(), Value::str(display_name));
-    attrs.insert("message".to_string(), Value::str(msg.clone()));
+    attrs.insert("message".to_string(), Value::str(msg));
     RuntimeError::typed("X::TypeCheck::Assignment", attrs)
 }
 

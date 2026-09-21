@@ -420,7 +420,7 @@ fn walk_type_capture_inheritance(
                         let child_display = if child.starts_with("__ANON_CLASS_") {
                             "<anon>".to_string()
                         } else {
-                            child.to_string()
+                            child
                         };
                         let msg = format!(
                             "{base} does not support inheritance, so {child_display} cannot inherit from it"

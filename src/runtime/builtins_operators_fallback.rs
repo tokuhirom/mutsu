@@ -276,7 +276,7 @@ impl Interpreter {
             let value_str = first.to_string_value();
             let msg = format!("No value '{}' found in enum {}", value_str, name);
             let mut attrs = std::collections::HashMap::new();
-            attrs.insert("message".to_string(), Value::str(msg.clone()));
+            attrs.insert("message".to_string(), Value::str(msg));
             attrs.insert("type".to_string(), Value::package(Symbol::intern(name)));
             attrs.insert("value".to_string(), first);
             let ex = Value::make_instance(Symbol::intern("X::Enum::NoValue"), attrs);

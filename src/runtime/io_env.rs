@@ -645,7 +645,7 @@ impl Interpreter {
         val: &Value,
     ) -> Result<String, RuntimeError> {
         if let ValueView::Package(name) = val.view() {
-            let cn = name.resolve().to_string();
+            let cn = name.resolve();
             if self.has_user_method(&cn, "Stringy")
                 && let Ok(r) = self.call_method_with_values(val.clone(), "Stringy", vec![])
             {
@@ -702,7 +702,7 @@ impl Interpreter {
         // (`class A { method Str {"foo"} }` then `print A` renders "foo",
         // matching Rakudo). Unlike prefix `~`, print/put do not use `.Stringy`.
         if let ValueView::Package(name) = value.view() {
-            let n = name.resolve().to_string();
+            let n = name.resolve();
             if self.has_user_method(&n, "Str")
                 && let Ok(r) = self.call_method_with_values(value.clone(), "Str", vec![])
             {

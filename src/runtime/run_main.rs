@@ -95,7 +95,7 @@ impl Interpreter {
         self.mark_readonly("*USAGE");
 
         if has_generate_usage {
-            let mut ga = vec![main.clone()];
+            let mut ga = vec![main];
             ga.extend(positional.iter().cloned());
             for (k, v) in &named_pairs {
                 ga.push(Value::pair(k.clone(), v.clone()));

@@ -219,7 +219,7 @@ impl Interpreter {
         let cell = crate::gc::Gc::new(crate::value::ContainerCell::new(seed));
         data.items_mut()[idx] = Value::container_ref(cell.clone());
         let updated = Value::array_with_kind(crate::gc::Gc::new(data), kind);
-        shared.insert(atomic_key.to_string(), updated.clone());
+        shared.insert(atomic_key.to_string(), updated);
         drop(shared);
         // Arrays deliberately skip the env mirror: GetLocal consults the
         // atomic shared key directly (see builtin_cas_array_elem's note).
@@ -495,10 +495,10 @@ impl Interpreter {
             dirty.insert(arr_name.to_string());
         }
         if let Some(cell) = self.unit_lexical_container_cell(arr_name) {
-            *cell.lock().unwrap_or_else(|e| e.into_inner()) = updated.clone();
+            *cell.lock().unwrap_or_else(|e| e.into_inner()) = updated;
         } else if let Some(ValueView::ContainerRef(cell)) = self.env.get(arr_name).map(Value::view)
         {
-            *cell.lock().unwrap_or_else(|e| e.into_inner()) = updated.clone();
+            *cell.lock().unwrap_or_else(|e| e.into_inner()) = updated;
         } else {
             self.env.insert(arr_name.to_string(), updated);
         }
@@ -563,10 +563,10 @@ impl Interpreter {
             dirty.insert(hash_name.to_string());
         }
         if let Some(cell) = self.unit_lexical_container_cell(hash_name) {
-            *cell.lock().unwrap_or_else(|e| e.into_inner()) = updated.clone();
+            *cell.lock().unwrap_or_else(|e| e.into_inner()) = updated;
         } else if let Some(ValueView::ContainerRef(cell)) = self.env.get(hash_name).map(Value::view)
         {
-            *cell.lock().unwrap_or_else(|e| e.into_inner()) = updated.clone();
+            *cell.lock().unwrap_or_else(|e| e.into_inner()) = updated;
         } else {
             self.env.insert(hash_name.to_string(), updated);
         }

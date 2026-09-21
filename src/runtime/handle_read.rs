@@ -133,8 +133,7 @@ impl Interpreter {
                     };
                     if effective_list.is_empty() {
                         // No file args — read from stdin, using $*IN's nl-in.
-                        let (effective_seps, effective_chomp) =
-                            stdin_seps.unwrap_or((seps.clone(), chomp));
+                        let (effective_seps, effective_chomp) = stdin_seps.unwrap_or((seps, chomp));
                         let line = {
                             let mut stdin = std::io::stdin().lock();
                             Self::read_record_with_separators(
