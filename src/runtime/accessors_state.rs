@@ -361,13 +361,13 @@ impl Interpreter {
         );
     }
 
-    /// The unqualified spelling of an `our_vars` key: its sigil (if any) plus
-    /// the segment after the last `::`. `"@Foo::Bar::words"` -> `"@words"`,
-    /// `"x"` -> `"x"`. See [`Interpreter::our_var_unqualified`].
-
     /// Whether any stored `our` variable could be reached under the
     /// unqualified name `name`. A `false` answer means every
     /// package-qualified candidate for `name` is guaranteed to miss.
+    ///
+    /// The index is keyed by the unqualified spelling
+    /// ([`crate::qualified::unqualified_part`]: sigil, if any, plus the
+    /// segment after the last `::`), so this interns `name` to ask.
     pub(crate) fn our_var_unqualified_exists(&self, name: &str) -> bool {
         self.our_var_unqualified.contains(&Symbol::intern(name))
     }
