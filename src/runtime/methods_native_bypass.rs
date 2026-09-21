@@ -103,6 +103,7 @@ impl Interpreter {
                 | "mixin"
                 | "archetypes"
                 | "nominalize"
+                | "refinee"
                 | "name"
                 | "shortname"
                 | "array_type"
