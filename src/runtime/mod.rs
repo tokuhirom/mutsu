@@ -3088,7 +3088,7 @@ pub struct Interpreter {
     ///
     /// Append-only, exactly like `our_vars` itself (which is only ever inserted
     /// into, never removed from), so a membership test can never be stale.
-    our_var_unqualified: rustc_hash::FxHashSet<String>,
+    our_var_unqualified: rustc_hash::FxHashSet<Symbol>,
     /// Runtime-installed `PROCESS::` dynamics (`PROCESS::<$name> := value`,
     /// the `Rakudo::Internals.REGISTER-DYNAMIC` idiom), keyed by the same
     /// dynamic-var env key `store_process_dynamic` writes (`*name`/`@*name`/

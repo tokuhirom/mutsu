@@ -93,22 +93,25 @@ impl Interpreter {
         if !self.our_var_unqualified_exists(name) {
             return None;
         }
-        let cur = self.current_package();
+        // The package off the interned mirror, not a `current_package()`
+        // clone, and the enclosing chain off `package_ancestors` rather than
+        // an `rsplit_once` per step — both are decided by text the source
+        // fixed once (#8899).
+        let cur_sym = self.current_package_sym();
         let frame = self.routine_stack().last();
         let candidates = [
-            frame.and_then(|f| f.lexical_package).map(|s| s.as_str()),
-            self.method_class_stack_top_str(),
+            frame.and_then(|f| f.lexical_package),
+            self.method_class_stack_top_str().map(Symbol::intern),
             frame
-                .map(|f| f.package.as_str())
-                .filter(|pkg| !pkg.is_empty() && *pkg != "GLOBAL"),
-            Some(cur.as_str()),
+                .map(|f| f.package)
+                .filter(|pkg| !crate::qualified::is_global_package(*pkg)),
+            Some(cur_sym),
         ];
         for candidate in candidates.into_iter().flatten() {
-            let mut pkg = candidate;
-            loop {
-                if pkg.is_empty()
-                    || pkg == "GLOBAL"
-                    || crate::runtime::utils::has_routine_scope_marker(pkg)
+            for pkg_sym in crate::qualified::package_ancestors(candidate) {
+                let pkg = pkg_sym.as_str();
+                if crate::qualified::is_global_package(pkg_sym)
+                    || crate::qualified::is_routine_scoped_package(pkg_sym)
                 {
                     break;
                 }
@@ -120,10 +123,6 @@ impl Interpreter {
                     && self.get_our_var(key.as_str()).is_some()
                 {
                     return Some(key.as_str().to_string());
-                }
-                match pkg.rsplit_once("::") {
-                    Some((parent, _)) => pkg = parent,
-                    None => break,
                 }
             }
         }
