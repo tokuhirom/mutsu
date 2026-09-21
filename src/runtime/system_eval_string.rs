@@ -304,6 +304,10 @@ impl Interpreter {
             ));
         }
         let previous_pod = self.env.get("=pod").cloned();
+        let previous_doc_comments = self.doc_comments.clone();
+        let previous_doc_comment_list = self.doc_comment_list.clone();
+        let previous_why_cache = self.why_cache.clone();
+        let previous_why_object_cache = self.why_object_cache.clone();
         let saved_in_eval = self.env.get("__mutsu_in_eval").cloned();
         // A pragma the EVAL'd unit turns on is scoped to that unit. `use fatal`
         // is the one that bites: mutsu keeps it as an interpreter-wide flag, so
@@ -435,6 +439,10 @@ impl Interpreter {
         } else {
             self.env.remove("=pod");
         }
+        self.doc_comments = previous_doc_comments;
+        self.doc_comment_list = previous_doc_comment_list;
+        self.why_cache = previous_why_cache;
+        self.why_object_cache = previous_why_object_cache;
         if let Some(saved) = saved_in_eval {
             self.env.insert("__mutsu_in_eval".to_string(), saved);
         } else {

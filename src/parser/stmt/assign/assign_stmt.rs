@@ -37,6 +37,19 @@ pub(in crate::parser) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
         return Err(PError::expected("assignment"));
     }
 
+    // Pod and other `$=...` twigil variables are reads, not bare-`$`
+    // anonymous-state assignment targets.  Leave them for the ordinary
+    // expression parser; without this guard a naked `$=pod` statement is
+    // parsed as an assignment to an anonymous state variable whose RHS is the
+    // bareword `pod`.
+    if sigil == b'$'
+        && input
+            .strip_prefix("$=")
+            .is_some_and(|rest| crate::parser::primary::var::parse_ident_with_hyphens(rest).is_ok())
+    {
+        return Err(PError::expected("assignment"));
+    }
+
     let prefix = match sigil {
         b'@' => "@",
         b'%' => "%",
