@@ -1011,7 +1011,7 @@ impl Compiler {
             };
             let mut args = vec![
                 (**method_target).clone(),
-                Expr::Literal(Value::str(method_name.resolve().to_string())),
+                Expr::Literal(Value::str(method_name.resolve())),
             ];
             if !method_args.is_empty() {
                 args.push(Expr::BracketArray(method_args.clone(), false));

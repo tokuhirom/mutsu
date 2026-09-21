@@ -596,7 +596,7 @@ impl Compiler {
             }];
             then_branch.extend(first_ph);
             loop_body.push(Stmt::If {
-                cond: Expr::Var(first_var.clone()),
+                cond: Expr::Var(first_var),
                 then_branch,
                 else_branch: Vec::new(),
                 binding_var: None,
@@ -625,10 +625,7 @@ impl Compiler {
         loop_body.extend(pre_ph);
         // When we have both result_var (KEEP/UNDO) and post_topic_var (POST),
         // we need to capture the body's last expression into both.
-        let capture_var = result_var
-            .clone()
-            .or(post_topic_var.clone())
-            .or(value_var.clone());
+        let capture_var = result_var.clone().or(post_topic_var.clone()).or(value_var);
         let body_taken = matches!(
             body_main.last(),
             Some(Stmt::Take(_, false)) if capture_var.is_some()
@@ -638,7 +635,7 @@ impl Compiler {
                 loop_body.extend(prefix.iter().cloned());
                 match last {
                     Stmt::Expr(expr) => loop_body.push(Stmt::Assign {
-                        name: cap_var.clone(),
+                        name: cap_var,
                         expr: expr.clone(),
                         op: AssignOp::Assign,
                     }),
@@ -652,12 +649,12 @@ impl Compiler {
                             expr: expr.clone(),
                             op: AssignOp::Assign,
                         });
-                        loop_body.push(Stmt::Take(Expr::Var(cap_var.clone()), false));
+                        loop_body.push(Stmt::Take(Expr::Var(cap_var), false));
                     }
                     other => {
                         loop_body.push(other.clone());
                         loop_body.push(Stmt::Assign {
-                            name: cap_var.clone(),
+                            name: cap_var,
                             expr: Expr::Literal(Value::NIL),
                             op: AssignOp::Assign,
                         });
@@ -665,7 +662,7 @@ impl Compiler {
                 }
             } else {
                 loop_body.push(Stmt::Assign {
-                    name: cap_var.clone(),
+                    name: cap_var,
                     expr: Expr::Literal(Value::NIL),
                     op: AssignOp::Assign,
                 });
@@ -689,7 +686,6 @@ impl Compiler {
         // POST sees the block's return value as $_
         if !post_ph.is_empty() {
             let post_topic = post_topic_var
-                .clone()
                 .map(Expr::Var)
                 .unwrap_or(Expr::Literal(Value::NIL));
             let mut post_body = Vec::new();
@@ -712,7 +708,7 @@ impl Compiler {
             && (!keep_ph.is_empty() || !undo_ph.is_empty())
         {
             loop_body.push(Stmt::If {
-                cond: Expr::Var(result_var.clone()),
+                cond: Expr::Var(result_var),
                 then_branch: keep_ph,
                 else_branch: undo_ph,
                 binding_var: None,
@@ -733,7 +729,7 @@ impl Compiler {
         //
         // Not emitted (and harmful — sinking a taken Failure would throw) when the
         // body's value was already `take`n into the enclosing gather.
-        if let Some(capture_var) = capture_var.clone()
+        if let Some(capture_var) = capture_var
             && !body_taken
             && (wants_value || result_var.is_some())
         {

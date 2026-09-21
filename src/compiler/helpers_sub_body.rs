@@ -1034,9 +1034,7 @@ impl Compiler {
         // frame learns which outer lexicals it reads only through this channel
         // (see `CompiledCode::nested_routine_free_reads`).
         if !cf.free_var_syms.is_empty() {
-            self.code
-                .nested_routine_free_reads
-                .push(cf.free_var_syms.clone());
+            self.code.nested_routine_free_reads.push(cf.free_var_syms);
         }
     }
 

@@ -360,7 +360,7 @@ impl Compiler {
         // positionals passed"). Compile it as the `&f(...)` form, which already
         // has an opcode (`CallOnCodeVar`).
         if name.with_str(|n| self.amp_binding_in_active_scope(n)) {
-            let target = Expr::CodeVar(name.resolve().to_string());
+            let target = Expr::CodeVar(name.resolve());
             self.compile_expr_call_on(&target, args);
             return;
         }
@@ -867,8 +867,8 @@ impl Compiler {
                 "__mutsu_tmp_assign_method_result_{}",
                 self.code.constants.len()
             );
-            let tmp_target_idx = self.code.add_constant(Value::str(tmp_target_name.clone()));
-            let tmp_result_idx = self.code.add_constant(Value::str(tmp_result_name.clone()));
+            let tmp_target_idx = self.code.add_constant(Value::str(tmp_target_name));
+            let tmp_result_idx = self.code.add_constant(Value::str(tmp_result_name));
             let call_name_idx = self.code.add_constant(Value::str(name.resolve()));
             let var_name_idx = self.code.add_constant(Value::str(var_name));
 
@@ -1696,7 +1696,7 @@ impl Compiler {
                 {
                     let atomic_add = Expr::Call {
                         name: Symbol::intern("__mutsu_atomic_add_var"),
-                        args: vec![Expr::Literal(Value::str(vname.clone())), delta],
+                        args: vec![Expr::Literal(Value::str(vname)), delta],
                     };
                     self.compile_expr(&atomic_add);
                     return;
@@ -1713,7 +1713,7 @@ impl Compiler {
                     if let Some(delta) = delta {
                         let atomic_add = Expr::Call {
                             name: Symbol::intern("__mutsu_atomic_add_var"),
-                            args: vec![Expr::Literal(Value::str(vname.clone())), delta],
+                            args: vec![Expr::Literal(Value::str(vname)), delta],
                         };
                         self.compile_expr(&atomic_add);
                         return;

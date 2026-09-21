@@ -722,7 +722,7 @@ impl Compiler {
             self.code.emit(OpCode::Dup);
             self.code.emit(OpCode::SetGlobalRaw(orig_idx));
             self.pending_index_rw_writebacks
-                .push((arg.clone(), tmp.clone(), orig.clone()));
+                .push((arg.clone(), tmp.clone(), orig));
             let name_idx = self.code.add_constant(Value::str(tmp));
             self.code.emit(OpCode::WrapVarRef {
                 name_idx,
@@ -1496,7 +1496,7 @@ impl Compiler {
             let msg = format!("Cannot assign to readonly variable {}", var_name);
             let mut attrs = std::collections::HashMap::new();
             attrs.insert("variable".to_string(), Value::str(var_name));
-            attrs.insert("message".to_string(), Value::str(msg.clone()));
+            attrs.insert("message".to_string(), Value::str(msg));
             return Some(Value::make_instance(
                 crate::symbol::Symbol::intern("X::Assignment::RO::Comp"),
                 attrs,
