@@ -52,12 +52,22 @@ Repeated runs of one binary:
 | `bench-hash` | 237,793 | 237,793 | 237,793 | 0% | 0.012% |
 | `bench-grammar-parse` | 38,862 | 38,858 | 38,861 | 0.010% | 0.016% |
 
-So: at least as reproducible as the instruction count, and exact on most benchmarks. Where a count
+A wider two-run sample agreed: eight of ten series within 0.01%, four of them at exactly zero. So it
+is at least as reproducible as the instruction count, and exact on most benchmarks. Where a count
 does move, the cause is the same per-process `HashMap` seeding that moves Ir, reaching the allocator
 through a string or table whose growth depends on iteration order. It is also the more stable of the
 two across toolchains — a rustc bump re-codegens every instruction and steps that whole series at
 once, but it does not change how many times the program asks for memory, so an allocation regression
 stays legible across exactly the event that makes the Ir series hard to read.
+
+The tenth series in that sample is worth its own line, because it is a warning and not noise:
+`bench-json-fast` measured 1,777,030 allocations and then 1,311,894, **-26%**, from nothing but the
+module precompilation cache that the first run after a build has to populate. That is the same trap
+the perf-tuning skill's §0 records as 650M instructions (34% of the run) on the same benchmark — and
+the allocation column states it more loudly than Ir does. It does not distort the recorded series,
+because the bench CI builds fresh on every run and is therefore cold on every run, consistently. It
+does distort a local A/B that compares a first run against a later one, which is exactly what §0
+already tells you not to do.
 
 ## What it is not
 

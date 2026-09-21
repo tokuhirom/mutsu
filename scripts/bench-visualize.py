@@ -517,7 +517,7 @@ document.getElementById('foot').innerHTML =
   (DATA.hasAllocs
     ? `<b>allocations</b> is the heap allocation count, read out of the same callgrind ` +
       `profile at no extra cost and at least as reproducible as the instruction count ` +
-      `(0&ndash;0.01% between runs of one binary), and unlike it, barely moved by a ` +
+      `(0&ndash;0.01% between warm runs of one binary), and unlike it, barely moved by a ` +
       `toolchain bump. It counts calls, not bytes, so the same number of larger blocks ` +
       `looks identical. `
     : '') +

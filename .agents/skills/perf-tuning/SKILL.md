@@ -163,6 +163,12 @@ makes it the right acceptance criterion for a change whose whole point is to all
 right thing to check when a slice removes instructions and you want to know whether it removed the
 allocation too.
 
+**§0's warm/cold rule applies to it, and it shows the effect more loudly than Ir does.** A two-run
+sample put eight of ten series within 0.01% — and `bench-json-fast` at 1,777,030 then 1,311,894,
+**-26%**, purely from populating the module precompilation cache. Same trap, same benchmark, same
+cause as the 650M Ir in §0. The recorded CI series is unaffected (that job builds fresh every time,
+so it is cold every time, consistently); a local A/B is not, so discard the first run there too.
+
 Three limits, all of them real:
 
 - **It counts calls, not bytes.** The same number of larger blocks reads as unchanged. Bytes need

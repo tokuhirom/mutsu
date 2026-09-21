@@ -61,12 +61,23 @@
 #   bench-hash          237,793 / 237,793 / 237,793                 0%
 #   bench-grammar-parse  38,862 /  38,858 /  38,861                 0.010%
 #
-# (Ir over the same three runs: 0.012% and 0.016%.) Exact reproduction is the
-# common case; where a count does move it is the same per-process `HashMap`
-# seeding that moves Ir, reaching the allocator through a string or table whose
-# growth depends on iteration order. It is also the more stable of the two across
-# toolchains: a rustc bump re-codegens every instruction, but it does not change
-# how many times the program asks for memory.
+# (Ir over the same three runs: 0.012% and 0.016%.) A wider two-run sample put
+# eight of ten series within 0.01% and four of them at exactly zero. Where a
+# count does move it is the same per-process `HashMap` seeding that moves Ir,
+# reaching the allocator through a string or table whose growth depends on
+# iteration order. It is also the more stable of the two across toolchains: a
+# rustc bump re-codegens every instruction, but it does not change how many times
+# the program asks for memory.
+#
+# THE ONE BIG EXCEPTION IS THE COLD-PRECOMPILATION RUN, and this column makes it
+# unmissable: the tenth series in that sample was `bench-json-fast`, at 1,777,030
+# allocations then 1,311,894 -- **-26%**, from nothing but the module
+# precompilation cache, which the first run after a build has to populate. That
+# is the same trap the perf-tuning skill's §0 documents as 650M Ir (34% of the
+# run), measured on the same benchmark. It does not distort the recorded series,
+# because the bench CI builds fresh every time and so is cold every time,
+# consistently -- but a LOCAL A/B has to compare warm against warm, or it will
+# read a 26% allocation "win" that is only a populated cache.
 #
 # WHY THE SYMBOL SET BELOW, and why counting two layers would be wrong: the libc
 # entry points are counted, not Rust's `__rust_alloc*` shims. The shims are
