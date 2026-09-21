@@ -17,6 +17,7 @@ before starting one of these tasks:
 | [`roast-triage`](.agents/skills/roast-triage/SKILL.md) | Choosing the next roast target, or investigating one failing `roast/*.t` |
 | [`perf-tuning`](.agents/skills/perf-tuning/SKILL.md) | Profiling, A/B-measuring and landing a perf change — working a `todo:perf` issue, or before quoting any performance number |
 | [`test-util-workout`](.agents/skills/test-util-workout/SKILL.md) | A "Test::Util workout" request |
+| [`clippy-clone-sweep`](.agents/skills/clippy-clone-sweep/SKILL.md) | A "clone sweep" / `clippy::nursery` pass to find wasted `.clone()` calls (periodic hygiene, not a bug hunt) |
 | [`reclaim-disk`](.agents/skills/reclaim-disk/SKILL.md) | Disk is filling up: stale agent worktrees, `target/` caches |
 | [`mutsu-ticket-flow`](.agents/skills/mutsu-ticket-flow/SKILL.md) | Working `todo:ticket` issues end-to-end through merge |
 | [`rakuast-implementation`](.agents/skills/rakuast-implementation/SKILL.md) | A RakuAST compatibility slice (`src/rakuast/`, `t/rakuast/`) |
