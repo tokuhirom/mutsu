@@ -12,6 +12,7 @@
 //! entirely in these ops — see `todo/tickets/cbor-simple-nqp-buf-ops.md`.
 
 use crate::builtins::mvm_array_read_buf_oob_message;
+use crate::runtime::nqp_pure::NqpPure;
 use crate::runtime::{Interpreter, RuntimeError, path_is_readable};
 use crate::value::value_buf;
 use crate::value::{Value, ValueView};
@@ -27,6 +28,14 @@ fn narg(args: &[Value], i: usize) -> f64 {
 
 fn bool_int(b: bool) -> Value {
     Value::int(i64::from(b))
+}
+
+/// An op whose body lives in [`crate::runtime::nqp_pure`] — the single
+/// implementation this string-keyed table and `exec_nqp_op`'s direct path
+/// share (#8900).
+#[inline]
+fn pure(op: NqpPure, args: &[Value]) -> Value {
+    crate::runtime::nqp_pure::eval(op, args)
 }
 
 /// `strtol`-style leading-integer parse for `nqp::coerce_si`: skip leading
@@ -157,9 +166,13 @@ impl Interpreter {
         };
         Some(match op {
             // -- native int arithmetic / bit ops --
-            "add_i" => Ok(Value::int(iarg(args, 0).wrapping_add(iarg(args, 1)))),
-            "sub_i" => Ok(Value::int(iarg(args, 0).wrapping_sub(iarg(args, 1)))),
-            "mul_i" => Ok(Value::int(iarg(args, 0).wrapping_mul(iarg(args, 1)))),
+            //
+            // The pure ops below delegate to `nqp_pure::eval`, which is also
+            // what `exec_nqp_op` runs when it takes the direct path (#8900).
+            // One implementation, so the two paths cannot drift.
+            "add_i" => Ok(pure(NqpPure::AddI, args)),
+            "sub_i" => Ok(pure(NqpPure::SubI, args)),
+            "mul_i" => Ok(pure(NqpPure::MulI, args)),
             // nqp::div_i uses floor division, unlike Rust's `/` for negative
             // operands.  Array::Sorted::Util uses this to choose the midpoint
             // of its binary search, so this is observable in ordinary module
@@ -187,18 +200,14 @@ impl Interpreter {
                     Ok(Value::int(quotient))
                 }
             }
-            "neg_i" => Ok(Value::int(iarg(args, 0).wrapping_neg())),
-            "abs_i" => Ok(Value::int(iarg(args, 0).wrapping_abs())),
-            "bitor_i" => Ok(Value::int(iarg(args, 0) | iarg(args, 1))),
-            "bitand_i" => Ok(Value::int(iarg(args, 0) & iarg(args, 1))),
-            "bitxor_i" => Ok(Value::int(iarg(args, 0) ^ iarg(args, 1))),
-            "bitneg_i" => Ok(Value::int(!iarg(args, 0))),
-            "bitshiftl_i" => Ok(Value::int(
-                iarg(args, 0).wrapping_shl(iarg(args, 1).clamp(0, 63) as u32),
-            )),
-            "bitshiftr_i" => Ok(Value::int(
-                iarg(args, 0).wrapping_shr(iarg(args, 1).clamp(0, 63) as u32),
-            )),
+            "neg_i" => Ok(pure(NqpPure::NegI, args)),
+            "abs_i" => Ok(pure(NqpPure::AbsI, args)),
+            "bitor_i" => Ok(pure(NqpPure::BitOrI, args)),
+            "bitand_i" => Ok(pure(NqpPure::BitAndI, args)),
+            "bitxor_i" => Ok(pure(NqpPure::BitXorI, args)),
+            "bitneg_i" => Ok(pure(NqpPure::BitNegI, args)),
+            "bitshiftl_i" => Ok(pure(NqpPure::ShlI, args)),
+            "bitshiftr_i" => Ok(pure(NqpPure::ShrI, args)),
             // Arbitrary-precision add: nqp::add_I($a, $b, Int) — the third
             // argument is the boxing target type and is ignored here.
             "add_I" => Ok(Value::from_bigint(
@@ -211,39 +220,32 @@ impl Interpreter {
             )),
 
             // -- native int comparisons (yield int 0/1, as in nqp) --
-            "iseq_i" => Ok(bool_int(iarg(args, 0) == iarg(args, 1))),
-            "isne_i" => Ok(bool_int(iarg(args, 0) != iarg(args, 1))),
-            "islt_i" => Ok(bool_int(iarg(args, 0) < iarg(args, 1))),
-            "isle_i" => Ok(bool_int(iarg(args, 0) <= iarg(args, 1))),
-            "isgt_i" => Ok(bool_int(iarg(args, 0) > iarg(args, 1))),
-            "isge_i" => Ok(bool_int(iarg(args, 0) >= iarg(args, 1))),
-            "cmp_i" => Ok(Value::int(cmp_result(iarg(args, 0).cmp(&iarg(args, 1))))),
-            "not_i" => Ok(bool_int(iarg(args, 0) == 0)),
+            "iseq_i" => Ok(pure(NqpPure::IsEqI, args)),
+            "isne_i" => Ok(pure(NqpPure::IsNeI, args)),
+            "islt_i" => Ok(pure(NqpPure::IsLtI, args)),
+            "isle_i" => Ok(pure(NqpPure::IsLeI, args)),
+            "isgt_i" => Ok(pure(NqpPure::IsGtI, args)),
+            "isge_i" => Ok(pure(NqpPure::IsGeI, args)),
+            "cmp_i" => Ok(pure(NqpPure::CmpI, args)),
+            "not_i" => Ok(pure(NqpPure::NotI, args)),
 
             // -- native num arithmetic --
-            "add_n" => Ok(Value::num(narg(args, 0) + narg(args, 1))),
-            "sub_n" => Ok(Value::num(narg(args, 0) - narg(args, 1))),
-            "mul_n" => Ok(Value::num(narg(args, 0) * narg(args, 1))),
-            "div_n" => Ok(Value::num(narg(args, 0) / narg(args, 1))),
-            "neg_n" => Ok(Value::num(-narg(args, 0))),
-            "abs_n" => Ok(Value::num(narg(args, 0).abs())),
+            "add_n" => Ok(pure(NqpPure::AddN, args)),
+            "sub_n" => Ok(pure(NqpPure::SubN, args)),
+            "mul_n" => Ok(pure(NqpPure::MulN, args)),
+            "div_n" => Ok(pure(NqpPure::DivN, args)),
+            "neg_n" => Ok(pure(NqpPure::NegN, args)),
+            "abs_n" => Ok(pure(NqpPure::AbsN, args)),
 
             // -- native num comparisons --
-            "iseq_n" => Ok(bool_int(narg(args, 0) == narg(args, 1))),
-            "isne_n" => Ok(bool_int(narg(args, 0) != narg(args, 1))),
-            "islt_n" => Ok(bool_int(narg(args, 0) < narg(args, 1))),
-            "isle_n" => Ok(bool_int(narg(args, 0) <= narg(args, 1))),
-            "isgt_n" => Ok(bool_int(narg(args, 0) > narg(args, 1))),
-            "isge_n" => Ok(bool_int(narg(args, 0) >= narg(args, 1))),
-            "cmp_n" => Ok(Value::int(
-                narg(args, 0)
-                    .partial_cmp(&narg(args, 1))
-                    .map_or(0, cmp_result),
-            )),
-            "isnanorinf" => Ok(bool_int({
-                let n = narg(args, 0);
-                n.is_nan() || n.is_infinite()
-            })),
+            "iseq_n" => Ok(pure(NqpPure::IsEqN, args)),
+            "isne_n" => Ok(pure(NqpPure::IsNeN, args)),
+            "islt_n" => Ok(pure(NqpPure::IsLtN, args)),
+            "isle_n" => Ok(pure(NqpPure::IsLeN, args)),
+            "isgt_n" => Ok(pure(NqpPure::IsGtN, args)),
+            "isge_n" => Ok(pure(NqpPure::IsGeN, args)),
+            "cmp_n" => Ok(pure(NqpPure::CmpN, args)),
+            "isnanorinf" => Ok(pure(NqpPure::IsNanOrInf, args)),
 
             // -- native str comparison --
             "cmp_s" => {

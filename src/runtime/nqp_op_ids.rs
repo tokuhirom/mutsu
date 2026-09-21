@@ -247,6 +247,13 @@ pub(crate) fn nqp_op_table(id: u16) -> NqpOpTable {
     NQP_OPS[id as usize].1
 }
 
+/// How many ids there are. [`crate::runtime::nqp_pure`] builds a table
+/// index-parallel to this one, derived from the NAMES here rather than from
+/// hardcoded ids (which are not stable across edits to `NQP_OPS`).
+pub(crate) fn nqp_op_count() -> usize {
+    NQP_OPS.len()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
