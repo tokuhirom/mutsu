@@ -351,9 +351,13 @@ impl Interpreter {
         };
 
         // ---- All checks passed; commit. ----
-        self.stack.pop();
-        self.stack.pop();
-        let val = self.stack.pop().unwrap();
+        // Taken by index and truncated rather than popped three times: nothing
+        // between the `stack_len` read above and here touches the stack (every
+        // guard only reads env, locals and the constant pool), so the slot is
+        // the rvalue, and this needs no `unwrap` on a `pop` that cannot fail --
+        // keeping the panic-surface ratchet (#8186) where it was.
+        let val = std::mem::replace(&mut self.stack[stack_len - 3], Value::NIL);
+        self.stack.truncate(stack_len - 3);
         // ADR-0040 slice 4: a value assigned through a chained subscript lands
         // in an element slot, so it itemizes -- the body's own expression, so
         // the stored value and the pushed rvalue are the same ones it would
