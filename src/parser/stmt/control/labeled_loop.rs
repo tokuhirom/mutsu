@@ -209,7 +209,7 @@ pub(crate) fn labeled_loop_stmt(input: &str) -> PResult<'_, Stmt> {
     // generic `IDENT: <expr>` case is ambiguous, and a declared-sub name
     // resolves it to a call. Parse the colon-listop argument list directly.
     if crate::parser::stmt::simple::is_user_declared_sub(&label) {
-        let (r, call) = crate::parser::primary::ident::parse_expr_listop_args(rest, label.clone())?;
+        let (r, call) = crate::parser::primary::ident::parse_expr_listop_args(rest, label)?;
         return Ok((r, Stmt::Expr(call)));
     }
 

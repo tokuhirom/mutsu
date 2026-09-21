@@ -361,7 +361,7 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                 let assigned_value = make_rhs(lhs_expr);
                 let stmt = Stmt::Expr(Expr::desugar_block(vec![
                     Stmt::VarDecl {
-                        name: tmp_idx.clone(),
+                        name: tmp_idx,
                         expr: *index,
                         type_constraint: None,
                         is_state: false,
@@ -475,7 +475,7 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
             Expr::Var(name) => {
                 let stmt = Stmt::Assign {
                     name: name.clone(),
-                    expr: make_rhs(Expr::Var(name.clone())),
+                    expr: make_rhs(Expr::Var(name)),
                     op: AssignOp::Assign,
                 };
                 return parse_statement_modifier(r, stmt);
@@ -515,7 +515,7 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                 let assigned_value = make_rhs(lhs_expr);
                 let stmt = Stmt::Expr(Expr::desugar_block(vec![
                     Stmt::VarDecl {
-                        name: tmp_idx.clone(),
+                        name: tmp_idx,
                         expr: *index,
                         type_constraint: None,
                         is_state: false,
@@ -1052,7 +1052,7 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
             if need_tmp {
                 stmts.push(Stmt::VarDecl {
                     name: tmp_name.clone(),
-                    expr: rhs.clone(),
+                    expr: rhs,
                     type_constraint: None,
                     is_state: false,
                     is_our: false,
@@ -1064,7 +1064,7 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                 });
             } else {
                 // Still evaluate rhs for side effects.
-                stmts.push(Stmt::Expr(rhs.clone()));
+                stmts.push(Stmt::Expr(rhs));
             }
             let mut pos_index: usize = 0;
             for info in param_infos.iter() {
@@ -1306,7 +1306,7 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
             };
             let stmt = Stmt::Expr(Expr::desugar_block(vec![
                 Stmt::VarDecl {
-                    name: tmp_idx.clone(),
+                    name: tmp_idx,
                     expr: (*index.clone()),
                     type_constraint: None,
                     is_state: false,
@@ -1410,19 +1410,19 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                         name: Symbol::intern("defined"),
                         args: vec![lhs_expr.clone()],
                     }),
-                    then_expr: Box::new(lhs_expr.clone()),
+                    then_expr: Box::new(lhs_expr),
                     else_expr: Box::new(rhs),
                 }
             } else {
                 Expr::Binary {
-                    left: Box::new(lhs_expr.clone()),
+                    left: Box::new(lhs_expr),
                     op: op.token_kind(),
                     right: Box::new(rhs),
                 }
             };
             let expanded = Expr::desugar_block(vec![
                 Stmt::VarDecl {
-                    name: tmp_idx.clone(),
+                    name: tmp_idx,
                     expr: (*index.clone()),
                     type_constraint: None,
                     is_state: false,

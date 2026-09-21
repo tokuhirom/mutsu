@@ -368,7 +368,7 @@ pub(crate) fn parse_meta_op(input: &str) -> Option<(String, String, usize)> {
     // Set operators in parenthesized and unicode form used by meta ops:
     // Z(&), Z∩, X(|), X∪, etc.
     if let Some((op, len)) = parse_meta_set_op(r) {
-        return Some((meta.to_string(), op.to_string(), 1 + len));
+        return Some((meta.to_string(), op, 1 + len));
     }
 
     // Try symbolic operators first (multi-char then single-char)

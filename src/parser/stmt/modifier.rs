@@ -960,7 +960,7 @@ fn parse_single_modifier(rest: &str, stmt: Stmt) -> Result<Option<(&str, Stmt)>,
                     modifier: None,
                     quoted: false,
                 },
-                then_branch: vec![stmt_for_branch.clone()],
+                then_branch: vec![stmt_for_branch],
                 else_branch: Vec::new(),
                 binding_var: None,
                 is_statement_modifier: true,
@@ -1041,7 +1041,7 @@ fn parse_single_modifier(rest: &str, stmt: Stmt) -> Result<Option<(&str, Stmt)>,
                 quoted: false,
             }),
         };
-        let modified_stmt = rewrite_placeholder_block_modifier_stmt(stmt_for_branch.clone(), &cond);
+        let modified_stmt = rewrite_placeholder_block_modifier_stmt(stmt_for_branch, &cond);
         if matches!(stmt, Stmt::Expr(_)) {
             let if_stmt = Stmt::If {
                 cond: not_defined,

@@ -260,7 +260,7 @@ pub(crate) fn short_circuit_compound_assign_expr(
     };
     let cond = Expr::desugar_block(vec![
         Stmt::VarDecl {
-            name: tmp_name.clone(),
+            name: tmp_name,
             expr: lhs,
             type_constraint: None,
             is_state: false,
@@ -319,7 +319,7 @@ pub(crate) fn compound_assigned_value_expr(lhs: Expr, op: CompoundAssignOp, rhs:
         Expr::Ternary {
             cond: Box::new(Expr::desugar_block(vec![
                 Stmt::VarDecl {
-                    name: tmp_name.clone(),
+                    name: tmp_name,
                     expr: lhs,
                     type_constraint: None,
                     is_state: false,
@@ -354,7 +354,7 @@ pub(crate) fn compound_assigned_value_expr(lhs: Expr, op: CompoundAssignOp, rhs:
         Expr::Ternary {
             cond: Box::new(Expr::desugar_block(vec![
                 Stmt::VarDecl {
-                    name: tmp_name.clone(),
+                    name: tmp_name,
                     expr: lhs,
                     type_constraint: None,
                     is_state: false,
@@ -367,7 +367,7 @@ pub(crate) fn compound_assigned_value_expr(lhs: Expr, op: CompoundAssignOp, rhs:
                 },
                 Stmt::Expr(Expr::Call {
                     name: Symbol::intern("defined"),
-                    args: vec![tmp_var.clone()],
+                    args: vec![tmp_var],
                 }),
             ])),
             then_expr: Box::new(then_branch),

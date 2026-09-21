@@ -139,7 +139,7 @@ pub(crate) fn wrap_dot_assign(target: Expr, method_call_fn: impl FnOnce(Expr) ->
             let assigned_value = method_call_fn(lhs_expr);
             Expr::desugar_block(vec![
                 Stmt::VarDecl {
-                    name: tmp_idx.clone(),
+                    name: tmp_idx,
                     expr: *index.clone(),
                     type_constraint: None,
                     is_state: false,
@@ -303,7 +303,7 @@ pub(crate) fn wrap_dot_assign(target: Expr, method_call_fn: impl FnOnce(Expr) ->
             let writeback = crate::parser::stmt::assign::method_lvalue_assign_expr(
                 inv_var,
                 Some(inv_tmp.clone()),
-                acc_name.resolve().to_string(),
+                acc_name.resolve(),
                 Vec::new(),
                 meth_result,
             );
@@ -383,8 +383,7 @@ pub(crate) fn wrap_dot_assign(target: Expr, method_call_fn: impl FnOnce(Expr) ->
                 modifier: None,
                 quoted: false,
             };
-            let then_expr =
-                Expr::desugar_block(vec![Stmt::Expr(store_call), Stmt::Expr(tmp_var.clone())]);
+            let then_expr = Expr::desugar_block(vec![Stmt::Expr(store_call), Stmt::Expr(tmp_var)]);
             let ternary = Expr::Ternary {
                 cond: Box::new(can_store),
                 then_expr: Box::new(then_expr),

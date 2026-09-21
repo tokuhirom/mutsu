@@ -25,7 +25,7 @@ where
         is_positional: false,
     };
     let mut body = vec![Stmt::VarDecl {
-        name: tmp_idx.clone(),
+        name: tmp_idx,
         expr: index,
         type_constraint: None,
         is_state: false,
@@ -71,7 +71,7 @@ fn compound_index_assign_op_expr(
     );
     let tmp_idx_expr = Expr::Var(tmp_idx.clone());
     let mut body = vec![Stmt::VarDecl {
-        name: tmp_idx.clone(),
+        name: tmp_idx,
         expr: index,
         type_constraint: None,
         is_state: false,
@@ -613,7 +613,7 @@ pub(crate) fn build_custom_compound_assign_expr(
             is_bind: false,
         },
         Expr::ArrayVar(name) => Expr::AssignExpr {
-            name: format!("@{}", name.clone()),
+            name: format!("@{}", name),
             expr: Box::new(Expr::InfixFunc {
                 name: op_name,
                 left: Box::new(Expr::ArrayVar(name)),
@@ -623,7 +623,7 @@ pub(crate) fn build_custom_compound_assign_expr(
             is_bind: false,
         },
         Expr::HashVar(name) => Expr::AssignExpr {
-            name: format!("%{}", name.clone()),
+            name: format!("%{}", name),
             expr: Box::new(Expr::InfixFunc {
                 name: op_name,
                 left: Box::new(Expr::HashVar(name)),
@@ -709,7 +709,7 @@ pub(crate) fn build_meta_assign_expr(
             is_bind: false,
         },
         Expr::ArrayVar(name) => Expr::AssignExpr {
-            name: format!("@{}", name.clone()),
+            name: format!("@{}", name),
             expr: Box::new(Expr::MetaOp {
                 meta,
                 op,
@@ -719,7 +719,7 @@ pub(crate) fn build_meta_assign_expr(
             is_bind: false,
         },
         Expr::HashVar(name) => Expr::AssignExpr {
-            name: format!("%{}", name.clone()),
+            name: format!("%{}", name),
             expr: Box::new(Expr::MetaOp {
                 meta,
                 op,

@@ -20,7 +20,7 @@ fn return_type_redeclaration(name: &Symbol, previous: &str) -> PError {
         previous
     );
     let mut attrs = std::collections::HashMap::new();
-    attrs.insert("symbol".to_string(), Value::str(name.resolve().to_string()));
+    attrs.insert("symbol".to_string(), Value::str(name.resolve()));
     attrs.insert("what".to_string(), Value::str("return type".to_string()));
     let ex = Value::make_instance(Symbol::intern("X::Redeclaration"), attrs);
     PError::fatal_with_exception(msg, Box::new(ex))
@@ -59,7 +59,7 @@ pub(super) fn try_keyword_dispatch(
             {
                 match return_type {
                     Some(existing) => return Err(return_type_redeclaration(name, existing)),
-                    None => *return_type = Some(routine_type.clone()),
+                    None => *return_type = Some(routine_type),
                 }
                 if is_our {
                     custom_traits.push(("__our_scoped".to_string(), None));
@@ -79,7 +79,7 @@ pub(super) fn try_keyword_dispatch(
             {
                 match return_type {
                     Some(existing) => return Err(return_type_redeclaration(name, existing)),
-                    None => *return_type = Some(routine_type.clone()),
+                    None => *return_type = Some(routine_type),
                 }
                 if is_our {
                     custom_traits.push(("__our_scoped".to_string(), None));

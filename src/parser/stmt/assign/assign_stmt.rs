@@ -116,10 +116,10 @@ pub(in crate::parser) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
                 name: Symbol::intern("__mutsu_assign_method_lvalue"),
                 args: vec![
                     var_expr,
-                    Expr::Literal(Value::str(method_name.clone())),
+                    Expr::Literal(Value::str(method_name)),
                     Expr::ArrayLiteral(Vec::new()),
                     updated_value,
-                    Expr::Literal(Value::str(name.clone())),
+                    Expr::Literal(Value::str(name)),
                     Expr::Literal(Value::truth(true)),
                 ],
             };
@@ -281,12 +281,7 @@ pub(in crate::parser) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
             && let Some(short) =
                 short_circuit_compound_assign_expr(&name, var_expr.clone(), op, rhs.clone())
         {
-            Stmt::Expr(compound_assign_marker(
-                var_expr.clone(),
-                op,
-                rhs.clone(),
-                short,
-            ))
+            Stmt::Expr(compound_assign_marker(var_expr, op, rhs, short))
         } else {
             Stmt::Assign {
                 name: name.clone(),
@@ -334,11 +329,11 @@ pub(in crate::parser) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
     if let Some(stripped) = rest.strip_prefix(".=") {
         let (stripped, _) = ws(stripped)?;
         let var_expr = if sigil == b'@' {
-            Expr::ArrayVar(var.clone())
+            Expr::ArrayVar(var)
         } else if sigil == b'%' {
-            Expr::HashVar(var.clone())
+            Expr::HashVar(var)
         } else {
-            Expr::Var(var.clone())
+            Expr::Var(var)
         };
         // Check for quoted method name: .="method"() or .='method'()
         if let Some((r_after_quote, qname)) = parse_quoted_method_name(stripped) {

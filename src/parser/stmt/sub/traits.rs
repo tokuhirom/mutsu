@@ -135,7 +135,7 @@ pub(crate) fn parse_sub_traits(mut input: &str) -> PResult<'_, SubTraits> {
                     return_type,
                     associativity,
                     custom_traits: custom_traits.clone(),
-                    precedence_trait: precedence_trait.clone(),
+                    precedence_trait,
                     handles: handles.clone(),
                 },
             ));
@@ -360,7 +360,7 @@ pub(crate) fn parse_sub_traits(mut input: &str) -> PResult<'_, SubTraits> {
                 return_type,
                 associativity,
                 custom_traits: custom_traits.clone(),
-                precedence_trait: precedence_trait.clone(),
+                precedence_trait,
                 handles: handles.clone(),
             },
         ));

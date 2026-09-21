@@ -721,7 +721,7 @@ pub(crate) fn proto_decl_scoped(input: &str, is_our: bool) -> PResult<'_, Stmt> 
                 name: Symbol::intern(&name),
                 params,
                 param_defs,
-                return_type: return_type.clone(),
+                return_type,
                 body,
                 is_export: traits.is_export,
                 export_tags: traits.export_tags.clone(),

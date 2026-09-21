@@ -338,7 +338,7 @@ pub(in crate::parser::stmt) fn has_decl(input: &str) -> PResult<'_, Stmt> {
                 } else if let Some(b) = tc.strip_suffix(":_") {
                     (b.to_string(), Some("_".to_string()))
                 } else {
-                    (tc.to_string(), None)
+                    (tc, None)
                 };
                 if r2.starts_with('(') {
                     return has_decl_list(r2, Some(base), smiley, is_embedded);

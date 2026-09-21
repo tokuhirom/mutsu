@@ -150,7 +150,7 @@ pub(crate) fn compose_prefix_into_whatevercode(op: TokenKind, expr: Expr) -> Exp
             is_whatever_code,
             param_sigilless,
         } => {
-            wrap_last_stmt_with_unary(&mut body, op.clone());
+            wrap_last_stmt_with_unary(&mut body, op);
             Expr::Lambda {
                 param,
                 body,
@@ -168,7 +168,7 @@ pub(crate) fn compose_prefix_into_whatevercode(op: TokenKind, expr: Expr) -> Exp
             is_whatever_code,
             declarator,
         } => {
-            wrap_last_stmt_with_unary(&mut body, op.clone());
+            wrap_last_stmt_with_unary(&mut body, op);
             Expr::AnonSubParams {
                 params,
                 param_defs,
