@@ -409,6 +409,66 @@ impl Interpreter {
             _ => None,
         };
         let class_name = class_sym_opt.map(|s| s.as_str());
+        // Fast dispatch cache -- mut path twin of the `fast_method_cache` check
+        // the non-mut `CallMethod` entry already has
+        // (`try_compiled_method_or_interpret_inner`). `.m()` on a lexical
+        // variable always compiles to `CallMethodMut`, so without this every
+        // such call re-ran the full `resolve_method_cached` ->
+        // `check_method_wrap_chain` -> `attributes.to_map()` walk, on every
+        // call, even a monomorphic call site in a tight loop -- the mut path
+        // never populated (or consulted) the cache the non-mut path already
+        // built (#8880). Same eligibility gate as the non-mut hit (see
+        // `try_populate_fast_cache`): a method with an `is rw` param, an
+        // invocant type constraint, a slurpy/named/where/sub-signature param,
+        // or an attributive parameter (`$!x`) is never cached, so this can
+        // never skip a case that needs the slow merge path.
+        if let Some(cn) = class_name
+            && let Some(class_sym) = class_sym_opt
+        {
+            self.refresh_method_caches_for_generation();
+            let cache_key = (class_sym, method_sym);
+            if let Some(entry) = self.fast_method_cache.get(&cache_key)
+                && args.len() <= entry.positional_count
+            {
+                let needs_default_eval =
+                    entry.has_defaults && args.len() < entry.positional_count && {
+                        let mut pos = 0;
+                        entry.method_def.param_defs.iter().any(|pd| {
+                            if pd.is_invocant || pd.traits.iter().any(|t| t == "invocant") {
+                                return false;
+                            }
+                            let result = pos >= args.len() && pd.default.is_some();
+                            pos += 1;
+                            result
+                        })
+                    };
+                let has_attr_aliases = match target.view() {
+                    ValueView::Instance { attributes, .. } => attributes
+                        .as_map()
+                        .keys()
+                        .any(|k| k.starts_with(super::vm_method_dispatch::ATTR_ALIAS_META_PREFIX)),
+                    _ => false,
+                };
+                let shares_scalar_container =
+                    self.method_shares_container_into_scalar_param(&entry.method_def, &args);
+                if !needs_default_eval && !has_attr_aliases && !shares_scalar_container {
+                    let owner_class = entry.owner_class.as_str();
+                    let method_def = entry.method_def.clone();
+                    let cc = entry.compiled_code.clone();
+                    let can_skip_merge = entry.can_skip_merge;
+                    return self.dispatch_compiled_method(
+                        cn,
+                        owner_class,
+                        method,
+                        &method_def,
+                        &cc,
+                        target,
+                        args,
+                        Some(can_skip_merge),
+                    );
+                }
+            }
+        }
         if let Some(cn) = class_name
             && let Some(class_sym) = class_sym_opt
             && let Some((owner_class, method_def)) =
@@ -451,6 +511,14 @@ impl Interpreter {
             };
             if let Some((owner_class, method_def)) = resolved {
                 let cc = method_def.compiled_code.clone().expect("compiled_code set");
+                // Populate the fast cache checked above so the NEXT call at
+                // this (class, method) pair skips straight to
+                // `dispatch_compiled_method` instead of repeating this whole
+                // resolve/wrap-chain walk (#8880).
+                if !method_def.is_multi {
+                    let cache_key = (class_sym, method_sym);
+                    self.try_populate_fast_cache(cache_key, cn, owner_class, &method_def, &cc);
+                }
                 let target_id = match target.view() {
                     ValueView::Instance { id, .. } => Some(id),
                     _ => None,
