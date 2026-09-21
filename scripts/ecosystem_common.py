@@ -24,6 +24,7 @@ import shutil
 import subprocess
 import sys
 import tarfile
+import tempfile
 import urllib.parse
 import urllib.request
 
@@ -605,6 +606,43 @@ def record_filename(dist: str) -> str:
     return f"{stem}~{digest}.json"
 
 
+def load_exclude(path: str) -> dict[str, str]:
+    """Distributions the ecosystem tools must never pick automatically.
+
+    One entry per line: `<Dist::Name>  <freeform reason...>`. A line whose
+    first non-blank character is `#`, and every blank line, is ignored -- so
+    the file can carry a header comment and per-entry context the way
+    `flaky-tests.txt` does. Missing file means no exclusions, so a fresh
+    checkout needs nothing special.
+
+    An entry belongs here only when the distribution was investigated and
+    found permanently unfixable without a decision the project has already
+    made and does not intend to revisit (a decision `CLAUDE.md` reserves for
+    the user, or a superseding ADR) -- never because it "looks hard", and
+    never for `no_baseline` (rakudo failing it too already excludes it from
+    the KPI on its own).
+
+    Shared by `ecosystem-sweep.py` (a bulk `--all` / `--prefix` / `--status` /
+    `--stale` selection skips these; an explicit `--only <name>` still
+    measures them) and `ecosystem-dist-roulette/pick-dist.py` (the random draw
+    never offers one).
+    """
+    if not os.path.isfile(path):
+        return {}
+    out: dict[str, str] = {}
+    with open(path, encoding="utf-8") as fh:
+        for lineno, raw in enumerate(fh, 1):
+            line = raw.strip()
+            if not line or line.startswith("#"):
+                continue
+            name, _, reason = line.partition(" ")
+            name = name.strip()
+            if name in out:
+                raise SystemExit(f"{path}:{lineno}: {name} is listed twice")
+            out[name] = reason.strip()
+    return out
+
+
 def load_records(dists_dir: str) -> list[dict]:
     """Every record in the ledger, keyed by nothing but its own `dist` field.
 
@@ -796,6 +834,37 @@ def _self_test() -> int:
     if record_filename("String::Utils") != record_filename("String::Utils"):
         print("record_filename is not deterministic", file=sys.stderr)
         failures += 1
+
+    # load_exclude: header/blank/comment lines are ignored, a bare name with no
+    # reason is fine, and a duplicate name is a hard error rather than a
+    # silently-shadowed entry (the same reasoning as load_records's duplicate
+    # dist check).
+    with tempfile.TemporaryDirectory() as tmp:
+        excl = os.path.join(tmp, "exclude.txt")
+        with open(excl, "w", encoding="utf-8") as fh:
+            fh.write("# header comment\n\n"
+                     "Rakudo::Version  #8945  gates on .name; ADR-0104\n"
+                     "BareName\n"
+                     "  # indented comment\n")
+        got = load_exclude(excl)
+        want = {"Rakudo::Version": "#8945  gates on .name; ADR-0104",
+                "BareName": ""}
+        if got != want:
+            print(f"load_exclude: want {want!r}, got {got!r}", file=sys.stderr)
+            failures += 1
+
+        with open(excl, "w", encoding="utf-8") as fh:
+            fh.write("Dup one\nDup two\n")
+        try:
+            load_exclude(excl)
+            print("load_exclude: a duplicate name did not raise", file=sys.stderr)
+            failures += 1
+        except SystemExit:
+            pass
+
+        if load_exclude(os.path.join(tmp, "does-not-exist.txt")) != {}:
+            print("load_exclude: a missing file must mean no exclusions", file=sys.stderr)
+            failures += 1
 
     print(f"ecosystem_common self-test: "
           f"{'all cases pass' if not failures else f'{failures} failure(s)'}")

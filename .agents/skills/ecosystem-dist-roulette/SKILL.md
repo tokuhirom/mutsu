@@ -64,6 +64,10 @@ It samples uniformly from `ecosystem/dists/**.json`, default pool `red` / `parti
 prints the whole matching set instead of a sample. Pass every held distribution as `--exclude`, so
 the shortlist is already lock-free.
 
+It also always subtracts `ecosystem/exclude.txt` first — distributions a prior run already
+confirmed are permanently unfixable (see step 5's "the dead-end case" below) — so you will never
+see one of those in the shortlist at all; there is no need to reason about them.
+
 **Take the first candidate. Skipping one because it looks hard is cherry-picking** and defeats the
 reason the draw is random. There are exactly three legitimate reasons to move to the next
 candidate, and all three are facts, not impressions:
@@ -157,6 +161,21 @@ reads `red`.
 
 Releasing is not optional on a bad outcome. **"I found nothing and stopped" is exactly the case
 where the next agent most needs to see the lock gone**, and to read why.
+
+### The dead-end case: add it to `ecosystem/exclude.txt`
+
+Sometimes the finding is not "too big to fix now" but "cannot be fixed, ever, without reversing a
+decision the project already made and does not intend to revisit" — a distribution whose whole
+suite depends on mutsu spoofing something it has explicitly, permanently decided never to spoof
+(`Rakudo::Version` gating on `$*RAKU.compiler.name eq 'rakudo'` against ADR-0104's outright
+rejection of that is the worked example). That is not the same as `no_baseline`: rakudo passes it
+fine, and the record stays `red` forever, correctly.
+
+For exactly this case — not for an ordinary `todo:ticket`/`todo:deep` finding that a future PR might
+still close — add one line to `ecosystem/exclude.txt` (format and rules in its own header) citing
+the issue you filed per `ecosystem-dist-fix` step 5. `pick-dist.py` reads that file automatically, so
+the next draw never re-spends an investigation on the same dead end. Do this before releasing the
+lock, and mention the exclude-list entry in the unlock comment.
 
 ## Done means
 

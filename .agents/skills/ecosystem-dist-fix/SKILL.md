@@ -205,6 +205,15 @@ distribution that goes from `red` to `partial` with the residue filed is a good 
 **not** acceptable is leaving a finding unrecorded because it was too big to fix — that is the one
 way this loop loses work.
 
+**A stronger variant of the "needs a new or superseding ADR" case is a distribution that can never
+pass at all**, because its whole suite depends on mutsu doing something the project has already,
+explicitly and permanently decided not to do (not merely "not yet designed" — already decided, e.g.
+a distribution gating on `$*RAKU.compiler.name eq 'rakudo'` against
+[ADR-0104](../../../docs/adr/0104-compiler-version-is-a-rakudo-release-coordinate.md)'s outright
+rejection of spoofing `.name`). File the issue as above, and — if you arrived here from
+`ecosystem-dist-roulette` — also add one line to `ecosystem/exclude.txt` per that skill's "the
+dead-end case", so a future random draw does not re-spend an investigation on the same distribution.
+
 ## 6. Fix, and pin it in `t/`
 
 The change goes where `CLAUDE.md` says it goes: implement in `compiler/` and `vm/`, never a new

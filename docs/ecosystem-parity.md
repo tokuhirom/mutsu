@@ -92,6 +92,13 @@ Per-file comparison verdicts (`cmp` in the record):
 Dist-level `status`: `green` · `partial` · `red` · `no_baseline` · `blocked_load`
 (a provided module does not even `use`) · `blocked_dep` (§3) · `skipped`.
 
+`ecosystem/exclude.txt` is orthogonal to `status` — it does not change what gets measured or
+published, only what `ecosystem-dist-roulette`/`ecosystem-sweep.py --all` offer automatically. A
+distribution lands there once, and only once, a run has shown its record can never move (rakudo
+passes, mutsu deliberately and permanently cannot) without reversing a decision already made
+elsewhere (an ADR, or a call `CLAUDE.md` reserves for the user) — never for "looks hard" or for
+`no_baseline`, which is already excluded from the KPI on its own.
+
 ## 2. The fairness contract
 
 Both interpreters must be running the same code under the same conditions, or

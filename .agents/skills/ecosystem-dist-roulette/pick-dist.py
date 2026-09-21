@@ -18,6 +18,11 @@ are the records where fixing the interpreter is what moves them; `guts` and
 `native` are usually the issue-filing case (see the ecosystem-dist-fix skill),
 `green` needs nothing, and `no_baseline` / `blocked_dep` are not charged to
 mutsu at all.
+
+`ecosystem/exclude.txt` is always subtracted from the pool first: a
+distribution goes there once a run has confirmed it is permanently unfixable
+without a decision the project reserves for the user (see that file's header),
+and the draw must never re-offer it.
 """
 
 from __future__ import annotations
@@ -31,7 +36,11 @@ import sys
 
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(
     os.path.abspath(__file__)))))
+sys.path.insert(0, os.path.join(REPO, "scripts"))
+import ecosystem_common as eco  # noqa: E402
+
 DISTS = os.path.join(REPO, "ecosystem", "dists")
+EXCLUDE_LIST = os.path.join(REPO, "ecosystem", "exclude.txt")
 
 ACTIONABLE = ("red", "partial", "blocked_load")
 ALL_STATUS = ACTIONABLE + ("green", "no_baseline", "blocked_dep", "skipped")
@@ -89,6 +98,9 @@ def main() -> int:
                     help="distribution to leave out; repeatable (use for held locks)")
     ap.add_argument("--exclude-file", metavar="PATH",
                     help="file with one distribution name per line to leave out")
+    ap.add_argument("--ignore-exclude-list", action="store_true",
+                    help="also offer distributions listed in ecosystem/exclude.txt "
+                         "(only for re-checking one after a policy changes)")
     ap.add_argument("--seed", help="seed the draw, to make it reproducible")
     ap.add_argument("--json", action="store_true", help="emit the shortlist as JSON")
     ap.add_argument("--pool", action="store_true",
@@ -101,6 +113,8 @@ def main() -> int:
         with open(args.exclude_file, encoding="utf-8") as fh:
             excluded |= {line.strip() for line in fh if line.strip()
                          and not line.startswith("#")}
+    if not args.ignore_exclude_list:
+        excluded |= set(eco.load_exclude(EXCLUDE_LIST))
 
     records = load_records()
     if not records:

@@ -9,6 +9,10 @@ rakudo does not pass cleanly is excluded from the KPI, never charged to mutsu.
 Decisions: docs/adr/0085-ecosystem-testsuite-parity-measurement.md
 Operations: docs/ecosystem-parity.md   Tracking issue: #7785
 
+A bulk selection (--all / --prefix / --status / --stale) skips whatever
+ecosystem/exclude.txt lists -- distributions already confirmed permanently
+unfixable. --only <name> always measures the name given, exclude list or not.
+
     scripts/ecosystem-sweep.py --only String::Utils
     scripts/ecosystem-sweep.py --prefix A --jobs 8
     scripts/ecosystem-sweep.py --all --jobs 8
@@ -38,6 +42,7 @@ import ecosystem_common as eco  # noqa: E402
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA_DIR = os.path.join(REPO, "ecosystem")
 DISTS_DIR = os.path.join(DATA_DIR, "dists")
+EXCLUDE_LIST = os.path.join(DATA_DIR, "exclude.txt")
 SCHEMA = 1
 HARNESS = 2
 
@@ -558,6 +563,13 @@ def select(index, args):
             log(f"warning: {n} is not in the index")
         return [n for n in args.only if n in index.targets]
     names = sorted(index.targets)
+    excluded = eco.load_exclude(EXCLUDE_LIST)
+    if excluded:
+        before = len(names)
+        names = [n for n in names if n not in excluded]
+        if before != len(names):
+            log(f"excluding {before - len(names)} distribution(s) listed in "
+                f"ecosystem/exclude.txt (use --only to measure one anyway)")
     if args.prefix:
         names = [n for n in names if shard_of(n) == args.prefix.upper()]
     if args.status:
@@ -784,6 +796,25 @@ def _self_test() -> int:
     run, calls = scripted((130, passing))
     side, flaky = measure(["x"], ".", 120, None, None, (), 1)
     check("attempts=1 does not escalate", calls == [120] and side["verdict"] == "timeout")
+
+    # select(): a bulk selection subtracts ecosystem/exclude.txt, but --only
+    # still measures a listed distribution on request -- an exclusion narrows
+    # the automatic draw, it does not forbid a deliberate re-check.
+    global EXCLUDE_LIST
+    real_exclude_list = EXCLUDE_LIST
+    with tempfile.TemporaryDirectory() as tmp:
+        EXCLUDE_LIST = os.path.join(tmp, "exclude.txt")
+        with open(EXCLUDE_LIST, "w", encoding="utf-8") as fh:
+            fh.write("Excluded::Dist reason\n")
+        index = eco.Index({"Good::Dist": {}, "Excluded::Dist": {}}, {}, {}, {})
+        base_args = dict(only=[], prefix=None, status=None, stale=False)
+        got = select(index, argparse.Namespace(**base_args))
+        check("a bulk selection drops the excluded distribution",
+              got == ["Good::Dist"])
+        got = select(index, argparse.Namespace(**{**base_args, "only": ["Excluded::Dist"]}))
+        check("--only still measures an excluded distribution",
+              got == ["Excluded::Dist"])
+    EXCLUDE_LIST = real_exclude_list
 
     run = real_run
     print(f"ecosystem-sweep self-test: "
