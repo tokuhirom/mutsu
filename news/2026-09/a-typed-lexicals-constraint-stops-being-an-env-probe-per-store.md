@@ -109,7 +109,7 @@ itself, its ~120 other readers, `Symbol::type_meta_subject`, and the
 closure-capture filter's special handling of `__mutsu_type::` are all still
 there, and retiring the namespace is what the issue asks for.
 
-Pinned by `t/vm/binding/typed-scalar-store-declared-constraint.t`, whose 19
+Pinned by `t/vm/binding/declared-constraint-slot-bake.t`, whose 19
 assertions are each a shape where answering from the declaration instead of the
 env could diverge — `int8` still wrapping, one slot with two constraints, a
 typed declaration followed by an untyped one of the same name, a subset
