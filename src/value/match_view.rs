@@ -144,6 +144,19 @@ impl Value {
         self.match_attr("named")
     }
 
+    /// The public `.hash`/`%($/)` view of named captures is an immutable Map.
+    /// Internally captures use a bare-value Hash so the regex and binding paths
+    /// can iterate them without exposing container metadata; tag a cloned
+    /// result here at the representation boundary.
+    pub(crate) fn match_named_map(&self) -> Option<Value> {
+        let mut named = self.match_named()?;
+        named.with_hash_mut(|hash| {
+            let data = crate::gc::Gc::make_mut(hash);
+            data.declared_type = Some("Map".to_string());
+        });
+        Some(named)
+    }
+
     /// The callable that produced this cursor (rakudo's `$!regexsub`), or
     /// `None` for any Match that did not come out of a cursor-protocol call.
     pub(crate) fn match_cursor_regexsub(&self) -> Option<Value> {

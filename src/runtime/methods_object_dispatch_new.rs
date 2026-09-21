@@ -2527,8 +2527,11 @@ impl Interpreter {
                     attrs.insert("__mutsu_array_storage".to_string(), storage);
                 }
                 // If the class inherits from Hash or Map, add backing storage
-                // populated from any constructor Pair args that do not name a
-                // declared attribute (mirrors the Array/List block above).
+                // populated from constructor args that do not name a declared
+                // attribute (mirrors the Array/List block above). Positional
+                // args are Hash.new-style alternating key/value entries; when
+                // positional args are present, call-site named Pairs are not
+                // part of the slurpy hash data.
                 // Raku's `Hash.new(a => 1, b => 2)` populates the hash's own
                 // key/value storage, not generic "attributes" — but the named-arg
                 // loop above (shared with every other class, including the
@@ -2544,19 +2547,23 @@ impl Interpreter {
                 {
                     let declared: std::collections::HashSet<&str> =
                         class_attrs_info.iter().map(|a| a.name.as_str()).collect();
-                    let hash_pairs: Vec<Value> = args
+                    let has_positional = args.iter().any(|a| !a.is_string_pair_value());
+                    let hash_args: Vec<Value> = args
                         .iter()
-                        .filter(|a| {
-                            matches!(a.view(), ValueView::Pair(k, _) if !declared.contains(k.as_str()))
+                        .filter(|a| match a.view() {
+                            ValueView::Pair(k, _) => {
+                                !has_positional && !declared.contains(k.as_str())
+                            }
+                            _ => true,
                         })
                         .cloned()
                         .collect();
-                    for pair in &hash_pairs {
+                    for pair in &hash_args {
                         if let ValueView::Pair(k, _) = pair.view() {
                             attrs.remove(k.as_str());
                         }
                     }
-                    let storage = self.associative_base_storage(class_key, hash_pairs);
+                    let storage = self.associative_base_storage(class_key, hash_args);
                     attrs.insert("__mutsu_hash_storage".to_string(), storage);
                 }
                 // Tag typed `@`/`%` attributes (`has Int @.nums`) with

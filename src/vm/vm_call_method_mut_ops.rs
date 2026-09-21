@@ -102,6 +102,21 @@ impl Interpreter {
             }
             _ => {}
         }
+        // A quoted dynamic method name is still ordinary method dispatch. In
+        // particular, a user method on an Instance must shadow the native
+        // method with the same name. The static CallMethod path already
+        // applies this precedence, but this dynamic entry used to probe the
+        // native table first. That made `self."$name"(...)` call the native
+        // `Str`/`Array`/`Hash` coercion instead of the user's method.
+        let user_method = match target.view() {
+            ValueView::Package(_) => {
+                self.package_has_applicable_user_method(&target, &method, &args)
+            }
+            ValueView::Instance { class_name, .. } => {
+                self.has_user_method(&class_name.resolve(), &method)
+            }
+            _ => self.native_lever_a_user_override(&target, &method),
+        };
         let call_result = if matches!(
             name_val.view(),
             ValueView::Sub(_) | ValueView::WeakSub(_) | ValueView::Routine { .. }
@@ -331,7 +346,8 @@ impl Interpreter {
             // count). The `CallMethod` opcode takes its delegation before its
             // own native probe for the same reason; falling through here reaches
             // the shared one in `call_method_with_values`.
-            if !self.delegates_to_array_storage(&target, &method)
+            if !user_method
+                && !self.delegates_to_array_storage(&target, &method)
                 && let Some(native_result) =
                     self.try_native_method(&target, Symbol::intern(&method), &args)
             {
