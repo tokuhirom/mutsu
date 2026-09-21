@@ -348,6 +348,33 @@ impl PartialEq for MixinOverrides {
 /// started as a single `signed: bool` — enough for `Buf`/`Blob`, whose element
 /// types are all integers — and became an enum for ADR-0015 P3, because a
 /// `CArray[num64]` shares this node and its elements are `Num`s.
+/// The receiver shapes the zero-argument native dispatch table keys on
+/// (issue #8888).
+///
+/// A method call currently walks a gauntlet of receiver probes — the one in
+/// `vm_native_dispatch::try_native_method_raw`, then `native_method_0arg`'s
+/// prologue, then `dispatch_core`'s — before the family cascade that actually
+/// answers it. Every probe re-decodes the same receiver and re-compares the
+/// same method name, and for a *plain* aggregate or string none of them can
+/// ever claim the call. This enum is the decoded half of the
+/// `(kind, method) -> "the families alone decide this"` table that lets such a
+/// call skip the whole walk (`builtins::fast_0arg`).
+///
+/// Deliberately narrow: only the `Kind`s whose every value is an ordinary,
+/// non-lazy, non-itemized aggregate or `Str`. Everything the gauntlet exists
+/// for — `Instance`, `Package`, `Mixin`, `Scalar`, `Seq`, `LazyList`, `Proxy`,
+/// a lazy `Match`, a shaped or lazy array, an itemized hash — answers `None`
+/// and takes the ordinary path.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum DispatchShape {
+    /// A plain `List`/`Array` (itemized or not), never shaped and never lazy.
+    Array,
+    /// A plain, non-itemized `Hash`.
+    Hash,
+    /// A `Str`.
+    Str,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) enum ElemKind {
     /// `uint8` … `uint64`, and every plain `Buf`/`Blob`/`utf8`/`utf16`.

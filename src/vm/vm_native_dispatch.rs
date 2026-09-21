@@ -60,6 +60,31 @@ impl Interpreter {
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
         use crate::runtime::utils::collection_contains_instance;
+        // The `(receiver kind, method symbol)` table (#8888). For a plain
+        // aggregate or `Str` calling one of the pure value queries the table
+        // lists, every probe between here and the family cascade is known to
+        // decline -- each is gated either on a method name the table excludes
+        // or on a receiver kind `dispatch_shape` refuses -- so the walk that
+        // proves it again on every call is skipped outright. `builtins::
+        // fast_0arg` carries the argument, and cross-checks itself against the
+        // full path in debug builds.
+        //
+        // The one thing the table cannot decide is whether user code has
+        // `augment`ed the receiver's builtin type with a method of this name,
+        // which is a property of the registry rather than of the call: that
+        // stays the same memoized gate the general path applies below.
+        if args.is_empty()
+            && let Some(result) = crate::builtins::fast_0arg::try_dispatch(target, method_sym)
+            && !self.native_lever_a_user_override_sym(target, method_sym)
+        {
+            self.record_native_row_coverage(
+                "vm_native_dispatch::fast_0arg",
+                target,
+                method_sym.as_str(),
+                0,
+            );
+            return Some(result);
+        }
         // `as_str`, not `resolve`: see `native_method_0arg`. An owned copy of
         // an already-`&'static str` per native method call.
         let method_name: &str = method_sym.as_str();
