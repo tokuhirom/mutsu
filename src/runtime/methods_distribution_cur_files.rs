@@ -7,9 +7,95 @@
 //! Unlike `.candidates`, `$path` is a file path, not a module short-name.
 
 use crate::runtime::Interpreter;
-use crate::value::{RuntimeError, Value, ValueView, VersionPart};
+use crate::symbol::Symbol;
+use crate::value::{RuntimeError, Value, ValueMap, ValueView, VersionPart};
 
 impl Interpreter {
+    /// `CompUnit::Repository::FileSystem.distribution`.
+    ///
+    /// A source repository describes the modules below its prefix as one
+    /// synthetic distribution.  Rakudo uses this metadata while discovering
+    /// plugins in a `use lib` directory, even when the directory has no
+    /// META6.json of its own.
+    pub(crate) fn cur_fs_distribution(&self, prefix: &str) -> Result<Value, RuntimeError> {
+        let prefix_path = std::path::Path::new(prefix);
+        let mut provides = ValueMap::default();
+        Self::collect_fs_repo_provides(prefix_path, prefix_path, &mut provides);
+
+        let mut meta = ValueMap::default();
+        meta.insert("name".to_string(), Value::str(prefix.to_string()));
+        meta.insert("ver".to_string(), Value::str_from("*"));
+        meta.insert("api".to_string(), Value::str_from("*"));
+        meta.insert("auth".to_string(), Value::str_from(""));
+        meta.insert(
+            "provides".to_string(),
+            Value::hash_with_data(Value::hash_arc(provides)),
+        );
+        meta.insert("resources".to_string(), Value::array(Vec::new()));
+
+        let distribution_prefix = prefix_path
+            .parent()
+            .unwrap_or(prefix_path)
+            .to_string_lossy()
+            .to_string();
+        let mut attrs = std::collections::HashMap::new();
+        attrs.insert(
+            "prefix".to_string(),
+            self.make_io_path_instance(&distribution_prefix),
+        );
+        attrs.insert(
+            "meta".to_string(),
+            Value::hash_with_data(Value::hash_arc(meta)),
+        );
+        attrs.insert(
+            "files".to_string(),
+            Value::hash_with_data(Value::hash_arc(ValueMap::default())),
+        );
+        Ok(Value::array(vec![Value::make_instance(
+            Symbol::intern("Distribution::Hash"),
+            attrs,
+        )]))
+    }
+
+    fn collect_fs_repo_provides(
+        root: &std::path::Path,
+        directory: &std::path::Path,
+        provides: &mut ValueMap,
+    ) {
+        let Ok(entries) = std::fs::read_dir(directory) else {
+            return;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            let Ok(file_type) = entry.file_type() else {
+                continue;
+            };
+            if file_type.is_dir() {
+                Self::collect_fs_repo_provides(root, &path, provides);
+                continue;
+            }
+            if !file_type.is_file() {
+                continue;
+            }
+            let Some(extension) = path.extension().and_then(|ext| ext.to_str()) else {
+                continue;
+            };
+            if !matches!(extension, "rakumod" | "pm6" | "pm") {
+                continue;
+            }
+            let Ok(relative) = path.strip_prefix(root) else {
+                continue;
+            };
+            let module_path = relative.with_extension("");
+            let Some(module_name) = module_path.to_str() else {
+                continue;
+            };
+            let module_name = module_name.replace(std::path::MAIN_SEPARATOR, "::");
+            let relative_path = relative.to_string_lossy().replace('\\', "/");
+            provides.insert(module_name, Value::str(format!("lib/{relative_path}")));
+        }
+    }
+
     /// `CompUnit::Repository::FileSystem.files`.
     pub(crate) fn cur_fs_files(&self, prefix: &str, args: &[Value]) -> Result<Value, RuntimeError> {
         let search_path = Self::positional_string(args, 0);

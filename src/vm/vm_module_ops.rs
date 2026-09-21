@@ -239,6 +239,25 @@ impl Interpreter {
             let repo =
                 Value::make_instance(Symbol::intern("CompUnit::Repository::Installation"), attrs);
             self.env_mut().insert("*REPO".to_string(), repo);
+        } else {
+            let prev = self.env().get("*REPO").cloned().unwrap_or(Value::NIL);
+            let canonical_prefix = std::fs::canonicalize(&path)
+                .unwrap_or_else(|_| std::path::PathBuf::from(&path))
+                .to_string_lossy()
+                .to_string();
+            let mut attrs = std::collections::HashMap::new();
+            attrs.insert(
+                "prefix".to_string(),
+                self.make_io_path_instance(&canonical_prefix),
+            );
+            attrs.insert("short-id".to_string(), Value::str_from("file"));
+            attrs.insert("next-repo".to_string(), prev);
+            // A `use lib` path is part of the normal repository chain, so it
+            // must retain the default repository's precompilation behavior.
+            attrs.insert("__mutsu_precomp_enabled".to_string(), Value::TRUE);
+            let repo =
+                Value::make_instance(Symbol::intern("CompUnit::Repository::FileSystem"), attrs);
+            self.env_mut().insert("*REPO".to_string(), repo);
         }
         // Prepended, mirroring the `$*REPO` chaining just above: a `use lib` path
         // takes precedence over `-I`, `MUTSULIB` and the installed repositories.
