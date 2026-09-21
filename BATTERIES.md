@@ -237,12 +237,12 @@ be **visible on the project's Pages site** (`site/`, deployed by
   documentation is reachable from the site. `docs/batteries/*.md` stays the single
   source of truth (linked as GitHub-rendered markdown); do not fork the prose into
   the HTML page — the page carries only the list + summaries + links.
-- Note the deploy trigger: `pages.yml` republishes on changes to `site/**`,
-  `modules/**` and `ecosystem/**`, after a release or a `Bench` run, nightly,
-  and on manual `workflow_dispatch`. A `docs/batteries/` edit alone will not
-  redeploy the site, and that is fine because the page links out to GitHub rather
-  than embedding the docs. Publish real rows only when the battery actually works
-  — do not advertise a not-yet-functional library on the public site.
+- The deploy trigger needs no thought any more: `pages.yml` republishes on
+  **every** push to main (plus after a release or a `Bench` run, nightly, and on
+  manual `workflow_dispatch`), because the job stopped building wasm from source
+  and now takes ~35 seconds. So a `docs/batteries/` edit reaches the site like
+  anything else. Publish real rows only when the battery actually works — do not
+  advertise a not-yet-functional library on the public site.
 
 ## 6. Security updates and independent updatability
 

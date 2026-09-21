@@ -5,41 +5,51 @@
 name: Deploy the site to GitHub Pages
 
 on:
-  # The interpreter comes from the latest published npm package. Keep the push
-  # trigger narrowed to files that change the site itself; a newly published
-  # interpreter can be picked up immediately with workflow_dispatch.
+  # EVERY push to main deploys, with no `paths:` filter. This job used to build
+  # the wasm playground from source, which is why it was narrowed to the files
+  # that change the site itself; it does not any more — the interpreter comes
+  # from the published npm package (`npm install @tokuhirom/mutsu@latest`), and
+  # what is left is a node install and four small generator scripts. Measured
+  # end to end on 2026-09-21: 30, 35, 36, 37, 41, 47 seconds. At that price a
+  # path filter costs more than it saves, because every path it omits is a way
+  # for the deployed site to disagree with `main`:
   #
-  # Deliberately NOT listed: `src/**`. Nearly every commit touches it, which
-  # would restore the every-merge build. The consequence is that the playground
-  # runs the interpreter from the last deploy, not from HEAD — when you want it
-  # to pick up interpreter changes, trigger this workflow by hand
-  # (`gh workflow run pages.yml`, or the "Run workflow" button).
+  #   - `roast-whitelist.txt` is the landing page's "N% of the official spec
+  #     files pass in full", counted at deploy time. It grows several times a
+  #     day and was on no push path at all, so that headline figure was only
+  #     ever refreshed by the daily cron below -- up to 24 hours behind.
+  #   - `roast/` itself is the denominator of the same figure, so a re-vendor
+  #     moved it with no trigger either.
+  #   - Anything a future generator script starts reading is covered from the
+  #     moment it is written, rather than the first time someone notices the
+  #     page is stale and remembers to extend a list in this file.
+  #
+  # What this does NOT change: the playground still runs the interpreter from
+  # the last published npm package, not from HEAD. Deploying more often cannot
+  # fix that — only a release can, which the `Release` workflow_run below
+  # already picks up.
+  #
+  # The burst case is already handled by the `concurrency` group further down
+  # (`cancel-in-progress: true`): when several PRs merge within a minute — which
+  # happens here routinely — the superseded runs are cancelled and only the last
+  # one deploys. That is what makes an unfiltered trigger safe rather than a way
+  # to queue twenty deploys of the same tree.
   #
   # Note that the ecosystem parity data needs no trigger of its own: a sweep
-  # lands its records as a pull request into main (ecosystem-sweep.yml), so the
-  # `ecosystem/**` path below fires on that merge — which is the right moment,
-  # because the records are only in the tree this job checks out once they are
-  # merged. Do NOT "fix" this by adding `Ecosystem sweep` to the workflow_run
-  # list: that fires while the pull request is still open and would deploy the
-  # previous sweep's numbers.
+  # lands its records as a pull request into main (ecosystem-sweep.yml), so that
+  # merge is an ordinary push — which is the right moment, because the records
+  # are only in the tree this job checks out once they are merged. Do NOT "fix"
+  # this by adding `Ecosystem sweep` to the workflow_run list: that fires while
+  # the pull request is still open and would deploy the previous sweep's
+  # numbers.
   #
-  # The daily schedule below is the safety net for what remains outside both
-  # the push filter and the workflow_run list: a newly published npm package
-  # and roast-whitelist.txt growth (the landing page's "N% of the spec passes"
-  # figure). Without it the deployed site can sit stale for weeks until someone
-  # remembers to press "Run workflow".
+  # The daily schedule remains the safety net for what no push can signal: an
+  # npm package published outside a tagged release, and a stretch of days with
+  # no merges at all.
   schedule:
     - cron: '17 21 * * *'
   push:
     branches: [main]
-    paths:
-      - 'site/**'
-      - 'modules/**'                   # the batteries page lists these
-      - 'scripts/bench-visualize.py'   # renders bench-trend.html
-      - 'scripts/gen-batteries-manifest.py'
-      - 'ecosystem/**'                 # the ecosystem page is built from these
-      - 'scripts/gen-ecosystem-manifest.py'
-      - '.github/workflows/pages.yml'
   workflow_run:
     # Release: a successful tagged release publishes npm before the Release
     # workflow completes, so this deploy picks up the new `latest` package
