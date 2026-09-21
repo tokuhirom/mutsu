@@ -677,6 +677,8 @@ fn nqp_form(op: &str) -> Option<NqpForm> {
     const N2: &[TrKind] = &[TrKind::Num, TrKind::Num];
     const O1: &[TrKind] = &[TrKind::Obj];
     const OI: &[TrKind] = &[TrKind::Obj, TrKind::Int];
+    const OII: &[TrKind] = &[TrKind::Obj, TrKind::Int, TrKind::Int];
+    const OOI: &[TrKind] = &[TrKind::Obj, TrKind::Obj, TrKind::Int];
     Some(match op {
         "add_i" => (I2, Int, &[TrOp::AddI]),
         "sub_i" => (I2, Int, &[TrOp::SubI]),
@@ -710,6 +712,8 @@ fn nqp_form(op: &str) -> Option<NqpForm> {
         "chars" => (O1, Int, &[TrOp::CharsS]),
         "ordat" => (OI, Int, &[TrOp::OrdAt]),
         "atpos_i" => (OI, Int, &[TrOp::AtPosI]),
+        "substr" => (OII, Obj, &[TrOp::SubstrS]),
+        "eqat" => (OOI, Int, &[TrOp::EqAtS]),
         _ => return None,
     })
 }
