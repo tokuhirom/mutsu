@@ -1,3 +1,4 @@
+use crate::ast::Expr;
 use crate::parser::helpers::is_ident_char;
 use crate::parser::stmt::simple::match_user_declared_infix_symbol_op;
 use crate::token_kind::TokenKind;
@@ -11,7 +12,12 @@ use crate::token_kind::TokenKind;
 /// `after_ws` is the remaining input after consuming whitespace from `rest`.
 ///
 /// Returns `true` when the infix loop should break.
-pub(crate) fn block_newline_terminates(input: &str, rest: &str, after_ws: &str) -> bool {
+pub(crate) fn block_newline_terminates(
+    input: &str,
+    rest: &str,
+    after_ws: &str,
+    left: &Expr,
+) -> bool {
     // `consumed_span` rather than an `input.len() - rest.len()` subtraction: a
     // heredoc left-hand side with trailing code on its marker line resumes the
     // parse on a freshly built buffer, so `rest` is not a tail slice of `input`
@@ -20,6 +26,17 @@ pub(crate) fn block_newline_terminates(input: &str, rest: &str, after_ws: &str) 
     let Some(consumed) = crate::parser::expr::postfix::consumed_span(input, rest) else {
         return false;
     };
+    // A `q{...}`/`qq{...}` quote also leaves a literal expression whose source
+    // ends in `}`.  Its delimiter is not a block boundary: `qq{head}\n~ $x`
+    // continues the expression in Rakudo.  The AST is the reliable
+    // distinction here; a code block is represented by a block expression,
+    // while a quote is a literal or string interpolation.
+    if matches!(
+        left,
+        Expr::Literal(_) | Expr::LiteralSrc(..) | Expr::StringInterpolation(_)
+    ) {
+        return false;
+    }
     // Check if the character just before `rest` is `}`
     if !consumed.ends_with('}') {
         return false;

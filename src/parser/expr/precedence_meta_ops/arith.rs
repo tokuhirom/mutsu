@@ -125,7 +125,7 @@ pub(crate) fn additive_expr(input: &str) -> PResult<'_, Expr> {
     let (mut rest, mut left) = multiplicative_expr(input)?;
     loop {
         let (r, _) = ws(rest)?;
-        if block_newline_terminates(input, rest, r) {
+        if block_newline_terminates(input, rest, r, &left) {
             break;
         }
         // Longest-token rule (Raku LTM): a user-declared *symbol* infix that is
@@ -278,7 +278,7 @@ pub(crate) fn multiplicative_expr(input: &str) -> PResult<'_, Expr> {
     let (mut rest, mut left) = prefix_expr_with_ws_dot(input)?;
     loop {
         let (r, _) = ws(rest)?;
-        if block_newline_terminates(input, rest, r) {
+        if block_newline_terminates(input, rest, r, &left) {
             break;
         }
         // Longest-token rule (Raku LTM): a user-declared *symbol* infix that is
@@ -523,7 +523,7 @@ fn power_expr_inner(input: &str, base_parser: fn(&str) -> PResult<'_, Expr>) -> 
     // Check for custom infixes at power level (tighter than multiplicative)
     loop {
         let (r, _) = ws(rest)?;
-        if block_newline_terminates(input, rest, r) {
+        if block_newline_terminates(input, rest, r, &base) {
             break;
         }
         // Custom infix ops at power level (between multiplicative and prefix exclusive)

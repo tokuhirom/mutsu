@@ -486,6 +486,23 @@ impl Interpreter {
                     .to_string_value();
                 Ok(Value::str(shorten_type_name(&full)))
             }
+            "refinee" if args.len() == 1 => {
+                let name = self.mop_receiver_owner(&args[0]);
+                let Some(base) = self
+                    .registry()
+                    .subsets
+                    .get(&name)
+                    .map(|subset| subset.base.clone())
+                else {
+                    let how = self.dispatch_how(&args[0], &[])?;
+                    let how_name = match how.view() {
+                        ValueView::Instance { class_name, .. } => class_name.resolve(),
+                        _ => "Mu".to_string(),
+                    };
+                    return Err(RuntimeError::method_not_found("refinee", &how_name));
+                };
+                Ok(Value::package(Symbol::intern(&base)))
+            }
             "ver" if args.len() == 1 => {
                 let name = self.mop_receiver_owner(&args[0]);
                 if let Some(meta) = self.type_metadata.get(&name)

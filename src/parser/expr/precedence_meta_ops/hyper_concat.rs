@@ -340,7 +340,7 @@ fn parse_hyper_rhs(input: &str, parent_prec: i32) -> PResult<'_, Expr> {
     let (mut rest, mut left) = replication_expr(input)?;
     loop {
         let (r, _) = ws(rest)?;
-        if block_newline_terminates(input, rest, r) {
+        if block_newline_terminates(input, rest, r, &left) {
             break;
         }
         if let Some((op, dwim_left, dwim_right, len)) = parse_hyper_op(r) {
@@ -377,7 +377,7 @@ pub(crate) fn concat_expr(input: &str) -> PResult<'_, Expr> {
     let (mut rest, mut left) = replication_expr(input)?;
     loop {
         let (r, _) = ws(rest)?;
-        if block_newline_terminates(input, rest, r) {
+        if block_newline_terminates(input, rest, r, &left) {
             break;
         }
         // Hyper operators with function reference: >>[&func]<<, <<[&func]>>, etc.
@@ -467,7 +467,7 @@ pub(super) fn replication_expr(input: &str) -> PResult<'_, Expr> {
     let (mut rest, mut left) = additive_expr(input)?;
     loop {
         let (r, _) = ws(rest)?;
-        if block_newline_terminates(input, rest, r) {
+        if block_newline_terminates(input, rest, r, &left) {
             break;
         }
         if let Some((op, len)) = parse_replication_op(r) {

@@ -162,7 +162,7 @@ pub(crate) fn structural_expr(input: &str) -> PResult<'_, Expr> {
     let (mut rest, mut left) = concat_expr(input)?;
     loop {
         let (r, _) = ws(rest)?;
-        if block_newline_terminates(input, rest, r) {
+        if block_newline_terminates(input, rest, r, &left) {
             break;
         }
         let localized = crate::parser::stmt::simple::l10n_match_infix(r);
