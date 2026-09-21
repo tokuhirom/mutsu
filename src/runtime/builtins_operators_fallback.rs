@@ -442,6 +442,7 @@ impl Interpreter {
             }
         }
         if name == "substr"
+            && !user_shadows_builtin
             && let Some((target, rest)) = args.split_first()
         {
             return self.call_method_with_values(target.clone(), "substr", rest.to_vec());
