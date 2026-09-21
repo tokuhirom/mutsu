@@ -37,6 +37,7 @@
 //!   shape every "try this name in each enclosing package" loop wants.
 //! - [`is_qualified`], [`is_routine_scoped_package`] and [`is_global_package`]
 //!   classify a name once.
+//! - [`unqualified_part`] strips a qualifier back off, once per name.
 //!
 //! # The gate
 //!
@@ -178,6 +179,40 @@ pub(crate) fn is_routine_scoped_package(pkg: Symbol) -> bool {
     flags::of(pkg) & flags::ROUTINE_SCOPED != 0
 }
 
+/// `key` with its package qualifier removed, keeping any sigil:
+/// `$Foo::Bar::x` -> `$x`, `x` -> `x`. Built once per symbol.
+///
+/// The `our` store's unqualified-name index derives one of these for every
+/// variable it records, and the hand-written form allocated a fresh `String`
+/// to do it — 354,298 of the 1,390,603 `StrSearcher` constructions in a
+/// ten-decode `JSON::Fast` profile came from that one derivation.
+pub(crate) fn unqualified_part(key: Symbol) -> Symbol {
+    thread_local! {
+        static BARE: std::cell::RefCell<rustc_hash::FxHashMap<Symbol, Symbol>> =
+            std::cell::RefCell::new(rustc_hash::FxHashMap::default());
+    }
+    if let Some(sym) = BARE.with(|c| c.borrow().get(&key).copied()) {
+        return sym;
+    }
+    let text = key.as_str();
+    let (sigil, rest) = match text.as_bytes().first() {
+        Some(b'$' | b'@' | b'%' | b'&') => text.split_at(1),
+        _ => ("", text),
+    };
+    let bare = rest.rsplit("::").next().unwrap_or(rest);
+    // The common case is an already-unqualified, sigil-less name, where the
+    // answer is the key itself and there is nothing to intern.
+    let sym = if sigil.is_empty() && bare.len() == text.len() {
+        key
+    } else {
+        Symbol::intern(&format!("{sigil}{bare}"))
+    };
+    BARE.with(|c| {
+        c.borrow_mut().insert(key, sym);
+    });
+    sym
+}
+
 /// Whether `pkg` names no package at all — unset, or the default top-level
 /// `GLOBAL`.
 ///
@@ -240,6 +275,37 @@ mod tests {
             // The two classifications share one table entry and must not
             // overwrite each other.
             assert_eq!(is_qualified(sym), pkg.contains("::"), "{pkg:?} qualified");
+        }
+    }
+
+    #[test]
+    fn the_unqualified_part_matches_the_string_form_it_replaces() {
+        fn by_hand(key: &str) -> String {
+            let (sigil, rest) = match key.as_bytes().first() {
+                Some(b'$' | b'@' | b'%' | b'&') => key.split_at(1),
+                _ => ("", key),
+            };
+            let bare = rest.rsplit("::").next().unwrap_or(rest);
+            format!("{sigil}{bare}")
+        }
+        for key in [
+            "$Foo::Bar::x",
+            "x",
+            "@Foo::a",
+            "%h",
+            "&Foo::f",
+            "",
+            "Foo::",
+            "::x",
+        ] {
+            let sym = Symbol::intern(key);
+            assert_eq!(unqualified_part(sym).as_str(), by_hand(key), "{key:?}");
+            // Second call takes the memo, and must answer the same.
+            assert_eq!(
+                unqualified_part(sym).as_str(),
+                by_hand(key),
+                "{key:?} memoized"
+            );
         }
     }
 
