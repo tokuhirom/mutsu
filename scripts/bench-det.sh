@@ -74,10 +74,20 @@
 # allocations then 1,311,894 -- **-26%**, from nothing but the module
 # precompilation cache, which the first run after a build has to populate. That
 # is the same trap the perf-tuning skill's §0 documents as 650M Ir (34% of the
-# run), measured on the same benchmark. It does not distort the recorded series,
-# because the bench CI builds fresh every time and so is cold every time,
-# consistently -- but a LOCAL A/B has to compare warm against warm, or it will
-# read a 26% allocation "win" that is only a populated cache.
+# run), measured on the same benchmark. A LOCAL A/B therefore has to compare warm
+# against warm, or it will read a 26% allocation "win" that is only a populated
+# cache.
+#
+# The recorded CI series measures the WARM state, and by construction rather than
+# by luck: bench.yml runs the wall-clock pass (scripts/bench-ci.sh, seven runs of
+# each benchmark in each lane) BEFORE this script, so the cache is thoroughly
+# populated by the time callgrind starts. The first recorded rows prove it --
+# `bench-json-fast` came back as 1,311,788, which is the warm local number to
+# within 0.008%, not the cold one. (An earlier version of this comment claimed the
+# opposite, that CI is "cold every time, consistently" because it builds fresh.
+# Consistent it is, but warm; and warm is the state worth recording, since it is
+# the one a steady-state run is in. If those two steps are ever reordered or the
+# wall-clock pass is dropped, this series steps once, for this reason.)
 #
 # WHY THE SYMBOL SET BELOW, and why counting two layers would be wrong: the libc
 # entry points are counted, not Rust's `__rust_alloc*` shims. The shims are

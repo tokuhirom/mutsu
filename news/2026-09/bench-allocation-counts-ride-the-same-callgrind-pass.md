@@ -72,10 +72,38 @@ The tenth series in that sample is worth its own line, because it is a warning a
 `bench-json-fast` measured 1,777,030 allocations and then 1,311,894, **-26%**, from nothing but the
 module precompilation cache that the first run after a build has to populate. That is the same trap
 the perf-tuning skill's §0 records as 650M instructions (34% of the run) on the same benchmark — and
-the allocation column states it more loudly than Ir does. It does not distort the recorded series,
-because the bench CI builds fresh on every run and is therefore cold on every run, consistently. It
-does distort a local A/B that compares a first run against a later one, which is exactly what §0
-already tells you not to do.
+the allocation column states it more loudly than Ir does. It distorts a local A/B that compares a
+first run against a later one, which is exactly what §0 already tells you not to do.
+
+> **Correction (2026-09-21, same day).** This paragraph first said the recorded series was unaffected
+> "because the bench CI builds fresh on every run and is therefore cold on every run, consistently".
+> Consistent it is; cold it is not. `bench.yml` runs the wall-clock pass — `scripts/bench-ci.sh`,
+> seven runs of every benchmark in both lanes — *before* the callgrind pass, so the precompilation
+> cache is thoroughly populated by the time the allocation count is taken. The first rows recorded
+> settle it: CI's `bench-json-fast` came back as **1,311,788**, the warm local figure to within
+> 0.008%, not the cold 1,777,030. The conclusion survives and improves — warm is the state a
+> steady-state run is in, so it is the one worth recording — but the reason given was wrong, and this
+> is a file about not fooling yourself with a plausible number. One consequence is worth writing down:
+> if those two steps are ever reordered, or the wall-clock pass is dropped, this series steps once for
+> that reason alone.
+
+## The first rows recorded
+
+The bench CI wrote its first two commits' worth on 2026-09-21 (144 rows), and they read exactly as the
+metric was meant to:
+
+| benchmark | `08ab8076` | `b584753e` | Δ |
+| --- | ---: | ---: | ---: |
+| `bench-array` | 169,218 | 169,215 | -3 |
+| `bench-grammar-parse` | 38,567 | 38,565 | -2 |
+| `bench-hash` | 237,497 | 237,494 | -3 |
+| `bench-json-fast` | 1,311,788 | 1,311,790 | +2 |
+
+Single digits out of 169 thousand to 1.3 million — about 0.001%, against the wall-clock series' 16-33%
+on the same axis. That is not a pure noise measurement (real interpreter changes landed between those
+two commits, and the Ir column moved by thousands), but it bounds run-to-run variability *plus* a
+day's worth of merges at a level where a deliberate allocation change of any size would stand out
+immediately.
 
 ## What it is not
 
