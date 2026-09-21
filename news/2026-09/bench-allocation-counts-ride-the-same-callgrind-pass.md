@@ -43,6 +43,14 @@ against memcheck's 237,590, a 0.5% gap easily explained away as a difference bet
 Checking it against memcheck rather than accepting a number that looked about right is what caught
 it.
 
+Because that is how the parse fails — plausibly, never loudly — the extractor is now pinned by
+`scripts/bench-det.sh --self-test` against a synthetic profile with a known answer, covering both
+shapes plus a file-namespace id collision and a callee (`free`) that must not be counted. It runs as
+`make check-bench-det` in the CI checks job (pure text processing: no valgrind, no binary,
+milliseconds) and again at the top of the bench job, so a broken extractor fails in seconds instead
+of appending twelve minutes of undercounted history. Reintroducing either historical bug makes it
+fail: 18 expected, 8 with the `cfn=`-only name map, 13 without the recursion-suffix strip.
+
 ## How stable it is
 
 Repeated runs of one binary:

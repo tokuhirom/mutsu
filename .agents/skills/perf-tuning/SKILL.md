@@ -179,6 +179,10 @@ Three limits, all of them real:
 - **Fewer allocations is not automatically faster.** Same rule as instruction counts: it localizes
   a change, the wall-clock series says whether it mattered.
 
+The extractor reads callgrind's own output format, and its failure mode is a silent undercount, so
+`make check-bench-det` (`scripts/bench-det.sh --self-test`, in the CI checks job) pins it against a
+fixture with a known answer. If you ever distrust an allocation number, run that first.
+
 Locally, name the files you care about — no argument measures all 26, which is four minutes you
 rarely need:
 

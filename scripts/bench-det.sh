@@ -127,13 +127,6 @@ TIMEOUT=${BENCH_DET_TIMEOUT:-600}
 WANT_BYTES=${BENCH_DET_BYTES:-0}
 CG_OUT=${BENCH_DET_CG_OUT:-tmp/bench-det-cg.out}
 
-if ! command -v valgrind >/dev/null 2>&1; then
-    echo "bench-det: valgrind not found; install it (apt-get install -y valgrind)" >&2
-    exit 1
-fi
-
-mkdir -p "$(dirname "$CG_OUT")"
-
 # Sum the call counts of the allocator entry points in a callgrind output file.
 # A call is recorded as a `cfn=` (called function) line followed by
 # `calls=<n> <target line>`, so the count wanted is the sum of `calls=` over the
@@ -185,6 +178,75 @@ BEGIN {
 }
 END { print total + 0 }
 '
+
+# --self-test: run CG_ALLOC_AWK against a synthetic profile with a known answer.
+# The extractor's failure mode is a silent undercount -- an allocator whose name
+# it fails to resolve simply contributes nothing, and the total stays plausible
+# (the `cfn=`-only version of this was 1,374 low on bench-hash and looked fine),
+# so there is nothing for a human to notice. This fixture therefore includes
+# every shape that has been got wrong or could be: an id introduced by `fn=` and
+# used by `cfn=`, an id introduced by `cfn=`, a recursion-suffixed name, a
+# same-numbered id in the FILE namespace (which must not be mistaken for a
+# function), and a non-allocator callee.
+self_test() {
+    local fixture expected got
+    fixture=$(printf '%s\n' \
+        'events: Ir' \
+        'fl=(1) /src/a.rs' \
+        'fn=(2) calloc' \
+        '1 10' \
+        'fn=(3) realloc' \
+        '2 10' \
+        'fl=(2) /src/not-a-function.rs' \
+        'fn=(4) work' \
+        '3 10' \
+        'cfn=(5) malloc' \
+        'calls=7 0' \
+        '3 100' \
+        'cfn=(2)' \
+        'calls=3 0' \
+        '3 100' \
+        'cfn=(3)' \
+        'calls=2 0' \
+        '3 100' \
+        'cfn=(6) free' \
+        'calls=9 0' \
+        '3 100' \
+        'fn=(7) malloc'\''2' \
+        '4 10' \
+        'fn=(8) other' \
+        '5 10' \
+        'cfn=(7)' \
+        'calls=5 0' \
+        '5 100' \
+        'cfn=(9) posix_memalign' \
+        'calls=1 0' \
+        '5 100')
+    expected=18   # malloc 7 + calloc 3 + realloc 2 + malloc'2 5 + posix_memalign 1
+    got=$(printf '%s\n' "$fixture" | awk "$CG_ALLOC_AWK")
+    if [ "$got" != "$expected" ]; then
+        echo "bench-det --self-test: FAILED -- allocator edges summed to $got, expected $expected." >&2
+        echo "  The callgrind name map is wrong; every allocation count this script" >&2
+        echo "  prints is suspect. See the CG_ALLOC_AWK comment for the two traps." >&2
+        return 1
+    fi
+    # `free` must not be counted, and neither must a file-namespace id collision.
+    echo "bench-det --self-test: ok ($got allocator calls in the fixture)"
+}
+
+if [ "${1:-}" = --self-test ]; then
+    self_test
+    exit
+fi
+
+# After --self-test, which is pure text processing and must work on a box with no
+# valgrind (it runs in the CI checks job, which installs none).
+if ! command -v valgrind >/dev/null 2>&1; then
+    echo "bench-det: valgrind not found; install it (apt-get install -y valgrind)" >&2
+    exit 1
+fi
+
+mkdir -p "$(dirname "$CG_OUT")"
 
 measure() { # $1=bench-file; sets $ir and $allocs
     local raw

@@ -129,7 +129,12 @@ jobs:
         # behaviour, memory boundness, lock contention or real thread
         # parallelism, and instruction counts step whenever the toolchain
         # changes. See the header of scripts/bench-det.sh.
-        run: scripts/bench-det.sh | tee tmp/bench-det-results.tsv
+        # The --self-test first: it is milliseconds, and it is the difference
+        # between failing here and appending twelve minutes of silently
+        # undercounted allocations to the history.
+        run: |
+          scripts/bench-det.sh --self-test
+          scripts/bench-det.sh | tee tmp/bench-det-results.tsv
 
       - name: Compare with previous run and render summary
         # Read-only look at the existing history BEFORE appending: warn when a
