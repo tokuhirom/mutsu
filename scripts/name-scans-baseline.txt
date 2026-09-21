@@ -1,8 +1,3 @@
-<<<<<<< HEAD
 qualify 173
-global-cmp 92
-=======
-qualify 174
-global-cmp 97
->>>>>>> ab02fadf (perf: the `our` store's unqualified index stops rebuilding its keys)
-scan 346
+global-cmp 90
+scan 344

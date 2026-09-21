@@ -111,7 +111,7 @@ impl Interpreter {
             for pkg_sym in crate::qualified::package_ancestors(candidate) {
                 let pkg = pkg_sym.as_str();
                 if crate::qualified::is_global_package(pkg_sym)
-                    || crate::runtime::utils::has_routine_scope_marker(pkg)
+                    || crate::qualified::is_routine_scoped_package(pkg_sym)
                 {
                     break;
                 }
