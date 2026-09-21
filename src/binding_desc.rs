@@ -64,6 +64,82 @@ impl BindingFlags {
     }
 }
 
+/// What a slot's own declarations settle about its type constraint, as far as
+/// the scalar-store fast path is concerned.
+///
+/// `my int $i` fixes `$i`'s constraint at its declaration, and the compiler is
+/// the one that reads it. Before this, every store to `$i` re-derived it at run
+/// time — hash `__mutsu_type::i`, walk the env chain, decode the `Str` it finds
+/// — at ~130 instructions, **22% of the store and 9% of an `nqp::add_i` loop**,
+/// to re-learn a fact settled once at compile time
+/// ([#8877](https://github.com/tokuhirom/mutsu/issues/8877)).
+///
+/// The variants are deliberately coarse, because the store asks exactly one
+/// question — `native_typed_store_is_identity`, "would the typed branch leave
+/// this value alone?" — and its answer depends only on which native family the
+/// constraint belongs to, never on the spelling.
+///
+/// **The env entry is not retired.** It stays the source of truth for the ~120
+/// other readers, and the fallback here: a slot whose constraint this chunk did
+/// not declare, or declared in a way the bake cannot describe, reads
+/// [`Self::Unrecorded`] / [`Self::Conflicting`] and probes exactly as before.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) enum DeclaredConstraint {
+    /// No declaration in this chunk registers a constraint for this slot — ask
+    /// the env. Every slot starts here, and a slot the chunk merely *uses* (a
+    /// free variable, a parameter, a compiler temporary) stays here: the
+    /// constraint, if there is one, belongs to whatever declared it.
+    #[default]
+    Unrecorded,
+    /// `int` / `int64`.
+    NativeInt,
+    /// `str`.
+    NativeStr,
+    /// `num` / `num64`.
+    NativeNum,
+    /// A constraint outside the five above — `Int`, `int8`, a class, a subset
+    /// name. The typed branch always has real work to do for it (the narrow
+    /// widths wrap, everything else type-checks), so the fast path can decline
+    /// without asking the env, which is what the probe concluded anyway.
+    NonNative,
+    /// Two *different* constraints were recorded for the same slot, or a trait
+    /// that can rewrite the constraint at run time was applied to it. The
+    /// default build gives a nested `my $x` the **outer** slot
+    /// (`Compiler::declare_local`), so `{ my int $i } { my Int $i }` really is
+    /// one slot with two constraints; the env, which is scoped, can tell them
+    /// apart and the bake cannot. Falls back to the probe.
+    Conflicting,
+}
+
+impl DeclaredConstraint {
+    /// Classify a declaration's constraint text.
+    ///
+    /// The comparison is against the same string the env entry will hold:
+    /// `Interpreter::parse_container_constraint` stores a scalar's constraint
+    /// as the trimmed raw text, so a bake that trims matches it exactly.
+    pub(crate) fn classify(tc: &str) -> Self {
+        match tc.trim() {
+            "int" | "int64" => DeclaredConstraint::NativeInt,
+            "str" => DeclaredConstraint::NativeStr,
+            "num" | "num64" => DeclaredConstraint::NativeNum,
+            _ => DeclaredConstraint::NonNative,
+        }
+    }
+
+    /// Fold another declaration's classification into this slot's record.
+    /// Agreement keeps the record, disagreement poisons it, and
+    /// [`Self::Conflicting`] is absorbing — a trait poisons a slot whose
+    /// deferred `is default(...)` type registration is emitted *after* it.
+    pub(crate) fn merge(&mut self, other: Self) {
+        *self = match *self {
+            DeclaredConstraint::Unrecorded => other,
+            DeclaredConstraint::Conflicting => DeclaredConstraint::Conflicting,
+            cur if cur == other => cur,
+            _ => DeclaredConstraint::Conflicting,
+        };
+    }
+}
+
 /// One local slot's compile-time-settled metadata. `CompiledCode::binding_descs`
 /// holds one per entry of `CompiledCode::locals`, same index.
 ///
@@ -86,6 +162,10 @@ pub(crate) struct BindingDesc {
     pub(crate) bound_slice_sym: Option<Symbol>,
     /// The interned `__mutsu_scalar_bind_no_container::<name>` env key.
     pub(crate) scalar_no_container_sym: Option<Symbol>,
+    /// What this slot's own declarations settle about its type constraint —
+    /// see [`DeclaredConstraint`]. `Unrecorded` (the default) means "ask the
+    /// env", which is what every slot did before.
+    pub(crate) declared_constraint: DeclaredConstraint,
     pub(crate) flags: BindingFlags,
 }
 

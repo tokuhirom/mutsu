@@ -2675,6 +2675,22 @@ impl Compiler {
             && !name.starts_with('*')
             && name != "__ANON_STATE__"
             && !name.contains("::");
+        // Bake the declaration-settled constraint onto the slot, so a store does
+        // not re-derive from the env what the source said here (#8877). Only
+        // the plain-scalar slots the store fast path serves: for `@a`/`%h` the
+        // env holds `parse_container_constraint`'s *value* type, which for
+        // `my Int %h{Str}` is not the declaration text, and `&f`/`$*x`/`our`
+        // are not slot-addressed stores at all.
+        if !is_our && Self::is_simple_scalar_store_name(name) {
+            let tc = self
+                .code
+                .constants
+                .get(tc_idx as usize)
+                .and_then(|c| c.as_str().map(str::to_owned));
+            if let Some(tc) = tc {
+                self.code.note_declared_constraint(name, &tc);
+            }
+        }
         if hoisted {
             self.code.emit(OpCode::SetVarTypeHoisted {
                 name_idx,

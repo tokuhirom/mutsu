@@ -4710,6 +4710,21 @@ pub(crate) struct CompiledCode {
     /// [`CompiledCode::is_plain_local`] / [`CompiledCode::is_simple_scalar_local`],
     /// never through this field directly.
     pub(crate) binding_descs: Vec<crate::binding_desc::BindingDesc>,
+    /// Compile-time scaffolding: the type constraint each declared *name* in
+    /// this chunk settles, folded into
+    /// [`crate::binding_desc::BindingDesc::declared_constraint`] by
+    /// [`Self::compute_locals_sym`] and dropped there.
+    ///
+    /// Keyed by name rather than by slot because the declaration emits its
+    /// `SetVarType*` **before** the store that allocates the slot
+    /// (`Compiler::emit_set_var_type_op` runs first so an initializer is
+    /// already checked against the constraint), so at the point the constraint
+    /// is known there is often no slot to hang it on yet. One name is one slot
+    /// in the default build — a nested `my $x` reuses the outer slot
+    /// (`Compiler::declare_local`) — which is also why a name that collects two
+    /// *different* constraints must poison rather than overwrite.
+    pending_declared_constraints:
+        rustc_hash::FxHashMap<String, crate::binding_desc::DeclaredConstraint>,
     /// Maps local slot indices to persistent state keys for `state` variables.
     pub(crate) state_locals: Vec<(usize, Symbol)>,
     /// Maps local slot indices to qualified package names for `our` variables.
@@ -5890,6 +5905,7 @@ impl CompiledCode {
             locals: Vec::new(),
             locals_sym: Vec::new(),
             binding_descs: Vec::new(),
+            pending_declared_constraints: rustc_hash::FxHashMap::default(),
             state_locals: Vec::new(),
             our_locals: Vec::new(),
             param_bind_names: Vec::new(),
@@ -6315,6 +6331,50 @@ impl CompiledCode {
             .is_some_and(|d| d.flags.plain_local())
     }
 
+    /// What this slot's declarations settle about its type constraint, for the
+    /// one caller that asks: `native_typed_store_is_identity`. A slot with no
+    /// descriptor (a hand-built chunk) reads `Unrecorded`, i.e. "ask the env",
+    /// which is what every slot did before this existed.
+    #[inline]
+    pub(crate) fn declared_constraint(
+        &self,
+        idx: usize,
+    ) -> crate::binding_desc::DeclaredConstraint {
+        self.binding_descs
+            .get(idx)
+            .map_or(crate::binding_desc::DeclaredConstraint::Unrecorded, |d| {
+                d.declared_constraint
+            })
+    }
+
+    /// Record that `name`'s declaration constrains it to `tc` — see
+    /// [`Self::pending_declared_constraints`]. Called once per `SetVarType*`
+    /// the compiler emits.
+    pub(crate) fn note_declared_constraint(&mut self, name: &str, tc: &str) {
+        self.merge_declared_constraint(name, crate::binding_desc::DeclaredConstraint::classify(tc));
+    }
+
+    /// Record that `name` is out of the bake's reach — a trait was applied to
+    /// it, and `ApplyVarTrait`'s container/class branches rewrite the
+    /// constraint at run time (`vm_var_trait_ops`), which no compile-time
+    /// record can describe.
+    pub(crate) fn poison_declared_constraint(&mut self, name: &str) {
+        self.merge_declared_constraint(name, crate::binding_desc::DeclaredConstraint::Conflicting);
+    }
+
+    fn merge_declared_constraint(
+        &mut self,
+        name: &str,
+        incoming: crate::binding_desc::DeclaredConstraint,
+    ) {
+        if let Some(cur) = self.pending_declared_constraints.get_mut(name) {
+            cur.merge(incoming);
+        } else {
+            self.pending_declared_constraints
+                .insert(name.to_string(), incoming);
+        }
+    }
+
     /// True if a store into `local[idx]` may take the plain-scalar fast path.
     /// Was `simple_scalar_locals[idx]`; see
     /// [`crate::binding_desc::BindingFlags::simple_scalar_local`].
@@ -6345,6 +6405,16 @@ impl CompiledCode {
                 self.locals.len(),
                 crate::binding_desc::BindingDesc::default(),
             );
+        }
+        // Fold the name-keyed declaration records onto their slots and drop
+        // them: compile-time scaffolding, like `const_index` below.
+        let pending = std::mem::take(&mut self.pending_declared_constraints);
+        if !pending.is_empty() {
+            for (desc, name) in self.binding_descs.iter_mut().zip(self.locals.iter()) {
+                if let Some(&c) = pending.get(name.as_str()) {
+                    desc.declared_constraint = c;
+                }
+            }
         }
         for (desc, name) in self.binding_descs.iter_mut().zip(self.locals.iter()) {
             desc.alias_sym = Some(crate::runtime::sigilless_alias_key(name));
