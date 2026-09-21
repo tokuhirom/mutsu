@@ -921,6 +921,23 @@ impl Interpreter {
             self.stack.push(frozen);
             return Ok(());
         }
+        // #8880: the plain-method lane. Everything from here to this opcode's
+        // user-method dispatch is a chain of probes speculating that the
+        // receiver might be something other than an ordinary object -- a proto,
+        // an exception, an attribute accessor, a scalar, an `IO::Handle` -- and
+        // for a plain `class C { method m() {...} }` every one of them answers
+        // "no" on every call. Once the chain has been observed inert for this
+        // receiver class and method name, skip it. The gate is re-evaluated (and
+        // the install candidate cleared) on every dispatch, so a nested call run
+        // from inside a probe cannot leave its key behind for an outer one.
+        // See `vm_call_method_plain_lane` for what the key has to hold constant.
+        match Self::plain_method_lane_key(&target, &args, modifier, quoted, want_ref, method_sym) {
+            Some(lane_key) if self.plain_method_lane_hit(lane_key) => {
+                self.plain_method_lane_candidate = None;
+                return self.run_plain_method_lane(code, target_name, target, method, method_sym);
+            }
+            other => self.plain_method_lane_candidate = other,
+        }
         // `proto method` body dispatch (see try_proto_method_body).
         if let Some(result) = self.try_proto_method_body(&target, method, &args) {
             crate::vm::vm_stats::record_dispatch_entry_intercept("callmethodmut", "proto");
