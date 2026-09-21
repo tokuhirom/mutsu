@@ -1169,6 +1169,7 @@ impl Compiler {
                     self.mint_named_pair = true;
                 }
                 self.compile_expr(arg);
+                self.maybe_promote_attr_arg_read(arg);
                 self.mark_arg_as_rw_container_candidate_callee(
                     crate::opcode::RwArgCallee::CodeVar {
                         name_idx: code_var_idx,
@@ -1206,6 +1207,7 @@ impl Compiler {
                     self.mint_named_pair = true;
                 }
                 self.compile_expr(arg);
+                self.maybe_promote_attr_arg_read(arg);
                 // ADR-0067's argument producer: the callee code object is the
                 // stack value `compile_expr(target)` just pushed, so the VM can
                 // read its real signature — no name is needed anywhere.

@@ -52,17 +52,52 @@ impl Interpreter {
     /// accessor path carries type metadata for, and wrapping it in a scalar
     /// cell would disagree with that storage.
     pub(super) fn exec_attr_container_ref_op(&mut self, code: &CompiledCode, name_idx: u32) {
-        let attr = Self::const_str(code, name_idx).to_string();
-        let Some(base) = self.frame_self_value(code) else {
+        let Some(cell_val) = self.try_promote_attr_container(code, name_idx) else {
             return;
         };
+        self.stack.pop();
+        self.stack.push(cell_val);
+    }
+
+    /// [`crate::opcode::OpCode::ResolveAttrRwCandidate`]'s handler: follows the
+    /// plain `GetLocal` read of a `$!attr`/`$.attr` positional call argument,
+    /// honoring a pending `accessor_ref_pending` marker (see
+    /// [`Self::exec_attr_container_ref_op`] /
+    /// [`crate::opcode::OpCode::MarkAccessorRefContext`]) instead of always
+    /// leaving the plain value in place.
+    ///
+    /// The flag is consumed (and unconditionally cleared) here, exactly like
+    /// `CallMethod`/`CallMethodMut` consume it for an accessor-shaped argument
+    /// — this op is the Var-argument twin of that producer/consumer pair, for
+    /// the one rw-tail shape `AttrContainerRef` itself cannot reach from a
+    /// plain read (#8904): an `is rw`/`is raw` parameter bound to a caller's
+    /// `$!attr` argument. When the flag is unset, or the promotion declines
+    /// (no instance invocant, absent attribute, aggregate-shaped slot), the
+    /// plain value `GetLocal` pushed is left untouched.
+    pub(super) fn exec_resolve_attr_rw_candidate_op(&mut self, code: &CompiledCode, name_idx: u32) {
+        if std::mem::take(&mut self.accessor_ref_pending)
+            && let Some(cell_val) = self.try_promote_attr_container(code, name_idx)
+        {
+            self.stack.pop();
+            self.stack.push(cell_val);
+        }
+    }
+
+    /// The shared promotion core behind [`Self::exec_attr_container_ref_op`]
+    /// and [`Self::exec_resolve_attr_rw_candidate_op`]: promote `self`'s `attr`
+    /// (by the constant-pool index of its *bare* name) to its shared
+    /// `ContainerRef` cell, or decline (`None`) under the same conditions
+    /// `exec_attr_container_ref_op`'s doc comment lists.
+    fn try_promote_attr_container(&mut self, code: &CompiledCode, name_idx: u32) -> Option<Value> {
+        let attr = Self::const_str(code, name_idx).to_string();
+        let base = self.frame_self_value(code)?;
         let ValueView::Instance {
             attributes,
             class_name,
             ..
         } = base.view()
         else {
-            return;
+            return None;
         };
         // Public `has $.v` stores under `v`; private-only `has $!v` under `v!`.
         let priv_key = format!("{}!", attr);
@@ -73,7 +108,7 @@ impl Interpreter {
             } else if map.get(priv_key.as_str()).is_some() {
                 priv_key
             } else {
-                return;
+                return None;
             }
         };
         let current = attributes.as_map().get(key.as_str()).cloned();
@@ -81,7 +116,7 @@ impl Interpreter {
             current.as_ref().map(|v| v.view()),
             Some(ValueView::Array(..) | ValueView::Hash(_) | ValueView::Mixin(..))
         ) {
-            return;
+            return None;
         }
         let cn = class_name.resolve();
         let cell_val = attributes.promote_attr_to_container(key.as_str());
@@ -93,8 +128,7 @@ impl Interpreter {
         {
             crate::value::register_container_constraint(&cell, &tc);
         }
-        self.stack.pop();
-        self.stack.push(cell_val);
+        Some(cell_val)
     }
 
     /// The declared type of attribute `attr` on `class_name`, searched up the

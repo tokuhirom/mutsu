@@ -408,6 +408,7 @@ impl Compiler {
                         c.scalar_bind_autovivify = saved_autoviv;
                         c.bind_terminal = saved_terminal;
                         if let Some(callee) = rw_arg_callee.as_deref() {
+                            c.maybe_promote_attr_arg_read(elem);
                             c.mark_arg_as_rw_container_candidate(callee, elem_idx as u32, elem);
                         }
                         // A List (`($a, $b)`) holds the *container* of each scalar

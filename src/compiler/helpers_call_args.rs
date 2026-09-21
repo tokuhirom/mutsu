@@ -346,6 +346,33 @@ impl Compiler {
         }
     }
 
+    /// If `arg` is a direct private/public attribute read (`$!v`/`$.v`,
+    /// compiled by `compile_expr` as a bare `Expr::Var`), follow the
+    /// `GetLocal` it just emitted with [`OpCode::ResolveAttrRwCandidate`], so
+    /// a runtime `MarkRwArgRefContext`/`MarkRwArgRefContextCallee` marker —
+    /// emitted right after this call by `is_accessor_shaped_arg`-gated
+    /// callers, landing between the two ops via `insert_accessor_ref_marker`
+    /// — has an op to honor: an `is rw`/`is raw` callee parameter at this
+    /// position then aliases the attribute's OWN shared cell, rather than
+    /// losing (or, worse, misdirecting onto the callee's own same-named
+    /// attribute) the writeback (#8904). Called right after `compile_expr(arg)`
+    /// at every argument-compile site; a no-op for every other argument shape.
+    ///
+    /// Declines when the last op is not `GetLocal` (a `$.attr` public accessor
+    /// compiles to a `CallMethod`, not a `Var` read — see `compile_expr_var` —
+    /// so it is already covered by the accessor-call producer instead).
+    pub(super) fn maybe_promote_attr_arg_read(&mut self, arg: &Expr) {
+        let Expr::Var(name) = arg else { return };
+        let Some((bare, _)) = crate::value::attr_twigil_base(name) else {
+            return;
+        };
+        if !matches!(self.code.ops.last(), Some(OpCode::GetLocal(_))) {
+            return;
+        }
+        let name_idx = self.code.add_constant(Value::str(bare.to_string()));
+        self.code.emit(OpCode::ResolveAttrRwCandidate(name_idx));
+    }
+
     /// Compile a method call argument.
     pub(super) fn compile_method_arg(&mut self, arg: &Expr) {
         self.compile_method_arg_with_escape(arg, false);
@@ -387,6 +414,7 @@ impl Compiler {
                     s.mint_named_pair = true;
                 }
                 s.compile_expr(arg);
+                s.maybe_promote_attr_arg_read(arg);
                 if Self::needs_decont(arg) {
                     s.code.emit(OpCode::Decont);
                 }
@@ -605,6 +633,7 @@ impl Compiler {
         self.with_escape(escaping, |c| {
             c.with_suppress_pair_capture(suppress_pairs, |c| c.compile_expr(arg))
         });
+        self.maybe_promote_attr_arg_read(arg);
         if Self::needs_decont(arg) || (is_bind_target && Self::bind_target_returns_aggregate(arg)) {
             self.code.emit(OpCode::Decont);
         }
@@ -902,10 +931,14 @@ impl Compiler {
     }
 
     /// Whether an argument expression *could* be a public attribute accessor
-    /// read — the only shape `try_fast_accessor_read`'s `want_ref` branch ever
-    /// answers with a container. Keeping the test here (rather than leaving it
-    /// to the runtime) is what stops the marker being emitted, and its callee
-    /// lookup executed, for the overwhelming majority of call arguments.
+    /// read (`$c.v`) or a direct private/public attribute read (`$!v`/`$.v`
+    /// compiled as a bare `Expr::Var`) — the two shapes whose compiled
+    /// bytecode can answer a pending rw-container marker with the attribute's
+    /// shared container instead of a value copy (`try_fast_accessor_read`'s
+    /// `want_ref` branch for the first shape, `exec_resolve_attr_rw_candidate_op`
+    /// for the second). Keeping the test here (rather than leaving it to the
+    /// runtime) is what stops the marker being emitted, and its callee lookup
+    /// executed, for the overwhelming majority of call arguments.
     pub(super) fn is_accessor_shaped_arg(arg: &Expr) -> bool {
         matches!(
             arg,
@@ -915,15 +948,28 @@ impl Compiler {
                 quoted: false,
                 ..
             } if args.is_empty()
-        )
+        ) || matches!(arg, Expr::Var(name) if crate::value::attr_twigil_base(name).is_some())
     }
 
     fn insert_accessor_ref_marker(&mut self, marker: OpCode) {
         let mut i = self.code.ops.len();
         while i > 0 {
             match &self.code.ops[i - 1] {
-                OpCode::Decont | OpCode::ContainerizePair => i -= 1,
-                OpCode::CallMethod { .. } | OpCode::CallMethodMut { .. } => {
+                // `WrapVarRef` is skippable alongside `Decont`/`ContainerizePair`
+                // for the `ResolveAttrRwCandidate` anchor below: every
+                // `$!attr`/`$.attr` call argument gets tagged with it
+                // (`emit_wrap_var_ref_arg_tag`, for rw-source tracking
+                // regardless of container-candidacy), so it can sit between
+                // that op and the trailing call for that shape (a plain-sub
+                // call site emits it; a method-call site does not). It is
+                // never present after a bare accessor-call argument (`$c.v`)
+                // — `positional_arg_source_name` does not match
+                // `Expr::MethodCall` — so skipping it here cannot walk past an
+                // unrelated `WrapVarRef` belonging to a different argument.
+                OpCode::Decont | OpCode::ContainerizePair | OpCode::WrapVarRef { .. } => i -= 1,
+                OpCode::CallMethod { .. }
+                | OpCode::CallMethodMut { .. }
+                | OpCode::ResolveAttrRwCandidate(..) => {
                     // Keep the ip -> line table (`op_lines`) aligned with `ops`:
                     // the marker inherits the call's line.
                     let line = self.code.op_lines[i - 1];

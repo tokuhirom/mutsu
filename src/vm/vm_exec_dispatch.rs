@@ -2700,6 +2700,10 @@ impl Interpreter {
                 self.exec_attr_container_ref_op(code, *name_idx);
                 *ip += 1;
             }
+            OpCode::ResolveAttrRwCandidate(name_idx) => {
+                self.exec_resolve_attr_rw_candidate_op(code, *name_idx);
+                *ip += 1;
+            }
             OpCode::MarkBindContext => {
                 self.bind_context().set(true);
                 *ip += 1;
