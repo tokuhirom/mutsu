@@ -836,6 +836,7 @@ mod resolution_map_grep_rw;
 mod resolution_method;
 mod resolution_private_method;
 mod resolution_sequence;
+pub(crate) mod routine_stack;
 mod run;
 mod run_dist;
 mod run_main;
@@ -2198,7 +2199,7 @@ pub struct Interpreter {
     /// package identity on every hit to stay package-scoped, so they read this
     /// relaxed atomic instead.
     current_package_sym: Arc<AtomicU32>,
-    routine_stack: Vec<RoutineFrame>,
+    routine_stack: routine_stack::RoutineStack,
     callframe_stack: Vec<CallFrameEntry>,
     method_class_stack: Vec<String>,
     /// The class whose instance is currently being constructed, set only while

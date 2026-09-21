@@ -123,6 +123,17 @@ impl Interpreter {
         &self.routine_stack
     }
 
+    /// Whether any live frame carries a `lexical_package`.
+    ///
+    /// A count maintained by [`crate::runtime::routine_stack::RoutineStack`],
+    /// not a walk of it: two gates ask this per NAME — the bareword read in
+    /// `running_module_bareword` and the module-table preference in
+    /// `get_env_with_main_alias_inner` — and the walk they used grew with
+    /// nesting depth (#8918).
+    pub(crate) fn any_lexical_package_frame(&self) -> bool {
+        self.routine_stack.any_lexical_package()
+    }
+
     /// Whether an actual **routine** (sub/method) encloses the running code —
     /// not merely some frame. A bare `{ ... }` block, a `for` body and a
     /// closure all push a `RoutineFrame` with `is_block: true`, so
