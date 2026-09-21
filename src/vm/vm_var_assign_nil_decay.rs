@@ -1,5 +1,6 @@
 use super::*;
 use crate::symbol::Symbol;
+use crate::value::ValueMap;
 
 impl Interpreter {
     /// ADR-0049 slice 3: the store-time `Nil` default for a whole-container
@@ -50,6 +51,42 @@ impl Interpreter {
             return Value::package(Symbol::intern(base));
         }
         self.typed_container_default(container)
+    }
+
+    /// ADR-0049 at a **chained** subscript store (`@d[0][0] = Nil`,
+    /// `%h<a><b> = Nil`, and their 3+-level twin).
+    ///
+    /// The `Nil` lands in an element of the ROW the earlier subscripts reach,
+    /// so it decays to *that* container's default -- never to the root
+    /// variable's. A row is an ordinary `Array`/`Hash` that does not inherit
+    /// the root's `is default(...)`, which is why raku answers `Any` for
+    /// `my @d is default(42); @d[0] = [1, 2]; @d[0][0] = Nil` and `7` when the
+    /// row is `:=`-bound to an `is default(7)` array. So this consults only the
+    /// row's OWN embedded state, through the same `typed_container_default`
+    /// ladder [`Interpreter::assign_store_nil_default`] ends on (an explicit
+    /// `is default(...)`, then declared element-type metadata -- which also
+    /// covers a native element's zero fill -- then the untyped `Any`), and
+    /// deliberately skips the name-keyed fallback the single-subscript store
+    /// takes, whose target name IS the owning container there.
+    ///
+    /// `row` is `None` when the chain has not been walk-created yet; a
+    /// brand-new row is untyped, so it defaults like a fresh container of the
+    /// kind the leaf subscript implies.
+    pub(crate) fn nested_store_nil_default(
+        &mut self,
+        row: Option<Value>,
+        leaf_positional: bool,
+    ) -> Value {
+        let row = row
+            .map(|r| r.deref_container().descalarize().clone())
+            .unwrap_or_else(|| {
+                if leaf_positional {
+                    Value::real_array(Vec::new())
+                } else {
+                    Value::hash(ValueMap::default())
+                }
+            });
+        self.typed_container_default(&row)
     }
 
     /// `@a = Nil` is a one-element *list* assignment whose single `Nil`

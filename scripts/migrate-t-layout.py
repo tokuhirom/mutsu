@@ -120,6 +120,11 @@ OVERRIDES: dict[str, str] = {
     # `collections`; they belong beside the other store-path pins.
     "hash-element-store-early-lane": "vm/binding",
     "nested-element-store-fast-lane": "vm/binding",
+    # ADR-0049's rule at the chained store (#8966): which default a `Nil` store
+    # decays to is a property of the store path's decision point, not of
+    # `Array`/`Hash` as containers -- same reasoning as the two lanes above, so
+    # `element`/`nested` must not pull it into `collections` either.
+    "nil-decay-chained-element-store": "vm/binding",
     # `where` on a generic type parameter -- a signature constraint.
     "generic-where": "routines",
     # Whether a generic class nominalizes -- a type-system property.

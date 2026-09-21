@@ -841,6 +841,33 @@ Slices 0-2 landed:
   construction.md`, the finding this ADR supersedes, is `git mv`'d to `news/2026-08/` as part of this
   same change, rewritten as an accomplishment.
 
+- **Follow-up (2026-09-21): the chained store** (#8966). Slice 4 unified the SINGLE-subscript element
+  store (`@a[0] = Nil`) onto `assign_store_nil_default`, but the chained one (`@d[0][0] = Nil`,
+  `%h<a><b> = Nil`, and their 3+-level twin) had no decay at all: every descent arm in
+  `exec_index_assign_expr_nested_op_body` / `exec_index_assign_deep_nested_op_body`
+  (`vm_var_assign_index_named.rs`) wrote the rvalue straight through `Value::assign_element_slot` /
+  `Value::hash_insert_through`, so a raw `Nil` reached the slot -- the one value this ADR says an
+  element can never hold.
+
+  Both ops now reach the decision point once, above their descent arms, through a new
+  `Interpreter::nested_store_nil_default` (`vm_var_assign_nil_decay.rs`). The owning container at a
+  chain is the **row** the earlier subscripts reach, not the root variable, so the helper consults only
+  that row's own embedded state -- the `typed_container_default` ladder `assign_store_nil_default`
+  itself ends on -- and deliberately omits the name-keyed `var_default`/`var_type_constraint` fallback,
+  whose target name IS the owning container only for the single-subscript store. That distinction is
+  observable and was measured against `raku`: `my @d is default(42); @d[0] = [1, 2]; @d[0][0] = Nil`
+  leaves `Any`, because the row is an ordinary `Array` that does not inherit the root's
+  `is default(...)`; a row that carries its own (`@f[0] := my @inner is default(7)`) decays to `7`, and
+  a typed row (`Array[Int]`) to `Int`. The row is peeked read-only with the same by-value
+  `subscript_peek_step` walk the `*-1` resolution already runs, and is absent exactly when the arms
+  below are about to walk-create it untyped.
+
+  The hook sits UNDER each op's `Proxy` arm (a `Proxy` element is not a `Scalar`, so its `STORE` takes
+  the raw `Nil`) and skips a `:=` bind (which replaces the element container rather than storing into
+  it, so `Nil` stays `Nil` there). Pinned by `t/vm/binding/nil-decay-chained-element-store.t`, dual-run
+  against `raku`; the `todo` this divergence carried in
+  `t/vm/binding/nested-element-store-fast-lane.t` is removed.
+
 ---
 
 *This ADR is Accepted for slices 0-6 (fully implemented). If the mechanism judgment changes for some

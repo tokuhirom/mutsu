@@ -3742,6 +3742,27 @@ impl Interpreter {
             return Ok(());
         }
 
+        // ADR-0049 at the CHAINED store: a `Nil` rvalue can never be left in
+        // an element slot -- it decays to the default of the container it
+        // lands in, which here is the ROW the inner subscript reaches
+        // (`@d[0]`), not the root variable. `nested_store_nil_default` carries
+        // why that distinction matters and which ladder decides it; the row is
+        // peeked read-only with the same one-step walk the `*-1` resolution
+        // above uses, and is absent exactly when the arms below are about to
+        // walk-create it. Placed under the `Proxy` arm on purpose: a `Proxy`
+        // element is not a `Scalar`, so its `STORE` takes the raw `Nil`. A
+        // `:=` bind replaces the element container rather than storing into
+        // it, so `Nil` stays `Nil` there too.
+        let val = if val.is_nil() && !is_bind_value {
+            let row = self
+                .env()
+                .get(&var_name)
+                .and_then(|root| Self::subscript_peek_step(root, &inner_key, inner_positional));
+            self.nested_store_nil_default(row, outer_positional)
+        } else {
+            val
+        };
+
         // The ROOT is itself a `Pair` (`my $p = (c => [1,2]); $p<c>[0] = 9`).
         // The inner subscript addresses the Pair's value, and the outer one
         // then indexes THAT — neither arm below recognizes a Pair as a root, so
@@ -4923,6 +4944,23 @@ impl Interpreter {
             val
         } else {
             val.itemize_for_element_store()
+        };
+
+        // ADR-0049 at the chained store, 3+-level twin of the two-level op's
+        // hook. The owning row is the container the chain reaches after every
+        // subscript but the LAST, so walk to it read-only (the same by-value
+        // step the `*-1` resolution above takes) and decay against that. A
+        // level that does not exist yet stops the walk, and `None` then means
+        // the row is about to be walk-created untyped.
+        let val = if val.is_nil() && bind_cell.is_none() {
+            let mut row = self.env().get(&var_name).cloned();
+            for level in 0..depth - 1 {
+                let Some(current) = row.as_ref() else { break };
+                row = Self::subscript_peek_step(current, &indices[level], positional_flags[level]);
+            }
+            self.nested_store_nil_default(row, positional_flags[depth - 1])
+        } else {
+            val
         };
 
         // Invalidate local cache for the variable
