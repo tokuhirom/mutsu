@@ -4298,7 +4298,7 @@ pub struct Interpreter {
     /// without a single probe claiming the call, so the chain can be skipped.
     /// Written only from the dispatch tail that proves it, and cleared with the
     /// other method caches on a registry generation change. See
-    /// [`crate::vm::vm_call_method_plain_lane`].
+    /// `vm_call_method_plain_lane`.
     pub(crate) plain_method_lane: rustc_hash::FxHashSet<(Symbol, Symbol)>,
     /// The key the *current* `CallMethodMut` dispatch may install into
     /// [`Interpreter::plain_method_lane`]. Set (or cleared) by that opcode's

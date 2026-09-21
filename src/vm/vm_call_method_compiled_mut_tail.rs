@@ -3,7 +3,7 @@
 //! function's prefix has declined the call.
 //!
 //! Split out so the `CallMethodMut` plain-method lane (#8880, see
-//! [`crate::vm::vm_call_method_plain_lane`]) can enter it directly for a
+//! `vm_call_method_plain_lane`) can enter it directly for a
 //! `(class, method)` pair whose prefix has already been proven inert, without
 //! the prefix being duplicated or the shared code drifting between the two
 //! entries.
