@@ -123,6 +123,33 @@ impl Interpreter {
         &self.routine_stack
     }
 
+    /// Package that owns the lexical context of a private-method call.
+    ///
+    /// A top-level sub declared in a `unit class` runs with a `GLOBAL` runtime
+    /// package for historical module-loading reasons, but its routine frame
+    /// still records the unit class as `lexical_package`. That lexical owner
+    /// must win over an enclosing method's dispatch class: an exported
+    /// operator sub in `Number` can call ` $value!native-int ` even when the
+    /// operator was invoked from a different class's method.
+    pub(crate) fn private_calling_package(&self) -> Option<String> {
+        if let Some(package) = self
+            .routine_stack
+            .last()
+            .and_then(|frame| frame.lexical_package)
+            .filter(|package| {
+                let package = package.as_str();
+                self.registry().classes.contains_key(package)
+                    || self.registry().roles.contains_key(package)
+            })
+        {
+            return Some(package.resolve());
+        }
+        self.method_class_stack
+            .last()
+            .cloned()
+            .or_else(|| Some(self.current_package().to_string()))
+    }
+
     /// Whether any live frame carries a `lexical_package`.
     ///
     /// A count maintained by [`crate::runtime::routine_stack::RoutineStack`],

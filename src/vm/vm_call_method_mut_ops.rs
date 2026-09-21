@@ -2481,8 +2481,17 @@ impl Interpreter {
                     ValueView::Package(name) if matches!(name.resolve().as_str(), "Any" | "Mu" | "Array")
                 )) {
             let empty_array = Value::real_array(vec![]);
-            self.env_mut()
-                .insert(target_name.to_string(), empty_array.clone());
+            // A writable loop parameter such as `for @rows <-> $row` names a
+            // `ContainerRef` cell for the source element. Replacing the env
+            // binding here detaches the vivified array from that element, so
+            // later reads still see Any. Descend through the alias when one
+            // exists; ordinary lexical variables retain the old env fallback.
+            if let Some(slot) = self.env_root_descended_mut(target_name) {
+                *slot = empty_array.clone();
+            } else {
+                self.env_mut()
+                    .insert(target_name.to_string(), empty_array.clone());
+            }
             empty_array
         } else {
             target

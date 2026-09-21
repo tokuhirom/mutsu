@@ -70,11 +70,7 @@ impl Interpreter {
         // Owner-qualified: !Owner::method. Split at the LAST `::` so a nested owner
         // class name (`$x!Jar::Cookie::secret`) keeps its full qualifier.
         if let Some((owner_class, private_name)) = private_rest.rsplit_once("::") {
-            let caller_class = self
-                .method_class_stack
-                .last()
-                .cloned()
-                .or_else(|| Some(self.current_package()));
+            let caller_class = self.private_calling_package();
             let (canonical_owner, caller_allowed) =
                 self.resolve_and_check_private_owner(caller_class.as_deref(), owner_class);
             if !caller_allowed {

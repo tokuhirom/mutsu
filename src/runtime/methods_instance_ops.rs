@@ -550,11 +550,7 @@ impl Interpreter {
                 return self.call_method_with_values(num, method, args);
             }
             if let Some(private_rest) = method.strip_prefix('!') {
-                let caller_class = self
-                    .method_class_stack
-                    .last()
-                    .cloned()
-                    .or_else(|| Some(self.current_package()));
+                let caller_class = self.private_calling_package();
                 // An unqualified external private call (`$o!meth` where `$o` is
                 // not `self`) must name the defining package — Raku reports
                 // X::Method::Private::Unqualified rather than the Permission
@@ -2060,11 +2056,7 @@ impl Interpreter {
                 return Ok(Value::make_instance(Symbol::intern("Supply"), attrs));
             }
             if let Some(private_rest) = method.strip_prefix('!') {
-                let caller_class = self
-                    .method_class_stack
-                    .last()
-                    .cloned()
-                    .or_else(|| Some(self.current_package()));
+                let caller_class = self.private_calling_package();
                 // Split at the LAST `::` so a nested owner class name
                 // (`$c!Jar::Cookie::secret` → owner `Jar::Cookie`, method `secret`)
                 // resolves correctly.
