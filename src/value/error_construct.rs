@@ -94,7 +94,7 @@ impl RuntimeError {
             Value::package(Symbol::intern(type_name)),
         );
         let ex = Value::make_instance(Symbol::intern("X::Numeric::Uninitialized"), attrs);
-        let mut err = Self::new(msg.to_string());
+        let mut err = Self::new(msg);
         err.exception = Some(Box::new(ex));
         err
     }
@@ -109,7 +109,7 @@ impl RuntimeError {
         attrs.insert("message".to_string(), Value::str_from(&msg));
         attrs.insert("name".to_string(), Value::str_from(op_long_name));
         let ex = Value::make_instance(Symbol::intern("X::NoZeroArgMeaning"), attrs);
-        let mut err = Self::new(msg.to_string());
+        let mut err = Self::new(msg);
         err.exception = Some(Box::new(ex));
         err
     }
@@ -377,7 +377,7 @@ impl RuntimeError {
             "Cannot modify an immutable value".to_string()
         };
         let mut attrs = ValueMap::default();
-        attrs.insert("message".to_string(), Value::str(msg.clone()));
+        attrs.insert("message".to_string(), Value::str(msg));
         if let Some(v) = value {
             attrs.insert("value".to_string(), Value::str(v.to_string()));
         }
@@ -499,7 +499,7 @@ impl RuntimeError {
         attrs.insert("source".to_string(), Value::str(source.to_string()));
         attrs.insert("reason".to_string(), Value::str(reason.to_string()));
         attrs.insert("target-name".to_string(), Value::str("Numeric".to_string()));
-        attrs.insert("message".to_string(), Value::str(msg.clone()));
+        attrs.insert("message".to_string(), Value::str(msg));
         Self::typed("X::Str::Numeric", attrs)
     }
 
@@ -515,7 +515,7 @@ impl RuntimeError {
         attrs.insert("what".to_string(), Value::str(what.to_string()));
         attrs.insert("got".to_string(), got);
         attrs.insert("range".to_string(), Value::str(range.to_string()));
-        attrs.insert("message".to_string(), Value::str(msg.clone()));
+        attrs.insert("message".to_string(), Value::str(msg));
         Self::typed("X::OutOfRange", attrs)
     }
 
