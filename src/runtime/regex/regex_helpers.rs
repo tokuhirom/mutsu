@@ -732,7 +732,12 @@ fn strip_marks_token(token: &RegexToken) -> RegexToken {
 /// `<$var>`-family call gets its own discarded `Match` object in Raku). See
 /// `todo/tickets/stored-regex-loses-its-defining-scope-lexicals.md` bug 2.
 pub(crate) fn wrap_capture_isolated(pattern: RegexPattern) -> RegexPattern {
-    wrap_capture_isolated_atom(RegexAtom::CaptureIsolatedGroup(pattern))
+    let (ignore_case, ignore_mark) = (pattern.ignore_case, pattern.ignore_mark);
+    wrap_capture_isolated_atom(
+        RegexAtom::CaptureIsolatedGroup(pattern),
+        ignore_case,
+        ignore_mark,
+    )
 }
 
 /// [`wrap_capture_isolated`], but the interpolated `Regex` value closed over
@@ -742,16 +747,19 @@ pub(crate) fn wrap_capture_isolated_scoped(
     pattern: RegexPattern,
     scope: Arc<crate::value::ValueMap>,
 ) -> RegexPattern {
-    wrap_capture_isolated_atom(RegexAtom::CaptureIsolatedGroupScoped(pattern, scope))
+    let (ignore_case, ignore_mark) = (pattern.ignore_case, pattern.ignore_mark);
+    wrap_capture_isolated_atom(
+        RegexAtom::CaptureIsolatedGroupScoped(pattern, scope),
+        ignore_case,
+        ignore_mark,
+    )
 }
 
-fn wrap_capture_isolated_atom(atom: RegexAtom) -> RegexPattern {
-    let (ignore_case, ignore_mark) = match &atom {
-        RegexAtom::CaptureIsolatedGroup(p) | RegexAtom::CaptureIsolatedGroupScoped(p, _) => {
-            (p.ignore_case, p.ignore_mark)
-        }
-        _ => unreachable!("wrap_capture_isolated_atom is only called with an isolated-group atom"),
-    };
+fn wrap_capture_isolated_atom(
+    atom: RegexAtom,
+    ignore_case: bool,
+    ignore_mark: bool,
+) -> RegexPattern {
     RegexPattern {
         tokens: vec![RegexToken {
             atom,
