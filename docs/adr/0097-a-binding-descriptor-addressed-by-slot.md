@@ -274,6 +274,9 @@ revertible.
 3. **The binding-shape properties**: `sigilless_alias`, `sigilless_readonly`,
    `scalar_bind_no_container`, `bound`, `bound_decont`, `var_source_name`,
    `outer`. These are what the scalar store cascade probes on every assignment.
+   §13 found this grouping is not uniform either: five of the seven need the
+   still-unbuilt, closure-capture-blocked runtime half (§13.2); `bound` and
+   `bound_decont` do not and are the next concrete slice (§13.3).
 4. **The element-state properties**: `bound_index`, `deleted_index`,
    `elem_share`, `ro_index`, `bound_array_len`, `bound_array_slice`. Runtime
    half; all latch-gated today, so the win is the deletion of the latches rather
@@ -350,7 +353,12 @@ one site per namespace rather than at twenty-eight.
 **Slices 2-5 are not started as written.** §10 records why slice 2 as written
 is not a uniform next step. One of its five properties has since been retired
 on its own: see §12 (`deep_readonly`, folded into `ReadonlyKind` rather than
-onto `BindingDesc` or the still-unbuilt runtime-half array).
+onto `BindingDesc` or the still-unbuilt runtime-half array). §13 found slice 3
+is not uniform either: `bound`/`bound_decont` are verified low-risk
+compile-time folds and are the next actionable slice; the other five of its
+seven properties join `shaped_array_dims` behind the runtime half, whose
+closure-capture story (§11.5, generalized by §13.2) is now the thing to
+design before any of them can move.
 
 ## 10. Slice 2 is five properties of different shapes, not one fold (2026-09-15)
 
@@ -644,3 +652,117 @@ either. What this section adds is one data point: not every property §10
 called "needs the runtime half" turns out to need a *new* one — check
 whether an existing per-frame dynamic mechanism already answers the same
 shape of question before designing another.
+
+## 13. Slice 3 is two shapes again, and one of them needs no runtime half at all (2026-09-21)
+
+Investigating slice 3 (`sigilless_alias`, `sigilless_readonly`,
+`scalar_bind_no_container`, `bound`, `bound_decont`, `var_source_name`,
+`outer`) before writing code, per the §10/§12 precedent.
+
+### 13.1 A counting mistake worth recording
+
+A first pass counted real call sites with `grep -c "MetaNs::Bound"`, which is
+a **substring** match: it silently folded in every sibling namespace whose
+name starts with `Bound` (`BoundIndex`, `BoundArrayLen`, `BoundArraySlice`,
+`BoundDecont`), inflating `Bound`'s apparent count to ~20. Re-run with a
+word-boundary match, `Bound` has **5** real call sites and `BoundDecont` has
+**5** — both far smaller than slice 2's `type`/`hash_key_type`, and in the
+same range as slice 1's twelve fields. Anyone re-deriving call-site counts
+for a `MetaNs` variant whose name is a prefix of others' should use
+`grep -rnE "MetaNs::Name\b[^A-Za-z]"` or equivalent, not a plain substring
+match.
+
+### 13.2 Five of the seven are the same dynamic shape as `shaped_array_dims`
+
+`sigilless_alias`, `sigilless_readonly`, `scalar_bind_no_container`,
+`var_source_name`, and `outer` all fail the same test §10 applied to
+`shaped_array_dims`: the *value* held is decided at **runtime**, not at the
+declaration's compile time, and can differ across repeated executions of the
+same slot (different loop iterations, different calls, different bind
+targets):
+
+- `sigilless_alias` stores the **resolved alias-chain target name** (`my \x
+  := \y`), walked with a `while seen.insert(...)` loop at the *store* site
+  (`vm_misc_assign.rs`) — a graph, not a bit, and the target can be a
+  parameter or a computed value unknown until the bind executes.
+- `scalar_bind_no_container`'s own write-site comment states the shape
+  directly: "Set/cleared per declaration so a **later** `my $o = 5` of the
+  same name goes back to owning a Scalar" (`vm_var_assign_set_local.rs:1186`).
+  That "later" is a different call or loop iteration re-executing the same
+  bytecode, not a different compile-time site.
+- `var_source_name` is written once **per call**, inside the parameter
+  binder (`binding_signature.rs`), recording which caller-side variable this
+  invocation's `@`/`%` parameter aliases — necessarily different across
+  calls.
+- `outer` is a **per-closure-creation value snapshot** (`vm_register_ops.rs`),
+  keyed by name inside the flattened capture `Env` a closure gets at
+  creation time, not a fact about a compiled slot at all — a program can
+  create many closures over the same lexical, each with its own snapshot.
+
+All five need "the runtime half" — a frame-lifetime, slot-indexed store,
+undesigned per §10 — or, per §12's precedent, an existing dynamic
+per-frame mechanism that already answers the same shape of question. None of
+the five fits `readonly_vars`/`ReadonlyKind` the way `deep_readonly` did (they
+are not readonly facts), so unlike §12 this is not a one-line reuse. Building
+the runtime half generically was investigated as part of this round and
+rejected for now: `Locals` (`src/runtime/locals.rs`, ADR-0077) is the right
+place to add a parallel slot-indexed array with no call-site changes (its
+`push_frame`/`pop_frame`/`refill_slots`/`resize_slots` are the only places
+that would need to grow it in lockstep), but every one of these five
+properties is *also* readable through a closure's captured `env` today —
+`outer`'s own mechanism is explicitly built around exactly that — and
+`Locals` does not travel with a closure capture. A `Locals`-only runtime half
+would silently lose the fact the moment any of these five crosses a closure
+boundary, which is the same gap §11.5 already named as unresolved for the
+`LOCAL_READ_SPOILERS` wiring slice. That section's "closure capture is not
+covered at all" is not specific to that one latch — it is the general
+blocker for every property in slices 2-5 that a closure can reach, and it
+should be answered once, for the runtime half as a whole, before any of
+these five is attempted.
+
+### 13.3 `bound` and `bound_decont` are a different, better shape
+
+Unlike the five above, `bound`'s and `bound_decont`'s *write* sites are each
+one fixed statement — `Stmt::MarkBoundContainer` (`compiler/stmt.rs:1131`)
+and the coerce-path bind marker (`vm_var_assign_coerce.rs`) — compiled once
+per `:=`-to-container declaration. `Compiler::alloc_fresh_local`
+(`compiler/mod.rs:2002`) never reuses a slot number across declarations: it
+always pushes `self.code.locals.len()` as the new slot, so **exactly one
+declaration statement ever owns a given local slot** for the life of a
+compiled chunk. That means "is slot N a `:=`-bound container" is not a
+per-execution fact that can drift between calls or iterations the way
+`scalar_bind_no_container`'s is — it is fully decided by which AST statement
+compiled to that slot, i.e. at compile time, for any name that resolves to a
+local slot at all. The existing "clear a stale marker" defenses elsewhere in
+this file (`bound_array_slice`, `bound_decont` itself) exist because *env* is
+name-keyed and two different slots can share a name across sibling scopes,
+producing spurious staleness on the shared string key — a bug class that is
+specific to name-keying and cannot occur once the fact is addressed by the
+declaration's own permanent slot.
+
+So `bound` (read hot: `OpCode::CheckReadOnly` "runs on every whole-variable
+assignment... per iteration in tight loops" per its own comment,
+`vm_exec_dispatch.rs:6023`) is a genuine slice-1-shaped candidate — a
+compile-time bit on `BindingDesc`, needing **no runtime write and no runtime
+read at all** for the local-slot case, which is the common one. What is not
+yet verified: `Stmt::MarkBoundContainer` compiles to `OpCode::SetGlobal`, not
+a local-slot op, so it may also fire for a name with no local slot (`our
+%a := ...` at file/package scope) — that case would still need the current
+env path, the same "partial retirement" shape already accepted for
+`type`/`hash_key_type` in §10. This needs verifying against the compiler's
+`our`/package-scope lowering before implementation, and the surrounding
+`CheckReadOnly`/`is_ro_constant_hash` logic (distinguishing a bound Map from
+a `constant` one) is intricate enough that the fold should land with its own
+focused regression tests before touching the hot path.
+
+### 13.4 Conclusion and next slice
+
+Slice 3, like slice 2, is not one fold. Five of its seven properties join
+`shaped_array_dims` behind the still-unbuilt, closure-capture-blocked runtime
+half — and closure capture is the thing to design next if that half is to be
+built at all, not any one property's plumbing. `bound` and `bound_decont`
+are the exception: they are slice-1-shaped, verified low-risk by the
+`alloc_fresh_local`-never-reuses-slots invariant, and are the next concrete,
+scoped implementation slice — smaller than originally estimated (5 call
+sites each, not the ~20 a substring-match miscount suggested) once the
+local-slot-vs-package-scope split above is confirmed.
