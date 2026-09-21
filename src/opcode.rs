@@ -1102,6 +1102,36 @@ pub(crate) enum OpCode {
     /// instance invocant or the slot is aggregate-shaped (an `@`/`%` value is
     /// already a shared container and has its own accessor path).
     AttrContainerRef(u32),
+    /// Follows the plain [`Self::GetLocal`] read of a `$!attr`/`$.attr`
+    /// positional call argument, honoring a pending [`Self::MarkRwArgRefContext`]
+    /// / [`Self::MarkRwArgRefContextCallee`] the same way [`Self::AttrContainerRef`]
+    /// honors [`Self::MarkAccessorRefContext`] — the marker producer sits
+    /// between the two ops, exactly as it sits between `$c`'s own
+    /// [`Self::GetLocal`] and the `.v` [`Self::CallMethodMut`] that resolves
+    /// an accessor-shaped argument, so the callee-side gate's stack-depth
+    /// arithmetic (calibrated for that one already-pushed intermediate value)
+    /// does not need a second convention.
+    ///
+    /// `$!attr` reads through a *seeded local slot* (see [`Self::AttrContainerRef`]'s
+    /// doc comment), so an ordinary attribute-typed positional argument
+    /// (`g.take($!buffer)`) compiled to a bare [`Self::GetLocal`] carried no
+    /// hook for an `is rw`/`is raw` callee parameter to alias the caller's
+    /// attribute cell through — the writeback machinery had nowhere to attach,
+    /// so the mutation was either silently lost, or (worse) misapplied to the
+    /// CALLEE's own same-named attribute if one happened to exist (#8904).
+    ///
+    /// Consumes (and unconditionally clears) `accessor_ref_pending`: when set,
+    /// pops the plain value [`Self::GetLocal`] just pushed and replaces it
+    /// with `self`'s attribute promoted to its shared `ContainerRef` cell, so
+    /// the argument aliases the SAME cell every other read/write of that
+    /// attribute observes — the caller's actual storage, not a value
+    /// snapshot. When the flag is unset (the overwhelming common case — most
+    /// calls never touch an `is rw` parameter) or the promotion declines, this
+    /// is a no-op and the plain value is left in place.
+    ///
+    /// The operand is the constant-pool index of the *bare* attribute name
+    /// (same encoding as [`Self::AttrContainerRef`]'s operand).
+    ResolveAttrRwCandidate(u32),
     /// Signal that the next SetLocal is a `:=` bind (preserve container type for `@` vars).
     MarkBindContext,
     /// Signal that the next SetLocal binds a `$` scalar to a Positional value via
