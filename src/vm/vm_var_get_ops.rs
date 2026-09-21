@@ -652,12 +652,10 @@ impl Interpreter {
     /// `env` under the one key) exactly as it was: that one needs a storage
     /// namespace of the kind #7914 gave enum keys, not a precedence change.
     fn running_module_bareword(&self, name: &str) -> Option<Value> {
-        if !self
-            .routine_stack()
-            .iter()
-            .rev()
-            .any(|frame| frame.lexical_package.is_some())
-        {
+        // A count kept by `RoutineStack`, not a walk of it: this gate opens
+        // every bareword read, and the walk grew with nesting depth on a path
+        // that runs per name (#8918).
+        if !self.any_lexical_package_frame() {
             return None;
         }
         // Two namespaces a lexical of the loading scope can never occupy, so

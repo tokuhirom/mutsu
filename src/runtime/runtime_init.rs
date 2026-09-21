@@ -3128,7 +3128,7 @@ impl Interpreter {
             current_package_sym: Arc::new(std::sync::atomic::AtomicU32::new(
                 crate::symbol::Symbol::intern("GLOBAL").id(),
             )),
-            routine_stack: Vec::new(),
+            routine_stack: crate::runtime::routine_stack::RoutineStack::default(),
             callframe_stack: Vec::new(),
             method_class_stack: Vec::new(),
             constructing_class: None,

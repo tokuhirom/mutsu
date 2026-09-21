@@ -1251,11 +1251,7 @@ impl Interpreter {
         // The compiler emits a global read for such a name, so prefer the
         // module table here when the running routine carries the unit owner;
         // ordinary local lexicals use a local-slot opcode and are unaffected.
-        if self
-            .routine_stack()
-            .iter()
-            .rev()
-            .any(|frame| frame.lexical_package.is_some())
+        if self.any_lexical_package_frame()
             && let Some(v) = self.module_imported_lexical(name)
         {
             return Some(v.clone());
