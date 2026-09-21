@@ -278,9 +278,10 @@ impl Interpreter {
         def_file: Option<Symbol>,
     ) {
         let invocation_id = self.take_invocation_id();
+        let lexical_package = self.lexical_package_for_frame(def_file);
         let frame = super::RoutineFrame {
             package,
-            lexical_package: None,
+            lexical_package,
             name,
             line,
             file,

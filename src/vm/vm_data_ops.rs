@@ -152,6 +152,14 @@ impl Interpreter {
                 {
                     elems.push(val)
                 }
+                // A Uni (and its NFC/NFD/NFKC/NFKD forms) is Positional but NOT
+                // Iterable, so it takes the same one-arg-flatten exemption as
+                // Buf/Blob above: `["a".NFC]` keeps the Uni whole as one
+                // element, even though `for`/`.map` iterate its codepoints
+                // (`Interpreter::value_to_list`, which flattens it, is used by
+                // those iteration paths, not by this literal's per-element
+                // decision).
+                ValueView::Uni(..) => elems.push(val),
                 // A single infinite *integer* range (`[1..Inf]`, `[1..*]`,
                 // `[^Inf]`, `[0..^*]`) keeps the `[...]` array lazy: build the
                 // same reify-on-demand lazy array `my @a = 1..Inf` produces, so

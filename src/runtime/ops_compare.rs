@@ -80,6 +80,14 @@ impl Interpreter {
                 })
                 .collect(),
             ValueView::Slip(items) => items.to_vec(),
+            // A Uni (and its NFC/NFD/NFKC/NFKD forms) does `Positional[uint32]`:
+            // in list context it flattens to its codepoints. Mirrors
+            // utils::value_to_list.
+            ValueView::Uni(u) => u
+                .codepoints()
+                .into_iter()
+                .map(|c| Value::int(c as i64))
+                .collect(),
             // Positional-ish instances (WalkList candidates, Backtrace frames,
             // Array-subclass backing storage) share the utils implementation.
             ValueView::Instance { .. } => crate::runtime::utils::value_to_list(val),
