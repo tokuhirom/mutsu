@@ -714,11 +714,7 @@ impl Interpreter {
                 id: target_id,
             } = target.view()
         {
-            let caller_class = self
-                .method_class_stack
-                .last()
-                .cloned()
-                .or_else(|| Some(self.current_package()));
+            let caller_class = self.private_calling_package();
             let (owner_class, attr_name) =
                 if let Some((owner, attr)) = private_rest.split_once("::") {
                     (owner.to_string(), attr.to_string())

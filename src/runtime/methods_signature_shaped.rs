@@ -229,11 +229,7 @@ impl Interpreter {
         } = target.view()
         {
             if let Some(private_rest) = method.strip_prefix('!') {
-                let caller_class = self
-                    .method_class_stack
-                    .last()
-                    .cloned()
-                    .or_else(|| Some(self.current_package()));
+                let caller_class = self.private_calling_package();
                 // Resolve: owner-qualified (!Owner::method) or unqualified (!method)
                 let resolved = if let Some((owner_class, pm_name)) = private_rest.split_once("::") {
                     // Canonicalize the source-written owner name relative to

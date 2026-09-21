@@ -981,10 +981,21 @@ impl Interpreter {
             }
         }
 
-        // Import into the current package scope so that `use Foo` inside
-        // `module Bar { }` makes Foo's exports available as `Bar::name`
-        // rather than polluting the GLOBAL namespace.
-        let target_pkg = self.current_package();
+        // Ordinary imports use the runtime package selected by the loading
+        // compunit. A file-level operator `use` can run before its later
+        // `unit class`/`unit module` declaration has registered and switched
+        // `current_package`; operator candidates must instead be installed in
+        // the unit package so methods in that declaration can dispatch them.
+        // Keep this distinction local to operators: regular nested `use`s in
+        // a `need`-loaded compunit remain in their historical GLOBAL/import
+        // scope, while operator syntax needs the unit package during the
+        // declaration's pre-registration window.
+        let current_pkg = self.current_package().to_string();
+        let unit_pkg = self
+            .import_target_package
+            .clone()
+            .or_else(|| self.unit_module_loading_stack.last().cloned())
+            .unwrap_or_else(|| current_pkg.clone());
 
         // For a `unit module Foo`, the actual exports live in
         // `unit_module_exported_subs[Foo]` (runtime registration used the
@@ -1017,7 +1028,12 @@ impl Interpreter {
             if !import_all && !is_mandatory && symbol_tags.is_disjoint(&requested) {
                 continue;
             }
-            self.record_imported_routine_alias(&target_pkg, &name);
+            let target_pkg = if name.contains(":<") {
+                &unit_pkg
+            } else {
+                &current_pkg
+            };
+            self.record_imported_routine_alias(target_pkg, &name);
             // An imported operator sub (e.g. `method infix:<as> is export`'s
             // sub form) must be visible to the EVAL parser so code parsed at
             // runtime recognizes the new operator symbol.
@@ -1259,7 +1275,7 @@ impl Interpreter {
                 .cloned()
             {
                 let bare_key = format!("&{name}");
-                let qualified_key = format!("&{target_pkg}::{name}");
+                let qualified_key = format!("&{current_pkg}::{name}");
                 self.record_import_env_key(&bare_key);
                 self.record_import_env_key(&qualified_key);
                 self.env.insert(bare_key, val.clone());
