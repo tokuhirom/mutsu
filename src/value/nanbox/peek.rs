@@ -429,6 +429,29 @@ impl NanBox {
         matches!(classify(self.0.get()), Classified::Kind(Kind::Seq))
     }
 
+    /// The [`crate::value::DispatchShape`] of this word, or `None` when the
+    /// receiver is not one of the plain shapes the zero-argument native
+    /// dispatch table covers — a pure tag probe (see [`Self::is_seq`]).
+    ///
+    /// `ArrayShaped` and `ArrayLazy` are excluded on purpose: a shaped array
+    /// and a lazy one both have arms of their own further down the cascade
+    /// (`.elems` on a lazy array is `X::Cannot::Lazy`, not a count), so they
+    /// are not interchangeable with a plain one. `HashItemized` is excluded
+    /// for the same reason — the itemized tag is what `.raku` reads to print
+    /// the `$` sigil.
+    #[inline]
+    pub(in crate::value) fn dispatch_shape(&self) -> Option<crate::value::DispatchShape> {
+        use crate::value::DispatchShape;
+        match classify(self.0.get()) {
+            Classified::Kind(
+                Kind::ArrayList | Kind::ArrayArray | Kind::ArrayItemList | Kind::ArrayItemArray,
+            ) => Some(DispatchShape::Array),
+            Classified::Kind(Kind::HashPlain) => Some(DispatchShape::Hash),
+            Classified::Kind(Kind::Str) => Some(DispatchShape::Str),
+            _ => None,
+        }
+    }
+
     /// Whether this word is a `LazyList` — a pure tag probe.
     #[inline]
     pub(in crate::value) fn is_lazy_list(&self) -> bool {

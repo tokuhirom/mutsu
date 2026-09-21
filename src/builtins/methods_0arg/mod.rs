@@ -2278,10 +2278,26 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
         )));
     }
 
-    // Delegate to sub-dispatch functions.
-    // Each returns Option<Option<Result<..>>> where:
-    //   None = method not handled, try next
-    //   Some(inner) = method matched, return inner
+    dispatch_core_families(target, method)
+}
+
+/// The eight method families [`dispatch_core`] ends in, without the
+/// receiver-shaped prologue in front of them.
+///
+/// Split out so the zero-argument dispatch table (`builtins::fast_0arg`) has
+/// somewhere to jump to: for a `(shape, method)` pair that table authorizes,
+/// every guard between the VM's native entry and this point is known to
+/// decline, so the families alone decide the answer. Calling *them* rather
+/// than reimplementing the method is the whole point — the table says which
+/// calls may skip the walk, never what they evaluate to.
+///
+/// Each family returns `Option<Option<Result<..>>>`:
+///   `None` = method not handled, try the next family;
+///   `Some(inner)` = method matched, `inner` is the answer.
+pub(crate) fn dispatch_core_families(
+    target: &Value,
+    method: &str,
+) -> Option<Result<Value, RuntimeError>> {
     macro_rules! try_dispatch {
         ($module:ident) => {
             if let Some(result) = $module::dispatch(target, method) {

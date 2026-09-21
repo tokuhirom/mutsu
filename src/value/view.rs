@@ -787,6 +787,15 @@ impl Value {
         self.0.is_lazy_list()
     }
 
+    /// The [`crate::value::DispatchShape`] of this value, or `None` when it is
+    /// not one of the plain receivers the zero-argument native dispatch table
+    /// covers. A pure tag probe (see [`Self::is_junction_value`]) — it must
+    /// stay one, since it gates a path taken on every method call.
+    #[inline]
+    pub(crate) fn dispatch_shape(&self) -> Option<crate::value::DispatchShape> {
+        self.0.dispatch_shape()
+    }
+
     /// Whether this is the `Any` type object (`Package("Any")`) — notably the
     /// value an uninitialized untyped scalar declaration seeds (PLAN 8.5
     /// step 3), which container-identity heuristics must treat like the old

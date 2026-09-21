@@ -172,6 +172,14 @@ OVERRIDES: dict[str, str] = {
     # ahead of "dispatch"'s `multi`, so even a bare "routines" override would
     # still land one level short.
     "multi-where-slurpy-hash": "routines/dispatch",
+    # The `(receiver kind, method)` table that lets a plain aggregate/Str skip
+    # the native-dispatch probe gauntlet (#8888) is interpreter dispatch
+    # machinery with no user-facing feature of its own -- what it would catch
+    # if it broke is a native method returning the wrong value for a plain
+    # receiver. It matches no rule on its own (the name carries neither a type
+    # nor a routine keyword), and spelling it with "dispatch" in the basename
+    # would route it to routines/dispatch, which is multi-candidate selection.
+    "fast-0arg-table": "vm",
 }
 
 

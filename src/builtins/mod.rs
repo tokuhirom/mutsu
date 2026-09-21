@@ -9,6 +9,7 @@ pub(crate) mod builtin_type_methods;
 pub(crate) mod collation;
 pub(crate) mod comb;
 pub(crate) mod exception_message;
+pub(crate) mod fast_0arg;
 mod functions;
 pub(crate) mod iterator_construct;
 pub(crate) mod map_hash_coerce;
