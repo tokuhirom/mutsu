@@ -965,9 +965,15 @@ impl Interpreter {
             } => crate::value::parametric_role_name(&base_name.resolve(), type_args),
             ValueView::Sub(data) => {
                 let base = value_type_name(target);
-                // Check for return type to produce Sub+{Callable[Type]} format
-                if let Some(ValueView::Str(ret)) =
-                    data.env.get("__mutsu_return_type").map(Value::view)
+                // A return type reblesses a `Sub` into `Sub+{Callable[Type]}`,
+                // and ONLY a `Sub`: rakudo reports a plain `Method`,
+                // `Submethod` or `Block` for one declared with `--> T`
+                // (measured). Wrapping those too was invisible until a
+                // method-typed closure value with a recorded return type
+                // existed -- the `WHEREFORE` of a `Pod::Block::Declarator`.
+                if base == "Sub"
+                    && let Some(ValueView::Str(ret)) =
+                        data.env.get("__mutsu_return_type").map(Value::view)
                 {
                     format!("{}+{{Callable[{}]}}", base, *ret)
                 } else {

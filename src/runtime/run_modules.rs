@@ -1002,7 +1002,12 @@ impl Interpreter {
             let saved_doc_comment_list = self.doc_comment_list.clone();
             let saved_why_cache = self.why_cache.clone();
             let saved_why_object_cache = self.why_object_cache.clone();
-            let result = match self.establish_pod_variables(&module_source) {
+            // `_from_stmts`, not the source-only form: the module's AST is
+            // already in hand here, so its declarator blocks get the concrete
+            // routine/attribute `WHEREFORE` (and the matching `.WHY` identity)
+            // that a renderer such as `Pod::To::Man` inspects, instead of a
+            // bare `Sub`/`Method`/`Attribute` type placeholder.
+            let result = match self.establish_pod_variables_from_stmts(&module_source, &stmts) {
                 Ok(()) => self.run_block(&stmts),
                 Err(err) => Err(err),
             };
