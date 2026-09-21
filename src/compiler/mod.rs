@@ -2099,8 +2099,7 @@ impl Compiler {
         // attachment-time bubbling `compile_named_sub_body` and
         // `compile_method_body` perform for their own nested-code kind.
         if !compiled.container_ref_capture_syms.is_empty() {
-            let syms = compiled.container_ref_capture_syms.clone();
-            self.bubble_container_ref_capture_syms(&syms);
+            self.bubble_container_ref_capture_syms(&compiled.container_ref_capture_syms);
         }
         self.code.add_closure_code(compiled, esc)
     }

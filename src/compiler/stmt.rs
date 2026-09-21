@@ -2045,7 +2045,7 @@ impl Compiler {
                             if type_mismatch == "Nil" {
                                 Value::NIL
                             } else {
-                                Value::str(type_mismatch.clone())
+                                Value::str(type_mismatch)
                             },
                         );
                         let err = Value::make_instance(
@@ -3567,7 +3567,7 @@ impl Compiler {
                         self.current_package_kind = Some(*kind);
                     }
                     // Register the package name so it's accessible as a value
-                    let name_idx = self.code.add_constant(Value::str(qualified_name.clone()));
+                    let name_idx = self.code.add_constant(Value::str(qualified_name));
                     self.code.emit(OpCode::RegisterPackage { name_idx });
                     self.code.emit(OpCode::SetPackageKind {
                         name_idx,
@@ -3579,7 +3579,7 @@ impl Compiler {
                     self.code.emit(OpCode::SetCurrentPackage { name_idx });
                 } else if is_stub_body {
                     // Stub package — register name but don't execute the body
-                    let name_idx = self.code.add_constant(Value::str(qualified_name.clone()));
+                    let name_idx = self.code.add_constant(Value::str(qualified_name));
                     self.code.emit(OpCode::RegisterPackage { name_idx });
                     self.code.emit(OpCode::SetPackageKind {
                         name_idx,

@@ -681,7 +681,7 @@ impl Compiler {
                     name: Symbol::intern("__mutsu_index_delete_method_lvalue"),
                     args: vec![
                         (**method_target).clone(),
-                        Expr::Literal(Value::str(method_name.resolve().to_string())),
+                        Expr::Literal(Value::str(method_name.resolve())),
                         (**delete_index).clone(),
                         Expr::Literal(Value::str(var_name)),
                     ],

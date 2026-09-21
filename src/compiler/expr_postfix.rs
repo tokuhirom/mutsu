@@ -393,7 +393,7 @@ impl Compiler {
             let tmp_val = format!("__mutsu_nested_incdec_val_{}", self.code.constants.len());
             let tmp_val_idx = self.code.add_constant(Value::str(tmp_val.clone()));
             let tmp_old = format!("__mutsu_nested_incdec_old_{}", self.code.constants.len());
-            let tmp_old_idx = self.code.add_constant(Value::str(tmp_old.clone()));
+            let tmp_old_idx = self.code.add_constant(Value::str(tmp_old));
 
             // 1. Read current value and store in tmp_val
             self.compile_expr(expr);
@@ -467,7 +467,7 @@ impl Compiler {
             // Stack now has new value; tmp_val also has new value
             // Save new value, we'll push it back at the end
             let tmp_new = format!("__mutsu_nested_preincdec_new_{}", self.code.constants.len());
-            let tmp_new_idx = self.code.add_constant(Value::str(tmp_new.clone()));
+            let tmp_new_idx = self.code.add_constant(Value::str(tmp_new));
             self.code.emit(OpCode::SetGlobal(tmp_new_idx));
             self.code.emit(OpCode::Pop);
 

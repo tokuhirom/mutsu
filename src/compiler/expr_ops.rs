@@ -622,7 +622,7 @@ impl Compiler {
             let tmp_idx = self.code.add_constant(Value::str(tmp_name.clone()));
             self.code.emit(OpCode::SetGlobal(tmp_idx));
             let result_name = format!("__mutsu_meta_assign_result_{}", self.code.constants.len());
-            let result_idx = self.code.add_constant(Value::str(result_name.clone()));
+            let result_idx = self.code.add_constant(Value::str(result_name));
             self.code.emit(OpCode::SetGlobal(result_idx));
             let assign_call = Expr::Call {
                 name: Symbol::intern("__mutsu_assign_callable_lvalue"),
