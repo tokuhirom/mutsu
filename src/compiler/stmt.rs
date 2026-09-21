@@ -2061,6 +2061,7 @@ impl Compiler {
                         self.compile_expr(arg);
                     }
                     let trait_name_idx = self.code.add_constant(Value::str(trait_name.clone()));
+                    self.code.poison_declared_constraint(name);
                     self.code.emit(OpCode::ApplyVarTrait {
                         name_idx,
                         trait_name_idx,

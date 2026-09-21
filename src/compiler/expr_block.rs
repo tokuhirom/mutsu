@@ -396,6 +396,7 @@ impl Compiler {
                         }
                         let trait_name_idx =
                             self.code.add_constant(Value::str("default".to_string()));
+                        self.code.poison_declared_constraint(name);
                         self.code.emit(OpCode::ApplyVarTrait {
                             name_idx,
                             trait_name_idx,
@@ -421,6 +422,7 @@ impl Compiler {
                             continue;
                         }
                         let trait_name_idx = self.code.add_constant(Value::str(trait_name.clone()));
+                        self.code.poison_declared_constraint(name);
                         self.code.emit(OpCode::ApplyVarTrait {
                             name_idx,
                             trait_name_idx,
@@ -753,6 +755,7 @@ impl Compiler {
                     let trait_name_idx = self.code.add_constant(Value::str(trait_name.clone()));
                     // Bake the same slot `emit_set_named_var` stored to (None
                     // when the value went to env via SetGlobal instead).
+                    self.code.poison_declared_constraint(name);
                     self.code.emit(OpCode::ApplyVarTrait {
                         name_idx,
                         trait_name_idx,

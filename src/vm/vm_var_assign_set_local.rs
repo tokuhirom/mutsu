@@ -1,4 +1,5 @@
 use super::*;
+use crate::binding_desc::DeclaredConstraint;
 use crate::runtime::meta_ns::MetaNs;
 use crate::value::ValueMap;
 
@@ -495,7 +496,19 @@ impl Interpreter {
     /// about `nqp::` ([#8830](https://github.com/tokuhirom/mutsu/issues/8830),
     /// [#8831](https://github.com/tokuhirom/mutsu/issues/8831)).
     ///
-    /// Nothing here is assumed from the declaration. The three steps the typed
+    /// **Where the constraint comes from.** Since #8877 the slot's own
+    /// declaration answers first — [`DeclaredConstraint`], baked by the
+    /// compiler at the `SetVarType*` emit point. A slot the chunk did not
+    /// declare, or declared in a way the bake cannot describe (two different
+    /// constraints on one slot, a trait that rewrites it at run time), reads
+    /// `Unrecorded`/`Conflicting` and falls through to the env probe below,
+    /// which is what every slot did before. The two agree by construction:
+    /// `parse_container_constraint` stores a *scalar's* constraint as the
+    /// trimmed declaration text, which is exactly what the bake classifies —
+    /// and only scalars are baked, because `@a`/`%h` do get rewritten
+    /// (`my Int %h{Str}` splits).
+    ///
+    /// Nothing here is assumed about the *value*. The three steps the typed
     /// branch runs are each checked to be a no-op for this exact
     /// (constraint, value) pair, and anything else declines:
     ///
@@ -525,6 +538,20 @@ impl Interpreter {
         // the constraint below would no longer be self-describing.
         if !self.registry().subsets.is_empty() {
             return false;
+        }
+        // The slot's own declaration already answered this, at compile time —
+        // see `DeclaredConstraint`. Only `Unrecorded`/`Conflicting` fall
+        // through to the env probe this replaces, which was 138 instructions
+        // per store and 9.2% of an `nqp::add_i` loop (#8877).
+        match code.declared_constraint(idx) {
+            DeclaredConstraint::NativeInt => return matches!(value.view(), ValueView::Int(_)),
+            DeclaredConstraint::NativeStr => return matches!(value.view(), ValueView::Str(_)),
+            DeclaredConstraint::NativeNum => return matches!(value.view(), ValueView::Num(_)),
+            // A narrow width wraps and a class constraint type-checks, so the
+            // typed branch is never the identity — the same verdict the probe
+            // reached, for one load instead of an env walk.
+            DeclaredConstraint::NonNative => return false,
+            DeclaredConstraint::Unrecorded | DeclaredConstraint::Conflicting => {}
         }
         let name = &code.locals[idx];
         let name_sym = code.locals_sym.get(idx).copied();
