@@ -666,7 +666,7 @@ pub(crate) fn make_signature_value_with_owner(
     let mut attrs = HashMap::new();
     attrs.insert("raku".to_string(), Value::str(raku_str.clone()));
     attrs.insert("perl".to_string(), Value::str(raku_str.clone()));
-    attrs.insert("Str".to_string(), Value::str(raku_str.clone()));
+    attrs.insert("Str".to_string(), Value::str(raku_str));
     attrs.insert("gist".to_string(), Value::str(gist_str));
     attrs.insert(
         "params".to_string(),

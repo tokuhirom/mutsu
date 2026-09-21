@@ -61,7 +61,7 @@ pub(crate) fn seq_consumed_error_for(type_name: &str) -> RuntimeError {
         Value::Package(crate::symbol::Symbol::intern(type_name)),
     );
     let ex = Value::make_instance(crate::symbol::Symbol::intern("X::Seq::Consumed"), attrs);
-    let mut err = RuntimeError::new(msg.to_string());
+    let mut err = RuntimeError::new(msg);
     err.exception = Some(Box::new(ex));
     err
 }

@@ -21,7 +21,7 @@ impl RuntimeError {
             crate::symbol::Symbol::intern("X::Syntax::Number::RadixOutOfRange"),
             attrs,
         );
-        let mut err = Self::new(msg.to_string());
+        let mut err = Self::new(msg);
         err.exception = Some(Box::new(ex));
         err
     }
@@ -73,7 +73,7 @@ impl RuntimeError {
         let mut attrs = ValueMap::default();
         attrs.insert("what".to_string(), Value::str(what.to_string()));
         attrs.insert("symbol".to_string(), Value::str(name.to_string()));
-        attrs.insert("message".to_string(), Value::str(msg.clone()));
+        attrs.insert("message".to_string(), Value::str(msg));
         Self::typed("X::Undeclared", attrs)
     }
 
@@ -180,7 +180,7 @@ impl RuntimeError {
         let mut attrs = ValueMap::default();
         attrs.insert("what".to_string(), Value::str(what.to_string()));
         attrs.insert("symbol".to_string(), Value::str(name.to_string()));
-        attrs.insert("message".to_string(), Value::str(msg.clone()));
+        attrs.insert("message".to_string(), Value::str(msg));
         Self::typed("X::Redeclaration", attrs)
     }
 
@@ -193,7 +193,7 @@ impl RuntimeError {
         let mut attrs = ValueMap::default();
         attrs.insert("what".to_string(), Value::str("routine".to_string()));
         attrs.insert("symbol".to_string(), Value::str(name.to_string()));
-        attrs.insert("message".to_string(), Value::str(msg.clone()));
+        attrs.insert("message".to_string(), Value::str(msg));
         Self::typed("X::Redeclaration", attrs)
     }
 
@@ -245,7 +245,7 @@ impl RuntimeError {
             "replacement".to_string(),
             Value::str(replacement.to_string()),
         );
-        attrs.insert("message".to_string(), Value::str(msg.clone()));
+        attrs.insert("message".to_string(), Value::str(msg));
         Self::typed("X::Obsolete", attrs)
     }
 
@@ -271,7 +271,7 @@ impl RuntimeError {
         if let Some(i) = implicit {
             attrs.insert("implicit".to_string(), Value::str(i.to_string()));
         }
-        attrs.insert("message".to_string(), Value::str(msg.clone()));
+        attrs.insert("message".to_string(), Value::str(msg));
         Self::typed("X::Syntax::Variable::MissingInitializer", attrs)
     }
 
@@ -280,7 +280,7 @@ impl RuntimeError {
         let msg = format!("\"without\" does not take \"{keyword}\", please rewrite using \"with\"");
         let mut attrs = ValueMap::default();
         attrs.insert("keyword".to_string(), Value::str(keyword.to_string()));
-        attrs.insert("message".to_string(), Value::str(msg.clone()));
+        attrs.insert("message".to_string(), Value::str(msg));
         Self::typed("X::Syntax::WithoutElse", attrs)
     }
 
@@ -300,7 +300,7 @@ impl RuntimeError {
         );
         let mut attrs = ValueMap::default();
         attrs.insert("prefixes".to_string(), Value::str(prefixes.to_string()));
-        attrs.insert("message".to_string(), Value::str(msg.clone()));
+        attrs.insert("message".to_string(), Value::str(msg));
         Self::typed("X::Syntax::DuplicatedPrefix", attrs)
     }
 
@@ -311,7 +311,7 @@ impl RuntimeError {
         let msg = format!("\"unless\" does not take \"{keyword}\", please rewrite using \"if\"");
         let mut attrs = ValueMap::default();
         attrs.insert("keyword".to_string(), Value::str(keyword.to_string()));
-        attrs.insert("message".to_string(), Value::str(msg.clone()));
+        attrs.insert("message".to_string(), Value::str(msg));
         Self::typed("X::Syntax::UnlessElse", attrs)
     }
 
@@ -347,7 +347,7 @@ impl RuntimeError {
                     .collect(),
             ),
         );
-        attrs.insert("message".to_string(), Value::str(msg.clone()));
+        attrs.insert("message".to_string(), Value::str(msg));
         Self::typed("X::Comp::Trait::Scope", attrs)
     }
 
@@ -365,7 +365,7 @@ impl RuntimeError {
         );
         attrs.insert("what".to_string(), Value::str(what.to_string()));
         attrs.insert("source".to_string(), Value::str(source.to_string()));
-        attrs.insert("message".to_string(), Value::str(msg.clone()));
+        attrs.insert("message".to_string(), Value::str(msg));
         Self::typed("X::Adverb", attrs)
     }
 
@@ -397,7 +397,7 @@ impl RuntimeError {
         let mut attrs = ValueMap::default();
         attrs.insert("typename".to_string(), Value::str(typename.to_string()));
         attrs.insert("method".to_string(), Value::str(method.to_string()));
-        attrs.insert("message".to_string(), Value::str(msg.clone()));
+        attrs.insert("message".to_string(), Value::str(msg));
         Self::typed("X::Immutable", attrs)
     }
 
@@ -417,7 +417,7 @@ impl RuntimeError {
         let msg = format!("Cannot .{} a lazy list", action);
         let mut attrs = ValueMap::default();
         attrs.insert("action".to_string(), Value::str(action.to_string()));
-        attrs.insert("message".to_string(), Value::str(msg.clone()));
+        attrs.insert("message".to_string(), Value::str(msg));
         Self::typed("X::Cannot::Lazy", attrs)
     }
 
@@ -426,7 +426,7 @@ impl RuntimeError {
         let msg = format!("Cannot {} a lazy list onto a {}", action, onto);
         let mut attrs = ValueMap::default();
         attrs.insert("action".to_string(), Value::str(action.to_string()));
-        attrs.insert("message".to_string(), Value::str(msg.clone()));
+        attrs.insert("message".to_string(), Value::str(msg));
         Self::typed("X::Cannot::Lazy", attrs)
     }
 
@@ -436,7 +436,7 @@ impl RuntimeError {
         let mut attrs = ValueMap::default();
         attrs.insert("action".to_string(), Value::str("coerce".to_string()));
         attrs.insert("what".to_string(), Value::str(what.to_string()));
-        attrs.insert("message".to_string(), Value::str(msg.clone()));
+        attrs.insert("message".to_string(), Value::str(msg));
         Self::typed("X::Cannot::Lazy", attrs)
     }
 
@@ -446,7 +446,7 @@ impl RuntimeError {
         let msg = format!("Missing {}", what);
         let mut attrs = ValueMap::default();
         attrs.insert("what".to_string(), Value::str(what.to_string()));
-        attrs.insert("message".to_string(), Value::str(msg.clone()));
+        attrs.insert("message".to_string(), Value::str(msg));
         Self::typed("X::Syntax::Missing", attrs)
     }
 
@@ -471,7 +471,7 @@ impl RuntimeError {
         let message = message.into();
         let mut attrs = ValueMap::default();
         attrs.insert("what".to_string(), Value::str(what.to_string()));
-        attrs.insert("message".to_string(), Value::str(message.clone()));
+        attrs.insert("message".to_string(), Value::str(message));
         Self::typed("X::Syntax::Malformed", attrs)
     }
 
@@ -498,7 +498,7 @@ impl RuntimeError {
             "Attempt to return outside of any Routine".to_string()
         };
         let mut attrs = ValueMap::default();
-        attrs.insert("message".to_string(), Value::str(msg.clone()));
+        attrs.insert("message".to_string(), Value::str(msg));
         attrs.insert(
             "out-of-dynamic-scope".to_string(),
             Value::Bool(out_of_dynamic_scope),
@@ -521,7 +521,7 @@ impl RuntimeError {
         // same message on the other assignment paths.
         let repr = crate::runtime::utils::value_short_repr(got_value);
         let got = if repr.is_empty() {
-            got_type.to_string()
+            got_type
         } else {
             format!("{} {}", got_type, repr)
         };
@@ -542,7 +542,7 @@ impl RuntimeError {
         if let Some(sym) = symbol {
             attrs.insert("symbol".to_string(), Value::str(sym.to_string()));
         }
-        attrs.insert("message".to_string(), Value::str(msg.clone()));
+        attrs.insert("message".to_string(), Value::str(msg));
         Self::typed("X::TypeCheck::Assignment", attrs)
     }
 
@@ -596,7 +596,7 @@ impl RuntimeError {
             "param-is-invocant".to_string(),
             Value::Bool(param_is_invocant),
         );
-        attrs.insert("message".to_string(), Value::str(msg.clone()));
+        attrs.insert("message".to_string(), Value::str(msg));
         Self::typed("X::Parameter::InvalidConcreteness", attrs)
     }
 
@@ -605,7 +605,7 @@ impl RuntimeError {
         let msg = format!("Cannot do '{}' on a closed handle", trying);
         let mut attrs = ValueMap::default();
         attrs.insert("trying".to_string(), Value::str(trying.to_string()));
-        attrs.insert("message".to_string(), Value::str(msg.clone()));
+        attrs.insert("message".to_string(), Value::str(msg));
         Self::typed("X::IO::Closed", attrs)
     }
 
@@ -615,7 +615,7 @@ impl RuntimeError {
         let msg = format!("Cannot bind to {}", target);
         let mut attrs = ValueMap::default();
         attrs.insert("target".to_string(), Value::str(target.to_string()));
-        attrs.insert("message".to_string(), Value::str(msg.clone()));
+        attrs.insert("message".to_string(), Value::str(msg));
         Self::typed("X::Bind", attrs)
     }
 
@@ -627,7 +627,7 @@ impl RuntimeError {
         );
         let mut attrs = ValueMap::default();
         attrs.insert("dim".to_string(), Value::Int(dim));
-        attrs.insert("message".to_string(), Value::str(msg.clone()));
+        attrs.insert("message".to_string(), Value::str(msg));
         Self::typed("X::IllegalDimensionInShape", attrs)
     }
 
@@ -641,7 +641,7 @@ impl RuntimeError {
         );
         let mut attrs = ValueMap::default();
         attrs.insert("dim".to_string(), Value::bigint(dim.clone()));
-        attrs.insert("message".to_string(), Value::str(msg.clone()));
+        attrs.insert("message".to_string(), Value::str(msg));
         Self::typed("X::IllegalDimensionInShape", attrs)
     }
 
@@ -679,7 +679,7 @@ impl RuntimeError {
                     .collect(),
             ),
         );
-        attrs.insert("message".to_string(), Value::str(msg.clone()));
+        attrs.insert("message".to_string(), Value::str(msg));
         Self::typed("X::Adverb", attrs)
     }
 
@@ -701,7 +701,7 @@ impl RuntimeError {
         // raku exposes `.expected` as the expected type OBJECT.
         attrs.insert("expected".to_string(), expected_type_object(expected));
         attrs.insert("got".to_string(), Value::str(got.to_string()));
-        attrs.insert("message".to_string(), Value::str(msg.clone()));
+        attrs.insert("message".to_string(), Value::str(msg));
         Self::typed("X::TypeCheck::Binding::Parameter", attrs)
     }
 
@@ -789,7 +789,7 @@ but got '{}' ({}) as a value without a container.",
         attrs.insert("parameter".to_string(), Value::str(param.to_string()));
         attrs.insert("expected".to_string(), expected_type_object(expected));
         attrs.insert("got".to_string(), value.clone());
-        attrs.insert("message".to_string(), Value::str(msg.clone()));
+        attrs.insert("message".to_string(), Value::str(msg));
         Self::typed("X::TypeCheck::Binding::Parameter", attrs)
     }
 
@@ -811,7 +811,7 @@ but got '{}' ({}) as a value without a container.",
             Value::str("anonymous constraint".to_string()),
         );
         attrs.insert("got".to_string(), value.clone());
-        attrs.insert("message".to_string(), Value::str(msg.clone()));
+        attrs.insert("message".to_string(), Value::str(msg));
         Self::typed("X::TypeCheck::Binding::Parameter", attrs)
     }
 
@@ -829,7 +829,7 @@ but got '{}' ({}) as a value without a container.",
         attrs.insert("parameter".to_string(), Value::str(param.to_string()));
         attrs.insert("expected".to_string(), Value::str(expected.to_string()));
         attrs.insert("got".to_string(), Value::str(got.to_string()));
-        attrs.insert("message".to_string(), Value::str(msg.clone()));
+        attrs.insert("message".to_string(), Value::str(msg));
         Self::typed("X::TypeCheck::Binding::Parameter", attrs)
     }
 
@@ -850,7 +850,7 @@ but got '{}' ({}) as a value without a container.",
         attrs.insert("parameter".to_string(), Value::str("<anon>".to_string()));
         attrs.insert("expected".to_string(), expected.clone());
         attrs.insert("got".to_string(), got.clone());
-        attrs.insert("message".to_string(), Value::str(msg.clone()));
+        attrs.insert("message".to_string(), Value::str(msg));
         Self::typed("X::TypeCheck::Binding::Parameter", attrs)
     }
 
@@ -871,7 +871,7 @@ but got '{}' ({}) as a value without a container.",
         attrs.insert("parameter".to_string(), Value::str(param.to_string()));
         attrs.insert("expected".to_string(), expected_type_object(expected));
         attrs.insert("got".to_string(), got);
-        attrs.insert("message".to_string(), Value::str(msg.clone()));
+        attrs.insert("message".to_string(), Value::str(msg));
         Self::typed("X::TypeCheck::Binding::Parameter", attrs)
     }
 
