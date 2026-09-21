@@ -664,6 +664,22 @@ impl Interpreter {
                 };
                 Ok(self.tag_container_metadata(hash, info))
             }
+            // A lazy sequence (`constant %h = gather { take ... }`) must be
+            // reified before it can be split into key/value pairs — the same
+            // forcing `coerce_object_to_hash` applies for `my %h = gather
+            // {...}` — or it falls to the `_` arm below and gets treated as
+            // ONE opaque item (X::Hash::Store::OddNumber with "found 1
+            // element(s)" even when the gather yields several pairs).
+            ValueView::LazyList(list) => {
+                let items = self.force_lazy_list_vm(&list)?;
+                let hash = self.build_hash_from_items_warning(items)?;
+                let info = crate::runtime::ContainerTypeInfo {
+                    value_type: String::new(),
+                    key_type: None,
+                    declared_type: Some("Map".to_string()),
+                };
+                Ok(self.tag_container_metadata(hash, info))
+            }
             _ => {
                 // For other types (Int, Str, etc.), coerce to Map via
                 // build_hash_from_items which raises X::Hash::Store::OddNumber
