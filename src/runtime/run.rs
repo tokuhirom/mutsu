@@ -365,6 +365,35 @@ multi sub trait_mod:<is>(Routine $r, :$nativeconv!) is export { }
 multi sub trait_mod:<is>(Routine $r, :$encoded!) is export { }
 "#;
 
+/// `trait_mod:<is>(Attribute:D $attr, :$default!)` — CORE.setting's candidate
+/// behind the literal `has $.x is default(...)` sugar, made callable directly
+/// so a distribution's own attribute-trait handler can re-dispatch to it.
+///
+/// mutsu applies `is default(...)` written directly on a `has` line as
+/// parse-time sugar (`CompiledAttrDecl::is_default`,
+/// `registration_class_body_attr.rs`), which is invisible to a *runtime* call
+/// against an already-built `Attribute` meta-object. `ASN::BER`'s
+/// `ASN::Types` composes a custom `DefaultValue` role for its own `is
+/// default-value(...)` trait and then reuses CORE's own default machinery on
+/// the same attribute: `trait_mod:<is>($attr, :default($default-value))`. Real
+/// Rakudo answers that call because `trait_mod:<is>` is one CORE.setting multi
+/// with dozens of candidates; without this one mutsu has none for `:default`
+/// at all, so the call falls through to "no candidate" and (since it runs
+/// nested inside the OUTER `is default-value` dispatch) is reported as that
+/// outer trait being unknown instead.
+///
+/// `__mutsu_attribute_set_default` relays the value to
+/// `Interpreter::trait_mod_default_writeback`, which
+/// `apply_class_body_attribute_traits` drains right after dispatching an
+/// attribute's own custom traits and folds into the attribute's compiled
+/// default — exactly as if `is default(...)` had been written on the `has`
+/// line itself.
+pub(super) const TRAIT_MOD_IS_DEFAULT_PRELUDE: &str = r#"
+multi sub trait_mod:<is>(Attribute:D $attr, :$default!) is export {
+    __mutsu_attribute_set_default($attr, $default);
+}
+"#;
+
 /// `Metamodel::Naming` and `Metamodel::Stashing` -- the two metaroles a custom
 /// HOW composes to become a *named* metaobject.
 ///
@@ -739,6 +768,7 @@ impl Interpreter {
         Self::inject_iosocket_prelude(&code, &mut stmts);
         Self::inject_trait_mod_does_prelude(&code, &mut stmts);
         Self::inject_trait_mod_is_prelude(&code, &mut stmts);
+        Self::inject_trait_mod_is_default_prelude(&code, &mut stmts);
         Self::inject_metamodel_role_prelude(&code, &mut stmts);
         Self::inject_enumeration_prelude(&code, &mut stmts);
         Self::inject_x_wrapper_prelude(&code, &mut stmts);

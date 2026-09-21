@@ -625,6 +625,33 @@ impl Interpreter {
                 .iter()
                 .any(|p| !p.named && (p.optional_marker || p.default.is_some()))
         });
+        // An exact-arity candidate with no positional type constraint at all
+        // (a bare `($x)`/`($unknown-type)` catch-all) is the WIDEST possible
+        // signature, not a narrow one — it must still compete with a
+        // different-arity candidate whose optional/default trailing
+        // parameter lets it apply to this call too (`multi f($x) {...}` vs
+        // `multi f(Int $x, Int $y = 10) {...}` called as `f(1)`: real Raku
+        // picks the typed candidate). Without this check the fast path below
+        // returned the catch-all unconditionally whenever it happened to be
+        // the only candidate registered at the call's exact arity, silently
+        // preferring it over a strictly narrower flexible-arity candidate
+        // (found while making ASN::BER's enum/Int `serialize` dispatch pick
+        // its catch-all `NYI` candidate over the real `Int`/enum ones).
+        //
+        // Only a candidate that actually HAS a non-named positional parameter
+        // can be "untyped" this way — a zero-arity candidate (`multi f() {}`)
+        // has no such parameter at all and is already the narrowest possible
+        // match for a zero-argument call, not a catch-all competing with
+        // wider optional-arity siblings (`multi f(Int $a?) {}`): flagging it
+        // here regressed `roast/S06-multi/syntax.t`'s "exact arity match wins
+        // over candidates with optionals" (`multi rt74900() {}` losing to
+        // `multi rt74900(Int $a?) {}` for `rt74900()`).
+        let exact_candidate_untyped = candidates.iter().any(|(_, def)| {
+            def.param_defs
+                .iter()
+                .any(|p| !p.named && !p.slurpy && !p.double_slurpy)
+                && self.candidate_specificity_rank_for_args(def, arg_values).3 == 0
+        });
         // An exact-arity candidate with no optional positional parameter is
         // already narrower than every default-arity fallback. Preserve that
         // fast path; otherwise `multi f(Int $x)` would lose to
@@ -633,6 +660,7 @@ impl Interpreter {
         // longer signatures whose required parameters may describe the call
         // more precisely (the `is-approx` tolerance overloads).
         if !exact_candidate_consumes_optional
+            && !exact_candidate_untyped
             && let Some(def) =
                 self.choose_best_matching_candidate(name, arg_values, candidates.clone())
         {

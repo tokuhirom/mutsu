@@ -3253,6 +3253,7 @@ impl Interpreter {
             trait_mod_writeback_key: None,
             trait_mod_writeback_value: None,
             trait_mod_attr_writeback_value: None,
+            trait_mod_default_writeback: None,
             hash_autovivify: false,
             newline_mode: NewlineMode::Lf,
             import_scope_stack: Vec::new(),

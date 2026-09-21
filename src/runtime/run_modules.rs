@@ -573,6 +573,7 @@ impl Interpreter {
         Self::inject_iosocket_prelude(&code, &mut stmts);
         Self::inject_trait_mod_does_prelude(&code, &mut stmts);
         Self::inject_trait_mod_is_prelude(&code, &mut stmts);
+        Self::inject_trait_mod_is_default_prelude(&code, &mut stmts);
         Self::inject_enumeration_prelude(&code, &mut stmts);
         Self::inject_x_wrapper_prelude(&code, &mut stmts);
 

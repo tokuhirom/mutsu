@@ -224,6 +224,7 @@ impl Interpreter {
         }
         visit_opt(visitor, &self.trait_mod_writeback_value);
         visit_opt(visitor, &self.trait_mod_attr_writeback_value);
+        visit_opt(visitor, &self.trait_mod_default_writeback);
         visit_map_values(visitor, &self.our_vars);
         for inner in self.package_lexicals.values() {
             visit_map_values(visitor, inner);
