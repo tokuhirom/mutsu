@@ -1193,6 +1193,19 @@ pub(in crate::parser::primary) fn topic_method_call(input: &str) -> PResult<'_, 
     {
         return Err(PError::malformed("class-qualified postfix call"));
     }
+    // Topic superscript powers use the same postfix syntax as explicit
+    // invocants: `.³` means `$_ ** 3`, not a method named `³`. List::Divvy
+    // uses this spelling inside a WhateverCode (`map({ .³ })`).
+    if let Some((exp, len)) = crate::parser::expr::parse_superscript_exp(r) {
+        return Ok((
+            &r[len..],
+            Expr::Binary {
+                left: Box::new(Expr::Var("_".to_string())),
+                op: TokenKind::StarStar,
+                right: Box::new(Expr::Literal(Value::int(exp))),
+            },
+        ));
+    }
     // .=method — mutating topic method call: $_ = $_.method(args)
     if let Some(stripped) = r.strip_prefix('=') {
         let (r, _) = ws(stripped)?;

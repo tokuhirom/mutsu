@@ -130,9 +130,16 @@ impl Interpreter {
     ) -> Option<Result<Value, RuntimeError>> {
         // Mirror `try_native_first` gating: at most one positional matcher and
         // no adverbs / `Bool` matcher (those keep interpreter semantics).
+        // The one exception is `:k`, which List::Divvy uses to find the
+        // stopping index of an infinite prime pipeline. It can be answered
+        // while pulling, without materializing the lazy list.
         let mut func: Option<Value> = None;
+        let mut has_k = false;
         for arg in args {
             match arg.view() {
+                ValueView::Pair(key, value) if key == "k" => {
+                    has_k = value.truthy();
+                }
                 ValueView::Pair(..) | ValueView::Bool(_) => return None,
                 _ if func.is_none() => func = Some(arg.clone()),
                 _ => return None,
@@ -143,7 +150,15 @@ impl Interpreter {
         // No matcher: `.first` is just the first element.
         let Some(func) = func else {
             return match self.force_lazy_list_vm_n(list, 1) {
-                Ok(items) => Some(Ok(items.into_iter().next().unwrap_or(Value::NIL))),
+                Ok(items) => Some(Ok(if has_k {
+                    if items.is_empty() {
+                        Value::NIL
+                    } else {
+                        Value::int(0)
+                    }
+                } else {
+                    items.into_iter().next().unwrap_or(Value::NIL)
+                })),
                 Err(e) => Some(Err(e)),
             };
         };
@@ -183,7 +198,7 @@ impl Interpreter {
                 }
             };
             if matched {
-                return Some(Ok(item));
+                return Some(Ok(if has_k { Value::int(idx as i64) } else { item }));
             }
             idx += 1;
         }
