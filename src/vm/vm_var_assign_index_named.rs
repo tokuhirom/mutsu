@@ -3708,10 +3708,15 @@ impl Interpreter {
         if var_name.starts_with('%')
             && let Some(constraint) = loan_env!(self, var_type_constraint(&var_name))
         {
-            let inner_hash = Value::hash(ValueMap::default());
-            if !loan_env!(self, type_matches_value(&constraint, &inner_hash)) {
+            let inner_value = if outer_positional {
+                Value::real_array(Vec::new())
+            } else {
+                Value::hash(ValueMap::default())
+            };
+            if !loan_env!(self, type_matches_value(&constraint, &inner_value)) {
                 return Err(RuntimeError::new(format!(
-                    "Type check failed in assignment to {var_name}; expected {constraint} but got Hash (autovivification)"
+                    "Type check failed in assignment to {var_name}; expected {constraint} but got {} (autovivification)",
+                    if outer_positional { "Array" } else { "Hash" }
                 )));
             }
         }
