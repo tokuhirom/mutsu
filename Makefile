@@ -1,4 +1,4 @@
-.PHONY: test lint roast check-roast-whitelist check-value-wall check-flaky-list check-t-layout check-magic-keys check-panic-surface check-pipefail
+.PHONY: test lint roast check-roast-whitelist check-value-wall check-flaky-list check-t-layout check-magic-keys check-panic-surface check-pipefail check-bench-det
 
 # Recipes run under bash with `pipefail`, because the two suite recipes pipe
 # into `tee` and POSIX sh reports only the *last* command's status -- `tee`'s,
@@ -46,7 +46,7 @@ PROVE_JOBS ?= 4
 # the gc-stress / jit-stress CI jobs keep running the whole t/ suite on debug.
 # See docs/adr/0075-make-test-runs-tap-on-release-binary.md, which supersedes
 # ADR-0014.
-test: check-pipefail check-value-wall check-flaky-list check-t-layout check-magic-keys check-panic-surface check-name-scans
+test: check-pipefail check-value-wall check-flaky-list check-t-layout check-magic-keys check-panic-surface check-name-scans check-bench-det
 	@mkdir -p tmp
 	(cargo build --release && cargo test -- --test-threads=1 && cargo test -p mutsu-lsp && MUTSU_BIN='$(CARGO_TARGET_DIR)/release/mutsu' MUTSU_T_TIMEOUT=60 prove -r -e 'scripts/run-t-test.sh' t/) 2>&1 | tee tmp/make-test.log
 
@@ -99,6 +99,17 @@ check-panic-surface:
 check-name-scans:
 	scripts/check-name-scans.sh --self-test
 	scripts/check-name-scans.sh
+
+# The bench series' allocation counts are read out of callgrind's own output
+# (#8959), and that parse fails by UNDERCOUNTING silently: an allocator whose
+# name it does not resolve contributes nothing and the total stays plausible.
+# The first version of it was 1,374 low on bench-hash and looked entirely
+# reasonable. So the extractor is self-tested against a synthetic profile with a
+# known answer, including the name-compression and recursion-suffix shapes that
+# have actually been got wrong. Pure text processing: needs no valgrind, no
+# binary, and runs in milliseconds.
+check-bench-det:
+	scripts/bench-det.sh --self-test
 
 roast: check-pipefail
 	@mkdir -p tmp

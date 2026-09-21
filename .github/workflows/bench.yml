@@ -118,16 +118,23 @@ jobs:
       - name: Install valgrind (deterministic metric)
         run: sudo apt-get update -qq && sudo apt-get install -y -qq valgrind
 
-      - name: Run deterministic benchmarks (instruction counts)
+      - name: Run deterministic benchmarks (instruction + allocation counts)
         # The wall-clock series above has a 16-33% median commit-to-commit noise
         # floor, so its own 1.5x alarm is inside its p90 and cannot see an
         # ordinary regression (#8085). This pass simulates instruction counts,
-        # which do not depend on the runner at all and reproduce to ~0.1%.
-        # Complementary, not a replacement: instruction counts are blind to
-        # cache behaviour, memory boundness, lock contention and real thread
-        # parallelism, and they step whenever the toolchain changes. See the
-        # header of scripts/bench-det.sh.
-        run: scripts/bench-det.sh | tee tmp/bench-det-results.tsv
+        # which do not depend on the runner at all and reproduce to ~0.1%, and
+        # reads the heap allocation count out of the same profile (#8959) --
+        # callgrind already records a call count per edge, so the allocator's is
+        # free. Complementary, not a replacement: neither number sees cache
+        # behaviour, memory boundness, lock contention or real thread
+        # parallelism, and instruction counts step whenever the toolchain
+        # changes. See the header of scripts/bench-det.sh.
+        # The --self-test first: it is milliseconds, and it is the difference
+        # between failing here and appending twelve minutes of silently
+        # undercounted allocations to the history.
+        run: |
+          scripts/bench-det.sh --self-test
+          scripts/bench-det.sh | tee tmp/bench-det-results.tsv
 
       - name: Compare with previous run and render summary
         # Read-only look at the existing history BEFORE appending: warn when a
@@ -171,26 +178,47 @@ jobs:
           DHIST=/tmp/bench-prev/bench-det-history.tsv
           {
             echo ""
-            echo "### Deterministic (simulated instruction counts)"
+            echo "### Deterministic (simulated instruction counts, heap allocations)"
             echo ""
-            echo "| benchmark | instructions | prev | change |"
-            echo "|---|---|---|---|"
+            echo "| benchmark | instructions | prev | change | allocations | prev | change |"
+            echo "|---|---|---|---|---|---|---|"
           } >> "$GITHUB_STEP_SUMMARY"
-          while IFS=$'\t' read -r name ir; do
-            dprev="NA"; dchange="—"
+          # pct(new, prev) -> "+1.23%" | "—", and over(new, prev, factor) -> 1
+          # when the new value exceeds the old one by that factor. Both metrics
+          # use the same 2% alarm: the measured run-to-run spread is ~0.1% for
+          # instructions and 0-0.01% for allocation counts, so 2% is still 20x
+          # the noisier of the two while being 25x tighter than anything wall
+          # clock can support. A toolchain bump steps every instruction row at
+          # once and is not a regression -- that is the one shape to read past
+          # here, and it barely touches the allocation counts, which is exactly
+          # why having both columns is worth the zero extra runtime.
+          pct() { awk -v n="$1" -v p="$2" 'BEGIN{
+            if (p > 0) printf "%+.2f%%", (n/p - 1) * 100; else print "—"
+          }'; }
+          over() { awk -v n="$1" -v p="$2" -v f="$3" 'BEGIN{print (p > 0 && n > p * f) ? 1 : 0}'; }
+          while IFS=$'\t' read -r name ir allocs; do
+            dprev="NA"; dchange="—"; aprev="NA"; achange="—"
+            allocs=${allocs:-NA}
             if [ -f "$DHIST" ]; then
               dprev=$(awk -F'\t' -v b="$name" '$3==b {v=$4} END {print (v=="" ? "NA" : v)}' "$DHIST")
+              # Allocations are column 6: appended after `toolchain` so every
+              # row written before this column existed still parses, and reads
+              # as NA here rather than as a change from zero.
+              aprev=$(awk -F'\t' -v b="$name" '$3==b && $6 ~ /^[0-9]+$/ {v=$6} END {print (v=="" ? "NA" : v)}' "$DHIST")
             fi
             if [ "$dprev" != "NA" ] && [ "$ir" != "NA" ]; then
-              dchange=$(awk -v n="$ir" -v p="$dprev" 'BEGIN{
-                if (p > 0) printf "%+.2f%%", (n/p - 1) * 100; else print "—"
-              }')
-              dslow=$(awk -v n="$ir" -v p="$dprev" 'BEGIN{print (p > 0 && n > p * 1.02) ? 1 : 0}')
-              if [ "$dslow" = 1 ]; then
+              dchange=$(pct "$ir" "$dprev")
+              if [ "$(over "$ir" "$dprev" 1.02)" = 1 ]; then
                 echo "::warning title=deterministic regression::$name executed ${dprev} -> ${ir} instructions ($dchange) vs previous recorded run"
               fi
             fi
-            echo "| $name | $ir | $dprev | $dchange |" >> "$GITHUB_STEP_SUMMARY"
+            if [ "$aprev" != "NA" ] && [ "$allocs" != "NA" ]; then
+              achange=$(pct "$allocs" "$aprev")
+              if [ "$(over "$allocs" "$aprev" 1.02)" = 1 ]; then
+                echo "::warning title=allocation regression::$name made ${aprev} -> ${allocs} heap allocations ($achange) vs previous recorded run"
+              fi
+            fi
+            echo "| $name | $ir | $dprev | $dchange | $allocs | $aprev | $achange |" >> "$GITHUB_STEP_SUMMARY"
           done < tmp/bench-det-results.tsv
           git worktree remove --force /tmp/bench-prev 2>/dev/null || true
 
@@ -232,11 +260,17 @@ jobs:
             # the toolchain that produced the binary is what steps it, so that
             # is what is recorded instead).
             if [ ! -f bench-det-history.tsv ]; then
-              printf 'date\tcommit\tbenchmark\tinstructions\ttoolchain\n' > bench-det-history.tsv
+              printf 'date\tcommit\tbenchmark\tinstructions\ttoolchain\tallocations\n' > bench-det-history.tsv
+            elif ! head -1 bench-det-history.tsv | grep -q 'allocations'; then
+              # One-time header migration (#8959). `allocations` is appended
+              # AFTER `toolchain` rather than inserted next to `instructions`
+              # precisely so that no existing row has to be rewritten: every
+              # pre-#8959 row keeps its four fields and simply has no sixth.
+              sed -i '1s/$/\tallocations/' bench-det-history.tsv
             fi
-            while IFS=$'\t' read -r name ir; do
-              printf '%s\t%s\t%s\t%s\t%s\n' \
-                "$DATE" "$SHA" "$name" "$ir" "$RUSTC_VER" >> bench-det-history.tsv
+            while IFS=$'\t' read -r name ir allocs; do
+              printf '%s\t%s\t%s\t%s\t%s\t%s\n' \
+                "$DATE" "$SHA" "$name" "$ir" "$RUSTC_VER" "${allocs:-NA}" >> bench-det-history.tsv
             done < "$GITHUB_WORKSPACE/tmp/bench-det-results.tsv"
             git add bench-history.tsv bench-det-history.tsv
             git commit -q -m "bench: ${SHA} (${DATE})"

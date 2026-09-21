@@ -308,6 +308,16 @@ jobs:
         # matching cannot make the ratchet silently report 0.
         run: make check-name-scans
 
+      - name: Bench allocation-count extractor still resolves every allocator
+        # The deterministic bench series reads its allocation counts out of
+        # callgrind's own output (#8959), and that parse fails by UNDERCOUNTING
+        # silently -- an allocator whose name it does not resolve contributes
+        # nothing and the total stays plausible. Only the bench job (main pushes
+        # only) would otherwise exercise it, and it would not notice. Pure text
+        # processing against a fixture with a known answer: no valgrind, no
+        # binary, milliseconds.
+        run: make check-bench-det
+
       - uses: dtolnay/rust-toolchain@01ba1edad32c6f80dbcce879d3e0fa5a00b2a84e # 1.96.0
         with:
           components: clippy, rustfmt

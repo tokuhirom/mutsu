@@ -48,12 +48,16 @@ COLUMNS = [
 # counterpart, no median/min -- an instruction count is exact -- and the
 # toolchain rather than the runner, because a simulated count does not depend on
 # the runner's CPU but DOES step when the binary's codegen changes.
+# `allocations` (#8959) is LAST, after `toolchain`, because it was appended to a
+# history that already had thousands of five-field rows: every one of those still
+# parses, and simply has no sixth field to read.
 DET_COLUMNS = [
     "date",
     "commit",
     "benchmark",
     "instructions",
     "toolchain",
+    "allocations",
 ]
 
 
@@ -95,6 +99,13 @@ def parse_det_rows(text):
             rec["instructions"] = int(rec["instructions"])
         except (ValueError, KeyError):
             continue  # an NA row (the measurement failed)
+        try:
+            rec["allocations"] = int(rec["allocations"])
+        except (ValueError, KeyError):
+            # Absent on every row written before the column existed, and NA on a
+            # row whose profile could not be read. Either way: no point, rather
+            # than a zero that would read as "stopped allocating".
+            rec["allocations"] = None
         rows.append(rec)
     return rows
 
@@ -121,32 +132,34 @@ def build_model(rows, det_rows=()):
     # it can be attached to the matching wall-clock point below.
     det = {}
     for r in det_rows:
-        det[(r["benchmark"], r["commit"])] = r["instructions"]
+        det[(r["benchmark"], r["commit"])] = (r["instructions"], r["allocations"])
 
     # benchmark basename -> {"base": [...pts], "jit": [...pts]}
-    # A point is [commitIdx, seconds, ratio, instructions|None] -- the fourth
-    # slot is None wherever the deterministic series has no row, which is every
-    # commit before it started being recorded.
+    # A point is [commitIdx, seconds, ratio, instructions|None, allocations|None]
+    # -- the last two slots are None wherever the deterministic series has no
+    # row, which is every commit before each of them started being recorded.
     benches = {}
     for r in rows:
         name = r["benchmark"]
         base_name, lane = split_lane(name)
         b = benches.setdefault(base_name, {"base": {}, "jit": {}})
+        instr, allocs = det.pop((name, r["commit"]), (None, None))
         # last write wins if a commit reran a benchmark
         b[lane][idx[r["commit"]]] = [
             idx[r["commit"]],
             round(r["mutsu_median_s"], 5),
             round(r["ratio"], 4),
-            det.pop((name, r["commit"]), None),
+            instr,
+            allocs,
         ]
 
     # Any deterministic row with no wall-clock twin (the wall-clock measurement
     # failed, or the benchmark is recorded in only one of the two) still gets a
     # point, with the seconds/ratio slots empty.
-    for (name, commit), instr in det.items():
+    for (name, commit), (instr, allocs) in det.items():
         base_name, lane = split_lane(name)
         b = benches.setdefault(base_name, {"base": {}, "jit": {}})
-        b[lane].setdefault(idx[commit], [idx[commit], None, None, instr])
+        b[lane].setdefault(idx[commit], [idx[commit], None, None, instr, allocs])
 
     out = []
     for name in sorted(benches):
@@ -160,6 +173,9 @@ def build_model(rows, det_rows=()):
         # checkout whose bench-data has no deterministic history yet would
         # otherwise show a button that renders nothing.
         "hasDet": bool(det_rows),
+        # Same, for "allocations" (#8959), which started being recorded later
+        # than the instruction counts and so is absent from the older rows.
+        "hasAllocs": any(r["allocations"] is not None for r in det_rows),
     }
 
 
@@ -268,6 +284,7 @@ __CHROME_NAV__
       <button data-v="seconds" aria-pressed="true">mutsu seconds</button>
       <button data-v="ratio" aria-pressed="false">ratio vs raku</button>
       <button data-v="instr" aria-pressed="false" id="metricInstr" hidden>instructions</button>
+      <button data-v="allocs" aria-pressed="false" id="metricAllocs" hidden>allocations</button>
     </div>
     <span class="ctl-label">Window</span>
     <div class="seg" id="window" role="group" aria-label="Commit window">
@@ -300,14 +317,14 @@ const commits = DATA.commits, benches = DATA.benches;
 const N = commits.length;
 let metric = 'seconds', windowN = 0, view = 'charts';
 
-// A point is [commitIdx, seconds, ratio, instructions]. `instructions` is null
-// for every commit before the deterministic series started being recorded, so
+// A point is [commitIdx, seconds, ratio, instructions, allocations]. The last
+// two are null for every commit before each series started being recorded, so
 // every consumer below has to tolerate a null y -- see `defined`.
-const YIDX = { seconds: 1, ratio: 2, instr: 3 };
+const YIDX = { seconds: 1, ratio: 2, instr: 3, allocs: 4 };
 const yval = (pt) => pt[YIDX[metric]];
 const defined = (pt) => yval(pt) != null;
-// Instruction counts run to 1e9-1e13, so they get SI suffixes rather than the
-// seconds formatter's fixed decimals.
+// Instruction counts run to 1e9-1e13 and allocation counts to 1e4-1e8, so both
+// get SI suffixes rather than the seconds formatter's fixed decimals.
 function fmtInstr(v) {
   const a = Math.abs(v);
   if (a >= 1e12) return (v / 1e12).toFixed(2) + 'T';
@@ -316,7 +333,7 @@ function fmtInstr(v) {
   if (a >= 1e3) return (v / 1e3).toFixed(1) + 'k';
   return String(v);
 }
-const fmt = (v) => metric === 'instr' ? fmtInstr(v)
+const fmt = (v) => (metric === 'instr' || metric === 'allocs') ? fmtInstr(v)
   : metric === 'seconds'
     ? (v < 0.001 ? v.toExponential(1) : v.toFixed(v < 0.1 ? 4 : 3))
     : v.toFixed(2);
@@ -381,7 +398,8 @@ function cardHTML(b) {
     const cls = Math.abs(d.pct) < 0.5 ? 'flat' : (d.pct > 0 ? 'up' : 'down');
     const sign = d.pct > 0 ? '+' : '';
     const arrow = metric === 'seconds' ? (d.pct > 0 ? ' slower' : (d.pct < 0 ? ' faster' : ''))
-      : metric === 'instr' ? (d.pct > 0 ? ' more' : (d.pct < 0 ? ' fewer' : ''))
+      : (metric === 'instr' || metric === 'allocs')
+        ? (d.pct > 0 ? ' more' : (d.pct < 0 ? ' fewer' : ''))
       : '';
     chip = `<span class="chip ${cls}">${sign}${d.pct.toFixed(1)}%${cls==='flat'?'':arrow}</span>`;
     now = `<span class="now mono">${fmt(d.now)}<span class="unit">${unit()}${nowLane==='jit'?' (+jit)':''}</span></span>`;
@@ -477,6 +495,7 @@ function seg(id, cb) {
   });
 }
 if (DATA.hasDet) document.getElementById('metricInstr').hidden = false;
+if (DATA.hasAllocs) document.getElementById('metricAllocs').hidden = false;
 seg('metric', v => metric = v);
 seg('window', v => windowN = +v);
 seg('view', v => view = v);
@@ -494,6 +513,13 @@ document.getElementById('foot').innerHTML =
       `16-33% for wall clock. It is blind to cache behaviour, memory boundness, lock ` +
       `contention and real thread parallelism, and it steps whenever the toolchain ` +
       `changes &mdash; read it together with the seconds series, not instead of it. `
+    : '') +
+  (DATA.hasAllocs
+    ? `<b>allocations</b> is the heap allocation count, read out of the same callgrind ` +
+      `profile at no extra cost and at least as reproducible as the instruction count ` +
+      `(0&ndash;0.01% between warm runs of one binary), and unlike it, barely moved by a ` +
+      `toolchain bump. It counts calls, not bytes, so the same number of larger blocks ` +
+      `looks identical. `
     : '') +
   `Source: <span class="mono">bench-history.tsv</span>` +
   (DATA.hasDet ? ` and <span class="mono">bench-det-history.tsv</span>` : '') +
@@ -536,11 +562,13 @@ def main():
     ap.add_argument(
         "--det",
         metavar="TSV",
-        help="bench-det-history.tsv, the deterministic instruction-count series "
-        "(#8085). Optional: without it the page renders exactly as before and the "
-        "`instructions` metric button is not offered, which is what a checkout whose "
-        "bench-data has no deterministic history yet needs. A missing file is not an "
-        "error, for the same reason.",
+        help="bench-det-history.tsv, the deterministic series: instruction counts "
+        "(#8085) and heap allocation counts (#8959). Optional: without it the page "
+        "renders exactly as before and the `instructions` / `allocations` metric buttons "
+        "are not offered, which is what a checkout whose bench-data has no deterministic "
+        "history yet needs. A missing file is not an error, for the same reason, and "
+        "neither is a history that predates the allocation column -- that button alone "
+        "stays hidden.",
     )
     ap.add_argument(
         "--site-chrome",
