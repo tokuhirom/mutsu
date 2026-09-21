@@ -202,6 +202,15 @@ pub(crate) enum TrOp {
     AtPosI,
     /// Pop a boxed string; push its length in codepoints.
     CharsS,
+    /// Pop an int `$len`, an int `$from` and a boxed string; push the
+    /// codepoint substring, clamped exactly as `nqp::substr($s, $from,
+    /// $len)`'s own implementation clamps it (negative/past-end `$from`
+    /// clamps to the string, a `$len` that runs past the end truncates).
+    SubstrS,
+    /// Pop an int `$pos`, a boxed needle and a boxed haystack; push 1 when
+    /// the needle occurs at exactly codepoint offset `$pos`, else 0 —
+    /// `nqp::eqat`'s own answer.
+    EqAtS,
     /// Pop `n` boxed values and push their concatenation — the lowering of
     /// `"a $b c"`. Runs the interpreter's own `StringConcat`, so a `.Str`
     /// override, a `Proxy` operand and the writeback reconcile behave

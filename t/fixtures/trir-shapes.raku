@@ -104,6 +104,36 @@ say "num-cmp={num-cmp(1e0, 2e0)},{num-cmp(2e0, 1e0)}";
 my sub width(str $s) { nqp::chars($s) }
 say "width={width('hello')},{width('')}";
 
+# --- `substr` / `eqat` ------------------------------------------------------
+# JSON::Fast's `parse-string` fast path is exactly this shape: `eqat` to spot
+# a clean quote and `substr` to slice the token out, both against the SAME
+# document text repeatedly (issue #8900).
+my sub slice(str $s, int $from, int $len) { nqp::substr($s, $from, $len) }
+say "substr-mid={slice('hello world', 6, 5)}";
+say "substr-clip={slice('hi', 0, 99)}";
+say "substr-oob={slice('hi', 99, 5)}";
+say "substr-neg={slice('hi', -3, 2)}";
+say "substr-empty={slice('hi', 1, 0)}";
+
+my sub starts-with(str $s, str $needle, int $pos) { nqp::eqat($s, $needle, $pos) }
+say "eqat-hit={starts-with('hello', 'ell', 1)}";
+say "eqat-miss={starts-with('hello', 'ell', 0)}";
+say "eqat-at-end={starts-with('hello', 'o', 4)}";
+say "eqat-oob={starts-with('hi', 'longneedle', 0)}";
+say "eqat-neg-pos={starts-with('hi', 'h', -1)}";
+
+# Same document text reused across both ops and across `ordat`/`chars`, so the
+# per-frame char memo has to answer all of them consistently.
+my sub scan-token(str $s, int $pos) {
+    nqp::if(
+      nqp::eqat($s, '"', nqp::sub_i($pos, 1)),
+      nqp::substr($s, $pos, nqp::sub_i(nqp::chars($s), $pos)),
+      'no-quote'
+    )
+}
+my str $quoted = Q["] ~ 'abcxyz';
+say "scan-token={scan-token($quoted, 1)}";
+
 # --- boundary: what the binder must still reject ---------------------------
 # A native `int` parameter accepts a `Bool` (Bool does Int) and rejects a
 # `Str`; a native `str` parameter rejects a non-string. TRIR must raise the
