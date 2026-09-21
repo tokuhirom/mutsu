@@ -652,6 +652,29 @@ impl Interpreter {
                 call_file,
                 def_file,
             );
+        } else if cc.is_routine {
+            // A genuine routine (a named `sub`/`my sub`, or an anonymous one
+            // declared with `sub`) invoked indirectly through its code value
+            // (`&name`, `.map(&name)`, a stored callback, ...) is still a real
+            // routine boundary, exactly like a direct by-name call — the
+            // `return`-catching branch below already treats it that way via
+            // `cc.is_routine` rather than the pushed frame's `is_block`. Every
+            // OTHER consumer of `RoutineFrame.is_block`
+            // (`Interpreter::running_package_candidates`,
+            // `enclosing_routine_exists`, `&?ROUTINE` frame-skipping, dynamic-
+            // variable scope walks) trusts the frame itself, so pushing it as
+            // `is_block: true` here made every indirect call misreport the
+            // callee as an anonymous block — in particular making
+            // `running_package_candidates` skip straight past the callee's own
+            // module and anchor bareword/constant resolution on whatever
+            // named routine happened to be calling it (#8905).
+            self.push_routine_with_location(
+                data.package,
+                data.name,
+                call_line,
+                call_file,
+                def_file,
+            );
         } else {
             self.push_block_routine_with_location(
                 data.package,
