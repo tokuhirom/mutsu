@@ -573,8 +573,33 @@ impl Interpreter {
         }
     }
 
-    /// Register `is export` routines declared directly in a role body when the
-    /// role is declared, rather than waiting for a later composition.
+    /// Register every top-level (non-method) `sub` declared directly in a role
+    /// body when the role is declared, rather than waiting for a later
+    /// composition.
+    ///
+    /// A plain `sub` in a role body is a lexical helper of the role's own
+    /// compilation unit, not a composition-time effect: Rakudo makes it (and
+    /// any `is export` sub that calls it) callable the moment the role loads,
+    /// with no class ever composing the role. Before this ran only the
+    /// `is export`ed subs early (see the historical `Red::ResultSeq` note
+    /// below) — a role-private helper stayed in `deferred_body_ops`, invisible
+    /// until composition, so an exported sub that forward-referenced one (the
+    /// common "public wrapper calls a private `_helper`" shape,
+    /// `Date::Calendar::Strftime`'s `strftime` -> `_strftime`) died with
+    /// "Unknown function" the moment it was called without ever composing the
+    /// role. `run_block_raw`'s ordinary `SubDecl` handling already
+    /// marks a non-`is export` sub my-scoped (see
+    /// `runtime_encoding::mark_my_scoped_package_item`), so registering it
+    /// here does not leak it to an importer that never asked for it — it only
+    /// makes it resolvable to bare-name calls from routines running under this
+    /// role's own package, exactly like a module's own private top-level
+    /// helper already is.
+    ///
+    /// Only `SubDecl` is widened this way. Every other deferred statement
+    /// kind (`my class`, `my grammar`, closures over role attributes, …) stays
+    /// composition-only: those either need a composed instance or are only
+    /// safe to re-evaluate per parameterization, per the existing
+    /// `RoleBodyOp::Deferred` contract in `walk_role_body`.
     ///
     /// Like an exported subset, an exported routine is a declaration that a
     /// consumer can import immediately.  Deferring it until composition loses
@@ -589,13 +614,7 @@ impl Interpreter {
         let saved_package = self.current_package().to_string();
         self.set_current_package(role_name.to_string());
         for op in deferred_body_ops {
-            if !matches!(
-                &op.raw,
-                Stmt::SubDecl {
-                    is_export: true,
-                    ..
-                }
-            ) {
+            if !matches!(&op.raw, Stmt::SubDecl { .. }) {
                 continue;
             }
             if let Err(error) = self.run_block_raw(std::slice::from_ref(&op.raw)) {
