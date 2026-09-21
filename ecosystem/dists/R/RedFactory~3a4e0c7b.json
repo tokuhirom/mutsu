@@ -39,11 +39,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "Could not instantiate role 'Red::ResultSeq' because it died with X::Redeclaration; exception details:",
+        "first_failure": "Any should do the Red::ResultSeq role",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 4.9,
+        "secs": 5.53,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -53,7 +53,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 137.88,
+        "secs": 152.68,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -62,11 +62,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "Any should do the Red::ResultSeq role",
+        "first_failure": "Could not instantiate role 'Red::ResultSeq' because it died with X::Redeclaration; exception details:",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 4.81,
+        "secs": 5.21,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -76,7 +76,7 @@
         "nok": 0,
         "ok": 24,
         "plan": 24,
-        "secs": 9.0,
+        "secs": 4.84,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -89,7 +89,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.83,
+        "secs": 3.42,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -99,7 +99,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 4.72,
+        "secs": 5.44,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -111,10 +111,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-20",
+    "date": "2026-09-21",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "fb8ac07",
+    "mutsu_commit": "ae07b22",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",

@@ -19,7 +19,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.12,
+        "secs": 0.19,
         "skip": 1,
         "todo": 0,
         "verdict": "pass"
@@ -29,7 +29,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.55,
+        "secs": 0.9,
         "skip": 1,
         "todo": 0,
         "verdict": "pass"
@@ -52,7 +52,7 @@
         "nok": 0,
         "ok": 31,
         "plan": 31,
-        "secs": 8.61,
+        "secs": 10.44,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -64,7 +64,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 0.13,
+        "secs": 0.19,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -74,7 +74,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 0.47,
+        "secs": 0.85,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -87,7 +87,7 @@
         "nok": 16,
         "ok": 35,
         "plan": 51,
-        "secs": 0.48,
+        "secs": 0.73,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -97,21 +97,20 @@
         "nok": 0,
         "ok": 51,
         "plan": 51,
-        "secs": 0.53,
+        "secs": 1.08,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "no_baseline",
-      "flaky": true,
+      "cmp": "regression",
       "mutsu": {
         "first_failure": "SWEEP-TIMEOUT",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 240.1,
+        "secs": 240.03,
         "skip": 0,
         "todo": 0,
         "verdict": "timeout"
@@ -121,7 +120,7 @@
         "nok": 0,
         "ok": 28,
         "plan": 28,
-        "secs": 0.82,
+        "secs": 1.23,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -138,10 +137,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-20",
+    "date": "2026-09-21",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "fb8ac07",
+    "mutsu_commit": "ae07b22",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -154,11 +153,11 @@
   },
   "status": "partial",
   "totals": {
-    "baseline_assertions": 86,
-    "baseline_files": 4,
+    "baseline_assertions": 114,
+    "baseline_files": 5,
     "mutsu_assertions": 39,
     "parity_files": 2,
-    "regressed_files": 2
+    "regressed_files": 3
   },
   "version": "0.1.0"
 }
