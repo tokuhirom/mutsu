@@ -76,13 +76,37 @@ is there because the probes ask `contains("::")` about names they re-derive; `cl
 four separate probes each walked the MRO to answer a question about a class that had not changed
 since the program started.
 
+## On the tracked benchmarks
+
+A microbenchmark is not a verdict, so the same change measured by `scripts/bench-det.sh` against
+`origin/main` (both release, both lanes, instructions and allocator calls):
+
+| | Ir | | allocations | |
+| --- | ---: | ---: | ---: | ---: |
+| `bench-class` | 1,226,271,303 → 1,088,627,535 | **−11.22%** | 979,440 → 903,462 | **−7.76%** |
+| `bench-class+jit` | 1,217,813,439 → 1,081,359,386 | **−11.20%** | 985,893 → 909,903 | −7.71% |
+| `bench-ctor` | 1,577,898,741 → 1,579,478,093 | **+0.10%** | 1,530,871 → 1,530,885 | ±0.00% |
+| `bench-ctor+jit` | 1,570,825,916 → 1,574,591,760 | **+0.24%** | — | ±0.00% |
+| `bench-json-fast` | 2,688,025,124 → 2,680,365,147 | −0.28% | — | ±0.00% |
+| `bench-grammar-parse` | 28,446,064 → 28,418,917 | −0.10% | — | ±0.00% |
+
+Two things in that table are worth saying out loud. `bench-ctor` gets **slightly slower**: it is
+`C.new(...)` on a bareword, a `Package` receiver the lane never applies to, so all it sees is the
+gate's own cost — one view match and one cleared field per dispatch. That is the price of the
+mechanism where it does not pay, and it is what it costs. And `bench-json-fast`, the benchmark that
+motivated #8880 in the first place, barely moves: `JSON::Fast`'s hot calls mostly carry arguments,
+which the zero-argument gate excludes. Widening the key to cover arguments is the obvious next step
+and is deliberately not taken here — excluding them is exactly what makes the argument-shaped
+early-outs in the probe chain impossible to get wrong.
+
 ## What this does not do
 
 The lane covers the `CallMethodMut` opcode — a method call on a *named* receiver, which is the
 shape `$o.m()` compiles to and the one the issue measures. The plain `CallMethod` opcode has its own
-probe prefix and its own `fast_method_cache` wiring and is untouched. Calls with arguments are
-outside the gate, deliberately: excluding them is what makes the argument-shaped early-outs in the
-chain impossible to get wrong, and widening the key to cover them is a separate, measurable step.
+probe prefix and its own `fast_method_cache` wiring and is untouched.
+
+The numbers above are local A/B runs against `origin/main`, taken minutes apart on the same box;
+`bench-history.tsv` on `bench-data` is the tracked series and is what any document should cite.
 
 [#8880](https://github.com/tokuhirom/mutsu/issues/8880) stays open. A method call is still 14,777
 instructions against rakudo's thirty cycles, and the remaining budget is now dominated by the
