@@ -579,7 +579,7 @@ fn collect_atom_calls(atom: &RegexAtom, pkg: Symbol, out: &mut DirectCalls) -> b
             out.runs_user_code |= args.is_some();
             true
         }
-        RegexAtom::Group(p) | RegexAtom::CaptureGroup(p) | RegexAtom::CaptureIsolatedGroup(p) => {
+        RegexAtom::Group(p) | RegexAtom::CaptureGroup(p) | RegexAtom::CaptureIsolatedGroup(p) | RegexAtom::CaptureIsolatedGroupScoped(p, _) => {
             collect_pattern_calls(p, pkg, out)
         }
         RegexAtom::Alternation(alts)

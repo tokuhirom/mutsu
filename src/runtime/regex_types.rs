@@ -961,6 +961,20 @@ pub(crate) enum RegexAtom {
     /// pattern that needs the INTERNAL backreference to keep working, ruling
     /// out plain capture erasure).
     CaptureIsolatedGroup(RegexPattern),
+    /// [`RegexAtom::CaptureIsolatedGroup`], but the interpolated value was
+    /// itself a closure (its pattern embeds `@(...)`/`$(...)`/`{...}` code —
+    /// [`Value::RegexCaptured`]): `scope` is the lexical scope that code
+    /// closed over, snapshotted at the point the *inner* regex literal was
+    /// evaluated. A `<$re>` reference resolves `$re`'s value at the OUTER
+    /// pattern's parse time and splices its pattern text in — so without
+    /// this, the embedded code would resolve its free variables against
+    /// whatever happens to be live at the outer match site instead of the
+    /// scope it actually closed over (issue #8951). The match-time execution
+    /// sites install `scope` into `env` for the duration of this atom's
+    /// match, exactly like
+    /// [`crate::runtime::Interpreter::install_regex_closure_scope`] does for
+    /// a `RegexCaptured` matched directly.
+    CaptureIsolatedGroupScoped(RegexPattern, Arc<crate::value::ValueMap>),
     Alternation(Vec<RegexPattern>),
     SequentialAlternation(Vec<RegexPattern>),
     /// Conjunction: all branches must match at the same position; longest match wins

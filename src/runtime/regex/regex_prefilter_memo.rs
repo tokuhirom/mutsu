@@ -133,9 +133,10 @@ fn atom_mentions_subrule(atom: &RegexAtom, depth: u32) -> bool {
         RegexAtom::CompositeClass { positive, .. } => {
             super::regex_prefilter_composite::composite_class_reads_registry(positive)
         }
-        RegexAtom::Group(p) | RegexAtom::CaptureGroup(p) | RegexAtom::CaptureIsolatedGroup(p) => {
-            pattern_mentions_subrule(p, depth + 1)
-        }
+        RegexAtom::Group(p)
+        | RegexAtom::CaptureGroup(p)
+        | RegexAtom::CaptureIsolatedGroup(p)
+        | RegexAtom::CaptureIsolatedGroupScoped(p, _) => pattern_mentions_subrule(p, depth + 1),
         RegexAtom::Alternation(v)
         | RegexAtom::SequentialAlternation(v)
         | RegexAtom::Conjunction(v) => v.iter().any(|p| pattern_mentions_subrule(p, depth + 1)),

@@ -1,4 +1,5 @@
 use super::super::*;
+use crate::value::ValueMap;
 use rustc_hash::FxHashMap as HashMap;
 use std::cell::{Cell, RefCell};
 use std::sync::Arc;
@@ -82,6 +83,21 @@ thread_local! {
     /// actually depends on a dynamic variable. The reduce-time action hook only
     /// fires when this is true, so ordinary (non-dyn-var) grammars pay nothing.
     pub(crate) static REGEX_GRAMMAR_DYNVAR_SEEN: Cell<bool> = const { Cell::new(false) };
+    /// The defining scope of a `<$re>`-interpolated `Regex` closure, active
+    /// while `self`/`self.env` is re-parsing/re-interpolating THAT regex's
+    /// OWN pattern text (issue #8951). `<$re>` resolves `$re`'s pattern
+    /// STRING and splices it into the outer pattern at the outer match site
+    /// — a site that has no reason to carry the inner regex's own captured
+    /// lexicals (e.g. a `token`/regex literal's `@(%hash.keys)` needs
+    /// `%hash` from where the literal was written, not from wherever it is
+    /// later interpolated). `eval_string_as_source`'s scratch interpreter
+    /// consults this to seed its env for exactly the embedded
+    /// `@(...)`/`$(...)` evaluation that resolving `$re`'s text triggers;
+    /// like [`REGEX_DYNVAR_OVERLAY`] this is `&self`-compatible because it
+    /// is consulted by a freshly built scratch `Interpreter`, never by
+    /// mutating the live one. `None` on the overwhelmingly common path where
+    /// no `Regex` value being interpolated is itself a closure.
+    pub(crate) static REGEX_INTERP_CLOSURE_SCOPE: RefCell<Option<Arc<ValueMap>>> = const { RefCell::new(None) };
     /// Log of every named subrule that *reduced* (matched successfully) during the
     /// live `Grammar.parse(:actions(...))`, in reduce order (children before their
     /// parent, since the matcher recurses). Rakudo dispatches an action method the
@@ -220,6 +236,7 @@ pub(crate) fn atom_contains_backref(atom: &RegexAtom) -> bool {
         RegexAtom::Group(p)
         | RegexAtom::CaptureGroup(p)
         | RegexAtom::CaptureIsolatedGroup(p)
+        | RegexAtom::CaptureIsolatedGroupScoped(p, _)
         | RegexAtom::Lookaround { pattern: p, .. } => pattern_has(p),
         RegexAtom::Alternation(alts)
         | RegexAtom::SequentialAlternation(alts)
@@ -526,6 +543,46 @@ impl Drop for RegexDynvarOverlayGuard {
     }
 }
 
+/// Consult [`REGEX_INTERP_CLOSURE_SCOPE`] for a name, or `None` when it is
+/// inactive or has no entry for the name. `key` is the env form (`$x` ->
+/// `"x"`, `@x`/`%x`/`&x` keep their sigil).
+pub(crate) fn interp_closure_scope_get(key: &str) -> Option<Value> {
+    REGEX_INTERP_CLOSURE_SCOPE.with(|slot| {
+        slot.borrow()
+            .as_ref()
+            .and_then(|scope| scope.get(key))
+            .cloned()
+    })
+}
+
+/// The whole active scope (or `None`), for a caller that wants to seed a
+/// scratch interpreter's env in bulk instead of probing one name at a time —
+/// [`Interpreter::eval_string_as_source`]'s `@(...)`/`$(...)` evaluation.
+pub(crate) fn interp_closure_scope_snapshot() -> Option<Arc<ValueMap>> {
+    REGEX_INTERP_CLOSURE_SCOPE.with(|slot| slot.borrow().clone())
+}
+
+/// RAII guard that activates [`REGEX_INTERP_CLOSURE_SCOPE`] for the duration
+/// of re-resolving a `<$re>`-interpolated `Regex` closure's own pattern text,
+/// restoring whatever scope (if any) was already active on drop — so a
+/// closure regex interpolating ANOTHER closure regex nests correctly.
+pub(crate) struct RegexInterpClosureScopeGuard {
+    prev: Option<Arc<ValueMap>>,
+}
+
+impl RegexInterpClosureScopeGuard {
+    pub(crate) fn activate(scope: Arc<ValueMap>) -> Self {
+        let prev = REGEX_INTERP_CLOSURE_SCOPE.with(|slot| slot.borrow_mut().replace(scope));
+        RegexInterpClosureScopeGuard { prev }
+    }
+}
+
+impl Drop for RegexInterpClosureScopeGuard {
+    fn drop(&mut self) {
+        REGEX_INTERP_CLOSURE_SCOPE.with(|slot| *slot.borrow_mut() = self.prev.take());
+    }
+}
+
 /// Strip combining marks from a character, returning just the base character(s).
 /// NFD-decompose the char and remove anything classified as a combining mark.
 pub(super) fn strip_marks_char(ch: char) -> Vec<char> {
@@ -675,11 +732,37 @@ fn strip_marks_token(token: &RegexToken) -> RegexToken {
 /// `<$var>`-family call gets its own discarded `Match` object in Raku). See
 /// `todo/tickets/stored-regex-loses-its-defining-scope-lexicals.md` bug 2.
 pub(crate) fn wrap_capture_isolated(pattern: RegexPattern) -> RegexPattern {
-    let ignore_case = pattern.ignore_case;
-    let ignore_mark = pattern.ignore_mark;
+    let (ignore_case, ignore_mark) = (pattern.ignore_case, pattern.ignore_mark);
+    wrap_capture_isolated_atom(
+        RegexAtom::CaptureIsolatedGroup(pattern),
+        ignore_case,
+        ignore_mark,
+    )
+}
+
+/// [`wrap_capture_isolated`], but the interpolated `Regex` value closed over
+/// `scope` of its own (issue #8951) — see
+/// `RegexAtom::CaptureIsolatedGroupScoped`'s doc comment.
+pub(crate) fn wrap_capture_isolated_scoped(
+    pattern: RegexPattern,
+    scope: Arc<crate::value::ValueMap>,
+) -> RegexPattern {
+    let (ignore_case, ignore_mark) = (pattern.ignore_case, pattern.ignore_mark);
+    wrap_capture_isolated_atom(
+        RegexAtom::CaptureIsolatedGroupScoped(pattern, scope),
+        ignore_case,
+        ignore_mark,
+    )
+}
+
+fn wrap_capture_isolated_atom(
+    atom: RegexAtom,
+    ignore_case: bool,
+    ignore_mark: bool,
+) -> RegexPattern {
     RegexPattern {
         tokens: vec![RegexToken {
-            atom: RegexAtom::CaptureIsolatedGroup(pattern),
+            atom,
             quant: RegexQuant::One,
             named_capture: None,
             secondary_named_capture: None,
@@ -734,6 +817,9 @@ fn strip_marks_atom(atom: &RegexAtom) -> RegexAtom {
         RegexAtom::CaptureGroup(p) => RegexAtom::CaptureGroup(strip_marks_pattern_uncached(p)),
         RegexAtom::CaptureIsolatedGroup(p) => {
             RegexAtom::CaptureIsolatedGroup(strip_marks_pattern_uncached(p))
+        }
+        RegexAtom::CaptureIsolatedGroupScoped(p, scope) => {
+            RegexAtom::CaptureIsolatedGroupScoped(strip_marks_pattern_uncached(p), scope.clone())
         }
         RegexAtom::Alternation(alts) => {
             RegexAtom::Alternation(alts.iter().map(strip_marks_pattern_uncached).collect())

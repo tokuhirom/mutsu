@@ -1173,6 +1173,15 @@ impl Interpreter {
             ..Default::default()
         };
         self.copy_decl_registry_into(&mut interp);
+        // A `<$re>` reference re-resolving `$re`'s OWN pattern text (issue
+        // #8951) needs `$re`'s defining scope here, not this call's ambient
+        // `self.env` — e.g. a literal's `@(%hash.keys)` closed over `%hash`
+        // where it was WRITTEN, not wherever it is later interpolated.
+        if let Some(scope) = super::regex::regex_helpers::interp_closure_scope_snapshot() {
+            for (k, v) in scope.iter() {
+                interp.env.insert(k.clone(), v.clone());
+            }
+        }
         match interp.eval_block_value(&stmts) {
             Ok(v) => v,
             Err(e) => e.return_value.unwrap_or(Value::NIL),

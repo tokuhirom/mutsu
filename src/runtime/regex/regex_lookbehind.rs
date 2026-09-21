@@ -133,6 +133,7 @@ fn atom_max_graphemes(atom: &RegexAtom) -> Option<usize> {
         RegexAtom::Group(inner)
         | RegexAtom::CaptureGroup(inner)
         | RegexAtom::CaptureIsolatedGroup(inner) => pattern_max_graphemes(inner),
+        RegexAtom::CaptureIsolatedGroupScoped(inner, _) => pattern_max_graphemes(inner),
 
         // A branch set consumes at most its longest branch. A conjunction's
         // branches all match the same span, so the same bound is sound.

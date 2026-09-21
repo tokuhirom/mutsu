@@ -206,7 +206,9 @@ fn required_literal_prefix_walk(pattern: &RegexPattern) -> (String, bool) {
             // capture-isolated group is likewise invisible to the enclosing
             // match's capture result, unlike `CaptureGroup`, so both may
             // extend a required prefix when their entire body is literal.
-            RegexAtom::Group(inner) | RegexAtom::CaptureIsolatedGroup(inner) => {
+            RegexAtom::Group(inner)
+            | RegexAtom::CaptureIsolatedGroup(inner)
+            | RegexAtom::CaptureIsolatedGroupScoped(inner, _) => {
                 let (inner_prefix, inner_complete) = required_literal_prefix_walk(inner);
                 prefix.push_str(&inner_prefix);
                 if !inner_complete {

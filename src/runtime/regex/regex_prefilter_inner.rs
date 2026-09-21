@@ -316,7 +316,10 @@ fn atom_span_and_candidates(atom: &RegexAtom, depth: u32) -> Option<(Span, Vec<C
         | RegexAtom::SameAssertion { .. }
         | RegexAtom::AtPosition(_)
         | RegexAtom::Lookaround { .. } => Span::ZERO,
-        RegexAtom::Group(p) | RegexAtom::CaptureGroup(p) | RegexAtom::CaptureIsolatedGroup(p) => {
+        RegexAtom::Group(p)
+        | RegexAtom::CaptureGroup(p)
+        | RegexAtom::CaptureIsolatedGroup(p)
+        | RegexAtom::CaptureIsolatedGroupScoped(p, _) => {
             return walk_pattern(p, deeper);
         }
         // Any branch may be the one that matches, so no branch's literal is

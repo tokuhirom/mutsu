@@ -285,6 +285,16 @@ impl Interpreter {
             RegexAtom::Group(pattern) | RegexAtom::CaptureIsolatedGroup(pattern) => {
                 return self.regex_match_end_from_in_pkg(pattern, chars, pos, pkg);
             }
+            RegexAtom::CaptureIsolatedGroupScoped(pattern, scope) => {
+                // Same as the plain `CaptureIsolatedGroup` arm above, but the
+                // interpolated regex closed over its own defining scope
+                // (issue #8951) — install it for the duration of this atom's
+                // match.
+                let saved = self.install_env_scope(scope);
+                let result = self.regex_match_end_from_in_pkg(pattern, chars, pos, pkg);
+                self.uninstall_regex_closure_scope(Some(saved));
+                return result;
+            }
             RegexAtom::CaptureGroup(pattern) => {
                 return self.regex_match_end_from_in_pkg(pattern, chars, pos, pkg);
             }
@@ -890,6 +900,7 @@ impl Interpreter {
             RegexAtom::Group(_)
             | RegexAtom::CaptureGroup(_)
             | RegexAtom::CaptureIsolatedGroup(_)
+            | RegexAtom::CaptureIsolatedGroupScoped(_, _)
             | RegexAtom::Alternation(_)
             | RegexAtom::SequentialAlternation(_)
             | RegexAtom::Conjunction(_)

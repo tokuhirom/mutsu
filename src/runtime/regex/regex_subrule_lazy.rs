@@ -102,6 +102,7 @@ fn atom_is_rule_call_free(atom: &RegexAtom) -> bool {
         RegexAtom::Group(p)
         | RegexAtom::CaptureGroup(p)
         | RegexAtom::CaptureIsolatedGroup(p) => pattern_is_rule_call_free(p),
+        RegexAtom::CaptureIsolatedGroupScoped(p, _) => pattern_is_rule_call_free(p),
         RegexAtom::Alternation(alts)
         | RegexAtom::SequentialAlternation(alts)
         | RegexAtom::Conjunction(alts) => alts.iter().all(pattern_is_rule_call_free),

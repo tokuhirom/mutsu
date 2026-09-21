@@ -1,7 +1,7 @@
 use v6;
 use Test;
 
-plan 20;
+plan 23;
 
 # --- Bug 1: a stored regex keeps its defining scope ---------------------------
 
@@ -79,4 +79,48 @@ ok ("abc" ~~ mk6()).defined, 'embedded code sees a mutation made before the fram
     my @pats = rx/(\d+)/, rx/(x+)/;
     "n=123" ~~ / 'n=' <@pats> /;
     nok $0.defined, '<@pats> alternation does not leak captures either';
+}
+
+# --- Issue #8951: a <$re>-interpolated Regex value that is ITSELF a
+# closure (its pattern embeds @(...)/{...} code) must resolve that code
+# against its OWN defining scope, not whatever is live at the OUTER
+# pattern's match site. Before the fix, <$var> extracted only the pattern
+# TEXT of a RegexCaptured value, so the embedded @(...) either tripped the
+# X::SecurityPolicy check meant for untrusted strings, or (once that check
+# was bypassed) silently failed to resolve %named and matched nothing.
+{
+    my %named = a => 1, b => 2, c => 3;
+    my $named-re = rx/ @(%named.keys) /;
+    sub normalize(Str $v) {
+        my $r = $v;
+        $r ~~ s:g/ <$named-re> /X/;
+        $r;
+    }
+    is normalize('has a and b and c'), 'hXs X Xnd X Xnd X',
+        '<$re> interpolated from an unrelated scope resolves its OWN captured lexicals';
+}
+
+# Same defect, reached through <@var> array-alternation of Regex-valued
+# elements instead of a single <$var>.
+{
+    my %named = a => 1, b => 2;
+    my @alts = rx/ @(%named.keys) /, rx/ zz /;
+    sub normalize2(Str $v) {
+        my $r = $v;
+        $r ~~ s:g/ <@alts> /X/;
+        $r;
+    }
+    is normalize2('a zz b'), 'X X X',
+        '<@var> array element that is a closure resolves its OWN captured lexicals';
+}
+
+# A genuine Regex value's own @(...)/$(...) is trusted -- it can only have
+# been written by actual regex literal syntax, never smuggled in through a
+# runtime string -- so interpolating it via <$var> must not trip the
+# X::SecurityPolicy check that guards against the latter.
+{
+    my %named = a => 1;
+    my $named-re = rx/ @(%named.keys) /;
+    lives-ok { 'a' ~~ / <$named-re> / },
+        '<$re> interpolating a code-bearing Regex value does not trip X::SecurityPolicy';
 }
