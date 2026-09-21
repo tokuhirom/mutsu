@@ -114,7 +114,7 @@ work; see the CLAUDE.md "mzef package manager and distribution" section. The **R
       clusters are filed as `todo:*` issues), or by **distribution** with
       [`ecosystem-dist-fix`](.agents/skills/ecosystem-dist-fix/SKILL.md) (named) /
       [`ecosystem-dist-roulette`](.agents/skills/ecosystem-dist-roulette/SKILL.md) (a uniform random
-      draw, locked on [#7884](https://github.com/tokuhirom/mutsu/issues/7884) so parallel agents do
+      draw, locked on [#8977](https://github.com/tokuhirom/mutsu/issues/8977) so parallel agents do
       not collide). Prefer a root cause when one covers several distributions; a uniform draw is what
       keeps the published figure honest.
       Method: [docs/ecosystem-parity.md](docs/ecosystem-parity.md);

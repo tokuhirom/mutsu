@@ -57,7 +57,7 @@ RELEASE_STALE="${RELEASE_STALE:-0}"
 # agents append after it ("Releasing: br - fixed in #8114", a Claude Code
 # attribution footer, a paragraph of findings).
 #
-# `Locking:` / `Unlocking:` (the ecosystem lock board, #7884) are deliberately
+# `Locking:` / `Unlocking:` (the ecosystem lock board, #8977) are deliberately
 # NOT claims: that board locks distributions, not the issue it lives on.
 live_claims() {
   awk -F'\t' '

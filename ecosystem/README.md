@@ -135,7 +135,7 @@ running at once — use
 instead. It draws uniformly from the actionable records here (a uniform sample is
 what keeps the published figure honest; picking the cheapest-looking record games
 it), takes a lock on
-[#7884](https://github.com/tokuhirom/mutsu/issues/7884) so no two agents work the
+[#8977](https://github.com/tokuhirom/mutsu/issues/8977) so no two agents work the
 same distribution, and then hands over to `ecosystem-dist-fix`. A distribution
 has no issue of its own to carry a claim, which is why the lock lives on that one
 board issue's comments rather than in this tree.

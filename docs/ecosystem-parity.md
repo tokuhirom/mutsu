@@ -19,7 +19,7 @@ sides, and publish the difference.
   fix-versus-file-an-issue rule;
   [`.agents/skills/ecosystem-dist-roulette/SKILL.md`](../.agents/skills/ecosystem-dist-roulette/SKILL.md)
   wraps that in a uniform random draw over the actionable records plus a lock on
-  [#7884](https://github.com/tokuhirom/mutsu/issues/7884), so parallel agents
+  [#8977](https://github.com/tokuhirom/mutsu/issues/8977), so parallel agents
   neither collide nor bias the sample by cherry-picking cheap records.
 - **Sibling tools**: [docs/dist-compat-sweep.md](dist-compat-sweep.md) is the
   load-level (`use <module>`) diagnostic sampler that feeds root-cause tickets;
