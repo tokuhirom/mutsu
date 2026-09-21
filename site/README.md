@@ -65,6 +65,13 @@ the figure baked into `index.html` — keep that fallback roughly current, but t
 deployed site never depends on it. (The README's hand-written count is exactly what
 this avoids: it sat ~290 files stale.)
 
+Counting it at deploy time is only half the guarantee: the deploy has to happen.
+Neither `roast-whitelist.txt` nor `roast/` was on the workflow's `paths:` filter, so
+for a while this figure moved several times a day and reached the site once a night.
+`pages.yml` now deploys on **every** push to main, which is affordable because the
+job no longer builds wasm from source — it installs the published npm package, and
+runs in ~35 seconds.
+
 `bench-trend.html` is rendered into the site at deploy time by
 `scripts/bench-visualize.py` from the `bench-data` branch's `bench-history.tsv`.
 A completed `Bench` run re-triggers the deploy, so a new measurement reaches the
