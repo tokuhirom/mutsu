@@ -131,9 +131,9 @@ impl Interpreter {
         match sub_data {
             Some(sd) => {
                 let name = sd.name.resolve();
-                attrs.insert("subname".to_string(), Value::str(name.to_string()));
+                attrs.insert("subname".to_string(), Value::str(name));
                 let pkg = sd.package.resolve();
-                attrs.insert("package".to_string(), Value::str(pkg.to_string()));
+                attrs.insert("package".to_string(), Value::str(pkg));
                 attrs.insert("subtype".to_string(), Value::str("SubRoutine".to_string()));
                 attrs.insert("sub".to_string(), code.clone());
             }
@@ -248,7 +248,7 @@ impl Interpreter {
             addresses.push("127.0.0.1".to_string());
         }
         let mut info = ValueMap::default();
-        info.insert("name".to_string(), Value::str(name.clone()));
+        info.insert("name".to_string(), Value::str(name));
         info.insert("addr".to_string(), Value::str(addresses[0].clone()));
         info.insert("aliases".to_string(), Value::array(Vec::new()));
         let addrs_values = addresses.into_iter().map(Value::str).collect();

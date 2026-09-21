@@ -1457,7 +1457,7 @@ impl Interpreter {
                 _name,
                 remaining,
                 call_args.clone(),
-                rw_params.clone(),
+                rw_params,
                 dispatch_token,
             );
             if have_rw_source {

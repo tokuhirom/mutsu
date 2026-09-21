@@ -334,8 +334,7 @@ impl Interpreter {
                         self.env.insert("_".to_string(), last_arg.clone());
                     }
                     // Bind @_ to the argument history window.
-                    self.env
-                        .insert("@_".to_string(), Value::array(args.clone()));
+                    self.env.insert("@_".to_string(), Value::array(args));
 
                     let exec_result = if let Some((code, fns)) = precompiled {
                         self.eval_precompiled_block_fast(code, fns)
@@ -572,7 +571,7 @@ impl Interpreter {
                         prev_endpoint
                     } else {
                         if pending_scalars.len() > 1 {
-                            let mut seeds = vec![prev_endpoint.clone()];
+                            let mut seeds = vec![prev_endpoint];
                             seeds.extend(
                                 pending_scalars[..pending_scalars.len() - 1].iter().cloned(),
                             );
@@ -1702,7 +1701,6 @@ impl Interpreter {
             && !closure_generation_finished
             && let Some(gen_fn) = generator
         {
-            let endpoint = endpoint.clone();
             let state = crate::value::ClosureSeqState {
                 generator: gen_fn,
                 closure_env: generator_closure_env,

@@ -341,7 +341,7 @@ impl Interpreter {
                     let ks = k.resolve();
                     ks == prefix || ks.starts_with(&format!("{prefix}/"))
                 })
-                .map(|(k, v)| (k.resolve().to_string(), v.clone()))
+                .map(|(k, v)| (k.resolve(), v.clone()))
                 .collect();
             for (key, def) in to_promote {
                 let global_key = key.replacen(&format!("{pkg}::"), "GLOBAL::", 1);

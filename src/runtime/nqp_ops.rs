@@ -424,10 +424,8 @@ impl Interpreter {
                 // it holds.
                 let v = args.first().cloned().unwrap_or(Value::NIL);
                 let type_name = match args.get(1).map(|t| t.view()) {
-                    Some(ValueView::Package(p)) => p.resolve().to_string(),
-                    Some(ValueView::Instance { class_name, .. }) => {
-                        class_name.resolve().to_string()
-                    }
+                    Some(ValueView::Package(p)) => p.resolve(),
+                    Some(ValueView::Instance { class_name, .. }) => class_name.resolve(),
                     // `Nil` used as a type argument (`nqp::istype($x, Nil)`) is a
                     // bare `ValueView::Nil`, not a `Package("Nil")` type object
                     // like other builtin types — CBOR::Simple's absent-value
@@ -443,8 +441,8 @@ impl Interpreter {
                     // like the class it puns to, exactly as the `isa`/`~~`
                     // fixes for the same shape do.
                     Some(ValueView::Mixin(inner, _)) => match inner.view() {
-                        ValueView::Package(p) => p.resolve().to_string(),
-                        ValueView::Instance { class_name, .. } => class_name.resolve().to_string(),
+                        ValueView::Package(p) => p.resolve(),
+                        ValueView::Instance { class_name, .. } => class_name.resolve(),
                         _ => String::new(),
                     },
                     _ => String::new(),
@@ -501,8 +499,8 @@ impl Interpreter {
             "objprimspec" => {
                 let v = args.first().cloned().unwrap_or(Value::NIL);
                 let type_name = match v.view() {
-                    ValueView::Package(name) => name.resolve().to_string(),
-                    ValueView::Instance { class_name, .. } => class_name.resolve().to_string(),
+                    ValueView::Package(name) => name.resolve(),
+                    ValueView::Instance { class_name, .. } => class_name.resolve(),
                     _ => String::new(),
                 };
                 let spec = match crate::runtime::native_types::native_family(&type_name) {

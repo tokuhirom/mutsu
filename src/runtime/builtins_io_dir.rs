@@ -196,7 +196,7 @@ impl Interpreter {
                 body.view(),
                 ValueView::Sub(_) | ValueView::WeakSub(_) | ValueView::Routine { .. }
             ) {
-                self.call_sub_value(body.clone(), vec![], true)
+                self.call_sub_value(body, vec![], true)
             } else {
                 Ok(body)
             }

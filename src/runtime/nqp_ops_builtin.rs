@@ -313,8 +313,8 @@ impl Interpreter {
                 let target = args
                     .get(1)
                     .map(|v| match v.view() {
-                        ValueView::Package(name) => name.resolve().to_string(),
-                        ValueView::Instance { class_name, .. } => class_name.resolve().to_string(),
+                        ValueView::Package(name) => name.resolve(),
+                        ValueView::Instance { class_name, .. } => class_name.resolve(),
                         _ => String::new(),
                     })
                     .unwrap_or_default();
@@ -355,7 +355,7 @@ impl Interpreter {
                 // had nothing to push onto. Everything else takes `CREATE`,
                 // whose whole point here is to skip the constructor.
                 let name = match ty.view() {
-                    ValueView::Package(sym) => sym.resolve().to_string(),
+                    ValueView::Package(sym) => sym.resolve(),
                     _ => crate::runtime::utils::value_type_name(&ty).to_string(),
                 };
                 // `nqp::create(Uni)` (and the NFC/NFD/NFKC/NFKD forms) must
@@ -364,11 +364,7 @@ impl Interpreter {
                 // answer with a bare type object instead, since a Uni's
                 // content is not a Raku attribute.
                 if matches!(name.as_str(), "Uni" | "NFC" | "NFD" | "NFKC" | "NFKD") {
-                    let form = if name == "Uni" {
-                        String::new()
-                    } else {
-                        name.clone()
-                    };
+                    let form = if name == "Uni" { String::new() } else { name };
                     return Some(Ok(Value::uni_from_codepoints(form, std::iter::empty())));
                 }
                 // A bare VM storage class (`is repr('VMArray')` /

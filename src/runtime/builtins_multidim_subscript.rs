@@ -62,12 +62,8 @@ impl Interpreter {
                 let temp_id: u64 = crate::gc::Gc::as_ptr(mixins) as u64;
                 let temp_var = format!("__mutsu_push_mixin_tmp_{}", temp_id);
                 self.env.insert(temp_var.clone(), current.clone());
-                let result = self.call_method_mut_with_values(
-                    &temp_var,
-                    current.clone(),
-                    &method,
-                    push_args,
-                )?;
+                let result =
+                    self.call_method_mut_with_values(&temp_var, current, &method, push_args)?;
                 let new_value = self.env.get(&temp_var).cloned().unwrap_or(result.clone());
                 self.env.remove(&temp_var);
                 let mut updated_mixins = (**mixins).clone();
@@ -113,8 +109,7 @@ impl Interpreter {
         // Call the mutating method via a temp variable
         let temp_var = format!("__mutsu_push_accessor_tmp_{}", target_id);
         self.env.insert(temp_var.clone(), current.clone());
-        let result =
-            self.call_method_mut_with_values(&temp_var, current.clone(), &method, push_args)?;
+        let result = self.call_method_mut_with_values(&temp_var, current, &method, push_args)?;
         let new_value = self.env.get(&temp_var).cloned().unwrap_or(result.clone());
         self.env.remove(&temp_var);
 

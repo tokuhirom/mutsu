@@ -202,7 +202,7 @@ impl Interpreter {
                         Ok(target)
                     }
                     ValueView::Instance { attributes, .. } => {
-                        let stored = val.clone();
+                        let stored = val;
                         let done =
                             crate::value::value_buf::with_buf_elems_mut(&attributes, |elems| {
                                 elems.insert(0, stored)

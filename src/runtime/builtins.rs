@@ -275,7 +275,7 @@ impl Interpreter {
         // dispatch, so the descriptor has to carry the element it describes --
         // `__mutsu_var_target` names the CONTAINER the element lives in, and
         // nothing else can find the element again from that.
-        attributes.insert("__mutsu_var_value".to_string(), element.clone());
+        attributes.insert("__mutsu_var_value".to_string(), element);
         attributes.insert(
             "dynamic".to_string(),
             Value::truth(self.is_var_dynamic(source_name)),
@@ -781,7 +781,7 @@ impl Interpreter {
                 };
                 let name = name.to_string_value();
                 let tags: Vec<String> = args[1..].iter().map(|a| a.to_string_value()).collect();
-                let pkg = self.current_package().to_string();
+                let pkg = self.current_package();
                 self.register_exported_var(pkg, name, tags);
                 Ok(Value::NIL)
             }

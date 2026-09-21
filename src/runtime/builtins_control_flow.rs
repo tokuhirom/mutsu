@@ -80,7 +80,7 @@ impl Interpreter {
                 // Non-exception instance: wrap in X::AdHoc with payload
                 let mut attrs = std::collections::HashMap::new();
                 attrs.insert("payload".to_string(), value.clone());
-                attrs.insert("message".to_string(), Value::str(msg.clone()));
+                attrs.insert("message".to_string(), Value::str(msg));
                 err.exception = Some(Box::new(Value::make_instance(
                     Symbol::intern("X::AdHoc"),
                     attrs,
@@ -90,7 +90,7 @@ impl Interpreter {
             // Non-instance value (Str, Int, etc.): wrap in X::AdHoc with payload
             let mut attrs = std::collections::HashMap::new();
             attrs.insert("payload".to_string(), value.clone());
-            attrs.insert("message".to_string(), Value::str(msg.clone()));
+            attrs.insert("message".to_string(), Value::str(msg));
             err.exception = Some(Box::new(Value::make_instance(
                 Symbol::intern("X::AdHoc"),
                 attrs,
@@ -449,7 +449,7 @@ impl Interpreter {
                 is_regex: true,
                 name,
                 ..
-            } => name.resolve().to_string(),
+            } => name.resolve(),
             _ => String::new(),
         };
         Some(self.raise_resumable_warning(

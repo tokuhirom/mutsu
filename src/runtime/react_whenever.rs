@@ -385,11 +385,8 @@ impl Interpreter {
             if let ValueView::Instance { class_name, .. } = supply_val.view()
                 && class_name == "IO::Socket::Async::Listener"
             {
-                let tap = self.call_method_with_values(
-                    supply_val.clone(),
-                    "act",
-                    vec![callback.clone()],
-                )?;
+                let tap =
+                    self.call_method_with_values(supply_val.clone(), "act", vec![callback])?;
                 // Listener taps already carry their close identity
                 // (`listener-id`), so preserve the object `.act` returned.
                 return Ok(result_tap(tap));
@@ -408,8 +405,8 @@ impl Interpreter {
             let sub = Value::array(vec![
                 supply_val.clone(),
                 callback_with_id.clone(),
-                Value::array(last_callbacks.clone()),
-                Value::array(quit_callbacks.clone()),
+                Value::array(last_callbacks),
+                Value::array(quit_callbacks),
                 Value::int(whenever_id as i64),
             ]);
             if let Some(last) = self.supply_emit_buffer.last_mut() {
@@ -443,7 +440,7 @@ impl Interpreter {
                 {
                     crate::runtime::native_methods::register_supply_tap(
                         pid as u64,
-                        callback_with_id.clone(),
+                        callback_with_id,
                     );
                 }
             }
@@ -476,7 +473,7 @@ impl Interpreter {
         } = supply_val.view()
             && class_name == "Supply"
         {
-            let mut tap_args = vec![callback.clone()];
+            let mut tap_args = vec![callback];
             let mut done_chain: Vec<Value> = last_callbacks.first().cloned().into_iter().collect();
             done_chain.extend(group_marker.clone());
             match done_chain.len() {

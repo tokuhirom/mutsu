@@ -451,7 +451,7 @@ impl Interpreter {
             && let ValueView::Instance { attributes, .. } = exc_box.view()
         {
             attributes.insert_if_absent("filename".to_string(), Value::str(unit_name.clone()));
-            attributes.insert_if_absent("file".to_string(), Value::str(unit_name.clone()));
+            attributes.insert_if_absent("file".to_string(), Value::str(unit_name));
         }
         crate::parser::set_parser_source_file(saved_source_file);
         self.current_unit = saved_unit;

@@ -199,7 +199,7 @@ impl Interpreter {
                 let mode = iarg(args, 1);
                 let target = args.get(2).cloned().unwrap_or(Value::NIL);
                 let normalized = match mode {
-                    0 => text.clone(),
+                    0 => text,
                     1 => normalize(&text, Normalization::Nfc),
                     2 => normalize(&text, Normalization::Nfd),
                     3 => normalize(&text, Normalization::Nfkc),

@@ -99,7 +99,7 @@ impl Interpreter {
             // (`$x.Real` / `$x.Numeric`), which handles every numeric variant
             // and string parsing with Failure semantics.
             "Rat" | "FatRat" | "Complex" | "Real" | "Numeric" => {
-                return self.call_method_with_values(value.clone(), name, vec![]);
+                return self.call_method_with_values(value, name, vec![]);
             }
             "Int" => match value.view() {
                 ValueView::Int(i) => Value::int(i),

@@ -400,9 +400,7 @@ impl Interpreter {
         block: &Value,
         leaf: &Value,
     ) -> Result<(Value, Value), RuntimeError> {
-        let cell = crate::gc::Gc::new(crate::value::ContainerCell::new(
-            leaf.deref_container().clone(),
-        ));
+        let cell = crate::gc::Gc::new(crate::value::ContainerCell::new(leaf.deref_container()));
         let res = self.call_sub_value(
             block.clone(),
             vec![Value::container_ref(cell.clone())],

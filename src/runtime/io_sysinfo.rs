@@ -11,7 +11,7 @@ impl Interpreter {
         let state = IoHandleState {
             target,
             mode,
-            path: path.clone(),
+            path,
             line_separators: self.default_line_separators(),
             line_chomp: true,
             encoding: "utf-8".to_string(),

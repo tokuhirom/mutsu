@@ -340,7 +340,7 @@ mod tests {
         assert_eq!(table.version(), base);
 
         let snapshot = std::sync::Arc::clone(&table);
-        transitions.install(std::sync::Arc::make_mut(&mut table), key, inner.clone());
+        transitions.install(std::sync::Arc::make_mut(&mut table), key, inner);
         assert_eq!(
             table.version(),
             installed,

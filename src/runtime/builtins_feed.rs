@@ -80,8 +80,7 @@ impl Interpreter {
             }
         }
         self.env.insert("$(*)".to_string(), appended.clone());
-        self.env
-            .insert("@(*)".to_string(), Value::array(list.clone()));
+        self.env.insert("@(*)".to_string(), Value::array(list));
         self.env.insert("%(*)".to_string(), Value::hash(hash_items));
         Ok(appended)
     }

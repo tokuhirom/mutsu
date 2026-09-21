@@ -301,7 +301,7 @@ impl Interpreter {
                         } else {
                             retry.stderr(std::process::Stdio::inherit());
                         }
-                        if let Some(cwd) = opts_cwd.clone() {
+                        if let Some(cwd) = opts_cwd {
                             retry.current_dir(cwd);
                         }
                         for (k, v) in &opts_env {

@@ -106,14 +106,14 @@ impl Interpreter {
         let name_fc = entry.name.to_lowercase();
         for existing in self.encoding_registry.iter() {
             if existing.name.to_lowercase() == name_fc {
-                return Err(entry.name.clone());
+                return Err(entry.name);
             }
             if existing
                 .alternative_names
                 .iter()
                 .any(|alt| alt.to_lowercase() == name_fc)
             {
-                return Err(entry.name.clone());
+                return Err(entry.name);
             }
         }
         for alt in &entry.alternative_names {
@@ -603,7 +603,7 @@ impl Interpreter {
         // sweeping every role the class composes — only the role the running
         // method came from may lend its lexical types.
         if let Some(ValueView::Package(role)) = self.env().get("?ROLE").map(|v| v.view()) {
-            let role_name = role.resolve().to_string();
+            let role_name = role.resolve();
             let qualified = format!("{}::{}", role_name, name);
             if let Some(key) = self.resolve_lexical_type_key(&qualified) {
                 return Some(key);

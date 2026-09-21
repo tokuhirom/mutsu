@@ -14,13 +14,10 @@ pub(crate) fn str_numeric_error(source: &str, pos: usize, reason: &str) -> Runti
     attrs.insert("pos".to_string(), Value::int(pos as i64));
     attrs.insert("reason".to_string(), Value::str(reason.to_string()));
     attrs.insert("target-name".to_string(), Value::str("Numeric".to_string()));
-    attrs.insert(
-        "source-indicator".to_string(),
-        Value::str(source_indicator.clone()),
-    );
+    attrs.insert("source-indicator".to_string(), Value::str(source_indicator));
     attrs.insert("message".to_string(), Value::str(msg.clone()));
     let ex = Value::make_instance(crate::symbol::Symbol::intern("X::Str::Numeric"), attrs);
-    let mut err = RuntimeError::new(msg.to_string());
+    let mut err = RuntimeError::new(msg);
     err.exception = Some(Box::new(ex));
     err
 }

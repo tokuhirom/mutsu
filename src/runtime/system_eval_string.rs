@@ -466,7 +466,7 @@ impl Interpreter {
                 crate::value::ValueView::Package(name)
                     if eval_role_names.contains(&name.resolve()) =>
                 {
-                    Some(name.resolve().to_string())
+                    Some(name.resolve())
                 }
                 _ => None,
             })
