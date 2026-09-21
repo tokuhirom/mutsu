@@ -19,6 +19,7 @@ with rakudo as the denominator.
 | `index-snapshot.json` | which ecosystem index snapshot the run drew from (fez + REA, with digests) |
 | `summary.json` / `summary.md` | generated rollup — **do not edit**, regenerate with `--rollup` |
 | `history.tsv` / `history.svg` | one row per full sweep, and its chart — the KPI over time |
+| `exclude.txt` | hand-maintained — distributions confirmed permanently unfixable, that the tools below must stop offering |
 
 `<S>` is the uppercased first letter of the distribution name (`_` when it is
 not an ASCII letter). The rest of the filename is
@@ -138,6 +139,15 @@ it), takes a lock on
 same distribution, and then hands over to `ecosystem-dist-fix`. A distribution
 has no issue of its own to carry a claim, which is why the lock lives on that one
 board issue's comments rather than in this tree.
+
+**When a run concludes a distribution can never pass** — its own suite depends
+on behavior mutsu has already, deliberately, decided never to provide (see
+`Rakudo::Version`'s entry in `exclude.txt` for a worked example: it gates on
+`$*RAKU.compiler.name eq 'rakudo'`, and [ADR-0104](../docs/adr/0104-compiler-version-is-a-rakudo-release-coordinate.md)
+already rejected outright ever spoofing `.name`) — add it to `exclude.txt` with
+a one-line reason citing the issue/ADR, alongside filing the finding as a
+`tokuhirom/mutsu` issue per `ecosystem-dist-fix`. Without that entry, the next
+random draw re-investigates the same dead end from scratch.
 
 ## Current state — the corpus, measured at one commit
 

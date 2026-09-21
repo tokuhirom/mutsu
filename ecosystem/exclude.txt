@@ -1,0 +1,23 @@
+# ecosystem/exclude.txt
+#
+# Distributions the ecosystem tools must never pick automatically.
+#
+# `ecosystem-dist-roulette/pick-dist.py` never offers a listed distribution in
+# its random draw. `ecosystem-sweep.py` skips them in a bulk `--all` /
+# `--prefix` / `--status` / `--stale` selection; `--only <name>` still measures
+# one explicitly, so a deliberate re-check after a policy changes is not
+# blocked by this file.
+#
+# An entry belongs here only when the distribution was investigated and found
+# permanently unfixable without a decision the project has already made and
+# does not intend to revisit -- a decision CLAUDE.md reserves for the user, or
+# a superseding ADR -- never because it "looks hard". This is NOT the same as
+# `no_baseline` (rakudo fails it too, so it is already excluded from the KPI on
+# its own): every entry here is a distribution rakudo passes and mutsu,
+# correctly, cannot -- see each reason below and the ADR/issue it cites.
+#
+# Format: <Dist::Name> <one-line reason, ideally citing an issue and/or ADR>
+# Blank lines and lines whose first non-blank character is `#` are ignored.
+# Keep sorted by name.
+
+Rakudo::Version #8945 -- its own BEGIN checks $*RAKU.compiler.name eq 'rakudo'; ADR-0104 already rejected outright ever spoofing .name, so this can only pass by superseding that decision.
