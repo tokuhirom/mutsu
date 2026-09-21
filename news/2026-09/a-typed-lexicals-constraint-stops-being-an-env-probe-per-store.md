@@ -72,10 +72,42 @@ for its ~120 other readers and the fallback for the two poisoned states. One
 
 ## Measured
 
+Paired callgrind runs, same box, `--profile profiling` rebuilt on each side:
+
+| loop, 100k iterations | before | after | |
+| --- | ---: | ---: | ---: |
+| `my int $i` + `nqp::add_i` | 150,340,494 | 129,058,173 | **-14.16%** |
+| `my Int $x` store | 500,580,544 | 460,703,508 | **-7.97%** |
+
+**213 instructions per store**, against the 138 the two named functions
+accounted for. The extra 75 are the tail the probe dragged behind it, which the
+caller tree shows going with it:
+
 | | before | after | |
 | --- | ---: | ---: | ---: |
-| `my int $i` + `nqp::add_i` loop, 100k | 150,340,494 | see PR | |
-| `my Int $x` store loop, 100k | 500,580,544 | see PR | |
+| `var_type_constraint_value_sym` | 6,600,135 | **0** | -100% |
+| `Env::get_sym` | 7,201,462 | 3,601,462 | -50.0% |
+| `nanbox::payload_op` | 3,005,113 | 6,064 | -99.8% |
+| `nanbox::peek::view_kind` | 2,604,639 | 3,931 | -99.8% |
+| `NanBox::drop` | 2,800,344 | 1,000,344 | -64.3% |
+| `exec_set_local_op` (self) | 23,500,102 | 19,800,100 | -15.7% |
+
+The env value was a `Value::str`, so reading it meant cloning it out of the map
+(an `Arc` bump, hence the `drop` row), decoding its NaN-box tag, borrowing the
+`&str` and comparing it against up to five literals. A `DeclaredConstraint` is
+one byte and one `match`. `Env::get_sym`'s surviving 100,000 calls are the
+*other* probe the fast path makes — the shared-cell/`Proxy` lookup it has always
+had, which is not this issue's.
+
+The `my Int $x` loop is the `NonNative` arm: it declined the fast path before
+and declines it now, just without paying for the probe first.
+
+## Not the whole issue
+
+#8877 stays open. This takes the *hot reader* off `MetaNs::Type`; the namespace
+itself, its ~120 other readers, `Symbol::type_meta_subject`, and the
+closure-capture filter's special handling of `__mutsu_type::` are all still
+there, and retiring the namespace is what the issue asks for.
 
 Pinned by `t/vm/binding/typed-scalar-store-declared-constraint.t`, whose 19
 assertions are each a shape where answering from the declaration instead of the
