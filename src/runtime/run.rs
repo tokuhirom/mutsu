@@ -597,10 +597,17 @@ impl Interpreter {
             // `collect_doc_comments` keys a parameter by the SIGILED name it
             // reads off the source line (`$a`, or a bare `$`/`@`/`%` for an
             // anonymous one), while `ParamDef::name` drops the `$`. Rebuild the
-            // source spelling from the `SigParam` so the two keys meet.
-            let key = format!("{owner_key}::{}{}", sig_param.sigil, sig_param.name);
+            // source spelling from the `SigParam` so the two keys meet, and
+            // join it to the owner through `qualified()` -- the memoizing
+            // constructor `src/qualified.rs` exists to keep `Pkg::thing` from
+            // being hand-rolled with `format!` (issue #8899).
+            let sigiled = format!("{}{}", sig_param.sigil, sig_param.name);
+            let key = crate::qualified::qualified(
+                crate::symbol::Symbol::intern(owner_key),
+                crate::symbol::Symbol::intern(&sigiled),
+            );
             out.insert(
-                key,
+                key.as_str().to_string(),
                 crate::value::signature::make_parameter_value_for_owner(
                     &sig_param, owner_key, None,
                 ),
