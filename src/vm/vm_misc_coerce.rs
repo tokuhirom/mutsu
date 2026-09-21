@@ -50,7 +50,7 @@ impl Interpreter {
                     n
                 )));
             }
-            let cn = n.to_string();
+            let cn = n;
             if self.has_user_method(&cn, "Numeric") {
                 let caller_code = self.current_code;
                 let result = self.try_compiled_method_or_interpret(val.clone(), "Numeric", vec![]);
@@ -289,7 +289,7 @@ impl Interpreter {
         // then `~A` dispatches it, matching Rakudo). Mu is already handled above
         // as a hard error, so it never reaches here.
         if let ValueView::Package(name) = val.view() {
-            let cn = name.resolve().to_string();
+            let cn = name.resolve();
             if self.has_user_method(&cn, "Stringy") {
                 let caller_code = self.current_code;
                 let r = self.try_compiled_method_or_interpret(val.clone(), "Stringy", vec![]);

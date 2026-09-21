@@ -530,7 +530,7 @@ impl Interpreter {
                     n
                 )));
             }
-            let cn = n.to_string();
+            let cn = n;
             if self.has_user_method(&cn, "Numeric") {
                 let caller_code = self.current_code;
                 let result = self.try_compiled_method_or_interpret(val.clone(), "Numeric", vec![]);
@@ -596,7 +596,7 @@ impl Interpreter {
             let negated: Vec<Value> = bytes.iter().map(|b| Value::int((!b) as i64)).collect();
             // Determine result type: if input is utf8, result is utf8; otherwise Buf
             let result_type = if let ValueView::Instance { class_name, .. } = val.view() {
-                class_name.resolve().to_string()
+                class_name.resolve()
             } else {
                 "Buf".to_string()
             };

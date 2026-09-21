@@ -628,9 +628,7 @@ impl Interpreter {
     ) -> Option<Vec<crate::ast::ParamDef>> {
         // Replace junction args with non-junction placeholder values for type resolution
         let resolved_args: Vec<Value> = args.iter().map(Self::unwrap_junction_deep).collect();
-        if let Some(def) =
-            loan_env!(self, resolve_function_with_types(name, &resolved_args)).map(|d| d.clone())
-        {
+        if let Some(def) = loan_env!(self, resolve_function_with_types(name, &resolved_args)) {
             return Some(def.param_defs.clone());
         }
         // Native operators (infix:<eq>, prefix:<!>, etc.) are not in the function

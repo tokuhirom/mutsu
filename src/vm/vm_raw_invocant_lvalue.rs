@@ -64,11 +64,7 @@ impl Interpreter {
         // value the copy-out tail reads back (`GetGlobal(tmp); ...;
         // IndexAssignExprNamed`). Either way the name is the location to box.
         let (source_name, inner, slot_hint) = match target.as_varref() {
-            Some((name, value, _)) => (
-                name.resolve().to_string(),
-                value.clone(),
-                target.varref_slot(),
-            ),
+            Some((name, value, _)) => (name.resolve(), value.clone(), target.varref_slot()),
             None => (String::new(), target.clone(), None),
         };
         let name = if source_name.is_empty() {

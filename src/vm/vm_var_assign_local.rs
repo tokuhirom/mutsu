@@ -527,7 +527,7 @@ impl Interpreter {
                 .and_then(|v| match v.view() {
                     ValueView::Package(sym) => Some(
                         self.resolve_type_in_current_package(&sym.resolve())
-                            .unwrap_or_else(|| sym.resolve().to_string()),
+                            .unwrap_or_else(|| sym.resolve()),
                     ),
                     _ => None,
                 })

@@ -1878,7 +1878,7 @@ impl Interpreter {
                 };
                 match inner_target.view() {
                     ValueView::Hash(map) => {
-                        let old_meta = self.container_type_metadata(inner_target).clone();
+                        let old_meta = self.container_type_metadata(inner_target);
                         // Clone the whole HashData (not just the map) so the
                         // object-hash `original_keys` survive; an object hash
                         // stores the key under its `.WHICH` and records the
@@ -2047,7 +2047,7 @@ impl Interpreter {
                         } else {
                             key
                         };
-                        let old_meta = self.container_type_metadata(inner_target).clone();
+                        let old_meta = self.container_type_metadata(inner_target);
                         let old_value = if map.contains_key(&key) {
                             self.resolve_hash_entry(&map, &key)
                         } else {
@@ -2193,7 +2193,7 @@ impl Interpreter {
                 };
                 match inner_target.view() {
                     ValueView::Hash(map) => {
-                        let old_meta = self.container_type_metadata(inner_target).clone();
+                        let old_meta = self.container_type_metadata(inner_target);
                         let value = args[1].clone();
                         let source_var = arg_sources
                             .as_ref()

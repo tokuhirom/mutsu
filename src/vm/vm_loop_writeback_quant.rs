@@ -569,11 +569,9 @@ impl Interpreter {
             let raw_source = self.get_env_with_main_alias(source);
             let inner = raw_source.as_ref().map(|v| v.deref_container());
             let writeback_val = match inner.as_ref().map(Value::view) {
-                Some(ValueView::Pair(key, _)) => Value::pair(key.clone(), current_val.clone()),
-                Some(ValueView::ValuePair(key, _)) => {
-                    Value::value_pair(key.clone(), current_val.clone())
-                }
-                _ => current_val.clone(),
+                Some(ValueView::Pair(key, _)) => Value::pair(key.clone(), current_val),
+                Some(ValueView::ValuePair(key, _)) => Value::value_pair(key.clone(), current_val),
+                _ => current_val,
             };
             if let Some(ValueView::ContainerRef(arc)) = raw_source.as_ref().map(Value::view) {
                 arc.lock().unwrap().clone_from(&writeback_val);

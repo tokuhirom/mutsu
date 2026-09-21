@@ -13,7 +13,7 @@ impl Interpreter {
             inner.message
         );
         let mut attrs = ValueMap::default();
-        attrs.insert("message".to_string(), Value::str(msg.clone()));
+        attrs.insert("message".to_string(), Value::str(msg));
         attrs.insert("exception".to_string(), inner_exception);
         RuntimeError::typed("X::Comp::BeginTime", attrs)
     }
@@ -100,7 +100,7 @@ impl Interpreter {
         let message = format!("Internal error: {message}");
         let mut err = RuntimeError::new(message.clone());
         let mut attrs = HashMap::new();
-        attrs.insert("message".to_string(), Value::str(message.clone()));
+        attrs.insert("message".to_string(), Value::str(message));
         err.exception = Some(Box::new(Value::make_instance(
             Symbol::intern("X::AdHoc"),
             attrs,

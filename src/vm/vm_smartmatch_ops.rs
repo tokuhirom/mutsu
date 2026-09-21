@@ -202,7 +202,7 @@ impl Interpreter {
             // An aliasing topic keeps its binding: write the modified value into
             // the cell rather than replacing the binding with a plain value, and
             // leave the local slot alone (it holds that same cell).
-            if let Some(arc) = topic_cell.clone() {
+            if let Some(arc) = topic_cell {
                 Self::cell_store_preserving_container_identity(var_name, &arc, &modified_topic);
             } else {
                 self.env_mut()
@@ -278,7 +278,7 @@ impl Interpreter {
                     inv,
                     method,
                     vec![],
-                    topic_after.clone(),
+                    topic_after,
                     false,
                 )
             {
@@ -456,7 +456,7 @@ impl Interpreter {
             self.stack.push(result);
             return Ok(());
         }
-        let result = self.divisible_by_values(left.clone(), right)?;
+        let result = self.divisible_by_values(left, right)?;
         self.stack.push(result);
         Ok(())
     }
@@ -494,7 +494,7 @@ impl Interpreter {
             self.stack.push(result);
             return Ok(());
         }
-        let result = self.not_divisible_by_values(left.clone(), right)?;
+        let result = self.not_divisible_by_values(left, right)?;
         self.stack.push(result);
         Ok(())
     }

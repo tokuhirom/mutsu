@@ -202,7 +202,7 @@ impl Interpreter {
                         self.stack.truncate(stack_base);
                         if let Some(v) = e.return_value {
                             if let Some(ref mut coll) = collected {
-                                Self::collect_loop_value(coll, v.clone());
+                                Self::collect_loop_value(coll, v);
                             } else {
                                 self.set_loop_topic(topic_local, v.clone());
                                 self.stack.push(v);
@@ -245,7 +245,7 @@ impl Interpreter {
                         let resume_body_ip = take_site.map(|(_, t)| t + 1);
                         self.gather_for_loop_resume =
                             Some(crate::value::ForLoopResumeState::LazyGather {
-                                lazy_list: ll_arc.clone(),
+                                lazy_list: ll_arc,
                                 next_index: if nested.is_some() || resume_body_ip.is_some() {
                                     idx.saturating_sub(arity)
                                 } else {
@@ -273,7 +273,7 @@ impl Interpreter {
                             self.unmark_readonly(name);
                         }
                         self.restore_topic_readonly(saved_topic_readonly);
-                        self.restore_loop_topic(saved_topic.clone(), saved_topic_local.clone());
+                        self.restore_loop_topic(saved_topic, saved_topic_local);
                         return Err(e);
                     }
                 }
@@ -465,7 +465,7 @@ impl Interpreter {
                         {
                             self.unmark_readonly(name);
                         }
-                        self.restore_loop_topic(saved_topic.clone(), saved_topic_local.clone());
+                        self.restore_loop_topic(saved_topic, saved_topic_local);
                         return Err(e);
                     }
                 }

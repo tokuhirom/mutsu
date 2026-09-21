@@ -27,7 +27,7 @@ impl Interpreter {
     /// (`Any`).
     pub(crate) fn assign_store_nil_default(&mut self, name: &str, container: &Value) -> Value {
         if let Some(def) = self.container_default(container) {
-            return def.clone();
+            return def;
         }
         if let Some(info) = self.container_type_metadata(container) {
             if let Some(def) = super::vm_var_ops::native_element_default(&info.value_type) {

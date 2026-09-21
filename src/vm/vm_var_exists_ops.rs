@@ -673,9 +673,9 @@ impl Interpreter {
                             (ValueView::Hash(map), ValueView::Str(key)) => {
                                 map.contains_key(key.as_str())
                             }
-                            (ValueView::Hash(map), _) => map.contains_key(
-                                &pkg_key.clone().unwrap_or_else(|| idx.to_string_value()),
-                            ),
+                            (ValueView::Hash(map), _) => {
+                                map.contains_key(&pkg_key.unwrap_or_else(|| idx.to_string_value()))
+                            }
                             (ValueView::Set(set, _), _) => {
                                 set.contains(&crate::runtime::utils::quanthash_elem_entry(&idx).0)
                             }

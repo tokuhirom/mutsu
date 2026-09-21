@@ -114,7 +114,7 @@ impl Interpreter {
                 // Non-exception instance: wrap in X::AdHoc with payload
                 let mut attrs = std::collections::HashMap::new();
                 attrs.insert("payload".to_string(), value);
-                attrs.insert("message".to_string(), Value::str(message.to_string()));
+                attrs.insert("message".to_string(), Value::str(message));
                 err.exception = Some(Box::new(Value::make_instance(
                     Symbol::intern("X::AdHoc"),
                     attrs,
@@ -124,7 +124,7 @@ impl Interpreter {
             // Non-instance value (Str, Int, etc.): wrap in X::AdHoc with payload
             let mut attrs = std::collections::HashMap::new();
             attrs.insert("payload".to_string(), value);
-            attrs.insert("message".to_string(), Value::str(message.to_string()));
+            attrs.insert("message".to_string(), Value::str(message));
             err.exception = Some(Box::new(Value::make_instance(
                 Symbol::intern("X::AdHoc"),
                 attrs,
@@ -1813,7 +1813,7 @@ impl Interpreter {
                                         {
                                             format!("{}{{{}}}", info.value_type, kt)
                                         } else {
-                                            info.value_type.clone()
+                                            info.value_type
                                         }
                                     })
                             });

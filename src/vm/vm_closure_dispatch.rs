@@ -1159,7 +1159,7 @@ impl Interpreter {
                     let ret_val = Value::NIL;
                     explicit_return = Some(ret_val.clone());
                     self.stack.truncate(saved_stack_depth);
-                    self.stack.push(ret_val.clone());
+                    self.stack.push(ret_val);
                     // A `supply` body's own `done` terminator is not a failed
                     // exit; its Nil is a terminator, not a result value.
                     self.resolve_let_saves_on_success(let_mark, true);

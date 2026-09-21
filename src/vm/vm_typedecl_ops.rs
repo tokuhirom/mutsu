@@ -189,7 +189,7 @@ impl Interpreter {
             // `class GLOBAL::void`, so it is excluded by construction. Covers
             // `grammar`, which registers through this same op.
             crate::value::note_user_declared_type_name(&resolved_name);
-            let current_package = self.current_package().to_string();
+            let current_package = self.current_package();
             let qualified_name = if let Some(stripped) = resolved_name.strip_prefix("GLOBAL::") {
                 // `class GLOBAL::Foo` declares Foo in the global namespace
                 stripped.to_string()
@@ -901,7 +901,7 @@ impl Interpreter {
             // See the class arm: a `role void { }` shadows NativeCall's `void`
             // for display purposes just as a class does.
             crate::value::note_user_declared_type_name(&name_str);
-            let current_package = self.current_package().to_string();
+            let current_package = self.current_package();
             let qualified_name = if let Some(stripped) = name_str.strip_prefix("GLOBAL::") {
                 stripped.to_string()
             } else if current_package == "GLOBAL"
@@ -999,7 +999,7 @@ impl Interpreter {
                     if let Some((pkg, short)) = name_str.rsplit_once("::") {
                         (pkg.to_string(), short.to_string())
                     } else {
-                        (current_package.clone(), name_str.clone())
+                        (current_package, name_str.clone())
                     };
                 self.register_exported_var(export_pkg, export_short, export_tags.clone());
             }
@@ -1064,7 +1064,7 @@ impl Interpreter {
             // Gather deferred custom traits from role registration
             let role_deferred = self
                 .get_role_def(&qualified_name)
-                .map(|r| r.deferred_custom_traits.clone())
+                .map(|r| r.deferred_custom_traits)
                 .unwrap_or_default();
 
             // Dispatch custom `is` traits via trait_mod:<is> if defined
@@ -1144,7 +1144,7 @@ impl Interpreter {
             // See the class arm: `subset void of Int` shadows NativeCall's
             // `void` for display purposes.
             crate::value::note_user_declared_type_name(&resolved_name);
-            let subset_package = self.current_package().to_string();
+            let subset_package = self.current_package();
             loan_env!(
                 self,
                 register_subset_decl(&resolved_name, base, predicate.as_ref(), version, *is_my)
@@ -1168,7 +1168,7 @@ impl Interpreter {
                     if let Some((pkg, short)) = resolved_name.rsplit_once("::") {
                         (pkg.to_string(), short.to_string())
                     } else {
-                        (self.current_package().to_string(), resolved_name)
+                        (self.current_package(), resolved_name)
                     };
                 self.register_exported_var(export_pkg, export_short, export_tags.clone());
             }

@@ -416,7 +416,7 @@ impl Interpreter {
 
         // Set current_package so class-scoped subs are found during method execution.
         // Only change package if the class has subs declared in its body.
-        let saved_package = self.current_package().to_string();
+        let saved_package = self.current_package();
         if self.has_class_scoped_subs(receiver_class_name) {
             self.set_current_package(receiver_class_name.to_string());
         } else if self.class_has_package_lexicals(owner_class) {
@@ -603,7 +603,7 @@ impl Interpreter {
                                 self.pop_method_samewith_context();
                             }
                             self.pop_method_class();
-                            self.set_current_package(saved_package.clone());
+                            self.set_current_package(saved_package);
                             self.stack.truncate(saved_stack_depth);
                             if pushed_caller {
                                 self.pop_caller_env();
@@ -796,7 +796,7 @@ impl Interpreter {
                     self.pop_method_samewith_context();
                 }
                 self.pop_method_class();
-                self.set_current_package(saved_package.clone());
+                self.set_current_package(saved_package);
                 self.stack.truncate(saved_stack_depth);
                 if pushed_caller {
                     self.pop_caller_env();

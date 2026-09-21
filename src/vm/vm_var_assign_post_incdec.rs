@@ -1013,7 +1013,7 @@ impl Interpreter {
                     },
                 }
             } else {
-                current.clone()
+                current
             };
             let effective = Self::normalize_incdec_source(effective);
             let new_val = if increment {

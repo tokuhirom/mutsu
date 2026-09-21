@@ -567,7 +567,7 @@ impl Interpreter {
                 };
                 let instance = self.tag_container_metadata(instance, info);
                 if !self.write_var_trait_target(code, eff_slot, &name_str, instance.clone()) {
-                    self.set_env_with_main_alias(&name_str, instance.clone());
+                    self.set_env_with_main_alias(&name_str, instance);
                 }
                 // Set type constraint so future assignments are coerced correctly
                 self.vm_set_var_type_constraint(&name_str, Some(trait_name.clone()));

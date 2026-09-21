@@ -342,8 +342,8 @@ impl Interpreter {
             return self.resolve_list_element_stringifiers(&v);
         }
         let (cn, is_type_object) = match v.view() {
-            ValueView::Instance { class_name, .. } => (class_name.resolve().to_string(), false),
-            ValueView::Package(name) => (name.resolve().to_string(), true),
+            ValueView::Instance { class_name, .. } => (class_name.resolve(), false),
+            ValueView::Package(name) => (name.resolve(), true),
             _ => return Ok(v),
         };
         if self.has_user_method(&cn, "Stringy") {
@@ -542,7 +542,7 @@ impl Interpreter {
             ValueView::Instance { class_name, .. }
                 if crate::runtime::utils::is_buf_or_blob_class(&class_name.resolve()) =>
             {
-                Some(class_name.resolve().to_string())
+                Some(class_name.resolve())
             }
             _ => None,
         }

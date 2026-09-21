@@ -23,7 +23,7 @@ impl Interpreter {
         let (scan, op_no_scan) = if let Some(stripped) = op.strip_prefix('\\') {
             (true, stripped.to_string())
         } else {
-            (false, op.clone())
+            (false, op)
         };
         // Only treat '!' as negation prefix when the remaining part is a known
         // operator (e.g. [!after], [!==], [!eqv]).  Operators like '!=' are their

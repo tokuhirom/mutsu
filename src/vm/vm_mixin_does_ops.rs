@@ -245,7 +245,7 @@ impl Interpreter {
                 if n != "Any" && n != "Mu" && self.has_class(&n) {
                     None
                 } else {
-                    Some(n.to_string())
+                    Some(n)
                 }
             }
             _ => None,

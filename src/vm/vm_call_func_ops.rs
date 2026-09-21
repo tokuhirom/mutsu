@@ -492,7 +492,7 @@ impl Interpreter {
                     // through its backing cell, exactly as the increment
                     // opcodes do around `exec_pre_increment_op_inner`.
                     if let Some((attr, _, _)) = arg.as_varref() {
-                        let attr = attr.resolve().to_string();
+                        let attr = attr.resolve();
                         self.sync_attr_local_from_cell_by_name(code, &attr);
                     }
                     let result = self.run_core_increment(op, &arg, Some(code))?;
@@ -1642,7 +1642,7 @@ impl Interpreter {
                 false
             };
             self.pending_call_topic_source = Self::topic_alias_source(&args, arg_sources.as_ref());
-            self.set_pending_call_arg_sources(arg_sources.clone());
+            self.set_pending_call_arg_sources(arg_sources);
             self.pending_call_topic_bare = bare_args;
             let result = self.vm_call_on_value(target, args, Some(compiled_fns));
             self.pending_call_topic_bare = false;
@@ -1657,7 +1657,7 @@ impl Interpreter {
         {
             let cf_auto_fetch = !cf.returns_container();
             let pkg_sym = self.current_package_sym();
-            self.set_pending_call_arg_sources(arg_sources.clone());
+            self.set_pending_call_arg_sources(arg_sources);
             let result =
                 self.call_compiled_function_named(cf, args, compiled_fns, pkg_sym, name_sym);
             self.set_pending_call_arg_sources(None);
@@ -1859,7 +1859,7 @@ impl Interpreter {
                     let result = result?;
                     return loan_env!(self, maybe_fetch_rw_proxy(result, !cf.returns_container()));
                 }
-                self.set_pending_call_arg_sources(arg_sources.clone());
+                self.set_pending_call_arg_sources(arg_sources);
                 // Hand over the winner this call already resolved (via
                 // `find_compiled_function_memo` above) instead of letting the
                 // frame resolve the identical call a second time. For a

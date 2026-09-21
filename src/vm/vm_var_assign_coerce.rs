@@ -1017,7 +1017,7 @@ impl Interpreter {
         let itemized_container = if Self::name_is_itemize_exempt(&name) {
             container.clone()
         } else {
-            Value::container_ref_itemized(cell.clone())
+            Value::container_ref_itemized(cell)
         };
         // Promote the SOURCE container variable to the same cell so its own
         // `.push` / whole-reassign (`@z = (...)`) mutate through and stay visible

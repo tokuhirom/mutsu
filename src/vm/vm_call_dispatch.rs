@@ -351,7 +351,7 @@ impl Interpreter {
             light_required_positionals: None,
             light_full_arity_only: false,
             return_fast_type: None,
-            package: pkg.clone(),
+            package: pkg,
             compiled_fns: (!own_compiled_fns.is_empty())
                 .then(|| std::sync::Arc::new(own_compiled_fns)),
             memo_cache: std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),
