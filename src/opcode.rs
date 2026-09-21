@@ -6331,10 +6331,11 @@ impl CompiledCode {
             .is_some_and(|d| d.flags.plain_local())
     }
 
-    /// What this slot's declarations settle about its type constraint, for the
-    /// one caller that asks: `native_typed_store_is_identity`. A slot with no
-    /// descriptor (a hand-built chunk) reads `Unrecorded`, i.e. "ask the env",
-    /// which is what every slot did before this existed.
+    /// What this slot's declarations settle about its type constraint —
+    /// consulted by `native_typed_store_is_identity` (the `SetLocal` fast
+    /// path) and `wrap_native_int_arithmetic_result_for_slot` (`++`/`--`). A
+    /// slot with no descriptor (a hand-built chunk) reads `Unrecorded`, i.e.
+    /// "ask the env", which is what every slot did before this existed.
     #[inline]
     pub(crate) fn declared_constraint(
         &self,

@@ -497,7 +497,8 @@ impl Interpreter {
         }
         let val = self.normalize_incdec_source_with_type(name, val);
         let new_val = self.increment_value_smart(&val)?;
-        let new_val = self.wrap_native_int_arithmetic_result(name, new_val);
+        let new_val =
+            self.wrap_native_int_arithmetic_result_for_slot(code, slot, name, None, new_val);
         self.check_incdec_type_constraint(name, &new_val)?;
         self.store_scalar_by_name(name, &new_val);
         self.sync_anon_state_value(name, &new_val);
@@ -596,7 +597,8 @@ impl Interpreter {
         }
         let val = self.normalize_incdec_source_with_type(name, val);
         let new_val = self.decrement_value_smart(&val)?;
-        let new_val = self.wrap_native_int_arithmetic_result(name, new_val);
+        let new_val =
+            self.wrap_native_int_arithmetic_result_for_slot(code, slot, name, None, new_val);
         self.check_incdec_type_constraint(name, &new_val)?;
         self.store_scalar_by_name(name, &new_val);
         self.sync_anon_state_value(name, &new_val);

@@ -1,4 +1,5 @@
 use super::*;
+use crate::binding_desc::DeclaredConstraint;
 use crate::runtime::{current_mutsu_thread_id, is_initial_thread};
 use crate::symbol::Symbol;
 
@@ -645,6 +646,50 @@ impl Interpreter {
             return value;
         };
         Self::wrap_native_int_arithmetic_for_constraint(&constraint, value)
+    }
+
+    /// [`Self::wrap_native_int_arithmetic_result_for`] for a caller that also
+    /// holds the target's compile-time-resolved local slot — every `++`/`--`
+    /// opcode does, and ran the env probe on every iteration of `my int $i;
+    /// $i++` regardless (#8877's second consumer of
+    /// [`crate::binding_desc::DeclaredConstraint`], after the `SetLocal` store
+    /// path).
+    ///
+    /// `NativeInt`/`NativeStr`/`NativeNum` answer the wrap without touching
+    /// `env` at all: a `str`/`num` constraint is never a native *int* type, so
+    /// [`Self::wrap_native_int_arithmetic_for_constraint`] is the identity for
+    /// it regardless of the value's shape, and `int`/`int64`/`atomicint` all
+    /// wrap at the same 64-bit signed boundary (`native_types::native_type_bits`),
+    /// so the exact declared spelling does not matter to the wrap itself —
+    /// only whether the slot is full-width. A narrower width (`int8`, ...)
+    /// still needs the real string to pick its bound, so `NonNative` falls
+    /// through to the probe, exactly like `Unrecorded`/`Conflicting`.
+    pub(crate) fn wrap_native_int_arithmetic_result_for_slot(
+        &mut self,
+        code: &CompiledCode,
+        slot: Option<u32>,
+        var_name: &str,
+        name_sym: Option<Symbol>,
+        value: Value,
+    ) -> Value {
+        // A subset anywhere in the program can redirect a native type name
+        // (`subset int of ...`), so the bake below would no longer be
+        // self-describing — see `native_typed_store_is_identity`'s identical
+        // guard.
+        if let Some(idx) = slot
+            && self.registry().subsets.is_empty()
+        {
+            match code.declared_constraint(idx as usize) {
+                DeclaredConstraint::NativeInt => {
+                    return Self::wrap_native_int_arithmetic_for_constraint("int64", value);
+                }
+                DeclaredConstraint::NativeStr | DeclaredConstraint::NativeNum => return value,
+                DeclaredConstraint::NonNative
+                | DeclaredConstraint::Unrecorded
+                | DeclaredConstraint::Conflicting => {}
+            }
+        }
+        self.wrap_native_int_arithmetic_result_for(var_name, name_sym, value)
     }
 
     /// Apply native arithmetic wrapping using an already-known type constraint.
