@@ -383,6 +383,85 @@ mod tests {
         assert_ne!(table.version(), base);
     }
 
+    /// Directly pins the mechanism the fix in #8935 (issues #8932, #8934)
+    /// landed: a live `seen` entry keeps its definition's allocation alive by
+    /// retaining its own clone, not by relying on some other owner (the
+    /// table, a local variable) to still be around. Unlike
+    /// `repeating_an_install_reuses_the_version_it_produced`, this does not
+    /// depend on the allocator actually reusing a freed address -- it
+    /// observes the retention directly through a `Weak` reference, so it
+    /// fails deterministically if the retained clone is ever dropped early.
+    #[test]
+    fn a_live_memo_entry_keeps_its_definitions_allocation_alive() {
+        let mut transitions = FunctionTableTransitions::default();
+        let mut table = std::sync::Arc::new(FunctionTable::default());
+        let inner = def();
+        let weak = std::sync::Arc::downgrade(&inner);
+
+        transitions.install(
+            std::sync::Arc::make_mut(&mut table),
+            Symbol::intern("GLOBAL::inner"),
+            inner,
+        );
+
+        // Every other owner is gone: `inner` was moved into `install`, and
+        // the only clone `table.map` held goes away with `table` itself.
+        drop(table);
+
+        assert!(
+            weak.upgrade().is_some(),
+            "the memo's retained clone should keep the allocation alive even \
+             after every other owner drops its reference"
+        );
+    }
+
+    /// The retention `a_live_memo_entry_keeps_its_definitions_allocation_alive`
+    /// observes is bounded, not a permanent leak: once the memo fills past
+    /// `TRANSITION_MEMO_CAP` and clears (`install`'s `None` branch), the
+    /// retained clones go with it and the allocations they were pinning can
+    /// finally be freed.
+    #[test]
+    fn evicting_the_memo_releases_its_retained_allocations() {
+        let mut transitions = FunctionTableTransitions::default();
+        let mut table = std::sync::Arc::new(FunctionTable::default());
+        let inner = def();
+        let weak = std::sync::Arc::downgrade(&inner);
+
+        transitions.install(
+            std::sync::Arc::make_mut(&mut table),
+            Symbol::intern("GLOBAL::inner"),
+            inner,
+        );
+        // Drop the table's own reference too, so afterwards the *only* thing
+        // keeping `inner` alive is the memo's retained clone -- otherwise the
+        // fillers below would just prove the table itself still holds it.
+        drop(table);
+        assert!(
+            weak.upgrade().is_some(),
+            "sanity: still pinned before eviction"
+        );
+
+        // Force enough distinct entries that some install along the way
+        // clears `seen` (each key/table-version pair here is unique, so
+        // every one of these is a fresh `None`-branch insert). A separate,
+        // fresh table for the fillers ensures none of them can accidentally
+        // keep `inner`'s key reachable.
+        let mut filler_table = std::sync::Arc::new(FunctionTable::default());
+        for i in 0..TRANSITION_MEMO_CAP {
+            transitions.install(
+                std::sync::Arc::make_mut(&mut filler_table),
+                Symbol::intern(&format!("GLOBAL::filler{i}")),
+                def(),
+            );
+        }
+
+        assert!(
+            weak.upgrade().is_none(),
+            "clearing the memo at its cap should release every retained \
+             clone, not leak them"
+        );
+    }
+
     /// The steady state the whole change is aiming at: a routine entered and
     /// left repeatedly makes the version alternate between exactly two values,
     /// so memos on both sides of the boundary keep their tags.
