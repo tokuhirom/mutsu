@@ -301,6 +301,21 @@ impl Interpreter {
         {
             return Some(self.make_native_method_object(method_name, &class_name_str));
         }
+        // A class that inherits a built-in scalar type (`class CM is Str
+        // {}`) inherits its `.COERCE` from that parent -- checked last, since
+        // any user-declared `COERCE` was already found by the MRO walk
+        // above. `CM.^lookup('COERCE').package.^name` answers `Str`, exactly
+        // as rakudo's does, rather than `Nil` for a class with no COERCE of
+        // its own. See `types::native_backed_class` and #8856.
+        if method_name == "COERCE"
+            && let Some(builtin) = self.native_scalar_backing_parent(&class_name_str)
+        {
+            return Some(Value::routine_parts(
+                Symbol::intern(builtin),
+                Symbol::intern("COERCE"),
+                false,
+            ));
+        }
         None
     }
 

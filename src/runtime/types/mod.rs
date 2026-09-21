@@ -6,6 +6,7 @@ mod args_matching;
 mod binding_helpers;
 mod binding_signature;
 mod coercion;
+mod native_backed_class;
 mod role_candidate;
 mod role_mixin_class;
 mod roles;
@@ -18,6 +19,7 @@ mod type_registry;
 pub(crate) use coercion::{
     coerce_impossible_error, diagnostic_type_name, is_coercion_constraint, parse_coercion_type,
 };
+pub(crate) use native_backed_class::NATIVE_BACKING_ATTR;
 pub(crate) use role_candidate::role_candidate_type_name;
 pub(in crate::runtime) use signature::{
     bind_named_rename_sub_signature, bind_sub_signature_from_value,

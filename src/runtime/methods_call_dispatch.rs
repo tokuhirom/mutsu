@@ -338,6 +338,30 @@ impl Interpreter {
         if let Some(result) = self.try_var_meta_delegate(&target, method, &args) {
             return result;
         }
+        // `class CM is Str {}` inherits its `.COERCE` from `Str` (or whatever
+        // built-in scalar parent it declares): `CM.COERCE(value)` boxes the
+        // coerced payload into an instance of `CM`, exactly as the `CM(value)`
+        // call-syntax coercion does (`builtins_operators_fallback.rs`). A
+        // class of no COERCE of its own has nothing else to answer this
+        // with -- built-in parents are not searched by ordinary method
+        // resolution -- so this is checked ahead of it, before every other
+        // dispatch tier gets a chance to raise X::Method::NotFound. Skipped
+        // entirely when the class declares its own `COERCE`, which must win.
+        if method == "COERCE"
+            && args.len() == 1
+            && matches!(
+                target.view(),
+                ValueView::Package(_) | ValueView::Instance { .. }
+            )
+        {
+            let class_name = self.mop_receiver_owner(&target);
+            if !self.class_has_user_method(&class_name, "COERCE")
+                && let Some(result) =
+                    self.coerce_into_builtin_inheriting_class(&class_name, &args[0])
+            {
+                return result;
+            }
+        }
         // A public attribute accessor is a user-visible method and must win
         // over same-named native by-name routines. This matters for role
         // attributes such as `%.index`: the native String `index` dispatcher
@@ -437,6 +461,15 @@ impl Interpreter {
                 .cloned()
                 .unwrap_or_else(|| Value::real_array(Vec::new()));
             return self.call_method_with_values(storage, method, args);
+        }
+        // Scalar-native-backed instance delegation, the interpreter-entry
+        // twin of the one in `vm_call_method_ops.rs` -- see
+        // `delegates_to_array_storage`'s own doc comment just above for why
+        // both are needed. `class CM is Str {}; CM('x')` boxes the coerced
+        // payload rather than keeping elements, so this is the scalar analog
+        // rather than a reuse of the array-storage path above.
+        if let Some(result) = self.try_native_backing_delegate(&target, method, &args) {
+            return result;
         }
 
         // Augmented native-type dispatch: a plain Array/List/Hash/Str/Range/
