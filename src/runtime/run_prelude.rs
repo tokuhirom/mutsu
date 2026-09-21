@@ -249,7 +249,23 @@ impl Interpreter {
         source: &CodeText<'_>,
         stmts: &mut Vec<Stmt>,
     ) {
-        if !source.contains("trait_mod:<is>") {
+        // Gated on the `:default(` call-site spelling, not merely on the
+        // routine's name: adding this candidate at all — even one nothing
+        // ever dispatches to — changes `trait_mod:<is>` from a single- to a
+        // multi-candidate routine, and a file that reflects on its OWN
+        // `&trait_mod:<is>` (`OUR::{'&trait_mod:<is>'} := &trait_mod:<is>;`,
+        // re-exporting a re-imported trait handler under `OUR::`) resolves
+        // that reference through the by-name multi-dispatch path only once
+        // 2+ candidates exist, and recurses infinitely doing so (a
+        // stack-overflow crash, not a wrong answer — see
+        // `t/modules/import-export/our-trait-mod-reexport.t`). Requiring the
+        // actual `:default(...)` argument shape ASN::BER's own re-dispatch
+        // uses keeps the gate closed for every file that merely declares or
+        // re-exports a trait_mod:<is> candidate of its own, at the cost of
+        // also gating on files that spell it `:default` without parens
+        // (a bare `:$default` boolean shorthand) — accepted, since a `has
+        // default(...)` cross-check has no such shorthand form in practice.
+        if !source.contains("trait_mod:<is>") || !source.contains(":default(") {
             return;
         }
         use std::sync::OnceLock;
