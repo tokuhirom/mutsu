@@ -942,6 +942,15 @@ impl Interpreter {
             if self.type_matches_value(name, &coercee[0]) {
                 return Ok(coercee[0].clone());
             }
+            // A class that INHERITS a built-in scalar type (`class CM is Str
+            // {}`) answers `CM('hello')` through the parent's inherited
+            // `COERCE` -- the built-in payload coerced from the argument,
+            // boxed into a real instance of `CM`. Mirrors
+            // `coerce_into_builtin_inheriting_role` just above for the ROLE
+            // case; see that function's doc comment and #8856.
+            if let Some(coerced) = self.coerce_into_builtin_inheriting_class(name, &coercee[0]) {
+                return coerced;
+            }
             let source_type = crate::runtime::types::diagnostic_type_name(&args[0]);
             // `name` may be a lexical class's mangled storage name
             // (ADR-0047 P1: `Foo\u{0}<decl-id>`) resolved above via
@@ -1013,10 +1022,8 @@ impl Interpreter {
             // the role had no CALL-ME/COERCE/new to reach and the call died
             // with X::Coerce::Impossible.
             //
-            // A CLASS with a built-in parent (`class C is Str {}; C('x')`)
-            // needs a built-in-backed instance representation mutsu does not
-            // have yet, and is NOT handled here -- see
-            // https://github.com/tokuhirom/mutsu/issues/8856.
+            // The CLASS twin (`class C is Str {}; C('x')`) is handled in the
+            // `has_class` branch above, via `coerce_into_builtin_inheriting_class`.
             if args.len() == 1
                 && let Some(coerced) = self.coerce_into_builtin_inheriting_role(name, &args[0])
             {

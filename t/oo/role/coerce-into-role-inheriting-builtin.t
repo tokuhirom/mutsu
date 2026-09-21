@@ -9,8 +9,9 @@ use Test;
 # offered no CALL-ME/COERCE/new, so the coercion died with
 # X::Coerce::Impossible instead.
 #
-# NOT covered here: a CLASS with a built-in parent (`class C is Str {}; C('x')`),
-# which needs a built-in-backed instance representation mutsu does not have.
+# The CLASS twin (`class C is Str {}; C('x')`) is covered separately in
+# t/oo/class/coerce-into-class-inheriting-builtin.t (see
+# src/runtime/types/native_backed_class.rs).
 
 plan 10;
 

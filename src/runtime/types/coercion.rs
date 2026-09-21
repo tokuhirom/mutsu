@@ -212,6 +212,24 @@ impl Interpreter {
             }
             return Err(coerce_impossible_error(target, &value));
         }
+        // A value already boxed by `coerce_into_builtin_inheriting_class`
+        // (`class CM is Str {}; CM('x')`) re-coerces from its own backing
+        // payload rather than from the empty attribute set an ordinary
+        // `Instance` presents -- e.g. re-coercing a `CM` for a further
+        // `Int(CM)` constraint.
+        if let ValueView::Instance { .. } = value.view()
+            && let Some(inner) = Self::native_backing_value(&value)
+            && let Ok(coerced) = self.try_coerce_value_with_method(target, inner)
+            && self.type_matches_value(base_target, &coerced)
+        {
+            return Ok(coerced);
+        }
+        // A Str-inheriting instance constructed the OTHER way -- `SStr.new:
+        // :value("42")`, storing the string as an ordinary (undeclared)
+        // attribute literally named "value" rather than through the COERCE
+        // protocol above -- re-coerces from that attribute the same way
+        // (`roast/S12-coercion/coercion-types.t`'s "coercions from a Str
+        // subclass works", predating `coerce_into_builtin_inheriting_class`).
         if let ValueView::Instance {
             class_name,
             attributes,
@@ -324,6 +342,9 @@ impl Interpreter {
                 return Ok(coerced);
             }
         }
+        if let Some(coerced) = self.coerce_into_builtin_inheriting_class(base_target, &value) {
+            return coerced;
+        }
         if let Some(coerced) = self.coerce_into_builtin_inheriting_role(base_target, &value) {
             return coerced;
         }
@@ -346,10 +367,11 @@ impl Interpreter {
     /// X::Coerce::Impossible.
     ///
     /// Returns `None` when the target is not such a role, so the caller's own
-    /// error path is unchanged. A CLASS with a built-in parent (`class C is Str
-    /// {}; C('x')`) would need a built-in-backed *instance* representation
-    /// mutsu does not have, and is deliberately not handled -- see
-    /// <https://github.com/tokuhirom/mutsu/issues/8856>.
+    /// error path is unchanged. The CLASS twin (`class C is Str {}; C('x')`)
+    /// is `coerce_into_builtin_inheriting_class`
+    /// (`types::native_backed_class`), which boxes the coerced payload into
+    /// an ordinary `Instance` attribute instead of a wrapper, since a class
+    /// instance already has a shared attribute node to hold it.
     pub(in crate::runtime) fn coerce_into_builtin_inheriting_role(
         &mut self,
         role_name: &str,

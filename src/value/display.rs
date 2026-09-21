@@ -835,6 +835,23 @@ impl Value {
                     .map(|v: &Value| v.with_deref(|inner| inner.to_string_value()))
                     .unwrap_or_default()
             }
+            // `class CM is Str {}; CM('x')` boxes the coerced built-in
+            // payload into this attribute (`types::native_backed_class`) --
+            // stringify as that payload, the same way rakudo's `CM` shares
+            // the `Str`'s own P6opaque. Checked ahead of the class-name-keyed
+            // arms below: a user class can be named anything, so this must
+            // not wait behind them.
+            ValueView::Instance { attributes, .. }
+                if attributes
+                    .as_map()
+                    .contains_key(crate::runtime::types::NATIVE_BACKING_ATTR) =>
+            {
+                attributes
+                    .as_map()
+                    .get(crate::runtime::types::NATIVE_BACKING_ATTR)
+                    .map(|v: &Value| v.to_string_value())
+                    .unwrap_or_default()
+            }
             ValueView::Instance {
                 class_name,
                 attributes,

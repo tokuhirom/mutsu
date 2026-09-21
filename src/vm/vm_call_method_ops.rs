@@ -2000,6 +2000,16 @@ impl Interpreter {
                         // Fall through to normal dispatch if delegation failed
                     }
                 }
+                // Scalar-native-backed instance delegation (`class CM is Str
+                // {}; CM('x')`): the scalar twin of the Array-subclass
+                // delegation just above, for a class that inherits a
+                // built-in Str/Int/Num/Rat/FatRat/Complex/Bool rather than a
+                // container. See `types::native_backed_class`.
+                if let Some(result) = self.try_native_backing_delegate(&target, method, &args) {
+                    crate::vm::vm_stats::record_dispatch_entry_outcome("callmethod", "native");
+                    self.stack.push(result?);
+                    return Ok(());
+                }
                 // Hash-subclass instance delegation (non-mut path): the
                 // Associative twin of the Array-subclass delegation just
                 // above. See `vm_hash_subclass_delegate.rs`.
