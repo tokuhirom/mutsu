@@ -177,9 +177,9 @@ pub(crate) fn to_hash(target: Value, check_odd: bool) -> Result<Value, RuntimeEr
             |w| w.clone(),
         )),
         ValueView::Instance { .. } if target.is_match_instance() => {
-            // %($/) returns the named captures hash.
+            // %($/) returns the named captures Map.
             Ok(target
-                .match_named()
+                .match_named_map()
                 .unwrap_or_else(|| Value::hash(ValueMap::default())))
         }
         // A bare `Pair` receiver is one key/value binding, not an odd-length

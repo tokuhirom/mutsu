@@ -554,16 +554,26 @@ impl Interpreter {
     }
 
     /// The backing store a fresh `is Hash`/`is Map` subclass instance gets,
-    /// seeded from `pairs` (constructor `Pair` args that do not name a
-    /// declared attribute). A `Map` subclass that is not ALSO an `is Hash`
+    /// seeded from constructor arguments that do not name a declared
+    /// attribute. Named `Pair` arguments are already key/value entries; bare
+    /// positional arguments are folded in alternating key/value order, just
+    /// like `Hash.new`. A `Map` subclass that is not ALSO an `is Hash`
     /// subclass (`Hash` extends `Map`, so its own MRO always contains both)
     /// is backed by an immutable Map — `%m<a> = 1` on it must still raise
     /// like raku's `X::Assignment::RO`, matching how
     /// [`Self::positional_base_storage`] picks an immutable `List` over a
     /// mutable `Array` for an `is List`-but-not-`is Array` subclass.
-    pub(crate) fn associative_base_storage(&mut self, class_key: &str, pairs: Vec<Value>) -> Value {
+    pub(crate) fn associative_base_storage(&mut self, class_key: &str, args: Vec<Value>) -> Value {
+        let mut items = Vec::new();
+        for arg in args {
+            match arg.view() {
+                ValueView::Pair(..) | ValueView::ValuePair(..) => items.push(arg),
+                _ => items.extend(crate::runtime::utils::value_to_list(&arg)),
+            }
+        }
         let mut map = ValueMap::default();
-        for item in pairs {
+        let mut iter = items.into_iter();
+        while let Some(item) = iter.next() {
             match item.view() {
                 ValueView::Pair(k, v) => {
                     map.insert(k.to_string(), v.clone());
@@ -571,7 +581,10 @@ impl Interpreter {
                 ValueView::ValuePair(k, v) => {
                     map.insert(k.to_string_value(), v.clone());
                 }
-                _ => {}
+                _ => {
+                    let value = iter.next().unwrap_or(Value::NIL);
+                    map.insert(item.to_string_value(), value);
+                }
             }
         }
         let result = Value::hash(map);

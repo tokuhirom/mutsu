@@ -597,13 +597,11 @@ impl Interpreter {
             }
         }
         // Hash-subclass construction: an `is Hash`/`is Map` subclass reaches
-        // the base `Hash.new(a => 1, b => 2)` semantics through
-        // `nextwith(|%values)` in its own `new`, which lands here as `bless`
-        // with named (Pair) args. Those pairs become the hash's own key/value
-        // storage (which Associative methods on the instance delegate to),
-        // mirroring the Array/List block above. A pair naming a DECLARED
-        // attribute is left as a real attribute instead (already inserted
-        // above) and excluded from storage.
+        // the base Hash.new semantics through `bless`. Named Pairs become
+        // hash entries, while bare positional args are folded as alternating
+        // key/value entries. A pair naming a DECLARED attribute is left as a
+        // real attribute instead (already inserted above) and excluded from
+        // storage.
         if self
             .class_mro(cn_resolved)
             .iter()
@@ -611,20 +609,22 @@ impl Interpreter {
         {
             let declared: std::collections::HashSet<&str> =
                 plan.class_attrs.iter().map(|a| a.name.as_str()).collect();
-            let hash_pairs: Vec<Value> = args
+            let has_positional = args.iter().any(|a| !a.is_string_pair_value());
+            let hash_args: Vec<Value> = args
                 .iter()
-                .filter(
-                    |a| matches!(a.view(), ValueView::Pair(k, _) if !declared.contains(k.as_str())),
-                )
+                .filter(|a| match a.view() {
+                    ValueView::Pair(k, _) => !has_positional && !declared.contains(k.as_str()),
+                    _ => true,
+                })
                 .cloned()
                 .collect();
-            if !hash_pairs.is_empty() || !attributes.contains_key("__mutsu_hash_storage") {
-                for pair in &hash_pairs {
+            if !hash_args.is_empty() || !attributes.contains_key("__mutsu_hash_storage") {
+                for pair in &hash_args {
                     if let ValueView::Pair(k, _) = pair.view() {
                         attributes.remove(k.as_str());
                     }
                 }
-                let storage = self.associative_base_storage(cn_resolved, hash_pairs);
+                let storage = self.associative_base_storage(cn_resolved, hash_args);
                 attributes.insert("__mutsu_hash_storage", storage);
             }
         }
