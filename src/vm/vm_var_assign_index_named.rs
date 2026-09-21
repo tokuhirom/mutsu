@@ -70,6 +70,39 @@ impl Interpreter {
         }
     }
 
+    /// The `X::Assignment::RO` a chained subscript store raises when it reaches
+    /// one of a `List`/`ItemList`'s bare elements (#7556 C2), built from the
+    /// container the store is refusing.
+    ///
+    /// It takes the backing node and kind rather than a `Value` so that the two
+    /// call sites can build it from *inside* their `with_array_mut` closure.
+    /// Both used to compute `value_type_name` and `gist_value` on the line
+    /// ABOVE the closure -- not because the message was wanted there, but to
+    /// dodge the mutable borrow the closure takes out. That made **every**
+    /// chained store pay for an error that fires essentially never:
+    /// `gist_value` renders each element of the addressed container and joins
+    /// them, so `@grid[$i][$j] = $v` over eight-element rows cost one
+    /// `gist_value`, eight `to_string_value` calls and the joined `String` per
+    /// store -- measured at 20,000 `gist_value` calls for 20,000 stores in
+    /// `benchmarks/bench-index-store.raku`
+    /// ([#8069](https://github.com/tokuhirom/mutsu/issues/8069)).
+    ///
+    /// Reconstructing the `Value` here is exact rather than approximate: an
+    /// `Array` value *is* the `(Gc<ArrayData>, ArrayKind)` pair, `value_type_name`
+    /// reads only the kind, and `gist_value` reads only the node -- so the
+    /// message is byte-identical to the eager one, and is now built only on the
+    /// branch that returns it.
+    fn immutable_list_refusal(
+        items: &crate::gc::Gc<crate::value::ArrayData>,
+        kind: crate::value::ArrayKind,
+    ) -> RuntimeError {
+        let refused = Value::array_with_kind(items.clone(), kind);
+        RuntimeError::assignment_ro_typename(
+            crate::runtime::utils::value_type_name(&refused),
+            &crate::runtime::utils::gist_value(&refused),
+        )
+    }
+
     fn build_slice_key_tree(&mut self, key: &Value) -> Result<SliceKeyTree, RuntimeError> {
         match key.view() {
             ValueView::LazyList(ll) => {
@@ -3405,6 +3438,17 @@ impl Interpreter {
         outer_positional: bool,
         inner_positional: bool,
     ) -> Result<(), RuntimeError> {
+        // #8069: the chained store's own fast lane, consulted before the body
+        // for the same reason the two single-subscript lanes are consulted
+        // before the shared preamble -- every question the body re-derives by
+        // string key was settled when the two containers were declared. It
+        // touches nothing unless it commits, so a decline leaves the body
+        // running exactly as it did before.
+        if let Some(result) =
+            self.try_fast_nested_element_assign(code, name_idx, outer_positional, inner_positional)
+        {
+            return result;
+        }
         let result = self.exec_index_assign_expr_nested_op_body(
             code,
             name_idx,
@@ -3900,8 +3944,6 @@ impl Interpreter {
                         // treats every ArrayKind as descendable) -- only here,
                         // once the specific reached element's own shape is
                         // known.
-                        let list_type_name = crate::runtime::utils::value_type_name(&arr[inner_i]);
-                        let list_gist = crate::runtime::utils::gist_value(&arr[inner_i]);
                         arr[inner_i].with_array_mut(|inner_arr, kind| -> Result<(), RuntimeError> {
                             if let Ok(j) = outer_key.parse::<usize>() {
                                 if matches!(
@@ -3913,10 +3955,7 @@ impl Interpreter {
                                     .get(j)
                                     .is_some_and(|v| matches!(v.view(), ValueView::ContainerRef(_)))
                                 {
-                                    return Err(RuntimeError::assignment_ro_typename(
-                                        list_type_name,
-                                        &list_gist,
-                                    ));
+                                    return Err(Self::immutable_list_refusal(inner_arr, *kind));
                                 }
                                 // Container identity (§3): write through a
                                 // shared inner node (a `ContainerRef` cell
@@ -4339,7 +4378,7 @@ impl Interpreter {
     /// chained-bracket form (`@a[i][j] = v`) is compiled to an entirely
     /// different opcode and never ran any of those sites, so `@a[0][1] = 5`
     /// left `@a[0][0]:exists` answering `True`.
-    fn autoviv_resize_tracking(
+    pub(crate) fn autoviv_resize_tracking(
         arr: &mut crate::value::ArrayData,
         idx: usize,
         fill: Value,
@@ -5045,8 +5084,6 @@ impl Interpreter {
                     // reached intermediate value, never the untouched root
                     // variable, so refusing a plain (non-`:=`) store into one
                     // of a `List`/`ItemList`'s bare elements is safe here too.
-                    let list_type_name = crate::runtime::utils::value_type_name(cur);
-                    let list_gist = crate::runtime::utils::gist_value(cur);
                     if let Some(r) =
                         cur.with_array_mut(|arr_arc, kind| -> Result<(), RuntimeError> {
                             if let Ok(i) = key.parse::<usize>() {
@@ -5060,10 +5097,7 @@ impl Interpreter {
                                         matches!(v.view(), ValueView::ContainerRef(_))
                                     })
                                 {
-                                    return Err(RuntimeError::assignment_ro_typename(
-                                        list_type_name,
-                                        &list_gist,
-                                    ));
+                                    return Err(Self::immutable_list_refusal(arr_arc, *kind));
                                 }
                                 let arr = crate::value::gc_data_mut(arr_arc);
                                 Self::autoviv_resize_tracking(arr, i, native_fill.clone())?;

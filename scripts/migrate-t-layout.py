@@ -111,6 +111,15 @@ OVERRIDES: dict[str, str] = {
     # of `for`-loop control flow as a language feature (the `^for-` rule would
     # otherwise place it in `control`).
     "for-loop-topic-deep-readonly-nesting": "vm/binding",
+    # The two element-store fast lanes' own decline rules (#8069): the
+    # associative lane consulted before the shared preamble, and the chained
+    # store's new lane. What breaks if either file breaks is the store path's
+    # guard set -- which shapes a lane must hand back to the full store -- not
+    # a property of `Hash`/`Array` as containers. The subscripts are only where
+    # it becomes visible, so `hash`/`element`/`nested` must not pull these into
+    # `collections`; they belong beside the other store-path pins.
+    "hash-element-store-early-lane": "vm/binding",
+    "nested-element-store-fast-lane": "vm/binding",
     # `where` on a generic type parameter -- a signature constraint.
     "generic-where": "routines",
     # Whether a generic class nominalizes -- a type-system property.

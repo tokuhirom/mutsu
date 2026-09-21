@@ -380,6 +380,16 @@ impl Interpreter {
                         // `ContainerRef` cell; reassignment needs the slow path's
                         // replace-vs-write-through guard, not a blind insert.
                         ValueView::ContainerRef(_) => true,
+                        // ADR-0040 §9 seen from the DESTINATION side: an element
+                        // can BE a `Proxy` (`%h<k> := Proxy.new(...)`), and it
+                        // mediates its own store -- a blind insert would replace
+                        // the container instead of firing its `STORE`. The
+                        // preamble's `existing_element_container` probe used to
+                        // catch this before the lane was ever reached; the lane
+                        // is consulted first now, so it has to ask itself. A
+                        // `VarRef` back-reference is the same kind of mediating
+                        // slot and is refused with it.
+                        ValueView::Proxy { .. } | ValueView::VarRef { .. } => true,
                         ValueView::Pair(name, _) if name.starts_with("__mutsu_bound") => true,
                         _ => false,
                     };
@@ -700,6 +710,16 @@ impl Interpreter {
         // this function running exactly as it did before.
         if let Some(result) =
             self.try_fast_array_element_assign_early(code, name_idx, is_positional, target_slot)
+        {
+            return result;
+        }
+        // The Associative twin of the lane above, consulted at the same point
+        // and for the same reason: every probe below asks about a shape a plain
+        // `%h{$k} = $v` has already been refused for. It was the LAST thing this
+        // dispatch chain tried until now, which is why the hash store cost 3,642
+        // instructions against the array store's 1,115 (#8069).
+        if let Some(result) =
+            self.try_fast_hash_element_assign_early(code, name_idx, is_positional, target_slot)
         {
             return result;
         }
