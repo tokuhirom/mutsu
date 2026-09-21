@@ -3,13 +3,27 @@ use crate::symbol::Symbol;
 
 impl Interpreter {
     /// Convert a named-flavour Pair into the positional flavour; a no-op for
-    /// everything else (ADR-0021 I1/I4). The same normalization
-    /// `OpCode::ContainerizePair` performs at a compiled call boundary,
-    /// needed here too because a Slip's elements bypass the compiler
-    /// entirely — `exec_make_slip_op` applies this to every element sourced
-    /// from a genuinely positional container (Array/Seq/LazyList/Capture's
+    /// everything else (ADR-0021 I1/I4). This IS the normalization
+    /// `OpCode::ContainerizePair` performs at a compiled call boundary (its
+    /// dispatch arm and the Tier B shim both call it), and it is needed for a
+    /// Slip's elements too, because those bypass the compiler entirely —
+    /// `exec_make_slip_op` applies it to every element sourced from a
+    /// genuinely positional container (Array/Seq/LazyList/Capture's
     /// positional lane).
+    ///
+    /// Tag-probe gated, because every caller runs it per argument or per
+    /// element and the answer is almost always "not a Pair, nothing to do".
+    /// `view()` is the wrong way to ask: it forces (and memoizes) a lazy
+    /// `Match` (`nanbox/peek.rs`'s `Kind::Match` arm), so passing `$/` as an
+    /// argument paid a materialization the callee may never ask for. Tier B
+    /// already decides this with one masked compare against `PAIR_PATTERN`
+    /// (`vm_jit_tier_b.rs::emit_containerize_pair`); `is_string_pair_value` is
+    /// the same question, spelled the same way.
+    #[inline]
     pub(super) fn containerize_pair_item(item: Value) -> Value {
+        if !item.is_string_pair_value() {
+            return item;
+        }
         match item.view() {
             ValueView::Pair(k, v) => Value::value_pair(Value::str(k.clone()), v.clone()),
             _ => item,

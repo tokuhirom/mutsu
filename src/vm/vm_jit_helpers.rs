@@ -55,10 +55,11 @@ pub(super) unsafe extern "C" fn load_const(
 pub(super) unsafe extern "C" fn containerize_pair(interp: *mut Interpreter) {
     let interp = unsafe { &mut *interp };
     let val = interp.stack.pop().unwrap();
-    let containerized = match val.view() {
-        ValueView::Pair(k, v) => Value::value_pair(Value::str(k.clone()), v.clone()),
-        _ => val,
-    };
+    // The same shared helper the dispatch arm uses, so the two flavours of
+    // this opcode cannot drift. `emit_containerize_pair` only calls this shim
+    // once its own `PAIR_PATTERN` compare has said yes, so the helper's probe
+    // is redundant here and costs one masked compare.
+    let containerized = Interpreter::containerize_pair_item(val);
     interp.stack.push(containerized);
 }
 

@@ -3062,11 +3062,13 @@ impl Interpreter {
                 *ip += 1;
             }
             OpCode::ContainerizePair => {
+                // ADR-0021 emits this op for EVERY non-syntactically-named
+                // positional call argument, so it runs overwhelmingly on
+                // values that are not a named-flavour `Pair` and has nothing
+                // to do. The shared helper is tag-probe gated for exactly that
+                // reason — see its doc comment.
                 let val = self.stack.pop().unwrap();
-                let containerized = match val.view() {
-                    ValueView::Pair(k, v) => Value::value_pair(Value::str(k.clone()), v.clone()),
-                    _ => val,
-                };
+                let containerized = Self::containerize_pair_item(val);
                 self.stack.push(containerized);
                 *ip += 1;
             }
