@@ -151,18 +151,19 @@ plan 20;
 #
 # Neither is reachable by the fast lane: `Nil` is absent from its rvalue
 # allow-list and a `Proxy` element is on its destination reject-list, so in
-# both cases it declines and the unchanged body runs. The `Nil` one is fixed
-# and pinned outright below; the `Proxy` one is still `todo`.
+# both cases it declines and the unchanged body runs. Both are fixed now
+# (#8965, #8966), so both are live pins here; their wider pins are
+# t/vm/binding/bind-chained-proxy-store.t and
+# t/vm/binding/nil-decay-chained-element-store.t.
 
 {
-    # A Proxy element mediates its own store. rakudo fires its STORE; mutsu
-    # overwrites the container. https://github.com/tokuhirom/mutsu/issues/8965
+    # A Proxy element mediates its own store: the chained store fires its
+    # STORE rather than overwriting the container (#8965).
     my @p;
     @p[0] = [0];
     my $backing = 0;
     @p[0][0] := Proxy.new(FETCH => -> $ { $backing }, STORE => -> $, $v { $backing = $v * 10 });
     @p[0][0] = 7;
-    todo 'chained store does not fire a Proxy element STORE (#8965)';
     is $backing, 70, 'a Proxy element at the second level still mediates the store';
 }
 
