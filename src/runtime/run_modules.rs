@@ -812,6 +812,16 @@ impl Interpreter {
         // into the caller's language version.
         let saved_language_version = crate::parser::current_language_version();
         let (stmts, _precompiled) = self.parse_module_source(module, &source_path)?;
+        // `$=pod` belongs to the compilation unit that declares it. The main
+        // program establishes its Pod variables before execution, but a module
+        // used to skip that step and therefore saw the importer's (or no)
+        // document instead. Keep the source view aligned with the parser,
+        // including the roast-directive preprocessing used by the main path.
+        let module_source = fs::read_to_string(&source_path)
+            .map(|source| Self::maybe_preprocess_roast_directives(&source).into_owned())
+            .map_err(|err| {
+                RuntimeError::new(format!("Failed to read module {}: {}", module, err))
+            })?;
         // ADR-0106 Slice 0: everything compiled for this module -- its mainline,
         // its routine bodies, the shared-body capture compile below -- belongs
         // to the module's own file, not to the script that `use`d it. Published
@@ -978,7 +988,28 @@ impl Interpreter {
             // see `hide_export_routines` for why this pair cannot share
             // `hidden_toplevel`'s restore point.
             let hidden_export = self.hide_export_routines();
-            let result = self.run_block(&stmts);
+            // `saved_plain_env` above snapshots the importer's `=pod` value.
+            // Populate the module's own document only after that snapshot, so
+            // the ordinary restoration below returns the caller's document
+            // after the module body (and nested module loads) finish.
+            // The document-comment tables are interpreter state too, but unlike
+            // `=pod` they are not part of the module env. Save them so loading
+            // a dependency cannot replace the importing program's `.WHY`
+            // metadata for the rest of its run. Nested module loads apply the
+            // same save/restore pair and therefore return to this module's
+            // document while its body is still executing.
+            let saved_doc_comments = self.doc_comments.clone();
+            let saved_doc_comment_list = self.doc_comment_list.clone();
+            let saved_why_cache = self.why_cache.clone();
+            let saved_why_object_cache = self.why_object_cache.clone();
+            let result = match self.establish_pod_variables(&module_source) {
+                Ok(()) => self.run_block(&stmts),
+                Err(err) => Err(err),
+            };
+            self.doc_comments = saved_doc_comments;
+            self.doc_comment_list = saved_doc_comment_list;
+            self.why_cache = saved_why_cache;
+            self.why_object_cache = saved_why_object_cache;
             // Snapshot the env exactly as the module body left it, before any
             // of the restoration below (the `leaked_packages` removal, the
             // `saved_plain_env` restore, `unit_lexicals` extraction) strips
