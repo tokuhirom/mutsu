@@ -125,6 +125,7 @@ impl Interpreter {
     /// CUR::Installation method dispatch.
     pub(crate) fn dispatch_cur_installation_method(
         &mut self,
+        repo: &Value,
         attributes: &AttrMap,
         method: &str,
         args: Vec<Value>,
@@ -204,23 +205,7 @@ impl Interpreter {
                 .cloned()
                 .unwrap_or(Value::NIL))),
             "prefix" => Some(Ok(self.make_io_path_instance(&prefix))),
-            "need" => Some(self.cur_inst_need(&prefix, args.first().cloned())),
-            "resolve" => {
-                let depspec = args.first().cloned().unwrap_or(Value::NIL);
-                match self.cur_inst_candidates(&prefix, &depspec) {
-                    Ok(v) => match v.view() {
-                        ValueView::Array(arr, _) => {
-                            if arr.is_empty() {
-                                Some(Ok(Value::NIL))
-                            } else {
-                                Some(Ok(Value::TRUE))
-                            }
-                        }
-                        _ => Some(Ok(Value::NIL)),
-                    },
-                    Err(e) => Some(Err(e)),
-                }
-            }
+            "need" => Some(self.cur_inst_need(&prefix, repo, args.first().cloned())),
             "files" => {
                 let search_path = args
                     .first()

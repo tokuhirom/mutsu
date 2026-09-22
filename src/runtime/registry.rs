@@ -1060,6 +1060,8 @@ impl Registry {
             "Distribution::Installation" => {
                 Some(&["Distribution::Installation", "Distribution", "Any", "Mu"])
             }
+            "CompUnit" => Some(&["CompUnit", "Any", "Mu"]),
+            "CompUnit::Handle" => Some(&["CompUnit::Handle", "Any", "Mu"]),
             "CompUnit::DependencySpecification" => {
                 Some(&["CompUnit::DependencySpecification", "Any", "Mu"])
             }

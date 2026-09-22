@@ -467,6 +467,8 @@ impl Interpreter {
                 | "CX::Warn"
                 | "CX::Return"
                 | "X::AdHoc"
+                | "CompUnit"
+                | "CompUnit::Handle"
                 | "CompUnit::DependencySpecification"
                 | "CompUnit::Repository"
                 | "CompUnit::Repository::FileSystem"

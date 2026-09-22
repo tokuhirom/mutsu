@@ -1146,8 +1146,23 @@ impl Interpreter {
                     _ => {}
                 }
             }
+            if method == "resolve"
+                && matches!(
+                    class_name.resolve().as_str(),
+                    "CompUnit::Repository::FileSystem" | "CompUnit::Repository::Installation"
+                )
+            {
+                let depspec = args.first().cloned().unwrap_or(Value::NIL);
+                return self.cur_resolve(
+                    &target,
+                    &class_name.resolve(),
+                    &attributes.as_map(),
+                    depspec,
+                );
+            }
             if class_name == "CompUnit::Repository::Installation"
                 && let Some(result) = self.dispatch_cur_installation_method(
+                    &target,
                     &(attributes).as_map(),
                     method,
                     args.clone(),
@@ -1226,6 +1241,18 @@ impl Interpreter {
                     }
                     "install" => {
                         return Err(RuntimeError::new("Cannot install on CUR::FileSystem"));
+                    }
+                    "loaded" | "id" | "path-spec" => {
+                        let prefix = attributes
+                            .as_map()
+                            .get("prefix")
+                            .map(Value::to_string_value)
+                            .unwrap_or_default();
+                        return Ok(match method {
+                            "loaded" => Value::array(self.cur_repo_loaded(&prefix)),
+                            "id" => Value::str(Self::cur_fs_id(&prefix)),
+                            _ => Value::str(format!("file#{prefix}")),
+                        });
                     }
                     // Repository stringification: bare prefix for `.Str`,
                     // `<short-id>#<prefix>` for `.gist` (so `.say` prints
@@ -1352,6 +1379,21 @@ impl Interpreter {
                             .insert(short_name_str.clone());
                         let mut attrs = HashMap::new();
                         attrs.insert("from".to_string(), Value::str_from("Raku"));
+                        // Same `.repo` / `.repo-id` / `.distribution` as a
+                        // `resolve` of this spec reports (a module found only
+                        // outside the prefix has no distribution here).
+                        attrs.insert("repo".to_string(), target.clone());
+                        if let Some(dist) = self
+                            .cur_fs_candidates(&prefix, &depspec)?
+                            .as_list_items()
+                            .and_then(Self::best_candidate)
+                        {
+                            attrs.insert(
+                                "repo-id".to_string(),
+                                Value::str(Self::compunit_repo_id(&prefix, &dist, &short_name_str)),
+                            );
+                            attrs.insert("distribution".to_string(), dist);
+                        }
                         attrs.insert("short-name".to_string(), Value::str(short_name_str));
                         attrs.insert(
                             "precompiled".to_string(),
@@ -1359,53 +1401,16 @@ impl Interpreter {
                         );
                         let compunit = Value::make_instance(Symbol::intern("CompUnit"), attrs);
                         self.env.insert(cache_key, compunit.clone());
+                        self.cur_repo_loaded_push(&prefix, compunit.clone());
                         return Ok(compunit);
                     }
                     _ => {}
                 }
             }
-            if class_name == "CompUnit" {
-                match method {
-                    "short-name" => {
-                        return Ok(attributes
-                            .as_map()
-                            .get("short-name")
-                            .cloned()
-                            .unwrap_or(Value::NIL));
-                    }
-                    "name" => {
-                        return Ok(attributes
-                            .as_map()
-                            .get("short-name")
-                            .cloned()
-                            .unwrap_or(Value::NIL));
-                    }
-                    "version" => {
-                        return Ok(attributes
-                            .as_map()
-                            .get("version")
-                            .cloned()
-                            .unwrap_or(Value::NIL));
-                    }
-                    // Rakudo exposes a handle object that can answer .globalish-package.
-                    // For mutsu, the handle carries the symbols this CompUnit loaded so
-                    // they can later be merged into GLOBAL via `merge-symbols`.
-                    "handle" => {
-                        let mut handle_attrs = HashMap::new();
-                        if let Some(syms) = attributes.as_map().get("globalish-symbols") {
-                            handle_attrs.insert("globalish-symbols".to_string(), syms.clone());
-                        }
-                        return Ok(Value::make_instance(
-                            Symbol::intern("CompUnit::Handle"),
-                            handle_attrs,
-                        ));
-                    }
-                    "globalish-package" => {
-                        return Ok(self
-                            .make_globalish_package(attributes.as_map().get("globalish-symbols")));
-                    }
-                    _ => {}
-                }
+            if class_name == "CompUnit"
+                && let Some(result) = self.dispatch_compunit_method(&attributes.as_map(), method)
+            {
+                return result;
             }
             if class_name == "CompUnit::Handle" && method == "globalish-package" {
                 return Ok(

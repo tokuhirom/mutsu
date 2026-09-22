@@ -279,6 +279,7 @@ impl Interpreter {
     pub(crate) fn cur_inst_need(
         &mut self,
         prefix: &str,
+        repo: &Value,
         depspec: Option<Value>,
     ) -> Result<Value, RuntimeError> {
         let depspec = depspec.unwrap_or(Value::NIL);
@@ -303,20 +304,7 @@ impl Interpreter {
                 _ => Value::NIL,
             }
         };
-        let best = candidates
-            .iter()
-            .max_by(|a, b| {
-                let va = dist_meta(a)
-                    .hash_get_str("ver")
-                    .map(|v| v.to_string_value())
-                    .unwrap_or_default();
-                let vb = dist_meta(b)
-                    .hash_get_str("ver")
-                    .map(|v| v.to_string_value())
-                    .unwrap_or_default();
-                va.cmp(&vb)
-            })
-            .cloned();
+        let best = Self::best_candidate(&candidates);
         let Some(dist) = best else {
             return Err(RuntimeError::new(format!(
                 "Could not find {short_name} in the installation repository"
@@ -391,12 +379,14 @@ impl Interpreter {
             "globalish-symbols".to_string(),
             Value::array(new_symbols.into_iter().map(Value::str).collect()),
         );
+        attrs.insert(
+            "repo-id".to_string(),
+            Value::str(Self::compunit_repo_id(prefix, &dist, &short_name)),
+        );
+        attrs.insert("repo".to_string(), repo.clone());
+        attrs.insert("distribution".to_string(), dist);
         let compunit = Value::make_instance(crate::symbol::Symbol::intern("CompUnit"), attrs);
-        self.cur_repo
-            .loaded
-            .entry(prefix.to_string())
-            .or_default()
-            .push(compunit.clone());
+        self.cur_repo_loaded_push(prefix, compunit.clone());
         Ok(compunit)
     }
 }
