@@ -1988,14 +1988,22 @@ impl Interpreter {
                 // Wrap native integer values on assignment (overflow wrapping)
                 val = Self::wrap_native_int_by_constraint(constraint, val)?;
             }
-        } else if !is_bind && (!is_vardecl || has_explicit_initializer) {
+        } else if !is_bind
+            && !is_rebind
+            && !is_constant
+            && !scalar_bind
+            && !param_raw_bind
+            && (!is_vardecl || has_explicit_initializer)
+        {
             // Untyped scalar: assigning Nil resets it to the default type
             // object Any (`$x = Nil` / `my $x = Nil` leave `$x === Any`,
             // S02-types/nil.t 21). Only a declaration WITHOUT an explicit
             // initializer keeps the synthesized-Nil path — that default is
             // load-bearing across the compiler's shadow-slot/closure-cell
-            // machinery (PLAN 8.5 step 3). The reset guard is a no-op for
-            // `@`/`%` containers and internal temps.
+            // machinery (PLAN 8.5 step 3). Bind/rebind, constant, and raw
+            // parameter stores keep their RHS value, including the native
+            // null that NQP uses for a missing hash key. The reset guard is a
+            // no-op for `@`/`%` containers and internal temps.
             val = self.reset_nil_untyped_scalar(name, val);
         }
         if !name.starts_with('@') && !name.starts_with('%') && !name.starts_with('&') {
