@@ -2280,6 +2280,7 @@ impl Interpreter {
                     } else {
                         val
                     };
+                    let val = Self::itemize_attr_store_value(sigil, val);
                     attrs.insert(storage_key, val);
                 }
                 // Embed `is default(...)` element defaults into `@`/`%` containers
@@ -2539,7 +2540,7 @@ impl Interpreter {
                                 }
                             }
                         };
-                        attrs.insert(qualified_key, val);
+                        attrs.insert(qualified_key, Self::itemize_attr_store_value(sigil, val));
                     }
                 }
                 // If the class inherits from Array or List, add backing storage

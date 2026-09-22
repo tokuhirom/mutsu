@@ -514,7 +514,7 @@ impl Interpreter {
                     seed: val.clone(),
                 });
             }
-            attributes.insert(attr_sym, val);
+            attributes.insert(attr_sym, Self::itemize_attr_store_value(*sigil, val));
         }
         crate::alloc_scope_end!(_sc_defaults);
         crate::alloc_scope_named!(_sc_named, "bless:named-args");

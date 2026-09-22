@@ -201,7 +201,10 @@ impl Interpreter {
                 Some(lit_val) => {
                     attrs.insert(
                         attr_sym,
-                        Self::coerce_attr_value_by_sigil(lit_val.clone(), *sigil),
+                        Self::itemize_attr_store_value(
+                            *sigil,
+                            Self::coerce_attr_value_by_sigil(lit_val.clone(), *sigil),
+                        ),
                     );
                 }
                 None if default_expr.is_some() => {
@@ -239,7 +242,13 @@ impl Interpreter {
                         typed_default_mismatch = true;
                         break;
                     }
-                    attrs.insert(attr_sym, Self::coerce_attr_value_by_sigil(val, *sigil));
+                    attrs.insert(
+                        attr_sym,
+                        Self::itemize_attr_store_value(
+                            *sigil,
+                            Self::coerce_attr_value_by_sigil(val, *sigil),
+                        ),
+                    );
                 }
                 None => {
                     // Uninitialized: `@` -> empty Array, `%` -> empty Hash. For
