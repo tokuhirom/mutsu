@@ -1024,7 +1024,7 @@ impl Interpreter {
             // against the live cell + local/env writes before the env is torn
             // down. The cell-direct reads + per-op mirrors make the cell the
             // single source; the legacy attribute writeback is gone.
-            reconciled_attrs = self.reconcile_attrs(&base, owner_class, cc, &method_def.params);
+            reconciled_attrs = self.reconcile_attrs(&base, owner_class, cc, &method_def.param_defs);
 
             let method_var_bindings = self.take_var_bindings();
             let mut restored_bindings = saved_var_bindings;
@@ -1051,7 +1051,7 @@ impl Interpreter {
 
             // Phase 3 Stage 2: reconcile all attributes against the live cell +
             // local/env writes before the env is merged away.
-            reconciled_attrs = self.reconcile_attrs(&base, owner_class, cc, &method_def.params);
+            reconciled_attrs = self.reconcile_attrs(&base, owner_class, cc, &method_def.param_defs);
             // Callee-frame key predicate for the merge (formerly a per-call
             // materialized HashSet<String>): the method's params and locals,
             // the frame fixtures, the attribute twigil forms and sigilless
@@ -1332,7 +1332,7 @@ impl Interpreter {
         base: &Value,
         owner_class: &str,
         code: &CompiledCode,
-        params: &[String],
+        param_defs: &[crate::ast::ParamDef],
     ) -> Option<AttrMap> {
         let cell = self.method_attr_cell(base, owner_class)?;
         // Cheap pre-check: a `:=` attr override can only be observed as a
@@ -1398,8 +1398,20 @@ impl Interpreter {
                 // owns as a slot (how a sigilless `has $x` is seeded) that the
                 // frame did NOT declare as a parameter or a `my`. The twigil
                 // forms keep the env fallback: no lexical can be called `!x`.
+                // The signature is consulted through `param_defs`, not the
+                // flat `params` name list: a named parameter written in the
+                // alias form (`:d(:$directed)`) declares the lexical
+                // `$directed` inside its sub-signature while the flat list
+                // carries only the external key `d`. Reading the flat list
+                // made every such parameter look like a name the frame does
+                // NOT own, so an `is copy` alias parameter that had been boxed
+                // into a `ContainerRef` (by ending up in a list, say
+                // `given ($directed, $!directed)`) was adopted as a `:=`
+                // binding for the same-named attribute and written into the
+                // receiver's cell on exit — `Graph.directed-graph()` corrupting
+                // the graph it was cloning from (#9007).
                 let bare_owned = code.locals.iter().any(|n| n == bare)
-                    && !params.iter().any(|p| p == bare)
+                    && !crate::ast::param_defs_declare_lexical(param_defs, bare)
                     && !code
                         .my_declared_sym
                         .contains(&crate::symbol::Symbol::intern(bare));
@@ -2270,7 +2282,7 @@ impl Interpreter {
         });
         // Phase 3 Stage 2: reconcile all attributes against the live cell +
         // local/env writes before the env is torn down.
-        let reconciled = self.reconcile_attrs(&base, owner_class, cc, &method_def.params);
+        let reconciled = self.reconcile_attrs(&base, owner_class, cc, &method_def.param_defs);
 
         let method_var_bindings = self.take_var_bindings();
         let mut restored_bindings = saved_var_bindings;

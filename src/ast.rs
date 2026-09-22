@@ -153,6 +153,35 @@ pub(crate) fn signature_declares_self_lexical(param_defs: &[ParamDef]) -> bool {
     })
 }
 
+/// True when `param_defs` declares a parameter whose *lexical* name is `name`.
+///
+/// A routine's flat `params` list (the `ParamDef::name`s) is NOT the set of
+/// lexicals its signature binds. Two spellings bind a name that never appears
+/// there:
+///
+///   * the named-alias form — `:d(:$directed)` binds `$directed`, while the
+///     outer `ParamDef::name` is the external key `d` and the real name sits in
+///     `sub_signature`;
+///   * a destructuring sub-signature — `sub f([$a, $b])` binds `$a` and `$b`.
+///
+/// So any site asking "is this bare name one of *this frame's own* parameters?"
+/// has to walk the sub-signatures. Answering from the flat list alone made
+/// `reconcile_attrs` mistake an alias-bound parameter for a `:=` attribute
+/// binding and write it into the receiver's attribute cell (#9007).
+pub(crate) fn param_defs_declare_lexical(param_defs: &[ParamDef], name: &str) -> bool {
+    param_defs.iter().any(|pd| {
+        pd.name == name
+            || pd
+                .sub_signature
+                .as_deref()
+                .is_some_and(|sub| param_defs_declare_lexical(sub, name))
+            || pd
+                .outer_sub_signature
+                .as_deref()
+                .is_some_and(|sub| param_defs_declare_lexical(sub, name))
+    })
+}
+
 /// True when a bare parameter-NAME list declares a `$self` lexical.
 ///
 /// The legacy binding path carries a single pointy-block parameter
