@@ -45,7 +45,33 @@ its operator, and `ReductionSpec`'s fields are decided only by
 added by emitting one more string for the VM to re-parse; it has to extend the
 lowering first.
 
-## What was measured, and what was not
+## What was measured
+
+A/B over `tmp/bench-ops.raku` — 400 iterations of `[+] @l`, `[\+] @l`, `[R-] @l`,
+`@l >>+<< @r`, `@l Z+ @r` and `@l X+ (1, 2)` over eight-element arrays, so 2,400
+operator executions. Both sides built from scratch with `--profile profiling`
+and measured under callgrind twice, quoting the second run so the module
+precompilation cache is warm on both (perf-tuning skill §0); the "before" side
+is `origin/main` at `afa2058a`.
+
+| | instructions | allocations |
+| --- | ---: | ---: |
+| before | 71,261,456 | 62,424 |
+| after | 71,120,031 | 57,226 |
+| | **-0.20%** | **-8.3%** |
+
+That is **~2.2 heap allocations and ~59 instructions removed per operator
+execution**, and the allocation figure is fully accounted for: one `String` per
+pooled operator constant (two for `MetaOp`, which pooled both the meta and the
+base spelling), the extra `String` a `[R-]` made while stripping its `R`, and
+the `format!("infix:<op>")` every reduction made to ask for its associativity.
+
+**This will not move a stopwatch, and the write-up should not claim it does.**
+0.20% is an order of magnitude below the ~2% a paired wall-clock run can see on
+this box. The honest claim is that these opcodes now do strictly less work per
+execution, with the deterministic counts as the evidence.
+
+## What the tests pin, and what is left
 
 `tests/static_operator_intern_budget.rs` pins the steady state: a looped `[+]`,
 `>>+<<` and `Z+`, and a `[+]` fold over a growing list, each add **0.000**
