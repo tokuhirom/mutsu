@@ -65,6 +65,102 @@ fn parse_leading_int(s: &str) -> i64 {
     signed.clamp(i64::MIN as i128, i64::MAX as i128) as i64
 }
 
+fn nqp_radix_digit(ch: char, radix: u32) -> Option<i64> {
+    ch.to_digit(radix).map(i64::from)
+}
+
+/// Parse the native-int form of `nqp::radix`.
+///
+/// Rakudo returns an array containing the wrapped native result, the number of
+/// result digits, and the codepoint offset after the consumed input. The
+/// fourth argument is a flag word: bit 0 forces a negative result, bit 1
+/// parses a leading sign, and bit 2 drops trailing zeroes from the result
+/// while still consuming them. A native integer wraps on overflow, as does
+/// the MoarVM operation.
+fn nqp_radix(args: &[Value]) -> Result<Value, RuntimeError> {
+    let radix = iarg(args, 0);
+    let Ok(radix) = u32::try_from(radix) else {
+        return Err(RuntimeError::new("nqp::radix: radix must be in 2..36"));
+    };
+    if !(2..=36).contains(&radix) {
+        return Err(RuntimeError::new("nqp::radix: radix must be in 2..36"));
+    }
+
+    let source = args.get(1).map(|v| v.to_string_value()).unwrap_or_default();
+    let chars: Vec<char> = source.chars().collect();
+    let mut pos = iarg(args, 2).max(0) as usize;
+    if pos >= chars.len() {
+        return Ok(Value::array(vec![
+            Value::int(0),
+            Value::int(0),
+            Value::int(-1),
+        ]));
+    }
+
+    let flags = iarg(args, 3);
+    let parse_sign = flags & 0x02 != 0;
+    let mut negative = flags & 0x01 != 0;
+    if parse_sign {
+        match chars[pos] {
+            '-' => {
+                negative = true;
+                pos += 1;
+            }
+            '+' => pos += 1,
+            _ => {}
+        }
+    }
+
+    let mut digits = Vec::new();
+    let mut cursor = pos;
+    while cursor < chars.len() {
+        if let Some(digit) = nqp_radix_digit(chars[cursor], radix) {
+            digits.push(digit);
+            cursor += 1;
+            continue;
+        }
+        // NQP permits a single underscore between two digits. It is consumed
+        // but does not contribute to either the result or its digit count.
+        if chars[cursor] == '_'
+            && !digits.is_empty()
+            && cursor + 1 < chars.len()
+            && nqp_radix_digit(chars[cursor + 1], radix).is_some()
+        {
+            cursor += 1;
+            continue;
+        }
+        break;
+    }
+
+    if digits.is_empty() {
+        return Ok(Value::array(vec![
+            Value::int(0),
+            Value::int(0),
+            Value::int(-1),
+        ]));
+    }
+
+    let mut result_digits = digits.len();
+    if flags & 0x04 != 0 {
+        while result_digits > 0 && digits[result_digits - 1] == 0 {
+            result_digits -= 1;
+        }
+    }
+    let mut result = 0i64;
+    for &digit in &digits[..result_digits] {
+        result = result.wrapping_mul(radix as i64).wrapping_add(digit);
+    }
+    if negative {
+        result = result.wrapping_neg();
+    }
+
+    Ok(Value::array(vec![
+        Value::int(result),
+        Value::int(result_digits as i64),
+        Value::int(cursor as i64),
+    ]))
+}
+
 fn cmp_result(ordering: std::cmp::Ordering) -> i64 {
     match ordering {
         std::cmp::Ordering::Less => -1,
@@ -236,6 +332,11 @@ impl Interpreter {
             "div_n" => Ok(pure(NqpPure::DivN, args)),
             "neg_n" => Ok(pure(NqpPure::NegN, args)),
             "abs_n" => Ok(pure(NqpPure::AbsN, args)),
+
+            // nqp::radix($radix, $str, $pos, $flags) returns the wrapped
+            // native-int result, the number of significant digits, and the
+            // offset after consuming the input.
+            "radix" => nqp_radix(args),
 
             // -- native num comparisons --
             "iseq_n" => Ok(pure(NqpPure::IsEqN, args)),

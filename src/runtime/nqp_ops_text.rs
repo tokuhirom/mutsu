@@ -307,6 +307,24 @@ impl Interpreter {
             }
 
             // -- string primitives --
+            // nqp::eqatic($haystack, $needle, $pos) -> 1 when the needle
+            // occurs at exactly codepoint offset `$pos`, ignoring case.
+            "eqatic" => {
+                let haystack = super::nqp_char_cache::cached_chars(args, 0);
+                let needle: Vec<char> = sarg(args, 1).chars().collect();
+                let pos = iarg(args, 2);
+                let yes = usize::try_from(pos)
+                    .ok()
+                    .and_then(|p| haystack.get(p..p.saturating_add(needle.len())))
+                    .map(|window| {
+                        window
+                            .iter()
+                            .zip(&needle)
+                            .all(|(left, right)| left.to_lowercase().eq(right.to_lowercase()))
+                    })
+                    .unwrap_or(false);
+                Ok(Value::int(yes as i64))
+            }
             // nqp::eqat($haystack, $needle, $pos) -> 1 when $needle occurs at
             // exactly codepoint offset $pos. The haystack is memoized (see
             // `nqp_char_cache`): JSON::Fast's string-token scan calls this
