@@ -36,8 +36,20 @@ impl SortCaller for VmSortCaller<'_> {
     }
 
     fn call_method(&mut self, recv: Value, name: &str) -> Value {
+        // Schwartzian key extraction (`.sort(*.elems)`/`{ .elems }`,
+        // `{ $^a.foo <=> $^b.foo }`) reads `recv` as a plain value: a
+        // `ContainerRef`-wrapped element (e.g. an inner `@component` pushed
+        // into an outer array, which itemizes it into a shared cell) must be
+        // transparent here exactly as it is for every other read path
+        // (`.map`, a hyper method call, a plain `for` loop) — see
+        // `call_method_with_values`'s identical `VarRef` deref for the same
+        // reason. Without it, `try_compiled_method_or_interpret` dispatched
+        // on the `ContainerRef` itself, which a generic fallback answered as
+        // a single opaque value (`.elems == 1` for every element regardless
+        // of its real size), making the Schwartzian sort compare all keys
+        // equal and silently leave the input order untouched (#9009).
         self.0
-            .try_compiled_method_or_interpret(recv, name, vec![])
+            .try_compiled_method_or_interpret(recv.deref_container(), name, vec![])
             .unwrap_or(Value::NIL)
     }
 
