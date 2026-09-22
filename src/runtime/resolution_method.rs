@@ -414,10 +414,19 @@ impl Interpreter {
             //   .0 = literal parameters (a literal is narrower than its type);
             //   .1 = `where` clauses OR subset types (a subset is narrower than its
             //        base, whose nominal distance was resolved to the base above);
-            //   .2 = sigilled params (`@`/`%`/`&`) — the sigil imposes an implicit
-            //        Positional/Associative/Callable constraint, so `(@x, @y)` is
-            //        narrower than `($a, $b)` for two array args (matching the sub
-            //        dispatch's `typed_param_count`, which also counts sigils).
+            //   .2 = sigilled POSITIONAL params (`@`/`%`/`&`) — the sigil imposes
+            //        an implicit Positional/Associative/Callable constraint, so
+            //        `(@x, @y)` is narrower than `($a, $b)` for two array args
+            //        (matching the sub dispatch's `typed_param_count`, which also
+            //        counts sigils). Scoped to positional params only, exactly as
+            //        `candidate_specificity_rank_for_args` scopes ITS narrowness
+            //        computation: "a named parameter's type decides whether the
+            //        candidate is *applicable*, never how narrow it is" — an
+            //        unrelated `:%stuff` on one candidate must not outrank a
+            //        same-tied candidate whose actual matching named param has no
+            //        sigil (`Graph::Circulant.new(n => 10, jump => 4)` recursing
+            //        into its own positional `new` picked the unrelated
+            //        zero-positional `Graph.new(:%adjacency-map, ...)` this way).
             //   .3 = `is rw`/`is raw` params — the trait demands a writable
             //        container, so `(Int $b is rw)` is narrower than `(Int $b)`
             //        for a variable argument (matching `candidate_specificity_rank`,
@@ -443,6 +452,7 @@ impl Interpreter {
                     .iter()
                     .filter(|p| {
                         !p.is_invocant
+                            && !p.named
                             && !p.slurpy
                             && !p.double_slurpy
                             && (p.name.starts_with('@')

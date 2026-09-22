@@ -299,7 +299,11 @@ impl ParamDef {
     /// records as nested named entries in `sub_signature`: `:s(:$sort)` becomes
     /// `ParamDef { name: "s", named: true, sub_signature: [ParamDef { name:
     /// "sort", named: true }] }`, and the call may use either `:s(…)` or
-    /// `:sort(…)`.
+    /// `:sort(…)`. Aliases nest arbitrarily deep (`:leaves(:rays(:$n))` is two
+    /// levels: `leaves` aliasing `rays` aliasing `n`), so each alias's own
+    /// `sub_signature` is walked in turn rather than stopping after one level
+    /// — a `Graph::Star.new(n => 5, ...)` naming only the innermost alias
+    /// otherwise never matched this parameter at all.
     ///
     /// Callers that match a named argument against a signature must consult all
     /// of them. Binding already did (`types/signature.rs`); multi-candidate
@@ -318,12 +322,9 @@ impl ParamDef {
         if self.named_alias
             && let Some(aliases) = &self.sub_signature
         {
-            keys.extend(
-                aliases
-                    .iter()
-                    .filter(|a| a.named && !a.slurpy)
-                    .map(|a| strip(&a.name)),
-            );
+            for alias in aliases.iter().filter(|a| a.named && !a.slurpy) {
+                keys.extend(alias.named_external_keys());
+            }
         }
         keys
     }
