@@ -2316,13 +2316,26 @@ impl Interpreter {
         if !trivial {
             return None;
         }
-        // The proto's OWN signature is a gate: `proto f(Int $x) {*}` rejects a
-        // `Str` arg even when a candidate (`multi f($)`) would accept it
-        // (S06-multi/proto.t: "proto signature is checked"). Bypassing the body
-        // would skip that check, so only proceed when the args satisfy the proto
-        // signature; otherwise fall back so the interpreter raises the proper
-        // X::TypeCheck::Argument. An empty proto signature accepts anything.
-        if !proto.param_defs.is_empty() && !self.method_args_match(args, &proto.param_defs) {
+        // A bodyless proto normally gates dispatch with its own signature, but
+        // Rakudo permits a definedness-constrained proto to dispatch to a
+        // candidate whose type is different (e.g. `proto f(Int:D) {*}` with a
+        // `multi f(Complex:D)`). A proto with an ordinary nominal constraint
+        // remains a hard gate, as pinned by S06-multi/proto.t. Check the proto
+        // before resolving the candidate so the VM-native path preserves both
+        // forms; a non-matching ordinary proto falls through to the interpreter
+        // path, which raises X::TypeCheck::Argument.
+        let proto_matches =
+            proto.param_defs.is_empty() || self.method_args_match(args, &proto.param_defs);
+        let proto_constraints: Vec<&str> = proto
+            .param_defs
+            .iter()
+            .filter_map(|param| param.type_constraint.as_deref())
+            .collect();
+        let proto_allows_candidate = !proto_constraints.is_empty()
+            && proto_constraints
+                .iter()
+                .all(|constraint| constraint.ends_with(":D"));
+        if !proto_matches && !proto_allows_candidate {
             return None;
         }
         // Ambiguity is signalled by `None` + a pending dispatch error; clear any

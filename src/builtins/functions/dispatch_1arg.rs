@@ -427,6 +427,7 @@ pub(crate) fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Val
             ValueView::Int(i) => Value::int(i.abs()),
             ValueView::Num(f) => Value::num(f.abs()),
             ValueView::Rat(n, d) => Value::rat_raw(n.abs(), d),
+            ValueView::FatRat(n, d) => Value::fat_rat_raw(n.abs(), d),
             ValueView::Complex(re, im) => Value::num((re * re + im * im).sqrt()),
             ValueView::Str(s) => {
                 if let Ok(i) = s.parse::<i64>() {

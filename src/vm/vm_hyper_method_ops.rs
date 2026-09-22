@@ -2,6 +2,25 @@ use super::*;
 use crate::symbol::Symbol;
 use crate::value::ValueMap;
 
+/// Rebuild a Hash after a hyper operation without dropping its object-hash or
+/// typed-container metadata. The stored map keys may be `.WHICH` strings, so
+/// losing `original_keys` exposes implementation keys such as `Str|1` to Raku
+/// code instead of the original logical keys.
+fn hash_with_replaced_map(source: &Value, map: ValueMap) -> Option<Value> {
+    let ValueView::Hash(source_data) = source.view() else {
+        return None;
+    };
+    let mut data = crate::value::HashData::new(map);
+    data.value_type = source_data.value_type.clone();
+    data.key_type = source_data.key_type.clone();
+    data.declared_type = source_data.declared_type.clone();
+    data.original_keys = source_data.original_keys.clone();
+    data.default = source_data.default.clone();
+    data.descriptor_name = source_data.descriptor_name.clone();
+    data.bare_values = source_data.bare_values;
+    Some(Value::hash_with_data(crate::gc::Gc::new(data)))
+}
+
 /// The elements a hyper walks over.
 ///
 /// This is deliberately **not** `value_to_list`, which answers a different
@@ -600,6 +619,11 @@ impl Interpreter {
         }
         // Hyper method/postfix on a Hash applies to each *value*, preserving the
         // keys: `%h>>.uc` and `%h>>!` yield a Hash, not a list of pairs.
+        let hash_source = if matches!(target.view(), ValueView::Hash(..)) {
+            Some(target.clone())
+        } else {
+            None
+        };
         let hash_keys: Option<Vec<String>> = if let ValueView::Hash(map) = target.view() {
             Some(map.keys().cloned().collect())
         } else {
@@ -1057,7 +1081,13 @@ impl Interpreter {
             for (key, item) in keys.iter().zip(items.iter()) {
                 map.insert(key.clone(), item.clone());
             }
-            let new_hash = Value::hash_with_data(Value::hash_arc(map));
+            let new_hash = match hash_source
+                .as_ref()
+                .and_then(|source| hash_with_replaced_map(source, map))
+            {
+                Some(hash) => hash,
+                None => return Err(RuntimeError::new("Hash hyper source disappeared")),
+            };
             if let Some(var) = target_var
                 .as_ref()
                 .filter(|v| v.starts_with('@') || v.starts_with('%'))
@@ -1089,7 +1119,14 @@ impl Interpreter {
             for (key, value) in keys.into_iter().zip(results) {
                 map.insert(key, value);
             }
-            self.stack.push(Value::hash_with_data(Value::hash_arc(map)));
+            let hash = match hash_source
+                .as_ref()
+                .and_then(|source| hash_with_replaced_map(source, map))
+            {
+                Some(hash) => hash,
+                None => return Err(RuntimeError::new("Hash hyper source disappeared")),
+            };
+            self.stack.push(hash);
             return Ok(());
         }
         // Preserve the container type of the target: Array->Array, List->List.
@@ -1202,10 +1239,13 @@ impl Interpreter {
                     res_map.insert(k.clone(), itemize_if_descended(&v, r));
                     mut_map.insert(k, m);
                 }
-                Ok((
-                    Value::hash_with_data(Value::hash_arc(res_map)),
-                    Value::hash_with_data(Value::hash_arc(mut_map)),
-                ))
+                let Some(result_hash) = hash_with_replaced_map(item, res_map) else {
+                    return Err(RuntimeError::new("Hash hyper source disappeared"));
+                };
+                let Some(mutated_hash) = hash_with_replaced_map(item, mut_map) else {
+                    return Err(RuntimeError::new("Hash hyper source disappeared"));
+                };
+                Ok((result_hash, mutated_hash))
             }
             _ => {
                 // Leaf: apply the method, mirroring the non-recursive leaf path.
@@ -1286,7 +1326,8 @@ impl Interpreter {
                     let r = self.hyper_sub_apply_recursive(callable, &v, extra_args, modifier)?;
                     res_map.insert(k, itemize_if_descended(&v, r));
                 }
-                Ok(Value::hash_with_data(Value::hash_arc(res_map)))
+                hash_with_replaced_map(item, res_map)
+                    .ok_or_else(|| RuntimeError::new("Hash hyper source disappeared"))
             }
             _ => {
                 // Leaf: invoke the callable with the element as the first argument.
@@ -1351,6 +1392,11 @@ impl Interpreter {
         };
         // Hyper on a Hash applies to each *value*, preserving the keys, and
         // yields a Hash (mirrors the non-dynamic `exec_hyper_method_call_op`).
+        let hash_source = if matches!(target.view(), ValueView::Hash(..)) {
+            Some(target.clone())
+        } else {
+            None
+        };
         let hash_keys: Option<Vec<String>> = if let ValueView::Hash(map) = target.view() {
             Some(map.keys().cloned().collect())
         } else {
@@ -1576,7 +1622,14 @@ impl Interpreter {
             for (key, value) in keys.into_iter().zip(results) {
                 map.insert(key, value);
             }
-            self.stack.push(Value::hash_with_data(Value::hash_arc(map)));
+            let hash = match hash_source
+                .as_ref()
+                .and_then(|source| hash_with_replaced_map(source, map))
+            {
+                Some(hash) => hash,
+                None => return Err(RuntimeError::new("Hash hyper source disappeared")),
+            };
+            self.stack.push(hash);
             return Ok(());
         }
         // Preserve the container type of the target: Array->Array, List->List
