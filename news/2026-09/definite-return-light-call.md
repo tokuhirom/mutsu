@@ -25,4 +25,4 @@ the same as the untyped signature.
 JSON::Fast declares `--> Nil` on `nom-ws`/`nom-comment` and `--> True`/`--> False`
 on `parse-true`/`parse-false`, which is what surfaced this (#8673).
 
-Pin: `t/routines/call/light-call-definite-return.t`.
+Pin: `t/vm/frames/light-call-definite-return.t`.
