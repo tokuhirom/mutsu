@@ -17,6 +17,15 @@ checksum), and in the 0.1-0.4 s range on a release build: the deterministic
 series resolves ~0.1%, while the wall-clock series needs the file to be well
 clear of the ~8 ms startup without paying 90x for it under callgrind.
 
+When the operation a benchmark exists for is small next to either interpreter's
+startup and module loading, the whole-script ratio reads near 1 no matter how
+slow the operation is. Such a benchmark prints `bench-section-seconds: <s>`
+(its own in-process timing) and the bench CI records an extra
+`<name>@section` / `<name>@section+jit` series from it, with raku's in-process
+time as the ratio's denominator. `bench-json-fast-spdx@section+jit` is the
+number [#8673](https://github.com/tokuhirom/mutsu/issues/8673) is decided by
+(goal: below 1.0, i.e. faster than rakudo).
+
 ### Regex and grammar coverage
 
 The regex engine was effectively unmeasured until 2026-09-13 (one 5000-iteration

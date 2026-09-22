@@ -190,6 +190,14 @@ run.
   `env_dirty` dual store, concurrency ordering);
 - anything that cannot be bounded as one PR, or whose right answer you cannot state confidently.
 
+**Search before filing, above all for `todo:perf`.** A slow path in a shared dependency is hit by
+every distribution that uses it, so the same finding keeps arriving from different distributions.
+Search open issues for the dependency and the symptom first, and when one already tracks it, add
+your distribution and test file as a comment there instead of opening a new issue. In particular:
+**`JSON::Fast` being slow — typically `Test::META`'s `meta-ok()` constructing `License::SPDX`,
+which decodes a ~340KB license list — is [#8673](https://github.com/tokuhirom/mutsu/issues/8673)**,
+the single tracking issue for it (#9061 was filed as a duplicate). Comment there; do not file.
+
 Label it by `docs/issue-workflow.md`: `todo:ticket` for a small self-contained slice you are simply
 not doing now, `todo:deep` for the design-needed cases above, `todo:perf` only when mutsu is
 *correct but slow* — a wrong answer is never `todo:perf`. Title it after the missing capability, not
