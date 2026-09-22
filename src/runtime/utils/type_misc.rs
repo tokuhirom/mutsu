@@ -326,7 +326,7 @@ pub(crate) fn reduction_identity_opt(op: &str) -> Option<Value> {
         "o" | "\u{2218}" => identity_callable(),
         _ => {
             // Hyper operator forms: >>op<<, >>op>>, <<op<<, <<op>>
-            if let Some(inner) = strip_hyper_delimiters_for_identity(op) {
+            if let Some(inner) = crate::compiled_operator::strip_hyper_delimiters(op) {
                 return reduction_identity_opt(inner);
             }
             return None;
@@ -338,22 +338,4 @@ pub(crate) fn reduction_identity_opt(op: &str) -> Option<Value> {
 /// `Nil`. Empty reduction evaluation should use [`reduction_identity_opt`].
 pub(crate) fn reduction_identity(op: &str) -> Value {
     reduction_identity_opt(op).unwrap_or(Value::NIL)
-}
-
-/// Strip hyper operator delimiters to find the inner operator for identity lookup.
-fn strip_hyper_delimiters_for_identity(s: &str) -> Option<&str> {
-    let after_left = s
-        .strip_prefix(">>")
-        .or_else(|| s.strip_prefix("<<"))
-        .or_else(|| s.strip_prefix('\u{00BB}'))
-        .or_else(|| s.strip_prefix('\u{00AB}'))?;
-    let inner = after_left
-        .strip_suffix(">>")
-        .or_else(|| after_left.strip_suffix("<<"))
-        .or_else(|| after_left.strip_suffix('\u{00BB}'))
-        .or_else(|| after_left.strip_suffix('\u{00AB}'))?;
-    if inner.is_empty() {
-        return None;
-    }
-    Some(inner)
 }

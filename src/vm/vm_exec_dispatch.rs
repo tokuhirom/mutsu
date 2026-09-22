@@ -5182,9 +5182,10 @@ impl Interpreter {
             }
 
             // -- Reduction --
-            OpCode::Reduction(op_idx) => {
+            OpCode::Reduction(spec_idx) => {
                 self.sync_source_line(code, *ip);
-                self.exec_reduction_op(code, *op_idx)?;
+                let spec = code.reduction_spec(*spec_idx);
+                self.exec_reduction_op(spec)?;
                 *ip += 1;
             }
 
@@ -5457,12 +5458,12 @@ impl Interpreter {
 
             // -- HyperOp --
             OpCode::HyperOp {
-                op_idx,
+                op,
                 dwim_left,
                 dwim_right,
             } => {
                 self.sync_source_line(code, *ip);
-                self.exec_hyper_op(code, *op_idx, *dwim_left, *dwim_right)?;
+                self.exec_hyper_op(*op, *dwim_left, *dwim_right)?;
                 *ip += 1;
             }
 
@@ -5486,25 +5487,21 @@ impl Interpreter {
             }
 
             // -- MetaOp --
-            OpCode::MetaOp { meta_idx, op_idx } => {
+            OpCode::MetaOp { meta, op } => {
                 self.sync_source_line(code, *ip);
-                self.exec_meta_op(code, *meta_idx, *op_idx)?;
+                self.exec_meta_op(*meta, *op)?;
                 *ip += 1;
             }
 
-            OpCode::MetaOpAssign { meta_idx, op_idx } => {
+            OpCode::MetaOpAssign { meta, op } => {
                 self.sync_source_line(code, *ip);
-                self.exec_meta_op_assign(code, *meta_idx, *op_idx)?;
+                self.exec_meta_op_assign(*meta, *op)?;
                 *ip += 1;
             }
 
-            OpCode::MetaOpNary {
-                meta_idx,
-                op_idx,
-                count,
-            } => {
+            OpCode::MetaOpNary { meta, op, count } => {
                 self.sync_source_line(code, *ip);
-                self.exec_meta_op_nary(code, *meta_idx, *op_idx, *count)?;
+                self.exec_meta_op_nary(*meta, *op, *count)?;
                 *ip += 1;
             }
 

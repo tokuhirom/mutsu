@@ -148,117 +148,19 @@ pub(crate) fn minmax_bounds_of_value(v: &Value) -> (Value, Value) {
 }
 
 impl Interpreter {
+    /// Whether `op` names a builtin infix the reduction / hyper / meta
+    /// machinery implements itself.
+    ///
+    /// The table lives in [`crate::compiled_operator`] because the compiler
+    /// consults it too, to decide a `[R op]` reduction's reverse parity at
+    /// compile time.
     pub(super) fn is_builtin_reduction_op(op: &str) -> bool {
-        if let Some(inner) = op
-            .strip_prefix('R')
-            .or_else(|| op.strip_prefix('Z'))
-            .or_else(|| op.strip_prefix('X'))
-            && !inner.is_empty()
-            && Self::is_builtin_reduction_op(inner)
-        {
-            return true;
-        }
-        // Hyper operator forms: >>op<<, >>op>>, <<op<<, <<op>>
-        if let Some(inner) = Self::strip_hyper_delimiters(op)
-            && Self::is_builtin_reduction_op(inner)
-        {
-            return true;
-        }
-        matches!(
-            op,
-            "+" | "-"
-                | "*"
-                | "/"
-                | "%"
-                | "~"
-                | "||"
-                | "&&"
-                | "//"
-                | "%%"
-                | "**"
-                | "^^"
-                | "+&"
-                | "+|"
-                | "+^"
-                | "+<"
-                | "+>"
-                | "~&"
-                | "~|"
-                | "~^"
-                | "~<"
-                | "~>"
-                | "?&"
-                | "?|"
-                | "?^"
-                | "=="
-                | "!="
-                | "<"
-                | ">"
-                | "<="
-                | ">="
-                | "<=>"
-                | "==="
-                | "=:="
-                | "!=:="
-                | "=>"
-                | "eqv"
-                | "eq"
-                | "ne"
-                | "lt"
-                | "gt"
-                | "le"
-                | "ge"
-                | "leg"
-                | "cmp"
-                | "~~"
-                | "min"
-                | "max"
-                | "div"
-                | "mod"
-                | "gcd"
-                | "lcm"
-                | "and"
-                | "or"
-                | "not"
-                | "andthen"
-                | "orelse"
-                | "notandthen"
-                | "xor"
-                | "="
-                | "minmax"
-                | ","
-                | "after"
-                | "before"
-                | "X"
-                | "Z"
-                | "x"
-                | "xx"
-                | "&"
-                | "|"
-                | "^"
-                | "o"
-                | "∘"
-                | "(-)"
-                | "∖"
-                | "(|)"
-                | "∪"
-                | "(&)"
-                | "∩"
-                | "(^)"
-                | "⊖"
-                | "(.)"
-                | "⊍"
-                | "(+)"
-                | "⊎"
-                | "(==)"
-                | "≡"
-                | "≢"
-        )
+        crate::compiled_operator::is_builtin_infix(op)
     }
 
     pub(super) fn reduction_op_associativity(&self, op: &str) -> ReductionAssoc {
-        let infix_name = format!("infix:<{}>", op);
-        if let Some(assoc) = self.infix_associativity(&infix_name) {
+        let names = crate::compiled_operator::infix_names(op);
+        if let Some(assoc) = self.infix_associativity(names.infix.as_str()) {
             return match assoc.as_str() {
                 "right" => ReductionAssoc::Right,
                 "chain" => ReductionAssoc::Chain,
@@ -294,8 +196,10 @@ impl Interpreter {
         if Self::is_builtin_reduction_op(op) {
             return None;
         }
-        let infix_name = format!("infix:<{}>", op);
-        let callable = loan_env!(self, resolve_code_var(&infix_name));
+        // `infix:<op>` / `&infix:<op>` / `&op` are derived from `op`, so they
+        // are built once per operator rather than once per reduction step.
+        let names = crate::compiled_operator::infix_names(op);
+        let callable = loan_env!(self, resolve_code_var(names.infix.as_str()));
         if matches!(
             callable.view(),
             ValueView::Sub(_)
@@ -305,7 +209,7 @@ impl Interpreter {
         ) {
             return Some(callable);
         }
-        if let Some(callable) = self.env().get(&format!("&{}", infix_name)).cloned()
+        if let Some(callable) = self.env().get(names.amp_infix.as_str()).cloned()
             && matches!(
                 callable.view(),
                 ValueView::Sub(_)
@@ -316,7 +220,7 @@ impl Interpreter {
         {
             return Some(callable);
         }
-        if let Some(callable) = self.env().get(&format!("&{}", op)).cloned()
+        if let Some(callable) = self.env().get(names.amp_op.as_str()).cloned()
             && matches!(
                 callable.view(),
                 ValueView::Sub(_)
@@ -339,7 +243,7 @@ impl Interpreter {
     ///
     /// A user declaration of the same name wins (`has_function`), so a
     /// user-defined `infix:<+>` is still called as a user routine.
-    pub(super) fn reduction_builtin_op_for_callable(&self, callable: &Value) -> Option<String> {
+    pub(super) fn reduction_builtin_op_for_callable(&self, callable: &Value) -> Option<Symbol> {
         let ValueView::Routine { name, .. } = callable.view() else {
             return None;
         };
@@ -351,29 +255,10 @@ impl Interpreter {
             .strip_prefix("infix:<")
             .and_then(|rest| rest.strip_suffix('>'))?;
         if Self::is_builtin_reduction_op(op) {
-            Some(op.to_string())
+            Some(Symbol::intern(op))
         } else {
             None
         }
-    }
-
-    /// Strip hyper operator delimiters (>>...<<, >>...>>, <<...<<, <<...>>)
-    /// and their Unicode variants, returning the inner operator if found.
-    fn strip_hyper_delimiters(s: &str) -> Option<&str> {
-        let after_left = s
-            .strip_prefix(">>")
-            .or_else(|| s.strip_prefix("<<"))
-            .or_else(|| s.strip_prefix('\u{00BB}'))
-            .or_else(|| s.strip_prefix('\u{00AB}'))?;
-        let inner = after_left
-            .strip_suffix(">>")
-            .or_else(|| after_left.strip_suffix("<<"))
-            .or_else(|| after_left.strip_suffix('\u{00BB}'))
-            .or_else(|| after_left.strip_suffix('\u{00AB}'))?;
-        if inner.is_empty() {
-            return None;
-        }
-        Some(inner)
     }
 
     pub(super) fn reduction_callable_arity(&self, callable: &Value) -> usize {

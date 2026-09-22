@@ -2388,6 +2388,11 @@ pub(crate) enum OpCode {
     },
 
     // -- Reduction ([+] @arr) --
+    /// The operand indexes [`CompiledCode::reduction_specs`], NOT the constant
+    /// pool: a reduction's scan / negation / reverse / thunked-short-circuit
+    /// markers and its Unicode-folded base operator are all decided by
+    /// [`crate::compiled_operator::ReductionSpec::lower`] at compile time. See
+    /// that module for why the operator is not a `Value::Str` constant.
     Reduction(u32),
 
     // -- Magic variables --
@@ -2520,7 +2525,10 @@ pub(crate) enum OpCode {
 
     // -- HyperOp (>>op<<) --
     HyperOp {
-        op_idx: u32,
+        /// The inner operator's canonical spelling, interned by the compiler
+        /// (`crate::compiled_operator`) rather than pooled as a string the VM
+        /// re-allocates per execution.
+        op: Symbol,
         dwim_left: bool,
         dwim_right: bool,
     },
@@ -2539,8 +2547,10 @@ pub(crate) enum OpCode {
 
     // -- MetaOp (Rop, Xop, Zop) --
     MetaOp {
-        meta_idx: u32,
-        op_idx: u32,
+        /// Which structural meta-operator wraps `op`. Typed, so the VM does
+        /// not re-`match` a pooled `"R"` / `"X"` / `"Z"` string.
+        meta: crate::compiled_operator::MetaKind,
+        op: Symbol,
     },
 
     // -- X/Z meta-assignment (`@a X[+=] @b`, `@a Z[+=] @b`) --
@@ -2551,8 +2561,8 @@ pub(crate) enum OpCode {
     // compiler always pairs this with a store of the mutated container back
     // into the left lvalue, leaving the result Seq as the expression value.
     MetaOpAssign {
-        meta_idx: u32,
-        op_idx: u32,
+        meta: crate::compiled_operator::MetaKind,
+        op: Symbol,
     },
 
     // -- List-associative n-ary MetaOp (X/Z chained: `a X b X c`) --
@@ -2560,8 +2570,8 @@ pub(crate) enum OpCode {
     // n-ary cross (X) or zip (Z) so the result is flat n-tuples rather than
     // left-nested pairs.
     MetaOpNary {
-        meta_idx: u32,
-        op_idx: u32,
+        meta: crate::compiled_operator::MetaKind,
+        op: Symbol,
         count: u32,
     },
 
@@ -4692,6 +4702,12 @@ pub(crate) struct CompiledCode {
     /// ADR-0110 §3.3: the compile-time-resolved TRIR call sites this chunk
     /// contains, indexed by [`OpCode::CallTrir`]'s operand.
     pub(crate) trir_call_sites: Vec<crate::trir::TrCallSite>,
+    /// The typed reduction operators this chunk contains, indexed by
+    /// [`OpCode::Reduction`]'s operand. A reduction's operator shape is fixed
+    /// by the source text, so it is decoded once here instead of being
+    /// re-parsed out of a pooled string on every execution — see
+    /// [`crate::compiled_operator`].
+    pub(crate) reduction_specs: Vec<crate::compiled_operator::ReductionSpec>,
     pub(crate) locals: Vec<String>,
     /// Pre-interned Symbol for each local name. Avoids Symbol::intern()
     /// on every env sync in hot paths.
@@ -5902,6 +5918,7 @@ impl CompiledCode {
             token_decl_plans: Vec::new(),
             decl_plans: Vec::new(),
             trir_call_sites: Vec::new(),
+            reduction_specs: Vec::new(),
             locals: Vec::new(),
             locals_sym: Vec::new(),
             binding_descs: Vec::new(),
@@ -8937,6 +8954,30 @@ impl CompiledCode {
     ///
     /// Values with an observable identity (containers, Instances, Regex, ...)
     /// get no key and always take a fresh slot.
+    /// Intern a lowered reduction operator into this chunk's typed table and
+    /// return its [`OpCode::Reduction`] operand.
+    ///
+    /// The only way to give a `Reduction` its operator: an operator spelling
+    /// cannot reach the VM as a constant-pool string, so a new statically
+    /// spelled reduction form has to extend
+    /// [`crate::compiled_operator::ReductionSpec::lower`] first.
+    pub(crate) fn add_reduction_spec(
+        &mut self,
+        spec: crate::compiled_operator::ReductionSpec,
+    ) -> u32 {
+        if let Some(idx) = self.reduction_specs.iter().position(|s| *s == spec) {
+            return idx as u32;
+        }
+        let idx = self.reduction_specs.len() as u32;
+        self.reduction_specs.push(spec);
+        idx
+    }
+
+    /// The lowered operator [`OpCode::Reduction`]'s operand selects.
+    pub(crate) fn reduction_spec(&self, idx: u32) -> crate::compiled_operator::ReductionSpec {
+        self.reduction_specs[idx as usize]
+    }
+
     pub(crate) fn add_constant(&mut self, value: Value) -> u32 {
         // Every `%_` reference -- a read, an index, a `|%_` flatten, a store --
         // reaches the constant pool as a variable-name string spelling `%_`

@@ -15,54 +15,29 @@ impl Interpreter {
 
     pub(super) fn exec_reduction_op(
         &mut self,
-        code: &CompiledCode,
-        op_idx: u32,
+        spec: crate::compiled_operator::ReductionSpec,
     ) -> Result<(), RuntimeError> {
-        let op = Self::const_str(code, op_idx).to_string();
-        // Support scan/meta reduction [\op] and negated forms like [!after].
-        let (scan, op_no_scan) = if let Some(stripped) = op.strip_prefix('\\') {
-            (true, stripped.to_string())
-        } else {
-            (false, op)
-        };
-        // Only treat '!' as negation prefix when the remaining part is a known
-        // operator (e.g. [!after], [!==], [!eqv]).  Operators like '!=' are their
-        // own base operators and must not be split.
-        const KNOWN_BASE_OPS: &[&str] = &[
-            "+", "-", "*", "/", "%", "~", "||", "&&", "//", "%%", "**", "^^", "+&", "+|", "+^",
-            "+<", "+>", "~&", "~|", "~^", "~<", "~>", "?&", "?|", "?^", "==", "!=", "<", ">", "<=",
-            ">=", "<=>", "===", "=:=", "!=:=", "=>", "eqv", "eq", "ne", "lt", "gt", "le", "ge",
-            "leg", "cmp", "~~", "min", "max", "gcd", "lcm", "and", "or", "not", "andthen",
-            "orelse", "xor", "minmax", ",", "after", "before", "X", "Z", "x", "xx", "&", "|", "^",
-            "o", "∘", "(-)", "∖", "(|)", "∪", "(&)", "∩", "(^)", "⊖", "(.)", "⊍", "(==)", "≡", "≢",
-        ];
-        let (negate, base_op) = if let Some(stripped) = op_no_scan.strip_prefix('!')
-            && KNOWN_BASE_OPS.contains(&stripped)
-        {
-            (true, stripped.to_string())
-        } else {
-            (false, op_no_scan)
-        };
-        // Unicode operator aliases fold identically to their ASCII base op
-        // (matching `eval_reduction_operator_values`): ∘→o, ×→*, ÷→/,
-        // −(U+2212)→-, ≤→<=, ≥→>=, ≠→!=. Without this a `[×]`/`[÷]`/… fold
-        // reaches an `infix:<×>` lookup that does not exist.
-        let mut base_op = match base_op.as_str() {
-            "\u{2218}" => "o".to_string(),
-            "\u{00D7}" => "*".to_string(),
-            "\u{00F7}" => "/".to_string(),
-            "\u{2212}" => "-".to_string(),
-            "\u{2264}" => "<=".to_string(),
-            "\u{2265}" => ">=".to_string(),
-            "\u{2260}" => "!=".to_string(),
-            _ => base_op,
-        };
-        // Handle lazy-scan short-circuit reduction compiled from ArrayLiteral.
-        // The operator has prefix "_sc_" and the operand is an array of thunks.
-        if let Some(sc_op) = base_op.strip_prefix("_sc_") {
+        // Every marker the operator's spelling carried — the `[\op]` scan
+        // form, the `[!op]` negation, the compiler's thunked short-circuit
+        // form, the Unicode alias fold and the statically decidable `R`
+        // prefixes — was decided once by `ReductionSpec::lower`. `base_str`
+        // hands back the interner's own `&'static str`, so nothing below
+        // allocates or re-parses the spelling.
+        let crate::compiled_operator::ReductionSpec {
+            scan,
+            negate,
+            shortcircuit,
+            reverse,
+            ..
+        } = spec;
+        let mut base_op: &str = spec.base_str();
+        // The thunked short-circuit reduction the compiler produces for a
+        // literal argument list: the operand is an array of thunks rather than
+        // a list of values.
+        if shortcircuit {
             let list_value = self.stack.pop().unwrap_or(Value::NIL);
             let thunks: Vec<Value> = runtime::value_to_list(&list_value);
-            return self.exec_scan_shortcircuit_reduction(sc_op, negate, scan, thunks);
+            return self.exec_scan_shortcircuit_reduction(base_op, negate, scan, thunks);
         }
         let list_value = self.stack.pop().unwrap_or(Value::NIL);
         // ADR-0058: `[+] (2..N).map({...})` folds over the mapped elements, so
@@ -72,7 +47,7 @@ impl Interpreter {
         // For scan (triangle reduce) on infinite/lazy inputs, handle lazily
         // to avoid materializing the entire infinite range.
         if scan && input_is_lazy {
-            return self.exec_lazy_scan_reduction(&base_op, negate, &list_value);
+            return self.exec_lazy_scan_reduction(base_op, negate, &list_value);
         }
         let operand_is_buf = Self::value_is_buf(&list_value);
         // Nor does a Set/SetHash/Bag/BagHash/Mix/MixHash — `Set ~~ Iterable`
@@ -162,21 +137,27 @@ impl Interpreter {
         // where the per-step operand swap done by `eval_reduction_operator_values`
         // would instead compute `[op]` right-folded (e.g. `[R/] 100,10,2` is
         // `2/10/100` = 0.002, not `100/(10/2)` = 20).
-        while let Some(inner) = base_op.strip_prefix('R') {
-            // An explicit `&callable` inner (`[R[&f]]`) reverses too. It is
-            // matched separately from the builtin table because a bare
-            // identifier after `R` is ambiguous — a user may have declared
-            // `infix:<Rfoo>` as well as `infix:<foo>` — while the `&` sigil
-            // cannot be part of an operator name, so there is nothing to
-            // confuse it with.
-            let inner_is_callable =
-                inner.starts_with('&') && self.reduction_callable_for_op(inner).is_some();
-            if !inner.is_empty() && (Self::is_builtin_reduction_op(inner) || inner_is_callable) {
-                list.reverse();
-                base_op = inner.to_string();
-            } else {
-                break;
-            }
+        //
+        // `ReductionSpec::lower` already folded the prefixes whose inner is a
+        // builtin operator into `spec.reverse` (an even count cancels), so for
+        // those only the operand reversal is left here.
+        if reverse {
+            list.reverse();
+        }
+        // An explicit `&callable` inner (`[R[&f]]`) reverses too, and that one
+        // is NOT decidable at compile time: whether `&foo` names a callable is
+        // a runtime question. It is matched separately from the builtin table
+        // because a bare identifier after `R` is ambiguous — a user may have
+        // declared `infix:<Rfoo>` as well as `infix:<foo>` — while the `&`
+        // sigil cannot be part of an operator name, so there is nothing to
+        // confuse it with. A `&`-named inner cannot itself begin with `R`, so
+        // one strip is all the old loop could ever do here.
+        if let Some(inner) = base_op.strip_prefix('R')
+            && inner.starts_with('&')
+            && self.reduction_callable_for_op(inner).is_some()
+        {
+            list.reverse();
+            base_op = inner;
         }
         if base_op == "," {
             if scan {
@@ -192,7 +173,7 @@ impl Interpreter {
             }
             return Ok(());
         }
-        let mut callable = self.reduction_callable_for_op(&base_op);
+        let mut callable = self.reduction_callable_for_op(base_op);
         // `my &op = &[+]; [[&op]] 5` is still a reduction with `infix:<+>`'s
         // identity, so unwrap a callable that merely names a builtin operator
         // back into that operator before any of the arity/associativity/
@@ -201,7 +182,7 @@ impl Interpreter {
             .as_ref()
             .and_then(|c| self.reduction_builtin_op_for_callable(c))
         {
-            base_op = op;
+            base_op = op.as_str();
             callable = None;
         }
         let arity = callable
@@ -211,26 +192,26 @@ impl Interpreter {
         let step = arity.saturating_sub(1).max(1);
         let assoc = if base_op == "=>" {
             ReductionAssoc::Right
-        } else if runtime::is_chain_comparison_op(&base_op) {
+        } else if runtime::is_chain_comparison_op(base_op) {
             ReductionAssoc::Chain
         } else {
-            self.reduction_op_associativity(&base_op)
+            self.reduction_op_associativity(base_op)
         };
 
         // Computed before the scan branch: `[\(|)] <a>, <a>`'s FIRST element is
         // `[(|)]("a")`, i.e. the same one-arg coercion the fold form applies.
-        let is_set_op = Self::is_set_reduction_op(&base_op);
+        let is_set_op = Self::is_set_reduction_op(base_op);
         if scan {
             if list.is_empty() {
                 self.stack.push(Value::seq(Vec::new()));
                 return Ok(());
             }
             if list.len() == 1 {
-                let is_chain = runtime::is_chain_comparison_op(&base_op);
+                let is_chain = runtime::is_chain_comparison_op(base_op);
                 let val = if is_chain {
                     Value::TRUE
                 } else if is_set_op && callable.is_none() {
-                    self.set_reduction_one_arg(&base_op, list[0].clone())?
+                    self.set_reduction_one_arg(base_op, list[0].clone())?
                 } else {
                     list[0].clone()
                 };
@@ -248,7 +229,7 @@ impl Interpreter {
                         let mut call_args = list[start..right_edge].to_vec();
                         call_args.push(acc);
                         let v =
-                            self.reduction_step_with_args(&base_op, callable.as_ref(), call_args)?;
+                            self.reduction_step_with_args(base_op, callable.as_ref(), call_args)?;
                         acc = if negate { Value::truth(!v.truthy()) } else { v };
                         out.push(acc.clone());
                         right_edge = start;
@@ -256,8 +237,8 @@ impl Interpreter {
                     out
                 }
                 _ => {
-                    let is_chain = runtime::is_chain_comparison_op(&base_op);
-                    let is_xor = matches!(base_op.as_str(), "^^" | "xor");
+                    let is_chain = runtime::is_chain_comparison_op(base_op);
+                    let is_xor = matches!(base_op, "^^" | "xor");
                     let mut out = Vec::new();
                     if is_chain {
                         // Chain comparison scan: first element is always True
@@ -268,7 +249,7 @@ impl Interpreter {
                         for i in 0..list.len() - 1 {
                             if all_true {
                                 let v = self.eval_reduction_operator_values(
-                                    &base_op,
+                                    base_op,
                                     &list[i],
                                     &list[i + 1],
                                 )?;
@@ -337,9 +318,8 @@ impl Interpreter {
                                     // Apply the Z/X op to all prefix elements
                                     let mut acc0 = list[0].clone();
                                     for item in list.iter().take(i + 1).skip(1) {
-                                        acc0 = self.eval_reduction_operator_values(
-                                            &base_op, &acc0, item,
-                                        )?;
+                                        acc0 = self
+                                            .eval_reduction_operator_values(base_op, &acc0, item)?;
                                     }
                                     acc0
                                 };
@@ -359,7 +339,7 @@ impl Interpreter {
                                 if zx_prefix {
                                     acc = Value::seq(vec![acc]);
                                 } else if is_set_op {
-                                    acc = self.set_reduction_one_arg(&base_op, acc)?;
+                                    acc = self.set_reduction_one_arg(base_op, acc)?;
                                 } else if base_op == "minmax" {
                                     // [minmax](x) = x..x for scalars,
                                     // or min(x)..max(x) for array/list x.
@@ -378,7 +358,7 @@ impl Interpreter {
                                 let mut call_args = vec![acc];
                                 call_args.extend(list[idx..idx + step].iter().cloned());
                                 let v = self.reduction_step_with_args(
-                                    &base_op,
+                                    base_op,
                                     callable.as_ref(),
                                     call_args,
                                 )?;
@@ -399,9 +379,9 @@ impl Interpreter {
         //   - the truthy value if exactly one is truthy
         //   - Nil if more than one is truthy (short-circuits)
         //   - the last element if all are falsy
-        if matches!(base_op.as_str(), "^^" | "xor") {
+        if matches!(base_op, "^^" | "xor") {
             if list.is_empty() {
-                self.stack.push(runtime::reduction_identity(&base_op));
+                self.stack.push(runtime::reduction_identity(base_op));
                 return Ok(());
             }
             let mut found: Option<Value> = None;
@@ -444,7 +424,7 @@ impl Interpreter {
             // `[(+)] Set.new("a")` is `("a"=>1).Bag`) -- not the bare operand
             // mutsu used to hand back.
             if list.len() == 1 && callable.is_none() {
-                let coerced = self.set_reduction_one_arg(&base_op, list[0].clone())?;
+                let coerced = self.set_reduction_one_arg(base_op, list[0].clone())?;
                 self.stack.push(coerced);
                 return Ok(());
             }
@@ -480,7 +460,7 @@ impl Interpreter {
         }
         // Multi-arg symmetric difference is NOT a left-fold.
         // For each key, the result weight = max_weight - second_max_weight.
-        if matches!(base_op.as_str(), "(^)" | "⊖") && list.len() > 2 {
+        if matches!(base_op, "(^)" | "⊖") && list.len() > 2 {
             self.stack.push(runtime::set_sym_diff_multi(&list));
             return Ok(());
         }
@@ -492,26 +472,25 @@ impl Interpreter {
             // identity-bearing BUILTINS short-circuit -- and a callable that is
             // really a builtin was already unwrapped above.
             if let Some(c) = callable.clone() {
-                let v = self.reduction_step_with_args(&base_op, Some(&c), Vec::new())?;
+                let v = self.reduction_step_with_args(base_op, Some(&c), Vec::new())?;
                 let result = if negate { Value::truth(!v.truthy()) } else { v };
                 self.stack.push(result);
                 return Ok(());
             }
             self.stack.push(
-                runtime::reduction_identity_opt(&base_op)
-                    .unwrap_or_else(|| runtime::no_zero_arg_meaning_failure(&base_op)),
+                runtime::reduction_identity_opt(base_op)
+                    .unwrap_or_else(|| runtime::no_zero_arg_meaning_failure(base_op)),
             );
         } else {
             // Chain-associative operators (built-in comparisons and user-defined
             // `is assoc<chain>` infixes) reduce as a conjunction of pairwise
             // applications, not a left-fold.
             let is_comparison =
-                runtime::is_chain_comparison_op(&base_op) || matches!(assoc, ReductionAssoc::Chain);
+                runtime::is_chain_comparison_op(base_op) || matches!(assoc, ReductionAssoc::Chain);
             if is_comparison {
                 let mut result = true;
                 for i in 0..list.len() - 1 {
-                    let v =
-                        self.eval_reduction_operator_values(&base_op, &list[i], &list[i + 1])?;
+                    let v = self.eval_reduction_operator_values(base_op, &list[i], &list[i + 1])?;
                     let truthy = if negate { !v.truthy() } else { v.truthy() };
                     if !truthy {
                         result = false;
@@ -530,7 +509,7 @@ impl Interpreter {
                     && let Some(c) = callable.clone()
                 {
                     let v =
-                        self.reduction_step_with_args(&base_op, Some(&c), vec![list[0].clone()])?;
+                        self.reduction_step_with_args(base_op, Some(&c), vec![list[0].clone()])?;
                     let result = if negate { Value::truth(!v.truthy()) } else { v };
                     self.stack.push(result);
                     return Ok(());
@@ -551,7 +530,7 @@ impl Interpreter {
                 if list.len() == 1
                     && callable.is_none()
                     && matches!(
-                        base_op.as_str(),
+                        base_op,
                         "+" | "-" | "*" | "/" | "%" | "**" | "+|" | "+&" | "+^"
                     )
                 {
@@ -610,7 +589,7 @@ impl Interpreter {
                             let mut call_args = list[start..right_edge].to_vec();
                             call_args.push(acc);
                             let v = self.reduction_step_with_args(
-                                &base_op,
+                                base_op,
                                 callable.as_ref(),
                                 call_args,
                             )?;
@@ -626,7 +605,7 @@ impl Interpreter {
                             let mut call_args = vec![acc];
                             call_args.extend(list[idx..idx + step].iter().cloned());
                             let v = self.reduction_step_with_args(
-                                &base_op,
+                                base_op,
                                 callable.as_ref(),
                                 call_args,
                             )?;

@@ -1,4 +1,5 @@
 use super::*;
+use crate::compiled_operator::MetaKind;
 use crate::symbol::Symbol;
 
 impl Compiler {
@@ -265,9 +266,8 @@ impl Compiler {
         if is_assign_op {
             self.compile_expr(left);
             self.compile_expr(right);
-            let op_idx = self.code.add_constant(Value::str(base_op.to_string()));
             self.code.emit(OpCode::HyperOp {
-                op_idx,
+                op: Symbol::intern(base_op),
                 dwim_left,
                 dwim_right,
             });
@@ -314,9 +314,8 @@ impl Compiler {
         } else {
             self.compile_expr(left);
             self.compile_expr(right);
-            let op_idx = self.code.add_constant(Value::str(op.to_string()));
             self.code.emit(OpCode::HyperOp {
-                op_idx,
+                op: Symbol::intern(op),
                 dwim_left,
                 dwim_right,
             });
@@ -586,6 +585,21 @@ impl Compiler {
                 return;
             }
         }
+        // Every path from here on emits a `MetaOp*` opcode, whose meta-operator
+        // is typed (`crate::compiled_operator::MetaKind`) instead of a pooled
+        // string the VM re-matches per execution. The parser spells only
+        // `R`/`X`/`Z`, and `build_meta_assign_expr` only `reduce`, so an
+        // unrecognized spelling is unreachable; it keeps the diagnostic the VM
+        // used to raise from its `_` arm rather than silently compiling to
+        // something else.
+        let Some(meta_kind) = MetaKind::lower(meta) else {
+            let msg_idx = self
+                .code
+                .add_constant(Value::str(format!("Unknown meta operator: {}", meta)));
+            self.code.emit(OpCode::LoadConst(msg_idx));
+            self.code.emit(OpCode::Die { user_throw: false });
+            return;
+        };
         // X/Z meta-assignment: `@a X[+=] @b`, `@a Z[+=] @b`. The inner op is an
         // in-place assignment operator, so each cross/zip pair mutates the
         // corresponding left cell and the mutated left container is written back
@@ -596,9 +610,10 @@ impl Compiler {
         {
             self.compile_expr(left);
             self.compile_expr(right);
-            let meta_idx = self.code.add_constant(Value::str(meta.to_string()));
-            let op_idx = self.code.add_constant(Value::str(op.to_string()));
-            self.code.emit(OpCode::MetaOpAssign { meta_idx, op_idx });
+            self.code.emit(OpCode::MetaOpAssign {
+                meta: meta_kind,
+                op: Symbol::intern(op),
+            });
             // The MetaOpAssign pushes [result_seq, mutated_left]; store the
             // mutated container (top) back into the lvalue, leaving the Seq.
             self.emit_set_named_var(&target);
@@ -615,9 +630,10 @@ impl Compiler {
         {
             self.compile_expr(left);
             self.compile_expr(right);
-            let meta_idx = self.code.add_constant(Value::str(meta.to_string()));
-            let op_idx = self.code.add_constant(Value::str(op.to_string()));
-            self.code.emit(OpCode::MetaOpAssign { meta_idx, op_idx });
+            self.code.emit(OpCode::MetaOpAssign {
+                meta: meta_kind,
+                op: Symbol::intern(op),
+            });
             let tmp_name = format!("__mutsu_meta_assign_tmp_{}", self.code.constants.len());
             let tmp_idx = self.code.add_constant(Value::str(tmp_name.clone()));
             self.code.emit(OpCode::SetGlobal(tmp_idx));
@@ -658,11 +674,9 @@ impl Compiler {
                         self.compile_expr(operand);
                     }
                 }
-                let meta_idx = self.code.add_constant(Value::str(meta.to_string()));
-                let op_idx = self.code.add_constant(Value::str(op.to_string()));
                 self.code.emit(OpCode::MetaOpNary {
-                    meta_idx,
-                    op_idx,
+                    meta: meta_kind,
+                    op: Symbol::intern(op),
                     count: operands.len() as u32,
                 });
                 return;
@@ -675,9 +689,10 @@ impl Compiler {
             self.compile_expr(left);
             self.compile_expr(right);
         }
-        let meta_idx = self.code.add_constant(Value::str(meta.to_string()));
-        let op_idx = self.code.add_constant(Value::str(op.to_string()));
-        self.code.emit(OpCode::MetaOp { meta_idx, op_idx });
+        self.code.emit(OpCode::MetaOp {
+            meta: meta_kind,
+            op: Symbol::intern(op),
+        });
     }
 
     /// Compile a cross/zip meta-op operand for a container-identity op

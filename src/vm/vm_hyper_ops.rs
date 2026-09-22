@@ -203,8 +203,7 @@ impl Interpreter {
 
     pub(super) fn exec_hyper_op(
         &mut self,
-        code: &CompiledCode,
-        op_idx: u32,
+        op: Symbol,
         dwim_left: bool,
         dwim_right: bool,
     ) -> Result<(), RuntimeError> {
@@ -228,7 +227,9 @@ impl Interpreter {
         } else {
             right
         };
-        let op = Self::const_str(code, op_idx).to_string();
+        // The inner operator was interned by the compiler, so `as_str` is the
+        // interner's own `&'static str` and this allocates nothing.
+        let op = op.as_str();
         // X::HyperOp::Infinite: when the result length is determined by an
         // infinite/lazy operand, the hyper op cannot produce a finite result.
         // Checked once at the top level (nested elements are already realized).
@@ -249,7 +250,7 @@ impl Interpreter {
                 return Err(Self::hyperop_infinite_error(side));
             }
         }
-        let result = self.hyper_op_pair(&op, &left, &right, dwim_left, dwim_right)?;
+        let result = self.hyper_op_pair(op, &left, &right, dwim_left, dwim_right)?;
         // The result inherits the itemization of the operand that donated its
         // structure (the left when listy, else the right): raku renders
         // `($a >>+<< (2,4,6)).raku` as `$(3, 6, 9)` for an itemized `$a`.
