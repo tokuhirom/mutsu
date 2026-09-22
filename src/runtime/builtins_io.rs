@@ -81,6 +81,40 @@ pub(super) fn parse_io_requirements(args: &[Value]) -> (bool, bool, bool, bool) 
 }
 
 impl Interpreter {
+    /// Resolve a `slurp`/`spurt`-family positional path argument to an
+    /// absolute filesystem `PathBuf`, plus the display string used in error
+    /// messages. An already-constructed `IO::Path` (sub)class instance
+    /// carries its own `cwd` attribute, captured from `$*CWD` at `.IO`/
+    /// `.new` time (`build_io_path_instance`/`make_io_path_instance`) — it
+    /// must be resolved against *that* captured directory, exactly as the
+    /// `.slurp`/`.spurt` methods on the instance do via
+    /// [`Self::resolve_io_path_buf`]. A plain `Str` (or other stringifiable
+    /// scalar) has no such capture, so it resolves against the live virtual
+    /// `$*CWD` instead, matching `chdir`/`indir`.
+    pub(super) fn resolve_io_arg_path(&self, arg: &Value) -> (PathBuf, String) {
+        if let ValueView::Instance {
+            class_name,
+            attributes,
+            ..
+        } = arg.view()
+            && (class_name == "IO::Path"
+                || self
+                    .class_mro(&class_name.resolve())
+                    .iter()
+                    .any(|n| n == "IO::Path"))
+        {
+            let attrs = attributes.as_map();
+            let p = attrs
+                .get("path")
+                .map(|v| v.to_string_value())
+                .unwrap_or_default();
+            let path_buf = self.resolve_io_path_buf(&attrs, &p);
+            return (path_buf, p);
+        }
+        let p = arg.to_string_value();
+        (self.resolve_path(&p), p)
+    }
+
     pub(super) fn dir_test_matches(
         &mut self,
         test: &Value,
@@ -215,7 +249,7 @@ impl Interpreter {
             }
             return Ok(result);
         }
-        let path = args.first().unwrap().to_string_value();
+        let (path_buf, path) = self.resolve_io_arg_path(args.first().unwrap());
         check_null_in_path(&path)?;
         let bin = args
             .iter()
@@ -230,7 +264,7 @@ impl Interpreter {
             None
         });
         if bin {
-            let bytes = fs::read(&path)
+            let bytes = fs::read(&path_buf)
                 .map_err(|err| RuntimeError::new(format!("Failed to slurp '{}': {}", path, err)))?;
             let byte_vals: Vec<Value> = bytes
                 .into_iter()
@@ -247,12 +281,12 @@ impl Interpreter {
             lower != "utf-8" && lower != "utf8"
         });
         if needs_non_utf8 {
-            let bytes = fs::read(&path)
+            let bytes = fs::read(&path_buf)
                 .map_err(|err| RuntimeError::new(format!("Failed to slurp '{}': {}", path, err)))?;
             let decoded = self.decode_with_encoding(&bytes, enc.as_ref().unwrap())?;
             Ok(Value::str(super::utils::translate_nl_in(decoded)))
         } else {
-            let content = fs::read_to_string(&path)
+            let content = fs::read_to_string(&path_buf)
                 .map_err(|err| RuntimeError::new(format!("Failed to slurp '{}': {}", path, err)))?;
             let content = super::utils::decode_text_content(content);
             Ok(Value::str(content))
@@ -278,10 +312,10 @@ impl Interpreter {
                 .collect();
             return self.native_io_handle(&(attributes).as_map(), "spurt", method_args);
         }
-        let path = args
-            .first()
-            .map(|v| v.to_string_value())
-            .ok_or_else(|| RuntimeError::new("spurt requires a path argument"))?;
+        let Some(path_arg) = args.first() else {
+            return Err(RuntimeError::new("spurt requires a path argument"));
+        };
+        let (resolved, path) = self.resolve_io_arg_path(path_arg);
         check_null_in_path(&path)?;
         let content_value = args
             .get(1)
@@ -299,7 +333,6 @@ impl Interpreter {
                 }
             }
         }
-        let resolved = self.resolve_path(&path);
         if createonly && resolved.exists() {
             return Ok(io_exception_failure(
                 "X::IO::Spurt",
