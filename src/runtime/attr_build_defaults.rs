@@ -192,6 +192,7 @@ impl Interpreter {
             } else {
                 val
             };
+            let val = Self::itemize_attr_store_value(d.sigil, val);
             cell.insert(key, val);
         }
         Ok(())

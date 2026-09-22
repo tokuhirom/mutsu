@@ -134,7 +134,13 @@ impl Interpreter {
     /// the same reason [`Self::check_attr_store_type`] and
     /// [`Self::attr_store_nil_default`] are: they are two spellings of one
     /// accessor, and a rule that lives in only one of them is a divergence
-    /// waiting to be reported.
+    /// waiting to be reported. Also applied to a `has $.x = <default>`
+    /// initializer's evaluated value at every construction site that seeds an
+    /// attribute cell directly (`dispatch_new`'s pre- and post-BUILD fills,
+    /// `dispatch_bless`, and the native default-constructor fast path) — those
+    /// sites are not reachable from `assign_method_lvalue_with_values`, so an
+    /// object read back `{:a(1)}` for a still-default attribute where the same
+    /// value read `${:a(1)}` once written through the accessor (#9040).
     pub(crate) fn itemize_attr_store_value(attr_sigil: char, value: Value) -> Value {
         if attr_sigil != '$' {
             return value;
