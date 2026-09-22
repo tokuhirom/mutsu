@@ -97,6 +97,26 @@ is dominated by method dispatch and `Value` construction, so removing ~970
 instructions per call moves it 1.4x, not 16x. The scanning benchmark is the
 one where General_Category was the whole cost.
 
+## Correction (2026-09-22): the `Word_Break` rakudo ratio above is overstated
+
+The `.uniprop('Word_Break')` row says 49x slower than rakudo before and 3.2x
+after. The before/after ratio holds, but **both absolute figures include the
+one-time lazy compilation of `unicode_script_name`'s 161 regexes**, amortized
+over only 1,140 calls. That compilation costs 5.52 ms, or 4.8 us of every one
+of those 1,140 calls, so the "3.2x slower than rakudo" comparison measures
+mutsu's start-up against rakudo's steady state.
+
+Re-measured one case per process at n=5,200 after a warm-up, the commit this
+entry describes left mutsu at **2.973 us** per ASCII letter and **3.127 us**
+per hiragana against rakudo's 3.063 us and 3.116 us -- that is parity, not
+3.2x. The same mistake is written up at length, with the two rules that
+prevent it, in
+[the Script table entry](script-lookup-stops-being-161-regexes-per-character.md).
+
+The other three rows are not affected: `findnotcclass` runs 4 M characters and
+`.uniprop` 20,800, so a 5.52 ms constant is noise in both, and
+`.unimatch('Alphabetic')`'s cost was a `Regex::new` *per call*, not once.
+
 ## Not done here
 
 `unicode_script_name` has the same shape the General_Category probe had —
