@@ -1,6 +1,6 @@
 use Test;
 
-plan 4;
+plan 5;
 
 {
     sub prefix:<X> ($thing) { return "ROUGHLY$thing"; }
@@ -20,4 +20,10 @@ plan 4;
 {
     my sub prefix:<->($thing) { return "CROSS$thing"; }
     is -"fish", "CROSSfish", "custom prefix overrides built-in operator";
+}
+
+{
+    sub prefix:<@> ($thing) { return "AT$thing"; }
+    my @values = [1, 2, 3];
+    is-deeply @values, [1, 2, 3], "a prefix:<@> does not shadow an adjacent array variable";
 }

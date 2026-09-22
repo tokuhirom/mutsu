@@ -156,14 +156,14 @@ impl Interpreter {
             }
             table.insert(
                 method_name.clone(),
-                self.make_method_object_with_owner(
+                self.mark_method_table_entry(self.make_method_object_with_owner(
                     &method_name,
                     first,
                     overloads.len() > 1,
                     first.return_type.clone(),
                     Some(&overloads),
                     Some(class_name),
-                ),
+                )),
             );
         }
         for native_name in &class_def.native_methods {
@@ -200,14 +200,14 @@ impl Interpreter {
             }
             table.insert(
                 method_name.clone(),
-                self.make_method_object_with_owner(
+                self.mark_method_table_entry(self.make_method_object_with_owner(
                     &method_name,
                     first,
                     overloads.len() > 1,
                     first.return_type.clone(),
                     Some(&overloads),
                     Some(class_name),
-                ),
+                )),
             );
         }
         table
@@ -386,6 +386,27 @@ impl Interpreter {
             None,
             0,
         )
+    }
+
+    /// Mark entries returned by `.^method_table`/`.^private_method_table` so
+    /// `CALL-ME` can distinguish them from ordinary `.^lookup` results. The
+    /// latter must invoke their attached callable directly: grammar tokens and
+    /// private NQP cursor methods carry the same lookup metadata but their
+    /// first argument is a cursor, not the object on which the method name
+    /// should be redispatched.
+    fn mark_method_table_entry(&self, value: Value) -> Value {
+        match value.view() {
+            ValueView::Instance {
+                class_name,
+                attributes,
+                ..
+            } => {
+                let mut attrs = attributes.as_map().clone();
+                attrs.insert("__mutsu_method_table_entry".to_string(), Value::TRUE);
+                Value::make_instance(class_name, attrs)
+            }
+            _ => value,
+        }
     }
 
     /// `is_multi_candidate`: this object is one entry of a multi family's

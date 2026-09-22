@@ -1,6 +1,6 @@
 use Test;
 
-plan 8;
+plan 10;
 
 # #8836: `.^private_method_table` was entirely unimplemented
 # ("No such method 'private_method_table' for invocant of type
@@ -33,3 +33,18 @@ nok %table<inherited-private>:exists,
     'an ancestor\'s private method is not in the own table';
 nok %table<from-role>:exists,
     'a public role-composed method is not in the private table';
+
+# Method-table entries are callable with the invocant as their first argument.
+# Keep the return value observable through an attribute assignment: the
+# reflective call must use the compiled method frame, not an AST carrier that
+# drops the final assignment's value.
+class CallableTable {
+    has $!value;
+    method public-write() { $!value = 41 }
+    method !private-write() { $!value = 42 }
+}
+my $callable = CallableTable.new;
+is CallableTable.^method_table<public-write>($callable), 41,
+    'a public method-table entry returns its final attribute assignment';
+is CallableTable.^private_method_table<private-write>($callable), 42,
+    'a private method-table entry returns its final attribute assignment';
