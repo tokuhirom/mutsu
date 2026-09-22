@@ -543,6 +543,26 @@ pub(in crate::parser) fn try_parse_assign_expr(input: &str) -> PResult<'_, Expr>
                 crate::parser::expr::precedence::assign_to_target_expr(rhs, value),
             ));
         }
+        // The expression-position twin of the statement rewrite in
+        // `assign_stmt`: `X`/`Z` over an assignment infix accumulates into the
+        // left cells in place, so it lowers to the `op=` spelling of `MetaOp`
+        // (which the compiler turns into `OpCode::MetaOpAssign`, writing the
+        // container back itself) rather than to `lhs = (lhs X op rhs)`. The
+        // expression's value is the Seq of per-op results, which for `X`
+        // differs from the mutated container -- `my $v = (@f X+= (10, 20))`
+        // leaves `@f` `[31, 32]` and `$v` `(11, 31, 12, 32)`. See that comment
+        // for why the old lowering was wrong and why `%` keeps it.
+        if (meta == "X" || meta == "Z") && op != "=" && matches!(sigil, b'$' | b'@') {
+            return Ok((
+                rest,
+                Expr::MetaOp {
+                    meta,
+                    op: format!("{op}="),
+                    left: Box::new(var_expr),
+                    right: Box::new(rhs),
+                },
+            ));
+        }
         return Ok((
             rest,
             Expr::AssignExpr {

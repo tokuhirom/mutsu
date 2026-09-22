@@ -219,6 +219,42 @@ pub(in crate::parser) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
             let assign = crate::parser::expr::precedence::assign_to_target_expr(rhs, value);
             return parse_statement_modifier(rest, Stmt::Expr(assign));
         }
+        // `@a X+= rhs` / `@a Z+= rhs` is the meta-operator applied to the
+        // ASSIGNMENT infix `+=`, not to the plain infix `+` with an assignment
+        // wrapped around it. Every right value accumulates into a left cell in
+        // place, the left index slowest for `X`, and the left container keeps
+        // its length. The old `@a = (@a X+ rhs)` lowering (which the comment at
+        // the head of this block still described) instead produced the
+        // flattened cross, growing a 2-element left container to 4:
+        // `my @d = 1,2; @d X+= (10,20)` gave `[11, 21, 12, 22]` for rakudo's
+        // `[31, 32]`.
+        //
+        // It was only ever right for `Z` at equal lengths, which is why `Z+=`
+        // looked correct: `@a = (@a Z+ rhs)` drops the left's trailing cells,
+        // so `my @c = 1,2,3; @c Z+= (10,20)` gave `[11, 22]` where rakudo keeps
+        // the untouched `3`.
+        //
+        // The `op=` spelling of `MetaOp` is exactly what the bracket form
+        // `@a X[+=] rhs` already produces, and the compiler lowers it to
+        // `OpCode::MetaOpAssign`, which mutates the left cells and writes the
+        // container back itself. So this is an expression statement and not a
+        // `Stmt::Assign`: an outer assignment would store the per-op result Seq
+        // over the container the opcode just mutated.
+        //
+        // TODO: compile to bytecode a `%`-sigil writeback so a Hash left can
+        // take this path too. `meta_assign_writeback_target` handles only
+        // `$`/`@`, and rakudo itself dies on `%h X+= (10, 20)`, so the old
+        // lowering is left in place for `%` rather than silently changing an
+        // already-wrong result.
+        if (meta == "X" || meta == "Z") && op != "=" && matches!(sigil, b'$' | b'@') {
+            let expr = Expr::MetaOp {
+                meta,
+                op: format!("{op}="),
+                left: Box::new(var_expr),
+                right: Box::new(rhs),
+            };
+            return parse_statement_modifier(rest, Stmt::Expr(expr));
+        }
         let expr = Expr::MetaOp {
             meta,
             op,
