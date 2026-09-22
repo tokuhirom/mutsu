@@ -18,7 +18,7 @@
         "nok": 0,
         "ok": 25,
         "plan": 25,
-        "secs": 0.22,
+        "secs": 0.68,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -28,7 +28,7 @@
         "nok": 0,
         "ok": 25,
         "plan": 25,
-        "secs": 4.09,
+        "secs": 13.05,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -40,7 +40,7 @@
         "nok": 0,
         "ok": 16,
         "plan": 16,
-        "secs": 0.27,
+        "secs": 0.7,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -50,7 +50,7 @@
         "nok": 0,
         "ok": 16,
         "plan": 16,
-        "secs": 0.43,
+        "secs": 1.66,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -62,7 +62,7 @@
         "nok": 0,
         "ok": 8,
         "plan": 8,
-        "secs": 0.2,
+        "secs": 0.61,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -72,7 +72,7 @@
         "nok": 0,
         "ok": 8,
         "plan": 8,
-        "secs": 0.32,
+        "secs": 0.85,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -84,7 +84,7 @@
         "nok": 0,
         "ok": 11,
         "plan": 11,
-        "secs": 0.2,
+        "secs": 0.52,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -94,7 +94,7 @@
         "nok": 0,
         "ok": 11,
         "plan": 11,
-        "secs": 0.33,
+        "secs": 1.21,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -106,7 +106,7 @@
         "nok": 0,
         "ok": 12,
         "plan": 12,
-        "secs": 0.16,
+        "secs": 0.46,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -116,7 +116,7 @@
         "nok": 0,
         "ok": 12,
         "plan": 12,
-        "secs": 0.26,
+        "secs": 0.81,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -136,8 +136,8 @@
     "attempts": 3,
     "date": "2026-09-22",
     "harness": 2,
-    "host": "linux-x86_64",
-    "mutsu_commit": "c72be3865",
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "61fb271",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",

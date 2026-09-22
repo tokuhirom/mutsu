@@ -21,9 +21,9 @@
       "mutsu": {
         "first_failure": "is the subpath not present",
         "nok": 1,
-        "ok": 9,
+        "ok": 12,
         "plan": 33,
-        "secs": 1.31,
+        "secs": 0.88,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -33,7 +33,7 @@
         "nok": 0,
         "ok": 33,
         "plan": 33,
-        "secs": 18.44,
+        "secs": 14.19,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -42,11 +42,11 @@
     {
       "cmp": "partial",
       "mutsu": {
-        "first_failure": "testing deb: /home/runner/.cache/mutsu-ecosystem/run/ecosweep-8jpk0ohz/dist/PURL-0.0.17/t/tests/types/deb-test.json",
-        "nok": 17,
-        "ok": 1,
+        "first_failure": "testing alpm: /home/runner/.cache/mutsu-ecosystem/run/ecosweep-t_4jycuo/dist/PURL-0.0.17/t/tests/types/alpm-test.json",
+        "nok": 28,
+        "ok": 2,
         "plan": 34,
-        "secs": 31.45,
+        "secs": 43.12,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -56,30 +56,29 @@
         "nok": 0,
         "ok": 34,
         "plan": 34,
-        "secs": 2.95,
+        "secs": 2.1,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "partial",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Checking examples of mlflow",
-        "nok": 1,
-        "ok": 32,
+        "nok": 0,
+        "ok": 33,
         "plan": 33,
-        "secs": 1.62,
+        "secs": 0.95,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "pass"
       },
       "path": "t/03-examples.rakutest",
       "raku": {
         "nok": 0,
         "ok": 33,
         "plan": 33,
-        "secs": 1.22,
+        "secs": 1.03,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -92,10 +91,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-21",
+    "date": "2026-09-22",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "ae07b22",
+    "mutsu_commit": "61fb271",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -106,13 +105,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/P/UR/PURL/19b68b9221e44a98780a056a5b8e116e869e02c6.tar.gz"
   },
-  "status": "red",
+  "status": "partial",
   "totals": {
     "baseline_assertions": 100,
     "baseline_files": 3,
-    "mutsu_assertions": 42,
-    "parity_files": 0,
-    "regressed_files": 3
+    "mutsu_assertions": 47,
+    "parity_files": 1,
+    "regressed_files": 2
   },
   "version": "0.0.17"
 }

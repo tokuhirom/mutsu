@@ -34,7 +34,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.07,
+        "secs": 0.04,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -43,11 +43,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "Failed to open '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-ccudw6j7/dist/Distribution-Extension-Updater-0.0.3/t/dirty/test1.t': creating or truncating a file requires write or append access",
+        "first_failure": "Failed to open '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-j1ads26m/dist/Distribution-Extension-Updater-0.0.3/t/dirty/test1.t': creating or truncating a file requires write or append access",
         "nok": 0,
         "ok": 0,
         "plan": 18,
-        "secs": 0.21,
+        "secs": 0.15,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -57,7 +57,7 @@
         "nok": 0,
         "ok": 18,
         "plan": 18,
-        "secs": 7.05,
+        "secs": 5.0,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -69,10 +69,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-21",
+    "date": "2026-09-22",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "ae07b22",
+    "mutsu_commit": "61fb271",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",

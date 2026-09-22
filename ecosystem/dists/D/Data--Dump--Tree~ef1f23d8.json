@@ -29,7 +29,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 1.55,
+        "secs": 0.7,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -39,7 +39,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 12.79,
+        "secs": 6.88,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -52,7 +52,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 1,
-        "secs": 1.62,
+        "secs": 0.84,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -62,7 +62,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 3.42,
+        "secs": 1.7,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -76,30 +76,30 @@
         "nok": 2,
         "ok": 2,
         "plan": 4,
-        "secs": 1.53,
+        "secs": 0.91,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
       }
     },
     {
-      "cmp": "partial",
+      "cmp": "regression",
       "mutsu": {
-        "first_failure": "not ok 1 -",
-        "nok": 1,
+        "first_failure": "stty: 'standard input': Inappropriate ioctl for device",
+        "nok": 0,
         "ok": 0,
         "plan": 23,
-        "secs": 1.75,
+        "secs": 1.11,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "die"
       },
       "path": "t/04_flat.rakutest",
       "raku": {
         "nok": 0,
         "ok": 23,
         "plan": 23,
-        "secs": 15.47,
+        "secs": 10.26,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -113,7 +113,7 @@
         "nok": 4,
         "ok": 0,
         "plan": 4,
-        "secs": 1.49,
+        "secs": 0.78,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -122,11 +122,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "No such method 'assuming' for invocant of type 'Method'",
+        "first_failure": "stty: 'standard input': Inappropriate ioctl for device",
         "nok": 0,
         "ok": 0,
         "plan": 11,
-        "secs": 1.7,
+        "secs": 0.82,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -136,7 +136,7 @@
         "nok": 0,
         "ok": 11,
         "plan": 11,
-        "secs": 3.58,
+        "secs": 2.07,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -150,7 +150,7 @@
         "nok": 2,
         "ok": 3,
         "plan": 5,
-        "secs": 1.87,
+        "secs": 0.94,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -164,7 +164,7 @@
         "nok": 3,
         "ok": 4,
         "plan": 7,
-        "secs": 1.86,
+        "secs": 1.02,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -178,7 +178,7 @@
         "nok": 6,
         "ok": 3,
         "plan": 9,
-        "secs": 2.74,
+        "secs": 1.77,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -187,11 +187,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "No such method 'assuming' for invocant of type 'Method'",
+        "first_failure": "stty: 'standard input': Inappropriate ioctl for device",
         "nok": 0,
         "ok": 0,
         "plan": 2,
-        "secs": 1.55,
+        "secs": 0.87,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -201,7 +201,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 1.95,
+        "secs": 0.93,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -215,7 +215,7 @@
         "nok": 7,
         "ok": 6,
         "plan": 13,
-        "secs": 2.0,
+        "secs": 1.35,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -229,7 +229,7 @@
         "nok": 1,
         "ok": 2,
         "plan": 3,
-        "secs": 1.24,
+        "secs": 0.93,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -243,7 +243,7 @@
         "nok": 3,
         "ok": 1,
         "plan": 4,
-        "secs": 1.4,
+        "secs": 0.98,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -252,11 +252,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "No such method 'assuming' for invocant of type 'Method'",
+        "first_failure": "stty: 'standard input': Inappropriate ioctl for device",
         "nok": 0,
-        "ok": 0,
+        "ok": 1,
         "plan": 2,
-        "secs": 1.7,
+        "secs": 0.97,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -266,7 +266,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 1.29,
+        "secs": 0.94,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -280,7 +280,7 @@
         "nok": 1,
         "ok": 1,
         "plan": 2,
-        "secs": 1.38,
+        "secs": 0.9,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -293,7 +293,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 4,
-        "secs": 1.65,
+        "secs": 1.03,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -303,7 +303,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 1.22,
+        "secs": 0.87,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -317,7 +317,7 @@
         "nok": 1,
         "ok": 3,
         "plan": 4,
-        "secs": 1.47,
+        "secs": 0.96,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -330,7 +330,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 8,
-        "secs": 1.69,
+        "secs": 0.89,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -340,7 +340,7 @@
         "nok": 0,
         "ok": 8,
         "plan": 8,
-        "secs": 1.6,
+        "secs": 1.06,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -354,7 +354,7 @@
         "nok": 5,
         "ok": 15,
         "plan": 20,
-        "secs": 2.79,
+        "secs": 1.8,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -368,7 +368,7 @@
         "nok": 16,
         "ok": 1,
         "plan": 17,
-        "secs": 3.03,
+        "secs": 1.89,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -382,7 +382,7 @@
         "nok": 3,
         "ok": 3,
         "plan": 6,
-        "secs": 1.57,
+        "secs": 0.79,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -396,7 +396,7 @@
         "nok": 2,
         "ok": 0,
         "plan": 2,
-        "secs": 1.22,
+        "secs": 0.6,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -409,7 +409,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 1,
-        "secs": 1.62,
+        "secs": 0.8,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -419,7 +419,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 1.18,
+        "secs": 0.62,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -433,7 +433,7 @@
         "nok": 8,
         "ok": 9,
         "plan": 17,
-        "secs": 3.11,
+        "secs": 1.64,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -447,7 +447,7 @@
         "nok": 3,
         "ok": 3,
         "plan": 6,
-        "secs": 1.73,
+        "secs": 1.07,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -460,7 +460,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 12,
-        "secs": 1.57,
+        "secs": 0.85,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -470,7 +470,7 @@
         "nok": 0,
         "ok": 12,
         "plan": 12,
-        "secs": 1.54,
+        "secs": 0.97,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -483,7 +483,7 @@
         "nok": 1,
         "ok": 3,
         "plan": 8,
-        "secs": 1.75,
+        "secs": 0.98,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -493,7 +493,7 @@
         "nok": 0,
         "ok": 8,
         "plan": 8,
-        "secs": 1.31,
+        "secs": 0.84,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -502,11 +502,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "No such method 'assuming' for invocant of type 'Method'",
+        "first_failure": "stty: 'standard input': Inappropriate ioctl for device",
         "nok": 0,
         "ok": 0,
         "plan": 1,
-        "secs": 1.82,
+        "secs": 0.95,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -516,7 +516,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 1.26,
+        "secs": 0.79,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -529,7 +529,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 4,
-        "secs": 1.62,
+        "secs": 0.83,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -539,30 +539,29 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 1.76,
+        "secs": 0.85,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "No such method 'assuming' for invocant of type 'Method'",
         "nok": 0,
-        "ok": 0,
+        "ok": 14,
         "plan": 14,
-        "secs": 1.69,
+        "secs": 1.11,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/80_title.rakutest",
       "raku": {
         "nok": 0,
         "ok": 14,
         "plan": 14,
-        "secs": 1.69,
+        "secs": 0.92,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -571,11 +570,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "No such method 'CALL-ME' for invocant of type 'AnsiColorizer'",
+        "first_failure": "stty: 'standard input': Inappropriate ioctl for device",
         "nok": 0,
         "ok": 0,
         "plan": 21,
-        "secs": 1.66,
+        "secs": 1.09,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -585,7 +584,7 @@
         "nok": 0,
         "ok": 21,
         "plan": 21,
-        "secs": 20.11,
+        "secs": 13.44,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -599,7 +598,7 @@
         "nok": 1,
         "ok": 1,
         "plan": 2,
-        "secs": 1.23,
+        "secs": 0.78,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -608,11 +607,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "No such method 'assuming' for invocant of type 'Method'",
+        "first_failure": "stty: 'standard input': Inappropriate ioctl for device",
         "nok": 0,
-        "ok": 1,
+        "ok": 4,
         "plan": 10,
-        "secs": 1.63,
+        "secs": 0.9,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -622,7 +621,7 @@
         "nok": 0,
         "ok": 10,
         "plan": 10,
-        "secs": 1.64,
+        "secs": 0.99,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -636,7 +635,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 26,
-        "secs": 4.87,
+        "secs": 2.79,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -644,8 +643,8 @@
     }
   ],
   "load": {
-    "DDT": "raku_also_fails",
-    "DDTR::ColorBlobLevel": "raku_also_fails",
+    "DDT": "ok",
+    "DDTR::ColorBlobLevel": "ok",
     "Data::Dump::Tree": "ok",
     "Data::Dump::Tree::Colorizer": "ok",
     "Data::Dump::Tree::DHTML": "ok",
@@ -662,10 +661,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-21",
+    "date": "2026-09-22",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "ae07b22",
+    "mutsu_commit": "61fb271",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -680,9 +679,9 @@
   "totals": {
     "baseline_assertions": 123,
     "baseline_files": 16,
-    "mutsu_assertions": 5,
-    "parity_files": 1,
-    "regressed_files": 15
+    "mutsu_assertions": 23,
+    "parity_files": 2,
+    "regressed_files": 14
   },
   "version": "2.9.4"
 }
