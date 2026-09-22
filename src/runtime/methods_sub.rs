@@ -188,7 +188,11 @@ impl Interpreter {
             return Some(Ok(if method == "line" {
                 line.map(|l| Value::int(l as i64)).unwrap_or(Value::NIL)
             } else {
-                file.map(Value::str).unwrap_or(Value::NIL)
+                file.map(|f| {
+                    let source_file = Symbol::intern(&f);
+                    Value::str(self.format_routine_file(f, Some(source_file)))
+                })
+                .unwrap_or(Value::NIL)
             }));
         }
         if method == "cando" && args.len() == 1 {
@@ -906,7 +910,11 @@ impl Interpreter {
             return Some(Ok(if method == "line" {
                 line.map(|l| Value::int(l as i64)).unwrap_or(Value::NIL)
             } else {
-                file.map(Value::str).unwrap_or(Value::NIL)
+                file.map(|f| {
+                    let source_file = Symbol::intern(&f);
+                    Value::str(self.format_routine_file(f, Some(source_file)))
+                })
+                .unwrap_or(Value::NIL)
             }));
         }
         if matches!(method, "of" | "returns") && args.is_empty() {

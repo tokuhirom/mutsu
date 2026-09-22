@@ -1,12 +1,38 @@
 //! Signature/candidate introspection: named-param keys, call-arg matching,
 //! candidate routine lookup, and arity/count Value builders.
 use super::*;
+use crate::symbol::Symbol;
 use crate::value::signature::{
     SubSignatureKey, cache_sub_signature, cached_sub_signature, extract_sig_info,
     make_signature_value_with_owner, param_defs_to_sig_info,
 };
 
 impl Interpreter {
+    /// Append Rakudo's `" (Package::Name)"` suffix to a `Code` object's
+    /// `.file` answer, matching real Raku's `Code.file` for a routine
+    /// declared in a real compilation unit (a `use`d/`require`d module) as
+    /// opposed to the mainline script. The suffix names the *compunit's own*
+    /// package identity — the `unit module`/`unit class` it declares, or (its
+    /// most common form in the ecosystem, e.g. `Identity::Utils`) the name it
+    /// was `use`d under when no such header exists — NOT the specific
+    /// lexical package the routine itself sits in: a method on a class
+    /// nested inside a module still reports the *module's* name, never the
+    /// class's (`Interpreter::lexical_package_for_frame` already implements
+    /// exactly this compunit-identity lookup for backtrace frames).
+    ///
+    /// This is not cosmetic: `Identity::Utils`'s ecosystem-wide "did this sub
+    /// come from my own compunit" idiom is exactly
+    /// `&code.file.ends-with("($module)")` (used to filter `UNIT::` symbol
+    /// lookups down to ones declared in the current file, e.g.
+    /// `Code::Coverable`'s `EXPORT`). Without the suffix every such check
+    /// fails and the module silently exports nothing (ecosystem `Code::Coverage`).
+    pub(super) fn format_routine_file(&self, file: String, source_file: Option<Symbol>) -> String {
+        match self.lexical_package_for_frame(source_file) {
+            Some(package) => format!("{file} ({})", package.resolve()),
+            None => file,
+        }
+    }
+
     pub(super) fn collect_named_param_keys(
         param_defs: &[ParamDef],
         out: &mut std::collections::HashSet<String>,

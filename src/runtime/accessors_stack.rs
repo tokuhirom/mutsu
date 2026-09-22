@@ -350,7 +350,7 @@ impl Interpreter {
     /// Find the unit-module package owning a routine or closure's body. EVAL
     /// units are not registered as modules themselves, but their parent unit
     /// is, so walk the same parent chain used by compilation-unit scoping.
-    fn lexical_package_for_frame(&self, def_file: Option<Symbol>) -> Option<Symbol> {
+    pub(super) fn lexical_package_for_frame(&self, def_file: Option<Symbol>) -> Option<Symbol> {
         // An empty module metadata table decides the answer on its own: no
         // module has been declared or loaded anywhere, therefore no frame has
         // a lexical package. Answering that here rather than by walking the
