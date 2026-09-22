@@ -284,6 +284,7 @@ impl Interpreter {
                                 .get(&sigiled_name)
                                 .cloned()
                                 .or_else(|| self.env.get(&bare_name).cloned())
+                                .or_else(|| self.regex_package_chain_var_fallback(&sigiled_name))
                                 .unwrap_or(Value::NIL);
                             let value = value.into_deref();
                             let entries: Vec<String> = match value.view() {
@@ -384,6 +385,7 @@ impl Interpreter {
                             .get(&name)
                             .cloned()
                             .or_else(|| self.env.get(&format!("${name}")).cloned())
+                            .or_else(|| self.regex_package_chain_var_fallback(&format!("${name}")))
                             .unwrap_or(Value::NIL);
                         let value = value.into_deref();
                         Self::check_hash_in_regex(&value)?;
@@ -656,6 +658,7 @@ impl Interpreter {
                         super::regex::regex_helpers::interp_closure_scope_get(&sigiled_name)
                             .or_else(|| self.env.get(&sigiled_name).cloned())
                             .or_else(|| self.env.get(&bare_name).cloned())
+                            .or_else(|| self.regex_package_chain_var_fallback(&sigiled_name))
                             .unwrap_or(Value::NIL);
                     // Slice 2a: a `=`-array-shared source (`my $r = @var`) promotes
                     // `@var` to a `ContainerRef` cell; deref it so the array

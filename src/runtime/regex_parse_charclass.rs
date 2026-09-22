@@ -1172,6 +1172,8 @@ impl Interpreter {
             )),
             ..Default::default()
         };
+        interp.package_lexicals = self.package_lexicals.clone();
+        interp.module_scope_lexicals = self.module_scope_lexicals.clone();
         self.copy_decl_registry_into(&mut interp);
         // A `<$re>` reference re-resolving `$re`'s OWN pattern text (issue
         // #8951) needs `$re`'s defining scope here, not this call's ambient

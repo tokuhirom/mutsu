@@ -345,7 +345,8 @@ impl Interpreter {
         // `handles` on a role method: synthesize forwarder methods.
         if !is_role_private && !decl.handles.is_empty() {
             let source_attr_marker = format!("&{}", resolved_method_name);
-            for spec in &decl.handles {
+            let handles = self.expand_handle_specs(&decl.handles);
+            for spec in &handles {
                 match spec {
                     HandleSpec::Name(target) => {
                         cx.role_def
@@ -372,6 +373,8 @@ impl Interpreter {
                             .push(format!("{}:regex:{}", source_attr_marker, pattern));
                     }
                     HandleSpec::Type(_) => {}
+                    // Expression-backed specs are expanded before this branch.
+                    HandleSpec::Expr(_) => {}
                 }
             }
         }

@@ -524,7 +524,8 @@ impl Interpreter {
                     if !decl.handles.is_empty() && self.registry().classes.contains_key(name) {
                         let owner = Symbol::intern(name);
                         let source_attr_marker = format!("&{}", resolved_method_name);
-                        for spec in &decl.handles {
+                        let handles = self.expand_handle_specs(&decl.handles);
+                        for spec in &handles {
                             match spec {
                                 HandleSpec::Name(target) => {
                                     self.registry_mut().push_user_method(
@@ -558,6 +559,10 @@ impl Interpreter {
                                     }
                                 }
                                 HandleSpec::Type(_) => {}
+                                // Expression-backed specs are expanded before
+                                // this branch; ignore one left by a partial
+                                // declaration rather than panicking.
+                                HandleSpec::Expr(_) => {}
                             }
                         }
                     }

@@ -3016,6 +3016,21 @@ impl Interpreter {
                 method,
                 "DEFINITE" | "WHAT" | "WHO" | "HOW" | "WHERE" | "VAR"
             );
+            // A class-level public accessor shadows a same-named method from a
+            // composed role. The VM opcode handles ordinary zero-argument
+            // accessor reads before entering this runtime mut-dispatch lane,
+            // but delegated `handles` calls arrive here directly. Keep the
+            // same per-MRO precedence so `Card.street` reads its delegated
+            // address attribute instead of Contact::Address.street's type
+            // object method.
+            if args.is_empty()
+                && matches!(
+                    self.resolve_user_method_or_accessor(&class_name.resolve(), method),
+                    Some(crate::runtime::UserMethodOrAccessor::Accessor)
+                )
+            {
+                return self.call_method_with_values(target, method, args);
+            }
             if self.has_user_method(&class_name.resolve(), method)
                 && (!is_pseudo_method || skip_pseudo)
             {
