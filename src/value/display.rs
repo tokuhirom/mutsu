@@ -861,6 +861,17 @@ impl Value {
                 .get("text")
                 .map(|v: &Value| v.to_string_value())
                 .unwrap_or_default(),
+            // A `CompUnit` (from `need` / `resolve`) stringifies as its
+            // short-name, as in Rakudo.
+            ValueView::Instance {
+                class_name,
+                attributes,
+                ..
+            } if class_name == "CompUnit" => attributes
+                .as_map()
+                .get("short-name")
+                .map(|v: &Value| v.to_string_value())
+                .unwrap_or_default(),
             ValueView::Instance {
                 class_name,
                 attributes,

@@ -143,7 +143,7 @@ impl Interpreter {
                 .or_else(|| meta.hash_get_str("version"))
                 .map(|v| v.to_string_value())
                 .unwrap_or_default();
-            if meta_ver != *ver_m {
+            if !Self::version_matcher_accepts(&meta_ver, ver_m) {
                 return false;
             }
         }
@@ -152,11 +152,24 @@ impl Interpreter {
                 .hash_get_str("api")
                 .map(|v| v.to_string_value())
                 .unwrap_or_default();
-            if meta_api != *api_m {
+            if !Self::version_matcher_accepts(&meta_api, api_m) {
                 return false;
             }
         }
         true
+    }
+
+    /// A depspec's version/api matcher is smartmatched against the
+    /// distribution's version, as in Rakudo (`$meta-ver ~~ Version.new($m)`):
+    /// `0.3.5+` accepts any later version, `1.*` any 1.x, and a Bool `True`
+    /// matcher (the unset default) or `*` accepts everything.
+    fn version_matcher_accepts(meta_ver: &str, matcher: &str) -> bool {
+        if matcher.is_empty() || matcher == "True" || matcher == "*" {
+            return true;
+        }
+        let (parts, plus, minus) = Value::parse_version_string(matcher.trim_start_matches('v'));
+        let meta = Value::version_from_str(meta_ver.trim_start_matches('v'));
+        Self::version_smart_match(&meta, &parts, plus, minus)
     }
 
     /// Get candidates for a CompUnit::Repository::FileSystem.

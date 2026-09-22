@@ -542,6 +542,8 @@ static CATALOG: &[BuiltinTypeInfo] = &[
     row!("Distribution::Path", mro: ["Distribution::Path", "Any", "Mu"], roles: [], owner: ""),
     row!("Distribution::Hash", mro: ["Distribution::Hash", "Any", "Mu"], roles: [], owner: ""),
     // ---- CompUnit family ----
+    row!("CompUnit", mro: ["CompUnit", "Any", "Mu"], roles: [], owner: ""),
+    row!("CompUnit::Handle", mro: ["CompUnit::Handle", "Any", "Mu"], roles: [], owner: ""),
     row!(
         "CompUnit::DependencySpecification",
         mro: ["CompUnit::DependencySpecification", "Any", "Mu"],

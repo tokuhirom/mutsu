@@ -1034,6 +1034,18 @@ impl Interpreter {
                     // Shared single implementation with the VM's native fast path.
                     return Ok(Self::build_native_proxy_value(&args));
                 }
+                // `CompUnit.new(:short-name, :repo, :repo-id, ...)`: a plain
+                // record of its named arguments, read back by the accessors in
+                // `methods_distribution_cur_compunit`.
+                "CompUnit" => {
+                    let mut attrs = HashMap::new();
+                    for arg in &args {
+                        if let ValueView::Pair(key, value) = arg.view() {
+                            attrs.insert(key.to_string(), value.clone());
+                        }
+                    }
+                    return Ok(Value::make_instance(*class_name, attrs));
+                }
                 "CompUnit::DependencySpecification" => {
                     let mut short_name: Option<String> = None;
                     let mut auth_matcher: Option<String> = None;
@@ -1168,11 +1180,14 @@ impl Interpreter {
                 }
                 "CompUnit::Repository::FileSystem" => {
                     let mut prefix = ".".to_string();
+                    let mut next_repo = None;
                     for arg in &args {
-                        if let ValueView::Pair(key, value) = arg.view()
-                            && key == "prefix"
-                        {
-                            prefix = value.to_string_value();
+                        if let ValueView::Pair(key, value) = arg.view() {
+                            if key == "prefix" {
+                                prefix = value.to_string_value();
+                            } else if key == "next-repo" && value.truthy() {
+                                next_repo = Some(value.clone());
+                            }
                         }
                     }
                     let prefix_path = if prefix.is_empty() { "." } else { &prefix };
@@ -1191,6 +1206,11 @@ impl Interpreter {
                     );
                     attrs.insert("short-id".to_string(), Value::str_from("file"));
                     attrs.insert("__mutsu_precomp_enabled".to_string(), Value::FALSE);
+                    // Like Rakudo, the per-prefix instance is created once, so
+                    // the first construction's `next-repo` is the one that sticks.
+                    if let Some(next) = next_repo {
+                        attrs.insert("next-repo".to_string(), next);
+                    }
                     let repo = Value::make_instance(*class_name, attrs);
                     self.env.insert(cache_key, repo.clone());
                     return Ok(repo);
