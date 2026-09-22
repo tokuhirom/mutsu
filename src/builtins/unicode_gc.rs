@@ -8,7 +8,7 @@
 //! `nqp::findcclass`/`findnotcclass`, by `.uniprop`, by collation and by the
 //! segmentation properties -- so a JSON decode paid it 23,520 times.
 //!
-//! It is now a table lookup against [`unicode_gc_data`], which is generated
+//! It is now a table lookup against [`super::unicode_gc_data`], which is generated
 //! from `regex-syntax`'s own Unicode tables (see that module's header) and so
 //! answers exactly what the regexes did. Three tiers, cheapest first:
 //!
