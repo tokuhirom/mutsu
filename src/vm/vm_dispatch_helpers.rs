@@ -192,6 +192,20 @@ impl Interpreter {
             self.reconcile_caller_after_internal_dispatch(caller_code);
             return Interpreter::apply_reduction_op(normalized_op, &l, right);
         }
+        // Function composition (`o`/`∘`) builds a fresh Callable per pair
+        // rather than folding two `Value`s through a static table entry, and
+        // needs `self` to resolve the composed sub's parameter signature
+        // (`compose_callables`) -- the same reason `eqv`/`=~=`/the numeric
+        // comparisons above are special-cased instead of living in
+        // `apply_reduction_op`, which is a pure function of two `Value`s.
+        // Plain `infix:<o>` never reaches this leaf at all (it compiles
+        // straight to `OpCode::FunctionCompose`); only a `Z`/`X`/hyper/
+        // reduction meta-op routes a composition through here, and without
+        // this arm it fell to `apply_reduction_op`'s catch-all
+        // "Unsupported reduction operator" error (#9050).
+        if normalized_op == "o" {
+            return Ok(self.compose_callables(left.clone(), right.clone()));
+        }
         match Interpreter::apply_reduction_op(normalized_op, left, right) {
             Ok(v) => Ok(v),
             Err(err) if err.message.starts_with("Unsupported reduction operator:") => {
