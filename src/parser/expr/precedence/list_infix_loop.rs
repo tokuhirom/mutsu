@@ -421,30 +421,28 @@ fn parse_list_infix_loop_impl<'a>(
         // comma-boundary logic needs `expression()` to leave the operator
         // alone — the same reason the bracket branch in `precedence/logic.rs`
         // limits itself to subscripted lvalues.
-        if matches!(left, Expr::ArrayLiteral(_))
-            || matches!(&left, Expr::Grouped(inner) if matches!(inner.as_ref(), Expr::ArrayLiteral(_)))
+        if (matches!(left, Expr::ArrayLiteral(_))
+            || matches!(&left, Expr::Grouped(inner) if matches!(inner.as_ref(), Expr::ArrayLiteral(_))))
+            && let Some((stripped, meta, op_name)) = parse_meta_compound_assign_op(r)
+            && (meta == "X" || meta == "Z")
+            && op_name != "="
         {
-            if let Some((stripped, meta, op_name)) = parse_meta_compound_assign_op(r)
-                && (meta == "X" || meta == "Z")
-                && op_name != "="
-            {
-                let (r, _) = ws(stripped)?;
-                let (r, rhs) = parse_assign_expr_or_comma(r).map_err(|err| {
-                    enrich_expected_error(
-                        err,
-                        "expected expression after meta compound assignment",
-                        r.len(),
-                    )
-                })?;
-                *left = Expr::MetaOp {
-                    meta,
-                    op: format!("{op_name}="),
-                    left: Box::new(left.clone()),
-                    right: Box::new(rhs),
-                };
-                rest = r;
-                continue;
-            }
+            let (r, _) = ws(stripped)?;
+            let (r, rhs) = parse_assign_expr_or_comma(r).map_err(|err| {
+                enrich_expected_error(
+                    err,
+                    "expected expression after meta compound assignment",
+                    r.len(),
+                )
+            })?;
+            *left = Expr::MetaOp {
+                meta,
+                op: format!("{op_name}="),
+                left: Box::new(left.clone()),
+                right: Box::new(rhs),
+            };
+            rest = r;
+            continue;
         }
         if let Some((meta, op, len)) = parse_meta_op(r) {
             // A reversed range meta-op (`R..`, `R^..`, `R..^`, `R^..^`) carries the
