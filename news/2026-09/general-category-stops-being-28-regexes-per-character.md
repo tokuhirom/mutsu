@@ -74,7 +74,28 @@ call sites in `runtime::unicode` that stringified a `char` per match now
 Release build, paired A/B against `main` minutes apart, first run of each
 discarded per the warm/cold rule in `.agents/skills/perf-tuning/SKILL.md`:
 
-<!--MEASUREMENTS-->
+| benchmark | before | after | rakudo | speedup |
+| --- | ---: | ---: | ---: | ---: |
+| `findnotcclass` over 4 M characters | 0.2753 s | **0.0172 s** | 0.0212 s | **16.0x** |
+| `.uniprop` x 20,800, mixed ASCII/CJK/punctuation | 0.0478 s | **0.0340 s** | — | 1.4x |
+| `.unimatch('Alphabetic')` x 1,140 | 0.3388 s | **0.0036 s** | 0.0041 s | **94x** |
+| `.uniprop('Word_Break')` x 1,140 | 0.2416 s | **0.0158 s** | 0.0049 s | **15.3x** |
+
+Three runs of each after a discarded warm-up; the `before` column is the
+`main` binary measured on the same box minutes earlier, the same way. The
+rakudo column is the reference implementation on the same box.
+
+Two of those now run *faster than rakudo*. `findnotcclass` was **10.7x slower
+than rakudo** in the issue's measurement and is now slightly faster than it;
+`.unimatch('Alphabetic')` was 83x slower and is now slightly faster.
+`.uniprop('Word_Break')` went from 49x slower to 3.2x, and what remains there
+is `unicode_script_name` and the segmentation properties' own `String`
+returns, not General_Category.
+
+The `.uniprop` row is the modest one and worth saying so: at 20,800 calls it
+is dominated by method dispatch and `Value` construction, so removing ~970
+instructions per call moves it 1.4x, not 16x. The scanning benchmark is the
+one where General_Category was the whole cost.
 
 ## Not done here
 
