@@ -363,8 +363,7 @@ impl Interpreter {
             // Zip: element-wise up to the shorter length.
             let n = left_cells.len().min(right_list.len());
             for i in 0..n {
-                let v =
-                    self.eval_infix_shape(op_shape.as_ref(), &left_cells[i], &right_list[i])?;
+                let v = self.eval_infix_shape(op_shape.as_ref(), &left_cells[i], &right_list[i])?;
                 left_cells[i] = v.clone();
                 results.push(v);
             }

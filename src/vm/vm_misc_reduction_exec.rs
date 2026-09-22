@@ -134,7 +134,7 @@ impl Interpreter {
         // `[R op] @list` == `[op] @list.reverse` (and likewise for the scan form
         // `[\R op]`). Reversing the operand list and stripping the `R` yields the
         // correct result for non-commutative / non-associative ops (`-`, `/`),
-        // where the per-step operand swap done by `eval_reduction_operator_values`
+        // where the per-step operand swap done by `eval_infix_shape`
         // would instead compute `[op]` right-folded (e.g. `[R/] 100,10,2` is
         // `2/10/100` = 0.002, not `100/(10/2)` = 20).
         //
@@ -234,8 +234,11 @@ impl Interpreter {
                         let start = right_edge - step;
                         let mut call_args = list[start..right_edge].to_vec();
                         call_args.push(acc);
-                        let v =
-                            self.reduction_step_with_args(op_shape.as_ref(), callable.as_ref(), call_args)?;
+                        let v = self.reduction_step_with_args(
+                            op_shape.as_ref(),
+                            callable.as_ref(),
+                            call_args,
+                        )?;
                         acc = if negate { Value::truth(!v.truthy()) } else { v };
                         out.push(acc.clone());
                         right_edge = start;
@@ -329,8 +332,8 @@ impl Interpreter {
                                     // Apply the Z/X op to all prefix elements
                                     let mut acc0 = list[0].clone();
                                     for item in list.iter().take(i + 1).skip(1) {
-                                        acc0 = self
-                                            .eval_infix_shape(op_shape.as_ref(), &acc0, item)?;
+                                        acc0 =
+                                            self.eval_infix_shape(op_shape.as_ref(), &acc0, item)?;
                                     }
                                     acc0
                                 };
@@ -519,8 +522,11 @@ impl Interpreter {
                 if list.len() == 1
                     && let Some(c) = callable.clone()
                 {
-                    let v =
-                        self.reduction_step_with_args(op_shape.as_ref(), Some(&c), vec![list[0].clone()])?;
+                    let v = self.reduction_step_with_args(
+                        op_shape.as_ref(),
+                        Some(&c),
+                        vec![list[0].clone()],
+                    )?;
                     let result = if negate { Value::truth(!v.truthy()) } else { v };
                     self.stack.push(result);
                     return Ok(());

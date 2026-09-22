@@ -122,6 +122,123 @@ fn hyper_delimiters_strip_both_ascii_and_unicode() {
     assert_eq!(strip_hyper_delimiters("+"), None);
 }
 
+/// The layers an operator decodes to, outermost first, plus its leaf — the
+/// whole observable content of an [`InfixShape`].
+fn shape_of(op: &str) -> (Vec<MetaLayer>, String, String) {
+    let shape = InfixShape::lower(op);
+    let mut cursor = shape.as_ref();
+    let mut layers = Vec::new();
+    while let Some((layer, inner)) = cursor.split_first() {
+        layers.push(layer);
+        cursor = inner;
+    }
+    (
+        layers,
+        cursor.leaf().to_string(),
+        cursor.canonical().to_string(),
+    )
+}
+
+#[test]
+fn a_plain_operator_has_no_meta_layers() {
+    let (layers, leaf, canonical) = shape_of("+");
+    assert!(layers.is_empty());
+    assert_eq!(leaf, "+");
+    assert_eq!(canonical, "+");
+}
+
+#[test]
+fn meta_layers_decode_outermost_first() {
+    assert_eq!(shape_of("R-").0, vec![MetaLayer::Reverse]);
+    assert_eq!(shape_of("Z+").0, vec![MetaLayer::Zip]);
+    assert_eq!(shape_of("Z").0, vec![MetaLayer::ZipTuple]);
+    assert_eq!(
+        shape_of("RZ-").0,
+        vec![MetaLayer::Reverse, MetaLayer::Zip],
+        "R wraps the Z, and both survive"
+    );
+    assert_eq!(shape_of("RZ-").1, "-");
+    assert_eq!(
+        shape_of("RR+").0,
+        vec![MetaLayer::Reverse, MetaLayer::Reverse],
+        "the VM cancels a double reverse by applying it twice"
+    );
+}
+
+#[test]
+fn the_reduction_bracket_is_transparent() {
+    // `[op]` as an INNER operator is `op` applied once, so it records no layer
+    // (the identity `MetaKind::Reduce` documents).
+    assert_eq!(shape_of("[+]").0, Vec::new());
+    assert_eq!(shape_of("[+]").1, "+");
+    assert_eq!(shape_of("[R+]").0, vec![MetaLayer::Reverse]);
+    // An unclosed or empty bracket is not one: it stays part of the leaf.
+    assert_eq!(shape_of("[]").1, "[]");
+    assert_eq!(shape_of("[+").1, "[+");
+}
+
+#[test]
+fn hyper_delimiters_carry_their_dwim_direction() {
+    assert_eq!(
+        shape_of(">>+<<").0,
+        vec![MetaLayer::Hyper {
+            dwim_left: false,
+            dwim_right: false
+        }]
+    );
+    assert_eq!(
+        shape_of("<<+>>").0,
+        vec![MetaLayer::Hyper {
+            dwim_left: true,
+            dwim_right: true
+        }]
+    );
+    assert_eq!(
+        shape_of(">>+>>").0,
+        vec![MetaLayer::Hyper {
+            dwim_left: false,
+            dwim_right: true
+        }]
+    );
+    assert_eq!(
+        shape_of("\u{00AB}+\u{00AB}").0,
+        vec![MetaLayer::Hyper {
+            dwim_left: true,
+            dwim_right: false
+        }],
+        "the Unicode delimiters carry the same directions"
+    );
+}
+
+#[test]
+fn the_leaf_keeps_its_spelling_and_offers_the_canonical_one() {
+    let (layers, leaf, canonical) = shape_of("Z\u{00D7}");
+    assert_eq!(layers, vec![MetaLayer::Zip]);
+    assert_eq!(
+        leaf, "\u{00D7}",
+        "the source spelling, for a user infix lookup"
+    );
+    assert_eq!(
+        canonical, "*",
+        "and the ASCII spelling the tables are keyed by"
+    );
+}
+
+#[test]
+fn as_plain_only_answers_for_an_unwrapped_leaf() {
+    assert_eq!(InfixShape::lower("=").as_ref().as_plain(), Some("="));
+    assert_eq!(InfixShape::lower("Z=").as_ref().as_plain(), None);
+    assert_eq!(InfixShape::lower("R~~").as_ref().as_plain(), None);
+}
+
+#[test]
+fn an_unknown_infix_decodes_to_a_bare_leaf() {
+    let (layers, leaf, _) = shape_of("my-op");
+    assert!(layers.is_empty());
+    assert_eq!(leaf, "my-op");
+    assert!(!is_builtin_infix(&leaf));
+}
+
 #[test]
 fn infix_names_are_memoized_per_operator() {
     let a = infix_names("+");
