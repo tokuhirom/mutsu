@@ -14,7 +14,7 @@
         "nok": 0,
         "ok": 56,
         "plan": 56,
-        "secs": 0.46,
+        "secs": 0.25,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -24,7 +24,7 @@
         "nok": 0,
         "ok": 56,
         "plan": 56,
-        "secs": 17.84,
+        "secs": 18.49,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -33,17 +33,17 @@
   ],
   "load": {
     "ClassicalChinese": "ok",
-    "古文": "raku_also_fails",
-    "文言": "raku_also_fails",
-    "文言文": "raku_also_fails",
-    "漢文": "raku_also_fails"
+    "古文": "ok",
+    "文言": "ok",
+    "文言文": "ok",
+    "漢文": "ok"
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-21",
+    "date": "2026-09-22",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "ae07b22",
+    "mutsu_commit": "61fb271",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",

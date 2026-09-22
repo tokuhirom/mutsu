@@ -18,7 +18,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 1.14,
+        "secs": 0.57,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -28,7 +28,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 21.61,
+        "secs": 9.87,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -42,7 +42,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 19,
-        "secs": 0.92,
+        "secs": 0.48,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -56,7 +56,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.94,
+        "secs": 0.32,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -70,7 +70,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 31,
-        "secs": 1.48,
+        "secs": 0.45,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -84,7 +84,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 5,
-        "secs": 0.98,
+        "secs": 0.36,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -98,7 +98,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 1.19,
+        "secs": 0.39,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -112,7 +112,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 1.35,
+        "secs": 0.58,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -126,7 +126,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 17,
-        "secs": 1.3,
+        "secs": 0.54,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -140,7 +140,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 2,
-        "secs": 1.03,
+        "secs": 0.51,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -154,7 +154,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.89,
+        "secs": 0.41,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -168,7 +168,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 28,
-        "secs": 0.98,
+        "secs": 0.35,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -182,7 +182,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 26,
-        "secs": 1.16,
+        "secs": 0.44,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -196,7 +196,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 21,
-        "secs": 1.2,
+        "secs": 0.51,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -210,7 +210,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 10,
-        "secs": 1.09,
+        "secs": 0.41,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -224,7 +224,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 1.31,
+        "secs": 0.56,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -238,7 +238,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 30,
-        "secs": 1.06,
+        "secs": 0.52,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -252,7 +252,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 1,
-        "secs": 1.14,
+        "secs": 0.5,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -266,7 +266,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 21,
-        "secs": 0.99,
+        "secs": 0.56,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -280,7 +280,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 4,
-        "secs": 0.96,
+        "secs": 0.5,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -290,25 +290,25 @@
   "load": {
     "Duckie": "ok",
     "Duckie::DuckDB::Native": "ok",
-    "Duckie::DuckDB::Native::Connection": "raku_also_fails",
-    "Duckie::DuckDB::Native::DataChunk": "raku_also_fails",
-    "Duckie::DuckDB::Native::Database": "raku_also_fails",
-    "Duckie::DuckDB::Native::Decimal": "raku_also_fails",
-    "Duckie::DuckDB::Native::DuckDate": "raku_also_fails",
-    "Duckie::DuckDB::Native::DuckTime": "raku_also_fails",
-    "Duckie::DuckDB::Native::DuckTimestamp": "raku_also_fails",
-    "Duckie::DuckDB::Native::HugeInt": "raku_also_fails",
-    "Duckie::DuckDB::Native::LogicalType": "raku_also_fails",
-    "Duckie::DuckDB::Native::Result": "raku_also_fails",
-    "Duckie::DuckDB::Native::UHugeInt": "raku_also_fails",
+    "Duckie::DuckDB::Native::Connection": "ok",
+    "Duckie::DuckDB::Native::DataChunk": "ok",
+    "Duckie::DuckDB::Native::Database": "ok",
+    "Duckie::DuckDB::Native::Decimal": "ok",
+    "Duckie::DuckDB::Native::DuckDate": "ok",
+    "Duckie::DuckDB::Native::DuckTime": "ok",
+    "Duckie::DuckDB::Native::DuckTimestamp": "ok",
+    "Duckie::DuckDB::Native::HugeInt": "ok",
+    "Duckie::DuckDB::Native::LogicalType": "ok",
+    "Duckie::DuckDB::Native::Result": "ok",
+    "Duckie::DuckDB::Native::UHugeInt": "ok",
     "Duckie::Result": "ok"
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-21",
+    "date": "2026-09-22",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "ae07b22",
+    "mutsu_commit": "61fb271",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
