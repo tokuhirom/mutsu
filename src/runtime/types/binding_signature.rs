@@ -510,6 +510,26 @@ impl Interpreter {
         source_name: Option<&str>,
         source_type_constraint: Option<&str>,
     ) -> Result<Value, RuntimeError> {
+        // A non-slurpy `@`-sigil parameter binds directly to a Positional
+        // argument, ignoring any `$`-itemization the caller's variable
+        // carried: `sub f(@x) {...}; my $r = (^5); f($r)` binds `@x` to the
+        // Range's five elements, exactly as `f((^5))` would. Real Raku
+        // itemizes a Range/Seq/List held in a scalar variable (so it will
+        // not flatten in ordinary list context), but that itemization
+        // belongs to the caller's variable, not to `@x`'s own binding — an
+        // Array never needed this step because an Array is already
+        // non-flattening and so is never Scalar-wrapped by assignment. Strip
+        // it before the Seq/LazyList-specific handling below so those checks
+        // see the bare value regardless of how it arrived (issue found via
+        // Math::Polynomial::Chebyshev's `chebyshev-rec(Str, UInt, @x, %cheb)`
+        // multi candidate, invoked with a Range read from a `$`-sigil param).
+        if pd.name.starts_with('@')
+            && !pd.slurpy
+            && let ValueView::Scalar(inner) = value.view()
+            && self.type_matches_value("Positional", inner)
+        {
+            value = (*inner).clone();
+        }
         // A gather normally materializes when it is bound to an aggregate,
         // but a gather whose captured environment contains another live
         // gather or an infinite sequence must stay pullable.  The latter is
