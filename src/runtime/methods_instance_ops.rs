@@ -3015,19 +3015,20 @@ impl Interpreter {
                     }
                 }
 
-                // `.wrap` on a Method object obtained from `.^methods(:local)`
-                // (a "Method" instance carrying its owning class via the
-                // `__mutsu_lookup_*` attributes): register a class-keyed wrap
-                // chain, mirroring `.wrap` on a `^lookup`/`^find_method` Sub, so
-                // the wrapper takes effect for later dispatch of that method
-                // (`advent2011-day14` AOP `compose` wraps every local method).
+                // `.wrap` on a Method/Submethod object obtained from
+                // `.^methods(:local)` or `.^find_method` (an instance carrying
+                // its owning class via the `__mutsu_lookup_*` attributes):
+                // register a class-keyed wrap chain, mirroring `.wrap` on a
+                // `^lookup`/`^find_method` Sub, so the wrapper takes effect
+                // for later dispatch of that method. Submethods use the same
+                // method-wrap registry; only their public object type differs.
                 if method == "wrap"
                     && let ValueView::Instance {
                         class_name,
                         attributes,
                         ..
                     } = target.view()
-                    && class_name == "Method"
+                    && matches!(class_name.resolve().as_str(), "Method" | "Submethod")
                     && let Some(wrapper) = args.first().cloned()
                 {
                     let am = attributes.as_map();
@@ -3065,7 +3066,7 @@ impl Interpreter {
                         attributes,
                         ..
                     } = target.view()
-                    && class_name == "Method"
+                    && matches!(class_name.resolve().as_str(), "Method" | "Submethod")
                     && let am = attributes.as_map()
                     && let (
                         Some(ValueView::Str(cls)),
