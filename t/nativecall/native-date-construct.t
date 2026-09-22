@@ -9,7 +9,7 @@ use Test;
 # `:formatter` falls through to the interpreter (the only self-dependent step).
 # The interpreter arm calls the same helper, keeping them byte-identical.
 
-plan 14;
+plan 15;
 
 is Date.new(2020, 1, 1).Str, '2020-01-01', 'Date.new(y, m, d)';
 is Date.new(2020, 2, 29).Str, '2020-02-29', 'leap day is valid';
@@ -26,6 +26,10 @@ is $d.WHAT.^name, 'Date', 'WHAT is Date';
 # --- from a DateTime ---
 is Date.new(DateTime.new(2020, 5, 5, 10, 30, 0)).Str, '2020-05-05',
     'Date.new from a DateTime takes its date';
+
+# DateTime::US's get-dst-dates calls Date.new($date) for each generated date.
+is Date.new($d).Str, '2020-03-15',
+    'Date.new from a Date copies the date';
 
 # --- validation errors ---
 dies-ok { Date.new(2020, 13, 1) }, 'invalid month dies';

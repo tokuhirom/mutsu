@@ -72,6 +72,16 @@ impl Interpreter {
                     class_name,
                     attributes,
                     ..
+                } if class_name == "Date" => {
+                    let (y, m, d) = temporal::date_attrs(&attributes.as_map());
+                    year = y;
+                    month = m;
+                    day = d;
+                }
+                ValueView::Instance {
+                    class_name,
+                    attributes,
+                    ..
                 } if class_name == "Instant" => {
                     let tai = attributes
                         .as_map()
