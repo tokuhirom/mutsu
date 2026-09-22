@@ -226,6 +226,7 @@ impl Compiler {
             light_required_positionals: None,
             light_full_arity_only: false,
             return_fast_type: None,
+            return_definite_const: None,
             package: package_name.to_string(),
             compiled_fns: (!own_compiled_fns.is_empty())
                 .then(|| std::sync::Arc::new(own_compiled_fns)),
