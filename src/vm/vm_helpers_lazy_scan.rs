@@ -239,7 +239,9 @@ impl Interpreter {
             }
         };
 
-        // Compute new scan elements (no locks held)
+        // Compute new scan elements (no locks held). The scan's operator is
+        // decoded once, not once per element of the batch.
+        let op_shape = crate::compiled_operator::InfixShape::lower(&base_op);
         let mut new_out: Vec<Value> = Vec::new();
         let mut computed = already;
 
@@ -251,8 +253,11 @@ impl Interpreter {
                 }
                 Some(prev) => {
                     let call_args = vec![prev, val];
-                    let v =
-                        self.reduction_step_with_args(&base_op, callable.as_ref(), call_args)?;
+                    let v = self.reduction_step_with_args(
+                        op_shape.as_ref(),
+                        callable.as_ref(),
+                        call_args,
+                    )?;
                     let v = if negate { Value::truth(!v.truthy()) } else { v };
                     new_out.push(v.clone());
                     v

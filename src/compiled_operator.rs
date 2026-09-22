@@ -41,6 +41,10 @@
 
 use crate::symbol::Symbol;
 
+mod infix_shape;
+
+pub(crate) use infix_shape::{InfixRef, InfixShape, MetaLayer};
+
 /// The structural meta-operator a [`crate::opcode::OpCode::MetaOp`] (and its
 /// assignment / n-ary siblings) applies to its base operator.
 ///

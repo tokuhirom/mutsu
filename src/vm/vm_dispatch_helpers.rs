@@ -22,106 +22,31 @@ impl Interpreter {
         )
     }
 
-    pub(super) fn eval_reduction_operator_values(
+    /// Apply the LEAF of an infix operator to two values: everything below
+    /// the structural meta-operator layers that
+    /// [`Interpreter::eval_infix_shape`] has already peeled off.
+    ///
+    /// `op` arrives decoded, so the Unicode alias fold and the `[`/`R`/`Z`/
+    /// hyper-delimiter strips this used to redo on every call (and therefore on
+    /// every element of a `Z`/`X`/hyper, and every step of a fold) have already
+    /// happened once.
+    pub(super) fn eval_infix_leaf(
         &mut self,
-        op: &str,
+        op: crate::compiled_operator::InfixRef<'_>,
         left: &Value,
         right: &Value,
     ) -> Result<Value, RuntimeError> {
-        // A reduction operator used as the inner op of a hyper op, e.g.
-        // `(1,2) >>[+]<< (100,200)`. Reducing the base op over the two operands
-        // is just the base op applied once.
-        if let Some(inner) = op.strip_prefix('[')
-            && let Some(inner_op) = inner.strip_suffix(']')
-            && !inner_op.is_empty()
-        {
-            return self.eval_reduction_operator_values(inner_op, left, right);
-        }
-        if let Some(inner_op) = op.strip_prefix('R')
-            && !inner_op.is_empty()
-        {
-            return self.eval_reduction_operator_values(inner_op, right, left);
-        }
-        // Bare Z: zip two lists into tuples (used by [Z] reduction).
-        // When left elements are already lists (from a prior Z fold), flatten them
-        // so that [Z] (a,b,c),(d,e,f),(g,h,i) produces (a d g), (b e h), (c f i).
-        if op == "Z" {
-            let left_list = runtime::value_to_list(left);
-            let right_list = runtime::value_to_list(right);
-            let len = left_list.len().min(right_list.len());
-            let mut results = Vec::new();
-            for i in 0..len {
-                let mut tuple = match left_list[i].view() {
-                    ValueView::Array(items, kind) if !kind.is_itemized() => items.to_vec(),
-                    _ => vec![left_list[i].clone()],
-                };
-                tuple.push(right_list[i].clone());
-                results.push(Value::array(tuple));
-            }
-            // Like the plain `Z` infix, the reduction yields a Seq (raku:
-            // `([Z] ...).WHAT` is `(Seq)`, `.raku` shows the `.Seq` suffix).
-            return Ok(Value::seq(results));
-        }
-        // Z-prefixed meta-operator: zip two lists element-wise with the inner op.
-        if let Some(inner_op) = op.strip_prefix('Z')
-            && !inner_op.is_empty()
-        {
-            let left_list = runtime::value_to_list(left);
-            let right_list = runtime::value_to_list(right);
-            let len = left_list.len().min(right_list.len());
-            let mut results = Vec::new();
-            for i in 0..len {
-                results.push(self.eval_reduction_operator_values(
-                    inner_op,
-                    &left_list[i],
-                    &right_list[i],
-                )?);
-            }
-            return Ok(Value::seq(results));
-        }
-        // Hyper operator forms: >>op<<, >>op>>, <<op<<, <<op>>
-        // Apply inner op element-wise to two lists.
-        if let Some(inner_op) = crate::compiled_operator::strip_hyper_delimiters(op) {
-            let left_list = runtime::value_to_list(left);
-            let right_list = runtime::value_to_list(right);
-            let dwim_left = op.starts_with("<<") || op.starts_with('\u{00AB}');
-            let dwim_right = op.ends_with(">>") || op.ends_with('\u{00BB}');
-            let len = if dwim_left && dwim_right {
-                left_list.len().max(right_list.len())
-            } else if dwim_left {
-                right_list.len()
-            } else if dwim_right {
-                left_list.len()
-            } else {
-                left_list.len().max(right_list.len())
-            };
-            let mut results = Vec::with_capacity(len);
-            for i in 0..len {
-                let l = if left_list.is_empty() {
-                    &Value::int(0.into())
-                } else {
-                    &left_list[i % left_list.len()]
-                };
-                let r = if right_list.is_empty() {
-                    &Value::int(0.into())
-                } else {
-                    &right_list[i % right_list.len()]
-                };
-                results.push(self.eval_reduction_operator_values(inner_op, l, r)?);
-            }
-            return Ok(Value::array(results));
-        }
         // Thread junctions through arithmetic/comparison reduction ops
         if matches!(left.view(), ValueView::Junction { .. })
             || matches!(right.view(), ValueView::Junction { .. })
         {
-            return self.eval_reduction_op_with_junctions(op, left.clone(), right.clone());
+            return self.eval_reduction_op_with_junctions(op.leaf(), left.clone(), right.clone());
         }
-        // Normalize Unicode operator aliases to their ASCII forms so they work
-        // in reduction / hyper / cross / zip meta-ops (`[×]`, `»×»`, `Z×`), just
-        // as they do as plain infixes: ∘→o, ×→*, ÷→/, −(U+2212)→-, ≤→<=, ≥→>=,
-        // ≠→!=.
-        let normalized_op = crate::compiled_operator::canonical_infix(op);
+        // The Unicode operator aliases (∘→o, ×→*, ÷→/, −(U+2212)→-, ≤→<=,
+        // ≥→>=, ≠→!=) were folded to their ASCII forms when the spelling was
+        // decoded, so `[×]`, `»×»` and `Z×` all reach the tables below under
+        // the same key a plain infix does.
+        let normalized_op = op.canonical();
         // `=~=` needs $*TOLERANCE (self), so the static reduction table cannot
         // host it (and its `op=` catch-all would mis-strip it to `=~`).
         if normalized_op == "=~=" || normalized_op == "\u{2245}" {
