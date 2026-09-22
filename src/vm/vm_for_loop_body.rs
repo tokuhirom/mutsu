@@ -789,7 +789,17 @@ impl Interpreter {
                 // writeback, which ADR-0045 slice 3 deletes — the writeback
                 // re-stored the mutated binding over the element, hiding the
                 // fact that the binding was never the container to begin with.
-                Some(name) if name.starts_with(['@', '%']) => item.deref_container(),
+                // The bind additionally drops the ELEMENT's own itemization —
+                // a stored `@`/`%` element reads back as `$[…]`/`${…}`, and a
+                // container-sigil parameter binds the aggregate itself.
+                // Without it `for @hash_list -> %v { for %v { $_.key } }`
+                // treats the whole hash as one item and dies on `.key`
+                // (#9006). Identity-preserving, so the deref's whole point —
+                // mutation through the binding reaching the source — survives
+                // it.
+                Some(name) if name.starts_with(['@', '%']) => {
+                    item.deref_container().deitemize_for_sigil_bind()
+                }
                 _ => item,
             };
             if let Some(ref name) = param_name {
