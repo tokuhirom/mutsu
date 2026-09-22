@@ -34,7 +34,12 @@ pub(crate) mod transliterate;
 pub(crate) mod unicode;
 pub(crate) mod unicode_gc;
 mod unicode_gc_data;
+// Test-only: the generator and verifier for `unicode_gc_data`. Declared with
+// the `#[path]` form so `check-panic-surface` excludes the whole file -- its
+// `expect`/`panic!` calls are test scaffolding, where failing loudly is the
+// correct behaviour, and should not consume the production panic budget.
 #[cfg(test)]
+#[path = "unicode_gc_gen.rs"]
 mod unicode_gc_gen;
 pub(crate) mod unicode_name_alias_table;
 pub(crate) mod unicode_named_sequence_table;
