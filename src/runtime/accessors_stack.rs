@@ -35,13 +35,17 @@ impl Interpreter {
         self.multi_candidates_cache.clear();
         self.declared_fn_cache.clear();
         self.multi_fn_cache.clear();
+        self.func_multi_resolve_cache.clear();
+        self.func_multi_type_cacheable.clear();
+        self.func_multi_argkey_cacheable.clear();
+        self.light_call_cache.clear();
+        self.pos_light_call_cache.clear();
+        self.otf_call_cache.clear();
         crate::vm::vm_stats::record_fn_keys_base_invalidation(self.fn_keys_by_base.len());
         self.fn_keys_by_base.clear();
         // ...and give the map a version it has never had, so that the caches
         // which self-refresh off the generation rather than being cleared here
-        // -- `light_call_cache`, `pos_light_call_cache`, `otf_call_cache`,
-        // `func_multi_resolve_cache`, the ADR-0066 callsite inline-cache epoch --
-        // see the change too. Mirroring the unchanged version instead left a
+        // -- the ADR-0066 callsite inline-cache epoch -- see the change too. Mirroring the unchanged version instead left a
         // `&wrapped.wrap(...)` invisible to a call site that had already run
         // (`t/routines/call/call-inline-cache.t` test 6): nothing about the
         // functions map moved, so nothing retired the resolution those caches

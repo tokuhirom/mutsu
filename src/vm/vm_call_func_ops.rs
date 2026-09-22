@@ -14,7 +14,9 @@ impl Interpreter {
         target: crate::runtime::PosLightTarget,
     ) {
         self.bump_pos_light_ic_epoch();
-        self.pos_light_call_cache.insert((name, pkg), target);
+        let generation = self.fn_resolve_gen;
+        self.pos_light_call_cache
+            .insert(generation, (name, pkg), target);
     }
 
     /// Retire every filled dispatch-cache entry. Cheap: the entries carry the
@@ -336,8 +338,7 @@ impl Interpreter {
         // folded into one conservative scan (an Array/Hash value anywhere
         // may need container sharing; a Junction may need autothreading —
         // both fall back to the materializing slow path).
-        if self.light_call_cache_gen == self.fn_resolve_gen
-            && self.stack.len() >= arity_usize
+        if self.stack.len() >= arity_usize
             && (self.amp_param_shadowed_names.is_empty()
                 || !self
                     .amp_param_shadowed_names
@@ -345,8 +346,9 @@ impl Interpreter {
         {
             let name_sym = code.const_sym(name_idx);
             let cur_pkg_sym = self.current_package_sym();
-            if let Some((cached_key, cached_fp)) =
-                self.light_call_cache.get(&(name_sym, cur_pkg_sym))
+            if let Some((cached_key, cached_fp)) = self
+                .light_call_cache
+                .get(self.fn_resolve_gen, &(name_sym, cur_pkg_sym))
                 && let Some(cf) = compiled_fns.get(cached_key)
                 && cf.fingerprint == *cached_fp
             {
@@ -639,7 +641,14 @@ impl Interpreter {
         if !skip_name_caches {
             let name_str = Self::const_str(code, name_idx);
             let name_sym = code.const_sym(name_idx);
-            if self.pos_light_call_cache_gen == self.fn_resolve_gen {
+            // The entries are generation-tagged and survive a generation
+            // change; only the `call_ic` slots, which carry no generation of
+            // their own, have to be retired by one (#9073).
+            if self.pos_light_call_cache_gen != self.fn_resolve_gen {
+                self.bump_pos_light_ic_epoch();
+                self.pos_light_call_cache_gen = self.fn_resolve_gen;
+            }
+            {
                 // An OTF-compiled body is owned by the cache rather than by
                 // `compiled_fns`, so take an `Arc` handle to it and let the
                 // borrow on `self` end before the call below.
@@ -667,7 +676,10 @@ impl Interpreter {
                     // that address for as long as the borrow of the table.
                     .map(|p| unsafe { Self::ic_target(compiled_fns, p) });
                 if cached.is_none() {
-                    cached = match self.pos_light_call_cache.get(&(name_sym, cur_pkg_sym)) {
+                    cached = match self
+                        .pos_light_call_cache
+                        .get(self.fn_resolve_gen, &(name_sym, cur_pkg_sym))
+                    {
                         Some(crate::runtime::PosLightTarget::Compiled { key, fingerprint }) => {
                             let (key, fingerprint) = (*key, *fingerprint);
                             compiled_fns
@@ -835,20 +847,17 @@ impl Interpreter {
                         }
                     }
                 }
-            } else {
-                self.pos_light_call_cache.clear();
-                self.bump_pos_light_ic_epoch();
-                self.pos_light_call_cache_gen = self.fn_resolve_gen;
             }
         }
 
         // Light-call cache check for named-param functions.
         if !skip_name_caches {
             let name_sym = code.const_sym(name_idx);
-            if self.light_call_cache_gen == self.fn_resolve_gen {
+            {
                 let cur_pkg_sym = self.current_package_sym();
-                if let Some((cached_key, cached_fp)) =
-                    self.light_call_cache.get(&(name_sym, cur_pkg_sym))
+                if let Some((cached_key, cached_fp)) = self
+                    .light_call_cache
+                    .get(self.fn_resolve_gen, &(name_sym, cur_pkg_sym))
                     && let Some(cf) = compiled_fns.get(cached_key)
                     && cf.fingerprint == *cached_fp
                 {
@@ -915,9 +924,6 @@ impl Interpreter {
                         return Ok(());
                     }
                 }
-            } else {
-                self.light_call_cache.clear();
-                self.light_call_cache_gen = self.fn_resolve_gen;
             }
         }
 
@@ -931,7 +937,7 @@ impl Interpreter {
         if !skip_name_caches {
             let name_str = Self::const_str(code, name_idx);
             let name_sym = code.const_sym(name_idx);
-            if self.otf_call_cache_gen == self.fn_resolve_gen {
+            {
                 // Skip this type-blind name-keyed fast cache for multi names: the
                 // right candidate depends on argument types, which this cache
                 // does not key on (the multi fork resolves per-call via
@@ -947,7 +953,7 @@ impl Interpreter {
                 if !self.has_multi_candidates_cached_sym(name_sym)
                     && let Some((def_pkg_sym, cf)) = self
                         .otf_call_cache
-                        .get(&name_sym)
+                        .get(self.fn_resolve_gen, &name_sym)
                         .filter(|(pkg, _, _)| *pkg == cur_pkg_sym)
                         .map(|(_, def_pkg, cf)| (*def_pkg, Arc::clone(cf)))
                     && !cf.has_inner_subs
@@ -1088,9 +1094,6 @@ impl Interpreter {
                         return Ok(());
                     }
                 }
-            } else {
-                self.otf_call_cache.clear();
-                self.otf_call_cache_gen = self.fn_resolve_gen;
             }
         }
 
@@ -1784,9 +1787,10 @@ impl Interpreter {
                     && !self.light_call_blocked_by_mainline_capture(name)
                 {
                     let cur_pkg_sym = self.current_package_sym();
-                    if !self
+                    if self
                         .pos_light_call_cache
-                        .contains_key(&(name_sym, cur_pkg_sym))
+                        .get(self.fn_resolve_gen, &(name_sym, cur_pkg_sym))
+                        .is_none()
                     {
                         let mut found: Option<Symbol> = None;
                         for (key, func) in compiled_fns.iter() {
@@ -1844,12 +1848,20 @@ impl Interpreter {
                 {
                     // Populate light-call cache so subsequent calls skip resolution
                     let cur_pkg_sym = self.current_package_sym();
-                    if !self.light_call_cache.contains_key(&(name_sym, cur_pkg_sym)) {
+                    let generation = self.fn_resolve_gen;
+                    if self
+                        .light_call_cache
+                        .get(generation, &(name_sym, cur_pkg_sym))
+                        .is_none()
+                    {
                         // Find the compiled_fns key for this function
                         for (key, func) in compiled_fns.iter() {
                             if std::ptr::eq(func, cf) {
-                                self.light_call_cache
-                                    .insert((name_sym, cur_pkg_sym), (*key, cf.fingerprint));
+                                self.light_call_cache.insert(
+                                    generation,
+                                    (name_sym, cur_pkg_sym),
+                                    (*key, cf.fingerprint),
+                                );
                                 break;
                             }
                         }

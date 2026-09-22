@@ -269,8 +269,22 @@ impl Interpreter {
         // (#8314). The diff runs once per restore, where the wholesale drop it
         // replaces cost one full registry re-scan per base name per resolution
         // until the index refilled.
+        //
+        // When the map being given back was reached from the snapshot by the
+        // memoized per-call installs alone -- the steady state of a routine
+        // that declares an inner `my sub` -- the transition memo already knows
+        // which keys those were, and the O(registry) diff below is skipped
+        // (#9073).
         let mut touched_keys: Vec<Symbol> = Vec::new();
-        {
+        let installed = {
+            let registry = self.registry();
+            registry
+                .fn_transitions
+                .keys_installed_since(functions.version(), registry.functions.version())
+        };
+        if let Some(keys) = installed {
+            touched_keys = keys;
+        } else {
             let registry = self.registry();
             for key in registry.functions.keys() {
                 if !functions.contains_key(key) {

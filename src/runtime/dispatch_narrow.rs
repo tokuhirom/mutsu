@@ -66,12 +66,11 @@ impl Interpreter {
         if self.is_unit_scoped_routine_name(name) {
             return false;
         }
-        // The family gate calls this first in the only caller, but this memo is
-        // keyed on the same registry generation as the caches that gate clears,
-        // so it must not depend on the caller's order to be refreshed.
-        self.refresh_func_multi_caches_for_generation();
+        // Tagged per entry with the registry generation, like the family gate's
+        // memo, so neither depends on the other having been consulted first.
+        let generation = self.fn_resolve_gen;
         let memo_key = (pkg_sym, name_sym, arg_keys.to_vec());
-        if let Some(&c) = self.func_multi_argkey_cacheable.get(&memo_key) {
+        if let Some(&c) = self.func_multi_argkey_cacheable.get(generation, &memo_key) {
             return c;
         }
         let candidates = self.resolve_all_multi_candidates_indexed(name);
@@ -87,7 +86,8 @@ impl Interpreter {
                 }
             }
         }
-        self.func_multi_argkey_cacheable.insert(memo_key, cacheable);
+        self.func_multi_argkey_cacheable
+            .insert(generation, memo_key, cacheable);
         cacheable
     }
 

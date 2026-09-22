@@ -1380,7 +1380,15 @@ impl Registry {
     }
 
     /// Wholesale-replace the marker set from a snapshot. Bumps `proto_gen`.
+    ///
+    /// Restoring the very set that is installed (the snapshot `Arc` itself,
+    /// untouched since) changes nothing, so it does not bump: a routine scope
+    /// restores this on every return, and the bump retired every
+    /// proto-generation memo in the program once per call (#9073).
     pub(crate) fn proto_subs_restore(&mut self, set: std::sync::Arc<HashSet<String>>) {
+        if std::sync::Arc::ptr_eq(&self.proto_subs, &set) {
+            return;
+        }
         self.proto_subs = set;
         self.bump_proto_gen();
     }
@@ -1411,11 +1419,10 @@ impl Registry {
     /// For a one-off registration it behaves exactly like the plain insert, at
     /// the cost of one hash lookup.
     pub(crate) fn install_function(&mut self, key: Symbol, def: std::sync::Arc<FunctionDef>) {
-        let table = crate::runtime::cow_table_mut(&mut self.functions);
         // `functions` and `fn_transitions` are disjoint fields; the split
-        // borrow is what lets the memo drive the table's stamp.
+        // borrow is what lets the memo drive the table (and its stamp).
         let transitions = &mut self.fn_transitions;
-        transitions.install(table, key, def);
+        transitions.install(&mut self.functions, key, def);
     }
 
     /// Give [`Registry::functions`] a version it has never had before, without
