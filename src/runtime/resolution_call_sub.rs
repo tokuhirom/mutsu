@@ -504,14 +504,30 @@ impl Interpreter {
                 .and_then(Value::into_array)
             {
                 let candidates = (*candidates_arc).clone();
-                // First try to dispatch via the function table (if still in scope)
+                // First try to dispatch via the function table (if still in scope).
+                // A proto or multi-candidate name alone is not enough: resolving
+                // either here can find the caller's declaration and discard the
+                // concrete candidates captured by this code value. A live multi
+                // is safe when its candidate identities are exactly the captured
+                // set; this keeps nextsame/callsame working for a same-scope code
+                // value while avoiding a same-named imported dispatcher.
                 if let Some(ValueView::Str(name)) =
                     data.env.get("__mutsu_multi_dispatch_name").map(Value::view)
-                    && (self.resolve_function(&name).is_some()
-                        || self.has_proto(&name)
-                        || self.has_multi_candidates(&name))
                 {
-                    return self.call_function(&name, call_args);
+                    let same_live_candidates = self.resolve_all_multi_candidates(&name);
+                    let captured_match = same_live_candidates.len() == candidates.len()
+                        && same_live_candidates.iter().zip(candidates.iter()).all(
+                            |(live, captured)| {
+                                matches!(
+                                    captured.view(),
+                                    ValueView::Sub(data)
+                                        if data.package == live.package && data.name == live.name
+                                )
+                            },
+                        );
+                    if self.resolve_function(&name).is_some() || captured_match {
+                        return self.call_function(&name, call_args);
+                    }
                 }
                 // Candidates are out of scope -- dispatch through captured Subs
                 for candidate in &candidates {
