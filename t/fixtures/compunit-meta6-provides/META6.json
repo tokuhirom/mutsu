@@ -1,0 +1,7 @@
+{
+  "name": "Mutsu::META6::Provides",
+  "version": "0.0.1",
+  "provides": {
+    "Mutsu::Meta6::Provided": "lib/Mutsu/Meta6/Implementation.rakumod"
+  }
+}

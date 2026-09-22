@@ -805,7 +805,7 @@ impl Compiler {
             _ => return None,
         };
         let mut captures: Vec<(Symbol, u32)> = Vec::new();
-        for name in crate::opcode::CompiledCode::regex_interpolated_var_names(&pattern) {
+        for name in crate::opcode::CompiledCode::regex_closure_var_names(&pattern) {
             // `$_`, `$/` and the numeric captures are match state, never a
             // captured lexical; the engine installs them per match position.
             if name == "_" || name == "/" || name.chars().all(|c| c.is_ascii_digit()) {

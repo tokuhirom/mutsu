@@ -206,7 +206,9 @@ impl Interpreter {
                 | ValueView::RegexWithAdverbs { .. }
                 | ValueView::Routine { is_regex: true, .. }
         );
+        let closure_scope = self.install_regex_closure_scope(&right);
         let matched = self.vm_smart_match(&left, &right);
+        self.uninstall_regex_closure_scope(closure_scope);
         // Check for pending regex security error (set by regex parse/match)
         if let Some(err) = crate::runtime::Interpreter::take_pending_regex_error() {
             return Err(err);

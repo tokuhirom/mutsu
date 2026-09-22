@@ -7336,6 +7336,94 @@ impl CompiledCode {
         names
     }
 
+    /// Extract the names a regex literal must close over. Ordinary bare
+    /// interpolation keeps the conservative prefix behavior of
+    /// [`Self::regex_interpolated_var_names`] so live match-time bindings such
+    /// as `$lookaround-value` are not snapshotted. Regex angle interpolations
+    /// (`<$NAME>`), and code interpolations (`<{$NAME}>`), use Raku's complete
+    /// kebab-case names and therefore need the full spelling here.
+    pub(crate) fn regex_closure_var_names(pattern: &str) -> Vec<String> {
+        let bytes = pattern.as_bytes();
+        let mut names = Self::regex_interpolated_var_names(pattern);
+        let mut i = 0;
+        let mut code_depth = 0usize;
+        while i < bytes.len() {
+            if code_depth == 0 && bytes[i] == b'<' && bytes.get(i + 1) == Some(&b'{') {
+                code_depth = 1;
+                i += 2;
+                continue;
+            }
+            if code_depth > 0 {
+                match bytes[i] {
+                    b'{' => code_depth += 1,
+                    b'}' => code_depth -= 1,
+                    _ => {}
+                }
+            }
+            if bytes[i] == b'$' {
+                let start = i + 1;
+                if start < bytes.len()
+                    && (bytes[start].is_ascii_alphabetic() || bytes[start] == b'_')
+                {
+                    let full_end = (start..bytes.len())
+                        .take_while(|&j| {
+                            bytes[j].is_ascii_alphanumeric() || matches!(bytes[j], b'_' | b'-')
+                        })
+                        .last()
+                        .map_or(start, |j| j + 1);
+                    let use_full_name = code_depth > 0 || i > 0 && bytes[i - 1] == b'<';
+                    if use_full_name {
+                        let short_end = (start..bytes.len())
+                            .take_while(|&j| bytes[j].is_ascii_alphanumeric() || bytes[j] == b'_')
+                            .last()
+                            .map_or(start, |j| j + 1);
+                        if short_end < full_end {
+                            let short_name = &pattern[start..short_end];
+                            names.retain(|name| name != short_name);
+                            names.push(pattern[start..full_end].to_string());
+                        }
+                        i = full_end;
+                    } else {
+                        i = start;
+                    }
+                    continue;
+                }
+            }
+            i += 1;
+        }
+        names
+    }
+
+    /// Extract variables referenced inside regex code interpolations such as
+    /// `<{$NO-VOWEL}>`.  Code blocks use Raku's full kebab-case identifier
+    /// grammar, unlike the ordinary regex interpolation scan above, whose
+    /// conservative prefix behavior preserves live match-time rebinding.
+    pub(crate) fn regex_code_interpolated_var_names(pattern: &str) -> Vec<String> {
+        let bytes = pattern.as_bytes();
+        let mut names = Vec::new();
+        let mut i = 0;
+        while i < bytes.len() {
+            if bytes[i] == b'$' {
+                let start = i + 1;
+                if start < bytes.len()
+                    && (bytes[start].is_ascii_alphabetic() || bytes[start] == b'_')
+                {
+                    let mut j = start;
+                    while j < bytes.len()
+                        && (bytes[j].is_ascii_alphanumeric() || matches!(bytes[j], b'_' | b'-'))
+                    {
+                        j += 1;
+                    }
+                    names.push(pattern[start..j].to_string());
+                    i = j;
+                    continue;
+                }
+            }
+            i += 1;
+        }
+        names
+    }
+
     /// The constant-pool index of a call op's *argument source names*. A lexical
     /// that reaches a call as an argument can be written through by an `is rw` /
     /// `is raw` parameter (`cas($x, $old, $new)` is the canonical sink), and that
@@ -7816,7 +7904,7 @@ impl CompiledCode {
                 _ => None,
             };
             if let Some(pattern) = pattern {
-                for name in Self::regex_interpolated_var_names(&pattern) {
+                for name in Self::regex_closure_var_names(&pattern) {
                     if own.contains(name.as_str()) {
                         regex_captured_own.insert(Symbol::intern(&name));
                     } else {
