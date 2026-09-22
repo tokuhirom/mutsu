@@ -74,6 +74,10 @@ impl Interpreter {
         // methods before dispatch.
         let method_name_str = Self::dynamic_method_name(&name_val);
         let method = Self::rewrite_method_name(&method_name_str, modifier);
+        // The spelling is dynamic, but it is stable for this dispatch. Intern it
+        // once at the opcode boundary so every native/cache probe below shares
+        // the same key instead of re-hashing it independently.
+        let method_sym = Symbol::intern(&method);
         let target = self.reify_or_consume_seq_target(target, &method)?;
         // Handle .* and .+ modifiers
         match modifier {
@@ -115,7 +119,7 @@ impl Interpreter {
             ValueView::Instance { class_name, .. } => {
                 self.has_user_method(&class_name.resolve(), &method)
             }
-            _ => self.native_lever_a_user_override(&target, &method),
+            _ => self.native_lever_a_user_override_sym(&target, method_sym),
         };
         let call_result = if matches!(
             name_val.view(),
@@ -130,7 +134,6 @@ impl Interpreter {
             call_args.extend(args);
             self.vm_call_on_value(name_val, call_args, None)
         } else {
-            let method = Self::dynamic_method_name(&name_val);
             // .return method: triggers a return from the enclosing sub
             if method == "return" && args.is_empty() {
                 crate::vm::vm_stats::record_dispatch_entry_intercept("callmethoddynamic", "return");
@@ -292,7 +295,7 @@ impl Interpreter {
                             crate::value::ArrayKind::List,
                         );
                         let call_result = if let Some(nr) =
-                            self.try_native_method(&array_target, Symbol::intern(&method), &args)
+                            self.try_native_method(&array_target, method_sym, &args)
                         {
                             nr
                         } else {
@@ -329,7 +332,7 @@ impl Interpreter {
                             crate::value::ArrayKind::List,
                         );
                         let call_result = if let Some(nr) =
-                            self.try_native_method(&array_target, Symbol::intern(&method), &args)
+                            self.try_native_method(&array_target, method_sym, &args)
                         {
                             nr
                         } else {
@@ -348,14 +351,13 @@ impl Interpreter {
             // the shared one in `call_method_with_values`.
             if !user_method
                 && !self.delegates_to_array_storage(&target, &method)
-                && let Some(native_result) =
-                    self.try_native_method(&target, Symbol::intern(&method), &args)
+                && let Some(native_result) = self.try_native_method(&target, method_sym, &args)
             {
                 crate::vm::vm_stats::record_dispatch_entry_outcome("callmethoddynamic", "native");
                 native_result
             } else {
                 crate::vm::vm_stats::record_dispatch_entry_outcome("callmethoddynamic", "user");
-                self.try_compiled_method_or_interpret(target, &method, args)
+                self.try_compiled_method_or_interpret_sym(target, method_sym, args)
             }
         };
         match modifier {

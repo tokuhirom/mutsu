@@ -1387,6 +1387,10 @@ impl Interpreter {
             let method_raw = name_val.to_string_value();
             Self::rewrite_method_name(&method_raw, modifier)
         });
+        // A dynamic hyper call has one runtime spelling for its entire target.
+        // Intern it before the item loop: native probes below used to hash that
+        // same spelling once per element.
+        let method_sym = method.as_deref().map(Symbol::intern);
         for (idx, item) in items.iter_mut().enumerate() {
             let item_args = args.clone();
             if let Some(callable_name) = &name_val_callable_name {
@@ -1443,10 +1447,13 @@ impl Interpreter {
             let method = method
                 .as_ref()
                 .expect("method string exists for non-callables");
+            let method_sym = method_sym.ok_or_else(|| {
+                RuntimeError::new("missing method symbol for dynamic hyper dispatch")
+            })?;
             match modifier {
                 Some("?") => {
                     let val = if let Some(native_result) =
-                        self.try_native_method(item, Symbol::intern(method), &item_args)
+                        self.try_native_method(item, method_sym, &item_args)
                     {
                         crate::vm::vm_stats::record_dispatch_entry_outcome(
                             "hypermethodcalldynamic",
@@ -1470,7 +1477,7 @@ impl Interpreter {
                 }
                 Some("+") => {
                     let vals = if let Some(native_result) =
-                        self.try_native_method(item, Symbol::intern(method), &item_args)
+                        self.try_native_method(item, method_sym, &item_args)
                     {
                         crate::vm::vm_stats::record_dispatch_entry_outcome(
                             "hypermethodcalldynamic",
@@ -1493,7 +1500,7 @@ impl Interpreter {
                 }
                 Some("*") => {
                     if let Some(native_result) =
-                        self.try_native_method(item, Symbol::intern(method), &item_args)
+                        self.try_native_method(item, method_sym, &item_args)
                     {
                         crate::vm::vm_stats::record_dispatch_entry_outcome(
                             "hypermethodcalldynamic",
@@ -1522,7 +1529,7 @@ impl Interpreter {
                 }
                 _ => {
                     let val = if let Some(native_result) =
-                        self.try_native_method(item, Symbol::intern(method), &item_args)
+                        self.try_native_method(item, method_sym, &item_args)
                     {
                         crate::vm::vm_stats::record_dispatch_entry_outcome(
                             "hypermethodcalldynamic",
