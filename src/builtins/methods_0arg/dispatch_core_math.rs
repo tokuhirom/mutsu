@@ -237,8 +237,9 @@ pub(super) fn dispatch(
             ValueView::BigInt(i) => Some(Ok(Value::num(i.to_f64().unwrap_or(f64::INFINITY).ln()))),
             ValueView::Num(f) => Some(Ok(Value::num(f.ln()))),
             ValueView::Rat(n, d) if d != 0 => Some(Ok(Value::num((n as f64 / d as f64).ln()))),
+            ValueView::FatRat(n, d) if d != 0 => Some(Ok(Value::num((n as f64 / d as f64).ln()))),
             ValueView::BigRat(n, d) if d != &num_bigint::BigInt::from(0) => Some(Ok(Value::num(
-                (n.to_f64().unwrap_or(0.0) / d.to_f64().unwrap_or(1.0)).ln(),
+                crate::builtins::arith::bigint_ratio_to_f64(n, d).ln(),
             ))),
             ValueView::Complex(r, i) => {
                 let mag = (r * r + i * i).sqrt().ln();
