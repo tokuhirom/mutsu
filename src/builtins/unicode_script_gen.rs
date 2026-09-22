@@ -210,9 +210,9 @@ fn render_names() -> String {
         "/// Every Script name, indexed by the code the tables above store.\n\
          #[rustfmt::skip]\n",
     );
-    let _ = write!(
+    let _ = writeln!(
         out,
-        "pub(super) static SCRIPT_NAMES: [&str; {}] = [\n",
+        "pub(super) static SCRIPT_NAMES: [&str; {}] = [",
         SCRIPTS.len() + 1
     );
     for chunk in SCRIPTS
@@ -228,13 +228,7 @@ fn render_names() -> String {
         }
         out.push('\n');
     }
-    out.push_str("];\n\n");
-    let _ = write!(
-        out,
-        "/// The code of the `Unknown` fallthrough.\n\
-         pub(super) const UNKNOWN_CODE: u8 = {};\n",
-        SCRIPTS.len()
-    );
+    out.push_str("];\n");
     out
 }
 
@@ -278,8 +272,7 @@ fn verify_committed_tables_match_unicode_data() {
     for (i, name) in SCRIPTS.iter().enumerate() {
         assert_eq!(data::SCRIPT_NAMES[i], *name);
     }
-    assert_eq!(data::UNKNOWN_CODE as usize, SCRIPTS.len());
-    assert_eq!(data::SCRIPT_NAMES[data::UNKNOWN_CODE as usize], "Unknown");
+    assert_eq!(data::SCRIPT_NAMES[SCRIPTS.len()], "Unknown");
 
     tbl::assert_lookup_matches_table(&table, |ch| {
         let name = super::unicode_script::script_name(ch);

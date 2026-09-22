@@ -389,6 +389,3 @@ pub(super) static SCRIPT_NAMES: [&str; 162] = [
     "Wancho","Warang_Citi","Yezidi","Yi",
     "Zanabazar_Square","Unknown",
 ];
-
-/// The code of the `Unknown` fallthrough.
-pub(super) const UNKNOWN_CODE: u8 = 161;

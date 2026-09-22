@@ -32,11 +32,11 @@ use super::unicode_script_data as data;
 pub(crate) struct Script(u8);
 
 impl Script {
-    /// `Unknown` -- the fallthrough for a codepoint in no script, which is
-    /// also what the ordered-regex probe returned when nothing matched.
-    pub(crate) const UNKNOWN: Self = Self(data::UNKNOWN_CODE);
-
     /// The script's name, as `.uniprop('Script')` reports it.
+    ///
+    /// The last entry of [`data::SCRIPT_NAMES`] is `Unknown`, the fallthrough
+    /// for a codepoint in no script -- which is what the ordered-regex probe
+    /// returned when nothing matched.
     pub(crate) fn as_str(self) -> &'static str {
         data::SCRIPT_NAMES
             .get(self.0 as usize)
@@ -101,13 +101,10 @@ mod tests {
     }
 
     #[test]
-    fn unknown_is_the_fallthrough() {
-        assert_eq!(Script::UNKNOWN.as_str(), "Unknown");
-        assert_eq!(script('\u{0378}'), Script::UNKNOWN);
-        assert_eq!(
-            data::SCRIPT_NAMES[data::UNKNOWN_CODE as usize],
-            "Unknown",
-            "the fallthrough code must name the fallthrough script"
-        );
+    fn unknown_is_the_last_name_and_the_fallthrough() {
+        assert_eq!(data::SCRIPT_NAMES.last(), Some(&"Unknown"));
+        assert_eq!(script_name('\u{0378}'), "Unknown");
+        // An out-of-range code cannot occur, but must not panic if it did.
+        assert_eq!(Script(u8::MAX).as_str(), "Unknown");
     }
 }
