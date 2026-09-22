@@ -4224,6 +4224,18 @@ pub struct Interpreter {
     /// cheaply (guarded by `is_empty()`) on each call. Never removed, mirroring
     /// `amp_param_shadowed_names`.
     pub(crate) export_amp_override_names: std::collections::HashSet<Symbol>,
+    /// Sigilless bare names a `sub EXPORT`'s returned map installed into `env`
+    /// (`install_export_symbol`). The CORE term keywords `True`/`False`/`Nil`/
+    /// `Empty`/`Any` are ordinary lexical bindings in Raku, so such an import
+    /// legitimately shadows them for the importing compunit — which mutsu's
+    /// parse-time folding of those keywords to literals otherwise made
+    /// impossible (#9047, `Logic::Ternary`). `OpCode::GetShadowableTerm`
+    /// consults this set before reading `env`, so a same-named key that got
+    /// there some OTHER way (an `our $True`, whose scalar read is env-keyed
+    /// without its sigil) can never be mistaken for a shadowing import.
+    /// Populated at export-symbol installation and never removed, mirroring
+    /// `export_amp_override_names`.
+    pub(crate) export_term_override_names: std::collections::HashSet<Symbol>,
     /// Names declared with an empty-signature proto (`proto bar {*}`). Such a
     /// proto's signature gates the whole multi dispatch: any call with
     /// positional arguments "will never work with signature of the proto ()"

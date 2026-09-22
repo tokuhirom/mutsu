@@ -47,6 +47,17 @@ struct ModuleScanResult {
     /// module must execute it at parse time so its slang registration can
     /// switch parser modes for the rest of the importing unit.
     uses_slangify: bool,
+    /// Whether the module computes its export set with a run-time `sub EXPORT`
+    /// hook. Such a hook can install ANY name into the importer's scope, the
+    /// CORE term keywords `True`/`False`/`Nil`/`Empty`/`Any` included, and
+    /// *which* names is generally not statically knowable (Logic::Ternary
+    /// derives them from the `use` arguments). The importer only needs to know
+    /// that it happened: the five keywords then compile to a run-time-resolved
+    /// term instead of a folded constant, so the hook's installation can win
+    /// (#9047). Defaulted rather than required so an on-disk scan cache written
+    /// before this field existed still decodes.
+    #[serde(default)]
+    declares_export_hook: bool,
     /// `module Foo { sub bar is export }` blocks declared *inside* the scanned
     /// module. The nested parse registers these in the process-wide inline
     /// export table, which — unlike the scopes — the scan does not restore, so
@@ -289,6 +300,14 @@ fn apply_scan_types(scan: &ModuleScanResult) {
     // can see it, exactly like an enum value.
     for name in &scan.value_terms {
         register_imported_value_term(name);
+    }
+    // A module that computes its exports in `sub EXPORT` can install a value
+    // under a CORE term keyword's own name, which the parser would otherwise
+    // have already folded to a constant (#9047). Replayed here (not only at
+    // scan time) so a cache hit, which skips the nested parse entirely, taints
+    // the importer the same way — exactly like `type_index_incomplete` above.
+    if scan.declares_export_hook {
+        note_import_export_hook();
     }
 }
 
@@ -720,7 +739,8 @@ fn scan_module_source(source: &str, path: &str) -> ModuleScanResult {
     // Approximate its export set with the routines it declares in its own unit
     // scope, which is what the dominant `UNIT::`-grep idiom exports verbatim
     // (ADR-0087).
-    if declares_export_sub(&stmts) || source_declares_export_sub(source) {
+    let declares_export_hook = declares_export_sub(&stmts) || source_declares_export_sub(source);
+    if declares_export_hook {
         collect_unit_scope_routines(&stmts, &mut exports);
         // A third idiom: `is export`-tagged declarations made LOCALLY inside
         // the hook's own body rather than at the module's unit scope
@@ -789,6 +809,7 @@ fn scan_module_source(source: &str, path: &str) -> ModuleScanResult {
         declare_keywords,
         type_index_incomplete,
         uses_slangify,
+        declares_export_hook,
         inline_module_exports,
         // Filled in by `find_and_scan_module`, which owns the dependency frame
         // and the file stamp.

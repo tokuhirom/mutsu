@@ -287,6 +287,39 @@ fn starts_with_type_smiley(rest: &str) -> bool {
         .is_some_and(|c| c.is_alphanumeric() || c == '_' || c == '-')
 }
 
+/// Hand a just-parsed CORE term keyword to the run-time resolver when the
+/// compunit being parsed could have imported a shadowing binding for it
+/// (#9047), and leave it folded to its constant otherwise.
+///
+/// `True`/`False`/`Nil`/`Empty`/`Any` are CORE-scope *lexicals* in Raku, so a
+/// `use` that exports a same-named symbol shadows them for the rest of the
+/// importing file — `Logic::Ternary` swaps all of `True`/`Unknown`/`False` for
+/// three-valued-logic objects that way. mutsu runs a module's `sub EXPORT` at
+/// module-load time, i.e. after the importing file has been parsed, so a value
+/// the hook computes can never reach a literal the parse already baked in.
+///
+/// Only a `sub EXPORT` hook can produce an import the parse cannot see: every
+/// other export shape (an `is export` trait, an exported `constant`, an enum)
+/// is found by the module scan and registered as a term symbol, which
+/// `declared_term_symbol` — tried *before* this function — already prefers over
+/// the keyword. So the taint is scoped to a compunit that imported through such
+/// a hook, and nowhere else does `True` stop being a compile-time constant.
+///
+/// `Inf`/`NaN` are excluded deliberately, for the same reason `try_kw` already
+/// refuses to let a user-declared type shadow them: they are numeric literals
+/// in Raku, not bindings.
+fn shadowable_term(expr: Expr, kw: &'static str) -> Expr {
+    match expr {
+        Expr::Literal(value) if crate::parser::stmt::simple::term_keywords_shadowable() => {
+            Expr::ShadowableTermKeyword {
+                name: Symbol::intern(kw),
+                value,
+            }
+        }
+        other => other,
+    }
+}
+
 /// Parse keywords that are values: True, False, Nil, Any, Inf, NaN, etc.
 pub(crate) fn keyword_literal(input: &str) -> PResult<'_, Expr> {
     // Try each keyword, ensuring it's not followed by alphanumeric (word boundary)
@@ -343,20 +376,25 @@ pub(crate) fn keyword_literal(input: &str) -> PResult<'_, Expr> {
         Ok((rest, Expr::Literal(val)))
     };
 
-    if let Ok(r) = try_kw("True", Value::TRUE) {
-        return Ok(r);
+    // The five CORE term keywords are ordinary lexical bindings in Raku, not
+    // syntax, so an import can shadow them — but only a compunit that `use`d a
+    // module with a run-time `sub EXPORT` hook can have such an import that the
+    // static scan could not already see, and only there does the fold below
+    // have to be given up. See [`shadowable_term`].
+    if let Ok((rest, expr)) = try_kw("True", Value::TRUE) {
+        return Ok((rest, shadowable_term(expr, "True")));
     }
-    if let Ok(r) = try_kw("False", Value::FALSE) {
-        return Ok(r);
+    if let Ok((rest, expr)) = try_kw("False", Value::FALSE) {
+        return Ok((rest, shadowable_term(expr, "False")));
     }
-    if let Ok(r) = try_kw("Nil", Value::NIL) {
-        return Ok(r);
+    if let Ok((rest, expr)) = try_kw("Nil", Value::NIL) {
+        return Ok((rest, shadowable_term(expr, "Nil")));
     }
-    if let Ok(r) = try_kw("Empty", Value::slip_arc(std::sync::Arc::new(vec![]))) {
-        return Ok(r);
+    if let Ok((rest, expr)) = try_kw("Empty", Value::slip_arc(std::sync::Arc::new(vec![]))) {
+        return Ok((rest, shadowable_term(expr, "Empty")));
     }
-    if let Ok(r) = try_kw("Any", Value::package(crate::symbol::wk::any())) {
-        return Ok(r);
+    if let Ok((rest, expr)) = try_kw("Any", Value::package(crate::symbol::wk::any())) {
+        return Ok((rest, shadowable_term(expr, "Any")));
     }
     // Unicode: ∅ (U+2205 EMPTY SET)
     if input.starts_with('\u{2205}') {
