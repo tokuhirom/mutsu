@@ -2912,6 +2912,10 @@ impl Compiler {
                 // `Given`; it changes nothing about how one executes.
                 with_kind: _,
             } => {
+                // The tail `given` of an `is rw` routine: every `when`/`default`
+                // clause and the body's own last statement may be the value the
+                // routine returns (#9060). Taken first so the topic never sees it.
+                let rw_branch = std::mem::take(&mut self.rw_tail_branch);
                 // A pointy `-> $_ is copy` block starts with a parser-generated
                 // lexical declaration carrying the `__pointy_copy` marker: the
                 // topic becomes a fresh, writable copy with NO writeback to the
@@ -3155,6 +3159,8 @@ impl Compiler {
                 } else {
                     for (i, s) in body.iter().enumerate() {
                         let is_last = i == body.len() - 1;
+                        self.rw_tail_branch = rw_branch
+                            && (is_last || matches!(s, Stmt::When { .. } | Stmt::Default(_)));
                         if is_last {
                             if !self.compile_when_tail_stmt(s) {
                                 self.compile_stmt(s);
@@ -3162,6 +3168,7 @@ impl Compiler {
                         } else {
                             self.compile_stmt(s);
                         }
+                        self.rw_tail_branch = false;
                     }
                 }
                 if let Some(idx) = let_frame {
@@ -3180,6 +3187,7 @@ impl Compiler {
                 body,
                 is_statement_modifier,
             } => {
+                let rw_branch = std::mem::take(&mut self.rw_tail_branch);
                 self.compile_expr(cond);
                 let when_idx = self.code.emit(OpCode::When {
                     body_end: 0,
@@ -3203,9 +3211,11 @@ impl Compiler {
                 for (i, s) in body.iter().enumerate() {
                     let is_last = i == body.len() - 1;
                     if is_last {
+                        self.rw_tail_branch = rw_branch;
                         if !self.compile_when_tail_stmt(s) {
                             self.compile_stmt(s);
                         }
+                        self.rw_tail_branch = false;
                     } else {
                         self.compile_stmt(s);
                     }
@@ -3223,6 +3233,7 @@ impl Compiler {
             // existing `ClassDecl`/`RoleDecl` pattern.
             Stmt::Default(body) if self.emit_block_placeholder_die(body) => {}
             Stmt::Default(body) => {
+                let rw_branch = std::mem::take(&mut self.rw_tail_branch);
                 let default_idx = self.code.emit(OpCode::Default { body_end: 0 });
                 let block_local_idx = Self::branch_declares_block_local(body).then(|| {
                     self.code.emit(OpCode::BlockLocalScope {
@@ -3238,9 +3249,11 @@ impl Compiler {
                     for (i, s) in body.iter().enumerate() {
                         let is_last = i == body.len() - 1;
                         if is_last {
+                            self.rw_tail_branch = rw_branch;
                             if !self.compile_when_tail_stmt(s) {
                                 self.compile_stmt(s);
                             }
+                            self.rw_tail_branch = false;
                         } else {
                             self.compile_stmt(s);
                         }

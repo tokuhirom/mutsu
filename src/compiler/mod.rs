@@ -1407,6 +1407,14 @@ pub(crate) struct Compiler {
     /// the `is rw` anonymous-sub paths; a nested closure gets its own
     /// compiler with the flag off.
     rw_tail: bool,
+    /// ADR-0059 Slice 2, extended to conditionals (#9060): set while compiling
+    /// the value-position branches of an `if`/`elsif`/`else` that IS the tail
+    /// of an `is rw` routine body. The taken branch's own tail expression is
+    /// then what the routine returns, so it is compiled as a container
+    /// (`compile_return_rw_arg`) exactly like a bare routine tail. Consumed
+    /// (taken) by `compile_stmts_value` / `compile_if_value`, so it never
+    /// leaks into a condition, a non-tail statement or a nested expression.
+    rw_tail_branch: bool,
     /// ADR-0067's argument producer, relayed through an `Expr::ArrayLiteral`.
     ///
     /// `f($c.v) = 9` and `++f($c.v)` are rewritten by the parser into
@@ -1750,6 +1758,7 @@ impl Compiler {
             bind_terminal: false,
             rw_return_operand: false,
             rw_tail: false,
+            rw_tail_branch: false,
             pending_rw_arg_list_callee: None,
             bind_target_direct: false,
             suppress_multidim_bind_ref_arg: false,
@@ -4078,7 +4087,7 @@ impl Compiler {
                             is_statement_modifier,
                             ..
                         } => {
-                            self.compile_if_value(
+                            self.compile_routine_tail_if(
                                 cond,
                                 then_branch,
                                 else_branch,
@@ -4102,7 +4111,7 @@ impl Compiler {
                         _ => {}
                     }
                 }
-                self.compile_stmt(stmt);
+                self.compile_routine_stmt(stmt, is_last);
                 // `given`/`when`/`default` leave their block value on the stack
                 // even in statement (sink) position — the tail-statement arms
                 // above rely on that leaked value being the block result. A
