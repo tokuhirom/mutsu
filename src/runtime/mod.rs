@@ -844,6 +844,7 @@ mod run;
 mod run_dist;
 mod run_main;
 mod run_modules;
+mod run_modules_bundled_repo;
 mod run_prelude;
 mod run_roast_preprocess;
 mod runtime_caller_env;

@@ -1163,16 +1163,22 @@ impl Interpreter {
                 }
                 "CompUnit::Repository::Installation" => {
                     let mut prefix = String::new();
+                    let mut next_repo = None;
                     for arg in &args {
-                        if let ValueView::Pair(key, value) = arg.view()
-                            && key == "prefix"
-                        {
-                            prefix = value.to_string_value();
+                        if let ValueView::Pair(key, value) = arg.view() {
+                            if key == "prefix" {
+                                prefix = value.to_string_value();
+                            } else if key == "next-repo" && value.truthy() {
+                                next_repo = Some(value.clone());
+                            }
                         }
                     }
                     let mut attrs = HashMap::new();
                     attrs.insert("prefix".to_string(), self.make_io_path_instance(&prefix));
                     attrs.insert("short-id".to_string(), Value::str_from("inst"));
+                    if let Some(next) = next_repo {
+                        attrs.insert("next-repo".to_string(), next);
+                    }
                     return Ok(Value::make_instance(
                         Symbol::intern("CompUnit::Repository::Installation"),
                         attrs,
