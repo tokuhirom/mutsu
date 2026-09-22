@@ -7,13 +7,22 @@
 //!
 //! It is reached per character, and twice per character from
 //! `unicode_word_break`'s letter arm -- once directly and once through
-//! `unicode_line_break`. **The cost is far worse for non-ASCII than the probe
-//! count suggests.** For an ASCII letter most of the 161 classes reject on the
-//! first byte, but a CJK or kana codepoint (`E3 81 82`) shares its lead bytes
-//! with many script classes, so the UTF-8 automaton has to descend before
-//! rejecting. Measured on a release build before this table,
-//! `.uniprop('Word_Break')` cost 3.52us for an ASCII letter and **29.39us for
-//! a hiragana one** -- against rakudo's 2.84us.
+//! `unicode_line_break`. Measured one case per process at n=5,200 on a release
+//! build, replacing it took `.uniprop('Word_Break')` from 2.973us to 2.061us
+//! for an ASCII letter and from 3.127us to 2.118us for a hiragana one, against
+//! rakudo's 3.063us and 3.116us. It also removes the 5.52ms the `OnceLock`
+//! spent compiling those 161 matchers the first time any script lookup
+//! happened in a process, which matters for a CLI.
+//!
+//! An earlier draft of this comment claimed the probe was dramatically worse
+//! for CJK than for ASCII -- 29.39us against 3.52us -- and explained it by the
+//! UTF-8 automaton having to descend further before rejecting a codepoint
+//! whose lead bytes many script classes share. **That was a measurement
+//! artifact, not a real effect**: the benchmark ran several cases in one
+//! process at n=520, so whichever ran first absorbed the whole 5.52ms
+//! compilation. The per-character cost never differed meaningfully between
+//! ASCII and kana. See
+//! `news/2026-09/script-lookup-stops-being-161-regexes-per-character.md`.
 //!
 //! The structure is [`super::unicode_gc`]'s, and for the same reasons: a
 //! 128-byte direct-index table for ASCII, a two-stage trie over 64-codepoint
