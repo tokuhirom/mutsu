@@ -52,7 +52,8 @@
 # operation. So this row's ratio will read near 1, and it is NOT the ~63x/~126x
 # of #8289, which was measured on the encode/decode calls alone with startup
 # excluded. What it does do is move when dispatch cost moves, which is the
-# point; for the isolated per-operation figure, time the calls directly.
+# point; for the isolated per-operation figure, time the calls directly --
+# which is what bench-json-fast-spdx does, as its `@section` rows (#8673).
 # ----------------------------------------------------------------------------
 use lib $?FILE.IO.parent(2).add('modules/JSON-Fast/lib').Str;
 use JSON::Fast;

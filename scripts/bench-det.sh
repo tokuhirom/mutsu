@@ -258,6 +258,12 @@ fi
 
 mkdir -p "$(dirname "$CG_OUT")"
 
+# Tells a benchmark it is running under callgrind (~90x native), so one sized
+# for the wall-clock series can shrink its input: benchmarks/bench-json-fast-spdx
+# decodes 100 records here instead of 727. The instruction series only has to
+# be comparable with itself across commits, never with the wall-clock series.
+export BENCH_DET=1
+
 measure() { # $1=bench-file; sets $ir and $allocs
     local raw
     ir=NA

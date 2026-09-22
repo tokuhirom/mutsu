@@ -313,6 +313,27 @@ tag-gating experiment and writing down *why* (7 of 57 decodes bought 1.17%; all 
 was worth more than landing it would have been. Publish that, then go and do the structural
 change.
 
+## 5b. Explain what is slow before claiming to close a ratio
+
+When the goal is a ratio against rakudo (#8673's is **faster than rakudo**, read off the bench
+CI's `bench-json-fast-spdx@section+jit` row), a profile table is not an explanation. Before a
+change is presented as moving that ratio, write down concretely:
+
+- **which operation** is slow and **how many times it runs** per unit of input (per JSON value,
+  per character, per record);
+- **what rakudo/MoarVM does instead** — e.g. `nqp::ordat` is one MoarVM instruction on a native
+  register, where mutsu boxes the operands, dispatches and unboxes the result;
+- **what structural change removes the work**, and the multiple it is worth by §5a's arithmetic.
+
+**Prefer pruning to shaving.** The wins that close a 60x gap come from *not doing* work: deciding
+a name or type once at compile time instead of per execution, keeping native values unboxed across
+a basic block, specializing a scanner loop. Regex and grammar code is the sharpest case: the
+dominant cost there is search space — literal prefixes, first-character sets, anchoring, not
+materializing backtracking state that no alternative will use — so tuning the matcher's inner
+steps barely moves it while pruning moves it by multiples. Obvious bounded fixes (a copy where a
+borrow exists, a check run twice) are still fine to land; just do not report them as progress on
+the ratio.
+
 ## 6. Reporting
 
 - **Say so when wall clock does not move.** Two slices in this campaign cut instructions and
