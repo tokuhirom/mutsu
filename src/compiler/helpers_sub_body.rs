@@ -780,6 +780,40 @@ impl Compiler {
         }
     }
 
+    /// Compile an `if`/`elsif`/`else` that is the tail statement of a routine
+    /// body. For an `is rw` / `is raw` routine the taken branch's tail is the
+    /// routine's return value, so it denotes a container just like a bare
+    /// tail does (`method m is rw { if $c { %h<a> } else { %h<b> } }`, #9060);
+    /// see `rw_tail_branch`.
+    pub(super) fn compile_routine_tail_if(
+        &mut self,
+        cond: &Expr,
+        then_branch: &[Stmt],
+        else_branch: &[Stmt],
+        binding_var: &Option<String>,
+        is_statement_modifier: bool,
+    ) {
+        let saved = std::mem::replace(&mut self.rw_tail_branch, self.rw_tail);
+        self.compile_if_value(
+            cond,
+            then_branch,
+            else_branch,
+            binding_var,
+            is_statement_modifier,
+        );
+        self.rw_tail_branch = saved;
+    }
+
+    /// Compile one statement of a routine body. When it is the body's tail
+    /// `given` (or `with`) and the routine is `is rw` / `is raw`, the value its
+    /// taken `when`/`default` (or its own last statement) yields is the
+    /// routine's return, so that tail compiles as a container (#9060).
+    pub(super) fn compile_routine_stmt(&mut self, stmt: &Stmt, is_tail: bool) {
+        self.rw_tail_branch = is_tail && self.rw_tail && matches!(stmt, Stmt::Given { .. });
+        self.compile_stmt(stmt);
+        self.rw_tail_branch = false;
+    }
+
     fn compile_routine_body_stmts(
         sub_compiler: &mut Compiler,
         body: &[Stmt],
@@ -835,7 +869,7 @@ impl Compiler {
                         is_statement_modifier,
                         ..
                     } => {
-                        sub_compiler.compile_if_value(
+                        sub_compiler.compile_routine_tail_if(
                             cond,
                             then_branch,
                             else_branch,
@@ -949,7 +983,7 @@ impl Compiler {
                     _ => {}
                 }
             }
-            sub_compiler.compile_stmt(stmt);
+            sub_compiler.compile_routine_stmt(stmt, is_last);
             // A non-final statement `given` nets one stack value that would
             // pollute the stack under the routine's real tail value — pop it.
             // (A final `given` falls through above and IS the implicit return.)
@@ -1396,7 +1430,7 @@ impl Compiler {
                         ..
                     } = stmt
                 {
-                    sub_compiler.compile_if_value(
+                    sub_compiler.compile_routine_tail_if(
                         cond,
                         then_branch,
                         else_branch,
@@ -1449,7 +1483,7 @@ impl Compiler {
                     sub_compiler.compile_let_stmt_as_value(stmt, &name);
                     continue;
                 }
-                sub_compiler.compile_stmt(stmt);
+                sub_compiler.compile_routine_stmt(stmt, is_value);
                 // A non-value statement `given` nets one stack value that would
                 // pollute the stack under the closure's real value — pop it.
                 if !is_value && Compiler::stmt_nets_a_stack_value(stmt) {
@@ -1557,7 +1591,7 @@ impl Compiler {
                             is_statement_modifier,
                             ..
                         } => {
-                            sub_compiler.compile_if_value(
+                            sub_compiler.compile_routine_tail_if(
                                 cond,
                                 then_branch,
                                 else_branch,
@@ -1636,7 +1670,7 @@ impl Compiler {
                         _ => {}
                     }
                 }
-                sub_compiler.compile_stmt(stmt);
+                sub_compiler.compile_routine_stmt(stmt, is_last);
                 // A non-final statement `given` nets one stack value that would
                 // pollute the stack under the closure's real tail value — pop it.
                 if !is_last && Compiler::stmt_nets_a_stack_value(stmt) {

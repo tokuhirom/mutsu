@@ -15,7 +15,24 @@ impl Compiler {
     /// in tail position already keeps its value (and tags a bare-variable topic
     /// for container writeback), so that case is preserved here too.
     pub(super) fn compile_when_tail_stmt(&mut self, stmt: &Stmt) -> bool {
+        // Set only for the tail of a `when`/`default`/`given` that is itself
+        // the tail of an `is rw` routine (#9060). A statement this helper does
+        // not handle (a `when`/`default` clause ending a `given` body) gets it
+        // back for the caller's own `compile_stmt`.
+        let rw_branch = std::mem::take(&mut self.rw_tail_branch);
+        let handled = self.compile_when_tail_stmt_inner(stmt, rw_branch);
+        if !handled {
+            self.rw_tail_branch = rw_branch;
+        }
+        handled
+    }
+
+    fn compile_when_tail_stmt_inner(&mut self, stmt: &Stmt, rw_branch: bool) -> bool {
         match stmt {
+            Stmt::Expr(expr) if rw_branch => {
+                self.compile_return_rw_arg(expr);
+                true
+            }
             Stmt::Expr(expr) => {
                 self.compile_expr(expr);
                 if let Expr::Var(name) = expr {

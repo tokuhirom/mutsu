@@ -69,6 +69,10 @@ impl Compiler {
     }
 
     pub(super) fn compile_stmts_value(&mut self, stmts: &[Stmt]) {
+        // Only this list's own tail may return a container (#9060); every other
+        // statement, and anything nested in the tail expression, compiles as an
+        // ordinary value.
+        let rw_branch = std::mem::take(&mut self.rw_tail_branch);
         let saved = self.push_dynamic_scope_lexical();
         if stmts.is_empty() {
             self.emit_nil_value();
@@ -86,6 +90,9 @@ impl Compiler {
             let is_last = i == stmts.len() - 1;
             if is_last {
                 match stmt {
+                    // The taken branch's tail of an `is rw` routine's tail `if`
+                    // is the routine's lvalue return (ADR-0059, #9060).
+                    Stmt::Expr(expr) if rw_branch => self.compile_return_rw_arg(expr),
                     Stmt::Expr(expr) => self.compile_expr(expr),
                     Stmt::If {
                         cond,
@@ -94,13 +101,19 @@ impl Compiler {
                         binding_var,
                         is_statement_modifier,
                         ..
-                    } => self.compile_if_value(
-                        cond,
-                        then_branch,
-                        else_branch,
-                        binding_var,
-                        *is_statement_modifier,
-                    ),
+                    } => {
+                        // An `elsif` is an `if` nested as the else branch's
+                        // tail: it inherits the routine-tail position.
+                        self.rw_tail_branch = rw_branch;
+                        self.compile_if_value(
+                            cond,
+                            then_branch,
+                            else_branch,
+                            binding_var,
+                            *is_statement_modifier,
+                        );
+                        self.rw_tail_branch = false;
+                    }
                     // A genuine source `{ ... }` in tail position is a block
                     // literal the enclosing block re-clones on every run, so its
                     // own `state` restarts per execution. That is what
@@ -140,7 +153,9 @@ impl Compiler {
                     // is a when-chain collect the clause's value per iteration
                     // (`do for 1..3 { when 2 { "hit" } }`).
                     s if Self::stmt_nets_a_stack_value(s) => {
+                        self.rw_tail_branch = rw_branch && matches!(s, Stmt::Given { .. });
                         self.compile_stmt(stmt);
+                        self.rw_tail_branch = false;
                     }
                     // A bare assignment (`$s += $_`, desugared to `Stmt::Assign`)
                     // in value-final position must yield the assigned container,
@@ -292,6 +307,9 @@ impl Compiler {
         binding_var: &Option<String>,
         is_statement_modifier: bool,
     ) {
+        // Taken here so the condition never sees it; handed back to each
+        // branch's own value list below (#9060).
+        let rw_branch = std::mem::take(&mut self.rw_tail_branch);
         // Check for heredoc scope violations before compiling
         if let Some(err) = self.check_heredoc_scope_errors(then_branch) {
             let idx = self.code.add_constant(err);
@@ -373,6 +391,7 @@ impl Compiler {
             if Self::has_block_enter_leave_phasers(then_branch) {
                 c.compile_phaser_block_scope(then_branch, PhaserBlockResult::Push);
             } else {
+                c.rw_tail_branch = rw_branch;
                 c.compile_stmts_value(then_branch);
             }
         });
@@ -392,6 +411,7 @@ impl Compiler {
                 if Self::has_block_enter_leave_phasers(else_branch) {
                     c.compile_phaser_block_scope(else_branch, PhaserBlockResult::Push);
                 } else {
+                    c.rw_tail_branch = rw_branch;
                     c.compile_stmts_value(else_branch);
                 }
             });
