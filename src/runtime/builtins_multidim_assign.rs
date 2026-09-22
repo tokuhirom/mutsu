@@ -795,12 +795,19 @@ impl Interpreter {
         // rvalue — `$obj.attr = $p` stores what `$p` FETCHes.
         let value = self.fetch_proxy_for_store(args[3].clone())?;
         // A list-valued accessor assignment (`$obj.data .= grep &pred`)
-        // receives grep's lazy Seq as the rvalue.  The accessor STORE below
-        // writes into an Array/Hash container, so realize that Seq before the
-        // in-place replacement; otherwise `replace_container_contents` sees a
-        // non-array source and leaves the old container unchanged.
+        // receives grep's lazy Seq as the rvalue.  Force it eagerly so an
+        // `@`/`%` accessor's in-place replacement (`replace_container_contents`)
+        // sees a concrete source rather than an unconsumed lazy generator.
         self.reify_map_grep_seq(&value)?;
-        let value = if value.is_seq_value() {
+        // A `$`-sigil accessor keeps the (now-forced) Seq AS a Seq: raku
+        // records the `$` container on the Seq handle rather than replacing
+        // the value, so `$obj.w = (1,2,3).Seq` stays a Seq to every later
+        // consumer (`itemize_attr_store_value`'s own `Seq` arms retag the
+        // handle for exactly this). Only an `@`/`%` target -- whose store
+        // needs a real Array/Hash -- gets the eager `coerce_to_array` (#9042).
+        let value = if value.is_seq_value()
+            && !self.method_lvalue_is_scalar_attr(&target, &method, &method_args)
+        {
             crate::runtime::coerce_to_array(value)
         } else {
             value
