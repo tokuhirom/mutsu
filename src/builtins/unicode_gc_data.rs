@@ -3,16 +3,16 @@
 //! Regenerate with:
 //!
 //! ```text
-//! MUTSU_UPDATE_GC_TABLE=1 cargo test --lib unicode_gc_gen::regenerate
+//! MUTSU_UPDATE_GC_TABLE=1 cargo test --lib unicode_gc_gen
 //! ```
 //!
-//! Derived from `regex-syntax`'s Unicode tables -- the same data
-//! `regex`'s `\p{...}` classes match against -- folded in the priority
-//! order the ordered-regex probe used, so every answer is identical to
-//! the implementation this replaced. `super::unicode_gc_gen` re-derives
-//! them on every test run and fails if this file has drifted.
+//! Derived from `regex-syntax`'s Unicode tables -- the same data `regex`'s
+//! `\p{...}` classes match against -- folded in the priority order the
+//! ordered-regex probe used, so every answer is identical to the
+//! implementation this replaced. `super::unicode_gc_gen` re-derives them on
+//! every test run and fails if this file has drifted.
 
-/// Category code of every ASCII codepoint, indexed directly.
+/// Code of every ASCII codepoint, indexed directly.
 ///
 /// Almost all the text mutsu classifies is ASCII, so that case skips
 /// the two-stage lookup below entirely: one load, no second dependent
@@ -65,7 +65,7 @@ pub(super) static BMP_INDEX: [u16; 1024] = [
     192,192,192,192,26,26,26,26,26,193,26,194,195,196,197,198,26,26,26,26,199,200,201,202,203,204,26,205,206,207,208,209,
 ];
 
-/// Deduplicated BMP leaf blocks: 210 blocks of 64 category codes.
+/// Deduplicated BMP leaf blocks: 210 blocks of 64 codes.
 #[rustfmt::skip]
 pub(super) static BMP_LEAVES: [u8; 13440] = [
     25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,22,17,17,17,19,17,17,17,13,14,17,18,17,12,17,17,8,8,8,8,8,8,8,8,8,8,17,17,18,18,18,17,
@@ -280,9 +280,9 @@ pub(super) static BMP_LEAVES: [u8; 13440] = [
     28,28,4,4,4,4,4,4,28,28,4,4,4,4,4,4,28,28,4,4,4,4,4,4,28,28,4,4,4,28,28,28,19,19,18,20,21,19,19,28,21,18,18,18,18,21,21,28,28,28,28,28,28,28,28,28,28,26,26,26,21,21,28,28,
 ];
 
-/// Start codepoint of each constant-category run above the BMP. The
-/// first entry is exactly `0x10000`, so the lookup's `partition_point`
-/// never underflows.
+/// Start codepoint of each constant-code run above the BMP. The first
+/// entry is exactly `0x10000`, so the lookup's `partition_point` never
+/// underflows.
 #[rustfmt::skip]
 pub(super) static ASTRAL_STARTS: [u32; 1200] = [
     0x10000,0x1000C,0x1000D,0x10027,0x10028,0x1003B,0x1003C,0x1003E,0x1003F,0x1004E,0x10050,0x1005E,
@@ -387,7 +387,7 @@ pub(super) static ASTRAL_STARTS: [u32; 1200] = [
     0x31350,0x323B0,0xE0001,0xE0002,0xE0020,0xE0080,0xE0100,0xE01F0,0xF0000,0xFFFFE,0x100000,0x10FFFE,
 ];
 
-/// Category code of each run in [`ASTRAL_STARTS`].
+/// Code of each run in [`ASTRAL_STARTS`].
 #[rustfmt::skip]
 pub(super) static ASTRAL_CATS: [u8; 1200] = [
     4,28,4,28,4,28,4,28,4,28,4,28,4,28,17,28,10,28,21,9,10,21,10,21,28,21,28,21,28,21,5,28,4,28,4,28,5,10,28,4,10,28,4,9,4,9,28,4,5,28,4,28,17,4,28,4,17,9,28,0,1,4,28,8,

@@ -34,16 +34,25 @@ pub(crate) mod transliterate;
 pub(crate) mod unicode;
 pub(crate) mod unicode_gc;
 mod unicode_gc_data;
-// Test-only: the generator and verifier for `unicode_gc_data`. Declared with
-// the `#[path]` form so `check-panic-surface` excludes the whole file -- its
-// `expect`/`panic!` calls are test scaffolding, where failing loudly is the
-// correct behaviour, and should not consume the production panic budget.
+// Test-only: the generators and verifiers for the tables above, plus their
+// shared machinery. Declared with the `#[path]` form so
+// `check-panic-surface` excludes them -- their `expect`/`panic!` calls are
+// test scaffolding, where failing loudly is the correct behaviour, and should
+// not consume the production panic budget.
 #[cfg(test)]
 #[path = "unicode_gc_gen.rs"]
 mod unicode_gc_gen;
 pub(crate) mod unicode_name_alias_table;
 pub(crate) mod unicode_named_sequence_table;
 pub(crate) mod unicode_numval_table;
+pub(crate) mod unicode_script;
+mod unicode_script_data;
+#[cfg(test)]
+#[path = "unicode_script_gen.rs"]
+mod unicode_script_gen;
+#[cfg(test)]
+#[path = "unicode_table_gen.rs"]
+mod unicode_table_gen;
 pub(crate) mod uniprop;
 mod uniprop_tables;
 use crate::value::{RuntimeError, Value, ValueView};

@@ -462,7 +462,7 @@ pub(crate) fn unicode_line_break(ch: char) -> String {
                 "Mn" | "Mc" | "Me" => {
                     // Southeast Asian scripts use SA for combining marks too
                     let script = crate::builtins::unicode::unicode_script_name(ch);
-                    match script.as_str() {
+                    match script {
                         "Thai" | "Lao" | "Myanmar" | "Khmer" | "Javanese" | "Tai_Tham"
                         | "New_Tai_Lue" | "Tai_Le" => "SA".to_string(),
                         _ => "CM".to_string(),
@@ -471,7 +471,7 @@ pub(crate) fn unicode_line_break(ch: char) -> String {
                 "Nd" => "NU".to_string(),
                 "Lu" | "Ll" | "Lt" | "Lm" | "Lo" => {
                     let script = crate::builtins::unicode::unicode_script_name(ch);
-                    match script.as_str() {
+                    match script {
                         "Thai" | "Lao" | "Myanmar" | "Khmer" | "Javanese" | "Tai_Tham"
                         | "New_Tai_Lue" | "Tai_Le" => "SA".to_string(),
                         // Ideographic scripts have Line_Break=ID (not AL), e.g. a
