@@ -262,12 +262,25 @@ pub(crate) fn double_quoted_string(input: &str) -> PResult<'_, Expr> {
             // `"{ $x.subst(/'{' .+? $/, '') }"` carries a literal `{` inside a
             // single-quoted string (here nested in a regex), and `"{ '}' }"`
             // a literal `}`. Skip over `'...'` and `"..."` (honoring `\`
-            // escapes) so their braces don't unbalance the scan.
+            // escapes) so their braces don't unbalance the scan. `｢...｣`
+            // (corner-bracket strings, e.g. `"{ ｢'｣ }"`) nest and never
+            // escape, so they need their own counter — otherwise a `'`
+            // inside one wrongly starts single-quote tracking and swallows
+            // the block's closing `}`.
             let mut depth = 0;
             let mut end = 0;
             let mut in_quote: Option<char> = None;
             let mut escaped = false;
+            let mut corner_depth: u32 = 0;
             for (i, c) in rest.char_indices() {
+                if corner_depth > 0 {
+                    match c {
+                        '｢' => corner_depth += 1,
+                        '｣' => corner_depth -= 1,
+                        _ => {}
+                    }
+                    continue;
+                }
                 if let Some(q) = in_quote {
                     if escaped {
                         escaped = false;
@@ -279,6 +292,7 @@ pub(crate) fn double_quoted_string(input: &str) -> PResult<'_, Expr> {
                     continue;
                 }
                 match c {
+                    '｢' => corner_depth = 1,
                     '\'' | '"' => in_quote = Some(c),
                     '{' => depth += 1,
                     '}' => {

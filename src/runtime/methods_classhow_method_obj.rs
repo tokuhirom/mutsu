@@ -26,7 +26,9 @@ impl Interpreter {
                         .user_method_overloads(class_name, &attr.name)
                         .is_none()
                 {
-                    result.push(self.make_native_method_object(&attr.name, class_name));
+                    result.push(
+                        self.make_native_accessor_method_object(&attr.name, class_name, attr.is_rw),
+                    );
                 }
             }
             // Class-level attributes (`my $.x` / `our $.x`) also get a reader
@@ -122,7 +124,7 @@ impl Interpreter {
                 {
                     table.insert(
                         attr.name.clone(),
-                        self.make_native_method_object(&attr.name, class_name),
+                        self.make_native_accessor_method_object(&attr.name, class_name, attr.is_rw),
                     );
                 }
             }
@@ -224,7 +226,9 @@ impl Interpreter {
             // Add accessor methods for public attributes
             for attr in &role_def.attributes {
                 if attr.is_public && !role_def.methods.contains_key(&attr.name) {
-                    result.push(self.make_native_method_object(&attr.name, role_name));
+                    result.push(
+                        self.make_native_accessor_method_object(&attr.name, role_name, attr.is_rw),
+                    );
                 }
             }
             // Add explicit methods
@@ -261,6 +265,38 @@ impl Interpreter {
     /// `todo/deep/adr0019-f1-f2-introspection-canonical-source.md`).
     pub(super) fn make_native_method_object(&self, name: &str, owner: &str) -> Value {
         self.make_native_method_object_ex(name, owner, false)
+    }
+
+    /// A public attribute's auto-generated accessor method object, carrying
+    /// the attribute's own `is rw` -- introspecting it (`.^method_table`,
+    /// `.^lookup`) otherwise always answered `.rw == False`, even for `has
+    /// $.x is rw`. That mismatch broke `Test::Mock`, which asks each
+    /// `.^method_table` entry's `.rw` to decide whether to install its own
+    /// generated mock method `is rw` (Test::Mock.rakumod), and wrapped every
+    /// mocked `is rw` accessor in a read-only shim instead (X::Assignment::RO
+    /// on the very next `.name = ...`, `App::six-pm::SixPM`'s `init`).
+    pub(super) fn make_native_accessor_method_object(
+        &self,
+        name: &str,
+        owner: &str,
+        is_rw: bool,
+    ) -> Value {
+        let obj = self.make_native_method_object(name, owner);
+        if !is_rw {
+            return obj;
+        }
+        let ValueView::Instance {
+            class_name,
+            attributes,
+            ..
+        } = obj.view()
+        else {
+            return obj;
+        };
+        let mut attrs = attributes.as_map().clone();
+        attrs.insert("rw".to_string(), Value::TRUE);
+        attrs.insert("readonly".to_string(), Value::FALSE);
+        Value::make_instance(class_name, attrs)
     }
 
     /// `is_regex`: the method is a grammar `token`/`rule`/`regex` -- its
