@@ -148,6 +148,37 @@ impl Interpreter {
         Self::itemize_scalar_store_value(value)
     }
 
+    /// Whether `target.method` (about to be assigned through, e.g.
+    /// `$obj.method = value`) is a `$`-sigil attribute accessor -- either the
+    /// generated public accessor for `has $.method`, or a hand-written
+    /// `is rw` method whose body is a bare `$!method`-shaped attribute
+    /// (see [`Self::rw_method_attribute_target`]).
+    ///
+    /// `false` on anything this can't positively identify as a `$` target
+    /// (a non-instance target, an unresolvable method, a container-sigil
+    /// attribute, a differently-named custom accessor whose body isn't a
+    /// bare attribute read). The one caller
+    /// (`builtin_assign_method_lvalue`) treats `false` as "assume `@`/`%`
+    /// and reify/coerce a Seq/Slip rvalue as before" -- the safe default is
+    /// the OLD behavior, not "definitely not `$`".
+    pub(crate) fn method_lvalue_is_scalar_attr(
+        &mut self,
+        target: &Value,
+        method: &str,
+        method_args: &[Value],
+    ) -> bool {
+        let ValueView::Instance { class_name, .. } = target.view() else {
+            return false;
+        };
+        let class_name = class_name.resolve();
+        if let Some(def) = self.resolve_method(&class_name, method, method_args) {
+            return matches!(Self::rw_method_attribute_target(&def.body), Some((_, '$')));
+        }
+        self.collect_class_attributes(&class_name)
+            .iter()
+            .any(|attr| attr.name == method && attr.sigil == '$')
+    }
+
     /// What assigning `Nil` to attribute `attr` actually stores.
     ///
     /// Raku's `=` restores a container's *default* when handed `Nil`: the

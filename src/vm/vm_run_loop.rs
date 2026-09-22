@@ -1199,8 +1199,24 @@ impl Interpreter {
             // A deferred `.cache` result is a List-view handle rather than a
             // real Array. Retag the handle without pulling its source, exactly
             // as the Array arm changes List -> ItemList without copying data.
-            ValueView::Seq(body) if body.view() == crate::value::SeqView::ItemList => val,
+            //
+            // Every arm below also marks the shared reification core
+            // itemized (`SeqBody::mark_itemized`): a `$`-held Seq/List
+            // survives an implicit statement sink un-consumed (`my $s =
+            // (1,2,3).Seq;` alone must not exhaust it), exactly like the
+            // dedicated `body.mark_itemized()` call `SetLocal`'s own store
+            // path (`vm_var_assign_set_local.rs`) makes beside its own call
+            // into this function. Without it here too, a caller with no such
+            // separate call of its own -- the attribute-accessor store
+            // (`itemize_attr_store_value`) -- left the body un-itemized, so
+            // `$obj.w = (1,2,3).Seq;`'s own implicit sink silently consumed
+            // it before any later read (#9042).
+            ValueView::Seq(body) if body.view() == crate::value::SeqView::ItemList => {
+                body.mark_itemized();
+                val
+            }
             ValueView::Seq(body) if body.view() == crate::value::SeqView::List => {
+                body.mark_itemized();
                 Value::seq_body(body.as_item_list_view())
             }
             // A real `Seq` records the `$` container on the HANDLE (a second
@@ -1211,6 +1227,7 @@ impl Interpreter {
             // must stay a `Seq` to every consumer while `.raku` renders the
             // container. Retagging pulls nothing, so a lazy source stays lazy.
             ValueView::Seq(body) if body.view() == crate::value::SeqView::Seq => {
+                body.mark_itemized();
                 Value::seq_body(body.as_item_seq_view())
             }
             // Unlike Arrays and Hashes, a Range has no itemized representation
