@@ -193,7 +193,7 @@ pub(crate) fn unicode_property_value(ch: char, prop: &str) -> Value {
             Value::str_from(crate::builtins::unicode::unicode_general_category(ch))
         }
         // Script
-        "Script" | "sc" => Value::str(crate::builtins::unicode::unicode_script_name(ch)),
+        "Script" | "sc" => Value::str_from(crate::builtins::unicode::unicode_script_name(ch)),
         // Age
         "Age" => Value::str_from("1.1"), // Simplified; proper impl would need full data
         // Block
