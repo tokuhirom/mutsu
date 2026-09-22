@@ -995,8 +995,32 @@ impl Interpreter {
         // correct once such a call does arrive.
         self.current_unit = saved_unit;
 
+        // A definite constant return spec (`--> Nil`, `--> True`, `--> 42`,
+        // #9074) is not a type check: mirror `finalize_return_with_spec`'s
+        // definite arm. A `fail` bypasses it; an explicit `return` must carry
+        // no value (a non-Nil one is `X::AdHoc` "malformed return value"); a
+        // natural completion sinks the body's value (so a trailing lazy
+        // `.map` still runs) and discards it. Either way the constant wins.
+        let definite_value = if let Some(konst) = &cf.return_definite_const
+            && result.is_ok()
+            && !fail_bypass
+        {
+            match &explicit_return {
+                Some(v) if !v.is_nil() => {
+                    let spec = cf.return_type.as_deref().unwrap_or("Nil");
+                    return Err(self.malformed_return_value_error(v, spec));
+                }
+                Some(_) => {}
+                None => self.sink_for_definite_return(&ret_val)?,
+            }
+            Some(konst.clone())
+        } else {
+            None
+        };
+
         // Return type check (if specified). Allows type objects, Nil, and Failure through.
         if result.is_ok()
+            && cf.return_definite_const.is_none()
             && let Some(ref rt) = cf.return_type
         {
             let check_val = explicit_return.as_ref().unwrap_or(&ret_val);
@@ -1032,7 +1056,9 @@ impl Interpreter {
         match result {
             Ok(()) if fail_bypass => Ok(ret_val),
             Ok(()) => {
-                if let Some(v) = explicit_return {
+                if let Some(v) = definite_value {
+                    Ok(v)
+                } else if let Some(v) = explicit_return {
                     Ok(v)
                 } else {
                     Ok(ret_val)

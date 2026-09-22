@@ -351,7 +351,7 @@ impl Interpreter {
         failure
     }
 
-    fn malformed_return_value_error(&self, value: &Value, spec: &str) -> RuntimeError {
+    pub(crate) fn malformed_return_value_error(&self, value: &Value, spec: &str) -> RuntimeError {
         if let ValueView::Instance {
             class_name,
             attributes,
@@ -421,7 +421,7 @@ impl Interpreter {
         self.eval_eval_string(s)
     }
 
-    fn sink_for_definite_return(&mut self, value: &Value) -> Result<(), RuntimeError> {
+    pub(crate) fn sink_for_definite_return(&mut self, value: &Value) -> Result<(), RuntimeError> {
         match value.view() {
             ValueView::LazyList(list) => {
                 let items = self.force_lazy_list(&list)?;

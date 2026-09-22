@@ -10071,6 +10071,17 @@ pub(crate) struct CompiledFunction {
     /// `None` when there is no return type, or when it is not one the light
     /// return check handles by tag.
     pub(crate) return_fast_type: Option<FastParamCheck>,
+    /// The constant a *definite* return spec names (`--> Nil`, `--> True`,
+    /// `--> False`, `--> 42`), when it is one of those literal constants.
+    /// Such a spec is not a type constraint: the body's value is sunk and
+    /// discarded and this constant is returned instead (see
+    /// `Interpreter::finalize_return_with_spec`). Carrying it precomputed lets
+    /// the positional-light path serve the routine with one branch after the
+    /// body, instead of declining it to the full call path (#9074). `None`
+    /// for no return spec, a type constraint, or a definite spec that is not
+    /// a plain constant (`--> $x`, an enum value, an expression), which keep
+    /// the general path.
+    pub(crate) return_definite_const: Option<Value>,
     /// The package this routine was declared in (e.g. `"P"` for a sub in
     /// `package P { ... }`, `"GLOBAL"` for a top-level sub). The dispatch sets
     /// `current_package` from this on entry so package-scoped variable
@@ -10428,6 +10439,28 @@ impl CompiledFunction {
     /// construction site already calls this once its signature is final, and
     /// keeping them in one place is what stops a new site from remembering the
     /// names and forgetting the tags.
+    /// The literal constant a definite return spec names, or `None` when the
+    /// spec is anything else (see [`Self::return_definite_const`]). Every
+    /// spelling accepted here is one `Interpreter::is_definite_return_spec`
+    /// classifies as definite unconditionally -- before any type-registry
+    /// lookup -- and one `evaluate_definite_return_value` answers without an
+    /// EVAL, so the light path returns exactly what the general path would.
+    fn definite_return_const(spec: &str) -> Option<Value> {
+        match spec.trim() {
+            "Nil" => Some(Value::NIL),
+            "True" => Some(Value::TRUE),
+            "False" => Some(Value::FALSE),
+            s if s
+                .strip_prefix('-')
+                .unwrap_or(s)
+                .starts_with(|c: char| c.is_ascii_digit()) =>
+            {
+                s.parse::<i64>().ok().map(Value::int)
+            }
+            _ => None,
+        }
+    }
+
     pub(crate) fn precompute_param_name_syms(&mut self) {
         self.param_name_syms = self
             .param_defs
@@ -10449,6 +10482,10 @@ impl CompiledFunction {
             .return_type
             .as_ref()
             .and_then(|rt| FastParamCheck::of(Some(rt)));
+        self.return_definite_const = self
+            .return_type
+            .as_deref()
+            .and_then(Self::definite_return_const);
         self.param_itemize_on_bind = self
             .param_defs
             .iter()
@@ -10576,6 +10613,7 @@ mod compiled_fns_identity {
             light_required_positionals: None,
             light_full_arity_only: false,
             return_fast_type: None,
+            return_definite_const: None,
             package: "GLOBAL".to_string(),
             compiled_fns: None,
             memo_cache: std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),

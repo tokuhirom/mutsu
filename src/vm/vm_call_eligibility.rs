@@ -398,11 +398,14 @@ impl Interpreter {
             && !cf.code.has_once
             // callframe / CALLER:: need the frame-pushing path (see fast path).
             && !cf.code.uses_callframe
-            // Only allow return types that light_return_type_check can handle
-            && cf
+            // Only allow return types that light_return_type_check can handle,
+            // or a definite constant return (`--> Nil`, `--> True`), which the
+            // light path serves by returning the constant (#9074).
+            && (cf
                 .return_type
                 .as_deref()
                 .is_none_or(Self::is_fast_type_name)
+                || cf.return_definite_const.is_some())
             && !cf.param_defs.is_empty()
             // A call that may OMIT a defaulted / `?`-optional positional is
             // admitted only when the precompute could reduce every one of them
