@@ -228,8 +228,11 @@ impl Interpreter {
             right
         };
         // The inner operator was interned by the compiler, so `as_str` is the
-        // interner's own `&'static str` and this allocates nothing.
+        // interner's own `&'static str` and this allocates nothing. Its shape
+        // is decoded ONCE here: `hyper_op_pair` recurses per element (and per
+        // nested Hash/Pair/list level), and each of those used to re-derive it.
         let op = op.as_str();
+        let op_shape = crate::compiled_operator::InfixShape::lower(op);
         // X::HyperOp::Infinite: when the result length is determined by an
         // infinite/lazy operand, the hyper op cannot produce a finite result.
         // Checked once at the top level (nested elements are already realized).
@@ -250,7 +253,7 @@ impl Interpreter {
                 return Err(Self::hyperop_infinite_error(side));
             }
         }
-        let result = self.hyper_op_pair(op, &left, &right, dwim_left, dwim_right)?;
+        let result = self.hyper_op_pair(op_shape.as_ref(), &left, &right, dwim_left, dwim_right)?;
         // The result inherits the itemization of the operand that donated its
         // structure (the left when listy, else the right): raku renders
         // `($a >>+<< (2,4,6)).raku` as `$(3, 6, 9)` for an itemized `$a`.
@@ -284,7 +287,7 @@ impl Interpreter {
     /// op into the hash element, yielding `("1a", {a=>"2b"}, "4c")`.
     fn hyper_op_pair(
         &mut self,
-        op: &str,
+        op: crate::compiled_operator::InfixRef<'_>,
         left: &Value,
         right: &Value,
         dwim_left: bool,
@@ -320,7 +323,7 @@ impl Interpreter {
                 (false, true) => la.keys().cloned().collect(),
                 (true, false) => ra.keys().cloned().collect(),
             };
-            let identity = runtime::reduction_identity(op);
+            let identity = runtime::reduction_identity(op.leaf());
             let mut result = crate::value::user_key_map::with_capacity(keys.len());
             // Object-hash identity (`{Any}`-keyed, `.WHICH`-stored) is per-key
             // metadata carried in `original_keys`, not derivable from the
@@ -446,7 +449,7 @@ impl Interpreter {
             let right_fixed = !dwim_right && !right_ext;
             // A non-dwimmy, non-extensible hyper requires equal lengths.
             if left_fixed && right_fixed && left_len != right_len {
-                return Err(Self::hyperop_nondwim_error(left_len, right_len, op));
+                return Err(Self::hyperop_nondwim_error(left_len, right_len, op.leaf()));
             }
             // A scalar leaf on the non-dwimmy side is a single element that cannot grow to
             // meet the other side, so `5 »*» (2..4)` is X::HyperOp::NonDWIM even though the
@@ -456,10 +459,10 @@ impl Interpreter {
                 fixed && is_scalar && other_len != 0 && other_len != 1
             };
             if scalar_fixed_mismatch(left_fixed, !Self::is_listy(left), right_len) {
-                return Err(Self::hyperop_nondwim_error(left_len, right_len, op));
+                return Err(Self::hyperop_nondwim_error(left_len, right_len, op.leaf()));
             }
             if scalar_fixed_mismatch(right_fixed, !Self::is_listy(right), left_len) {
-                return Err(Self::hyperop_nondwim_error(left_len, right_len, op));
+                return Err(Self::hyperop_nondwim_error(left_len, right_len, op.leaf()));
             }
             // An empty operand cannot be cycled or padded to fill a dwim side, so
             // any empty side yields an empty result (`True »+» ()` is `()`, not a
@@ -535,10 +538,13 @@ impl Interpreter {
         // distributes 7 across @a's shape, and the old left value is simply
         // replaced. The distribution and the dwim rules are the ordinary hyper
         // ones, handled above; only the leaf is special.
-        if op == "=" {
+        // Both are LEAF-only spellings: a `Z=`/`R~~` must not take them (the
+        // meta layer decides what the leaf is applied to), so they are matched
+        // on an operator that carries no layer at all.
+        if op.as_plain() == Some("=") {
             return Ok(right.clone());
         }
-        if op == "~~" {
+        if op.as_plain() == Some("~~") {
             return Ok(Value::truth(self.vm_smart_match(left, right)));
         }
         // Try user-defined infix dispatch first when either operand is an
@@ -546,12 +552,12 @@ impl Interpreter {
         if matches!(left.view(), ValueView::Instance { .. })
             || matches!(right.view(), ValueView::Instance { .. })
         {
-            let infix_name = format!("infix:<{}>", op);
+            let infix_name = format!("infix:<{}>", op.leaf());
             if let Some(v) = self.try_user_infix(&infix_name, left, right)? {
                 return Ok(v);
             }
         }
-        self.eval_reduction_operator_values(op, left, right)
+        self.eval_infix_shape(op, left, right)
     }
 
     /// The QuantHash kind and mutability of a value, if it is a Set/Bag/Mix.

@@ -134,7 +134,7 @@ impl Interpreter {
         // `[R op] @list` == `[op] @list.reverse` (and likewise for the scan form
         // `[\R op]`). Reversing the operand list and stripping the `R` yields the
         // correct result for non-commutative / non-associative ops (`-`, `/`),
-        // where the per-step operand swap done by `eval_reduction_operator_values`
+        // where the per-step operand swap done by `eval_infix_shape`
         // would instead compute `[op]` right-folded (e.g. `[R/] 100,10,2` is
         // `2/10/100` = 0.002, not `100/(10/2)` = 20).
         //
@@ -185,6 +185,12 @@ impl Interpreter {
             base_op = op.as_str();
             callable = None;
         }
+        // `base_op` is final from here on (the `R&callable` strip and the
+        // builtin-callable unwrap above are the last things that can change
+        // it), so its shape is decoded ONCE — the fold, scan and chain loops
+        // below apply the operator once per element and each of those used to
+        // re-derive it.
+        let op_shape = crate::compiled_operator::InfixShape::lower(base_op);
         let arity = callable
             .as_ref()
             .map(|c| self.reduction_callable_arity(c))
@@ -228,8 +234,11 @@ impl Interpreter {
                         let start = right_edge - step;
                         let mut call_args = list[start..right_edge].to_vec();
                         call_args.push(acc);
-                        let v =
-                            self.reduction_step_with_args(base_op, callable.as_ref(), call_args)?;
+                        let v = self.reduction_step_with_args(
+                            op_shape.as_ref(),
+                            callable.as_ref(),
+                            call_args,
+                        )?;
                         acc = if negate { Value::truth(!v.truthy()) } else { v };
                         out.push(acc.clone());
                         right_edge = start;
@@ -248,8 +257,8 @@ impl Interpreter {
                         let mut all_true = true;
                         for i in 0..list.len() - 1 {
                             if all_true {
-                                let v = self.eval_reduction_operator_values(
-                                    base_op,
+                                let v = self.eval_infix_shape(
+                                    op_shape.as_ref(),
                                     &list[i],
                                     &list[i + 1],
                                 )?;
@@ -296,20 +305,25 @@ impl Interpreter {
                             && ((base_op.starts_with('Z') && base_op.len() > 1)
                                 || (base_op.starts_with('X') && base_op.len() > 1));
                         if is_multi_list_zx {
+                            // The inner operator of the `Z`/`X` prefix, decoded
+                            // once for the whole prefix walk below.
+                            let inner_shape =
+                                crate::compiled_operator::InfixShape::lower(&base_op[1..]);
                             // Compute prefix reductions from scratch at each step
                             for i in 0..list.len() {
                                 let v = if i == 0 {
                                     // Single-element: apply inner_op as a left-fold
                                     // over the first list's elements, wrapped in Seq.
-                                    let inner_op = &base_op[1..];
                                     let items = runtime::value_to_list(&list[0]);
                                     if items.is_empty() {
                                         Value::seq(vec![])
                                     } else {
                                         let mut acc0 = items[0].clone();
                                         for item in items.iter().skip(1) {
-                                            acc0 = self.eval_reduction_operator_values(
-                                                inner_op, &acc0, item,
+                                            acc0 = self.eval_infix_shape(
+                                                inner_shape.as_ref(),
+                                                &acc0,
+                                                item,
                                             )?;
                                         }
                                         Value::seq(vec![acc0])
@@ -318,8 +332,8 @@ impl Interpreter {
                                     // Apply the Z/X op to all prefix elements
                                     let mut acc0 = list[0].clone();
                                     for item in list.iter().take(i + 1).skip(1) {
-                                        acc0 = self
-                                            .eval_reduction_operator_values(base_op, &acc0, item)?;
+                                        acc0 =
+                                            self.eval_infix_shape(op_shape.as_ref(), &acc0, item)?;
                                     }
                                     acc0
                                 };
@@ -358,7 +372,7 @@ impl Interpreter {
                                 let mut call_args = vec![acc];
                                 call_args.extend(list[idx..idx + step].iter().cloned());
                                 let v = self.reduction_step_with_args(
-                                    base_op,
+                                    op_shape.as_ref(),
                                     callable.as_ref(),
                                     call_args,
                                 )?;
@@ -472,7 +486,7 @@ impl Interpreter {
             // identity-bearing BUILTINS short-circuit -- and a callable that is
             // really a builtin was already unwrapped above.
             if let Some(c) = callable.clone() {
-                let v = self.reduction_step_with_args(base_op, Some(&c), Vec::new())?;
+                let v = self.reduction_step_with_args(op_shape.as_ref(), Some(&c), Vec::new())?;
                 let result = if negate { Value::truth(!v.truthy()) } else { v };
                 self.stack.push(result);
                 return Ok(());
@@ -490,7 +504,7 @@ impl Interpreter {
             if is_comparison {
                 let mut result = true;
                 for i in 0..list.len() - 1 {
-                    let v = self.eval_reduction_operator_values(base_op, &list[i], &list[i + 1])?;
+                    let v = self.eval_infix_shape(op_shape.as_ref(), &list[i], &list[i + 1])?;
                     let truthy = if negate { !v.truthy() } else { v.truthy() };
                     if !truthy {
                         result = false;
@@ -508,8 +522,11 @@ impl Interpreter {
                 if list.len() == 1
                     && let Some(c) = callable.clone()
                 {
-                    let v =
-                        self.reduction_step_with_args(base_op, Some(&c), vec![list[0].clone()])?;
+                    let v = self.reduction_step_with_args(
+                        op_shape.as_ref(),
+                        Some(&c),
+                        vec![list[0].clone()],
+                    )?;
                     let result = if negate { Value::truth(!v.truthy()) } else { v };
                     self.stack.push(result);
                     return Ok(());
@@ -552,7 +569,11 @@ impl Interpreter {
                     // `**`/`%` it would wrongly compute `0 - 5`, `1 / 5`, etc.
                     // Numify via the additive identity so `[+] "2"` is Int 2,
                     // `[-] 5` is 5, and `[/] 5` is 5 (matching Rakudo).
-                    let v = self.reduction_step_with_args("+", None, vec![Value::int(0), elem])?;
+                    let v = self.reduction_step_with_args(
+                        crate::compiled_operator::InfixShape::lower("+").as_ref(),
+                        None,
+                        vec![Value::int(0), elem],
+                    )?;
                     let result = if negate { Value::truth(!v.truthy()) } else { v };
                     self.stack.push(result);
                     return Ok(());
@@ -572,7 +593,7 @@ impl Interpreter {
                     && !Self::value_is_buf(&list[0])
                 {
                     let v = self.reduction_step_with_args(
-                        "~",
+                        crate::compiled_operator::InfixShape::lower("~").as_ref(),
                         None,
                         vec![Value::str(String::new()), list[0].clone()],
                     )?;
@@ -589,7 +610,7 @@ impl Interpreter {
                             let mut call_args = list[start..right_edge].to_vec();
                             call_args.push(acc);
                             let v = self.reduction_step_with_args(
-                                base_op,
+                                op_shape.as_ref(),
                                 callable.as_ref(),
                                 call_args,
                             )?;
@@ -605,7 +626,7 @@ impl Interpreter {
                             let mut call_args = vec![acc];
                             call_args.extend(list[idx..idx + step].iter().cloned());
                             let v = self.reduction_step_with_args(
-                                base_op,
+                                op_shape.as_ref(),
                                 callable.as_ref(),
                                 call_args,
                             )?;

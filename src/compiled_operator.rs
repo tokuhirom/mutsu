@@ -27,6 +27,12 @@
 //! reach an operator name at run time (a user-defined infix, or an operator
 //! spelling computed by a helper rather than written in the source).
 //!
+//! [`InfixShape`] is the runtime-side counterpart, for the operator spellings
+//! the compiler does not own: it decodes the `[op]` / `R` / `Z` / `>>op<<`
+//! structure of an operator string ONCE, so the element loops of a hyper, a
+//! zip, a cross or a fold walk a decoded shape instead of re-parsing the
+//! spelling per element.
+//!
 //! This is the same finding [`crate::qualified`] records for package-qualified
 //! names, in a different namespace: a name derived from other names is built
 //! once, not per execution.
@@ -40,6 +46,10 @@
 //! extend the lowering here first.
 
 use crate::symbol::Symbol;
+
+mod infix_shape;
+
+pub(crate) use infix_shape::{InfixRef, InfixShape, MetaLayer};
 
 /// The structural meta-operator a [`crate::opcode::OpCode::MetaOp`] (and its
 /// assignment / n-ary siblings) applies to its base operator.

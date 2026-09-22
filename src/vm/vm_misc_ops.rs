@@ -291,9 +291,15 @@ impl Interpreter {
         params.len().max(2)
     }
 
+    /// One step of a reduction: call the resolved routine, or apply the
+    /// operator itself.
+    ///
+    /// `op` arrives decoded — a fold runs this once per element, and decoding
+    /// the operator's spelling here is exactly the per-element work
+    /// [`crate::compiled_operator::InfixShape`] exists to remove.
     pub(super) fn reduction_step_with_args(
         &mut self,
-        base_op: &str,
+        op: crate::compiled_operator::InfixRef<'_>,
         callable: Option<&Value>,
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
@@ -310,18 +316,20 @@ impl Interpreter {
                 // still wins: `has_function` sees it and the direct call runs.
                 if !self.has_function(&name)
                     && args.len() == 2
-                    && let Some(op) = name
+                    && let Some(routine_op) = name
                         .strip_prefix("infix:<")
                         .and_then(|rest| rest.strip_suffix('>'))
-                    && Self::is_builtin_reduction_op(op)
+                    && Self::is_builtin_reduction_op(routine_op)
                 {
-                    return self.eval_reduction_operator_values(op, &args[0], &args[1]);
+                    // A different operator from `op`: it comes from the
+                    // routine's own name, so it is decoded here.
+                    return self.eval_reduction_operator_values(routine_op, &args[0], &args[1]);
                 }
                 return loan_env!(self, call_user_routine_direct(&name, args));
             }
             return self.vm_call_on_value(callable.clone(), args, None);
         }
         debug_assert!(args.len() == 2);
-        self.eval_reduction_operator_values(base_op, &args[0], &args[1])
+        self.eval_infix_shape(op, &args[0], &args[1])
     }
 }

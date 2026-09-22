@@ -102,13 +102,15 @@ impl Interpreter {
         self.reify_map_grep_seq(&right)?;
         // Both operands are compile-time data: `meta` is typed and `op` was
         // interned by the compiler, so `as_str` hands back the interner's own
-        // `&'static str` and nothing here allocates.
+        // `&'static str` and nothing here allocates. Its structure is decoded
+        // once here rather than once per cross/zip pair.
         let op = op.as_str();
+        let op_shape = crate::compiled_operator::InfixShape::lower(op);
         let result = match meta {
             // `[op]=` compound assignment (e.g. `$x [+]= 6`) lowers to a "reduce"
             // meta-op: reducing the base op over the two operands is just the base
             // op applied once.
-            MetaKind::Reduce => self.eval_reduction_operator_values(op, &left, &right)?,
+            MetaKind::Reduce => self.eval_infix_shape(op_shape.as_ref(), &left, &right)?,
             MetaKind::Reverse => {
                 if op == "..." || op == "...^" {
                     let exclude_end = op == "...^";
@@ -131,7 +133,7 @@ impl Interpreter {
                     }
                     return Ok(());
                 } else {
-                    self.eval_reduction_operator_values(op, &right, &left)?
+                    self.eval_infix_shape(op_shape.as_ref(), &right, &left)?
                 }
             }
             MetaKind::Cross => {
@@ -184,7 +186,7 @@ impl Interpreter {
                 } else {
                     for l in &left_list {
                         for r in &right_list {
-                            results.push(self.eval_reduction_operator_values(op, l, r)?);
+                            results.push(self.eval_infix_shape(op_shape.as_ref(), l, r)?);
                         }
                     }
                 }
@@ -270,15 +272,18 @@ impl Interpreter {
                     };
                     for i in 0..len {
                         if let Some((ref first, ref extra)) = nested_left {
-                            let mut v =
-                                self.eval_reduction_operator_values(op, first, &right_iter.nth(i))?;
+                            let mut v = self.eval_infix_shape(
+                                op_shape.as_ref(),
+                                first,
+                                &right_iter.nth(i),
+                            )?;
                             if let Some(extra_i) = extra.get(i) {
-                                v = self.eval_reduction_operator_values(op, &v, extra_i)?;
+                                v = self.eval_infix_shape(op_shape.as_ref(), &v, extra_i)?;
                             }
                             results.push(v);
                         } else {
-                            results.push(self.eval_reduction_operator_values(
-                                op,
+                            results.push(self.eval_infix_shape(
+                                op_shape.as_ref(),
                                 &left_iter.nth(i),
                                 &right_iter.nth(i),
                             )?);
@@ -297,7 +302,7 @@ impl Interpreter {
                 }
             }
             MetaKind::Negate => {
-                let inner = self.eval_reduction_operator_values(op, &left, &right)?;
+                let inner = self.eval_infix_shape(op_shape.as_ref(), &left, &right)?;
                 Value::truth(!inner.truthy())
             }
         };
@@ -320,8 +325,10 @@ impl Interpreter {
         let right = self.stack.pop().unwrap_or(Value::NIL);
         let left = self.stack.pop().unwrap_or(Value::NIL);
         let op = op.as_str();
-        // Strip the trailing `=` to get the base op (`+=` -> `+`, `min=` -> `min`).
+        // Strip the trailing `=` to get the base op (`+=` -> `+`, `min=` -> `min`),
+        // and decode its shape once for every pair below.
         let base_op = &op[..op.len() - 1];
+        let op_shape = crate::compiled_operator::InfixShape::lower(base_op);
 
         // A scalar left operand (`$a X[+=] @b`) folds into a single cell; a
         // list-like left (`@a`) keeps its per-element cells.
@@ -347,7 +354,7 @@ impl Interpreter {
             // first left cell before advancing to the next.
             for cell in left_cells.iter_mut() {
                 for r in &right_list {
-                    let v = self.eval_reduction_operator_values(base_op, cell, r)?;
+                    let v = self.eval_infix_shape(op_shape.as_ref(), cell, r)?;
                     *cell = v.clone();
                     results.push(v);
                 }
@@ -356,8 +363,7 @@ impl Interpreter {
             // Zip: element-wise up to the shorter length.
             let n = left_cells.len().min(right_list.len());
             for i in 0..n {
-                let v =
-                    self.eval_reduction_operator_values(base_op, &left_cells[i], &right_list[i])?;
+                let v = self.eval_infix_shape(op_shape.as_ref(), &left_cells[i], &right_list[i])?;
                 left_cells[i] = v.clone();
                 results.push(v);
             }
@@ -393,6 +399,11 @@ impl Interpreter {
         operands.reverse();
         let op = op.as_str();
         let make_tuple = op.is_empty() || op == ",";
+        // `~~` needs the interpreter, so it is not an operator-table leaf. It is
+        // decided from the whole spelling once, here, so a `Z~~`-style meta form
+        // still reaches its own arm rather than this one.
+        let smart_match = op == "~~";
+        let op_shape = crate::compiled_operator::InfixShape::lower(op);
 
         let result = match meta {
             MetaKind::Cross => {
@@ -431,7 +442,12 @@ impl Interpreter {
                     'outer: loop {
                         let combo: Vec<Value> =
                             (0..n).map(|k| lists[k][indices[k]].clone()).collect();
-                        results.push(self.combine_meta_tuple(op, make_tuple, combo)?);
+                        results.push(self.combine_meta_tuple(
+                            op_shape.as_ref(),
+                            smart_match,
+                            make_tuple,
+                            combo,
+                        )?);
                         // Increment the mixed-radix index from the right.
                         let mut k = n;
                         loop {
@@ -495,7 +511,12 @@ impl Interpreter {
                 let mut results: Vec<Value> = Vec::with_capacity(len);
                 for i in 0..len {
                     let combo: Vec<Value> = iters.iter().map(|it| it.nth(i)).collect();
-                    results.push(self.combine_meta_tuple(op, make_tuple, combo)?);
+                    results.push(self.combine_meta_tuple(
+                        op_shape.as_ref(),
+                        smart_match,
+                        make_tuple,
+                        combo,
+                    )?);
                 }
                 if all_lazy {
                     // Every operand is lazy/infinite, so the zip is too.
@@ -524,7 +545,8 @@ impl Interpreter {
     /// tuple (no operator) or left-fold the operator across all elements.
     fn combine_meta_tuple(
         &mut self,
-        op: &str,
+        op: crate::compiled_operator::InfixRef<'_>,
+        smart_match: bool,
         make_tuple: bool,
         combo: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
@@ -534,10 +556,10 @@ impl Interpreter {
         let mut iter = combo.into_iter();
         let mut acc = iter.next().unwrap_or(Value::NIL);
         for elem in iter {
-            acc = if op == "~~" {
+            acc = if smart_match {
                 Value::truth(self.vm_smart_match(&acc, &elem))
             } else {
-                self.eval_reduction_operator_values(op, &acc, &elem)?
+                self.eval_infix_shape(op, &acc, &elem)?
             };
         }
         Ok(acc)
