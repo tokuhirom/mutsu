@@ -810,12 +810,18 @@ impl Interpreter {
                 // `$<x>=<[cd]>?`) always "runs" as a unit even when the `?`
                 // takes its zero branch, so it renders as an empty (zero-width)
                 // Match — unlike a name on a *capturing-group* atom
-                // (`$<x>=(...)?`), where Raku still yields Nil for zero reps
-                // (verified against `raku`: the CaptureGroup case differs from
-                // every other atom kind). `store_apply_named_capture` is a
+                // (`$<x>=(...)?`) or a bare *subrule call* atom
+                // (`$<x>=<.uint>?`, `$<x>=<uint>?`, including zero-arg builtins
+                // like `<lower>`), where Raku leaves the name entirely absent
+                // (`Nil`, missing from `.caps`) when the `?` takes its zero
+                // branch (verified against `raku`; a subrule call wrapped in a
+                // group, `$<x>=[<.uint>]?`, is the `Group`/`?`-on-Group case
+                // and still materializes an empty Match — only a *bare*
+                // `Named` atom differs). `store_apply_named_capture` is a
                 // no-op when `token.named_capture` is unset, so this is safe
-                // to call unconditionally for non-CaptureGroup atoms.
-                let named_zero_capture = !matches!(token.atom, RegexAtom::CaptureGroup(_));
+                // to call unconditionally for the remaining atom kinds.
+                let named_zero_capture =
+                    !matches!(token.atom, RegexAtom::CaptureGroup(_) | RegexAtom::Named(_));
                 if token.frugal && !token.ratchet {
                     // Frugal: prefer zero matches — try zero first.
                     if self.walk_zero_or_one_zero_arm(
