@@ -145,6 +145,13 @@ impl Interpreter {
         } else {
             self.parse_require_source(file, &path)?.0
         };
+        // A required file is its own compilation unit: rakudo rejects a call
+        // to a routine declared nowhere in it at CHECK time
+        // (X::Undeclared::Symbols), before the module body runs -- the same
+        // check the top-level program's own mainline gets (`run()`). Checked
+        // before any state below is touched, so an error here leaves nothing
+        // to unwind.
+        self.check_undeclared_routines_mainline(&stmts)?;
         let saved_package = self.current_package();
         let before_function_keys: std::collections::HashSet<Symbol> =
             self.registry().functions.keys().copied().collect();

@@ -650,7 +650,7 @@ impl Interpreter {
             def.param_defs
                 .iter()
                 .any(|p| !p.named && !p.slurpy && !p.double_slurpy)
-                && self.candidate_specificity_rank_for_args(def, arg_values).3 == 0
+                && self.candidate_specificity_rank_for_args(def, arg_values).1 == 0
         });
         // An exact-arity candidate with no optional positional parameter is
         // already narrower than every default-arity fallback. Preserve that

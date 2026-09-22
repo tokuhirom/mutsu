@@ -16,6 +16,7 @@
 //! `t/nqp/nqp-cclass-uniprop.t`, which pins both against the same values).
 
 use super::*;
+use crate::builtins::unicode_gc::GeneralCategory;
 
 /// MoarVM's General_Category property value codes, in its enumeration order.
 /// The index into this table *is* the value `nqp::getuniprop_int` returns.
@@ -50,37 +51,91 @@ fn is_cclass(cclass: i64, ch: char) -> bool {
     if cclass == ANY {
         return true;
     }
-    let gc = crate::builtins::unicode::unicode_general_category(ch);
-    let gc = gc.as_str();
-    let cp = ch as u32;
-    // The horizontal/vertical space members that are not `Z*` categories.
-    let is_line_break = matches!(cp, 0x0A | 0x0B | 0x0C | 0x0D | 0x85);
-    let alphabetic = matches!(gc, "Lu" | "Ll" | "Lt" | "Lm" | "Lo");
-    let numeric = gc == "Nd";
+    cclass & cclass_bits(ch) != 0
+}
 
-    let mut matched = false;
-    let mut test = |bit: i64, yes: bool| {
-        if cclass & bit != 0 && yes {
-            matched = true;
-        }
-    };
-    test(1, gc == "Lu"); // CCLASS_UPPERCASE
-    test(2, gc == "Ll"); // CCLASS_LOWERCASE
-    test(4, alphabetic); // CCLASS_ALPHABETIC
-    test(8, numeric); // CCLASS_NUMERIC
-    test(16, ch.is_ascii_hexdigit()); // CCLASS_HEXADECIMAL (ASCII only)
-    test(
-        32,
-        matches!(gc, "Zs" | "Zl" | "Zp") || is_line_break || cp == 0x09,
-    ); // WHITESPACE
-    test(64, gc != "Cc"); // CCLASS_PRINTING
-    test(256, gc == "Zs" || cp == 0x09); // CCLASS_BLANK
-    test(512, gc == "Cc"); // CCLASS_CONTROL
-    test(1024, gc.starts_with('P')); // CCLASS_PUNCTUATION
-    test(2048, alphabetic || numeric); // CCLASS_ALPHANUMERIC
-    test(4096, is_line_break || matches!(gc, "Zl" | "Zp")); // CCLASS_NEWLINE
-    test(8192, alphabetic || numeric || cp == 0x5F); // CCLASS_WORD
-    matched
+/// Every `CCLASS_*` bit `ch` belongs to, as one integer.
+///
+/// This is called once per character scanned by `nqp::findcclass` /
+/// `findnotcclass` -- the inner loop of a hand-rolled NQP scanner such as
+/// `JSON::Fast`'s `parse-string` -- so it answers all thirteen classes from a
+/// single table load rather than re-deriving each one from string
+/// comparisons against the category name.
+fn cclass_bits(ch: char) -> i64 {
+    use crate::builtins::unicode_gc::general_category;
+
+    let mut bits = CCLASS_BY_GC[general_category(ch) as usize];
+    let cp = ch as u32;
+    // The members that are not a function of the General_Category: specific
+    // codepoints, and the ASCII-only hexadecimal class.
+    if ch.is_ascii_hexdigit() {
+        bits |= 16; // CCLASS_HEXADECIMAL
+    }
+    if matches!(cp, 0x0A | 0x0B | 0x0C | 0x0D | 0x85) {
+        bits |= 32 | 4096; // WHITESPACE, NEWLINE
+    }
+    if cp == 0x09 {
+        bits |= 32 | 256; // WHITESPACE, BLANK
+    }
+    if cp == 0x5F {
+        bits |= 8192; // CCLASS_WORD
+    }
+    bits
+}
+
+/// The `CCLASS_*` bits implied by a General_Category, indexed by its
+/// discriminant. Derived from the rules documented at the top of this file;
+/// `t/nqp/nqp-cclass-uniprop.t` pins the result against rakudo.
+const CCLASS_BY_GC: [i64; GeneralCategory::ALL.len()] = {
+    let mut table = [0i64; GeneralCategory::ALL.len()];
+    let mut i = 0;
+    while i < table.len() {
+        table[i] = cclass_bits_for_gc(GeneralCategory::ALL[i]);
+        i += 1;
+    }
+    table
+};
+
+const fn cclass_bits_for_gc(gc: GeneralCategory) -> i64 {
+    let alphabetic = gc.in_mask(GeneralCategory::LETTER);
+    let numeric = matches!(gc, GeneralCategory::Nd);
+    let separator = gc.in_mask(GeneralCategory::SEPARATOR);
+    let control = matches!(gc, GeneralCategory::Cc);
+    let mut bits = 0i64;
+    if matches!(gc, GeneralCategory::Lu) {
+        bits |= 1; // CCLASS_UPPERCASE
+    }
+    if matches!(gc, GeneralCategory::Ll) {
+        bits |= 2; // CCLASS_LOWERCASE
+    }
+    if alphabetic {
+        bits |= 4; // CCLASS_ALPHABETIC
+    }
+    if numeric {
+        bits |= 8; // CCLASS_NUMERIC
+    }
+    if separator {
+        bits |= 32; // CCLASS_WHITESPACE
+    }
+    if !control {
+        bits |= 64; // CCLASS_PRINTING
+    }
+    if matches!(gc, GeneralCategory::Zs) {
+        bits |= 256; // CCLASS_BLANK
+    }
+    if control {
+        bits |= 512; // CCLASS_CONTROL
+    }
+    if gc.in_mask(GeneralCategory::PUNCTUATION) {
+        bits |= 1024; // CCLASS_PUNCTUATION
+    }
+    if alphabetic || numeric {
+        bits |= 2048 | 8192; // CCLASS_ALPHANUMERIC, CCLASS_WORD
+    }
+    if matches!(gc, GeneralCategory::Zl | GeneralCategory::Zp) {
+        bits |= 4096; // CCLASS_NEWLINE
+    }
+    bits
 }
 
 /// `(chars, offset)` for a cclass scan: nqp indexes strings by codepoint, so
@@ -172,10 +227,10 @@ impl Interpreter {
                 let gc = u32::try_from(cp)
                     .ok()
                     .and_then(char::from_u32)
-                    .map(crate::builtins::unicode::unicode_general_category)
-                    .unwrap_or_else(|| "Cn".to_string());
+                    .map(|ch| crate::builtins::unicode_gc::general_category(ch).as_str())
+                    .unwrap_or("Cn");
                 if op == "getuniprop_str" {
-                    Ok(Value::str(gc))
+                    Ok(Value::str_from(gc))
                 } else {
                     let code = GENERAL_CATEGORY_CODES
                         .iter()

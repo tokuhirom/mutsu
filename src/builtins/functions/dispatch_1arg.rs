@@ -399,7 +399,7 @@ pub(crate) fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Val
                         return Some(Ok(Value::NIL));
                     }
                     let ch = s.chars().next().unwrap();
-                    Some(Ok(Value::str(
+                    Some(Ok(Value::str_from(
                         crate::builtins::unicode::unicode_general_category(ch),
                     )))
                 }

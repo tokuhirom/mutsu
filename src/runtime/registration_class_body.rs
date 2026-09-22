@@ -8,6 +8,20 @@ use super::registration_class::AttrValidationCtx;
 use super::*;
 use crate::symbol::Symbol;
 
+/// What a deferred `compose` hook queued by `apply_attribute_traits` must
+/// fire on, once `run_pending_attr_composes` drains it (#8845). A `does`
+/// mixin carrying a `compose` method can live in either of two places, per
+/// real Rakudo's own composition protocol: mixed into the composing class's
+/// `.HOW` meta-object (AttrX::Lazy's mechanism: `$class.HOW does
+/// LazyAttributeContainerHOW`), or mixed directly into the attribute itself
+/// (Attribute::Lazy's simpler mechanism: `$attr does Builder[$block]`, with
+/// no `.HOW` involved — `Attribute` has a native no-op `compose(Mu $package)`
+/// every attribute's own mixed-in override polymorphically replaces).
+pub(super) enum PendingAttrCompose {
+    How(String),
+    Attribute(String, String),
+}
+
 /// Shared state of the class-body walk, passed by `&mut` to the per-statement
 /// arms instead of threading the individual locals (ADR-0019 D0).
 pub(super) struct ClassBodyCx<'a> {
@@ -42,9 +56,9 @@ pub(super) struct ClassBodyCx<'a> {
     pub(super) compiled_fns: &'a crate::opcode::CompiledFns,
     /// See [`super::registration_class::ClassDeclModifiers::is_hoisted_shell`].
     pub(super) is_hoisted_shell: bool,
-    /// Owner class names queued by `apply_attribute_traits` for a deferred
-    /// `compose` call (#8845) — see `Interpreter::run_pending_attr_composes`.
-    pub(super) pending_attr_composes: Vec<String>,
+    /// Deferred `compose` hooks queued by `apply_attribute_traits` (#8845) —
+    /// see `Interpreter::run_pending_attr_composes`.
+    pub(super) pending_attr_composes: Vec<PendingAttrCompose>,
 }
 
 impl ClassBodyCx<'_> {
@@ -393,17 +407,55 @@ impl Interpreter {
     /// mixin first happened) so a `compose` call after further mixins still
     /// sees the fully-composed HOW.
     fn run_pending_attr_composes(&mut self, cx: &mut ClassBodyCx<'_>) -> Result<(), RuntimeError> {
-        for owner in std::mem::take(&mut cx.pending_attr_composes) {
-            let Some(how_val) = self.registry().class_how_values.get(&owner).cloned() else {
-                continue;
+        for pending in std::mem::take(&mut cx.pending_attr_composes) {
+            // Real Rakudo hides a public attribute's auto-generated accessor
+            // from `.^method_table` only up to the point a `compose`
+            // override's own `callsame` reaches the native step that installs
+            // it (verified against `raku`: `$package.^method_table<foo>:exists`
+            // is False right before `callsame` and True right after, within
+            // the SAME compose call). mutsu has no discrete "install"
+            // step to hook that transition on, so it approximates by hiding
+            // accessors for the whole hook call -- which only matches Rakudo
+            // when the hook inspects `.^method_table` BEFORE its own
+            // `callsame` (`$class.HOW`-level hooks, #8836's own case: the
+            // conflict/existence checks AttrX::Lazy-shaped modules run
+            // ahead of `callsame`). An attribute's own `compose` hook
+            // (Attribute::Lazy's `Builder.compose`) instead reads
+            // `.^method_table` AFTER its `callsame`, expecting the accessor
+            // already installed, so it is not gated at all: skipping the gate
+            // here is what keeps that read seeing the accessor's real Method
+            // object throughout, matching the only observable case in our
+            // corpus (this class's other attributes and methods are already
+            // fully registered in `class_def` by the time ANY deferred
+            // compose runs, per #8845, so nothing else is still "mid
+            // composition" here to hide).
+            let (owner, receiver, gate_accessors) = match &pending {
+                PendingAttrCompose::How(owner) => {
+                    let Some(how_val) = self.registry().class_how_values.get(owner).cloned() else {
+                        continue;
+                    };
+                    (owner.clone(), how_val, true)
+                }
+                PendingAttrCompose::Attribute(owner, attr_name) => {
+                    let Some(attr_val) = self
+                        .registry()
+                        .class_attribute_trait_objects
+                        .get(&(owner.clone(), attr_name.clone()))
+                        .cloned()
+                    else {
+                        continue;
+                    };
+                    (owner.clone(), attr_val, false)
+                }
             };
             let type_obj = Value::package(Symbol::intern(&owner));
-            // While this hook runs, `owner`'s own auto-generated accessors
-            // are not yet in `.^method_table` — see
-            // `classes_composing_accessors`'s doc comment (#8836).
-            self.classes_composing_accessors.insert(owner.clone());
-            let result = self.call_method_with_values(how_val, "compose", vec![type_obj]);
-            self.classes_composing_accessors.remove(&owner);
+            if gate_accessors {
+                self.classes_composing_accessors.insert(owner.clone());
+            }
+            let result = self.call_method_with_values(receiver, "compose", vec![type_obj]);
+            if gate_accessors {
+                self.classes_composing_accessors.remove(&owner);
+            }
             result?;
         }
         if let Some(updated) = self.registry().classes.get(cx.name).cloned() {

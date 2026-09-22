@@ -865,6 +865,7 @@ impl Interpreter {
                             .entry(doc_key.clone())
                             .or_insert_with(|| DocComment {
                                 wherefore_name: name.clone(),
+                                declarant_key: Some(doc_key.clone()),
                                 kind: kind.clone(),
                                 is_proto: false,
                                 ..Default::default()
@@ -968,6 +969,7 @@ impl Interpreter {
                         .entry(param_key.clone())
                         .or_insert_with(|| DocComment {
                             wherefore_name: param_name.clone(),
+                            declarant_key: Some(param_key.clone()),
                             kind: super::DocDeclKind::Param,
                             ..Default::default()
                         });
@@ -1261,8 +1263,18 @@ impl Interpreter {
         // registration opcodes, but Pod::To::Text needs both `.WHY` identity and
         // the routine's real signature at that point.
         for dc in &self.doc_comment_list {
+            // `declarant_key` first: it is what distinguishes the candidates of
+            // a multi (`&mm/multi.0` vs `&mm/multi.1`) and one routine's `$a`
+            // from another's. `wherefore_name` is the fallback for a
+            // declaration whose key is simply its name.
             let wherefore = declarants
-                .and_then(|values| values.get(&dc.wherefore_name).cloned())
+                .and_then(|values| {
+                    dc.declarant_key
+                        .as_ref()
+                        .and_then(|key| values.get(key))
+                        .or_else(|| values.get(&dc.wherefore_name))
+                        .cloned()
+                })
                 .unwrap_or_else(|| match dc.kind {
                     DocDeclKind::Package => {
                         Value::package(crate::symbol::Symbol::intern(&dc.wherefore_name))
@@ -1281,11 +1293,13 @@ impl Interpreter {
                                 "Sub"
                             };
                             // For subs with return types (e.g., "anon Str sub {}"),
-                            // produce "Sub+{Callable[Str]}" format
-                            let type_name = if let Some(ref rt) = dc.return_type {
-                                format!("{}+{{Callable[{}]}}", base_type, rt)
-                            } else {
-                                base_type.to_string()
+                            // produce "Sub+{Callable[Str]}" format. Only a Sub:
+                            // rakudo leaves a Method/Submethod's name alone.
+                            let type_name = match dc.return_type {
+                                Some(ref rt) if base_type == "Sub" => {
+                                    format!("{}+{{Callable[{}]}}", base_type, rt)
+                                }
+                                _ => base_type.to_string(),
                             };
                             Value::package(crate::symbol::Symbol::intern(&type_name))
                         }

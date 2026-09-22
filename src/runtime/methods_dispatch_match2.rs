@@ -652,6 +652,18 @@ impl Interpreter {
             let result = self.eval_map_over_items(args.first().cloned(), items)?;
             return Ok(Value::seq(crate::runtime::utils::value_to_list(&result)));
         }
+        // A map callback has no observable invocation when its source is empty.
+        // Returning an already-reified empty Seq avoids allocating the deferred
+        // MapGrep source (its Arc, source vector and writeback holder) merely to
+        // discover that there is nothing to pull. This stays after callability
+        // validation above: `().map(42)` must still throw X::Cannot::Map.
+        //
+        // This matters for constructor TWEAKs such as the Zef::Distribution
+        // shape in bench-ctor, where an empty attribute is normalized with
+        // `@!resources.map(*.flat)` on every construction.
+        if items.is_empty() {
+            return Ok(Value::seq(Vec::new()));
+        }
         // A `return` callback keeps the older `LazyList` deferral for now
         // (ADR-0058 step 4 retires it): that `return` targets the lexically
         // enclosing routine, and if the Seq is forced after that routine has

@@ -45,82 +45,10 @@
         "nok": 0,
         "ok": 13,
         "plan": 16,
-        "secs": 1.41,
+        "secs": 1.4,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 3,
-        "plan": 3,
-        "secs": 0.17,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/02_mistral.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 3,
-        "plan": 3,
-        "secs": 3.44,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "no_baseline",
-      "path": "t/03_token_counter.rakutest",
-      "raku": {
-        "first_failure": "Cannot locate symbol 'tokenizers_new_from_str' in native library ''",
-        "nok": 0,
-        "ok": 0,
-        "plan": 4,
-        "secs": 8.4,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      }
-    },
-    {
-      "cmp": "no_baseline",
-      "path": "t/04_conversation.rakutest",
-      "raku": {
-        "first_failure": "Cannot locate symbol 'tokenizers_new_from_str' in native library ''",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 3.82,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 15,
-        "plan": 15,
-        "secs": 0.55,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/05_response.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 15,
-        "plan": 15,
-        "secs": 1.52,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
       }
     },
     {
@@ -134,34 +62,62 @@
         "todo": 0,
         "verdict": "pass"
       },
-      "path": "t/06_chatml.rakutest",
+      "path": "t/02_mistral.rakutest",
       "raku": {
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 2.4,
+        "secs": 3.19,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
+      "cmp": "no_baseline",
+      "path": "t/03_token_counter.rakutest",
+      "raku": {
+        "first_failure": "Cannot locate symbol 'tokenizers_new_from_str' in native library ''",
+        "nok": 0,
+        "ok": 0,
+        "plan": 4,
+        "secs": 8.07,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/04_conversation.rakutest",
+      "raku": {
+        "first_failure": "Cannot locate symbol 'tokenizers_new_from_str' in native library ''",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 3.19,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
       "cmp": "parity",
       "mutsu": {
         "nok": 0,
-        "ok": 3,
-        "plan": 3,
-        "secs": 0.21,
+        "ok": 15,
+        "plan": 15,
+        "secs": 0.54,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       },
-      "path": "t/07_llama3.rakutest",
+      "path": "t/05_response.rakutest",
       "raku": {
         "nok": 0,
-        "ok": 3,
-        "plan": 3,
-        "secs": 3.21,
+        "ok": 15,
+        "plan": 15,
+        "secs": 1.42,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -178,12 +134,34 @@
         "todo": 0,
         "verdict": "pass"
       },
-      "path": "t/08_llama4.rakutest",
+      "path": "t/06_chatml.rakutest",
       "raku": {
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 3.6,
+        "secs": 3.11,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 0.27,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/07_llama3.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 3.19,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -200,12 +178,34 @@
         "todo": 0,
         "verdict": "pass"
       },
+      "path": "t/08_llama4.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 3.07,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 0.2,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
       "path": "t/09_gemma2.rakutest",
       "raku": {
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 3.24,
+        "secs": 2.9,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -217,7 +217,7 @@
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 6.93,
+        "secs": 5.83,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -227,7 +227,7 @@
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 35.15,
+        "secs": 31.35,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -254,10 +254,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-20",
+    "date": "2026-09-21",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "fb8ac07",
+    "mutsu_commit": "ae07b22",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",

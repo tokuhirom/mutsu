@@ -2060,6 +2060,13 @@ impl Interpreter {
             } else {
                 Self::value_to_list(&target)
             };
+            // With no elements there is neither a callback invocation nor an
+            // rw writeback to defer. Avoid creating a MapGrep source merely to
+            // reify it immediately as empty; this is the mutable-array route
+            // used by attribute TWEAKs such as `@!resources.map(*.flat)`.
+            if items.is_empty() {
+                return Ok(Value::seq(Vec::new()));
+            }
             // ADR-0058 §9.4: this used to run the map loop RIGHT HERE, which
             // made `@a.map({ ... })` -- the commonest `.map` spelling there
             // is -- the one receiver step 2 never reached, because a `.map`

@@ -603,6 +603,7 @@ mod class_introspection;
 mod code_frame;
 pub(crate) use code_frame::{CodeFrame, LazyRoutineCode};
 mod compunit_scope;
+mod constraint_meta;
 mod container_element_proxy;
 mod ctor_phase_plan;
 mod nqp_char_cache;
@@ -613,6 +614,7 @@ mod nqp_ops_list;
 mod nqp_ops_process;
 mod nqp_ops_str;
 mod nqp_ops_text;
+pub(crate) mod nqp_pure;
 pub(crate) use class_introspection::UserMethodOrAccessor;
 pub(crate) mod cstruct_layout;
 mod decl_types;
@@ -1484,6 +1486,15 @@ pub(crate) struct DocComment {
     pub trailing: Option<String>,
     /// The name of the thing this comment is attached to (for WHEREFORE).
     pub wherefore_name: String,
+    /// The key this comment is filed under in `doc_comments` -- the same name
+    /// as `wherefore_name` for an ordinary declaration, but uniquified for the
+    /// cases where one name covers several declarations (`&mm/multi.1`,
+    /// `&<anon>.2`, `R/role.1`) and scoped to its owner for a parameter
+    /// (`&doc-sub::$a`). `collect_pod_declarants` files its concrete declarant
+    /// values under the same keys, so this is what tells two multi candidates
+    /// -- or two same-named parameters of different routines -- apart when the
+    /// `$=pod` declarator entries are built.
+    pub declarant_key: Option<String>,
     /// Kind of declaration.
     pub kind: DocDeclKind,
     /// Whether this is a proto declaration (affects WHEREFORE type in $=pod).
@@ -4284,6 +4295,21 @@ pub struct Interpreter {
     pub(crate) last_method_resolve: Option<(Symbol, Symbol, Symbol, Arc<MethodDef>)>,
     pub(crate) fast_method_cache:
         rustc_hash::FxHashMap<(Symbol, Symbol), crate::vm::FastMethodCacheEntry>,
+    /// #8880: `(receiver class, method name)` pairs whose `CallMethodMut`
+    /// dispatch has been observed to walk the entire pre-dispatch probe chain
+    /// without a single probe claiming the call, so the chain can be skipped.
+    /// Written only from the dispatch tail that proves it, and cleared with the
+    /// other method caches on a registry generation change. See
+    /// `vm_call_method_plain_lane`.
+    pub(crate) plain_method_lane: rustc_hash::FxHashSet<(Symbol, Symbol)>,
+    /// The key the *current* `CallMethodMut` dispatch may install into
+    /// [`Interpreter::plain_method_lane`]. Set (or cleared) by that opcode's
+    /// gate on every dispatch, so it always describes the innermost one.
+    pub(crate) plain_method_lane_candidate: Option<(Symbol, Symbol)>,
+    /// One-shot flag handing a proven-inert dispatch straight to the
+    /// user-method tail; consumed by
+    /// `try_compiled_method_mut_or_interpret_sym`.
+    pub(crate) plain_method_lane_active: bool,
     /// Memoized `class -> NativeCtorPlan` for the native default constructor.
     /// Cleared wherever `fast_method_cache` is cleared, plus the MOP class-shape
     /// mutators (`Attribute.set_build`, `^add_attribute`, `^add_method`,
@@ -4612,6 +4638,29 @@ pub(crate) struct ContainerTypeInfo {
     pub(crate) value_type: String,
     pub(crate) key_type: Option<String>,
     pub(crate) declared_type: Option<String>,
+}
+
+/// [`ContainerTypeInfo`] with its two type names still borrowed from the
+/// constraint text they were sliced out of — see
+/// [`Interpreter::container_constraint_parts`], which is where the reason
+/// lives.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct ContainerConstraintParts<'a> {
+    pub(crate) value_type: &'a str,
+    pub(crate) key_type: Option<&'a str>,
+    pub(crate) declared_type: Option<String>,
+}
+
+impl ContainerConstraintParts<'_> {
+    /// Copy the borrowed names out, for the callers that keep the answer past
+    /// the constraint text's borrow.
+    pub(crate) fn into_owned(self) -> ContainerTypeInfo {
+        ContainerTypeInfo {
+            value_type: self.value_type.to_string(),
+            key_type: self.key_type.map(str::to_string),
+            declared_type: self.declared_type,
+        }
+    }
 }
 
 /// Compiled bytecode for a subset `where` predicate (the predicate body plus any

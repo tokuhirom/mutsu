@@ -271,11 +271,7 @@ impl Interpreter {
     /// without tagging a pre-existing same-named env value — see
     /// `set_var_type_constraint_decl`.
     #[inline]
-    pub(crate) fn vm_set_var_type_constraint_decl(
-        &mut self,
-        name: &str,
-        constraint: Option<String>,
-    ) {
+    pub(crate) fn vm_set_var_type_constraint_decl(&mut self, name: &str, constraint: Option<&str>) {
         self.loan_env_for(|i| i.set_var_type_constraint_decl(name, constraint))
     }
 

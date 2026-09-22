@@ -23,12 +23,39 @@ fn check_full_composition_exclusion(ch: char) -> bool {
     nfc != s
 }
 
+thread_local! {
+    /// Compiled `\p{...}` matchers, keyed by the pattern literal.
+    ///
+    /// This used to compile a fresh `regex::Regex` on *every call* -- and the
+    /// call is per character, from `.uniprop`/`unimatch` and from the UAX #29
+    /// segmentation properties in `text_seg`, several times per character
+    /// there. Measured on a release build before this cache,
+    /// `.unimatch('Alphabetic')` cost 297us per character and
+    /// `.uniprop('Word_Break')` 212us; compiling the pattern was essentially
+    /// all of it ([#8999](https://github.com/tokuhirom/mutsu/issues/8999)).
+    ///
+    /// Thread-local rather than a locked global, matching the identical cache
+    /// in `runtime::unicode`: a `Regex` is cheap to hold and these are the
+    /// hot paths a lock would sit in.
+    static BINARY_PROP_REGEXES: std::cell::RefCell<
+        std::collections::HashMap<&'static str, Option<regex::Regex>>,
+    > = std::cell::RefCell::new(std::collections::HashMap::new());
+}
+
 /// Check if a character has a binary Unicode property using regex \p{...}.
-pub(crate) fn check_binary_property(ch: char, prop_regex_str: &str) -> bool {
-    let re = regex::Regex::new(prop_regex_str).ok();
+///
+/// The pattern is `&'static str` so it can key the compiled-regex cache
+/// without allocating; every call site passes a literal.
+pub(crate) fn check_binary_property(ch: char, prop_regex_str: &'static str) -> bool {
     let mut buf = [0u8; 4];
     let s = ch.encode_utf8(&mut buf);
-    re.is_some_and(|r| r.is_match(s))
+    BINARY_PROP_REGEXES.with(|cache| {
+        let mut cache = cache.borrow_mut();
+        let entry = cache
+            .entry(prop_regex_str)
+            .or_insert_with(|| regex::Regex::new(prop_regex_str).ok());
+        entry.as_ref().is_some_and(|re| re.is_match(s))
+    })
 }
 
 /// Check a binary Unicode property by name, returning Some(bool) if it's

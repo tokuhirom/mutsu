@@ -29,6 +29,19 @@ impl Interpreter {
         // where we know these are offsets.
         let method_args: Vec<Value> = method_args.iter().map(Value::deref_container).collect();
 
+        // A read of `substr` returns a Failure for a start beyond either end,
+        // but an lvalue assignment must throw X::OutOfRange. Clamping here
+        // would turn `substr-rw($s, 7) = "gap"` into an append, which is not
+        // the lvalue contract used by P5substr's Proxy STORE.
+        if let Some(first_arg) = method_args.first()
+            && self.substr_extract_range(first_arg, str_len)?.is_none()
+        {
+            let start_raw = self.substr_resolve_position(first_arg, str_len)?;
+            if start_raw > str_len as i64 || start_raw < -(str_len as i64) {
+                return Err(self.out_of_range_error(Value::int(start_raw)));
+            }
+        }
+
         // Resolve start and end using the same logic as dispatch_substr
         let (start, end) = self.resolve_substr_rw_range(&method_args, str_len)?;
 
@@ -41,7 +54,12 @@ impl Interpreter {
 
         let result = Value::str(new_str);
         if let Some(var) = target_var {
-            self.env.insert(var.to_string(), result.clone());
+            // The target may be a sigilless parameter captured by a Proxy
+            // callback. Its environment still holds the caller's
+            // `ContainerRef`; replace-the-binding would sever that alias and
+            // make `substr(...) = ...` report success without changing the
+            // original scalar. Assign through the existing cell instead.
+            self.env.insert_through(var.to_string(), result.clone());
         }
         Ok(result)
     }

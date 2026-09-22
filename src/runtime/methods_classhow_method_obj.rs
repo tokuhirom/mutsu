@@ -326,7 +326,11 @@ impl Interpreter {
         );
         attrs.insert(
             "file".to_string(),
-            file.map(Value::str).unwrap_or(Value::NIL),
+            file.map(|f| {
+                let source_file = Symbol::intern(&f);
+                Value::str(self.format_routine_file(f, Some(source_file)))
+            })
+            .unwrap_or(Value::NIL),
         );
         // `.WHY` (`dispatch_why`'s `Instance` branch) builds its doc-comment
         // lookup key from these two, the same way it does for a plain user
@@ -447,7 +451,10 @@ impl Interpreter {
             method_def
                 .source_file
                 .as_ref()
-                .map(|f| Value::str(f.clone()))
+                .map(|f| {
+                    let source_file = Symbol::intern(f);
+                    Value::str(self.format_routine_file(f.clone(), Some(source_file)))
+                })
                 .unwrap_or(Value::NIL),
         );
         // The method name is always recorded so `CALL-ME` on a dispatcher

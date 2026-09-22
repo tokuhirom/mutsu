@@ -94,7 +94,7 @@ pub(super) fn dispatch(
                 return Some(Some(Ok(Value::NIL)));
             }
             let ch = s.chars().next().unwrap();
-            Some(Some(Ok(Value::str(
+            Some(Some(Ok(Value::str_from(
                 crate::builtins::unicode::unicode_general_category(ch),
             ))))
         }
@@ -135,7 +135,7 @@ pub(super) fn dispatch(
             }
             let props: Vec<Value> = s
                 .chars()
-                .map(|ch| Value::str(crate::builtins::unicode::unicode_general_category(ch)))
+                .map(|ch| Value::str_from(crate::builtins::unicode::unicode_general_category(ch)))
                 .collect();
             // `.uniprops` returns a Seq in raku.
             Some(Some(Ok(Value::seq(props))))

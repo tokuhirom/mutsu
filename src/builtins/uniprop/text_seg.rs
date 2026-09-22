@@ -339,7 +339,7 @@ pub(crate) fn unicode_sentence_break(ch: char) -> String {
         return "STerm".to_string();
     }
     // Close: open/close/quotation punctuation plus straight quotes.
-    if matches!(gc.as_str(), "Ps" | "Pe" | "Pi" | "Pf") || cp == 0x0022 || cp == 0x0027 {
+    if matches!(gc, "Ps" | "Pe" | "Pi" | "Pf") || cp == 0x0022 || cp == 0x0027 {
         return "Close".to_string();
     }
     if is_sb_scontinue(cp) {
@@ -408,7 +408,7 @@ pub(crate) fn unicode_word_break(ch: char) -> String {
     if gc == "Cf" && cp != 0x200B {
         return "Format".to_string();
     }
-    match gc.as_str() {
+    match gc {
         "Nd" => "Numeric".to_string(),
         "Lu" | "Ll" | "Lt" | "Lm" | "Lo" => {
             let script = crate::builtins::unicode::unicode_script_name(ch);
@@ -455,7 +455,7 @@ pub(crate) fn unicode_line_break(ch: char) -> String {
                 return "XX".to_string();
             }
             let gc = crate::builtins::unicode::unicode_general_category(ch);
-            match gc.as_str() {
+            match gc {
                 "Ps" => "OP".to_string(),
                 "Pe" => "CL".to_string(),
                 "Zs" => "SP".to_string(),

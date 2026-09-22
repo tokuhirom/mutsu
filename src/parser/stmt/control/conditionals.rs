@@ -319,6 +319,28 @@ pub(crate) fn parse_elsif_chain(
             // not just `$`. VarDecl names strip a leading `$` but keep `&`/`@`/`%`.
             let (r, orwith_param_name) = if let Some(r2) = r.strip_prefix("->") {
                 let (r2, _) = ws(r2)?;
+                // A typed pointy param (`orwith EXPR -> int $c { ... }`, the
+                // shape `Identity::Utils`'s `short-name` uses) names a type
+                // constraint before the sigil. Consume and discard it the same
+                // way `parse_for_pointy_param` does (this bind, like `with`'s
+                // own single-param path via `simple_pointy_bind`, does not
+                // enforce the type at runtime either) -- without this the type
+                // name was left unconsumed, `block(r)` then failed on the
+                // dangling `-> int $c { ... }` text, and the whole `orwith`
+                // clause's parse error made the ENTIRE `with`/`orwith` chain
+                // fall back to being re-parsed as a bareword call to `orwith`
+                // (ecosystem `Identity::Utils`, #Code::Coverage).
+                let r2 = match super::super::sub_param::parse_type_constraint_expr(r2) {
+                    Some((after_tc, _type_constraint)) => {
+                        let (after_ws, _) = ws(after_tc)?;
+                        if after_ws.starts_with(['$', '&', '@', '%']) {
+                            after_ws
+                        } else {
+                            r2
+                        }
+                    }
+                    None => r2,
+                };
                 let sigil = r2.chars().next();
                 if let Some(sig) = sigil.filter(|&c| c == '$' || c == '&' || c == '@' || c == '%') {
                     let r_after_sigil = &r2[sig.len_utf8()..];

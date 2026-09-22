@@ -46,7 +46,9 @@ pub(super) fn check_unicode_property(name: &str, c: char) -> bool {
                 let pattern = format!(r"^\p{{{}}}", full_prop);
                 regex::Regex::new(&pattern).ok()
             });
-            entry.as_ref().map(|re| re.is_match(&c.to_string()))
+            let mut buf = [0u8; 4];
+            let s = c.encode_utf8(&mut buf);
+            entry.as_ref().map(|re| re.is_match(s))
         });
         // The regex crate only supports a handful of value-typed properties
         // (General_Category, Script, Script_Extensions). For everything else
@@ -64,7 +66,10 @@ pub(super) fn check_unicode_property(name: &str, c: char) -> bool {
             regex::Regex::new(&pattern).ok()
         });
         match entry {
-            Some(re) => re.is_match(&c.to_string()),
+            Some(re) => {
+                let mut buf = [0u8; 4];
+                re.is_match(c.encode_utf8(&mut buf))
+            }
             None => false,
         }
     })

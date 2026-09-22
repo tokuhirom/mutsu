@@ -74,6 +74,13 @@ cranelift-jit = { version = "0.133", optional = true }
 cranelift-module = { version = "0.133", optional = true }
 cranelift-native = { version = "0.133", optional = true }
 
+[dev-dependencies]
+# Used only by `builtins::unicode_gc_gen` to re-derive the committed
+# General_Category tables from the very Unicode data `regex` matches against,
+# so a `regex-syntax` bump carrying a new Unicode version fails the suite
+# instead of silently diverging. Keep it on the same minor as `regex`'s own.
+regex-syntax = "0.8"
+
 [profile.release]
 # No debug info in release. Full debuginfo bloats the binary (~250MB vs ~27MB),
 # slows codegen/linking by ~70s, and — accumulated across the local target/

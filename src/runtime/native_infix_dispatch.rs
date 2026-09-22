@@ -257,7 +257,7 @@ impl Interpreter {
         // a `subset` of `Int` still beats it. The core candidates are plain
         // nominal types, so they carry no refinement of any kind.
         let args = [left.clone(), right.clone()];
-        let (literal, where_c, subset, typed, subsig, _traits) =
+        let (literal, typed, where_c, subset, subsig, _traits) =
             self.candidate_specificity_rank_for_args(def, &args);
         // A literal parameter (`multi infix:<->(e1, e2)`, roast
         // S03-operators/custom.t) is not merely a refinement: rakudo compiles

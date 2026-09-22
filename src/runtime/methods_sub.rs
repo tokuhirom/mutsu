@@ -188,7 +188,11 @@ impl Interpreter {
             return Some(Ok(if method == "line" {
                 line.map(|l| Value::int(l as i64)).unwrap_or(Value::NIL)
             } else {
-                file.map(Value::str).unwrap_or(Value::NIL)
+                file.map(|f| {
+                    let source_file = Symbol::intern(&f);
+                    Value::str(self.format_routine_file(f, Some(source_file)))
+                })
+                .unwrap_or(Value::NIL)
             }));
         }
         if method == "cando" && args.len() == 1 {
@@ -853,9 +857,20 @@ impl Interpreter {
             }
             if method == "gist" {
                 // Rakudo: a named Sub gists as `&name`; an anonymous sub as
-                // `sub { }` (the signature is not shown).
+                // `sub { }` (the signature is not shown). A Method/Submethod
+                // gists as its BARE name instead (`C.^lookup('m').gist` is
+                // `m`) -- reached here by the method-typed closure values that
+                // carry the `__mutsu_callable_type` marker rather than being a
+                // real method `Instance`, such as the `WHEREFORE` of a
+                // `Pod::Block::Declarator`.
                 if is_anon {
                     return Some(Ok(Value::str_from("sub { }")));
+                }
+                if matches!(
+                    data.env.get("__mutsu_callable_type").map(Value::view),
+                    Some(ValueView::Str(kind)) if matches!(kind.as_str(), "Method" | "Submethod")
+                ) {
+                    return Some(Ok(Value::str(name)));
                 }
                 return Some(Ok(Value::str(format!("&{}", name))));
             }
@@ -895,7 +910,11 @@ impl Interpreter {
             return Some(Ok(if method == "line" {
                 line.map(|l| Value::int(l as i64)).unwrap_or(Value::NIL)
             } else {
-                file.map(Value::str).unwrap_or(Value::NIL)
+                file.map(|f| {
+                    let source_file = Symbol::intern(&f);
+                    Value::str(self.format_routine_file(f, Some(source_file)))
+                })
+                .unwrap_or(Value::NIL)
             }));
         }
         if matches!(method, "of" | "returns") && args.is_empty() {

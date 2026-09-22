@@ -839,6 +839,15 @@ impl Interpreter {
         // module: a member named `<directive>::<declarator>` must use a known
         // directive (DECLARE/SUPERSEDE/COMPOSE), else X::EXPORTHOW::InvalidDirective.
         Self::validate_exporthow_directives(&stmts)?;
+        // A loaded module is its own compilation unit: rakudo rejects a call
+        // to a routine declared nowhere in it at CHECK time
+        // (X::Undeclared::Symbols), before the module body runs -- the same
+        // check the top-level program's own mainline gets (`run()`). This is
+        // also the path a bareword-named `require ::($name)` reaches (a
+        // non-path-like require target loads via `use_module`, not
+        // `require_load_from_file`), so it is the one place that covers both
+        // `use` and `require` of an installed/on-path module name.
+        self.check_undeclared_routines_mainline(&stmts)?;
         let mut module_scope_names: ValueMap = ValueMap::default();
         let mut module_type_aliases: HashMap<String, String> = HashMap::new();
         let mut imported_lexical_names: HashSet<String> = HashSet::new();
@@ -1002,7 +1011,12 @@ impl Interpreter {
             let saved_doc_comment_list = self.doc_comment_list.clone();
             let saved_why_cache = self.why_cache.clone();
             let saved_why_object_cache = self.why_object_cache.clone();
-            let result = match self.establish_pod_variables(&module_source) {
+            // `_from_stmts`, not the source-only form: the module's AST is
+            // already in hand here, so its declarator blocks get the concrete
+            // routine/attribute `WHEREFORE` (and the matching `.WHY` identity)
+            // that a renderer such as `Pod::To::Man` inspects, instead of a
+            // bare `Sub`/`Method`/`Attribute` type placeholder.
+            let result = match self.establish_pod_variables_from_stmts(&module_source, &stmts) {
                 Ok(()) => self.run_block(&stmts),
                 Err(err) => Err(err),
             };

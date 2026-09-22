@@ -193,11 +193,16 @@ impl ParamDef {
     /// The decision has to be made from `sigilless`, not from the name: a scalar
     /// parameter's env key drops its `$`, so `$p` and `\p` reach the binder
     /// spelled identically.
-    pub(crate) fn assignment_type_constraint(&self) -> Option<String> {
+    ///
+    /// Borrowed from the `ParamDef`, which outlives every binder use of it:
+    /// the binder only ever reads the text and hands it to the env, so copying
+    /// it made a `String` per typed parameter bind — the single largest source
+    /// of `String::clone` in a `JSON::Fast` decode (#8898).
+    pub(crate) fn assignment_type_constraint(&self) -> Option<&str> {
         if self.sigilless {
             return None;
         }
-        self.type_constraint.clone()
+        self.type_constraint.as_deref()
     }
 
     /// True when the *source* declares a parameter spelled `$self` — an explicit
@@ -294,7 +299,11 @@ impl ParamDef {
     /// records as nested named entries in `sub_signature`: `:s(:$sort)` becomes
     /// `ParamDef { name: "s", named: true, sub_signature: [ParamDef { name:
     /// "sort", named: true }] }`, and the call may use either `:s(…)` or
-    /// `:sort(…)`.
+    /// `:sort(…)`. Aliases nest arbitrarily deep (`:leaves(:rays(:$n))` is two
+    /// levels: `leaves` aliasing `rays` aliasing `n`), so each alias's own
+    /// `sub_signature` is walked in turn rather than stopping after one level
+    /// — a `Graph::Star.new(n => 5, ...)` naming only the innermost alias
+    /// otherwise never matched this parameter at all.
     ///
     /// Callers that match a named argument against a signature must consult all
     /// of them. Binding already did (`types/signature.rs`); multi-candidate
@@ -313,12 +322,9 @@ impl ParamDef {
         if self.named_alias
             && let Some(aliases) = &self.sub_signature
         {
-            keys.extend(
-                aliases
-                    .iter()
-                    .filter(|a| a.named && !a.slurpy)
-                    .map(|a| strip(&a.name)),
-            );
+            for alias in aliases.iter().filter(|a| a.named && !a.slurpy) {
+                keys.extend(alias.named_external_keys());
+            }
         }
         keys
     }

@@ -8,12 +8,28 @@ use crate::value::ValueView;
 pub(super) const UNRELATED_DISTANCE: usize = 500;
 
 /// The narrowness key a multi candidate is ranked by (see
-/// `Interpreter::candidate_rank_key`): specificity rank, type-hierarchy
-/// distance, whether it declares any named parameter, optional-positional
-/// count, required-named count, declaration order.
+/// [`Interpreter::candidate_rank_key`]), in two tiers plus tie-breaks:
+///
+/// 0. the NOMINAL tier — literal-value count, then meaningfully-typed
+///    positional count (higher is narrower);
+/// 1. the type-hierarchy distance of those nominal types (lower is narrower);
+/// 2. the REFINEMENT tier — `where` count, `subset` count, sub-signature
+///    count, `rw`/`raw` count (higher is narrower);
+///
+/// then whether it declares any named parameter, optional-positional count,
+/// required-named count, and declaration order.
+///
+/// The tier split is rakudo's rule, not a mutsu invention: its `is_narrower`
+/// compares the candidates' nominal parameter types first and only consults a
+/// parameter's constraint (`where`, and the equality check a literal or a
+/// `subset` compiles to) when the two candidates are TIED on every nominal
+/// type. So `multi f($x where ...)` must lose to `multi f(Int $x)` for
+/// `f(42)`, while `multi f(Int $x where ...)` still beats `multi f(Int $x)`
+/// ([#8958](https://github.com/tokuhirom/mutsu/issues/8958)).
 type CandidateRankKey = (
-    (usize, usize, usize, usize, usize, usize),
+    (usize, usize),
     usize,
+    (usize, usize, usize, usize),
     usize,
     usize,
     usize,
@@ -77,31 +93,43 @@ impl Interpreter {
     }
 
     /// The narrowness key a multi candidate is ranked by, in
-    /// `candidate_rank_cmp` order: specificity rank, type-hierarchy distance,
-    /// whether it declares any named parameter, optional-positional count,
-    /// required-named count, declaration order.
+    /// `candidate_rank_cmp` order: the nominal tier, the type-hierarchy
+    /// distance, the refinement tier, whether it declares any named parameter,
+    /// optional-positional count, required-named count, declaration order.
+    /// See [`CandidateRankKey`] for why nominal narrowness outranks a
+    /// refinement rather than the other way round.
     fn candidate_rank_key(&mut self, def: &Arc<FunctionDef>, args: &[Value]) -> CandidateRankKey {
-        let rank = self.candidate_specificity_rank_for_args(def, args);
+        let (literal, typed, where_c, subset, subsig, writable) =
+            self.candidate_specificity_rank_for_args(def, args);
         let dist = self.candidate_type_distance(args, def);
         let has_named = usize::from(Self::candidate_declares_named(def));
         let opt = Self::candidate_optional_positional_count(def);
         let req_named = Self::candidate_required_named_count(def);
-        (rank, dist, has_named, opt, req_named, def.decl_order)
+        (
+            (literal, typed),
+            dist,
+            (where_c, subset, subsig, writable),
+            has_named,
+            opt,
+            req_named,
+            def.decl_order,
+        )
     }
 
-    /// Order two [`Self::candidate_rank_key`]s narrowest-first: higher rank
-    /// first, then lower distance, then a candidate that declares nameds over
-    /// one that declares none, then fewer optional positionals (a required
-    /// param is narrower than an optional one), then higher required named,
-    /// and finally — for candidates tied on all of that — the one declared
-    /// first, which is what Rakudo runs.
+    /// Order two [`Self::candidate_rank_key`]s narrowest-first: higher nominal
+    /// tier first, then lower type distance, then higher refinement tier, then
+    /// a candidate that declares nameds over one that declares none, then fewer
+    /// optional positionals (a required param is narrower than an optional
+    /// one), then higher required named, and finally — for candidates tied on
+    /// all of that — the one declared first, which is what Rakudo runs.
     fn candidate_rank_cmp(a: CandidateRankKey, b: CandidateRankKey) -> std::cmp::Ordering {
         b.0.cmp(&a.0)
             .then(a.1.cmp(&b.1))
             .then(b.2.cmp(&a.2))
-            .then(a.3.cmp(&b.3))
-            .then(b.4.cmp(&a.4))
-            .then(a.5.cmp(&b.5))
+            .then(b.3.cmp(&a.3))
+            .then(a.4.cmp(&b.4))
+            .then(b.5.cmp(&a.5))
+            .then(a.6.cmp(&b.6))
     }
 
     /// `key` with its declaration-order component cleared, so two candidates
@@ -112,7 +140,7 @@ impl Interpreter {
     /// opposed to `candidate_rank_cmp` on the full key, which is the total
     /// order the winner is picked by.
     fn rank_key_ignoring_decl_order(mut key: CandidateRankKey) -> CandidateRankKey {
-        key.5 = 0;
+        key.6 = 0;
         key
     }
 
@@ -258,14 +286,15 @@ impl Interpreter {
                     // narrower candidate that matched (`multi bar(| (A $x))`)
                     // is reached before a `where`-only one
                     // (`multi bar(| where { ... })`) and that `where` never
-                    // runs. mutsu's own ranking weighs `where` above the
-                    // nominal shape, which is fine for picking a winner among
-                    // candidates that all matched but would wrongly claim the
-                    // thrower came first here.
+                    // runs. The rank key now models that tier split itself, so
+                    // this mostly duplicates it; it still matters for a
+                    // thrower that is nominally TIED with the best match, where
+                    // rakudo runs neither `where` ahead of the plain candidate
+                    // it cannot out-narrow.
                     let mut a = self.candidate_rank_key(&thrower, args);
                     let mut b = self.candidate_rank_key(best, args);
-                    a.0.1 = 0;
-                    b.0.1 = 0;
+                    a.2.0 = 0;
+                    b.2.0 = 0;
                     Self::candidate_rank_cmp(a, b) != std::cmp::Ordering::Greater
                 }
             };
@@ -431,6 +460,9 @@ impl Interpreter {
             .any(|p| p.named && p.type_constraint.is_some())
     }
 
+    /// The narrowness tuple of `def` with no call in flight, in
+    /// `(literal, typed, where, subset, subsig, writable)` order — the first
+    /// two are the nominal tier, the rest the refinement tier.
     pub(super) fn candidate_specificity_rank(
         &self,
         def: &FunctionDef,
@@ -454,6 +486,54 @@ impl Interpreter {
     /// `multi infix:<+>(UInt $a, UInt $b)`).
     pub(crate) fn constraint_is_subset(&self, base: &str) -> bool {
         base == "UInt" || self.registry().subsets.contains_key(base)
+    }
+
+    /// The type a constraint measures its type-hierarchy distance against.
+    ///
+    /// A `subset` is a *refinement* of another type, not a type of its own:
+    /// rakudo gives `subset Even of Int` the nominal type `Int` plus a
+    /// constraint, so `multi f(Even $x)` ties `multi f(Int $x)` on nominal
+    /// narrowness and wins on the refinement tier. Measuring `Even` itself
+    /// finds it nowhere in the hierarchy and scores the 500 "unrelated"
+    /// distance, which — now that distance outranks the refinement tier —
+    /// would make a subset lose every tie it exists to win. Resolving it here
+    /// keeps that comparison honest without teaching the hierarchy walk about
+    /// subsets.
+    ///
+    /// A subset of a subset (`subset Top of Mid of Int`) resolves through the
+    /// chain; the iteration bound keeps a cyclic declaration from spinning.
+    fn dispatch_nominal_base<'a>(&self, base: &'a str) -> std::borrow::Cow<'a, str> {
+        use std::borrow::Cow;
+        // `UInt` is `subset UInt of Int where * >= 0` in rakudo, but mutsu
+        // implements it as a type-matching special case rather than a registry
+        // entry (see `constraint_is_subset`).
+        if base == "UInt" {
+            return Cow::Borrowed("Int");
+        }
+        let Some(mut current) = self.registry().subsets.get(base).map(|d| d.base.clone()) else {
+            return Cow::Borrowed(base);
+        };
+        for _ in 0..16 {
+            if current == "UInt" {
+                return Cow::Owned("Int".to_string());
+            }
+            let Some(next) = self
+                .registry()
+                .subsets
+                .get(&current)
+                .map(|d| d.base.clone())
+            else {
+                break;
+            };
+            if next.is_empty() || next == current {
+                break;
+            }
+            current = next;
+        }
+        if current.is_empty() {
+            return Cow::Borrowed(base);
+        }
+        Cow::Owned(current)
     }
 
     pub(super) fn candidate_specificity_rank_for_args(
@@ -517,10 +597,18 @@ impl Interpreter {
             .filter(|p| p.traits.iter().any(|t| matches!(t.as_str(), "rw" | "raw")))
             .count();
         (
+            // NOMINAL tier. A literal parameter is not merely a refinement:
+            // rakudo compiles it to the literal's own type plus an equality
+            // constraint, so it is nominally exactly as narrow as the argument
+            // and only then wins the tie on the constraint. It therefore leads
+            // the tier, ahead of the plain type count.
             literal_value_count,
+            typed_param_count,
+            // REFINEMENT tier — consulted only once two candidates are tied on
+            // the nominal tier AND on type-hierarchy distance. See
+            // [`CandidateRankKey`].
             where_count,
             subset_type_count,
-            typed_param_count,
             subsig_count,
             // `rw`/`raw` are dispatch-visible because they require a writable
             // argument; `copy` changes only binding and must not outrank an
@@ -677,7 +765,8 @@ impl Interpreter {
                         self.unwrap_varref_for_dispatch_at(&args[pos_idx], pos_idx);
                     pos_idx += 1;
                     let effective = self.effective_dispatch_constraint(constraint, Some(&arg));
-                    let base = Self::constraint_base_name(effective);
+                    let nominal = self.dispatch_nominal_base(Self::constraint_base_name(effective));
+                    let base = nominal.as_ref();
                     if pd.name.starts_with('&')
                         && let Some(return_type) = self.callable_return_type(&arg)
                     {
@@ -738,6 +827,26 @@ impl Interpreter {
                         continue;
                     }
                 }
+                // A LITERAL parameter (`multi f(42)`) carries no type
+                // constraint here, but it is not an unconstrained parameter:
+                // rakudo compiles it to the literal's own type plus an
+                // equality constraint, so it is nominally exactly as narrow as
+                // any argument that can bind to it. Score it at distance 0
+                // rather than at the implicit-`Any` distance below — otherwise
+                // the type distance, which now outranks the refinement tier,
+                // would hand every literal candidate's tie to a plainly-typed
+                // sibling (`multi f(42)` losing to `multi f(Int $x)`).
+                if !pd.slurpy && pd.literal_value.is_some() {
+                    while pos_idx < args.len()
+                        && matches!(args[pos_idx].view(), ValueView::Pair(..))
+                    {
+                        pos_idx += 1;
+                    }
+                    if pos_idx < args.len() {
+                        pos_idx += 1;
+                    }
+                    continue;
+                }
                 // An unconstrained positional `$`-param is an implicit `Any`
                 // constraint (raku): rank it at the Any distance instead of a
                 // flat 1000, so `($j, @x)` can out-narrow `(Any:D $j, Mu)` on
@@ -760,6 +869,28 @@ impl Interpreter {
                         );
                         continue;
                     }
+                }
+                // An OPTIONAL positional the call supplied no argument for is
+                // not a wider parameter — it is one this call does not compare
+                // at all. Rakudo caps its narrowness comparison at the shorter
+                // signature's positional count whenever the two candidates
+                // share a minimum arity, so a surplus optional contributes
+                // nothing to either side. Charging it the flat 1000 made a
+                // trailing guard parameter lose to its own shorter sibling
+                // (`multi pick(Int $seed = 0, $? where { ... })` vs
+                // `multi pick(Int $seed = 0)`, `t/routines/signature/
+                // optional-param-where-runs-when-omitted.t`) once distance
+                // started outranking the refinement tier. The constrained
+                // branch above already contributes nothing in this case, so
+                // this only makes the two paths agree. A required parameter
+                // with no argument keeps the 1000: that candidate cannot bind
+                // the call at all.
+                if !pd.slurpy
+                    && !pd.name.starts_with('&')
+                    && (pd.optional_marker || pd.default.is_some())
+                    && pos_idx >= args.len()
+                {
+                    continue;
                 }
                 total += 1000;
                 pos_idx += 1;

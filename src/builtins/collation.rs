@@ -135,7 +135,7 @@ pub fn coll_ordering(left: &str, right: &str, settings: &CollationSettings) -> s
     let is_implicit_weight = |c: char| -> bool {
         // General_Category Cn (unassigned, which also covers noncharacters) and
         // Co (private use) get UCA implicit weights rather than DUCET entries.
-        matches!(unicode_general_category(c).as_str(), "Cn" | "Co")
+        matches!(unicode_general_category(c), "Cn" | "Co")
     };
     let has_noncharacter = |s: &str| s.chars().any(|c| is_noncharacter(c as u32));
     let first_diff_both_implicit =

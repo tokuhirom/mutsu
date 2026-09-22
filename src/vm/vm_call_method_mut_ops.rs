@@ -74,6 +74,10 @@ impl Interpreter {
         // methods before dispatch.
         let method_name_str = Self::dynamic_method_name(&name_val);
         let method = Self::rewrite_method_name(&method_name_str, modifier);
+        // The spelling is dynamic, but it is stable for this dispatch. Intern it
+        // once at the opcode boundary so every native/cache probe below shares
+        // the same key instead of re-hashing it independently.
+        let method_sym = Symbol::intern(&method);
         let target = self.reify_or_consume_seq_target(target, &method)?;
         // Handle .* and .+ modifiers
         match modifier {
@@ -115,7 +119,7 @@ impl Interpreter {
             ValueView::Instance { class_name, .. } => {
                 self.has_user_method(&class_name.resolve(), &method)
             }
-            _ => self.native_lever_a_user_override(&target, &method),
+            _ => self.native_lever_a_user_override_sym(&target, method_sym),
         };
         let call_result = if matches!(
             name_val.view(),
@@ -130,7 +134,6 @@ impl Interpreter {
             call_args.extend(args);
             self.vm_call_on_value(name_val, call_args, None)
         } else {
-            let method = Self::dynamic_method_name(&name_val);
             // .return method: triggers a return from the enclosing sub
             if method == "return" && args.is_empty() {
                 crate::vm::vm_stats::record_dispatch_entry_intercept("callmethoddynamic", "return");
@@ -292,7 +295,7 @@ impl Interpreter {
                             crate::value::ArrayKind::List,
                         );
                         let call_result = if let Some(nr) =
-                            self.try_native_method(&array_target, Symbol::intern(&method), &args)
+                            self.try_native_method(&array_target, method_sym, &args)
                         {
                             nr
                         } else {
@@ -329,7 +332,7 @@ impl Interpreter {
                             crate::value::ArrayKind::List,
                         );
                         let call_result = if let Some(nr) =
-                            self.try_native_method(&array_target, Symbol::intern(&method), &args)
+                            self.try_native_method(&array_target, method_sym, &args)
                         {
                             nr
                         } else {
@@ -348,14 +351,13 @@ impl Interpreter {
             // the shared one in `call_method_with_values`.
             if !user_method
                 && !self.delegates_to_array_storage(&target, &method)
-                && let Some(native_result) =
-                    self.try_native_method(&target, Symbol::intern(&method), &args)
+                && let Some(native_result) = self.try_native_method(&target, method_sym, &args)
             {
                 crate::vm::vm_stats::record_dispatch_entry_outcome("callmethoddynamic", "native");
                 native_result
             } else {
                 crate::vm::vm_stats::record_dispatch_entry_outcome("callmethoddynamic", "user");
-                self.try_compiled_method_or_interpret(target, &method, args)
+                self.try_compiled_method_or_interpret_sym(target, method_sym, args)
             }
         };
         match modifier {
@@ -920,6 +922,23 @@ impl Interpreter {
             let frozen = self.pair_freeze(&target, target_name);
             self.stack.push(frozen);
             return Ok(());
+        }
+        // #8880: the plain-method lane. Everything from here to this opcode's
+        // user-method dispatch is a chain of probes speculating that the
+        // receiver might be something other than an ordinary object -- a proto,
+        // an exception, an attribute accessor, a scalar, an `IO::Handle` -- and
+        // for a plain `class C { method m() {...} }` every one of them answers
+        // "no" on every call. Once the chain has been observed inert for this
+        // receiver class and method name, skip it. The gate is re-evaluated (and
+        // the install candidate cleared) on every dispatch, so a nested call run
+        // from inside a probe cannot leave its key behind for an outer one.
+        // See `vm_call_method_plain_lane` for what the key has to hold constant.
+        match Self::plain_method_lane_key(&target, &args, modifier, quoted, want_ref, method_sym) {
+            Some(lane_key) if self.plain_method_lane_hit(lane_key) => {
+                self.plain_method_lane_candidate = None;
+                return self.run_plain_method_lane(code, target_name, target, method, method_sym);
+            }
+            other => self.plain_method_lane_candidate = other,
         }
         // `proto method` body dispatch (see try_proto_method_body).
         if let Some(result) = self.try_proto_method_body(&target, method, &args) {

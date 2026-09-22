@@ -368,6 +368,29 @@ impl Interpreter {
     }
 
     pub(crate) fn parse_container_constraint(name: &str, raw: &str) -> ContainerTypeInfo {
+        Self::container_constraint_parts(name, raw).into_owned()
+    }
+
+    /// [`Self::parse_container_constraint`] without the copies: the value and
+    /// key types are slices of `raw`, because that is all any of them ever
+    /// were — `split_once`/`strip_suffix`/`trim` only ever narrow the input.
+    ///
+    /// Every type-constraint registration runs this, and all three of them
+    /// (the typed-declaration op, the routine-scoped writer, the parameter
+    /// binder) do nothing with the result but read it and hand it to
+    /// [`crate::runtime::constraint_meta::constraint_meta_value_str`]. Owning
+    /// the two slices to do that cost a `malloc`/`free` pair per execution of
+    /// a typed declaration and per typed parameter bind — 92,370 of the
+    /// 1.45 M heap allocations a 200-record `JSON::Fast` decode makes (#8898).
+    ///
+    /// `declared_type` stays owned: unlike the other two it is a genuinely new
+    /// spelling (`Hash[V,K]` / `array[int]`) that is nowhere in `raw`, and it
+    /// is built only for the two container shapes that have one — never on the
+    /// scalar path this exists for.
+    pub(crate) fn container_constraint_parts<'a>(
+        name: &str,
+        raw: &'a str,
+    ) -> ContainerConstraintParts<'a> {
         let raw = raw.trim();
         // Note: For %-sigil variables, Hash[X] means "elements are Hash[X]",
         // NOT "elements are X". We do NOT unwrap Hash[...] here.
@@ -377,17 +400,18 @@ impl Interpreter {
             && let Some((value_type, key_part)) = raw.split_once('{')
             && let Some(key_type) = key_part.strip_suffix('}')
         {
-            return ContainerTypeInfo {
-                value_type: value_type.trim().to_string(),
-                key_type: Some(key_type.trim().to_string()),
-                declared_type: Some(format!("Hash[{},{}]", value_type.trim(), key_type.trim())),
+            let (value_type, key_type) = (value_type.trim(), key_type.trim());
+            return ContainerConstraintParts {
+                value_type,
+                key_type: Some(key_type),
+                declared_type: Some(format!("Hash[{value_type},{key_type}]")),
             };
         }
         // Note: For @-sigil variables, Array[X] means "elements are Array[X]",
         // NOT "elements are X". We do NOT unwrap Array[...] here.
         // `my Int @a` has raw="Int" and `my Array[Int] @a` has raw="Array[Int]".
-        ContainerTypeInfo {
-            value_type: raw.to_string(),
+        ContainerConstraintParts {
+            value_type: raw,
             key_type: None,
             declared_type: if name.starts_with('@')
                 && crate::runtime::native_types::is_native_array_element_type(raw)

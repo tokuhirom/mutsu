@@ -1039,11 +1039,9 @@ impl Interpreter {
             }
             // CompUnit::Repository base methods shared by every repository kind
             // (FileSystem / Installation / ...). `repo-chain` walks the
-            // `next-repo` links starting at self; mutsu's repositories are not
-            // chained (each `$*REPO` is a standalone repo), so the chain is just
-            // `(self,)` unless a `next-repo` attribute has been set. Without this,
-            // `$*REPO.repo-chain` (zef's `list-installed`) died with
-            // "No such method 'repo-chain'".
+            // `next-repo` links starting at self. Plain `use lib` paths install
+            // FileSystem nodes here so repository introspection sees the same
+            // chain as module resolution.
             if class_name.resolve().starts_with("CompUnit::Repository") {
                 match method {
                     "repo-chain" => {
@@ -1141,6 +1139,14 @@ impl Interpreter {
                             .unwrap_or_default();
                         let depspec = args.first().cloned().unwrap_or(Value::NIL);
                         return self.cur_fs_candidates(&prefix, &depspec);
+                    }
+                    "distribution" => {
+                        let prefix = attributes
+                            .as_map()
+                            .get("prefix")
+                            .map(Value::to_string_value)
+                            .unwrap_or_default();
+                        return self.cur_fs_distribution(&prefix);
                     }
                     "install" => {
                         return Err(RuntimeError::new("Cannot install on CUR::FileSystem"));

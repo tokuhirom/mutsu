@@ -345,6 +345,20 @@ impl Interpreter {
                     let n = self.trir_chars_len(&v);
                     self.trir.ns.push(n);
                 }
+                TrOp::SubstrS => {
+                    let want = self.ipop();
+                    let from = self.ipop();
+                    let src = self.opop();
+                    let v = self.trir_substr(&src, from, want);
+                    self.trir.os.push(v);
+                }
+                TrOp::EqAtS => {
+                    let pos = self.ipop();
+                    let needle = self.opop();
+                    let haystack = self.opop();
+                    let yes = self.trir_eqat(&haystack, &needle, pos);
+                    self.trir.ns.push(yes);
+                }
 
                 TrOp::LoadBareWord(i) => {
                     let name = chunk.constants[*i as usize].to_string_value();
@@ -360,9 +374,26 @@ impl Interpreter {
                 TrOp::NqpOpGen { id, arity } => {
                     let n = *arity as usize;
                     let base = self.trir.os.len().saturating_sub(n);
-                    let args: Vec<Value> = self.trir.os.drain(base..).collect();
-                    let v = self.dispatch_nqp_op_by_id(*id, &args)?;
-                    self.trir.os.push(v);
+                    // The pure native ops (`crate::runtime::nqp_pure`) run
+                    // straight off the boxed bank: no argument vector, no
+                    // name, no table walk. TRIR has typed forms for most of
+                    // these already, so what reaches here is the residue a
+                    // chunk could not type — an `nqp::iseq_i` whose operand
+                    // came back boxed from a `CallGen`, say (#8900).
+                    let direct = crate::runtime::nqp_pure::pure_op(*id).and_then(|op| {
+                        crate::runtime::nqp_pure::try_eval_native(op, &self.trir.os[base..])
+                    });
+                    match direct {
+                        Some(v) => {
+                            self.trir.os.truncate(base);
+                            self.trir.os.push(v);
+                        }
+                        None => {
+                            let args: Vec<Value> = self.trir.os.drain(base..).collect();
+                            let v = self.dispatch_nqp_op_by_id(*id, &args)?;
+                            self.trir.os.push(v);
+                        }
+                    }
                 }
 
                 // ---- calls ----
@@ -442,6 +473,38 @@ impl Interpreter {
         }
     }
 
+    /// `nqp::substr($src, $from, $want)`'s answer, with the same clamping as
+    /// `runtime/nqp_ops_str.rs`'s own `substr` and the same per-frame
+    /// codepoint memo `trir_ord_at`/`trir_chars_len` use.
+    fn trir_substr(&mut self, src: &Value, from: i64, want: i64) -> Value {
+        match self.trir.chars.index_of(src) {
+            Some(i) => Value::str(substr_of(self.trir.chars.chars_at(i), from, want)),
+            None => {
+                let s = src.to_string_value();
+                let chars: Vec<char> = s.chars().collect();
+                Value::str(substr_of(&chars, from, want))
+            }
+        }
+    }
+
+    /// `nqp::eqat($haystack, $needle, $pos)`'s answer, with the same
+    /// haystack memo `trir_substr`/`trir_ord_at` use. The needle is not
+    /// memoized — it is a fresh expression at almost every call site (a
+    /// string literal or a short computed slice), so `runtime/
+    /// nqp_ops_text.rs`'s own `eqat` does not cache it either.
+    fn trir_eqat(&mut self, haystack: &Value, needle: &Value, pos: i64) -> i64 {
+        let needle_chars: Vec<char> = needle.to_string_value().chars().collect();
+        let matches = match self.trir.chars.index_of(haystack) {
+            Some(i) => eqat_of(self.trir.chars.chars_at(i), &needle_chars, pos),
+            None => {
+                let s = haystack.to_string_value();
+                let chars: Vec<char> = s.chars().collect();
+                eqat_of(&chars, &needle_chars, pos)
+            }
+        };
+        matches as i64
+    }
+
     pub(super) fn trir_atpos_i(v: &Value, idx: i64) -> i64 {
         let Ok(i) = usize::try_from(idx) else {
             return 0;
@@ -497,4 +560,29 @@ fn ord_at(chars: &[char], pos: i64) -> i64 {
         .and_then(|p| chars.get(p))
         .map(|&c| c as i64)
         .unwrap_or(-1)
+}
+
+/// `nqp::substr($s, $from, $want)`'s clamping, exactly as
+/// `runtime/nqp_ops_str.rs`'s own `substr` computes it: a negative or
+/// past-the-end `$from` clamps rather than dying, and a `$want` that runs
+/// past the end truncates.
+#[inline]
+fn substr_of(chars: &[char], from: i64, want: i64) -> String {
+    let total = chars.len();
+    let from = (from.max(0) as usize).min(total);
+    let want = if want < 0 { 0 } else { want as usize };
+    let end = from.saturating_add(want).min(total);
+    chars[from..end].iter().collect()
+}
+
+/// `nqp::eqat($haystack, $needle, $pos)`'s answer: whether `needle` occurs at
+/// exactly codepoint offset `pos`, exactly as `runtime/nqp_ops_text.rs`'s own
+/// `eqat` computes it.
+#[inline]
+fn eqat_of(chars: &[char], needle: &[char], pos: i64) -> bool {
+    usize::try_from(pos)
+        .ok()
+        .and_then(|p| chars.get(p..p.saturating_add(needle.len())))
+        .map(|window| window == needle)
+        .unwrap_or(false)
 }

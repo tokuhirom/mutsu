@@ -132,6 +132,29 @@ fn native_arithmetic_uses_typed_ops() {
     );
 }
 
+/// `nqp::substr`/`nqp::eqat` in the 3-argument shape `JSON::Fast`'s
+/// `parse-string` uses (issue #8900) compile to the typed, operand-direct
+/// forms rather than the generic boxed-dispatch `NqpOpGen`.
+#[test]
+fn substr_and_eqat_use_typed_ops() {
+    let chunk = chunk_of("my sub f(str $s, int $from, int $len) { nqp::substr($s, $from, $len) }")
+        .expect("nqp::substr in the 3-arg shape must be admitted");
+    let ops: Vec<String> = chunk.ops.iter().map(sketch).collect();
+    assert_eq!(
+        ops,
+        vec!["LoadObj(0)", "LoadI(0)", "LoadI(1)", "SubstrS", "ReturnObj"]
+    );
+
+    let chunk =
+        chunk_of("my sub g(str $s, str $needle, int $pos) { nqp::eqat($s, $needle, $pos) }")
+            .expect("nqp::eqat must be admitted");
+    let ops: Vec<String> = chunk.ops.iter().map(sketch).collect();
+    assert_eq!(
+        ops,
+        vec!["LoadObj(0)", "LoadObj(1)", "LoadI(0)", "EqAtS", "ReturnI"]
+    );
+}
+
 /// Every one of these is a construct Stage 1 does not prove, so the WHOLE
 /// routine declines and takes the untyped path (ADR-0110 §4). Each is listed
 /// with the reason, because a future stage lifting one should have to delete
