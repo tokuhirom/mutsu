@@ -1141,18 +1141,18 @@ impl Interpreter {
             return false;
         }
         if !has_hash_slurpy {
-            let named_params: std::collections::HashSet<&str> = filtered_params
+            // `named_external_keys()` covers every alias a named parameter
+            // answers to (`:s(:$sort)` accepts both `:s(...)` and
+            // `:sort(...)`), not just its primary sigil-stripped name — a
+            // multi-alias named param (`:leaves(:rays(:$n))`, Graph::Star's
+            // own constructor) otherwise never matched a call spelled with
+            // any alias but the first, silently losing the dispatch to a
+            // less-specific ancestor candidate whose implicit `*%_` slurpy
+            // swallowed the "unrecognized" named arg instead.
+            let named_params: std::collections::HashSet<String> = filtered_params
                 .iter()
                 .filter(|p| p.named)
-                .map(|p| {
-                    // Strip the sigil of a sigiled named param: :@l -> "l",
-                    // :%h -> "h", :&c -> "c"
-                    p.name
-                        .strip_prefix('@')
-                        .or_else(|| p.name.strip_prefix('%'))
-                        .or_else(|| p.name.strip_prefix('&'))
-                        .unwrap_or(p.name.as_str())
-                })
+                .flat_map(|p| p.named_external_keys())
                 .collect();
             for arg in args {
                 if let ValueView::Pair(key, _) = arg.view()
