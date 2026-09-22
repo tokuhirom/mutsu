@@ -31,4 +31,4 @@ pub(in crate::parser) use sigil_vars::is_known_word_infix;
 // ── pub(super): accessible from parser::primary (the parent of `var`)
 //    and all its descendants via `crate::parser::primary::var::` paths ──────
 pub(super) use scalar::{parse_dollar_paren_block_pub, parse_var_name_from_str, scalar_var};
-pub(super) use sigil_vars::{array_var, code_var, hash_var};
+pub(crate) use sigil_vars::{array_var, code_var, hash_var};

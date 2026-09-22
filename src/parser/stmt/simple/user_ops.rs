@@ -10,6 +10,32 @@ pub(crate) fn is_user_declared_postfix_sub(symbol: &str) -> bool {
     is_user_declared_sub(&op_name)
 }
 
+/// A sigil can also be a user-defined prefix operator, but an adjacent sigil
+/// variable keeps its ordinary lexical meaning.  In particular, Math::Matrix
+/// exports `prefix:<@>`; matching that operator before primary parsing turns
+/// every `@array` into a call to the imported operator instead of an ArrayVar.
+/// Other sigil-prefixed forms remain available wherever the parser can
+/// disambiguate them from these ordinary variable/contextualizer forms.
+fn starts_sigil_variable(input: &str, op: &str) -> bool {
+    let parsed = match op {
+        "@" => crate::parser::primary::var::array_var(input),
+        "%" => crate::parser::primary::var::hash_var(input),
+        "&" => crate::parser::primary::var::code_var(input),
+        _ => return false,
+    };
+    if let Ok((rest, _)) = parsed
+        && rest.len() < input.len()
+    {
+        return true;
+    }
+    // The sigil parsers intentionally leave contextualizer circumfixes to the
+    // primary/container layer.  Reserve those adjacent forms here as well.
+    matches!(
+        (op, input.as_bytes().get(1).copied()),
+        ("@" | "%" | "&", Some(b'(' | b'[' | b'{'))
+    )
+}
+
 /// Match a user-declared prefix operator against the current input.
 /// Returns `(full_name, consumed_len)` when input begins with an in-scope
 /// `prefix:<...>` operator symbol.
@@ -27,6 +53,9 @@ pub(crate) fn match_user_declared_prefix_op(input: &str) -> Option<(String, usiz
                     continue;
                 };
                 if !input.starts_with(op) {
+                    continue;
+                }
+                if starts_sigil_variable(input, op) {
                     continue;
                 }
                 if scope

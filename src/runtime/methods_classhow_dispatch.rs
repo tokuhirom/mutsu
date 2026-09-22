@@ -1239,6 +1239,17 @@ impl Interpreter {
                         .cloned()
                         .collect()
                 };
+                let captured_env = if sub_data.env.is_empty() {
+                    None
+                } else {
+                    // A closure handed to ^add_method carries lexical values
+                    // from the code that created it.  Mark that capture as
+                    // authoritative so a nested method call cannot let a
+                    // same-named lexical from its caller shadow it.
+                    let mut env = sub_data.env.clone();
+                    env.insert("__mutsu_declared_method_capture".to_string(), Value::int(1));
+                    Some(env)
+                };
                 let def = MethodDef {
                     lexical_package: sub_data.package,
                     params: filtered_params,
@@ -1262,11 +1273,7 @@ impl Interpreter {
                     // like `method { attr.get_value(self) }` (Attribute::Predicate's
                     // `is predicate`) can still resolve `attr` after its creating
                     // sub returns. Only carried when the env actually holds captures.
-                    captured_env: if sub_data.env.is_empty() {
-                        None
-                    } else {
-                        Some(sub_data.env.clone())
-                    },
+                    captured_env,
                     source_file: sub_data.source_file.clone(),
                     role_param_bindings: None,
                 };
@@ -1321,6 +1328,13 @@ impl Interpreter {
                 let ValueView::Sub(sub_data) = method_value.view() else {
                     return Ok(Value::NIL);
                 };
+                let captured_env = if sub_data.env.is_empty() {
+                    None
+                } else {
+                    let mut env = sub_data.env.clone();
+                    env.insert("__mutsu_declared_method_capture".to_string(), Value::int(1));
+                    Some(env)
+                };
                 let def = MethodDef {
                     lexical_package: sub_data.package,
                     params: sub_data.params.to_vec(),
@@ -1340,11 +1354,7 @@ impl Interpreter {
                     is_default: false,
                     deprecated_message: None,
                     is_submethod: false,
-                    captured_env: if sub_data.env.is_empty() {
-                        None
-                    } else {
-                        Some(sub_data.env.clone())
-                    },
+                    captured_env,
                     source_file: sub_data.source_file.clone(),
                     role_param_bindings: None,
                 };

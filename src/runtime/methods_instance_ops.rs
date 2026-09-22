@@ -2867,6 +2867,57 @@ impl Interpreter {
                     && matches!(class_name.as_str(), "Method" | "Submethod" | "Regex")
                 {
                     let am = attributes.as_map();
+                    // A Method object obtained from a method table carries the
+                    // declaring class and method name alongside its callable
+                    // payload. Re-enter ordinary method dispatch for that
+                    // shape so the body's compiled method frame (including
+                    // its final expression and attribute-cell handling) is
+                    // used. Calling the payload directly falls back to the
+                    // AST carrier and loses the value of a final attribute
+                    // assignment (`.^private_method_table<foo>($obj)`).
+                    let is_multi_candidate = matches!(
+                        am.get("multi").map(Value::view),
+                        Some(ValueView::Bool(true))
+                    );
+                    let is_method_table_entry = matches!(
+                        am.get("__mutsu_method_table_entry").map(Value::view),
+                        Some(ValueView::Bool(true))
+                    );
+                    if is_method_table_entry
+                        && !is_multi_candidate
+                        && let Some(ValueView::Str(method_name)) =
+                            am.get("__mutsu_lookup_method").map(Value::view)
+                        && !args.is_empty()
+                    {
+                        let mut args = args;
+                        let invocant = args.remove(0);
+                        let is_private = matches!(
+                            am.get("name").map(Value::view),
+                            Some(ValueView::Str(name)) if name.starts_with('!')
+                        );
+                        let method_name = if is_private {
+                            format!("!{}", method_name.as_str())
+                        } else {
+                            method_name.to_string()
+                        };
+                        if is_private
+                            && let Some(ValueView::Str(owner)) =
+                                am.get("__mutsu_lookup_class").map(Value::view)
+                        {
+                            // Calling a private method through its reflection
+                            // table is explicitly authorized by the table
+                            // itself, even when the caller is outside the
+                            // declaring class. Give the normal private
+                            // resolver that lexical owner context so it uses
+                            // the compiled method path without weakening
+                            // ordinary source-level privacy checks.
+                            self.push_method_class(owner.to_string());
+                            let result = self.call_method_with_values(invocant, &method_name, args);
+                            self.pop_method_class();
+                            return result;
+                        }
+                        return self.call_method_with_values(invocant, &method_name, args);
+                    }
                     if let Some(callable) = am.get("__mutsu_method_callable").cloned() {
                         return self.call_sub_value(callable, args, false);
                     }
