@@ -431,6 +431,62 @@ impl Interpreter {
         }
     }
 
+    /// Resolve a regex body's bare lexical through its defining grammar's
+    /// package and inherited grammar packages. A derived grammar executes an
+    /// inherited token body under the derived dispatch package, but the body
+    /// still closes over package-scoped lexicals declared by its base grammar.
+    /// Ordinary variable reads intentionally do not use this inherited lookup;
+    /// it is only for regex interpolation, where the token resolver has already
+    /// selected an inherited definition.
+    pub(crate) fn regex_package_chain_var_fallback(&self, name: &str) -> Option<Value> {
+        if let Some(value) = self.package_chain_var_fallback(name) {
+            return Some(value);
+        }
+        if crate::qualified::is_qualified(crate::symbol::Symbol::intern(name)) {
+            return None;
+        }
+        let cur = self.current_package_sym();
+        if crate::qualified::is_global_package(cur)
+            || crate::qualified::is_routine_scoped_package(cur)
+        {
+            return None;
+        }
+        for mro_pkg in self.mro_readonly(cur.as_str()) {
+            for pkg in crate::qualified::package_ancestors(crate::symbol::Symbol::intern(&mro_pkg))
+            {
+                if pkg.as_str() != cur.as_str() {
+                    if let Some(candidate) = Self::package_qualified_candidate(name, pkg.as_str())
+                        && let Some(value) = self.get_our_var(candidate.as_str()).cloned()
+                    {
+                        return Some(value);
+                    }
+                    if let Some(candidate) = Self::package_qualified_candidate(name, pkg.as_str())
+                        && let Some(value) = self.get_env_with_main_alias(candidate.as_str())
+                    {
+                        return Some(value);
+                    }
+                    if let Some(value) = self
+                        .package_lexicals
+                        .get(pkg.as_str())
+                        .and_then(|entries| entries.get(name))
+                        .cloned()
+                    {
+                        return Some(value);
+                    }
+                    if let Some(value) = self
+                        .module_scope_lexicals
+                        .get(pkg.as_str())
+                        .and_then(|entries| entries.get(name))
+                        .cloned()
+                    {
+                        return Some(value);
+                    }
+                }
+            }
+        }
+        None
+    }
+
     /// Return the value of a bare package-block `my` lexical (`package P { my $x;
     /// sub f { $x } }`) recorded in `package_lexicals` by `exec_package_scope_op`.
     /// This store is the *authoritative* lexical scope a package's named subs close

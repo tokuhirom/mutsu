@@ -1,3 +1,4 @@
+use super::super::super::expr::expression;
 use super::super::super::helpers::ws;
 use super::super::super::parse_result::{PError, PResult, take_while1};
 use super::super::ident;
@@ -6,6 +7,14 @@ use crate::ast::HandleSpec;
 /// Parse a single handle spec item (colon-pair, word list, regex, wildcard, etc.)
 fn parse_single_handle_spec<'a>(input: &'a str, specs: &mut Vec<HandleSpec>) -> PResult<'a, ()> {
     let r = input;
+    // Capture slips in a parenthesized list, e.g. `|SomeType.methods`.
+    // The slip itself is only syntax here; declaration composition expands the
+    // resulting value into individual method names.
+    if let Some(after_slip) = r.strip_prefix('|') {
+        let (rest, expr) = expression(after_slip)?;
+        specs.push(HandleSpec::Expr(Box::new(expr)));
+        return Ok((rest, ()));
+    }
     // Quoted method name inside a parenthesized list: `handles('title', "author")`.
     if r.starts_with('\'') || r.starts_with('"') {
         let quote = r.as_bytes()[0] as char;
@@ -115,7 +124,11 @@ pub(in crate::parser) fn parse_handle_specs<'a>(
     rest_out: &mut &'a str,
 ) -> Result<(), PError> {
     let r = input;
-    if let Some(r_inner) = r.strip_prefix('<') {
+    if let Some(after_slip) = r.strip_prefix('|') {
+        let (rest, expr) = expression(after_slip)?;
+        specs.push(HandleSpec::Expr(Box::new(expr)));
+        *rest_out = rest;
+    } else if let Some(r_inner) = r.strip_prefix('<') {
         // Word list: <a b c>
         let mut cursor = r_inner;
         loop {

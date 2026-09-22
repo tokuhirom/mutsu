@@ -541,7 +541,7 @@ impl Interpreter {
 
     /// Apply `handles` specifications to a role definition.
     pub(crate) fn apply_handle_specs_to_role(
-        &self,
+        &mut self,
         specs: &[HandleSpec],
         attr_var_name: &str,
         role_def: &mut RoleDef,
@@ -557,16 +557,16 @@ impl Interpreter {
     /// Resolve handle specs to concrete (exposed_name, target_method, attr_var_name) tuples
     /// or wildcard/regex entries. This step only reads from self (immutable borrow).
     pub(crate) fn resolve_handle_specs_to_names(
-        &self,
+        &mut self,
         specs: &[HandleSpec],
         attr_var_name: &str,
     ) -> Vec<ResolvedHandle> {
         let mut result = Vec::new();
-        for spec in specs {
+        for spec in self.expand_handle_specs(specs) {
             match spec {
                 HandleSpec::Name(name) => {
                     // Check if the name refers to a known class or role (type delegation)
-                    let type_methods = self.collect_type_method_names(name);
+                    let type_methods = self.collect_type_method_names(&name);
                     if !type_methods.is_empty() {
                         for method_name in type_methods {
                             result.push(ResolvedHandle::Method {
@@ -591,7 +591,7 @@ impl Interpreter {
                     });
                 }
                 HandleSpec::Type(type_name) => {
-                    for method_name in self.collect_type_method_names(type_name) {
+                    for method_name in self.collect_type_method_names(&type_name) {
                         result.push(ResolvedHandle::Method {
                             exposed: method_name.clone(),
                             target: method_name,
@@ -608,9 +608,37 @@ impl Interpreter {
                 HandleSpec::Wildcard => {
                     result.push(ResolvedHandle::WildcardHandle(attr_var_name.to_string()));
                 }
+                // Expression-backed specs are consumed by `expand_handle_specs`.
+                // Keep this arm non-panicking for callers that provide a spec
+                // list from a partially-composed declaration.
+                HandleSpec::Expr(_) => {}
             }
         }
         result
+    }
+
+    /// Evaluate expression-backed `handles` entries and turn their positional
+    /// values into ordinary method-name specs. A scalar value is one method
+    /// name; a list-like value contributes one name per element.
+    pub(crate) fn expand_handle_specs(&mut self, specs: &[HandleSpec]) -> Vec<HandleSpec> {
+        let mut expanded = Vec::new();
+        for spec in specs {
+            match spec {
+                HandleSpec::Expr(expr) => {
+                    if let Ok(value) =
+                        self.eval_block_value(&[crate::ast::Stmt::Expr((**expr).clone())])
+                    {
+                        expanded.extend(
+                            crate::runtime::utils::value_to_list(&value)
+                                .into_iter()
+                                .map(|item| HandleSpec::Name(item.to_string_value())),
+                        );
+                    }
+                }
+                other => expanded.push(other.clone()),
+            }
+        }
+        expanded
     }
 
     /// Collect method names from a class or role by name.

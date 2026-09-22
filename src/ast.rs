@@ -46,6 +46,13 @@ pub(crate) fn next_class_decl_id() -> u64 {
 pub(crate) enum HandleSpec {
     /// Forward a method by name (same name on both sides).
     Name(String),
+    /// Expand the value of an expression into method names.
+    ///
+    /// Raku permits capture slips in a parenthesized `handles` list, such as
+    /// `handles ('name', |SomeType.methods)`. The expression is evaluated when
+    /// the declaration is composed, just like the rest of the declaration's
+    /// traits.
+    Expr(Box<Expr>),
     /// Rename: expose `exposed` on the class, forwarding to `target` on the delegate.
     Rename { exposed: String, target: String },
     /// Forward all methods defined in the given type (class or role name).

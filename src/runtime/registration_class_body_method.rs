@@ -387,7 +387,8 @@ impl Interpreter {
             // sites recognize this prefix and invoke the named
             // method on self to obtain the delegate.
             let source_attr_marker = format!("&{}", resolved_method_name);
-            for spec in &decl.handles {
+            let handles = self.expand_handle_specs(&decl.handles);
+            for spec in &handles {
                 match spec {
                     HandleSpec::Name(target) => {
                         let delegation = make_delegation_method(&source_attr_marker, target);
@@ -419,6 +420,8 @@ impl Interpreter {
                         // Method-based delegation via a type name
                         // is not yet supported; fall through.
                     }
+                    // Expression-backed specs are expanded before this branch.
+                    HandleSpec::Expr(_) => {}
                 }
             }
         }
