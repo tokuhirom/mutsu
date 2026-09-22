@@ -66,7 +66,9 @@ impl Interpreter {
         })
     }
 
-    /// The type check every attribute store applies to the value on its way in.
+    /// The type check — and the native-width narrowing — every attribute store
+    /// applies to the value on its way in. Returns the value as the attribute
+    /// will actually hold it.
     ///
     /// One rule, two callers: the generated public accessor
     /// (`$obj.attr = v`) and the hand-written `is rw` method that exposes the
@@ -74,6 +76,16 @@ impl Interpreter {
     /// `is rw` method over a bare `$!attr` *is* an accessor, so the two must
     /// agree — the method store used to skip the check entirely, letting
     /// `$obj.acc = "str"` land a `Str` in a `has Int $.n`.
+    ///
+    /// The narrowing step is the same one the ordinary local-slot store runs
+    /// after its own type check (`exec_set_local_op_inner`, which calls
+    /// [`Interpreter::wrap_native_int_by_constraint`] on every typed store), and
+    /// it has to be here for the same reason the type check does:
+    /// `type_matches_value` accepts any `Int` for a native-int constraint, so
+    /// `260` passes for a `uint8` and nothing else on this path would ever
+    /// narrow it. Without it `$obj.v = 260` left `260` in a `has uint8 $.v`
+    /// where `my uint8 $x = 260` gave `4` (#9022). It also covers `num32`'s
+    /// store-time truncation to single precision.
     ///
     /// `Nil` is exempt: it never reaches the attribute, because
     /// [`Self::attr_store_nil_default`] replaces it with the declared default
@@ -83,24 +95,24 @@ impl Interpreter {
         class_name: &str,
         attr: &str,
         attr_sigil: char,
-        value: &Value,
-    ) -> Result<(), RuntimeError> {
+        value: Value,
+    ) -> Result<Value, RuntimeError> {
         // For `@`/`%` attributes the constraint applies to the elements, not to
         // the container being stored; those checks live at the call sites.
         if attr_sigil != '$' || value.is_nil() {
-            return Ok(());
+            return Ok(value);
         }
         let Some(type_constraint) = self.get_attr_type_constraint(class_name, attr) else {
-            return Ok(());
+            return Ok(value);
         };
-        if self.type_matches_value(&type_constraint, value)
+        if self.type_matches_value(&type_constraint, &value)
             || self.is_container_subclass(&type_constraint)
         {
-            return Ok(());
+            return Self::wrap_native_int_by_constraint(&type_constraint, value);
         }
         Err(RuntimeError::typecheck_assignment(
             &type_constraint,
-            value,
+            &value,
             Some(&format!("$!{}", attr)),
         ))
     }

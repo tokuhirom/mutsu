@@ -1106,7 +1106,8 @@ impl Interpreter {
                 // not to the container itself, so skip the container-level check.
                 // `Nil` is exempt: the store below replaces it with the
                 // declaration's default or its type object.
-                self.check_attr_store_type(&class_name.resolve(), method, attr_sigil, &value)?;
+                let value =
+                    self.check_attr_store_type(&class_name.resolve(), method, attr_sigil, value)?;
                 // A gather is represented by a lazy list until it reaches a
                 // strict aggregate assignment.  An `@` attribute owns a real
                 // mutable Array, so finish a finite gather here before the
@@ -1418,7 +1419,8 @@ impl Interpreter {
             // An `is rw` method whose body is a bare `$!attr` IS that
             // attribute's accessor, so its store obeys the same type constraint
             // the generated accessor enforces.
-            self.check_attr_store_type(&class_name.resolve(), &attr_name, attr_sigil, &value)?;
+            let value =
+                self.check_attr_store_type(&class_name.resolve(), &attr_name, attr_sigil, value)?;
             let mut updated = attributes.to_map();
             // The method body's own sigil (e.g. a bare `%!h`) is authoritative;
             // fall back to the class's declared sigil for this attribute only

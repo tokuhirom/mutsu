@@ -920,7 +920,7 @@ impl Interpreter {
     }
 
     /// For non-native constraints or non-integer values, returns the value unchanged.
-    pub(super) fn wrap_native_int_by_constraint(
+    pub(crate) fn wrap_native_int_by_constraint(
         constraint: &str,
         val: Value,
     ) -> Result<Value, RuntimeError> {
