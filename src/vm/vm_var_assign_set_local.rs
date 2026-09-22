@@ -1998,6 +1998,9 @@ impl Interpreter {
             // `@`/`%` containers and internal temps.
             val = self.reset_nil_untyped_scalar(name, val);
         }
+        if !name.starts_with('@') && !name.starts_with('%') && !name.starts_with('&') {
+            self.check_scalar_attr_where_on_assign(name, &val)?;
+        }
         // Only enforce sigilless-readonly when this is NOT a new variable
         // declaration (my $x = ...).  A `my` decl creates a fresh variable
         // that shadows the sigilless one, so it must not be blocked. Skipped

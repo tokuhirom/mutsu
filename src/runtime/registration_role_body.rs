@@ -149,6 +149,9 @@ impl Interpreter {
             where_constraint: decl.where_constraint.clone(),
             declared_shape,
         });
+        if decl.where_constraint.is_some() {
+            Self::mark_attr_where_constraint_seen();
+        }
         if let Some(built) = decl.is_built {
             cx.role_def
                 .attribute_built

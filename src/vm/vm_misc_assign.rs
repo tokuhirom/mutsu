@@ -461,6 +461,9 @@ impl Interpreter {
             // for `@`/`%` containers).
             self.reset_nil_untyped_scalar(&name, val)
         };
+        if !name.starts_with('@') && !name.starts_with('%') {
+            self.check_scalar_attr_where_on_assign(&name, &val)?;
+        }
         let name_sym = Symbol::intern(&name);
         if matches!(
             self.env()

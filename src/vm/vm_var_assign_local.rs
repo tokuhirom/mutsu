@@ -311,6 +311,9 @@ impl Interpreter {
             // object Any (the reset guard is a no-op for `@`/`%` containers).
             val = self.reset_nil_untyped_scalar(name, val);
         }
+        if !name.starts_with('@') && !name.starts_with('%') && !name.starts_with('&') {
+            self.check_scalar_attr_where_on_assign(name, &val)?;
+        }
         // A sigilless-readonly binding can only exist once the program created a
         // `__mutsu_sigilless_*` key, so skip the probe (and its two `format!`s)
         // entirely otherwise — this runs on every expression-context assignment.

@@ -595,6 +595,9 @@ impl Interpreter {
                             where_constraint: decl.where_constraint.clone(),
                             declared_shape,
                         });
+                        if decl.where_constraint.is_some() {
+                            Self::mark_attr_where_constraint_seen();
+                        }
                         if decl.is_alias {
                             class_def.alias_attributes.insert(attr_name_str.clone());
                         }
