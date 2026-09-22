@@ -16,6 +16,8 @@ my $p = Plain.new;
 my $m1 = Plain.^lookup("foo");
 is $m1.WHAT.gist, '(Method)', 'lookup of a plain method is a Method Instance';
 is $m1($p, 5), 6, 'calling a plain method lookup runs the method';
+is $m1.assuming($p)(5), 6,
+    'assuming on a looked-up Method binds its invocant before the call';
 is $m1.candidates.elems, 1, 'a non-multi method is its own sole candidate';
 
 class Multi1 {
@@ -26,6 +28,8 @@ my $mm = Multi1.new;
 my $m2 = Multi1.^lookup("bar");
 is $m2($mm, 5), 'int:5', 'calling a multi dispatcher lookup re-dispatches on Int arg';
 is $m2($mm, "hi"), 'str:hi', 'calling a multi dispatcher lookup re-dispatches on Str arg';
+is $m2.assuming($mm)(5), 'int:5',
+    'assuming on a multi lookup binds its invocant before redispatch';
 is $m2.candidates[0]($mm, 5), 'int:5', 'calling an individual multi candidate runs that candidate';
 
 role R {

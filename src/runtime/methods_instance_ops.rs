@@ -502,6 +502,82 @@ impl Interpreter {
             id: target_id,
         } = target.view()
         {
+            // `.^lookup`/`.^find_method` return Method/Submethod instances,
+            // whose callable payload already carries the invocant as its
+            // first parameter. Reuse the callable's normal `.assuming`
+            // implementation so a looked-up method can be curried before it
+            // is called (`$type.^lookup('method').assuming($obj)(...)`).
+            if method == "assuming"
+                && matches!(
+                    class_name.resolve().as_str(),
+                    "Method" | "Submethod" | "Regex"
+                )
+                && let Some(callable) = attributes.as_map().get("__mutsu_method_callable")
+                && let Some(result) = self.dispatch_callable_method(callable, method, &args)
+            {
+                return result;
+            }
+            // A multi Method dispatcher has no single callable payload. Its
+            // candidates do, however, so preserve `.assuming`'s bound
+            // invocant by reusing the existing captured multi-dispatch call
+            // path rather than re-entering named method lookup on every call.
+            if method == "assuming"
+                && matches!(class_name.resolve().as_str(), "Method" | "Submethod")
+                && attributes
+                    .as_map()
+                    .get("is_dispatcher")
+                    .is_some_and(|value| value.truthy())
+            {
+                let candidates = attributes
+                    .as_map()
+                    .get("candidates")
+                    .cloned()
+                    .and_then(Value::into_array)
+                    .map(|(items, _)| {
+                        items
+                            .iter()
+                            .filter_map(|candidate| {
+                                let ValueView::Instance { attributes, .. } = candidate.view()
+                                else {
+                                    return None;
+                                };
+                                attributes.as_map().get("__mutsu_method_callable").cloned()
+                            })
+                            .collect::<Vec<_>>()
+                    })
+                    .unwrap_or_default();
+                if candidates.is_empty() {
+                    return Err(RuntimeError::new(
+                        "A multi Method has no callable candidates",
+                    ));
+                }
+                let mut env = crate::env::Env::new();
+                env.insert(
+                    "__mutsu_multi_dispatch_candidates".to_string(),
+                    Value::array(candidates),
+                );
+                let carrier = Value::make_sub(
+                    Symbol::intern("Method"),
+                    Symbol::intern("assuming"),
+                    Vec::<String>::new(),
+                    Vec::<crate::ast::ParamDef>::new(),
+                    Vec::<crate::ast::Stmt>::new(),
+                    false,
+                    env,
+                );
+                let ValueView::Sub(data) = carrier.view() else {
+                    unreachable!("method assuming carrier must be a Sub");
+                };
+                let mut data = (**data).clone();
+                for arg in args {
+                    if let ValueView::Pair(key, value) = arg.view() {
+                        data.assumed_named.insert(key.clone(), value.clone());
+                    } else {
+                        data.assumed_positional.push(arg);
+                    }
+                }
+                return Ok(Value::sub_value(crate::gc::Gc::new(data)));
+            }
             // A per-attribute container descriptor produced by `Attribute.container`
             // (tagged with `__mutsu_attr_container_owner`). `.VAR` returns the
             // descriptor itself so a subsequent `does Role(...)` can be recorded
