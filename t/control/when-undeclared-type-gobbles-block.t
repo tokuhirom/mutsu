@@ -147,4 +147,25 @@ UNIT
 is $qualified-type.new.describe($qualified-type.new), 'qualified',
     'a unit class can match its fully-qualified name in its body';
 
+# A class declared after a `unit module` is registered by its short name while
+# the rest of the compilation unit is parsed.  A qualified matcher in a CATCH
+# block must still keep its handler block instead of being treated as a
+# listop-call argument (RakuConfig::BadConfig, from Collection 0.18.0).
+my $unit-module-eval = EVAL q:to/UNIT/;
+unit module WhenMatcherUnit;
+class QualifiedException is Exception { }
+sub classify() {
+    try {
+        42;
+        CATCH {
+            when WhenMatcherUnit::QualifiedException { 'matched' }
+            default { 'default' }
+        }
+    }
+}
+classify()
+UNIT
+ok !$unit-module-eval.defined,
+    'unit-module class can be used as a qualified CATCH matcher';
+
 done-testing;

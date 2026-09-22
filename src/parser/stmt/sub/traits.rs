@@ -34,7 +34,12 @@ fn parse_trait_type_name(input: &str) -> PResult<'_, String> {
             return Ok((rest, name));
         }
     }
-    let (rest, base) = take_while1(input, |c: char| c.is_alphanumeric() || c == '_' || c == ':')?;
+    // Return types use the same identifier segments as declarations.  In
+    // particular, a qualified type may have a hyphenated final segment
+    // (`LibCurl::version-info`), which is common in NativeCall wrappers.
+    let (rest, base) = take_while1(input, |c: char| {
+        c.is_alphanumeric() || matches!(c, '_' | ':' | '-' | '\'')
+    })?;
     let mut base = base.to_string();
     let mut rest = rest;
     // Parametrization: `returns Array[Int]`, `of Maybe[Array]`. Scan a balanced
