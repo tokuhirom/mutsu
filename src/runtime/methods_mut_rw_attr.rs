@@ -117,6 +117,31 @@ impl Interpreter {
         ))
     }
 
+    /// Itemize the value a `$`-sigil attribute store is about to commit.
+    ///
+    /// A `$` attribute IS a Scalar container, so an Array/Hash/Seq/Slip stored
+    /// into it renders with the itemizing `$` prefix and stops flattening under
+    /// the single-argument rule — exactly what `my $x = [1, 2, 3]` produces.
+    /// The ordinary local-slot store gets that from `itemize_scalar_store`; the
+    /// accessor store did not, so `$obj.x = {a => 1}` read back as `{:a(1)}`
+    /// where rakudo gives `${:a(1)}`, and `my @flat = $obj.x` spread a
+    /// `$`-held Array into three elements instead of one (#9023).
+    ///
+    /// `@`/`%` attributes are containers in their own right and must NOT be
+    /// itemized: `$obj.h = {e => 5}` on a `has %.h` stays `{:e(5)}`.
+    ///
+    /// Shared by the generated accessor store and the `is rw` method store for
+    /// the same reason [`Self::check_attr_store_type`] and
+    /// [`Self::attr_store_nil_default`] are: they are two spellings of one
+    /// accessor, and a rule that lives in only one of them is a divergence
+    /// waiting to be reported.
+    pub(crate) fn itemize_attr_store_value(attr_sigil: char, value: Value) -> Value {
+        if attr_sigil != '$' {
+            return value;
+        }
+        Self::itemize_scalar_store_value(value)
+    }
+
     /// What assigning `Nil` to attribute `attr` actually stores.
     ///
     /// Raku's `=` restores a container's *default* when handed `Nil`: the
