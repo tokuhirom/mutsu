@@ -770,7 +770,7 @@ impl Interpreter {
                         actual_method
                     )));
                 }
-                if let Some((attr_name, _sigil)) =
+                if let Some((attr_name, attr_sigil)) =
                     Self::rw_method_attribute_target(&method_def.body)
                 {
                     let mut updated = attributes.to_map();
@@ -785,7 +785,7 @@ impl Interpreter {
                             current,
                             value,
                             preserve_hash_entries,
-                            false,
+                            attr_sigil,
                         )
                     } else {
                         value
@@ -840,6 +840,7 @@ impl Interpreter {
                 // No explicit method found — try auto-accessor for public `is rw` attributes
                 let class_attrs = self.collect_class_attributes(qualifier);
                 let mut found_rw = false;
+                let mut found_sigil = '$';
                 for attr in &class_attrs {
                     if attr.name == actual_method && attr.is_public {
                         if !attr.is_rw && attr.sigil != '@' && attr.sigil != '%' {
@@ -849,6 +850,7 @@ impl Interpreter {
                             )));
                         }
                         found_rw = true;
+                        found_sigil = attr.sigil;
                         break;
                     }
                 }
@@ -865,7 +867,7 @@ impl Interpreter {
                             current,
                             value,
                             preserve_hash_entries,
-                            false,
+                            found_sigil,
                         )
                     } else {
                         value
@@ -1189,7 +1191,7 @@ impl Interpreter {
                     current,
                     value.clone(),
                     preserve_hash_entries,
-                    attr_sigil == '%',
+                    attr_sigil,
                 );
                 // A default-initialized `%` slot may still be represented by its
                 // raw initializer before the first store, so there is no embedded
@@ -1418,11 +1420,21 @@ impl Interpreter {
             // the generated accessor enforces.
             self.check_attr_store_type(&class_name.resolve(), &attr_name, attr_sigil, &value)?;
             let mut updated = attributes.to_map();
-            let force_hash_context = attr_sigil == '%'
+            // The method body's own sigil (e.g. a bare `%!h`) is authoritative;
+            // fall back to the class's declared sigil for this attribute only
+            // when the body's sigil disagrees, so a `%`-declared attribute
+            // still gets hash-shape handling even if the accessor body somehow
+            // reads it through a differently-sigiled alias.
+            let resolved_sigil = if attr_sigil == '%'
                 || self
                     .collect_class_attributes(&class_name.resolve())
                     .iter()
-                    .any(|attr| attr.name == attr_name && attr.sigil == '%');
+                    .any(|attr| attr.name == attr_name && attr.sigil == '%')
+            {
+                '%'
+            } else {
+                attr_sigil
+            };
             let current = if method_args.is_empty() {
                 self.call_method_with_values(
                     Value::instance_parts(class_name, attributes.clone(), target_id),
@@ -1438,7 +1450,7 @@ impl Interpreter {
                     current,
                     value,
                     preserve_hash_entries,
-                    force_hash_context,
+                    resolved_sigil,
                 )
             } else {
                 value

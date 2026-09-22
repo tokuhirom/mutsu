@@ -120,8 +120,25 @@ impl Interpreter {
         current: Option<Value>,
         value: Value,
         preserve_hash_entries: bool,
-        force_hash_context: bool,
+        attr_sigil: char,
     ) -> Value {
+        // A `$`-sigil accessor REBINDS on assignment: whatever the attribute
+        // currently holds (even a real Array/Hash object, e.g. from a
+        // `has $.x is rw = [...]` default, or an earlier `.x = [...]`
+        // store) is irrelevant to what `.x = newval` stores next. Only
+        // `@`/`%` sigils flow an assignment INTO the existing container,
+        // preserving its identity and `is default(...)` -- matching plain
+        // Raku container semantics (`my $x = [1,2,3]; $x = <a b>` rebinds
+        // `$x` outright; `my @a = 1,2,3; @a = <a b>` assigns into `@a`).
+        // Without this gate, a scalar attribute whose CURRENT value merely
+        // happens to be an Array/Hash silently coerced every later
+        // assignment (including a `.=` coercion's own result) back into
+        // that shape -- `has $.x is rw; .x = [...]; .x .= Hash` produced an
+        // Array of the Hash's pairs instead of the Hash itself (#9005).
+        if !matches!(attr_sigil, '@' | '%') {
+            return value;
+        }
+        let force_hash_context = attr_sigil == '%';
         let current = current.map(Value::into_descalarized);
         if force_hash_context && !preserve_hash_entries {
             let value = value.into_descalarized();
