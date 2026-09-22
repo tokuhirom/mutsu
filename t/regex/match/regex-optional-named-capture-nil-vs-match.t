@@ -9,6 +9,14 @@ use Test;
 # - `(x)?` / `$<x>=(...)?` -- the `?` quantifies a CaptureGroup atom, and
 #   Raku still yields Nil for a capturing group that matched zero times, even
 #   when the group itself carries the name.
+# - `$<x>=<.subrule>?` / `$<x>=<subrule>?` -- a BARE subrule call (including a
+#   zero-arg builtin like `<lower>`) is a third case, distinct from the
+#   character-class one above even though both are written `$<x>=<...>?`: an
+#   unmatched subrule never produced a Match to bind, so `$<x>` is Nil and
+#   absent from `.caps`, exactly like the CaptureGroup case. Wrapping the same
+#   subrule call in a group (`$<x>=[<.subrule>]?`) reverts to the
+#   non-capturing-group case above and yields a defined, empty Match --
+#   verified against `raku` (issue #9054).
 #
 # Each scenario uses its own capture name (rather than reusing `$<x>` across
 # blocks) because a named capture absent from the current match falls back to
@@ -16,7 +24,7 @@ use Test;
 # (todo/tickets/named-capture-absent-from-current-match-leaks-stale-value.md)
 # that this test intentionally does not exercise.
 
-plan 8;
+plan 11;
 
 if "b" ~~ / $<ncg>=[<[cd]>]? "b" / {
     ok $<ncg>.defined, 'name on a non-capturing group: defined (empty Match)';
@@ -57,4 +65,27 @@ if "cb" ~~ / $<bare2>=<[cd]>? "b" / {
     is ~$<bare2>, 'c', 'a matched bare-atom name still captures its text';
 } else {
     flunk 'matched bare atom name';
+}
+
+grammar SubruleG {
+    token digit { \d }
+    token TOP {
+        $<sub>=<.digit>? 'x'
+        $<subgroup>=[<.digit>]? 'y'
+    }
+}
+
+if SubruleG.parse('xy') -> $m {
+    nok $m<sub>.defined, 'name on a bare unmatched subrule call: Nil';
+    ok $m<subgroup>.defined,
+        'name on a group wrapping an unmatched subrule call: defined (empty Match)';
+} else {
+    flunk 'bare subrule call: parse';
+    flunk 'grouped subrule call: parse';
+}
+
+if SubruleG.parse('5x6y') -> $m {
+    is ~$m<sub>, '5', 'a matched bare subrule call name still captures its text';
+} else {
+    flunk 'matched bare subrule call';
 }
