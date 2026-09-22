@@ -331,6 +331,26 @@ pub(crate) fn stmt_ends_with_block(stmt: &Stmt) -> bool {
     match stmt {
         Stmt::Expr(e) => expr_ends_with_block(e),
         Stmt::VarDecl { expr, .. } | Stmt::Assign { expr, .. } => expr_ends_with_block(expr),
+        // Sigilless declarations are lowered to a synthetic block carrying
+        // compiler markers after the real declaration.  Ignore those markers
+        // and inspect the last source-bearing statement so
+        // `my \name = do { ... }` gets the same block-final boundary as an
+        // ordinary declaration.
+        Stmt::SyntheticBlock(stmts) => stmts
+            .iter()
+            .rev()
+            .find(|stmt| {
+                !matches!(
+                    stmt,
+                    Stmt::MarkBind
+                        | Stmt::MarkBoundContainer(_)
+                        | Stmt::MarkReadonly(_, _)
+                        | Stmt::MarkSigilless(_)
+                        | Stmt::MarkSigillessReadonly(_)
+                        | Stmt::SetLine(_)
+                )
+            })
+            .is_some_and(stmt_ends_with_block),
         // `my regex/token/rule NAME { ... }` is a block-form declaration, so it
         // ends the statement. Without this, the next line's `if` was absorbed as
         // a statement modifier and the declaration was re-parented into the
@@ -394,9 +414,24 @@ pub(crate) fn parse_statement_modifier(input: &str, stmt: Stmt) -> PResult<'_, S
         // modifier (App::Moneymoor writes ten modules that way). Read the source
         // text before the statement's end to tell the two apart; with no source
         // recorded (a nested/EVAL buffer), keep the conservative old answer.
-        if input[..consumed_len].contains('\n')
+        // Most callers leave the whitespace after the expression in `input`,
+        // but declaration RHS parsers may already have consumed it.  In that
+        // case `input` starts at the next line's modifier keyword, so the
+        // newline is no longer visible in the slice even though the source
+        // line is empty before the keyword.  Treat that source-position shape
+        // as the same block-final boundary; otherwise
+        // `my \Role = do { ... }` followed by `unless ...` is parsed as a
+        // statement modifier on the declaration, moving the declaration into
+        // the conditional body (and making the condition observe an
+        // uninitialized `Role`).
+        let source_line_starts_at_modifier = matches!(stmt, Stmt::SyntheticBlock(_))
             && crate::parser::primary::source_span_at(input)
-                .is_none_or(|(pre, _)| pre.trim_end().ends_with('}'))
+                .is_some_and(|(pre, _)| pre.trim().is_empty());
+        if (input[..consumed_len].contains('\n') || source_line_starts_at_modifier)
+            && crate::parser::primary::source_span_at(input).is_none_or(|(pre, _)| {
+                pre.trim_end().ends_with('}')
+                    || (source_line_starts_at_modifier && pre.trim().is_empty())
+            })
         {
             return Ok((input, stmt));
         }
