@@ -2855,7 +2855,23 @@ impl Compiler {
     /// `Int`. Positions past 31 are never marked (a call with 32+ positional
     /// arguments and a native `multi` candidate is not worth a wider carrier);
     /// leaving a bit clear only preserves the old ranking for that position.
-    fn literal_native_args_mask(&self, args: &[Expr]) -> u32 {
+    ///
+    /// `floor`/`ceiling`/`ceil` (#9012) read this SAME field for a different
+    /// question -- not "which candidate should multi dispatch rank first" but
+    /// "does the free-function form's return type stay `Num` or become
+    /// `Int`" -- and the two questions disagree on a bare literal. Rakudo
+    /// ranks `d(5)` as if `5` were `int` (that is what the general mask
+    /// above encodes), but `ceiling(3.2e0)` still returns a boxed `Int`: a
+    /// literal is never a native CONTAINER, only a value shaped like one.
+    /// Route exactly these three (single-argument) names through
+    /// [`Self::is_declared_native_arg`] instead, which is the strict
+    /// "genuinely declared native" subset of [`Self::is_native_literal_arg`]
+    /// -- a declared-native local or an inline `my num $ = ...` argument,
+    /// never a bare literal or a folded constant.
+    fn literal_native_args_mask(&self, name: &Symbol, args: &[Expr]) -> u32 {
+        if args.len() == 1 && name.with_str(|n| matches!(n, "floor" | "ceiling" | "ceil")) {
+            return u32::from(self.is_declared_native_arg(&args[0]));
+        }
         let mut mask = 0u32;
         for (i, arg) in args.iter().enumerate().take(32) {
             if self.is_native_literal_arg(arg) {
@@ -2863,6 +2879,40 @@ impl Compiler {
             }
         }
         mask
+    }
+
+    /// Whether `arg`'s call-site SHAPE is a genuinely declared native scalar:
+    /// either a plain read of a local declared with a native type constraint
+    /// (`my num $y = ...; f($y)`), or an inline anonymous native declaration
+    /// used directly as the argument (`f(my num $ = ...)`, which parses to a
+    /// `DoStmt` wrapping the `VarDecl` -- `my uint32 $ = 1` has no named
+    /// lexical metadata for the runtime matcher to inspect, but its call-site
+    /// shape still identifies it as a native argument). Unlike
+    /// [`Self::is_native_literal_arg`], a bare literal or a const-folded
+    /// expression does NOT count here: those are boxed values shaped like a
+    /// native one, not native containers, and `floor`/`ceiling`/`ceil`'s
+    /// `literal_native_args_mask` special case (#9012) needs exactly that
+    /// distinction.
+    fn is_declared_native_arg(&self, arg: &Expr) -> bool {
+        if let Expr::DoStmt(stmt) = arg
+            && let Stmt::VarDecl {
+                name,
+                type_constraint: Some(type_constraint),
+                ..
+            } = stmt.as_ref()
+            && name == "__ANON_STATE__"
+            && crate::runtime::native_types::is_native_array_element_type(type_constraint)
+        {
+            return true;
+        }
+        if let Expr::Var(name) = arg
+            && self.local_types.get(name).is_some_and(|type_constraint| {
+                crate::runtime::native_types::is_native_array_element_type(type_constraint)
+            })
+        {
+            return true;
+        }
+        false
     }
 
     /// One position's test for `literal_native_args_mask`. An anonymous native
@@ -2893,22 +2943,7 @@ impl Compiler {
                     | crate::value::ValueView::Str(_)
             )
         };
-        if let Expr::DoStmt(stmt) = arg
-            && let Stmt::VarDecl {
-                name,
-                type_constraint: Some(type_constraint),
-                ..
-            } = stmt.as_ref()
-            && name == "__ANON_STATE__"
-            && crate::runtime::native_types::is_native_array_element_type(type_constraint)
-        {
-            return true;
-        }
-        if let Expr::Var(name) = arg
-            && self.local_types.get(name).is_some_and(|type_constraint| {
-                crate::runtime::native_types::is_native_array_element_type(type_constraint)
-            })
-        {
+        if self.is_declared_native_arg(arg) {
             return true;
         }
         // The literal shapes are recognised without folding, so they still

@@ -710,6 +710,20 @@ impl Interpreter {
                 return Some(result);
             }
         }
+        // #9012: `floor`/`ceiling` as FREE FUNCTIONS return `Int` for a boxed
+        // `Num` argument (a literal, a computed value, or a `Num`-typed
+        // variable) but must stay `Num` for a genuinely native
+        // `num`/`num32`/`num64` argument -- rakudo distinguishes the two by
+        // the argument's declared/static nativity, which mutsu has no
+        // `Value`-level tag for (both are the same `ValueView::Num(f64)`).
+        // `dispatch_1arg.rs`'s pure implementation cannot see that distinction
+        // at all, so it always keeps `Num` -- matching only the native case.
+        // See `try_native_floor_ceiling` for the compile-time signal
+        // (`literal_native_args`'s call-specific meaning for these three
+        // names) that makes the distinction here.
+        if let Some(result) = self.try_native_floor_ceiling(name_sym, args) {
+            return Some(result);
+        }
         // ADR-0058: `crate::builtins::native_function` is pure Rust that reads
         // its arguments' elements directly, so a still-deferred `.map` Seq has
         // to be pulled first (otherwise `join`/`say`/... read its empty seed).
@@ -854,5 +868,48 @@ impl Interpreter {
             }
         }
         crate::builtins::native_function(name_sym, args)
+    }
+
+    /// The `floor`/`ceiling` free-function special case documented at its
+    /// call site in [`Self::try_native_function`]. `None` for every other
+    /// name/shape, so the caller falls through to the ordinary native table
+    /// (which still owns the NaN/Infinite/Int/Rat/Complex/Instance arms, and
+    /// the native `Num` case: a declared-native argument, `bit 0` set,
+    /// returns `None` here and reaches that table's `Value::num(...)` arm
+    /// unchanged).
+    ///
+    /// `self.literal_native_args` is normally a per-position "was this
+    /// argument written as a literal" mask for multi-dispatch ranking
+    /// (`unwrap_varref_for_dispatch_at`); the compiler's
+    /// `literal_native_args_mask` special-cases exactly these three
+    /// (single-argument) callee names to carry a different bit instead --
+    /// whether the sole argument's call-site SHAPE is a genuinely declared
+    /// native scalar (see `Compiler::is_declared_native_arg`). A plain
+    /// variable argument is unwrapped to its bare value well before this
+    /// point (`normalize_call_args_for_target` strips the `VarRef` tag for
+    /// any name with no user-declared candidate, builtins included), so the
+    /// mask -- published for the whole call by `exec_call_func_op` -- is the
+    /// only surviving signal.
+    fn try_native_floor_ceiling(
+        &self,
+        name_sym: crate::symbol::Symbol,
+        args: &[Value],
+    ) -> Option<Result<Value, RuntimeError>> {
+        let name = name_sym.as_str();
+        if !matches!(name, "floor" | "ceiling" | "ceil") || args.len() != 1 {
+            return None;
+        }
+        let ValueView::Num(f) = args[0].unwrap_varref().view() else {
+            return None;
+        };
+        if f.is_nan() || f.is_infinite() {
+            return None;
+        }
+        let is_declared_native = self.literal_native_args & 1 != 0;
+        if is_declared_native {
+            return None;
+        }
+        let rounded = if name == "floor" { f.floor() } else { f.ceil() };
+        Some(Ok(Value::int(rounded as i64)))
     }
 }
