@@ -147,22 +147,40 @@ const NEGATABLE_BASE_OPS: &[&str] = &[
     "(^)", "⊖", "(.)", "⊍", "(==)", "≡", "≢",
 ];
 
+/// Every Unicode infix alias, paired with the ASCII spelling it folds to.
+///
+/// One table, two readers, because they have to agree: [`canonical_infix`]
+/// resolves the alias at run time, and the parser's meta-operator scanner
+/// (`parse_meta_op`) has to *recognize* the same spellings to read
+/// `@a Z× @b` at all. The scanner kept its own ASCII-only operator list, so
+/// the runtime could fold `Z×` while the parser stopped dead at the non-ASCII
+/// byte (#9034). Adding an alias here now reaches both.
+///
+/// Set operators (`∪`, `∩`, `⊍`, `∖`, `⊖`, ...) are deliberately absent: they
+/// are not aliases of an ASCII infix — their `(|)`-style spellings are a
+/// separate pairing, handled by the parser's `parse_meta_set_op` and by the
+/// runtime's own set-operator dispatch.
+pub(crate) const UNICODE_INFIX_ALIASES: &[(&str, &str)] = &[
+    ("\u{2218}", "o"),  // ∘ function composition
+    ("\u{00D7}", "*"),  // × multiplication
+    ("\u{00F7}", "/"),  // ÷ division
+    ("\u{2212}", "-"),  // − (U+2212) subtraction
+    ("\u{2264}", "<="), // ≤
+    ("\u{2265}", ">="), // ≥
+    ("\u{2260}", "!="), // ≠
+];
+
 /// The ASCII spelling a Unicode operator alias folds to, or `op` unchanged.
 ///
-/// `∘`→`o`, `×`→`*`, `÷`→`/`, `−`(U+2212)→`-`, `≤`→`<=`, `≥`→`>=`, `≠`→`!=`.
 /// Without the fold a `[×]` reduction reaches an `infix:<×>` lookup that does
-/// not exist.
+/// not exist. The table is [`UNICODE_INFIX_ALIASES`].
 pub(crate) fn canonical_infix(op: &str) -> &str {
-    match op {
-        "\u{2218}" => "o",
-        "\u{00D7}" => "*",
-        "\u{00F7}" => "/",
-        "\u{2212}" => "-",
-        "\u{2264}" => "<=",
-        "\u{2265}" => ">=",
-        "\u{2260}" => "!=",
-        other => other,
+    for (alias, ascii) in UNICODE_INFIX_ALIASES {
+        if op == *alias {
+            return ascii;
+        }
     }
+    op
 }
 
 /// Strip hyper-operator delimiters (`>>op<<`, `>>op>>`, `<<op<<`, `<<op>>`)
@@ -189,6 +207,13 @@ pub(crate) fn strip_hyper_delimiters(s: &str) -> Option<&str> {
 ///
 /// Recurses through the `R`/`Z`/`X` meta prefixes and the hyper delimiters, so
 /// `RZ+` and `>>+<<` answer `true` as well.
+///
+/// A Unicode alias is folded before the table lookup, so `×` answers like `*`
+/// and, through the recursion above, so does `Z×`. Without the fold `[Z×]`
+/// reached an `infix:<Z×>` user-routine lookup and died "Unknown function"
+/// while the identical `[Z*]` worked — the bare `[×]` escaped it only because
+/// `ReductionSpec::decode` folds the *whole* spelling, which leaves the alias
+/// untouched once a meta prefix is in front of it (#9034).
 pub(crate) fn is_builtin_infix(op: &str) -> bool {
     if let Some(inner) = op
         .strip_prefix('R')
@@ -205,7 +230,7 @@ pub(crate) fn is_builtin_infix(op: &str) -> bool {
         return true;
     }
     matches!(
-        op,
+        canonical_infix(op),
         "+" | "-"
             | "*"
             | "/"

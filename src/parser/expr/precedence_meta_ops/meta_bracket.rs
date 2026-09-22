@@ -409,6 +409,21 @@ pub(crate) fn parse_meta_op(input: &str) -> Option<(String, String, usize)> {
             return Some((meta.to_string(), op.to_string(), 1 + op.len()));
         }
     }
+    // Unicode infix aliases (`×`, `÷`, `≤`, `−`, ...). The runtime already
+    // folds these for exactly these meta forms — `canonical_infix` turns `Z×`
+    // into a `Zip` layer over a `*` leaf — but the scan above is ASCII-only, so
+    // the parser stopped at the non-ASCII byte and `@a Z× @b` never got that
+    // far (#9034). They are matched after the ASCII table, not inside it, so an
+    // alias can never shadow a longer ASCII spelling; no alias is a prefix of
+    // an ASCII operator, so the order between the two is not otherwise
+    // load-bearing. The alias is kept verbatim in the returned op: the fold to
+    // ASCII belongs to `canonical_infix` at lowering time, and rewriting it
+    // here would make `Z×` indistinguishable from `Z*` in the AST.
+    for (alias, _) in crate::compiled_operator::UNICODE_INFIX_ALIASES {
+        if r.starts_with(alias) {
+            return Some((meta.to_string(), (*alias).to_string(), 1 + alias.len()));
+        }
+    }
     // Try word operators: cmp, min, max, eq, ne, lt, gt, le, ge, leg
     let word_ops: &[&str] = &[
         "unicmp", "cmp", "coll", "min", "max", "eq", "ne", "lt", "gt", "le", "ge", "leg",
