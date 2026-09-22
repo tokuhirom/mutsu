@@ -768,6 +768,14 @@ impl Interpreter {
         let Some(v) = args.first() else {
             return Ok(Value::NIL);
         };
+        // A prefix slip in the RHS is expanded at this helper's call
+        // boundary, so `my ($a, $b) = |$match` arrives as two positional
+        // arguments rather than one Slip value. Preserve all of them as the
+        // list-assignment source instead of silently dropping every argument
+        // after the first.
+        if args.len() > 1 {
+            return Ok(Value::array(args.to_vec()));
+        }
         if let ValueView::Array(items, kind) = v.view()
             && kind.is_itemized()
         {

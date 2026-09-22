@@ -39,6 +39,9 @@ impl Interpreter {
                     }
                 }
             }
+            if let Some(candidate) = Self::resolve_module_from_meta6(base_path, module) {
+                return Some((candidate, None));
+            }
         }
 
         let mut candidates: Vec<std::path::PathBuf> = Vec::new();
@@ -106,6 +109,49 @@ impl Interpreter {
             .into_iter()
             .find(|path| path.exists())
             .map(|p| (p, None))
+    }
+
+    /// Resolve a module through a filesystem repository's META6.json.
+    ///
+    /// A distribution may provide a module from a file whose name does not
+    /// match the module's short name.  Rakudo uses the distribution's
+    /// `provides` map for that case, including when the repository prefix is
+    /// the distribution's `lib/` directory and the META6.json is one level
+    /// above it.
+    fn resolve_module_from_meta6(base_path: &Path, module: &str) -> Option<std::path::PathBuf> {
+        let mut meta_paths = vec![base_path.join("META6.json")];
+        if let Some(parent) = base_path.parent() {
+            meta_paths.push(parent.join("META6.json"));
+        }
+
+        for meta_path in meta_paths {
+            let Ok(content) = std::fs::read_to_string(&meta_path) else {
+                continue;
+            };
+            let Ok(meta) = serde_json::from_str::<serde_json::Value>(&content) else {
+                continue;
+            };
+            let Some(provides) = meta.get("provides").and_then(serde_json::Value::as_object) else {
+                continue;
+            };
+            let Some(entry) = provides.get(module) else {
+                continue;
+            };
+            let file = entry
+                .as_str()
+                .or_else(|| entry.get("file").and_then(serde_json::Value::as_str));
+            let Some(file) = file else {
+                continue;
+            };
+            let Some(prefix) = meta_path.parent() else {
+                continue;
+            };
+            let source = prefix.join(file);
+            if source.is_file() {
+                return Some(source);
+            }
+        }
+        None
     }
 
     /// Resolve `module` inside ONE installed repository (`inst#<prefix>`), whose

@@ -106,6 +106,32 @@ impl Interpreter {
                 }
                 items
             }
+            ValueView::Instance { .. } if val.is_match_instance() => {
+                // A Match is Capture-like when slipped directly: its
+                // positional captures become positional arguments and its
+                // named captures become named arguments. Treating it as an
+                // ordinary scalar loses every capture and passes the whole
+                // Match as one argument (`|$/.list` is not this operation).
+                let mut items = val
+                    .match_list()
+                    .map(|list| {
+                        let captures = list
+                            .as_list_items()
+                            .map(<[Value]>::to_vec)
+                            .unwrap_or_else(|| crate::runtime::value_to_list(&list));
+                        captures
+                            .into_iter()
+                            .map(Self::containerize_pair_item)
+                            .collect::<Vec<_>>()
+                    })
+                    .unwrap_or_default();
+                if let Some(ValueView::Hash(named)) = val.match_named().as_ref().map(Value::view) {
+                    for (key, value) in named.iter() {
+                        items.push(Value::pair(key.clone(), value.clone()));
+                    }
+                }
+                items
+            }
             // typed_pair decodes an object hash's `.WHICH` store keys back to
             // the original key objects (plain hashes get `Pair(str_key, v)`).
             // I4: `|%h` is always named, so promote every entry here rather

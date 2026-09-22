@@ -117,6 +117,23 @@ impl Interpreter {
         target: &str,
     ) -> Option<String> {
         let mut env = self.make_regex_eval_env(caps);
+        // Regex code interpolations such as `<{$NOUN}>` execute in a scratch
+        // interpreter. Its copied env contains dynamic bindings, but a
+        // module's file-scope lexicals are resolved by the normal compiled
+        // variable reader through the module/unit lexical stores rather than
+        // by a plain env lookup. Seed those names explicitly so a module
+        // routine can use its own regex fragments after another regex has
+        // run. Match-local `:my`/`:let` values retain precedence.
+        let regex_local_names: std::collections::HashSet<String> =
+            caps.regex_vars().keys().cloned().collect();
+        for name in crate::opcode::CompiledCode::regex_code_interpolated_var_names(code) {
+            if regex_local_names.contains(&name) {
+                continue;
+            }
+            if let Some(value) = self.get_env_with_main_alias(&name) {
+                env.insert(name, value);
+            }
+        }
         // Set $_ to the match target string. After `make_regex_eval_env`, which
         // installs the `:my`/`:let` lexicals — the topic must win over them.
         env.insert("_".to_string(), Value::str(target.to_string()));
