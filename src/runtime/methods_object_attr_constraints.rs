@@ -3,60 +3,62 @@ use crate::symbol::Symbol;
 use crate::value::AttrMap;
 
 impl Interpreter {
-    fn check_attribute_where_constraint(
+    pub(crate) fn check_attribute_where_constraint(
         &mut self,
         pred: &crate::opcode::DeclTraitArg,
         value: &Value,
     ) -> bool {
-        // A declaration-time `where` expression can use the implicit topic:
-        // `where .so` and `where .all ~~ Cool` compile as reads of `_`, rather
-        // than as WhateverCode predicates. Seed that topic before evaluation
-        // and use the expression's truth value. Predicate-shaped expressions
-        // such as `where * > 0` do not read `_`; their result is still
-        // smart-matched against the attribute value below.
-        let uses_topic = match pred {
-            crate::opcode::DeclTraitArg::Compiled(chunk) => {
-                chunk.code.free_var_syms.contains(&Symbol::intern("_"))
-            }
-            crate::opcode::DeclTraitArg::Ast(_) => false,
-            crate::opcode::DeclTraitArg::Literal(_) => false,
-        };
-        let saved_topic = if uses_topic {
-            self.env().get("_").cloned()
-        } else {
-            None
-        };
-        if uses_topic {
-            self.env_mut().insert("_".to_string(), value.clone());
-        }
+        // The implicit topic `$_` is seeded to the candidate value BEFORE
+        // evaluating the predicate, unconditionally -- mirroring the subset
+        // `where`-predicate's own inline execution (`type_matches_value`'s
+        // `Expr::Block`/`Expr::Lambda` handling), which always binds the
+        // candidate to `$_`/the param name rather than trying to detect
+        // whether the predicate "uses" it first.
+        //
+        // A prior version only seeded `_` when the compiled chunk's
+        // `free_var_syms` recorded a read of it, to cover `where .so` /
+        // `where .all ~~ Cool` (implicit-topic method calls) without
+        // disturbing a plain value/type/Junction predicate. But `$_` is a
+        // magic/dynamic variable resolved through env, not a genuine lexical
+        // closure capture, so an ordinary BLOCK predicate that reads it
+        // explicitly (`has Numeric $.lat where { -90 <= $_ <= 90 }`) does
+        // NOT reliably show up in `free_var_syms` either -- `_` then stayed
+        // unseeded, the block evaluated against a stale/absent topic, and
+        // the predicate silently always passed (ecosystem `Date::Event`
+        // t/5-lat-lon.t: `$o.lat: 999` never died).
+        //
+        // Seeding unconditionally is safe for every predicate shape: a
+        // plain value/type/Junction predicate (`where Int`, `where 42|3`)
+        // never reads `_`, so seeding it is a no-op for evaluation, and
+        // `smart_match_values` below already implements "a Bool RHS is the
+        // match result regardless of the topic" (rakudo: smartmatch against
+        // `True` always matches) -- so a block/`.so` predicate's boolean
+        // result and a plain value/type/Junction predicate both resolve
+        // correctly through the same `smart_match_values` call, and the
+        // `uses_topic` branch this replaced is no longer needed.
+        let saved_topic = self.env().get("_").cloned();
+        self.env_mut().insert("_".to_string(), value.clone());
         let pred_val = match self.eval_decl_trait_arg(pred) {
             Ok(v) => v,
             Err(_) => {
-                if uses_topic {
-                    match saved_topic.as_ref() {
-                        Some(v) => {
-                            self.env_mut().insert("_".to_string(), v.clone());
-                        }
-                        None => {
-                            self.env_mut().remove("_");
-                        }
+                match saved_topic {
+                    Some(v) => {
+                        self.env_mut().insert("_".to_string(), v);
+                    }
+                    None => {
+                        self.env_mut().remove("_");
                     }
                 }
                 return false;
             }
         };
-        if uses_topic {
-            match saved_topic.as_ref() {
-                Some(v) => {
-                    self.env_mut().insert("_".to_string(), v.clone());
-                }
-                None => {
-                    self.env_mut().remove("_");
-                }
+        match saved_topic {
+            Some(v) => {
+                self.env_mut().insert("_".to_string(), v);
             }
-        }
-        if uses_topic {
-            return pred_val.truthy();
+            None => {
+                self.env_mut().remove("_");
+            }
         }
         // `has $.x is default(V) where PRED` passes iff `value ~~ PRED`.
         // Smartmatch handles every predicate shape uniformly: a

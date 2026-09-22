@@ -1,7 +1,100 @@
 use super::*;
 use crate::value::ValueMap;
 
+/// Whether any class attribute anywhere in the program has ever been
+/// declared with an inline `where` constraint (`has Numeric $.lat where {
+/// -90 <= $_ <= 90 }`), process-wide and monotonic. Gates
+/// `Interpreter::self_attr_where_constraint` so the per-assignment
+/// attribute-constraint lookup -- paid on every scalar attribute store --
+/// does not additionally search `class_def.attributes` when no class in the
+/// program ever declares one, which is the overwhelming common case.
+static ATTR_WHERE_CONSTRAINT_SEEN: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
 impl Interpreter {
+    /// Record that a class attribute was declared with an inline `where`
+    /// constraint. Called once per such attribute at class/role registration
+    /// time (see `registration_class_body_attr.rs`, `registration_role_body.rs`,
+    /// `registration_class_augment.rs`).
+    pub(crate) fn mark_attr_where_constraint_seen() {
+        ATTR_WHERE_CONSTRAINT_SEEN.store(true, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    /// The declared `where` constraint (if any) of the scalar attribute that a
+    /// local/env name refers to (`!x` / `.x` inside a method), mirroring
+    /// `self_attr_type_constraint`'s MRO walk. Construction already enforces
+    /// this constraint (`enforce_attribute_where_constraints`), but a later
+    /// `$!x = v` inside a method reaches the plain scalar-assignment paths,
+    /// which only ever consulted the attribute's declared TYPE
+    /// (`scalar_attr_type_constraint`) and silently accepted any value that
+    /// merely satisfied that type -- so `has Numeric $.lat where { -90 <= $_
+    /// <= 90 }; method lat(Numeric $v) { $!lat = $v }` never rejected an
+    /// out-of-range `$v` (ecosystem `Date::Event` t/5-lat-lon.t).
+    pub(crate) fn self_attr_where_constraint(
+        &self,
+        attr_name: &str,
+    ) -> Option<crate::opcode::DeclTraitArg> {
+        if !ATTR_WHERE_CONSTRAINT_SEEN.load(std::sync::atomic::Ordering::Relaxed) {
+            return None;
+        }
+        let self_val = self.get_env_self()?;
+        let class_name = self_val.with_deref(|v| match v.view() {
+            crate::value::ValueView::Instance { class_name, .. } => Some(class_name.resolve()),
+            crate::value::ValueView::Mixin(inner, _) => match inner.view() {
+                crate::value::ValueView::Instance { class_name, .. } => Some(class_name.resolve()),
+                _ => None,
+            },
+            _ => None,
+        })?;
+        let (bare, sigil) = if let Some((bare, _)) = crate::value::attr_twigil_base(attr_name) {
+            (
+                bare,
+                crate::value::attr_twigil_sigil(attr_name).unwrap_or('$'),
+            )
+        } else {
+            (attr_name, '$')
+        };
+        self.mro_readonly(&class_name).iter().find_map(|cls| {
+            self.registry()
+                .classes
+                .get(cls.as_str())
+                .and_then(|class_def| {
+                    class_def
+                        .attributes
+                        .iter()
+                        .find(|attr| attr.name == bare && attr.sigil == sigil)
+                        .and_then(|attr| attr.where_constraint.clone())
+                })
+        })
+    }
+
+    /// Check a scalar attribute's own `where` constraint (if it declared one)
+    /// against a freshly assigned value, after the ordinary type check has
+    /// already accepted it. No-op for `Nil` (which resets the attribute to
+    /// its type object elsewhere) and for an attribute with no `where`
+    /// clause. Called from the plain scalar-assignment paths
+    /// (`exec_set_local_op_inner`, `exec_assign_expr_local_op_inner`, and the
+    /// name-based `AssignExpr` path in `vm_misc_assign.rs`) right after their
+    /// own type-constraint handling.
+    pub(crate) fn check_scalar_attr_where_on_assign(
+        &mut self,
+        name: &str,
+        val: &Value,
+    ) -> Result<(), RuntimeError> {
+        if val.is_nil() {
+            return Ok(());
+        }
+        let Some(pred) = self.self_attr_where_constraint(name) else {
+            return Ok(());
+        };
+        if self.check_attribute_where_constraint(&pred, val) {
+            return Ok(());
+        }
+        Err(crate::runtime::utils::type_check_assignment_typed_error(
+            name, "<anon>", val,
+        ))
+    }
+
     fn wrap_in_begin_time(inner: RuntimeError) -> RuntimeError {
         let inner_exception = inner
             .exception
