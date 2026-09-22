@@ -244,6 +244,23 @@ impl Interpreter {
         self.registry_mut()
             .classes
             .insert(name.to_string(), class_def);
+        // The per-op walk in `run_class_body` re-derives the accessor column
+        // after each body statement so mid-body introspection sees it, but a
+        // class whose attributes arrive ONLY from header-level composition
+        // (`class Bar is Foo does R {}`, an empty body) never runs that walk
+        // at all, so `registry.classes` was published in `publish_class_shell`
+        // and re-published just above with `method_entries[].accessor` still
+        // reflecting whatever the previous declaration (or nothing) left
+        // behind. A role-composed public attribute then lost to a same-named
+        // *inherited* method at this class's own MRO level (`resolve_user_
+        // method_or_accessor` never saw `has_attr` here and fell through to
+        // the ancestor's method) — the accessor is meant to win at this
+        // level per `resolve_user_method_or_accessor`'s doc comment. This is
+        // the FINAL class_def for this declaration, so re-derive
+        // unconditionally rather than depend on the body having had a chance
+        // to.
+        self.registry_mut()
+            .sync_accessor_entries(crate::symbol::Symbol::intern(name));
         let mut stack = Vec::new();
         if let Err(err) = self.compute_class_mro(name, &mut stack) {
             snapshot.restore(self, name);
