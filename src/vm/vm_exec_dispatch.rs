@@ -5824,9 +5824,9 @@ impl Interpreter {
                 self.exec_register_enum_op(code, *idx)?;
                 *ip += 1;
             }
-            OpCode::AugmentClass(idx) => {
+            OpCode::AugmentClass { idx, site_id } => {
                 self.sync_source_line(code, *ip);
-                self.exec_augment_class_op(code, *idx)?;
+                self.exec_augment_class_op(code, *idx, *site_id)?;
                 *ip += 1;
             }
             OpCode::RegisterSubset(idx) => {

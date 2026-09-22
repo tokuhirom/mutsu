@@ -4457,9 +4457,10 @@ impl Compiler {
                 let idx = self.add_class_decl_plan(&stmt);
                 self.code.emit(OpCode::RegisterDecl(idx));
             }
-            Stmt::AugmentClass { .. } => {
+            Stmt::AugmentClass { name, body, .. } => {
+                let site_id = self.augment_site_id(&name.resolve(), body);
                 let idx = self.code.add_stmt(stmt.clone());
-                self.code.emit(OpCode::AugmentClass(idx));
+                self.code.emit(OpCode::AugmentClass { idx, site_id });
             }
             // ADR-0048 D7/Phase 5, VALUE half: NOT implemented — a role body
             // carrying a stray placeholder is still rejected here, where raku

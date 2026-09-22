@@ -399,6 +399,32 @@ impl Compiler {
         hasher.finish()
     }
 
+    /// The memo cell an `augment class X { ... }` site claims at run time.
+    ///
+    /// Same recipe as [`Self::begin_site_id`] (declaring package, line, body
+    /// fingerprint — stable across recompiles), plus the augmented class
+    /// name so two augments of different classes on one line never collide.
+    /// Real Raku elaborates `augment` at compile time of the enclosing code,
+    /// once, however many times that code later runs; a `sub EXPORT` that
+    /// re-augments the same class on every `use` (`Logic::Ternary`) must see
+    /// the second and later calls as no-ops, not `X::Redeclaration`.
+    pub(super) fn augment_site_id(&mut self, name: &str, body: &[Stmt]) -> u64 {
+        use std::hash::{Hash, Hasher};
+        let mut hasher = std::hash::DefaultHasher::new();
+        "AugmentClass".hash(&mut hasher);
+        name.hash(&mut hasher);
+        self.current_package.hash(&mut hasher);
+        self.last_source_line.hash(&mut hasher);
+        crate::ast::function_body_fingerprint(&[], &[], body).hash(&mut hasher);
+        let base = hasher.finish();
+        let seq = self.augment_site_seq.entry(base).or_insert(0);
+        *seq += 1;
+        let mut hasher = std::hash::DefaultHasher::new();
+        base.hash(&mut hasher);
+        seq.hash(&mut hasher);
+        hasher.finish()
+    }
+
     /// Compile `once { ... }` expression.
     ///
     /// The once-site identity is the emitted `OnceExpr` op's bytecode position
