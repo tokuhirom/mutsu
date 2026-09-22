@@ -416,9 +416,24 @@ impl Interpreter {
 
         // Set current_package so class-scoped subs are found during method execution.
         // Only change package if the class has subs declared in its body.
+        //
+        // Keyed on `owner_class` (the class/role that LEXICALLY declares this
+        // method body), not `receiver_class_name` (self's dynamic class): a
+        // method's lexical scope is fixed by where it is written, not by what
+        // it is called on. Using the receiver broke an INHERITED method whose
+        // own body declares a recursive nested `sub` (e.g. Tarjan's SCC
+        // algorithm): calling it through a subclass that happens to declare
+        // its own, unrelated class-body `sub` flipped `current_package` to
+        // the subclass for the whole call, and the nested sub's own
+        // self-recursive call -- looked up under that now-mismatched package
+        // -- died "Unknown function: <name>" (#9008). `owner_class` still
+        // equals `receiver_class_name` whenever the method is not inherited,
+        // so this is a no-op for the common case and for the scenario
+        // `t/oo/method/class-body-use-import-visible-in-method.t` pins
+        // (#8883, no inheritance involved there either).
         let saved_package = self.current_package();
-        if self.has_class_scoped_subs(receiver_class_name) {
-            self.set_current_package(receiver_class_name.to_string());
+        if self.has_class_scoped_subs(owner_class) {
+            self.set_current_package(owner_class.to_string());
         } else if self.class_has_package_lexicals(owner_class) {
             // The class body declared `my` statics; set current_package to the
             // owner class so a method read resolves them via package_scope_lexical.
@@ -1660,9 +1675,11 @@ impl Interpreter {
 
         // Save/restore the current package only when this dispatch actually
         // switches it (rare) — the unconditional save cloned a String per call.
-        let saved_package: Option<String> = if self.has_class_scoped_subs(receiver_class_name) {
+        // See the matching comment in `call_compiled_method`: keyed on
+        // `owner_class`, not the dynamic `receiver_class_name` (#9008).
+        let saved_package: Option<String> = if self.has_class_scoped_subs(owner_class) {
             let saved = self.current_package();
-            self.set_current_package(receiver_class_name.to_string());
+            self.set_current_package(owner_class.to_string());
             Some(saved)
         } else if self.class_has_package_lexicals(owner_class) {
             // The class body declared `my` statics; set current_package to the
