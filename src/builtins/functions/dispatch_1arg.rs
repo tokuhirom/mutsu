@@ -458,7 +458,14 @@ pub(crate) fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Val
             }
             Some(Ok(match arg.view() {
                 ValueView::Num(f) if f.is_nan() || f.is_infinite() => Value::num(f),
-                ValueView::Num(f) => Value::num(f.floor()),
+                // `floor`/`ceiling` on a Num return an Int in Raku (matching the
+                // `.floor`/`.ceiling` method form, `dispatch_core_list.rs`), not
+                // a Num — this free-function form kept the pre-floor float,
+                // which then failed a `UInt:D`/`Int:D` parameter type-check
+                // downstream (found via the Graph distribution's
+                // `MinCuttish.find-minimum-cut`, whose `UInt:D :$th` computed by
+                // `ceiling(1 + $n / sqrt(2))` never satisfied its own signature).
+                ValueView::Num(f) => Value::int(f.floor() as i64),
                 ValueView::Int(i) => Value::int(i),
                 ValueView::Rat(n, d) if d != 0 => {
                     let q = n / d;
@@ -478,7 +485,7 @@ pub(crate) fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Val
             }
             Some(Ok(match arg.view() {
                 ValueView::Num(f) if f.is_nan() || f.is_infinite() => Value::num(f),
-                ValueView::Num(f) => Value::num(f.ceil()),
+                ValueView::Num(f) => Value::int(f.ceil() as i64),
                 ValueView::Int(i) => Value::int(i),
                 ValueView::Rat(n, d) if d != 0 => {
                     let q = n / d;
