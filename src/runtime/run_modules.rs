@@ -444,28 +444,11 @@ impl Interpreter {
                 Symbol::intern("CompUnit::Repository::Installation"),
                 site_attrs,
             );
-            let mut cursor = self.env.get("*REPO").cloned();
-            while let Some(node) = cursor {
-                let ValueView::Instance { attributes, .. } = node.view() else {
-                    break;
-                };
-                // Read the current `next-repo` and release the read lock before
-                // taking the write lock below (holding both on the same
-                // interior-mutable cell would self-deadlock).
-                let next = attributes.as_map().get("next-repo").cloned();
-                match next {
-                    Some(next)
-                        if next.truthy() && matches!(next.view(), ValueView::Instance { .. }) =>
-                    {
-                        cursor = Some(next);
-                    }
-                    _ => {
-                        attributes.insert("next-repo".to_string(), site_repo);
-                        break;
-                    }
-                }
-            }
+            self.append_repo_to_chain_tail(site_repo);
         }
+        // The bundled batteries are the lowest-priority link, after the site
+        // repository, exactly where `resolve_module_path` searches them.
+        self.add_bundled_repos();
     }
 
     /// Parse a dist JSON string and return the file ID for the given module name.

@@ -53,10 +53,18 @@ impl Interpreter {
                     if matches!(name.as_str(), "site" | "home" | "vendor" | "perl" | "core")
                         && let Some(dir) = Self::default_repo_dir(&name)
                     {
-                        let new_args = vec![Value::pair(
+                        let mut new_args = vec![Value::pair(
                             "prefix".to_string(),
                             Value::str(dir.display().to_string()),
                         )];
+                        // Rakudo's core repository holds the modules it ships
+                        // (`Test`, ...); mutsu bundles those as a battery, so
+                        // chain that battery behind it (#9071).
+                        if name == "core"
+                            && let Some(bundled) = self.bundled_core_repo()
+                        {
+                            new_args.push(Value::pair("next-repo".to_string(), bundled));
+                        }
                         return Some(self.call_method_with_values(
                             Value::package(Symbol::intern("CompUnit::Repository::Installation")),
                             "new",
