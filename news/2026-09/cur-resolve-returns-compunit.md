@@ -51,9 +51,9 @@ mutsu with Rakudo as the oracle, and fixed in the same change:
   (`1.9` > `1.10`); `need` and `resolve` now share one Version-ordered pick.
 - `CompUnit.new(:short-name, :repo, :repo-id, ...)` works.
 
-Two gaps remain and are filed separately: `FileSystem.load(IO::Path)`, and
-`$*REPO.resolve` not seeing bundled modules such as `Test`, which mutsu serves
-outside the repository chain.
+Two gaps remain, recorded in #9071: `$*REPO.resolve` does not see bundled
+modules such as `Test` (mutsu serves them outside the repository chain), and
+`FileSystem.load(IO::Path)` is not implemented.
 
 The `CompUnit` accessor methods moved out of the oversized
 `methods_instance_ops.rs` into the new module. `Code::Coverable`'s
