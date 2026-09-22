@@ -371,6 +371,17 @@ def sandbox_wrap(cmd, root, sbx_home, mem_kb=6_000_000, nproc=400, *, writable=(
     turn that into a failure on both interpreters -- symmetric, so not a false
     regression, but it would silently shrink the measurable baseline. Only pass
     a path you are willing to see destroyed.
+
+    `NO_NETWORK_TESTING=1` is set for both interpreters: it is the ecosystem's
+    conventional guard for skipping network-touching tests (LWP::Simple,
+    URI::FetchFile, and others check it directly). The sandbox already makes
+    the network unreachable via `--unshare-all`, so this does not change
+    behavior that depends on the network actually working -- it only lets a
+    distribution's own guard recognize the no-network condition and skip
+    cleanly instead of attempting a doomed connection and failing with a DNS
+    error, which used to make mutsu diverge from Rakudo whenever mutsu bundles
+    an optional module (e.g. IO::Socket::SSL) that Rakudo's flat dependency
+    closure lacks (#8844).
     """
     binds = []
     for path in writable:
@@ -385,6 +396,7 @@ def sandbox_wrap(cmd, root, sbx_home, mem_kb=6_000_000, nproc=400, *, writable=(
         "--tmpfs", "/run",
         "--tmpfs", sbx_home,          # writable throwaway HOME (tmpfs over an existing dir)
         "--setenv", "HOME", sbx_home,
+        "--setenv", "NO_NETWORK_TESTING", "1",
         "--chdir", root,
         "--die-with-parent",
         "--new-session",
@@ -865,6 +877,23 @@ def _self_test() -> int:
         if load_exclude(os.path.join(tmp, "does-not-exist.txt")) != {}:
             print("load_exclude: a missing file must mean no exclusions", file=sys.stderr)
             failures += 1
+
+    # sandbox_wrap must set NO_NETWORK_TESTING=1 for both interpreters so a
+    # distribution's own `try require IO::Socket::SSL` / NO_NETWORK_TESTING
+    # guard sees the no-network condition and skips, instead of mutsu (which
+    # bundles the module Rakudo lacks) attempting and failing a doomed
+    # connection -- the divergence in #8844.
+    with tempfile.TemporaryDirectory() as tmp:
+        wrapped = sandbox_wrap(["mutsu", "-e", "1"], tmp, os.path.join(tmp, "home"))
+        if "NO_NETWORK_TESTING" not in wrapped:
+            print("sandbox_wrap: missing --setenv NO_NETWORK_TESTING", file=sys.stderr)
+            failures += 1
+        else:
+            idx = wrapped.index("NO_NETWORK_TESTING")
+            if wrapped[idx - 1] != "--setenv" or wrapped[idx + 1] != "1":
+                print(f"sandbox_wrap: malformed NO_NETWORK_TESTING setenv: {wrapped!r}",
+                      file=sys.stderr)
+                failures += 1
 
     print(f"ecosystem_common self-test: "
           f"{'all cases pass' if not failures else f'{failures} failure(s)'}")
