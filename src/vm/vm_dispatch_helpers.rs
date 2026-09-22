@@ -22,25 +22,6 @@ impl Interpreter {
         )
     }
 
-    /// Strip hyper operator delimiters (>>...<<, >>...>>, <<...<<, <<...>>)
-    /// and their Unicode variants, returning the inner operator if found.
-    fn strip_hyper_delimiters_str(s: &str) -> Option<&str> {
-        let after_left = s
-            .strip_prefix(">>")
-            .or_else(|| s.strip_prefix("<<"))
-            .or_else(|| s.strip_prefix('\u{00BB}'))
-            .or_else(|| s.strip_prefix('\u{00AB}'))?;
-        let inner = after_left
-            .strip_suffix(">>")
-            .or_else(|| after_left.strip_suffix("<<"))
-            .or_else(|| after_left.strip_suffix('\u{00BB}'))
-            .or_else(|| after_left.strip_suffix('\u{00AB}'))?;
-        if inner.is_empty() {
-            return None;
-        }
-        Some(inner)
-    }
-
     pub(super) fn eval_reduction_operator_values(
         &mut self,
         op: &str,
@@ -100,7 +81,7 @@ impl Interpreter {
         }
         // Hyper operator forms: >>op<<, >>op>>, <<op<<, <<op>>
         // Apply inner op element-wise to two lists.
-        if let Some(inner_op) = Self::strip_hyper_delimiters_str(op) {
+        if let Some(inner_op) = crate::compiled_operator::strip_hyper_delimiters(op) {
             let left_list = runtime::value_to_list(left);
             let right_list = runtime::value_to_list(right);
             let dwim_left = op.starts_with("<<") || op.starts_with('\u{00AB}');
@@ -140,16 +121,7 @@ impl Interpreter {
         // in reduction / hyper / cross / zip meta-ops (`[×]`, `»×»`, `Z×`), just
         // as they do as plain infixes: ∘→o, ×→*, ÷→/, −(U+2212)→-, ≤→<=, ≥→>=,
         // ≠→!=.
-        let normalized_op = match op {
-            "\u{2218}" => "o",
-            "\u{00D7}" => "*",
-            "\u{00F7}" => "/",
-            "\u{2212}" => "-",
-            "\u{2264}" => "<=",
-            "\u{2265}" => ">=",
-            "\u{2260}" => "!=",
-            other => other,
-        };
+        let normalized_op = crate::compiled_operator::canonical_infix(op);
         // `=~=` needs $*TOLERANCE (self), so the static reduction table cannot
         // host it (and its `op=` catch-all would mis-strip it to `=~`).
         if normalized_op == "=~=" || normalized_op == "\u{2245}" {

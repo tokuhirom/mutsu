@@ -1,4 +1,5 @@
 use super::*;
+use crate::compiled_operator::ReductionSpec;
 use crate::value::ValueView;
 
 impl Compiler {
@@ -1072,7 +1073,9 @@ impl Compiler {
                         Expr::Var(name.clone())
                     };
                     self.compile_expr(&target);
-                    let op_idx = self.code.add_constant(Value::str(op.clone()));
+                    let op_idx = self
+                        .code
+                        .add_reduction_spec(ReductionSpec::lower(op.as_str()));
                     self.code.emit(OpCode::Reduction(op_idx));
                     return;
                 }
@@ -1104,7 +1107,9 @@ impl Compiler {
                     }
                 }
                 self.compile_expr(expr);
-                let op_idx = self.code.add_constant(Value::str(op.clone()));
+                let op_idx = self
+                    .code
+                    .add_reduction_spec(ReductionSpec::lower(op.as_str()));
                 self.code.emit(OpCode::Reduction(op_idx));
             }
             // ADR-0048 Phase 2: a phaser-as-expression / `once {}` body does
@@ -1534,7 +1539,7 @@ impl Compiler {
                     }
                 }
                 self.code.emit(OpCode::MakeArray(items.len() as u32));
-                let op_idx = self.code.add_constant(Value::str(op.to_string()));
+                let op_idx = self.code.add_reduction_spec(ReductionSpec::lower(op));
                 self.code.emit(OpCode::Reduction(op_idx));
             }
         }
@@ -1575,14 +1580,16 @@ impl Compiler {
             self.compile_expr_anon_sub(&body, false, true);
         }
         self.code.emit(OpCode::MakeArray(items.len() as u32));
-        // Emit special lazy reduction operator marker.
-        // Use "\\_sc_" prefix for scan (triangle), "_sc_" for non-scan.
-        let lazy_op = if is_scan {
-            format!("\\_sc_{}", op)
-        } else {
-            format!("_sc_{}", op)
-        };
-        let op_idx = self.code.add_constant(Value::str(lazy_op));
+        // The thunked short-circuit reduction form: the spec's
+        // `shortcircuit` flag (with `scan` for the triangle variant) is what
+        // the old `"_sc_"` / `"\\_sc_"` string prefixes encoded.
+        let op_idx = self.code.add_reduction_spec(ReductionSpec {
+            scan: is_scan,
+            negate: false,
+            shortcircuit: true,
+            reverse: false,
+            base: crate::symbol::Symbol::intern(op),
+        });
         self.code.emit(OpCode::Reduction(op_idx));
     }
 

@@ -1,5 +1,6 @@
 use super::vm_meta_ops_zip::{MAX_ZIP_EXPAND, ZipIter};
 use super::*;
+use crate::compiled_operator::MetaKind;
 
 impl Interpreter {
     /// True for a Z operand that is unbounded — a `LazyList` (map/grep/seq
@@ -91,12 +92,7 @@ impl Interpreter {
         )
     }
 
-    pub(super) fn exec_meta_op(
-        &mut self,
-        code: &CompiledCode,
-        meta_idx: u32,
-        op_idx: u32,
-    ) -> Result<(), RuntimeError> {
+    pub(super) fn exec_meta_op(&mut self, meta: MetaKind, op: Symbol) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap_or(Value::NIL);
         let left = self.stack.pop().unwrap_or(Value::NIL);
         // ADR-0058: the meta-ops below read their operands' elements through
@@ -104,27 +100,29 @@ impl Interpreter {
         // still-deferred `.map` operand has to run its callback first.
         self.reify_map_grep_seq(&left)?;
         self.reify_map_grep_seq(&right)?;
-        let meta = Self::const_str(code, meta_idx).to_string();
-        let op = Self::const_str(code, op_idx).to_string();
-        let result = match meta.as_str() {
+        // Both operands are compile-time data: `meta` is typed and `op` was
+        // interned by the compiler, so `as_str` hands back the interner's own
+        // `&'static str` and nothing here allocates.
+        let op = op.as_str();
+        let result = match meta {
             // `[op]=` compound assignment (e.g. `$x [+]= 6`) lowers to a "reduce"
             // meta-op: reducing the base op over the two operands is just the base
             // op applied once.
-            "reduce" => self.eval_reduction_operator_values(&op, &left, &right)?,
-            "R" => {
+            MetaKind::Reduce => self.eval_reduction_operator_values(op, &left, &right)?,
+            MetaKind::Reverse => {
                 if op == "..." || op == "...^" {
                     let exclude_end = op == "...^";
                     loan_env!(self, eval_sequence_values(right, left, exclude_end))?
                 } else if op == "~~" {
                     Value::truth(self.vm_smart_match(&right, &left))
-                } else if matches!(op.as_str(), ".." | "..^" | "^.." | "^..^") {
+                } else if matches!(op, ".." | "..^" | "^.." | "^..^") {
                     // `a R.. b` == `b .. a`: build the range with operands
                     // reversed. Reuse the dedicated range builders (which pop
                     // `left`/`right` off the stack) so endpoint coercion and
                     // canonical Range-variant selection stay in one place.
                     self.stack.push(right);
                     self.stack.push(left);
-                    match op.as_str() {
+                    match op {
                         ".." => self.exec_make_range_op()?,
                         "..^" => self.exec_make_range_excl_op()?,
                         "^.." => self.exec_make_range_excl_start_op()?,
@@ -133,10 +131,10 @@ impl Interpreter {
                     }
                     return Ok(());
                 } else {
-                    self.eval_reduction_operator_values(&op, &right, &left)?
+                    self.eval_reduction_operator_values(op, &right, &left)?
                 }
             }
-            "X" => {
+            MetaKind::Cross => {
                 let value_is_lazy = |v: &Value| match v.view() {
                     // A finite closure sequence must be forced below. Its
                     // cache only holds the seed until that happens.
@@ -186,7 +184,7 @@ impl Interpreter {
                 } else {
                     for l in &left_list {
                         for r in &right_list {
-                            results.push(self.eval_reduction_operator_values(&op, l, r)?);
+                            results.push(self.eval_reduction_operator_values(op, l, r)?);
                         }
                     }
                 }
@@ -202,7 +200,7 @@ impl Interpreter {
                     Value::seq(results)
                 }
             }
-            "Z" => {
+            MetaKind::Zip => {
                 // Use lazy index-based iteration for ranges to avoid
                 // materializing huge/infinite lists like 1..*. An infinite
                 // Range is just as unbounded as a LazyList here, so both
@@ -272,18 +270,15 @@ impl Interpreter {
                     };
                     for i in 0..len {
                         if let Some((ref first, ref extra)) = nested_left {
-                            let mut v = self.eval_reduction_operator_values(
-                                &op,
-                                first,
-                                &right_iter.nth(i),
-                            )?;
+                            let mut v =
+                                self.eval_reduction_operator_values(op, first, &right_iter.nth(i))?;
                             if let Some(extra_i) = extra.get(i) {
-                                v = self.eval_reduction_operator_values(&op, &v, extra_i)?;
+                                v = self.eval_reduction_operator_values(op, &v, extra_i)?;
                             }
                             results.push(v);
                         } else {
                             results.push(self.eval_reduction_operator_values(
-                                &op,
+                                op,
                                 &left_iter.nth(i),
                                 &right_iter.nth(i),
                             )?);
@@ -301,15 +296,9 @@ impl Interpreter {
                     Value::seq(results)
                 }
             }
-            "!" => {
-                let inner = self.eval_reduction_operator_values(&op, &left, &right)?;
+            MetaKind::Negate => {
+                let inner = self.eval_reduction_operator_values(op, &left, &right)?;
                 Value::truth(!inner.truthy())
-            }
-            _ => {
-                return Err(RuntimeError::new(format!(
-                    "Unknown meta operator: {}",
-                    meta
-                )));
             }
         };
         self.stack.push(result);
@@ -325,14 +314,12 @@ impl Interpreter {
     /// the Seq as the expression value.
     pub(super) fn exec_meta_op_assign(
         &mut self,
-        code: &CompiledCode,
-        meta_idx: u32,
-        op_idx: u32,
+        meta: MetaKind,
+        op: Symbol,
     ) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap_or(Value::NIL);
         let left = self.stack.pop().unwrap_or(Value::NIL);
-        let meta = Self::const_str(code, meta_idx).to_string();
-        let op = Self::const_str(code, op_idx).to_string();
+        let op = op.as_str();
         // Strip the trailing `=` to get the base op (`+=` -> `+`, `min=` -> `min`).
         let base_op = &op[..op.len() - 1];
 
@@ -355,7 +342,7 @@ impl Interpreter {
 
         // Per-op assignment results, in evaluation order.
         let mut results: Vec<Value> = Vec::new();
-        if meta == "X" {
+        if meta == MetaKind::Cross {
             // Cross: left index slowest, so all right values accumulate into the
             // first left cell before advancing to the next.
             for cell in left_cells.iter_mut() {
@@ -394,9 +381,8 @@ impl Interpreter {
     /// when an operator is attached), matching Raku's list associativity.
     pub(super) fn exec_meta_op_nary(
         &mut self,
-        code: &CompiledCode,
-        meta_idx: u32,
-        op_idx: u32,
+        meta: MetaKind,
+        op: Symbol,
         count: u32,
     ) -> Result<(), RuntimeError> {
         let n = count as usize;
@@ -405,12 +391,11 @@ impl Interpreter {
             operands.push(self.stack.pop().unwrap_or(Value::NIL));
         }
         operands.reverse();
-        let meta = Self::const_str(code, meta_idx).to_string();
-        let op = Self::const_str(code, op_idx).to_string();
+        let op = op.as_str();
         let make_tuple = op.is_empty() || op == ",";
 
-        let result = match meta.as_str() {
-            "X" => {
+        let result = match meta {
+            MetaKind::Cross => {
                 let value_is_lazy = |v: &Value| match v.view() {
                     ValueView::LazyList(_) => true,
                     ValueView::Range(_, end)
@@ -446,7 +431,7 @@ impl Interpreter {
                     'outer: loop {
                         let combo: Vec<Value> =
                             (0..n).map(|k| lists[k][indices[k]].clone()).collect();
-                        results.push(self.combine_meta_tuple(&op, make_tuple, combo)?);
+                        results.push(self.combine_meta_tuple(op, make_tuple, combo)?);
                         // Increment the mixed-radix index from the right.
                         let mut k = n;
                         loop {
@@ -474,7 +459,7 @@ impl Interpreter {
                     Value::seq(results)
                 }
             }
-            "Z" => {
+            MetaKind::Zip => {
                 let probes: Vec<ZipIter> = operands.iter().map(ZipIter::from_value).collect();
                 let has_eager_operand = operands.iter().any(|v| !Self::is_zip_unbounded(v));
                 let pull_limit = if has_eager_operand {
@@ -510,7 +495,7 @@ impl Interpreter {
                 let mut results: Vec<Value> = Vec::with_capacity(len);
                 for i in 0..len {
                     let combo: Vec<Value> = iters.iter().map(|it| it.nth(i)).collect();
-                    results.push(self.combine_meta_tuple(&op, make_tuple, combo)?);
+                    results.push(self.combine_meta_tuple(op, make_tuple, combo)?);
                 }
                 if all_lazy {
                     // Every operand is lazy/infinite, so the zip is too.
@@ -522,10 +507,12 @@ impl Interpreter {
                     Value::seq(results)
                 }
             }
-            _ => {
+            // Only `X` and `Z` chain list-associatively, so the compiler
+            // never emits this opcode for another meta-operator.
+            MetaKind::Reduce | MetaKind::Reverse | MetaKind::Negate => {
                 return Err(RuntimeError::new(format!(
                     "Unknown n-ary meta operator: {}",
-                    meta
+                    meta.as_str()
                 )));
             }
         };

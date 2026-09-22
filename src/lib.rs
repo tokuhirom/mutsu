@@ -6,6 +6,7 @@ mod ast;
 pub(crate) mod binding_desc;
 mod builtins;
 pub(crate) mod chain_compare;
+mod compiled_operator;
 mod compiler;
 pub mod crash_report;
 pub mod doc_mode;

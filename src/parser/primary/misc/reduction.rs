@@ -223,29 +223,10 @@ fn is_valid_reduction_op(op: &str) -> bool {
         return true;
     }
     // Hyper operator forms: >>op<<, >>op>>, <<op<<, <<op>>, and Unicode variants
-    if let Some(inner) = strip_hyper_delimiters(s) {
+    if let Some(inner) = crate::compiled_operator::strip_hyper_delimiters(s) {
         return is_valid_reduction_op(inner);
     }
     is_custom_reduction_op(s)
-}
-
-/// Strip hyper operator delimiters (>>...<<, >>...>>, <<...<<, <<...>>)
-/// and their Unicode variants, returning the inner operator if found.
-fn strip_hyper_delimiters(s: &str) -> Option<&str> {
-    let after_left = s
-        .strip_prefix(">>")
-        .or_else(|| s.strip_prefix("<<"))
-        .or_else(|| s.strip_prefix('\u{00BB}'))
-        .or_else(|| s.strip_prefix('\u{00AB}'))?;
-    let inner = after_left
-        .strip_suffix(">>")
-        .or_else(|| after_left.strip_suffix("<<"))
-        .or_else(|| after_left.strip_suffix('\u{00BB}'))
-        .or_else(|| after_left.strip_suffix('\u{00AB}'))?;
-    if inner.is_empty() {
-        return None;
-    }
-    Some(inner)
 }
 
 fn is_custom_reduction_op(op: &str) -> bool {
