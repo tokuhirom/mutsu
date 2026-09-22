@@ -697,6 +697,29 @@ impl Value {
         }
     }
 
+    /// Binding a container-sigil name — an `@`/`%` signature parameter, or a
+    /// `:=` target — hands it the Positional/Associative ITSELF, never an
+    /// itemized holder of one. Rakudo's binder decontainerizes, so `sub
+    /// f(%h)`, `for %adj.kv -> $k, %v` and `my %b := $(%h)` all see
+    /// `{:a(1)}` where the stored element reads back as `${:a(1)}`, and
+    /// `for ($(1,2),) -> @v` sees `(1, 2)` rather than `$(1, 2)`.
+    ///
+    /// Without it the bound name is one item in list context, so `for %v { }`
+    /// iterates the whole hash as a single element and `$_.key` dies with
+    /// "No such method 'key' for invocant of type 'Hash'"
+    /// ([#9006](https://github.com/tokuhirom/mutsu/issues/9006)) — and the
+    /// implicit `Associative` constraint on a `:=` target rejects the
+    /// itemized holder outright.
+    ///
+    /// One level only, and identity-preserving: [`Value::deitemize_element`]
+    /// clears the itemization flag over the SAME `HashData`/`ArrayData` `Gc`,
+    /// so `%v<d> = 9` inside the body still reaches the caller's hash. A
+    /// `Set`/`Bag`/`Mix` bound to a `%` name has no itemization to strip and
+    /// passes through untouched, keeping its type.
+    pub fn deitemize_for_sigil_bind(self) -> Value {
+        self.deitemize_element()
+    }
+
     /// ADR-0040 slice 3: the discriminator, stated once. Are this container's
     /// elements `Scalar` containers of their own?
     ///

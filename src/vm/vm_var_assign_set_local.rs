@@ -1374,6 +1374,11 @@ impl Interpreter {
                 ));
             }
             if is_bind {
+                // A `%`-sigil bind takes the Associative itself, not an
+                // itemized holder of one — and that has to happen BEFORE the
+                // implicit-Associative check, which sees a `$`-wrapped hash as
+                // a non-Associative and rejects it outright.
+                let raw_popped = raw_popped.deitemize_for_sigil_bind();
                 self.check_associative_bind_value(name, &raw_popped)?;
                 // `:=` binding preserves containers — skip coercion. But the
                 // bound container must conform to a typed-hash variable's

@@ -1390,6 +1390,10 @@ impl Interpreter {
                     // topic name "_" is excluded inside the helper.
                     let value = if !param.starts_with(['@', '%', '&', '\\']) {
                         Self::itemize_scalar_store(param, value)
+                    } else if param.starts_with('%') {
+                        // A `%`-sigil placeholder (`%^o`) decontainerizes on
+                        // bind like every other `%` parameter.
+                        value.deitemize_for_sigil_bind()
                     } else {
                         value
                     };
@@ -2240,6 +2244,12 @@ impl Interpreter {
                         // (`:$n` shorthand over `my $n = @a`) is excluded — it shares
                         // by reference already, like the positional scalar source.
                         let mut bound_value = val.clone();
+                        // A named `%`-sigil parameter decontainerizes exactly
+                        // like the positional one (`sub f(:%o)` bound from
+                        // `f(o => %outer<a>)` is `{:b(1)}`, not `${:b(1)}`).
+                        if pd.name.starts_with('%') && !pd.slurpy && !pd.double_slurpy {
+                            bound_value = bound_value.deitemize_for_sigil_bind();
+                        }
                         // Supplied `@`/`%` named param bound from a caller
                         // container variable: record the source for the
                         // container-descriptor `.name` pass at the end.
@@ -3043,6 +3053,15 @@ impl Interpreter {
                                     .map(std::borrow::Cow::Borrowed)
                             });
                     let mut value = unwrap_varref_value(raw_arg.clone());
+                    // A `%`-sigil parameter binds the Associative itself, never
+                    // an itemized holder of one: `sub f(%h) {…}; f(%outer<a>)`
+                    // sees `{:b(1)}` where the stored element reads `${:b(1)}`.
+                    // Before the implicit-Associative check below, and before
+                    // `is copy` detaches — a detached copy of the wrapper would
+                    // still be a wrapper.
+                    if pd.name.starts_with('%') && !pd.slurpy && !pd.double_slurpy {
+                        value = value.deitemize_for_sigil_bind();
+                    }
                     // Container identity (§3): an `is copy` container param owns
                     // a DISTINCT container. Mutations now write through the
                     // shared backing node (no COW detach), so the copy must
