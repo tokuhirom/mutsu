@@ -71,6 +71,7 @@ pub(crate) fn check_duplicate_params(params: &[ParamDef]) -> Result<(), PError> 
         let name = &p.name;
         let name_without_sigil = strip_param_sigil(name);
         if name.is_empty()
+            || matches!(name.as_str(), "@" | "%" | "&")
             || name_without_sigil.starts_with("__ANON_")
             || name == "__type_only__"
             || name == "__literal__"

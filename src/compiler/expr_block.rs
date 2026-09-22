@@ -1063,6 +1063,14 @@ impl Compiler {
                 let name = name.clone();
                 self.compile_let_stmt_as_value(stmt, &name);
             }
+            // A bare call parsed as a statement still produces the value of the
+            // call when it is embedded in an expression, such as a braced
+            // interpolation inside a heredoc. Compiling it through the ordinary
+            // statement path sinks the result and leaves Nil for the enclosing
+            // string interpolation.
+            Stmt::Call { name, args } => {
+                self.compile_tail_stmt_call_value(*name, args);
+            }
             // `anon sub NAME ... {...}` (marked `__anon_decl` by the parser):
             // build the routine value carrying its declared name WITHOUT
             // registering `&NAME` in the enclosing scope.
