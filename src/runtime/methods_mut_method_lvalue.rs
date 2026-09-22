@@ -1218,6 +1218,9 @@ impl Interpreter {
                     attr_sigil,
                     assigned_value,
                 );
+                // A `$` attribute is a Scalar container, so what it holds is
+                // itemized on the way in, exactly as a `my $x = [...]` store is.
+                assigned_value = Self::itemize_attr_store_value(attr_sigil, assigned_value);
                 // Embed the attribute's declared element type into the stored
                 // container so it survives later reads (`$o.h.of`, `.push` type
                 // enforcement). Hash metadata lives in `HashData`; without this
@@ -1470,13 +1473,26 @@ impl Interpreter {
                 attr_sigil,
                 assigned_value,
             );
+            // A `$` attribute is a Scalar container, so what it holds is
+            // itemized on the way in, exactly as a `my $x = [...]` store is.
+            assigned_value = Self::itemize_attr_store_value(attr_sigil, assigned_value);
             // The accessor named a container the attribute already holds, so
             // this is a store INTO that container, not a rebinding of the
             // attribute (see `store_into_attr_container`). Doing it in place
             // keeps the container's identity -- and keeps a concurrent writer
             // from committing a stale copy of the whole attribute map over
             // another thread's write.
-            if let Some(existing) = updated.get(&attr_name).cloned()
+            //
+            // That is an `@`/`%` rule, and the guard is not decoration: a `$`
+            // attribute is a Scalar, and `$obj.w = {b => 2}` REBINDS it to the
+            // new Hash rather than emptying and refilling the old one — the
+            // same distinction the `returns_rw_attr` comment above draws ("only
+            // a *scalar* `$!attr` needs `is rw` to expose the container for
+            // rebinding"). Adopting in place also silently dropped the
+            // itemization the store had just applied, because the destination
+            // container kept its own older tag (#9023).
+            if matches!(attr_sigil, '@' | '%')
+                && let Some(existing) = updated.get(&attr_name).cloned()
                 && Self::store_into_attr_container(&existing, &assigned_value)
             {
                 return Ok(assigned_value);
