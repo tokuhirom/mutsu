@@ -107,6 +107,14 @@ fn bareword_names_known_term(name: &str) -> bool {
         // vanishingly rare; leaving it alone keeps this check to the case the
         // ticket is about.
         || simple::is_user_declared_sub(name)
+        // A class declared in a `unit module` is registered under its short
+        // name while the remaining compilation unit is parsed.  Its valid
+        // package-qualified spelling therefore needs the same protection from
+        // block gobbling as the short name (`RakuConfig::BadConfig`, from
+        // RakuConfig, is the ecosystem example).
+        || name
+            .rsplit_once("::")
+            .is_some_and(|(_, last)| simple::is_user_declared_type(last))
     {
         return true;
     }
