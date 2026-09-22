@@ -406,6 +406,44 @@ fn parse_list_infix_loop_impl<'a>(
             rest = r;
             continue;
         }
+        // The same rewrite for `X`/`Z` over an assignment infix, for the
+        // lvalue shapes the variable-name assign paths never see: a literal
+        // list (`($a, $b) X+= 2, 3`). `X+=` is `X` applied to the infix `+=`,
+        // whose AST is `MetaOp { op: "+=" }` — exactly what the bracketed
+        // `($a, $b) X[+=] 2, 3` already produced here via `parse_meta_op`, and
+        // what the compiler's `ArrayLiteral` branch distributes back across
+        // the individual containers. Without this the scan below took `X+` and
+        // choked on the stranded `=`, so the unbracketed spelling did not
+        // parse at all (#9046).
+        //
+        // Restricted to a literal-list left on purpose. A `$`/`@` variable
+        // left is rewritten by `assign_stmt` / `try_assign` (#9033), whose
+        // comma-boundary logic needs `expression()` to leave the operator
+        // alone — the same reason the bracket branch in `precedence/logic.rs`
+        // limits itself to subscripted lvalues.
+        if (matches!(left, Expr::ArrayLiteral(_))
+            || matches!(&left, Expr::Grouped(inner) if matches!(inner.as_ref(), Expr::ArrayLiteral(_))))
+            && let Some((stripped, meta, op_name)) = parse_meta_compound_assign_op(r)
+            && (meta == "X" || meta == "Z")
+            && op_name != "="
+        {
+            let (r, _) = ws(stripped)?;
+            let (r, rhs) = parse_assign_expr_or_comma(r).map_err(|err| {
+                enrich_expected_error(
+                    err,
+                    "expected expression after meta compound assignment",
+                    r.len(),
+                )
+            })?;
+            *left = Expr::MetaOp {
+                meta,
+                op: format!("{op_name}="),
+                left: Box::new(left.clone()),
+                right: Box::new(rhs),
+            };
+            rest = r;
+            continue;
+        }
         if let Some((meta, op, len)) = parse_meta_op(r) {
             // A reversed range meta-op (`R..`, `R^..`, `R..^`, `R^..^`) carries the
             // same precedence worry as a plain range: `|4 R.. 5` / `~4 R.. 5` mean
