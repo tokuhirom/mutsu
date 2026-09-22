@@ -32,6 +32,10 @@ pub(crate) mod string_pos;
 pub(crate) mod substr;
 pub(crate) mod transliterate;
 pub(crate) mod unicode;
+pub(crate) mod unicode_gc;
+mod unicode_gc_data;
+#[cfg(test)]
+mod unicode_gc_gen;
 pub(crate) mod unicode_name_alias_table;
 pub(crate) mod unicode_named_sequence_table;
 pub(crate) mod unicode_numval_table;

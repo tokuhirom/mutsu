@@ -1052,36 +1052,11 @@ pub(crate) fn uniname_from_int(codepoint: i64) -> Result<String, crate::value::R
 }
 
 /// Return the Unicode General Category abbreviation for a character.
-pub(crate) fn unicode_general_category(ch: char) -> String {
-    use std::sync::OnceLock;
-
-    // Build regex matchers for each General Category lazily.
-    // We check the most common categories first.
-    static CATEGORIES: OnceLock<Vec<(&'static str, regex::Regex)>> = OnceLock::new();
-    let cats = CATEGORIES.get_or_init(|| {
-        // Note: "Cs" (surrogates) is omitted because the regex crate does not support it,
-        // and Rust chars cannot be surrogates anyway.
-        let cats_list: &[&str] = &[
-            "Lu", "Ll", "Lt", "Lm", "Lo", "Mn", "Mc", "Me", "Nd", "Nl", "No", "Pc", "Pd", "Ps",
-            "Pe", "Pi", "Pf", "Po", "Sm", "Sc", "Sk", "So", "Zs", "Zl", "Zp", "Cc", "Cf", "Co",
-        ];
-        cats_list
-            .iter()
-            .map(|cat| {
-                let re = regex::Regex::new(&format!(r"^\p{{{cat}}}$")).expect("valid regex");
-                (*cat, re)
-            })
-            .collect()
-    });
-
-    let mut buf = [0u8; 4];
-    let s = ch.encode_utf8(&mut buf);
-    for (cat, re) in cats.iter() {
-        if re.is_match(s) {
-            return cat.to_string();
-        }
-    }
-    "Cn".to_string()
+///
+/// A table lookup -- see [`crate::builtins::unicode_gc`], which replaced the
+/// 28-regex linear probe this used to be.
+pub(crate) fn unicode_general_category(ch: char) -> &'static str {
+    crate::builtins::unicode_gc::general_category(ch).as_str()
 }
 
 /// Return the Unicode Script name for a character (e.g. "Latin", "Hangul").

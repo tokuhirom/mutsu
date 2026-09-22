@@ -190,7 +190,7 @@ pub(crate) fn unicode_property_value(ch: char, prop: &str) -> Value {
     match prop {
         // General Category
         "General_Category" | "gc" => {
-            Value::str(crate::builtins::unicode::unicode_general_category(ch))
+            Value::str_from(crate::builtins::unicode::unicode_general_category(ch))
         }
         // Script
         "Script" | "sc" => Value::str(crate::builtins::unicode::unicode_script_name(ch)),
@@ -238,7 +238,7 @@ pub(crate) fn unicode_property_value(ch: char, prop: &str) -> Value {
         }
         "Bidi_Paired_Bracket_Type" | "bpt" => {
             let gc = crate::builtins::unicode::unicode_general_category(ch);
-            let result = match gc.as_str() {
+            let result = match gc {
                 "Ps" => "o", // Open
                 "Pe" => "c", // Close
                 _ => "n",    // None
@@ -291,7 +291,7 @@ pub(crate) fn unicode_property_value(ch: char, prop: &str) -> Value {
         "Emoji_Presentation" => Value::truth(is_emoji_presentation(ch)),
         "Emoji_All" => Value::truth(is_emoji_all(ch)),
         // Default: general category
-        _ => Value::str(crate::builtins::unicode::unicode_general_category(ch)),
+        _ => Value::str_from(crate::builtins::unicode::unicode_general_category(ch)),
     }
 }
 
@@ -302,7 +302,7 @@ pub(crate) fn unicode_property_value_for_codepoint(cp: u32, prop: Option<&str>) 
     match char::from_u32(cp) {
         Some(ch) => match prop {
             Some(p) => unicode_property_value(ch, p),
-            None => Value::str(crate::builtins::unicode::unicode_general_category(ch)),
+            None => Value::str_from(crate::builtins::unicode::unicode_general_category(ch)),
         },
         None => {
             // Invalid codepoint (surrogate or out of range)
@@ -398,25 +398,23 @@ fn unimatch_property(ch: char, prop_value: &str, prop_name: &str) -> bool {
 /// Supports exact matches ("Lu"), parent category matches ("L" matches "Lu", "Ll", etc.),
 /// and the "LC" alias for cased letters (Lu, Ll, Lt).
 fn unimatch_general_category(ch: char, cat: &str) -> bool {
-    let gc = crate::builtins::unicode::unicode_general_category(ch);
+    use crate::builtins::unicode_gc::{GeneralCategory, general_category};
 
-    // Exact match
-    if gc == cat {
-        return true;
+    let gc = general_category(ch);
+
+    // LC (Cased_Letter) matches Lu, Ll, Lt.
+    if cat == "LC" {
+        return gc.in_mask(GeneralCategory::CASED_LETTER);
     }
 
-    // Parent category match: single-letter category matches any two-letter sub-category
-    // starting with that letter (e.g., "L" matches "Lu", "Ll", "Lt", "Lm", "Lo")
-    if cat.len() == 1 && gc.len() == 2 && gc.starts_with(cat) {
-        return true;
+    // Parent category match: a single-letter category matches any two-letter
+    // sub-category starting with that letter ("L" matches Lu, Ll, Lt, Lm, Lo).
+    if let [letter] = cat.as_bytes() {
+        return gc.major() == *letter;
     }
 
-    // LC (Cased_Letter) matches Lu, Ll, Lt
-    if cat == "LC" && (gc == "Lu" || gc == "Ll" || gc == "Lt") {
-        return true;
-    }
-
-    false
+    // Exact match.
+    GeneralCategory::from_name(cat) == Some(gc)
 }
 
 /// Match an East_Asian_Width value. Rakudo exposes East_Asian_Width using the

@@ -755,6 +755,7 @@ dependencies = [
  "num-traits",
  "pcre2",
  "regex",
+ "regex-syntax",
  "rustc-hash",
  "rustyline",
  "serde",

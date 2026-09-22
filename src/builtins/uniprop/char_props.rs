@@ -249,7 +249,7 @@ pub(crate) fn unicode_bidi_class(ch: char) -> String {
         _ => {
             // Everything not covered above defaults by General_Category.
             let gc = crate::builtins::unicode::unicode_general_category(ch);
-            match gc.as_str() {
+            match gc {
                 "Mn" | "Me" => "NSM",
                 "Cf" => "BN",
                 "Zs" => "WS",
