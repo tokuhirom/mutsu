@@ -54,50 +54,50 @@ fn assign_stmt_parses_nested_bracket_metaop_assign() {
     }
 }
 
+/// `@a X*= 10` is the meta-operator `X` over the ASSIGNMENT infix `*=`, so it
+/// lowers to the same `MetaOp { op: "*=" }` the bracketed spelling
+/// `@a X[*=] 10` produces — NOT to `@a = (@a X* 10)`, which is a different
+/// operator and gave the flattened cross (#9033). There is no enclosing
+/// `AssignExpr`: the compiler's `MetaOpAssign` writes the mutated container
+/// back itself, and the expression's value is the per-op result Seq.
 #[test]
 fn assign_expr_parses_unbracketed_cross_metaop_assign() {
     let (rest, expr) = assign::try_parse_assign_expr("@a X*= 10").unwrap();
     assert_eq!(rest, "");
     match expr {
-        Expr::AssignExpr { name, expr, .. } => {
-            assert_eq!(name, "@a");
-            match *expr {
-                Expr::MetaOp {
-                    meta,
-                    op,
-                    left,
-                    right,
-                } => {
-                    assert_eq!(meta, "X");
-                    assert_eq!(op, "*");
-                    assert!(matches!(*left, Expr::ArrayVar(ref n) if n == "a"));
-                    assert!(
-                        matches!(&*right, Expr::Literal(lit) if matches!(lit.view(), ValueView::Int(10)))
-                    );
-                }
-                other => panic!("expected meta-op assignment expr, got {other:?}"),
-            }
+        Expr::MetaOp {
+            meta,
+            op,
+            left,
+            right,
+        } => {
+            assert_eq!(meta, "X");
+            assert_eq!(op, "*=");
+            assert!(matches!(*left, Expr::ArrayVar(ref n) if n == "a"));
+            assert!(
+                matches!(&*right, Expr::Literal(lit) if matches!(lit.view(), ValueView::Int(10)))
+            );
         }
-        other => panic!("expected AssignExpr, got {other:?}"),
+        other => panic!("expected meta-op assignment expr, got {other:?}"),
     }
 }
 
+/// The statement-position twin of the test above: an expression statement, not
+/// a `Stmt::Assign`. An outer assignment would store the per-op result Seq over
+/// the container `MetaOpAssign` had just mutated.
 #[test]
 fn assign_stmt_parses_unbracketed_cross_metaop_assign() {
     let (rest, stmt) = assign::assign_stmt("@a X*= 10;").unwrap();
     assert_eq!(rest, "");
     match stmt {
-        Stmt::Assign { name, expr, .. } => {
-            assert_eq!(name, "@a");
-            match expr {
-                Expr::MetaOp { meta, op, .. } => {
-                    assert_eq!(meta, "X");
-                    assert_eq!(op, "*");
-                }
-                other => panic!("expected meta-op assignment stmt, got {other:?}"),
-            }
+        Stmt::Expr(Expr::MetaOp {
+            meta, op, ref left, ..
+        }) => {
+            assert_eq!(meta, "X");
+            assert_eq!(op, "*=");
+            assert!(matches!(**left, Expr::ArrayVar(ref n) if n == "a"));
         }
-        other => panic!("expected Assign stmt, got {other:?}"),
+        other => panic!("expected meta-op assignment stmt, got {other:?}"),
     }
 }
 
