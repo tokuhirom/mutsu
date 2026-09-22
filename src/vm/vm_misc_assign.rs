@@ -429,7 +429,7 @@ impl Interpreter {
             && let Some(constraint) =
                 loan_env!(self, var_type_constraint(&name)).or(attr_constraint)
         {
-            if val.is_nil() {
+            let checked = if val.is_nil() {
                 if constraint == "Mu" {
                     val
                 } else {
@@ -447,7 +447,15 @@ impl Interpreter {
                 loan_env!(self, try_coerce_value_for_constraint(&constraint, val))?
             } else {
                 val
-            }
+            };
+            // Narrow to the declared native width, the same last step the
+            // local-slot store takes after its own type check
+            // (`exec_set_local_op_inner`). `type_matches_value` accepts any
+            // `Int` for a native-int constraint, so without this `$.v = 260`
+            // inside a method left `260` in a `has uint8 $.v` (#9022) — the
+            // `$!v` spelling of the same store was already right only because
+            // it compiles to a local slot and never reaches here.
+            Self::wrap_native_int_by_constraint(&constraint, checked)?
         } else {
             // Untyped scalar: Nil resets to the default type object Any (a no-op
             // for `@`/`%` containers).
