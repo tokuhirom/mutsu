@@ -86,10 +86,11 @@ pub(in crate::parser) use module_exports::{
 };
 pub(in crate::parser) use pragma_preseed::{
     current_attributes_pragma, imported_value_term_names, is_imported_value_term,
-    is_user_declared_sub, push_package_path, register_imported_type, register_imported_value_term,
-    register_user_enum_value, register_user_type, reset_package_path, set_attributes_pragma,
-    set_eval_operator_assoc_preseed, set_eval_operator_preseed, set_eval_user_sub_preseed,
-    set_eval_user_type_preseed, set_eval_user_value_term_preseed,
+    is_user_declared_sub, note_import_export_hook, push_package_path, register_imported_type,
+    register_imported_value_term, register_user_enum_value, register_user_type, reset_package_path,
+    set_attributes_pragma, set_eval_operator_assoc_preseed, set_eval_operator_preseed,
+    set_eval_user_sub_preseed, set_eval_user_type_preseed, set_eval_user_value_term_preseed,
+    term_keywords_shadowable,
 };
 /// Crate-wide (not just `pub(in crate::parser)` like its siblings above): the
 /// compiler's `is_definite_return_spec` twin needs this parse-time enum-value
@@ -154,6 +155,19 @@ pub(in crate::parser) struct LexicalScope {
     /// steers real parse decisions (`match_user_declared_term_symbol`), and this
     /// set only feeds a diagnostic.
     imported_value_terms: HashSet<String>,
+    /// Set once this compunit has `use`d a module whose exports are computed by
+    /// a run-time `sub EXPORT` hook. Such a hook can install ANY name into the
+    /// importer's scope -- including the CORE term keywords `True`/`False`/
+    /// `Nil`/`Empty`/`Any`, which `keyword_literal` otherwise folds straight to
+    /// an `Expr::Literal` at parse time and no run-time import could ever
+    /// shadow (#9047). The names it installs are generally not statically
+    /// knowable (Logic::Ternary computes them from the `use` arguments), so the
+    /// parser cannot know *which* keyword is shadowed -- only that one might
+    /// be. That is enough: in such a compunit the five keywords compile to
+    /// `Expr::ShadowableTermKeyword`, which resolves the name against the
+    /// import at run time and falls back to the keyword's constant value.
+    /// Everywhere else the constant folding is untouched.
+    imports_export_hook_module: bool,
     /// `no worries` lexical pragma: when true, compiler "Potential difficulties"
     /// warnings (e.g. the empty-`<>` colonpair warning) are suppressed in this
     /// scope and any nested scopes (inherited via `push_scope`).

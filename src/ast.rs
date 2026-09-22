@@ -741,6 +741,25 @@ pub(crate) const SUBMETHOD_LITERAL_MARKER: &str = "__submethod_literal";
 #[allow(clippy::enum_variant_names, dead_code)]
 pub(crate) enum Expr {
     Literal(Value),
+    /// A CORE term keyword (`True`, `False`, `Nil`, `Empty`, `Any`) parsed in a
+    /// compunit that `use`d a module whose exports are computed by a run-time
+    /// `sub EXPORT` hook, so the keyword's binding may be shadowed by whatever
+    /// that hook installs (#9047).
+    ///
+    /// In Raku these are ordinary CORE-scope lexicals, not syntax, and an
+    /// import that brings in a same-named symbol legitimately shadows them for
+    /// the rest of the importing file — `Logic::Ternary` replaces all three of
+    /// `True`/`Unknown`/`False` with three-valued-logic objects that way. mutsu
+    /// folds them to `Literal` at parse time, which no run-time import can
+    /// reach, so in a tainted compunit the parser emits this instead: the
+    /// compiler keeps the folded `value` as the fallback and the VM prefers an
+    /// `EXPORT`-installed binding of `name` when one exists. Outside such a
+    /// compunit — everywhere else in the language — the constant folding is
+    /// untouched.
+    ShadowableTermKeyword {
+        name: crate::symbol::Symbol,
+        value: Value,
+    },
     /// A parser-created static regex with its source-level tree retained for
     /// RakuAST conversion. Execution still consumes `value` until the shared
     /// tree's lowering covers the whole regex grammar (ADR-0088).

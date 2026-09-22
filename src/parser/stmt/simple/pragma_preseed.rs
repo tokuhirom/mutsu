@@ -220,6 +220,36 @@ pub(crate) fn register_imported_value_term(name: &str) {
     });
 }
 
+/// Record that this compunit has `use`d a module whose export set is computed
+/// by a run-time `sub EXPORT` hook, so the CORE term keywords may be lexically
+/// shadowed by whatever that hook installs (#9047).
+///
+/// Registered in the **outermost** scope for the same reason as an imported
+/// enum value or `constant`: a `use` taints the rest of the importing file, not
+/// only whichever scope happened to be innermost when it was parsed.
+pub(crate) fn note_import_export_hook() {
+    SCOPES.with(|s| {
+        let mut scopes = s.borrow_mut();
+        scopes
+            .first_mut()
+            .expect("scope stack should never be empty")
+            .imports_export_hook_module = true;
+    });
+}
+
+/// Whether the CORE term keywords (`True`, `False`, `Nil`, `Empty`, `Any`) can
+/// be lexically shadowed in the code currently being parsed — see
+/// [`note_import_export_hook`]. False for every compunit that imports nothing
+/// through a `sub EXPORT` hook, which is the overwhelming majority: there the
+/// keywords keep folding to plain `Expr::Literal` constants.
+pub(crate) fn term_keywords_shadowable() -> bool {
+    SCOPES.with(|s| {
+        s.borrow()
+            .iter()
+            .any(|scope| scope.imports_export_hook_module)
+    })
+}
+
 /// Return sigilless value terms imported by the current parse. EVAL starts a
 /// fresh parser scope, so its preseed must carry these names across the scope
 /// reset just as it carries locally declared constant markers.

@@ -431,6 +431,17 @@ impl Interpreter {
         // dynamic env scan) sees a symbol a custom `sub EXPORT` installed, not
         // just one an `is export` tag installed (#8564).
         self.record_import_env_key(&env_key);
+        // A sigilless import can shadow a CORE term keyword (`True`, `False`,
+        // ...) for the importing compunit — `Logic::Ternary` replaces all of
+        // `True`/`Unknown`/`False` with three-valued-logic objects this way.
+        // The parser emits `OpCode::GetShadowableTerm` for those keywords in a
+        // compunit that imported through an EXPORT hook, and this set is what
+        // tells that opcode the env key it is about to read really came from
+        // such an import (#9047).
+        if sigil.is_none_or(|c| c.is_alphanumeric() || c == '_') {
+            self.export_term_override_names
+                .insert(crate::symbol::Symbol::intern(&env_key));
+        }
         self.env.insert(env_key.clone(), value.clone());
         if normalized_env_key != env_key {
             self.record_import_env_key(&normalized_env_key);

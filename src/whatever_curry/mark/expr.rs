@@ -336,6 +336,7 @@ fn mark_expr_after_plant(expr: &mut Expr) {
         // substitution literals whose pattern is stored as raw text).
         Expr::Literal(_)
         | Expr::LiteralSrc(_, _)
+        | Expr::ShadowableTermKeyword { .. }
         | Expr::BareWord(_)
         | Expr::HeredocInterpolation(_, _)
         | Expr::Var(_)

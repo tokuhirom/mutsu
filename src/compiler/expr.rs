@@ -257,6 +257,20 @@ impl Compiler {
                 let name_idx = self.code.add_constant(Value::str(var_name));
                 self.code.emit(OpCode::GetHashVar(name_idx));
             }
+            Expr::ShadowableTermKeyword { name, value } => {
+                // A CORE term keyword in a compunit that imported through a
+                // run-time `sub EXPORT` hook (#9047). The hook's export set is
+                // not knowable here — Logic::Ternary computes the very NAMES it
+                // installs from the `use` arguments — so the choice is deferred
+                // to the VM, which prefers an `EXPORT`-installed binding of this
+                // name and otherwise pushes the folded constant.
+                let name_idx = self.code.add_constant(Value::str(name.resolve()));
+                let fallback_idx = self.code.add_constant(value.clone());
+                self.code.emit(OpCode::GetShadowableTerm {
+                    name_idx,
+                    fallback_idx,
+                });
+            }
             Expr::BareWord(name) if name == "done" && !self.amp_binding_in_active_scope("done") => {
                 // `done` as a bare term in expression position (e.g. the `!!`
                 // branch of `$cond ?? die !! done`) is the supply/react

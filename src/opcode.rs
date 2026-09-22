@@ -955,6 +955,20 @@ pub(crate) enum OpCode {
     GetArrayVar(u32),
     GetHashVar(u32),
     GetBareWord(u32),
+    /// Push a CORE term keyword's value (`True`, `False`, `Nil`, `Empty`,
+    /// `Any`), preferring a binding of the same name that a module's run-time
+    /// `sub EXPORT` hook installed into the importing scope (#9047).
+    ///
+    /// Emitted ONLY for a compunit that `use`d such a module — everywhere else
+    /// these keywords stay folded to a plain `LoadConst` — so the env probe is
+    /// never on the path of an ordinary `True`. `name_idx` is the keyword's
+    /// name in the constant pool and `fallback_idx` the folded constant to use
+    /// when nothing shadows it, which is also the answer whenever the hook
+    /// installed some other set of names.
+    GetShadowableTerm {
+        name_idx: u32,
+        fallback_idx: u32,
+    },
     GetPseudoStash(u32),
     /// Build a lexical pseudo-stash from a compiler-baked scope description.
     /// Unlike `GetPseudoStash`, this names exactly one lexical frame, so an

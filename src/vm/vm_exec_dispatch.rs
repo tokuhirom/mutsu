@@ -906,6 +906,16 @@ impl Interpreter {
                 self.apply_pending_rw_writeback(code);
                 *ip += 1;
             }
+            OpCode::GetShadowableTerm {
+                name_idx,
+                fallback_idx,
+            } => {
+                let value = self
+                    .export_installed_term(Self::const_str(code, *name_idx))
+                    .unwrap_or_else(|| code.constants[*fallback_idx as usize].clone());
+                self.stack.push(value);
+                *ip += 1;
+            }
             OpCode::GetPseudoStash(name_idx) => {
                 self.exec_get_pseudo_stash_op(code, *name_idx);
                 *ip += 1;

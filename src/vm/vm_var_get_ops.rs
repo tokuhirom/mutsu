@@ -34,6 +34,33 @@ impl Interpreter {
             .or_else(|| self.resolve_type_in_current_package(name))
     }
 
+    /// The value an `EXPORT` hook installed under the CORE term keyword `name`,
+    /// if one did — the run-time half of `OpCode::GetShadowableTerm` (#9047).
+    ///
+    /// Gated on [`Interpreter::export_term_override_names`] rather than probing
+    /// `env` directly: a sigilless env key is shared with the sigil-stripped
+    /// spelling of a same-named `our $True`, and only a key an EXPORT hook
+    /// actually installed may shadow the keyword.
+    ///
+    /// That set is process-wide while the shadowing itself is lexical, so this
+    /// is an approximation in the same direction (and for the same reason) as
+    /// `export_amp_override_names`: what keeps it honest is the parser, which
+    /// emits the opcode only for a compunit that imported through such a hook
+    /// itself. A compunit that did not still folds the keyword to a constant
+    /// and never reaches here.
+    pub(super) fn export_installed_term(&self, name: &str) -> Option<Value> {
+        if self.export_term_override_names.is_empty() {
+            return None;
+        }
+        if !self
+            .export_term_override_names
+            .contains(&Symbol::intern(name))
+        {
+            return None;
+        }
+        self.env().get(name).cloned()
+    }
+
     pub(super) fn exec_get_bare_word_op(
         &mut self,
         code: &CompiledCode,
