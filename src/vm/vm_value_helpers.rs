@@ -642,7 +642,18 @@ impl Interpreter {
         name_sym: Option<Symbol>,
         value: Value,
     ) -> Value {
-        let Some(constraint) = loan_env!(self, var_type_constraint_for(var_name, name_sym)) else {
+        let constraint = loan_env!(self, var_type_constraint_for(var_name, name_sym))
+            // A private/public attribute local (`$!attr`/`$.attr`) carries no
+            // env-scoped `__mutsu_type::` entry: unlike an ordinary `my`
+            // lexical, its declaration lives in the class registry, not in
+            // this method frame's env. The plain assignment store
+            // (`exec_set_local_op_inner`) already falls back to
+            // `scalar_attr_type_constraint` for exactly this reason; the
+            // increment/decrement read-modify-write must do the same, or a
+            // narrow-width attribute (`has int8 $.v`) never wraps on
+            // `$!v++`/`$.v++` overflow (#8985).
+            .or_else(|| self.scalar_attr_type_constraint(var_name));
+        let Some(constraint) = constraint else {
             return value;
         };
         Self::wrap_native_int_arithmetic_for_constraint(&constraint, value)
