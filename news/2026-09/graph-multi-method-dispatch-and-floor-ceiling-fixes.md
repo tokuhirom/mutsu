@@ -1,10 +1,10 @@
-# Graph ecosystem distribution: multi-method dispatch and floor/ceiling fixes
+# Graph ecosystem distribution: inherited multi-method dispatch fixes
 
 Working the `Graph` distribution (0.1.3, locked on
 [#8977](https://github.com/tokuhirom/mutsu/issues/8977) via
-`ecosystem-dist-roulette`) surfaced three real, general-purpose interpreter
-bugs, all now fixed, taking the distribution's baseline from 16/24 files at
-parity to 19/24.
+`ecosystem-dist-roulette`) surfaced two real, general-purpose multi-method
+dispatch bugs, both now fixed, taking the distribution's baseline from
+16/24 files at parity to 18/24.
 
 ## Inherited multi method dispatch mismatched named-param narrowness
 
@@ -35,22 +35,33 @@ all, and fell through to an ancestor's `new` — silently constructing a bare
 Both fixed in mutsu, pinned by `t/oo/method/multi-method-inherited-sigil-narrowness.t`
 and `t/oo/method/multi-method-nested-named-alias.t`.
 
-## floor()/ceiling() free functions returned Num instead of Int
+## floor()/ceiling() free functions: tried, reverted, filed instead
 
-The `.floor`/`.ceiling` *method* forms already returned `Int` correctly; the
-free-*function* forms (`floor(x)`/`ceiling(x)`) wrapped the rounded value
-back in a `Num`. A `UInt:D`/`Int:D`-typed named parameter fed the result
-then failed its own type check downstream —
-`Graph::MinCuttish.find-minimum-cut(method => 'karger-stein')` computes its
-`UInt:D :$th` from `ceiling(1 + $n / sqrt(2))`, and the resulting type-check
-failure on the sole (non-multi) private method `!karger-contract` was
-misreported as "No matching candidates for method: karger-contract".
+The `.floor`/`.ceiling` *method* forms already return `Int` correctly; the
+free-*function* forms (`floor(x)`/`ceiling(x)`) return `Num`. A
+`UInt:D`-typed named parameter fed such a result then fails its own type
+check — `Graph::MinCuttish.find-minimum-cut(method => 'karger-stein')`
+computes its `UInt:D :$th` from `ceiling(1 + $n / sqrt(2))`, and the
+resulting type-check failure on the sole (non-multi) private method
+`!karger-contract` is misreported as "No matching candidates for method:
+karger-contract".
 
-Pinned by `t/types/numeric/floor-ceiling-function-returns-int.t`.
+Changing the free-function form to always return `Int` (matching the method
+form) initially looked like the fix, and made `t/17-find-minimum-cut.rakutest`
+pass — but it regressed the already-whitelisted `roast/S02-types/num.t`,
+whose `'ceiling(num)'` subtest pins that a genuinely native `num`
+(lowercase, unboxed) scalar keeps `ceiling()`'s result as `Num`, unlike a
+boxed `Num`/`Rat`. mutsu has no runtime representation distinguishing the
+two (`my num $y` and `my Num $y` report the identical `(Scalar)` for
+`.VAR.WHAT`), so there is no way to pick the right answer at the point
+`floor`/`ceiling` currently dispatch from. Reverted, and filed as
+[#9012](https://github.com/tokuhirom/mutsu/issues/9012) — the real fix needs
+the argument's declared/static nativity plumbed through to the builtin
+dispatcher, a cross-cutting call-site change rather than a one-file fix.
 
 ## Remaining red files
 
-Five findings that didn't fit a bounded fix in this pass were filed as
+Six findings that didn't fit a bounded fix in this pass were filed as
 `tokuhirom/mutsu` issues rather than folded into this PR:
 
 - [#9005](https://github.com/tokuhirom/mutsu/issues/9005) — `.=` does not
@@ -70,3 +81,7 @@ Five findings that didn't fit a bounded fix in this pass were filed as
 - [#9009](https://github.com/tokuhirom/mutsu/issues/9009) —
   `weakly-connected-components` returns components in the wrong order,
   likely a Hash-iteration-order mismatch (`t/06-weak-connectivity.rakutest`).
+- [#9012](https://github.com/tokuhirom/mutsu/issues/9012) — `floor()`/
+  `ceiling()` free functions can't distinguish native `num` (keeps `Num`)
+  from boxed `Num`/`Rat` (returns `Int`) — no runtime nativity tag
+  (`t/17-find-minimum-cut.rakutest`).
