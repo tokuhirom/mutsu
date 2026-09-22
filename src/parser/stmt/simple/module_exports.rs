@@ -7,7 +7,7 @@ use std::rc::Rc;
 mod export_hook;
 use export_hook::{
     collect_export_hook_value_terms, collect_unit_scope_routines, declares_export_sub,
-    source_declares_export_sub, unit_scope_routine_names_fallback,
+    find_export_sub_body, source_declares_export_sub, unit_scope_routine_names_fallback,
 };
 
 /// Everything one module-file scan learns that importers need replayed:
@@ -722,6 +722,18 @@ fn scan_module_source(source: &str, path: &str) -> ModuleScanResult {
     // (ADR-0087).
     if declares_export_sub(&stmts) || source_declares_export_sub(source) {
         collect_unit_scope_routines(&stmts, &mut exports);
+        // A third idiom: `is export`-tagged declarations made LOCALLY inside
+        // the hook's own body rather than at the module's unit scope
+        // (Logic::Ternary's `multi infix:<and3>(...) is export { ... }`,
+        // declared inside `sub EXPORT` so it can close over the `use`
+        // arguments). `collect_unit_scope_routines` only walks the module
+        // file's top-level statements, so a declaration nested in EXPORT's
+        // own body is invisible to it; reuse the precise `is export` walker
+        // (which also captures a custom operator's precedence/associativity,
+        // unlike the coarse unit-scope approximation) on that body too.
+        if let Some(body) = find_export_sub_body(&stmts) {
+            collect_exported_subs_in(body, &mut exports, false);
+        }
         // A second idiom's value terms, declared locally inside the hook's own
         // body rather than drawn from `UNIT::` — see the function's own doc
         // for why a value term (unlike a routine) needs this at all.

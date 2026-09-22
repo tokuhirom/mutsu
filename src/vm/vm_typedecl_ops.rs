@@ -803,6 +803,7 @@ impl Interpreter {
         &mut self,
         code: &CompiledCode,
         idx: u32,
+        site_id: u64,
     ) -> Result<(), RuntimeError> {
         let stmt = &code.stmt_pool[idx as usize];
         if let Stmt::AugmentClass {
@@ -825,8 +826,31 @@ impl Interpreter {
             if *is_role {
                 return Err(self.augment_role_error(&name_str));
             }
+            // Real Raku elaborates `augment` at compile time of the enclosing
+            // code, once, however many times that code is later invoked. A
+            // `sub EXPORT { augment class Any {...} }` re-runs the whole sub
+            // body on every `use` of the module (mutsu deliberately re-runs
+            // EXPORT per import, see `apply_module_export`'s doc comment),
+            // but the augmentation itself must not repeat -- Logic::Ternary's
+            // `augment class Any { method Ternary(...) {...} }` else dies
+            // with `X::Redeclaration` on the second `use` (every `t/04`
+            // assertion after the first). Claim this textual site in the
+            // `once` store (see `OpCode::BeginOnceExpr`, the same recipe) and
+            // skip re-applying an already-claimed one instead of running
+            // `augment_class` again.
+            let cache_key = format!("AugmentClass#{site_id}");
+            let store = std::sync::Arc::clone(self.once_store());
+            match store.claim(&cache_key) {
+                crate::runtime::once_store::OnceClaim::Cached(_) => return Ok(()),
+                crate::runtime::once_store::OnceClaim::Claimed => {}
+            }
             let does_role_names: Vec<String> = does_roles.iter().map(|s| s.resolve()).collect();
-            loan_env!(self, augment_class(&name_str, body, &does_role_names))?;
+            let result = loan_env!(self, augment_class(&name_str, body, &does_role_names));
+            if let Err(e) = result {
+                store.abandon(&cache_key);
+                return Err(e);
+            }
+            store.fulfill(&cache_key, Value::NIL);
             // Recompile augmented class methods for the fast path
             self.compile_class_methods(&name_str);
             // Augment can add methods/attributes — drop cached construction plans.

@@ -2732,7 +2732,20 @@ pub(crate) enum OpCode {
     ReturnFromNonRoutine(bool, bool),
     RegisterDecl(u32),
     RegisterEnum(u32),
-    AugmentClass(u32),
+    /// `augment class X { ... }`. `site_id` is a compile-time hash of the
+    /// declaring package, source line and body (same recipe as
+    /// [`OpCode::BeginOnceExpr`]'s), so it identifies this TEXTUAL augment
+    /// statement, not a particular call: real Raku elaborates `augment` at
+    /// compile time of the enclosing code, once, no matter how many times
+    /// that code is later invoked (`sub EXPORT { augment class Any {...} }`
+    /// re-augments on every `use`, only mutsu re-running it as an ordinary
+    /// runtime statement). `exec_augment_class_op` claims `site_id` in the
+    /// `once` store and skips re-applying an already-claimed site instead of
+    /// hitting the class's own redeclaration check.
+    AugmentClass {
+        idx: u32,
+        site_id: u64,
+    },
     RegisterSubset(u32),
     ReactScope {
         body_end: u32,

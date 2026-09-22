@@ -1588,6 +1588,10 @@ pub(crate) struct Compiler {
     /// identical BEGINs on one line so they keep separate memo cells; see
     /// `begin_site_id`.
     begin_site_seq: std::collections::HashMap<u64, u32>,
+    /// Same disambiguation as `begin_site_seq`, for `augment class` sites; see
+    /// `augment_site_id`. A separate map so an augment site and an unrelated
+    /// BEGIN that happened to hash to the same base never share a counter.
+    augment_site_seq: std::collections::HashMap<u64, u32>,
     /// Pending writebacks for Index expressions passed to function calls.
     /// After the call returns, if the `is rw` parameter was written to,
     /// we need to write the temp variable value back to the original hash/array slot.
@@ -1767,6 +1771,7 @@ impl Compiler {
             with_element_source_capture: None,
             last_source_line: None,
             begin_site_seq: std::collections::HashMap::new(),
+            augment_site_seq: std::collections::HashMap::new(),
             pending_index_rw_writebacks: Vec::new(),
             current_distribution: None,
             escaping_position: false,
