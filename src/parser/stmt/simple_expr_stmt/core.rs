@@ -1544,7 +1544,11 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
     }
 
     // Check for comma-separated expressions (e.g., "1,2, until $++")
-    // The statement modifier applies only to the last expression
+    // A trailing statement modifier gates the WHOLE comma list, not just its
+    // last element (`$a++, $b++ if COND` runs neither or both — verified
+    // against `raku`; HTTP::Server::Async's `$index--, last if
+    // $data[$index] == ...` relies on the decrement and the `last` firing
+    // together).
     if rest.starts_with(',') && !rest.starts_with(",,") {
         let mut exprs = vec![expr];
         let mut r = rest;
@@ -1593,20 +1597,17 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
             return Ok((r, Stmt::Expr(expr)));
         }
 
-        // Convert all but last expr to Stmt::Expr for modifier lowering
-        let mut stmts = Vec::new();
-        let last_expr = exprs.pop().unwrap();
-        for e in exprs {
-            stmts.push(Stmt::Expr(e));
-        }
-
-        // Apply statement modifier to the last expression
-        let last_stmt = Stmt::Expr(last_expr);
-        let (r, last_stmt_with_modifier) = parse_statement_modifier(r, last_stmt)?;
-        stmts.push(last_stmt_with_modifier);
-
-        // Return as a block
-        return Ok((r, Stmt::Block(stmts)));
+        // Build one list expression for the entire comma-separated statement
+        // and let the modifier wrap that whole list, same as the operators
+        // that are looser than the comma (see the `normalize_comma_list_items`
+        // call in the no-modifier branch above).
+        let mut exprs = crate::parser::stmt::assign::normalize_comma_list_items(exprs);
+        let list_expr = if exprs.len() > 1 {
+            Expr::ArrayLiteral(exprs)
+        } else {
+            exprs.remove(0)
+        };
+        return parse_statement_modifier(r, Stmt::Expr(list_expr));
     }
 
     add_xor_sink_warnings(&expr, crate::parser::primary::current_line_number(input));
