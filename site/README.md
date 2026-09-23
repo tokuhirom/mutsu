@@ -107,7 +107,7 @@ reload:
 
 | Page | Hash |
 | --- | --- |
-| `bench-trend.html` | `#metric=seconds\|ratio\|instr` · `window=0\|50\|150` · `view=charts\|table` · `sort=<column>` · `dir=asc\|desc` |
+| `bench-trend.html` | `#metric=seconds\|ratio\|instr\|allocs` · `window=0\|50\|150` (default 150) · `y=fit\|zero` · `view=charts\|table` · `sort=<column>` · `dir=asc\|desc` |
 | `ecosystem.html` | `#q=<search text>` · `status=<status>` |
 | `tutorial.html` | `#<chapter>/<lesson>` |
 | `playground.html` | `#code=<encoded program>` |
