@@ -51,6 +51,9 @@ impl Interpreter {
     /// A no-op — and, for the overwhelmingly common case of a class that does
     /// not override `WHICH`, only a type-tag check plus an MRO probe — for
     /// everything else.
+    /// Cost: O(t), t = elements of a list-shaped `value` counted recursively to
+    /// depth 16 (each is visited even when no class overrides `WHICH`), O(d) for
+    /// an instance, d = MRO depth. Rakudo: O(1) for `===` -- see #9172.
     pub(crate) fn warm_which_identity(&mut self, value: &Value) {
         self.warm_which_identity_depth(value, 0);
     }

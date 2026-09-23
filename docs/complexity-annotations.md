@@ -26,6 +26,7 @@ measured and filed):
 | `nqp::` ops | `src/runtime/nqp_ops*.rs`, `src/runtime/nqp_pure.rs`, `src/compiler/nqp_forms.rs` | `MoarVM: O(..)` | `scripts/nqp-complexity-check.sh` |
 | `Str` methods | wherever each method's body lives (see the list in `scripts/str-complexity-check.sh`) | `Rakudo: O(..)` | `scripts/str-complexity-check.sh` |
 | `Array` / `List` / `Seq` operations | wherever each operation's body lives (see the list in `scripts/array-complexity-check.sh`) | `Rakudo: O(..)` | `scripts/array-complexity-check.sh` |
+| VM opcodes | one line per `OpCode` arm of `exec_one_dispatch` (`src/vm/vm_exec_dispatch.rs`), plus the handler where a deficit's root cause lives, plus the run loop (`src/vm/vm_run_loop.rs`) | `Rakudo: O(..)` | `scripts/vm-complexity-check.sh` |
 
 ## Rules
 

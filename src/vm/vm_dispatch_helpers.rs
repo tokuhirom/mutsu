@@ -394,6 +394,9 @@ impl Interpreter {
     /// Evaluate truthiness of a value, including dispatch to user-defined Bool methods.
     /// For Package (type objects) and Instance values, checks if the class defines
     /// a custom Bool method and calls it. Falls back to Value::truthy() otherwise.
+    /// Cost: O(1) for most values; a not-yet-run `.map`/`.grep` Seq is forced whole by
+    /// `reify_map_grep_seq`, O(e) callbacks, e = source elements, where Rakudo pulls a single
+    /// element. Rakudo: O(1) -- see #9158.
     pub(crate) fn eval_truthy(&mut self, val: &Value) -> bool {
         // A successful lazy Match already knows its truth value, and reading
         // it through `view()` would force the capture map. Plain regex
