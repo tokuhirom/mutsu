@@ -98,6 +98,14 @@ pub(crate) fn to_set(target: Value, what: &str) -> Result<Value, RuntimeError> {
                     add_item(elems, original_keys, inner_item, true);
                 }
             }
+            // A Capture passed with the `\(...)` slurpy syntax contributes
+            // its positional arguments to the surrounding list context. Its
+            // named arguments are call metadata, not Set elements.
+            ValueView::Capture { positional, .. } if flatten => {
+                for inner_item in positional.iter() {
+                    add_item(elems, original_keys, inner_item, true);
+                }
+            }
             _ => {
                 quanthash_insert_set(elems, original_keys, item);
             }

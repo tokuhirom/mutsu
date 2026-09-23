@@ -351,7 +351,27 @@ impl Interpreter {
         if !self.user_infix_override(op_name) {
             return Ok(None);
         }
-        let args = vec![left.clone(), right.clone()];
+        // Set operators are also used by the tree-walking carrier path. That
+        // path preserves VarRef/Scalar wrappers so a raw parameter can alias
+        // its caller, but operator dispatch must match the values, not those
+        // call-site containers. The bytecode set-op path performs the same
+        // decontainerization before reaching this helper.
+        let dispatch_arg = |value: &Value| {
+            crate::runtime::types::unwrap_varref_value(value.clone()).into_descalarized()
+        };
+        let args = if matches!(
+            op_name,
+            "infix:<(elem)>"
+                | "infix:<(cont)>"
+                | "infix:<(&)>"
+                | "infix:<∩>"
+                | "infix:<(|)>"
+                | "infix:<∪>"
+        ) {
+            vec![dispatch_arg(left), dispatch_arg(right)]
+        } else {
+            vec![left.clone(), right.clone()]
+        };
         // A custom EXPORT hook can return a materialized `&infix:<op>` value
         // whose candidates were private to the exporting compilation unit.
         // They are intentionally captured in the Sub, not left in the global

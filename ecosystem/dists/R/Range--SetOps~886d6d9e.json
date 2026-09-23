@@ -14,7 +14,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.25,
+        "secs": 0.09,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -24,30 +24,29 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 2.29,
+        "secs": 0.72,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Runtime error: Unable to parse expression in array composer; couldn't find final ']' (corresponding starter was at line 1)",
         "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 0.03,
+        "ok": 360,
+        "plan": 360,
+        "secs": 0.22,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/02-elem.t",
       "raku": {
         "nok": 0,
         "ok": 360,
         "plan": 360,
-        "secs": 1.41,
+        "secs": 0.42,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -59,7 +58,7 @@
         "nok": 0,
         "ok": 228,
         "plan": 228,
-        "secs": 0.48,
+        "secs": 0.18,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -69,53 +68,51 @@
         "nok": 0,
         "ok": 228,
         "plan": 228,
-        "secs": 1.52,
+        "secs": 0.5,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "partial",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "1..10 (|) 5..6 => Set.new(1..10) but got Set.new(\\(1..10))",
-        "nok": 44,
-        "ok": 22,
+        "nok": 0,
+        "ok": 79,
         "plan": 79,
-        "secs": 0.92,
+        "secs": 0.17,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "pass"
       },
       "path": "t/04-union.t",
       "raku": {
         "nok": 0,
         "ok": 79,
         "plan": 79,
-        "secs": 1.58,
+        "secs": 0.49,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "partial",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "[(&)] [[1..5, 3..10],] == Set.new(3..5)",
-        "nok": 26,
-        "ok": 0,
+        "nok": 0,
+        "ok": 26,
         "plan": 26,
-        "secs": 0.55,
+        "secs": 0.1,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "pass"
       },
       "path": "t/05-intersection.t",
       "raku": {
         "nok": 0,
         "ok": 26,
         "plan": 26,
-        "secs": 0.84,
+        "secs": 0.3,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -127,10 +124,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-22",
+    "date": "2026-09-23",
     "harness": 2,
-    "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "61fb271",
+    "host": "linux-x86_64",
+    "mutsu_commit": "2bb99a27a",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -139,15 +136,15 @@
   "schema": 1,
   "source": {
     "index": "fez",
-    "url": "https://360.zef.pm/R/AN/RANGE_SETOPS/4e8296bc6ea045efd53bfaeb7646e7f7984e5c6a.tar.gz"
+    "url": "https://360.zef.pm/R/AN/RANGE_SETOPS/3d7eb71b39285e4ce6c3a33349cdb40e04b62c5b.tar.gz"
   },
-  "status": "partial",
+  "status": "green",
   "totals": {
     "baseline_assertions": 694,
     "baseline_files": 5,
-    "mutsu_assertions": 251,
-    "parity_files": 2,
-    "regressed_files": 3
+    "mutsu_assertions": 694,
+    "parity_files": 5,
+    "regressed_files": 0
   },
-  "version": "0.0.5"
+  "version": "0.0.4"
 }

@@ -499,15 +499,50 @@ impl Interpreter {
         }
     }
 
+    pub(crate) fn eval_set_elem_values(
+        &mut self,
+        left: Value,
+        right: Value,
+    ) -> Result<Value, RuntimeError> {
+        if Self::is_failure_value(&left) || Self::is_failure_value(&right) {
+            return Err(RuntimeError::new("Exception"));
+        }
+        let dispatch_left = left.clone();
+        let dispatch_right = right.clone();
+        if let Some(result) =
+            self.try_user_infix("infix:<(elem)>", &dispatch_left, &dispatch_right)?
+        {
+            return Ok(result);
+        }
+        let result = self.set_contains(&right, &left);
+        Ok(Value::truth(result))
+    }
+
+    pub(crate) fn eval_set_cont_values(
+        &mut self,
+        left: Value,
+        right: Value,
+    ) -> Result<Value, RuntimeError> {
+        if Self::is_failure_value(&left) || Self::is_failure_value(&right) {
+            return Err(RuntimeError::new("Exception"));
+        }
+        let dispatch_left = left.clone();
+        let dispatch_right = right.clone();
+        if let Some(result) =
+            self.try_user_infix("infix:<(cont)>", &dispatch_left, &dispatch_right)?
+        {
+            return Ok(result);
+        }
+        let result = self.set_contains(&left, &right);
+        Ok(Value::truth(result))
+    }
+
     /// Cost: see `set_contains` -- O(e) on a list RHS, O(1) on a Set/Bag/Mix/Hash.
     pub(super) fn exec_set_elem_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
-        if Self::is_failure_value(&left) || Self::is_failure_value(&right) {
-            return Err(RuntimeError::new("Exception"));
-        }
-        let result = self.set_contains(&right, &left);
-        self.stack.push(Value::truth(result));
+        let result = self.eval_binary_with_junctions(left, right, Self::eval_set_elem_values)?;
+        self.stack.push(result);
         Ok(())
     }
 
@@ -515,11 +550,8 @@ impl Interpreter {
     pub(super) fn exec_set_cont_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
-        if Self::is_failure_value(&left) || Self::is_failure_value(&right) {
-            return Err(RuntimeError::new("Exception"));
-        }
-        let result = self.set_contains(&left, &right);
-        self.stack.push(Value::truth(result));
+        let result = self.eval_binary_with_junctions(left, right, Self::eval_set_cont_values)?;
+        self.stack.push(result);
         Ok(())
     }
 
@@ -528,6 +560,13 @@ impl Interpreter {
         let left = self.stack.pop().unwrap();
         if Self::is_failure_value(&left) || Self::is_failure_value(&right) {
             return Err(RuntimeError::new("Exception"));
+        }
+        if let Some(result) = self
+            .try_user_infix("infix:<(|)>", &left, &right)?
+            .or(self.try_user_infix("infix:<∪>", &left, &right)?)
+        {
+            self.stack.push(result);
+            return Ok(());
         }
         let result_mutable = runtime::set_result_mutability(&left);
 

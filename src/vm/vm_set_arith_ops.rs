@@ -350,6 +350,14 @@ impl Interpreter {
             return Err(RuntimeError::new("Exception"));
         }
 
+        if let Some(result) = self
+            .try_user_infix("infix:<(&)>", &left, &right)?
+            .or(self.try_user_infix("infix:<∩>", &left, &right)?)
+        {
+            self.stack.push(result);
+            return Ok(());
+        }
+
         // Check for lazy lists
         if Self::is_lazy_value(&left) || Self::is_lazy_value(&right) {
             let mut attrs = HashMap::new();
