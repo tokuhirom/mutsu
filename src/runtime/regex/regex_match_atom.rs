@@ -310,7 +310,14 @@ impl Interpreter {
         // ε-bypass measurement below) and `CodeAssertion` keeps its existing
         // inline handling (ADR-0009), so both fall through to `LtmAtomMode::Normal`
         // here and are unaffected by this guard.
-        if LTM_DECLARATIVE_MODE.with(std::cell::Cell::get) {
+        let wrapped_token = match atom {
+            RegexAtom::Named(name) => {
+                self.token_method_has_wrap_chain(pkg.as_str(), &name.spec().lookup_name)
+            }
+            RegexAtom::WsRule => self.token_method_has_wrap_chain(pkg.as_str(), "ws"),
+            _ => false,
+        };
+        if LTM_DECLARATIVE_MODE.with(std::cell::Cell::get) && !wrapped_token {
             match ltm_atom_mode(atom) {
                 // A fate ends this path of the measurement: record where, and
                 // fail the path so the walk goes on with the others
@@ -610,6 +617,16 @@ impl Interpreter {
             if !preinstalled {
                 *dyn_saved = self.install_subrule_dynamic_params(&spec, pkg, &arg_values);
             }
+            // A token/rule/regex returned by `.^find_method(...).wrap(...)`
+            // has a class-keyed wrap chain, but the ordinary regex engine
+            // evaluates its body directly rather than dispatching a Regex
+            // value. Let the wrapper produce the cursor and feed that result
+            // back through the normal named-subrule capture builder.
+            if let Some(result) =
+                self.try_wrapped_token_subrule_dispatch(&spec, chars, pos, pkg, &arg_values)
+            {
+                return result;
+            }
             // Resolve + parse the candidates once (memoized for the
             // argument-less common case — see PARSED_TOKEN_CANDIDATES).
             let (candidates, raw_empty) = self.parsed_subrule_candidates(&spec, pkg, &arg_values);
@@ -767,8 +784,14 @@ impl Interpreter {
                         for (idx, _) in ranked {
                             let (parsed, sub_pkg, sym_key) = &candidates[idx];
                             let sym_key = sym_key.clone();
-                            let all_matches = self
-                                .subrule_candidate_ends(parsed, chars, pos, *sub_pkg, first_only);
+                            let all_matches = self.subrule_candidate_ends_with_frame(
+                                &spec.lookup_name,
+                                parsed,
+                                chars,
+                                pos,
+                                (*sub_pkg, pkg),
+                                first_only,
+                            );
                             if all_matches.is_empty() {
                                 continue;
                             }
@@ -789,8 +812,14 @@ impl Interpreter {
                         }
                     } else {
                         for (parsed, sub_pkg, sym_key) in candidates.iter() {
-                            let all_matches = self
-                                .subrule_candidate_ends(parsed, chars, pos, *sub_pkg, first_only);
+                            let all_matches = self.subrule_candidate_ends_with_frame(
+                                &spec.lookup_name,
+                                parsed,
+                                chars,
+                                pos,
+                                (*sub_pkg, pkg),
+                                first_only,
+                            );
                             // all_matches: HIGHEST FIRST.
                             let matches_to_use: Vec<_> = if sym_key.is_some() {
                                 all_matches.into_iter().take(1).collect()
@@ -957,6 +986,32 @@ impl Interpreter {
                 .collect();
         }
         self.regex_match_ends_from_caps_in_pkg(parsed, chars, pos, sub_pkg)
+    }
+
+    /// Keep named grammar-rule frames visible while a rule's pattern is
+    /// evaluated. Token/rule bodies are executed by the regex engine rather
+    /// than ordinary method dispatch, but `Backtrace` still needs to see the
+    /// enclosing rule when a wrapped token records its caller.
+    fn subrule_candidate_ends_with_frame(
+        &mut self,
+        rule_name: &str,
+        parsed: &RegexPattern,
+        chars: &[char],
+        pos: usize,
+        packages: (Symbol, Symbol),
+        first_only: bool,
+    ) -> Vec<(usize, RegexCaptures)> {
+        let (sub_pkg, frame_pkg) = packages;
+        self.push_routine_with_location(
+            frame_pkg,
+            Symbol::intern(rule_name),
+            self.current_source_line(),
+            self.executing_source_file_sym(),
+            None,
+        );
+        let result = self.subrule_candidate_ends(parsed, chars, pos, sub_pkg, first_only);
+        self.routine_stack.pop();
+        result
     }
 
     /// Dispatch a subrule that names a plain grammar METHOD (not a token/regex/rule).

@@ -572,6 +572,8 @@ pub(crate) struct CompiledMethodDecl {
     pub(crate) custom_traits: Vec<(String, Option<Expr>)>,
     pub(crate) is_export: bool,
     pub(crate) export_tags: Vec<String>,
+    /// Whether this method carries Raku's `is hidden-from-backtrace` trait.
+    pub(crate) is_hidden_from_backtrace: bool,
     /// Main-pass-compiled bytecode key for this method's body (ADR-0019
     /// D3-8a), keyed into the program's [`CompiledFns`] table exactly like a
     /// `sub`'s [`CompiledSubDeclPlan::compiled_routine_keys`]. `None` when
@@ -645,6 +647,9 @@ impl CompiledMethodDecl {
             custom_traits: custom_traits.clone(),
             is_export: *is_export,
             export_tags: export_tags.clone(),
+            is_hidden_from_backtrace: custom_traits
+                .iter()
+                .any(|(t, _)| t == "__hidden_from_backtrace"),
             compiled_routine_key: None,
             uses_bare_positional_args,
         }

@@ -500,6 +500,10 @@ impl Interpreter {
             let mut frame_attrs = HashMap::new();
             frame_attrs.insert("subname".to_string(), Value::str(subname));
             frame_attrs.insert(
+                "is-hidden".to_string(),
+                Value::truth(frame.is_hidden_from_backtrace),
+            );
+            frame_attrs.insert(
                 "file".to_string(),
                 file.map(Value::str).unwrap_or(Value::str(String::new())),
             );

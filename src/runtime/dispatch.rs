@@ -245,11 +245,14 @@ impl Interpreter {
         // `Grammar.parse(:actions(...))` the real match has OBSERVABLE side
         // effects: Rakudo dispatches an action the moment a subrule reduces, so
         // even a doomed match leaves the actions of its matched subrules behind.
-        // With a single (non-proto) candidate there is nothing to select between,
-        // so hand it back and let the real match run and fail.
+        // A grammar that installs a parse diagnostic cursor (such as
+        // Grammar::PrettyErrors' `$*HIGHWATER`) likewise needs the real walk to
+        // run so wrapped tokens and the failure position are observable. With a
+        // single (non-proto) candidate there is nothing to select between, so
+        // hand it back and let the real match run and fail.
         if rejected.len() == 1
-            && self.current_grammar_actions.is_some()
             && !self.has_proto_token(name)
+            && (self.current_grammar_actions.is_some() || self.env.contains_key("*HIGHWATER"))
         {
             return Ok(rejected.pop().map(|p| vec![(p, None)]));
         }
@@ -295,6 +298,7 @@ impl Interpreter {
             is_method: false,
             is_submethod: false,
             is_block: false,
+            is_hidden_from_backtrace: false,
             def_file: None,
             invocation_id,
         };

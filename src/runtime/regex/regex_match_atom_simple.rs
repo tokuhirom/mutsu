@@ -258,7 +258,14 @@ impl Interpreter {
         // `CodeAssertion` already returns `Some(pos)` unconditionally here
         // (zero-width, never executed — this function never runs code), which
         // is a safe (if imprecise for a plain block) default under mode.
-        if LTM_DECLARATIVE_MODE.with(std::cell::Cell::get) {
+        let wrapped_token = match atom {
+            RegexAtom::Named(name) => {
+                self.token_method_has_wrap_chain(pkg.as_str(), &name.spec().lookup_name)
+            }
+            RegexAtom::WsRule => self.token_method_has_wrap_chain(pkg.as_str(), "ws"),
+            _ => false,
+        };
+        if LTM_DECLARATIVE_MODE.with(std::cell::Cell::get) && !wrapped_token {
             match ltm_atom_mode(atom) {
                 LtmAtomMode::Terminate => {
                     ltm_record_fate(pos);
@@ -456,6 +463,9 @@ impl Interpreter {
                 return None;
             }
             RegexAtom::WsRule => {
+                if let Some(result) = self.try_wrapped_token_end(chars, pos, pkg, "ws") {
+                    return result;
+                }
                 let before_is_word = pos > 0 && is_word_char(chars[pos - 1]);
                 let mut end = pos;
                 while end < chars.len() && chars[end].is_whitespace() {

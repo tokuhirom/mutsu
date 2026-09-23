@@ -1077,6 +1077,40 @@ impl Interpreter {
                 };
                 let method_name = args[1].to_string_value();
                 let method_value = unwrap_method_instance_callable(&args[2]);
+                if let ValueView::Routine {
+                    package,
+                    name,
+                    is_regex: true,
+                    ..
+                } = method_value.view()
+                {
+                    let source_key = crate::runtime::dispatch_key::qualified_intern(
+                        &package.resolve(),
+                        &name.resolve(),
+                    );
+                    let Some(source_defs) = self.registry().token_defs.get(&source_key).cloned()
+                    else {
+                        return Ok(Value::NIL);
+                    };
+                    let target_key =
+                        crate::runtime::dispatch_key::qualified_intern(&class_name, &method_name);
+                    let target_defs = source_defs
+                        .iter()
+                        .map(|source| {
+                            let mut def = (**source).clone();
+                            def.package = Symbol::intern(&class_name);
+                            def.name = Symbol::intern(&method_name);
+                            def.decl_order = crate::runtime::resolution::next_decl_order();
+                            std::sync::Arc::new(def)
+                        })
+                        .collect();
+                    self.registry_mut()
+                        .token_defs
+                        .insert(target_key, target_defs);
+                    crate::runtime::regex_parse::TOKEN_DEFS_GEN
+                        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    return Ok(Value::NIL);
+                }
                 let ValueView::Sub(sub_data) = method_value.view() else {
                     return Ok(Value::NIL);
                 };
@@ -1269,6 +1303,7 @@ impl Interpreter {
                     is_default: false,
                     deprecated_message: None,
                     is_submethod: false,
+                    is_hidden_from_backtrace: false,
                     // Preserve the closure literal's captured scope so a method
                     // like `method { attr.get_value(self) }` (Attribute::Predicate's
                     // `is predicate`) can still resolve `attr` after its creating
@@ -1354,6 +1389,7 @@ impl Interpreter {
                     is_default: false,
                     deprecated_message: None,
                     is_submethod: false,
+                    is_hidden_from_backtrace: false,
                     captured_env,
                     source_file: sub_data.source_file.clone(),
                     role_param_bindings: None,

@@ -533,6 +533,7 @@ impl Interpreter {
                         is_method: false,
                         is_submethod: false,
                         is_block: false,
+                        is_hidden_from_backtrace: false,
                         def_file: None,
                         invocation_id,
                     };

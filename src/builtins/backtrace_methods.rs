@@ -119,9 +119,14 @@ fn is_routine(frame: &Value) -> bool {
     }
 }
 
-/// mutsu does not track `is hidden-from-backtrace` routines.
-fn is_hidden(_frame: &Value) -> bool {
-    false
+fn is_hidden(frame: &Value) -> bool {
+    match frame.view() {
+        ValueView::Instance { attributes, .. } => attributes
+            .as_map()
+            .get("is-hidden")
+            .is_some_and(Value::truthy),
+        _ => false,
+    }
 }
 
 fn is_setting(frame: &Value) -> bool {

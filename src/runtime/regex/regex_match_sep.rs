@@ -199,6 +199,7 @@ impl Interpreter {
                 .pop()
         {
             atom_caps.push(caps);
+            super::regex_helpers::record_regex_farthest_position(end);
             cur = end;
             while can_extend(atom_caps.len()) {
                 let Some((sep_end, scaps)) =
@@ -206,6 +207,7 @@ impl Interpreter {
                 else {
                     break;
                 };
+                super::regex_helpers::record_regex_farthest_position(sep_end);
                 let Some((atom_end, acaps)) = self
                     .regex_match_atom_all_with_capture_in_pkg(
                         &token.atom,
@@ -219,6 +221,7 @@ impl Interpreter {
                 else {
                     break;
                 };
+                super::regex_helpers::record_regex_farthest_position(atom_end);
                 if atom_end <= cur {
                     break;
                 }
@@ -320,6 +323,7 @@ impl Interpreter {
         // `extend_separated_chain`'s `atom_end <= cur` no-progress guard (and
         // the 20_000 chain cap), so a zero-width atom cannot loop forever.
         for (end, caps) in first_matches.into_iter().rev() {
+            super::regex_helpers::record_regex_farthest_position(end);
             let mut atom_caps = vec![caps];
             let mut sep_caps: Vec<RegexCaptures> = Vec::new();
             self.extend_separated_chain(
@@ -370,6 +374,7 @@ impl Interpreter {
                 cur,
                 pkg,
             ) {
+                super::regex_helpers::record_regex_farthest_position(sep_end);
                 // Enumerate every atom-match length after this separator
                 // (highest-priority first), mirroring the first-atom enumeration
                 // so a frugal atom can expand to satisfy a following anchor.
@@ -382,6 +387,7 @@ impl Interpreter {
                     pattern.ignore_case,
                 );
                 for (atom_end, acaps) in atom_matches.into_iter().rev() {
+                    super::regex_helpers::record_regex_farthest_position(atom_end);
                     if atom_end <= cur {
                         continue;
                     }

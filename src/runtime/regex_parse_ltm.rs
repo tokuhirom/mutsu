@@ -1132,6 +1132,9 @@ impl Interpreter {
             // `%` takes only a single atom as separator; split off the remainder.
             let (sep_atom, sep_rest) = Self::split_first_atom(full_sep);
             let sep = Some(sep_atom.as_str());
+            if sep_atom.trim_start().starts_with('[') {
+                return pattern.to_string();
+            }
             // When the quantified atom or the separator contains a capture, the
             // string-based expansion (`atom[sep atom]*`) would renumber captures
             // and break the Match structure. Leave the `%`/`%%` text in place so

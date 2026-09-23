@@ -1798,7 +1798,11 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                     return Some(Ok(Value::truth(backtrace_frame_is_routine(&attributes))));
                 }
                 "is-hidden" => {
-                    return Some(Ok(Value::FALSE));
+                    return Some(Ok(attributes
+                        .as_map()
+                        .get("is-hidden")
+                        .cloned()
+                        .unwrap_or(Value::FALSE)));
                 }
                 "is-setting" => {
                     return Some(Ok(attributes

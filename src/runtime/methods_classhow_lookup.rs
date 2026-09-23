@@ -122,6 +122,7 @@ impl Interpreter {
                         is_default: false,
                         deprecated_message: None,
                         is_submethod: false,
+                        is_hidden_from_backtrace: false,
                         captured_env: None,
                         source_file: proto.source_file,
                         role_param_bindings: None,
