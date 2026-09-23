@@ -27,23 +27,23 @@ pub(crate) fn with_buf_storage_mut<R>(
     attrs: &InstanceAttrs,
     f: impl FnOnce(&mut Vec<u8>, usize) -> R,
 ) -> Option<R> {
-    let map = attrs.as_map();
-    let node = node_in(&map)?;
-    let width = node.width as usize;
-    if node.strong_count() == 1 {
-        // SAFETY: audited aliased in-place container write (see
-        // `value::aliased_mut`), the one `put_bytes` performs. The node is
-        // unshared, `f` is a pure byte edit that never re-enters the
-        // interpreter, and the read guard covers only the attribute map —
-        // which is not what is being mutated.
-        let data: &mut BufData = unsafe { crate::value::gc_contents_mut(&node) };
-        return Some(f(&mut data.bytes, width));
-    }
-    // A shared node is forked: copy, edit the copy, install it.
-    let (mut bytes, w, kind) = (node.bytes.clone(), node.width, node.kind);
-    drop(node);
-    drop(map);
-    let out = f(&mut bytes, width);
+    let (mut bytes, w, kind) = {
+        let map = attrs.as_map();
+        let node = node_in(&map)?;
+        if node.strong_count() == 1 {
+            // SAFETY: audited aliased in-place container write (see
+            // `value::aliased_mut`), the one `put_bytes` performs. The node is
+            // unshared, `f` is a pure byte edit that never re-enters the
+            // interpreter, and the read guard covers only the attribute map —
+            // which is not what is being mutated.
+            let data: &mut BufData = unsafe { crate::value::gc_contents_mut(&node) };
+            let width = data.width as usize;
+            return Some(f(&mut data.bytes, width));
+        }
+        // A shared node is forked: copy, edit the copy, install it.
+        (node.bytes.clone(), node.width, node.kind)
+    };
+    let out = f(&mut bytes, w as usize);
     attrs.insert(ELEMS_ATTR, storage_value(bytes, w, kind));
     Some(out)
 }
