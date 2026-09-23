@@ -198,8 +198,9 @@ the untyped path's `validate_native_int_assignment`.
 | 727-record `from-json` | ~1.38 s | **~0.21 s** | ≤ 0.334 s: **met** |
 | `trir:` line, 100-record decode | `bails=0 gen-links=1088` | `bails=0 gen-links=2285` | — |
 
-The decoded result is byte-identical to rakudo's. Against rakudo's ~0.058 s
-the ratio is ~3.6x, where §3 had estimated ~8x after Step 2. Pins:
+The decoded result is byte-identical to rakudo's. Rakudo measured
+0.043-0.048 s on the same box in the same session, so the ratio is ~4.6x,
+where §3 had estimated ~8x after Step 2. Pins:
 `t/vm/codegen/adr0112-trir-string-path.t` and
 `t/fixtures/trir-string-path.raku`.
 

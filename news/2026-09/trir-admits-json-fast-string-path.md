@@ -61,8 +61,8 @@ Measured on a release build on a 4-core container, `from-json` of the
 | ADR-0112 Step 2 gate | ≤ 0.334 s | met |
 
 The decoded document is byte-identical to rakudo's and to mutsu's with TRIR
-off. Rakudo takes ~0.058 s on the same box, so the gap is now ~3.6x, down
-from ~24x. Steps 3 (typed container ops) and 4 (native lowering with
+off. Rakudo took 0.043-0.048 s on the same box in the same session, so the
+gap is now ~4.6x, down from ~30x. Steps 3 (typed container ops) and 4 (native lowering with
 inlining) are next.
 
 Pins: `t/vm/codegen/adr0112-trir-string-path.t` (with

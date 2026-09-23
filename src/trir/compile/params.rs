@@ -60,12 +60,22 @@ fn nominal_check(tc: &str) -> Option<TrParamCheck> {
         Some(":U") => Some(false),
         Some(_) => return None,
     };
-    let plain = base.split("::").all(|seg| {
-        seg.starts_with(|c: char| c.is_ascii_uppercase())
-            && seg
-                .chars()
-                .all(|c| c.is_alphanumeric() || c == '_' || c == '-')
-    });
+    // Every `::`-separated segment starts with a capital letter; checked
+    // character by character (a colon pair must be followed by one).
+    let bytes = base.as_bytes();
+    let mut plain = bytes.first().is_some_and(u8::is_ascii_uppercase);
+    let mut i = 0;
+    while plain && i < bytes.len() {
+        let c = bytes[i];
+        if c == b':' {
+            plain = bytes.get(i + 1) == Some(&b':')
+                && bytes.get(i + 2).is_some_and(u8::is_ascii_uppercase);
+            i += 2;
+            continue;
+        }
+        plain = c.is_ascii_alphanumeric() || c == b'_' || c == b'-';
+        i += 1;
+    }
     plain.then(|| TrParamCheck {
         base: base.to_string(),
         defined,
