@@ -688,9 +688,10 @@ pub(crate) fn normalize_token_pattern(pattern: &str) -> String {
 /// `primary::ident::identifier_call`), which previously built only the
 /// normalized text — so an anonymous `rule` got none of its implicit `<.ws>`
 /// and an anonymous `token` did not ratchet. The named declarator
-/// (`grammar_module::token_decl`) does the same steps inline, with one extra
-/// of its own that only a name can trigger (the `<.ws>?` a `:sym<…>` rule
-/// ends with).
+/// (`grammar_module::token_decl`) does the same steps inline. A `:sym<…>`
+/// candidate gets no extra trailing `<.ws>` there either: like any `rule`, it
+/// ends in `<.ws>` only when its body has whitespace before the closing `}`
+/// (mutsu#9094).
 pub(crate) fn finalize_anon_declarator_pattern(
     normalized: &str,
     kind: crate::regex_tree::RegexDeclKind,
