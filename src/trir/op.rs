@@ -107,7 +107,7 @@ pub(crate) enum TrOp {
     /// Drop the top of the int bank.
     PopI,
     /// Push the cached value of pre-resolved outer lexical `n`
-    /// ([`TrChunk::outers`]).
+    /// ([`TrChunk::outers`](super::TrChunk::outers)).
     LoadOuter(u16),
     /// Push the value a BAREWORD names — a type object (`Map`, `NFD`), a
     /// constant, a package. Resolved by name through the ordinary machinery:
@@ -231,7 +231,7 @@ pub(crate) enum TrOp {
 
     // ---- calls ----
     /// Call another TRIR routine, resolved at compile time. `site` indexes
-    /// [`TrChunk::calls`].
+    /// [`TrChunk::calls`](super::TrChunk::calls).
     CallTr(u32),
     /// Call a routine TRIR did not resolve — a cold error helper, a routine
     /// in another compunit, anything. The arguments are boxed and handed to
@@ -244,7 +244,7 @@ pub(crate) enum TrOp {
     CallGen(u32),
     /// Call a method on a boxed receiver through the ordinary method
     /// dispatch: pop the arguments and the receiver, push the boxed result.
-    /// `site` indexes [`TrChunk::methods`]. The method-call twin of
+    /// `site` indexes [`TrChunk::methods`](super::TrChunk::methods). The method-call twin of
     /// `CallGen` (ADR-0112 Step 2).
     MethodGen(u32),
 
