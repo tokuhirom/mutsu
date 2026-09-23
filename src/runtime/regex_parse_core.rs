@@ -2131,6 +2131,13 @@ impl Interpreter {
             // Set when a sigil alias (`$<a>=`) sits on a *negated* subrule
             // assertion (`<!foo>`, `<!before y>`); see the `'<'` arm below.
             let mut aliased_negated_subrule = false;
+            // Set when a sigil alias (`$<a>=`) sits on a *subrule call*
+            // (`<foo>`, `<.foo>`, `<alpha>`, `<?foo>`), as opposed to a char
+            // class or property (`<[a..z]>`, `<:L>`). Rakudo's `subrule_alias`
+            // renames the call itself, so a quantifier after it repeats a
+            // capturing call and the alias is a List of per-iteration Matches;
+            // see `wrap_named_quant` below.
+            let mut aliased_subrule_call = false;
             let atom = match c {
                 '.' => RegexAtom::Any,
                 '\\' => {
@@ -2660,6 +2667,12 @@ impl Interpreter {
                             } else {
                                 aliased_negated_subrule = true;
                             }
+                        }
+                        if pending_named_capture.is_some()
+                            && !pending_named_capture_is_angle_alias
+                            && is_subrule_lookahead_name(&chars.clone().take(2).collect::<String>())
+                        {
+                            aliased_subrule_call = true;
                         }
                         // Check for lookaround assertions: <?before ...>, <!before ...>,
                         // <?after ...>, <!after ...>
@@ -4495,8 +4508,14 @@ impl Interpreter {
             // (`[«a» «b» «c»]`), each preserving the group's inner captures. Only a
             // sigil alias on a non-grouping quantified atom (`$<x>=\w+`,
             // `$<x>=[\w]+`) wraps to capture the whole span as one Match.
+            //
+            // A sigil alias on a *subrule call* (`$<a>=<foo>+`, `$<a>=<.alpha>+`)
+            // is the per-iteration case too: Rakudo's `subrule_alias` renames the
+            // call (`a=foo`), so the quantifier repeats a capturing call and
+            // `$<a>` is a List with one Match per iteration, like `$<foo>`.
             let wrap_named_quant = primary_is_user_alias
                 && !user_alias_is_angle
+                && !aliased_subrule_call
                 && !matches!(atom, RegexAtom::CaptureGroup(_))
                 && hash_capture.is_none()
                 && token_separator.is_none()
@@ -4518,7 +4537,8 @@ impl Interpreter {
             // that presence is what distinguishes them from a raw `<[a..z]>`.
             let force_list_capture = user_alias_is_array
                 && (matches!(atom, RegexAtom::CaptureGroup(_) | RegexAtom::Named(_))
-                    || secondary_named.is_some());
+                    || secondary_named.is_some()
+                    || aliased_subrule_call);
             if wrap_named_quant {
                 let inner = RegexToken {
                     atom,
