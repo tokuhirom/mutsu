@@ -21,5 +21,5 @@ codepoint-indexed; switching one op alone would make a scanner's bound
 disagree with its own indexing. The grapheme-vs-codepoint divergence from
 MoarVM is a family-wide question, independent of this cost fix.
 
-Pinned by `t/types/string/nqp-chars-scan-is-linear.t` (correctness plus a
+Pinned by `t/vm/nqp-chars-scan-is-linear.t` (correctness plus a
 4x-input time ratio).
