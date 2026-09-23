@@ -35,4 +35,4 @@ Pinned by `t/grammar/grammar-wrapped-token-dispatch.t`, which checks that the
 first wrap installed after a wrap-free parse still takes effect.
 
 Still open: mutsu runs a token's wrapper twice per match where Rakudo runs it
-once.
+once ([#9151](https://github.com/tokuhirom/mutsu/issues/9151)).

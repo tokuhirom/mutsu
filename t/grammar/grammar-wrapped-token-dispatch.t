@@ -26,7 +26,7 @@ Wrapped.^find_method('word').wrap(-> |c { @seen.push('word'); callsame });
 my $m = Wrapped.parse('ab cd ef');
 ok $m, 'parse succeeds through the wrapped token';
 is $m<word>.elems, 3, 'wrapped token still produces its captures';
-# TODO: Rakudo runs the wrapper exactly once per word (3); mutsu currently
+# TODO(#9151): Rakudo runs the wrapper exactly once per word (3); mutsu currently
 # dispatches it twice per word, so only check that it ran at all.
 ok @seen.elems >= 3, 'wrapper ran for every word';
 
