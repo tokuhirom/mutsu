@@ -368,7 +368,7 @@ impl Interpreter {
                     let want = self.ipop();
                     let from = self.ipop();
                     let src = self.opop();
-                    let v = self.trir_substr(&src, from, want);
+                    let v = self.trir_substr(&src, from, want)?;
                     self.trir.os.push(v);
                 }
                 TrOp::EqAtS => {

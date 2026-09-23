@@ -83,12 +83,10 @@ pub(super) fn dispatch(
             target.to_string_value().trim_end().to_string(),
         )))),
         // Cost: O(n), n = chars of the invocant.
-        "flip" => {
-            let s = target.to_string_value();
-            use unicode_normalization::UnicodeNormalization;
-            let reversed: String = s.graphemes(true).rev().collect::<String>().nfc().collect();
-            Some(Some(Ok(Value::str(reversed))))
-        }
+        "flip" => Some(Some(Ok(crate::builtins::grapheme_index::with_str(
+            target,
+            crate::builtins::str_prim::flip,
+        )))),
         "so" => {
             // Calling .so on a Failure marks it as handled
             if let ValueView::Instance { class_name, .. } = target.view()

@@ -607,7 +607,6 @@ mod compunit_scope;
 mod constraint_meta;
 mod container_element_proxy;
 mod ctor_phase_plan;
-mod nqp_char_cache;
 pub(crate) mod nqp_op_ids;
 pub(crate) mod nqp_ops;
 mod nqp_ops_builtin;

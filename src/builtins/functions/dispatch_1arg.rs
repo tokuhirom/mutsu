@@ -266,9 +266,7 @@ pub(crate) fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Val
         }
         // Cost: O(1) amortized for a cached `Str` (index built once in O(n) and
         // cached per payload, see `grapheme_index`); O(n) otherwise.
-        "chars" => Some(Ok(Value::int(
-            crate::builtins::grapheme_index::with_str_index(arg, |_, idx| idx.len()) as i64,
-        ))),
+        "chars" => Some(Ok(Value::int(crate::builtins::str_prim::chars(arg) as i64))),
         "chr" => {
             let (code, display) = match arg.view() {
                 ValueView::Int(i) => (i, format!("{}", i)),

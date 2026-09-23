@@ -308,6 +308,15 @@ jobs:
         # matching cannot make the ratchet silently report 0.
         run: make check-name-scans
 
+      - name: No private copy of a Str primitive
+        # A ban (ADR-0117): the nqp:: op tables, the VM's nqp path and TRIR's
+        # runtime must call src/builtins/str_prim/, the same routine the
+        # matching Str method uses, instead of their own `.chars()` /
+        # `to_lowercase()` / `.nfc()` / `Vec<char>` memo. Three independent
+        # copies (Str methods, nqp ops, TRIR ops) had drifted apart on
+        # grapheme vs codepoint positions. Self-tests its patterns first.
+        run: make check-str-prims
+
       - name: Bench allocation-count extractor still resolves every allocator
         # The deterministic bench series reads its allocation counts out of
         # callgrind's own output (#8959), and that parse fails by UNDERCOUNTING

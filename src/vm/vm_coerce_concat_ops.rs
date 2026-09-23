@@ -1,7 +1,6 @@
 //! Coercion, slip, boolean, string concatenation, and Buf-value ops.
 use super::*;
 use std::sync::Arc;
-use unicode_normalization::UnicodeNormalization;
 
 impl Interpreter {
     pub(super) fn exec_decont_op(&mut self) {
@@ -541,24 +540,12 @@ impl Interpreter {
             } else {
                 crate::runtime::utils::coerce_to_str(&right)
             };
-            let concatenated = format!("{}{}", left_str, right_str);
-            if concatenated.is_ascii() {
-                return Value::str(concatenated);
-            }
-            let normalized: String = concatenated.nfc().collect();
-            return Value::str(normalized);
+            return crate::builtins::str_prim::concat(&left_str, &right_str);
         }
-        let concatenated = format!(
-            "{}{}",
-            crate::runtime::utils::coerce_to_str(&left),
-            crate::runtime::utils::coerce_to_str(&right)
-        );
-        if concatenated.is_ascii() {
-            Value::str(concatenated)
-        } else {
-            let normalized: String = concatenated.nfc().collect();
-            Value::str(normalized)
-        }
+        crate::builtins::str_prim::concat(
+            &crate::runtime::utils::coerce_to_str(&left),
+            &crate::runtime::utils::coerce_to_str(&right),
+        )
     }
 
     pub fn is_buf_value(val: &Value) -> bool {

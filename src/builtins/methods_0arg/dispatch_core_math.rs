@@ -709,14 +709,9 @@ pub(super) fn dispatch(
         }
         // Cost: O(n), n = codepoints of the invocant.
         "NFC" | "NFD" | "NFKC" | "NFKD" => {
-            use unicode_normalization::UnicodeNormalization;
             let s = uni_or_str(target);
-            let normalized: String = match method {
-                "NFC" => s.nfc().collect(),
-                "NFD" => s.nfd().collect(),
-                "NFKC" => s.nfkc().collect(),
-                _ => s.nfkd().collect(),
-            };
+            let form = crate::builtins::str_prim::Normal::from_name(method)?;
+            let normalized = crate::builtins::str_prim::normalize(&s, form);
             Some(Some(Ok(Value::uni(method.to_string(), normalized))))
         }
         _ => None,

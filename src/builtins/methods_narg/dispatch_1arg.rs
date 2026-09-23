@@ -9,8 +9,7 @@ use super::buf::{
 };
 use super::flatten::{flatten_target, is_hammer_pair, parse_flat_depth};
 use super::fmt_contains::{
-    contains_value_recursive, fmt_joinable_target, fmt_single_or_pair, fmt_value_needs_coercion,
-    pair_key_value,
+    fmt_joinable_target, fmt_single_or_pair, fmt_value_needs_coercion, pair_key_value,
 };
 use super::indent::str_indent;
 use super::numeric::{
@@ -432,9 +431,18 @@ pub(crate) fn native_method_1arg(
             if let ValueView::Regex(..) = arg.view() {
                 return None;
             }
-            Some(Ok(crate::builtins::grapheme_index::with_str(target, |s| {
-                contains_value_recursive(s, arg)
-            })))
+            Some(Ok(crate::builtins::grapheme_index::with_str_index(
+                target,
+                |text, idx| {
+                    crate::builtins::str_prim::contains(
+                        text,
+                        idx,
+                        0,
+                        arg,
+                        crate::builtins::str_prim::Fold::Exact,
+                    )
+                },
+            )))
         }
         // starts-with / ends-with: the plain `.starts-with($needle)` form (a
         // single positional argument) is a pure prefix/suffix check on a Str
@@ -451,15 +459,13 @@ pub(crate) fn native_method_1arg(
                 ))));
             }
             let is_prefix = method == "starts-with";
-            let ok = crate::builtins::grapheme_index::with_str(target, |text| {
-                crate::builtins::grapheme_index::with_str(arg, |needle| {
-                    if is_prefix {
-                        text.starts_with(needle)
-                    } else {
-                        text.ends_with(needle)
-                    }
-                })
-            });
+            let needle = arg.to_string_value();
+            let ok = crate::builtins::str_prim::affix_matches(
+                target,
+                &needle,
+                is_prefix,
+                crate::builtins::str_prim::Fold::Exact,
+            );
             Some(Ok(Value::truth(ok)))
         }
         // Cost: O(n + m), n = chars of the invocant, m = chars of the mark source.
@@ -1180,13 +1186,8 @@ pub(crate) fn native_method_1arg(
             let needle = arg.to_string_value();
             Some(Ok(crate::builtins::grapheme_index::with_str_index(
                 target,
-                |s, idx| match crate::builtins::grapheme_index::rfind_graphemes(
-                    s,
-                    idx,
-                    s.len(),
-                    &needle,
-                ) {
-                    Some(pos) => Value::int(idx.grapheme_at(s, pos) as i64),
+                |s, idx| match crate::builtins::str_prim::rindex(s, idx, idx.len(), &needle) {
+                    Some(g) => Value::int(g as i64),
                     None => Value::NIL,
                 },
             )))

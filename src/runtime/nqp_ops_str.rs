@@ -3,11 +3,11 @@
 //! Third link in the pure-value chain (`nqp_ops` → `nqp_ops_process` →
 //! `nqp_ops_text` → here), split for the 500-line limit.
 //!
-//! Every string op is **codepoint-indexed**, not byte-indexed: nqp's `substr`,
-//! `index` and `chars` all count the same units, and nqp code mixes them
-//! freely (`nqp::substr($s, 0, nqp::index($s, $needle))`). Indexing by bytes
-//! would agree with rakudo on ASCII and diverge on the first accented
-//! character.
+//! Every string op is **grapheme-indexed**, as MoarVM's are, and is the
+//! same routine as the matching `Str` method (`builtins::str_prim`,
+//! ADR-0117): nqp's `substr`, `index` and `chars` all count the same units,
+//! and nqp code mixes them freely
+//! (`nqp::substr($s, 0, nqp::index($s, $needle))`).
 
 use super::*;
 
@@ -19,21 +19,6 @@ fn iarg(args: &[Value], i: usize) -> i64 {
     args.get(i).map(crate::runtime::to_int).unwrap_or(0)
 }
 
-/// The "mark" (combining diacritic) stripped from a single codepoint: its
-/// NFD decomposition's first non-combining part. `café`'s precomposed `é`
-/// folds to `e`; a codepoint with no decomposition folds to itself. This is
-/// a per-codepoint approximation, not a full grapheme fold, matching the
-/// codepoint-indexed contract `nqp::indexim`/`nqp::indexicim` need: a
-/// precomposed accented letter (the common case) stays 1:1 with the
-/// original string, so comparing codepoint-for-codepoint keeps the returned
-/// position aligned with `nqp::substr` on the same string.
-fn strip_mark_char(c: char) -> char {
-    use unicode_normalization::UnicodeNormalization;
-    c.nfd()
-        .find(|ch| !unicode_normalization::char::is_combining_mark(*ch))
-        .unwrap_or(c)
-}
-
 impl Interpreter {
     /// Try a string / hash `nqp::` op. `None` means "not an op this table
     /// knows"; the caller then raises the unsupported-op error.
@@ -42,119 +27,66 @@ impl Interpreter {
         op: &str,
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
+        use crate::builtins::str_prim::{self, Fold};
         Some(match op {
-            // nqp::substr($s, $from) / ($s, $from, $chars). A negative or
-            // past-the-end `$from` clamps rather than dying, and a `$chars`
-            // that runs past the end truncates — nqp's own behaviour, which
-            // `String::Utils`'s scanners rely on (they walk with an index that
-            // may reach `chars($s)`).
-            // Cost: O(k) cache hit, O(n) miss, k = chars returned, n = chars of $s.
-            // MoarVM: O(k) -- see #9129.
-            "substr" => {
-                // Memoized (see `nqp_char_cache`): a hand-rolled NQP scanner
-                // calls `nqp::substr($text, $pos, ...)` once per token over
-                // the SAME full `$text` (JSON::Fast's own parser is the case
-                // that surfaced this), so re-scanning it to a byte offset
-                // via `char_indices` on every call was O(n) work repeated
-                // O(n) times. Slicing the cached `Vec<char>` directly is
-                // O(want) instead.
-                let chars = super::nqp_char_cache::cached_chars(args, 0);
-                let total = chars.len();
-                let from = iarg(args, 1).max(0) as usize;
-                let from = from.min(total);
-                let want = if args.len() > 2 {
-                    let n = iarg(args, 2);
-                    if n < 0 { 0 } else { n as usize }
-                } else {
-                    total - from
-                };
-                let end = from.saturating_add(want).min(total);
-                Ok(Value::str(chars[from..end].iter().collect::<String>()))
-            }
-            // Cost: O(n1 + n2), n1, n2 = chars of the operands.
-            "concat" => Ok(Value::str(format!("{}{}", sarg(args, 0), sarg(args, 1)))),
+            // Every string op below is the SAME routine the matching `Str`
+            // method uses (`builtins::str_prim`, ADR-0117): positions are
+            // graphemes, as in MoarVM, never codepoints.
+            // nqp::substr($s, $from, $want?).
+            // Cost: O(k) amortized, k = graphemes returned.
+            "substr" => str_prim::nqp_substr(
+                args.first().unwrap_or(&Value::NIL),
+                iarg(args, 1),
+                (args.len() > 2).then(|| iarg(args, 2)),
+            ),
+            // Cost: O(n1 + n2), n1, n2 = chars of the operands. Rakudo: amortized O(1)
+            // (strands) -- see #9141.
+            "concat" => Ok(str_prim::concat(&sarg(args, 0), &sarg(args, 1))),
             // nqp::index / rindex return **-1** when the needle is absent,
             // where Raku's `index` returns Nil. nqp code branches on exactly
             // that, so the -1 is the contract, not a placeholder.
-            // Cost: O((n - from) * m) (+ O(n) on a char-cache miss), n = chars of
-            // haystack, m = chars of needle. MoarVM: O((n - from) * m) -- see #9129.
-            "index" | "rindex" => {
-                let needle = sarg(args, 1);
-                // The haystack is memoized (see `nqp_char_cache`): a
-                // hand-rolled NQP scanner calls `nqp::index($text, needle,
-                // $pos)` with the SAME full `$text` and an advancing `$pos`
-                // (JSON::Fast's own string-token scan is the case that
-                // surfaced this), so collecting it fresh on every call was
-                // O(n) work repeated O(n) times.
-                let chars = super::nqp_char_cache::cached_chars(args, 0);
-                let needle_chars: Vec<char> = needle.chars().collect();
-                let from = if args.len() > 2 {
-                    iarg(args, 2).max(0) as usize
-                } else if op == "index" {
-                    0
-                } else {
-                    chars.len()
+            // Cost: O((n - from) * m), n = graphemes of haystack, m = chars of needle.
+            "index" | "indexic" | "indexim" | "indexicim" => {
+                let fold = match op {
+                    "indexic" => Fold::Case,
+                    "indexim" => Fold::Mark,
+                    "indexicim" => Fold::CaseMark,
+                    _ => Fold::Exact,
                 };
-                let found = if needle_chars.is_empty() {
-                    Some(from.min(chars.len()))
-                } else if op == "index" {
-                    (from..=chars.len().saturating_sub(needle_chars.len()))
-                        .find(|&i| chars[i..i + needle_chars.len()] == needle_chars[..])
-                } else {
-                    let last = from.min(chars.len().saturating_sub(needle_chars.len()));
-                    (0..=last)
-                        .rev()
-                        .find(|&i| chars[i..i + needle_chars.len()] == needle_chars[..])
-                };
-                Ok(Value::int(found.map(|i| i as i64).unwrap_or(-1)))
+                Ok(Value::int(str_prim::nqp_index(
+                    args.first().unwrap_or(&Value::NIL),
+                    &sarg(args, 1),
+                    iarg(args, 2),
+                    fold,
+                )))
             }
-            // nqp::indexic (case-insensitive), nqp::indexim (mark/diacritic-
-            // insensitive), nqp::indexicim (both) — same -1-on-absent
-            // contract as `index` above. `has-word`'s own case/mark folding
-            // (`find-wordic`/`find-wordim`/`find-wordicim`) is what these
-            // exist for.
-            // Cost: O((n - from) * m) (+ O(n) on a char-cache miss), n = chars of
-            // haystack, m = chars of needle. MoarVM: O((n - from) * m) -- see #9129.
-            "indexic" | "indexim" | "indexicim" => {
-                let needle = sarg(args, 1);
-                let chars = super::nqp_char_cache::cached_chars(args, 0);
-                let needle_chars: Vec<char> = needle.chars().collect();
-                let from = if args.len() > 2 {
-                    iarg(args, 2).max(0) as usize
-                } else {
-                    0
-                };
-                let char_eq = |a: char, b: char| -> bool {
-                    match op {
-                        "indexic" => a.to_lowercase().eq(b.to_lowercase()),
-                        "indexicim" => strip_mark_char(a)
-                            .to_lowercase()
-                            .eq(strip_mark_char(b).to_lowercase()),
-                        _ => strip_mark_char(a) == strip_mark_char(b), // "indexim"
-                    }
-                };
-                let found = if needle_chars.is_empty() {
-                    Some(from.min(chars.len()))
-                } else if needle_chars.len() > chars.len() {
-                    None
-                } else {
-                    (from..=chars.len() - needle_chars.len()).find(|&i| {
-                        (0..needle_chars.len()).all(|k| char_eq(chars[i + k], needle_chars[k]))
-                    })
-                };
-                Ok(Value::int(found.map(|i| i as i64).unwrap_or(-1)))
-            }
+            // Cost: O((from - p) * m), p = the hit, m = chars of needle.
+            "rindex" => str_prim::nqp_rindex(
+                args.first().unwrap_or(&Value::NIL),
+                &sarg(args, 1),
+                (args.len() > 2).then(|| iarg(args, 2)),
+            )
+            .map(Value::int),
             // Cost: O(n), n = chars of $s.
-            "flip" => Ok(Value::str(sarg(args, 0).chars().rev().collect::<String>())),
+            "flip" => Ok(str_prim::flip(&sarg(args, 0))),
             // Cost: O(n), n = chars of $s.
-            "uc" => Ok(Value::str(sarg(args, 0).to_uppercase())),
+            "uc" => Ok(Value::str(crate::builtins::unicode::grapheme_uppercase(
+                &sarg(args, 0),
+            ))),
             // Cost: O(n), n = chars of $s.
-            "lc" => Ok(Value::str(sarg(args, 0).to_lowercase())),
-            // Cost: O(n * c), n = chars of $s, c = repeat count.
+            "lc" => Ok(Value::str(crate::builtins::unicode::grapheme_lowercase(
+                &sarg(args, 0),
+            ))),
+            // Cost: O(n * c), n = chars of $s, c = repeat count. Rakudo: O(1) for a flat
+            // operand (one repeat strand) -- see #9147.
             "x" => {
                 let n = iarg(args, 1);
-                let n = if n < 0 { 0 } else { n as usize };
-                Ok(Value::str(sarg(args, 0).repeat(n)))
+                if n < 0 {
+                    return Some(Err(RuntimeError::new(format!(
+                        "Repeat count ({n}) cannot be negative"
+                    ))));
+                }
+                str_prim::repeat(&sarg(args, 0), n as usize)
             }
 
             // -- hash primitives --

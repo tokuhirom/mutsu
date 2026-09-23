@@ -44,6 +44,7 @@ fn pure(op: NqpPure, args: &[Value]) -> Value {
 /// MoarVM's behavior, verified against `raku -e 'nqp::coerce_si(...)'`).
 fn parse_leading_int(s: &str) -> i64 {
     let trimmed = s.trim_start();
+    // Parsing ASCII digits, not indexing the string. str-prim: allow
     let mut chars = trimmed.chars().peekable();
     let negative = match chars.peek() {
         Some('-') => {
@@ -87,7 +88,9 @@ fn nqp_radix(args: &[Value]) -> Result<Value, RuntimeError> {
     }
 
     let source = args.get(1).map(|v| v.to_string_value()).unwrap_or_default();
-    let chars: Vec<char> = source.chars().collect();
+    // One char per grapheme: `$pos` and the returned offset are grapheme
+    // positions, like every other nqp string op.
+    let chars = crate::builtins::str_prim::grapheme_base_chars(&source);
     let mut pos = iarg(args, 2).max(0) as usize;
     if pos >= chars.len() {
         return Ok(Value::array(vec![
@@ -663,12 +666,12 @@ impl Interpreter {
             }
 
             // -- string / aggregate queries --
+            // Graphemes, as `.chars` (the same routine, `str_prim::chars`).
             // Cost: O(1) amortized: a long `Str` answers from its cached
-            // index (built in O(n) on first use, `grapheme_index`); a short
-            // one is counted in place without copying.
+            // index (built in O(n) on first use, `grapheme_index`).
             "chars" => Ok(Value::int(
                 args.first()
-                    .map(|v| crate::builtins::grapheme_index::codepoint_count(v) as i64)
+                    .map(|v| crate::builtins::str_prim::chars(v) as i64)
                     .unwrap_or(0),
             )),
             // Cost: O(1).
@@ -699,6 +702,7 @@ impl Interpreter {
                 let buf = args.first().cloned().unwrap_or(Value::NIL);
                 let enc = args
                     .get(1)
+                    // An encoding NAME. str-prim: allow
                     .map(|v| v.to_string_value().to_lowercase())
                     .unwrap_or_else(|| "utf8".to_string());
                 match with_buf_bytes_of(op, &buf, |bytes| match enc.as_str() {

@@ -49,39 +49,13 @@ pub(crate) fn fmt_single_or_pair(fmt: &str, item: &Value) -> String {
     }
 }
 
-pub(crate) fn contains_value_recursive(hay: &str, needle: &Value) -> Value {
-    match needle.view() {
-        ValueView::Junction { kind, values } => {
-            let mapped = values
-                .iter()
-                .map(|v| contains_value_recursive(hay, v))
-                .collect::<Vec<_>>();
-            Value::junction(kind, mapped)
-        }
-        _ => Value::truth(hay.contains(&needle.to_string_value())),
-    }
-}
-
-fn contains_value_recursive_ci(hay_lc: &str, needle: &Value) -> Value {
-    match needle.view() {
-        ValueView::Junction { kind, values } => {
-            let mapped = values
-                .iter()
-                .map(|v| contains_value_recursive_ci(hay_lc, v))
-                .collect::<Vec<_>>();
-            Value::junction(kind, mapped)
-        }
-        _ => Value::truth(hay_lc.contains(&needle.to_string_value().to_lowercase())),
-    }
-}
-
 /// `.contains($needle, $pos?, :i/:ignorecase/:m/:ignoremark?)` on a `Str` receiver —
 /// the forms that carry a start position and/or the case-/mark-insensitive named
 /// markings. These never reach the arity-keyed `native_method_*arg` dispatch (a Pair
 /// or a 3rd arg pushes them past it), so they previously bounced to the interpreter.
-/// Mirrors `Interpreter::dispatch_contains` (runtime/methods_string.rs) exactly: named
-/// `i`/`ignorecase`/`m`/`ignoremark` all fold to a lowercase compare, and the start
-/// position is taken from the second positional (Int/Num/Str-parsed).
+/// Both it and `Interpreter::dispatch_contains` call `str_prim::contains`, which
+/// folds `:i`/`:m` the way `nqp::indexic`/`indexim` do; the start position is taken
+/// from the second positional (Int/Num/Str-parsed).
 ///
 /// Returns `None` (fall through to the interpreter) for: non-Str receivers, a Package
 /// (type-object) needle, a `BigInt` position (overflow → X::OutOfRange handled by the
@@ -89,7 +63,7 @@ fn contains_value_recursive_ci(hay_lc: &str, needle: &Value) -> Value {
 /// plain single-needle form (`contains($needle)`) keeps its `native_method_1arg` arm.
 // Cost: O(d * m) amortized, d = chars searched from `$pos`, m = chars of the
 // needle, once the invocant's grapheme index is cached (`$pos` is resolved
-// through it; the suffix is borrowed). :i lowercases the suffix, O(d) extra.
+// through it). :i/:m fold the searched graphemes, O(d) extra.
 pub(crate) fn native_contains_with_options(
     target: &Value,
     args: &[Value],
@@ -99,14 +73,12 @@ pub(crate) fn native_contains_with_options(
     }
     let mut positional: Vec<&Value> = Vec::new();
     let mut ignore_case = false;
+    let mut ignore_mark = false;
     for arg in args {
         if let ValueView::Pair(key, value) = arg.view() {
             match key.as_str() {
                 "i" | "ignorecase" => ignore_case = value.truthy(),
-                // `:ignoremark` needs NFD mark-stripping (the interpreter's
-                // strip logic); let dispatch_contains own it.
-                "m" | "ignoremark" if value.truthy() => return None,
-                "m" | "ignoremark" => {}
+                "m" | "ignoremark" => ignore_mark = value.truthy(),
                 // An unexpected named arg: let the interpreter own the semantics.
                 _ => return None,
             }
@@ -141,11 +113,16 @@ pub(crate) fn native_contains_with_options(
     // The position is a grapheme index, resolved through the cached index
     // rather than by re-collecting the suffix (#9140).
     crate::builtins::grapheme_index::with_str_index(target, |text, idx| {
-        let hay = crate::builtins::grapheme_index::suffix_from(text, idx, start as usize)?;
-        Some(Ok(if ignore_case {
-            contains_value_recursive_ci(&hay.to_lowercase(), needle)
-        } else {
-            contains_value_recursive(hay, needle)
-        }))
+        if start as usize > idx.len() {
+            return None;
+        }
+        let fold = crate::builtins::str_prim::Fold::new(ignore_case, ignore_mark);
+        Some(Ok(crate::builtins::str_prim::contains(
+            text,
+            idx,
+            start as usize,
+            needle,
+            fold,
+        )))
     })
 }

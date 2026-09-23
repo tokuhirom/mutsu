@@ -47,10 +47,11 @@
 //!   stated), `e` (elements of the array / hash operand), `k` (elements or
 //!   chars produced / requested), `m` (needle / separator length).
 //! * Converting a `Str` operand with `to_string_value()` copies it, so it is
-//!   O(n); cloning a `Value` is a refcount bump, O(1). A `nqp_char_cache`
-//!   hit is O(1); a miss collects the string, O(n) — a cost written as
-//!   "amortized" relies on the hit, i.e. on consecutive calls passing the
-//!   SAME string.
+//!   O(n); cloning a `Value` is a refcount bump, O(1). The string ops share
+//!   the `Str` methods' routines (`builtins::str_prim`, ADR-0117) and so
+//!   resolve positions through the per-payload `grapheme_index` cache: a hit
+//!   is O(1) for a flat ASCII string and O(STRIDE) otherwise, a miss builds
+//!   the index in O(n) — "amortized" relies on the hit.
 //! * A `MoarVM: O(..)` suffix appears only where mutsu's bound is WORSE than
 //!   the one MoarVM gives the same op. Each such gap has a tracking issue,
 //!   so `grep -rn 'MoarVM: O(' src/` lists every known complexity deficit.

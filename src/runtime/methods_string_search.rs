@@ -1,27 +1,5 @@
 use super::*;
 
-/// Fold a string for `.contains` matching: `:ignoremark` strips combining marks
-/// (NFD, drop combining code points), `:ignorecase` lowercases. Applied to both
-/// the haystack and each needle so the comparison is symmetric.
-fn fold_for_contains(s: &str, ignore_case: bool, ignore_mark: bool) -> std::borrow::Cow<'_, str> {
-    use std::borrow::Cow;
-    use unicode_normalization::UnicodeNormalization;
-    let stripped: Cow<'_, str> = if ignore_mark {
-        Cow::Owned(
-            s.nfd()
-                .filter(|c| !unicode_normalization::char::is_combining_mark(*c))
-                .collect(),
-        )
-    } else {
-        Cow::Borrowed(s)
-    };
-    if ignore_case {
-        Cow::Owned(stripped.to_lowercase())
-    } else {
-        stripped
-    }
-}
-
 impl Interpreter {
     // Cost: O(d * m) amortized, d = chars searched from `$pos`, m = chars of
     // the needle, once the invocant's grapheme index is cached (`$pos` is
@@ -80,8 +58,6 @@ impl Interpreter {
                 &format!("0..{}", len),
             ));
         }
-        let from = idx.byte_at(&text, start as usize);
-        let hay = &text[from..];
         // Cost (Regex needle): O(n) setup (a MatchTarget over the whole
         // subject) plus the search, n = chars of the invocant, even for a hit
         // at the front. Rakudo: O(1) setup -- see #9144.
@@ -91,6 +67,7 @@ impl Interpreter {
         // copied suffix, so a lookbehind or `<<` sees what precedes `$pos` and
         // `^` stays anchored at the start of the string.
         if let ValueView::Regex(..) = needle.view() {
+            let from = idx.byte_at(&text, start as usize);
             let target = crate::runtime::MatchTarget::new(&text);
             let min_pos = text[..from].chars().count();
             let found = self
@@ -98,33 +75,13 @@ impl Interpreter {
                 .is_some();
             return Ok(Value::truth(found));
         }
-        // `:ignorecase`/`:ignoremark` fold the haystack once here; each needle is
-        // folded the same way inside contains_value.
-        let folded_hay = fold_for_contains(hay, ignore_case, ignore_mark);
-        Ok(Self::contains_value(
-            &folded_hay,
+        Ok(crate::builtins::str_prim::contains(
+            &text,
+            &idx,
+            start as usize,
             &needle,
-            ignore_case,
-            ignore_mark,
+            crate::builtins::str_prim::Fold::new(ignore_case, ignore_mark),
         ))
-    }
-
-    fn contains_value(hay: &str, needle: &Value, ignore_case: bool, ignore_mark: bool) -> Value {
-        match needle.view() {
-            ValueView::Junction { kind, values } => {
-                let mapped = values
-                    .iter()
-                    .map(|v| Self::contains_value(hay, v, ignore_case, ignore_mark))
-                    .collect::<Vec<_>>();
-                Value::junction(kind, mapped)
-            }
-            _ => {
-                let raw = needle.to_string_value();
-                let needle = fold_for_contains(&raw, ignore_case, ignore_mark);
-                let ok = hay.contains(needle.as_ref() as &str);
-                Value::truth(ok)
-            }
-        }
     }
 
     pub(super) fn dispatch_starts_with(
@@ -143,9 +100,7 @@ impl Interpreter {
         self.dispatch_prefix_suffix_check(target, args, false)
     }
 
-    // Cost: O(m), m = chars of the needle (the payload is borrowed); :i/:m
-    // fold the whole invocant, O(n + m), n = chars of the invocant.
-    // Rakudo: O(m) -- see #9147.
+    // Cost: O(m) amortized, m = chars of the needle (`str_prim::affix_matches`).
     pub(super) fn dispatch_prefix_suffix_check(
         &self,
         target: Value,
@@ -183,60 +138,11 @@ impl Interpreter {
             .first()
             .map(|v| v.to_string_value())
             .unwrap_or_default();
-        crate::builtins::grapheme_index::with_str(&target, |text| {
-            Ok(Value::truth(self.prefix_suffix_matches(
-                text,
-                &needle,
-                is_prefix,
-                ignore_case,
-                ignore_mark,
-            )))
-        })
-    }
-
-    fn prefix_suffix_matches(
-        &self,
-        text: &str,
-        needle: &str,
-        is_prefix: bool,
-        ignore_case: bool,
-        ignore_mark: bool,
-    ) -> bool {
-        match (ignore_case, ignore_mark) {
-            (false, false) => {
-                if is_prefix {
-                    text.starts_with(needle)
-                } else {
-                    text.ends_with(needle)
-                }
-            }
-            (true, false) => {
-                let t = text.to_lowercase();
-                let n = needle.to_lowercase();
-                if is_prefix {
-                    t.starts_with(n.as_str())
-                } else {
-                    t.ends_with(n.as_str())
-                }
-            }
-            (false, true) => {
-                let t = self.strip_marks(text);
-                let n = self.strip_marks(needle);
-                if is_prefix {
-                    t.starts_with(n.as_str())
-                } else {
-                    t.ends_with(n.as_str())
-                }
-            }
-            (true, true) => {
-                let t = self.strip_marks(text).to_lowercase();
-                let n = self.strip_marks(needle).to_lowercase();
-                if is_prefix {
-                    t.starts_with(n.as_str())
-                } else {
-                    t.ends_with(n.as_str())
-                }
-            }
-        }
+        Ok(Value::truth(crate::builtins::str_prim::affix_matches(
+            &target,
+            &needle,
+            is_prefix,
+            crate::builtins::str_prim::Fold::new(ignore_case, ignore_mark),
+        )))
     }
 }

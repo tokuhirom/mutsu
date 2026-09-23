@@ -57,7 +57,7 @@ pub(super) fn dispatch(
                 return Some(Some(Err(err)));
             }
             Some(Some(Ok(Value::int(
-                crate::builtins::grapheme_index::with_str_index(target, |_, idx| idx.len()) as i64,
+                crate::builtins::str_prim::chars(target) as i64,
             ))))
         }
         // Cost: O(1) (borrows the payload).
