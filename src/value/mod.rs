@@ -1403,9 +1403,25 @@ impl SubData {
         self.param_name_syms_cache.get_or_init(|| {
             let params: Vec<Symbol> = self.params.iter().map(|p| Symbol::intern(p)).collect();
             let mut call_local: rustc_hash::FxHashSet<Symbol> = params.iter().copied().collect();
+            for param in self.params.iter() {
+                if let Some(bare) = param.strip_prefix('^') {
+                    // Placeholder parameters publish a twigil-less alias in
+                    // the environment (`$^a` also binds `$a`).  That alias is
+                    // still call-local: the closure writeback must not treat
+                    // it as a mutation of a same-named lexical in its caller.
+                    call_local.insert(Symbol::intern(bare));
+                } else if let Some(bare) = param.strip_prefix("&^") {
+                    call_local.insert(Symbol::intern(&format!("&{bare}")));
+                }
+            }
             for pd in self.param_defs.iter() {
                 if !pd.name.is_empty() {
                     call_local.insert(Symbol::intern(&pd.name));
+                    if let Some(bare) = pd.name.strip_prefix('^') {
+                        call_local.insert(Symbol::intern(bare));
+                    } else if let Some(bare) = pd.name.strip_prefix("&^") {
+                        call_local.insert(Symbol::intern(&format!("&{bare}")));
+                    }
                 }
                 collect_sub_signature_syms(&pd.sub_signature, &mut call_local);
             }

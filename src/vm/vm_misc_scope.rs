@@ -398,6 +398,8 @@ impl Interpreter {
     /// Run `[ip+1..body_end)` with the routine registry saved and restored, so a
     /// `sub` declared inside stops being callable when the range ends. See
     /// `OpCode::RoutineScope`.
+    // Cost: O(R) per execution plus the body, R = routine-registry entries (our-scoped
+    // subs, tokens, import aliases) snapshotted and diffed. Rakudo: O(1) -- see #9170.
     pub(super) fn exec_routine_scope_op(
         &mut self,
         code: &CompiledCode,
@@ -436,6 +438,10 @@ impl Interpreter {
         Ok(())
     }
 
+    // Cost: O(b + v + L + R) per execution plus the body, b = ops in the block (scanned
+    // for declarations/topic binders on every entry), v = env entries (the exit merge
+    // walks the whole env), L = frame locals, R = routine-registry entries (snapshot +
+    // restore). Rakudo: O(1) -- see #9170.
     pub(super) fn exec_block_scope_op(
         &mut self,
         code: &CompiledCode,

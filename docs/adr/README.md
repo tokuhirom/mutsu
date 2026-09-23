@@ -139,3 +139,4 @@ The role of an ADR is to preserve the *context of the judgment* — something th
 | [0112](0112-trir-completion-plan-for-beating-rakudo.md) | Finishing ADR-0110 for the JSON::Fast goal — whole-unit linkage, the string path in TRIR, typed container ops, then native lowering with inlining | Accepted (Step 1 landed; Steps 2-4 open) |
 | [0113](0113-frame-lexical-inner-subs.md) | A call-only `my sub` in a routine body is a frame lexical: its declaration registers nothing and its call sites are resolved at compile time | Accepted (slice 1 implemented) |
 | [0114](0114-routine-nested-sub-free-var-aliases.md) | A sub declared in a routine reads its free variables through per-activation aliases bound by its declaration | Accepted (implemented) |
+| [0115](0115-core-type-names-in-nqp-operands-fold-at-parse-time.md) | A CORE type name used as an `nqp::` operand folds to its type object at parse time, unless the compunit binds the name | Accepted (implemented) |

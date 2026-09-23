@@ -235,8 +235,8 @@ pub(crate) fn native_function_2arg(
                 _ => Some(Ok(Value::NIL)),
             }
         }
-        // Cost: O(n + m), n = chars of the string, m = chars of the needle (copy,
-        // search, char-offset conversion). Rakudo: O(p + m), p = match position -- see #9140.
+        // Cost: O(p + m) amortized, p = match position, m = chars of the needle;
+        // the byte offset is converted through the cached grapheme index.
         "index" => {
             // Skip native path for junctions — fall through to interpreter for auto-threading
             if matches!(arg1.view(), ValueView::Junction { .. })
@@ -249,45 +249,48 @@ pub(crate) fn native_function_2arg(
             if matches!(arg2.view(), ValueView::Array(..)) {
                 return None;
             }
-            let s = arg1.to_string_value();
             let needle = arg2.to_string_value();
-            Some(Ok(match s.find(&needle) {
-                Some(pos) => {
-                    Value::int(crate::builtins::string_pos::grapheme_offset(&s, pos) as i64)
-                }
-                None => Value::NIL,
-            }))
+            Some(Ok(crate::builtins::grapheme_index::with_str_index(
+                arg1,
+                |s, idx| match crate::builtins::grapheme_index::find_graphemes(s, idx, 0, &needle) {
+                    Some(pos) => Value::int(idx.grapheme_at(s, pos) as i64),
+                    None => Value::NIL,
+                },
+            )))
         }
         "indices" => {
             // Fall through to runtime -- handles named params, overlap, etc.
             None
         }
-        // Cost: O(n + m), n = chars of the string, m = chars of the needle (copy,
-        // reverse search, char-offset conversion of the prefix). Rakudo: O(n - p + m),
-        // p = match position -- see #9140.
+        // Cost: O(n - p + m) amortized, p = match position, m = chars of the
+        // needle; the byte offset is converted through the cached grapheme index.
         "rindex" => {
             // Fall through to runtime for arrays (list of needles)
             if matches!(arg2.view(), ValueView::Array(..)) {
                 return None;
             }
-            let s = arg1.to_string_value();
             let needle = arg2.to_string_value();
-            Some(Ok(match s.rfind(&needle) {
-                Some(pos) => {
-                    Value::int(crate::builtins::string_pos::grapheme_offset(&s, pos) as i64)
-                }
-                None => Value::NIL,
-            }))
+            Some(Ok(crate::builtins::grapheme_index::with_str_index(
+                arg1,
+                |s, idx| match crate::builtins::grapheme_index::rfind_graphemes(
+                    s,
+                    idx,
+                    s.len(),
+                    &needle,
+                ) {
+                    Some(pos) => Value::int(idx.grapheme_at(s, pos) as i64),
+                    None => Value::NIL,
+                },
+            )))
         }
-        // Cost: O(n), n = chars of the string (see `native_substr_slice`).
-        // Rakudo: O(k), k = chars returned -- see #9140.
+        // Cost: O(k) amortized, k = chars returned (see `native_substr_slice`).
         "substr" => {
             if matches!(arg1.view(), ValueView::Junction { .. })
                 || matches!(arg2.view(), ValueView::Junction { .. })
             {
                 return None;
             }
-            crate::builtins::substr::native_substr_slice(&arg1.to_string_value(), arg2, None)
+            crate::builtins::substr::native_substr_slice(arg1, arg2, None)
         }
         "samemark" => {
             let target = arg1.to_string_value();

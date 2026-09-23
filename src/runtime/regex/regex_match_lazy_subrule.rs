@@ -70,6 +70,9 @@ impl Interpreter {
         if !self.registry().grammar_custom_how.is_empty() {
             return decline(StreamDecline::CustomHow);
         }
+        if self.has_any_wrap_chains() {
+            return decline(StreamDecline::MethodWrapInstalled);
+        }
         // Memoized per (package, atom text), and asked FIRST: the rule resolves
         // to exactly one plain argument-less candidate AND the call graph proves
         // it cannot reach a call to its own name. A call that fails this costs

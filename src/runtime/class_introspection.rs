@@ -321,6 +321,10 @@ impl Interpreter {
     /// such as `Match` it is not in the class table and falls back to a
     /// `::`-tail scan of every registered class, which cost ~115k
     /// instructions per call and 44% of `bench-regex-capture`.
+    // Cost: O(d + r), d = MRO depth, r = registered roles; the O(d^2)
+    // grammar-ancestry walk runs only when a role on the MRO declares the
+    // method. Runs on every `CallMethod` to an Instance/Package.
+    // Rakudo: O(1) (method cache) -- see #9172.
     pub(crate) fn grammar_has_user_method(&mut self, name: &str, method_name: &str) -> bool {
         if self.has_user_method(name, method_name) {
             return true;

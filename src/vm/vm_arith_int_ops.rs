@@ -559,6 +559,9 @@ impl Interpreter {
         Ok(())
     }
 
+    // Cost: O(k * s), k = repeat count (capped at 4096, or 256 for a callable,
+    // above 10**6 or for `xx *`), s = Slip width: every element is built eagerly
+    // even when only a prefix is read. Rakudo: O(1) until consumed -- see #9159.
     pub(super) fn exec_list_repeat_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();

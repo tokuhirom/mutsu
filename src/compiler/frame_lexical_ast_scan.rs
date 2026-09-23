@@ -88,7 +88,12 @@ impl AstScan {
                     && let Some((key, inner)) = map.iter().next()
                     && key.starts_with(|c: char| c.is_ascii_uppercase())
                 {
-                    if REJECT_ALL_VARIANTS.contains(&key.as_str()) {
+                    // `Package` names the package DECLARATION statement. A
+                    // literal type object (`Literal(Package(..))`, what
+                    // ADR-0115 folds `nqp::create(Uni)`'s operand to) is
+                    // serialized under the same key, and is only data.
+                    let literal_type_object = key == "Package" && variant == Some("Literal");
+                    if REJECT_ALL_VARIANTS.contains(&key.as_str()) && !literal_type_object {
                         self.reject_all = true;
                         return;
                     }

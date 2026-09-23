@@ -14,8 +14,9 @@ impl Interpreter {
         method_args: Vec<Value>,
         value: Value,
     ) -> Result<Value, RuntimeError> {
+        // Positions and lengths count graphemes, like `.substr`.
         let s = target.to_string_value();
-        let chars: Vec<char> = s.chars().collect();
+        let chars = crate::builtins::string_pos::grapheme_units(&s);
         let str_len = chars.len();
 
         // `substr-rw`'s own arguments are plain offsets, not containers. The
@@ -50,8 +51,8 @@ impl Interpreter {
         let replacement = value.to_string_value();
 
         // Build new string: prefix + replacement + suffix
-        let prefix: String = chars[..start].iter().collect();
-        let suffix: String = chars[end..].iter().collect();
+        let prefix: String = chars[..start].concat();
+        let suffix: String = chars[end..].concat();
         let new_str = format!("{}{}{}", prefix, replacement, suffix);
 
         let result = Value::str(new_str);

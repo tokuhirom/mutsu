@@ -261,3 +261,11 @@ the whole run (callgrind, 100 records), spent resolving the same core type
 names (`List`, `Array`, `IterationBuffer`, `Map`, `Hash`, `Uni`, `NFD`) through
 the untyped path's full bareword resolution. A cache for it needs a key that
 covers everything that resolution reads, which is the next slice (#9122).
+
+### Step 3 — third slice landed 2026-09-23 (CORE type names fold at parse time)
+
+The 10% `LoadBareWord` cost is gone by [ADR-0115](0115-core-type-names-in-nqp-operands-fold-at-parse-time.md):
+a CORE type name used as an `nqp::` operand is a type-object literal when the compunit binds
+the name nowhere. 727-record decode ~0.17 s → ~0.146 s; `{}` ~5.0 → ~3.6 µs, escaped string
+~12.5 → ~10.0 µs. `[]` (~15 µs) is still well above the 5 µs gate, and is what the next slice
+looks at.

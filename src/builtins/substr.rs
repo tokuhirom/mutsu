@@ -13,7 +13,7 @@
 //! — stays in the interpreter's `dispatch_substr`. This helper returns `None`
 //! for all of those so the caller defers, exactly as the four copies did.
 
-use crate::builtins::string_pos::grapheme_units;
+use crate::builtins::grapheme_index::with_str_index;
 use crate::value::{RuntimeError, Value, ValueView};
 
 /// Pure `substr` slice for a non-negative integer `start` and optional
@@ -21,12 +21,11 @@ use crate::value::{RuntimeError, Value, ValueView};
 /// `start`/`len` is negative or non-`Int`, or when `start` is past the end (the
 /// interpreter then returns a `Failure`).
 ///
-/// Cost: O(n), n = chars of `text`: `grapheme_units` builds a `Vec` of every
-/// grapheme (one slice per byte even on flat ASCII) before the O(k) slice is
-/// copied out, and every caller has already copied the invocant with
-/// `to_string_value`. Rakudo: O(k), k = chars returned -- see #9140.
+/// Cost: O(k) amortized, k = chars returned: the invocant is borrowed and the
+/// start is resolved through its cached grapheme index (built in O(n) on first
+/// use, `grapheme_index`).
 pub(crate) fn native_substr_slice(
-    text: &str,
+    target: &Value,
     start: &Value,
     len: Option<&Value>,
 ) -> Option<Result<Value, RuntimeError>> {
@@ -42,17 +41,12 @@ pub(crate) fn native_substr_slice(
         None => None,
     };
 
-    let chars = grapheme_units(text);
-    if start > chars.len() {
-        return None; // out-of-range: the interpreter returns a Failure
-    }
-
-    let slice: String = match len {
-        Some(l) => {
-            let end = (start + l).min(chars.len());
-            chars[start..end].concat()
+    // O(len) once the invocant's grapheme index is cached, not O(n) (#9140).
+    with_str_index(target, |text, idx| {
+        if start > idx.len() {
+            return None; // out-of-range: the interpreter returns a Failure
         }
-        None => chars[start..].concat(),
-    };
-    Some(Ok(Value::str(slice)))
+        let (b0, b1) = idx.byte_range(text, start, len.unwrap_or(usize::MAX));
+        Some(Ok(Value::str(text[b0..b1].to_string())))
+    })
 }

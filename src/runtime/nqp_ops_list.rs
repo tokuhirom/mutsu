@@ -49,10 +49,10 @@ pub(crate) fn nqp_backing_array(v: &Value) -> Option<Value> {
             {
                 return Some(items.clone());
             }
+            // One key into the shared cell, not a copy of the whole map
+            // committed back (`InstanceAttrs::insert`, as `value_buf` writes).
             let fresh = Value::real_array(Vec::new());
-            let mut updated = attributes.to_map();
-            updated.insert(ITERATION_BUFFER_ITEMS.to_string(), fresh.clone());
-            attributes.commit_attrs(updated);
+            attributes.insert(ITERATION_BUFFER_ITEMS, fresh.clone());
             Some(fresh)
         }
         _ => None,
@@ -71,9 +71,7 @@ fn repoint_backing_array(storage: &Value, array: &Value) -> bool {
         && class_name == "IterationBuffer"
         && matches!(array.view(), ValueView::Array(..))
     {
-        let mut updated = attributes.to_map();
-        updated.insert(ITERATION_BUFFER_ITEMS.to_string(), array.clone());
-        attributes.commit_attrs(updated);
+        attributes.insert(ITERATION_BUFFER_ITEMS, array.clone());
         return true;
     }
     false

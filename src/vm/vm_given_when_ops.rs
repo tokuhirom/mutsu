@@ -287,6 +287,8 @@ impl Interpreter {
         Ok(())
     }
 
+    // Cost: O(L) plus the body, L = frame locals (`find_local_slot("_")` by-name scan).
+    // Rakudo: O(1) -- see #9171.
     pub(super) fn exec_do_given_expr_op(
         &mut self,
         code: &CompiledCode,

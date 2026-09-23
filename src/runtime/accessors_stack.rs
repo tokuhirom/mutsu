@@ -253,9 +253,13 @@ impl Interpreter {
     ) {
         let invocation_id = self.take_invocation_id();
         let lexical_package = self.lexical_package_for_frame(def_file);
-        let name = match name.as_str().rsplit_once("::") {
-            Some((_, short)) => Symbol::intern(short),
-            None => name,
+        // Decided once per symbol (`src/qualified.rs`): this runs on every
+        // routine call, and the `rsplit_once("::")` it replaces built a
+        // `StrSearcher` each time, qualified or not.
+        let name = if crate::qualified::is_qualified(name) {
+            crate::qualified::unqualified_part(name)
+        } else {
+            name
         };
         let frame = super::RoutineFrame {
             package,

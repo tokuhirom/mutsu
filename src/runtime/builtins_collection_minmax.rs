@@ -159,7 +159,11 @@ impl Interpreter {
             (_, ValueView::Sub(_)) | (ValueView::Sub(_), _) => {
                 Value::generic_range(left, right, false, false)
             }
-            _ => Value::NIL,
+            // Other orderable endpoint types (notably Date) still form a
+            // generic Raku Range. Returning Nil here made `minmax` silently
+            // lose a valid result, and a subsequent assignment to a `Range:D`
+            // variable reported a misleading missing-initializer error.
+            _ => Value::generic_range(left, right, false, false),
         }
     }
 
