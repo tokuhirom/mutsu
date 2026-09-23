@@ -50,6 +50,9 @@ pub(crate) struct TrirCompiler<'a> {
     /// semantics, where the general binder would reject the same narrowing
     /// on a `my int $x = <arbitrary boxed>`.
     pub(super) nqp_sourced: bool,
+    /// Set while compiling an expression that is DIRECTLY an `nqp::` op's
+    /// operand, and consumed by the sigilless-parameter read it admits.
+    pub(super) nqp_operand: bool,
     /// The routine declares `--> Nil`, so every `return` discards its value.
     pub(super) returns_nil: bool,
     /// The routine declares a definite return value (`--> True`): the body
@@ -153,6 +156,7 @@ impl<'a> TrirCompiler<'a> {
             fns,
             why: None,
             nqp_sourced: false,
+            nqp_operand: false,
             returns_nil: return_type == Some("Nil") || definite_return.is_some(),
             definite_return,
             nqp_bound: HashSet::new(),

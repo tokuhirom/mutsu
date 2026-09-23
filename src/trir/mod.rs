@@ -400,6 +400,11 @@ pub(crate) struct TrParam {
     /// failed check declines the TRIR call, so the untyped path raises the
     /// error the program should see.
     pub(crate) check: Option<TrParamCheck>,
+    /// A sigilless parameter (`\codes`). It binds the caller's CONTAINER
+    /// when handed a variable, which a boxed slot holding a value cannot
+    /// stand in for, so every door declines such an argument and admits
+    /// only a computed value.
+    pub(crate) sigilless: bool,
 }
 
 /// A boxed parameter's nominal type check.

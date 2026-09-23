@@ -15,7 +15,7 @@
 //! methods that read their receiver's value and never rebind it are
 //! admitted — for those the two opcodes are the same call.
 
-use super::TrirCompiler;
+use super::{Binding, TrirCompiler};
 use crate::ast::Expr;
 use crate::trir::{TrKind, TrMethodCall, TrOp};
 
@@ -37,6 +37,21 @@ impl TrirCompiler<'_> {
         }
         if args.len() > u8::MAX as usize || args.iter().any(Self::is_named_or_spread) {
             self.note_decline(|| format!("method .{name} with a named or spread argument"));
+            return None;
+        }
+        // `$v.raku` renders the container's itemization (`$(1, 2)`), which
+        // the untyped binder adds to a `$` parameter and a TRIR slot does
+        // not carry. A native or a computed receiver has none to show.
+        if matches!(name, "raku" | "gist")
+            && let Some(Binding {
+                kind: TrKind::Obj, ..
+            }) = match target {
+                Expr::Var(n) => self.binding_of(n),
+                Expr::BareWord(n) => self.binding_of(&super::params::sigilless_key(n)),
+                _ => None,
+            }
+        {
+            self.note_decline(|| format!("method .{name} on a boxed variable"));
             return None;
         }
         let tk = self.compile_expr(target)?;

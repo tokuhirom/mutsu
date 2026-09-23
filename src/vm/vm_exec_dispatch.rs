@@ -209,7 +209,14 @@ impl Interpreter {
                     Some(r) => r?,
                     None => {
                         let site = code.trir_call_sites[*site_idx as usize].clone();
-                        self.exec_call_trir_fallback(&site, code)?
+                        match self.exec_call_trir_fallback_frame_lexical(
+                            code,
+                            &site,
+                            compiled_fns,
+                        )? {
+                            Some(v) => v,
+                            None => self.exec_call_trir_fallback(&site, code)?,
+                        }
                     }
                 };
                 self.stack.push(result);

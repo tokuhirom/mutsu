@@ -122,7 +122,7 @@ impl TrirCompiler<'_> {
             && args.len() == want.len()
         {
             for (a, k) in args.iter().zip(want) {
-                let got = self.compile_expr(a)?;
+                let got = self.compile_nqp_operand(a)?;
                 self.coerce(got, *k)?;
             }
             self.ops.extend_from_slice(emit);
@@ -148,7 +148,7 @@ impl TrirCompiler<'_> {
             return None;
         }
         for a in args {
-            let got = self.compile_expr(a)?;
+            let got = self.compile_nqp_operand(a)?;
             self.coerce(got, TrKind::Obj)?;
         }
         self.ops.push(TrOp::NqpOpGen {
@@ -157,6 +157,15 @@ impl TrirCompiler<'_> {
         });
         self.nqp_sourced = true;
         Some(TrKind::Obj)
+    }
+
+    /// Compile one operand of an `nqp::` op. A sigilless parameter is
+    /// admitted exactly here (see the `BareWord` arm of `compile_expr`).
+    fn compile_nqp_operand(&mut self, a: &Expr) -> Option<TrKind> {
+        self.nqp_operand = matches!(a, Expr::BareWord(_));
+        let got = self.compile_expr(a);
+        self.nqp_operand = false;
+        got
     }
 
     /// The operand-direct form of a two-operand string/list read whose first

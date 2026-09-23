@@ -16,7 +16,12 @@ Each of these constructs made a routine decline, and each is now admitted:
   already compiled.
 - **A sigilless parameter (`Uni:D \codes`).** It is read as a bareword term,
   so it is kept under its own key: a bareword `pos` next to a `$pos` parameter
-  is still a call to the routine `pos`.
+  is still a call to the routine `pos`. A sigilless parameter binds the
+  caller's *container* when it is handed a variable, and a slot holding a
+  value cannot stand in for that. So it is admitted only where its value is
+  all that is used, as a direct `nqp::` operand, and every door declines a
+  variable argument to it. `sub relay(\c) { leaf(c) }` stays untyped, and its
+  callee's write still reaches the caller.
 - **A nominal parameter type.** `Uni:D` is checked at bind time with the
   general binder's own type test. A failed check declines the call, and the
   untyped path then raises the error the program should see. A statically
@@ -42,6 +47,15 @@ Each of these constructs made a routine decline, and each is now admitted:
   statements, compiled in a nested scope.
 - **`--> True` / `--> False`.** The body runs for its effects, and the routine
   answers the constant.
+
+Admitting more routines exposed an older gap. A call from an untyped body to
+a TRIR routine compiles to a statically linked `CallTrir`. When the TRIR bind
+declines (for instance on a failed type check), the call falls back to
+by-name dispatch. An ADR-0113 frame-lexical inner sub is never registered
+under its name, so that fallback died with "Unknown function" instead of the
+type-check error. The fallback now goes through the frame-lexical table
+first. `scan_chunk` counts a `CallTrir` site as a bare call, so the caller's
+chunk carries that table.
 
 Differential testing found one real divergence, and it was already present
 before this change: storing a boxed `nqp::` result into a native `int`

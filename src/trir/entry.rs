@@ -223,7 +223,9 @@ impl Interpreter {
                 continue;
             }
             let idx = caller_slot as usize;
-            if idx >= self.locals.len() {
+            // Every argument here is a caller variable, which a sigilless
+            // parameter would bind as a container.
+            if p.sigilless || idx >= self.locals.len() {
                 return None;
             }
             if let Some(cell) = self.trir_captured_cell(caller_code, idx) {
@@ -272,7 +274,16 @@ impl Interpreter {
                 rw_len += 1;
                 continue;
             }
-            let val = self.stack[args_base + i].unwrap_varref().clone();
+            let arg = &self.stack[args_base + i];
+            if p.sigilless
+                && matches!(
+                    arg.view(),
+                    ValueView::VarRef { .. } | ValueView::ContainerRef(_)
+                )
+            {
+                return None;
+            }
+            let val = arg.unwrap_varref().clone();
             self.bind_ro_param(frame, p, &val)?;
         }
         Some((rw, rw_len))
@@ -410,6 +421,27 @@ impl Interpreter {
         site: &crate::trir::TrCallSite,
         caller_code: &CompiledCode,
     ) -> Result<Value, RuntimeError> {
+        let args = self.trir_site_fallback_args(site, caller_code);
+        let name = site.name.resolve();
+        // Mirror `exec_call_func_op`'s save/restore. A statically linked
+        // site's arguments are all plain lexicals, never literals, so the
+        // mask this call publishes for multi-candidate selection is empty —
+        // but it must be published, or the callee's dispatch would read the
+        // CALLER's.
+        let saved = std::mem::replace(&mut self.literal_native_args, 0);
+        let result = self.call_function(&name, args);
+        self.literal_native_args = saved;
+        result
+    }
+
+    /// The arguments the untyped call site a `CallTrir` replaced would have
+    /// pushed: every plain lexical wrapped in a slotted `VarRef`, which is
+    /// what `WrapVarRef` does.
+    pub(crate) fn trir_site_fallback_args(
+        &self,
+        site: &crate::trir::TrCallSite,
+        caller_code: &CompiledCode,
+    ) -> Vec<Value> {
         let mut args = Vec::with_capacity(site.arg_slots.len());
         for &slot in &site.arg_slots {
             let value = self
@@ -424,16 +456,7 @@ impl Interpreter {
                 .unwrap_or_else(|| Symbol::intern(""));
             args.push(Value::varref_slotted(sym, value, None, Some(slot)));
         }
-        let name = site.name.resolve();
-        // Mirror `exec_call_func_op`'s save/restore. A statically linked
-        // site's arguments are all plain lexicals, never literals, so the
-        // mask this call publishes for multi-candidate selection is empty —
-        // but it must be published, or the callee's dispatch would read the
-        // CALLER's.
-        let saved = std::mem::replace(&mut self.literal_native_args, 0);
-        let result = self.call_function(&name, args);
-        self.literal_native_args = saved;
-        result
+        args
     }
 }
 

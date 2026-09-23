@@ -59,10 +59,21 @@ impl TrirCompiler<'_> {
                     // A no-paren zero-argument nqp term.
                     return self.compile_nqp_value_op(name, &[]);
                 }
-                // A sigilless parameter (`\codes`) is read as a bareword.
+                // A sigilless parameter (`\codes`) is read as a bareword. It
+                // may be bound to the caller's CONTAINER, which a slot holding
+                // its value can stand in for only where the value is all that
+                // is used: as an `nqp::` op's operand. Handed on to a routine
+                // (`leaf(c)`), the container itself would have to travel.
                 if let Some(Binding { slot, kind }) =
                     self.binding_of(&super::params::sigilless_key(name))
                 {
+                    if !std::mem::take(&mut self.nqp_operand) {
+                        let n = name.clone();
+                        self.note_decline(|| {
+                            format!("sigilless {n} used other than as an nqp:: operand")
+                        });
+                        return None;
+                    }
                     self.load(slot, kind);
                     return Some(kind);
                 }

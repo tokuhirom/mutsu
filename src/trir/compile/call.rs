@@ -216,7 +216,12 @@ impl TrirCompiler<'_> {
         // A `CallTr` binds by copying, with no type test; a callee whose
         // parameters carry a nominal check goes through `CallGen`, whose
         // run-time link binds through `bind_ro_param`.
-        if link.chunk.params.iter().any(|p| p.check.is_some()) {
+        if link
+            .chunk
+            .params
+            .iter()
+            .any(|p| p.check.is_some() || p.sigilless)
+        {
             return None;
         }
         (link.chunk.params.len() == arity).then_some(link)

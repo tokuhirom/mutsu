@@ -213,6 +213,7 @@ impl TrirCompiler<'_> {
                 is_rw,
                 type_name,
                 check,
+                sigilless: pd.sigilless,
             });
         }
         Some(())

@@ -182,6 +182,11 @@ All six routines are accepted, and `unjsonify-string`'s inner
   so a method that could rebind its receiver stays out
   (`src/trir/compile/method.rs`).
 
+A sigilless parameter is narrower than §2 suggested. It binds the caller's
+container when it is handed a variable, and a boxed slot holds a value, so it
+is admitted only as a direct `nqp::` operand, and every door declines a
+variable argument to it.
+
 Also admitted: a nominal boxed parameter type, checked at bind time by
 `type_matches_value`. A failed check declines the call. `CallTr` refuses such
 a callee, so the check always runs. Bare blocks in value position are admitted
