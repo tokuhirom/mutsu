@@ -206,6 +206,17 @@ impl Interpreter {
         if normalized_op == "o" {
             return Ok(self.compose_callables(left.clone(), right.clone()));
         }
+        // Set operators have native reduction implementations, but an imported
+        // module may provide a more specific overload (for example, a range
+        // union/intersection that must preserve ranges instead of expanding
+        // them into individual set elements). Give that candidate the same
+        // dispatch opportunity as the ordinary binary set-op opcodes.
+        if matches!(normalized_op, "(|)" | "∪" | "(&)" | "∩") {
+            let infix_name = format!("infix:<{normalized_op}>");
+            if let Some(v) = self.try_user_infix(&infix_name, left, right)? {
+                return Ok(v);
+            }
+        }
         match Interpreter::apply_reduction_op(normalized_op, left, right) {
             Ok(v) => Ok(v),
             Err(err) if err.message.starts_with("Unsupported reduction operator:") => {
@@ -383,6 +394,9 @@ impl Interpreter {
     /// Evaluate truthiness of a value, including dispatch to user-defined Bool methods.
     /// For Package (type objects) and Instance values, checks if the class defines
     /// a custom Bool method and calls it. Falls back to Value::truthy() otherwise.
+    /// Cost: O(1) for most values; a not-yet-run `.map`/`.grep` Seq is forced whole by
+    /// `reify_map_grep_seq`, O(e) callbacks, e = source elements, where Rakudo pulls a single
+    /// element. Rakudo: O(1) -- see #9158.
     pub(crate) fn eval_truthy(&mut self, val: &Value) -> bool {
         // A successful lazy Match already knows its truth value, and reading
         // it through `view()` would force the capture map. Plain regex

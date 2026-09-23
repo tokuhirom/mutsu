@@ -563,6 +563,7 @@ pub(super) fn dispatch(
                 // one the block the first had just freed
                 // (`[1,2].WHICH eq [3,4,5].WHICH` was True). See
                 // `crate::value::which_id`.
+                // Cost: O(1) (a per-container id, no element walk).
                 ValueView::Array(items, ..) => {
                     format!("Array|{}", items.which_id.get())
                 }
@@ -695,6 +696,7 @@ pub(super) fn dispatch(
             Some(Some(Ok(Value::int((hasher.finish() >> 1) as i64))))
         }
         // Cost: O(1) for a Str invocant (emptiness test).
+        // Cost: O(1) for an Array/List invocant (`truthy` tests emptiness only).
         "Bool" => {
             if matches!(target.view(), ValueView::Instance { .. })
                 && (target.does_check("Real") || target.does_check("Numeric"))
@@ -1258,6 +1260,7 @@ pub(super) fn dispatch(
                 // imaginary component is rejected; dropping that component
                 // here made `Complex.Numeric.Rat` silently discard it.
                 ValueView::Complex(_, _) => target.clone(),
+                // Cost: O(1) (`.Numeric` / `+@a` of an array is its element count).
                 ValueView::Array(items, ..) => Value::int(items.len() as i64),
                 ValueView::Hash(h) => Value::int(h.len() as i64),
                 ValueView::Instance {

@@ -427,6 +427,8 @@ pub(crate) fn build_hash_from_items(items: Vec<Value>) -> Result<Value, RuntimeE
 /// `.keys` can recover a non-`Str` key); a type object coerced to `""` returns
 /// `false`, matching Rakudo's plain-`Str` `""` key. Pair/Hash flattening and
 /// the "Odd number of elements" error are handled here regardless of the hook.
+/// Cost: O(e), e = items of the initializer list (plus pairs of any bare Hash
+/// item flattened in); one hash insert each. Backs `%h = @pairs` and `%(@a)`.
 pub(crate) fn build_hash_from_items_with_key_coercion<F>(
     items: Vec<Value>,
     mut encode_key: F,

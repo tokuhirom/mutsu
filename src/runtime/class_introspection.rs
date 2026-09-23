@@ -314,6 +314,10 @@ impl Interpreter {
     /// un-punned role composed onto the grammar. Those methods remain in the
     /// role registry rather than the class method table, but they override
     /// Grammar's native `parse`/`subparse`/`parsefile` entry points.
+    // Cost: O(d^2), d = parent-chain depth: `class_is_grammar` is evaluated even
+    // when `direct` already answered, and its walk tests a `Vec<String>` seen
+    // list per level. Runs on every `CallMethod` to an Instance/Package.
+    // Rakudo: O(1) (method cache) -- see #9172.
     pub(crate) fn grammar_has_user_method(&mut self, name: &str, method_name: &str) -> bool {
         let direct = self.has_user_method(name, method_name);
         let role = self.class_is_grammar(name)

@@ -99,6 +99,12 @@ impl Interpreter {
     /// eligible for single-element pull (arity-1, no full-binding signature and
     /// no grep adverbs handled by the caller). Returns `None` to fall back to
     /// the eager path.
+    ///
+    /// Cost: O(1) per call; the stage runs one callback per source element
+    /// pulled, so `(1..*).map(&f).head(k)` is O(k). A multi-arity callback
+    /// declines here, and on an infinite source the eager fallback then fails
+    /// (`(1..*).map(-> $a, $b { ... }).head(3)` dies "Not enough elements")
+    /// where Rakudo pulls O(1) per chunk -- see #9159.
     pub(crate) fn make_lazy_pipe(target: Value, func: Value, is_grep: bool) -> Option<Value> {
         // Only callbacks that consume one element per call can be pulled lazily.
         // A multi-arity block (`-> $a, $b { }`) or a slurpy param (`*@a`)

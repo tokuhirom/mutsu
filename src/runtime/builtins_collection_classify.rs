@@ -2,6 +2,11 @@ use super::*;
 use crate::value::ValueMap;
 
 impl Interpreter {
+    /// Cost: O(e * d) average, e = elements of the source, d = key path length
+    /// (1 for a plain classify; categories per element for `categorize`): one
+    /// mapper call and one amortized hash upsert per key per element, plus the
+    /// chars of each key's stringification. A lazy source throws before reaching
+    /// here.
     pub(super) fn builtin_classify(
         &mut self,
         name: &str,

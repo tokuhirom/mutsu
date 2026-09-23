@@ -5328,6 +5328,9 @@ impl Interpreter {
     /// Generic index assignment on a stack-computed target.
     /// Stack order: target (bottom), index, value (top).
     /// If the target hash has `__callframe_depth`, routes through set_caller_var.
+    // Cost: O(1) amortized for one index into an Array/Hash target, plus O(n) to
+    // stringify the key; O(e) into an `is Array` instance target, e = its elements
+    // (`__mutsu_array_storage` is copied per store). Rakudo: O(1) -- see #9157.
     pub(super) fn exec_index_assign_generic_op(
         &mut self,
         code: &CompiledCode,

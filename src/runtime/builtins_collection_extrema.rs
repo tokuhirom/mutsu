@@ -251,6 +251,8 @@ impl Interpreter {
         (adverb, positional)
     }
 
+    /// Cost: O(e) comparisons (or `:by` calls), e = elements of the flattened
+    /// arguments; O(1) on a Range.
     pub(super) fn builtin_min(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
         let (adverb, filtered_args) = Self::extract_extrema_adverbs(args);
         if let Some(r) = self.range_extrema_sub_form(&filtered_args, "min", adverb.as_deref()) {
@@ -323,6 +325,8 @@ impl Interpreter {
         self.extrema_from_values_by(&positional, false, by.as_ref())
     }
 
+    /// Cost: O(e) comparisons (or `:by` calls), e = elements of the flattened
+    /// arguments; O(1) on a Range.
     pub(super) fn builtin_max(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
         let (adverb, filtered_args) = Self::extract_extrema_adverbs(args);
         if let Some(r) = self.range_extrema_sub_form(&filtered_args, "max", adverb.as_deref()) {

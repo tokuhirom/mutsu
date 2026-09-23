@@ -1,19 +1,32 @@
 # Complexity annotations
 
-Some hot built-in families carry one comment per operation stating its
-per-call time complexity. The comment always has the same grep-able form:
+Every built-in method, routine and `nqp::` op implementation carries one
+comment stating its per-call time complexity (the project rule in
+`CLAUDE.md` "Conventions", adopted 2026-09-23). The comment always has the
+same grep-able form:
 
 ```text
 // Cost: O(n), n = chars of the invocant.
 // Cost: O(n), n = chars of the invocant. Rakudo: O(1) -- see #NNNN.
 ```
 
-Annotated families so far:
+**When the rule applies.** Adding a method arm, a native method, a runtime
+method handler, a builtin routine or an `nqp::` op, or changing what an
+existing one costs, requires the `// Cost:` line directly above it (or a
+`/// Cost:` line in its doc comment). If the new bound is worse than the
+reference implementation's, file a `todo:perf` issue and put its real
+number in the suffix; a literal `#NNNN` is never committed outside this
+document. Families not yet audited are annotated as their code is touched.
+
+Fully audited families so far (every operation annotated, deficits
+measured and filed):
 
 | family | where | reference suffix | measurement script |
 |---|---|---|---|
 | `nqp::` ops | `src/runtime/nqp_ops*.rs`, `src/runtime/nqp_pure.rs`, `src/compiler/nqp_forms.rs` | `MoarVM: O(..)` | `scripts/nqp-complexity-check.sh` |
 | `Str` methods | wherever each method's body lives (see the list in `scripts/str-complexity-check.sh`) | `Rakudo: O(..)` | `scripts/str-complexity-check.sh` |
+| `Array` / `List` / `Seq` operations | wherever each operation's body lives (see the list in `scripts/array-complexity-check.sh`) | `Rakudo: O(..)` | `scripts/array-complexity-check.sh` |
+| VM opcodes | one line per `OpCode` arm of `exec_one_dispatch` (`src/vm/vm_exec_dispatch.rs`), plus the handler where a deficit's root cause lives, plus the run loop (`src/vm/vm_run_loop.rs`) | `Rakudo: O(..)` | `scripts/vm-complexity-check.sh` |
 
 ## Rules
 

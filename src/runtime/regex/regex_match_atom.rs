@@ -310,14 +310,10 @@ impl Interpreter {
         // ε-bypass measurement below) and `CodeAssertion` keeps its existing
         // inline handling (ADR-0009), so both fall through to `LtmAtomMode::Normal`
         // here and are unaffected by this guard.
-        let wrapped_token = match atom {
-            RegexAtom::Named(name) => {
-                self.token_method_has_wrap_chain(pkg.as_str(), &name.spec().lookup_name)
-            }
-            RegexAtom::WsRule => self.token_method_has_wrap_chain(pkg.as_str(), "ws"),
-            _ => false,
-        };
-        if LTM_DECLARATIVE_MODE.with(std::cell::Cell::get) && !wrapped_token {
+        // A `.wrap`ped token is measured by its own body here, like any other
+        // subrule: the wrapper is user code and never runs during measurement
+        // (`token_method_wrap_chain`, #9151).
+        if LTM_DECLARATIVE_MODE.with(std::cell::Cell::get) {
             match ltm_atom_mode(atom) {
                 // A fate ends this path of the measurement: record where, and
                 // fail the path so the walk goes on with the others

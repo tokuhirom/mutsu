@@ -2,6 +2,10 @@ use super::*;
 use crate::value::AttrMap;
 
 impl Interpreter {
+    /// Cost: O(e + i), e = elements of the invocant, i = index of the first match:
+    /// the whole receiver is decomposed up front (a container cell per element for
+    /// a mutable array, a copied Vec otherwise), then i+1 matcher calls run, so an
+    /// early hit still pays O(e). Rakudo: O(i) -- see #9162.
     pub(in crate::runtime) fn dispatch_first(
         &mut self,
         target: Value,

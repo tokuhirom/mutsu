@@ -55,6 +55,9 @@ impl Interpreter {
         Self::op_associativity(callable)
     }
 
+    /// Cost: O(e) callable calls, e = elements (every running value is kept, so
+    /// the output is e values). A lazy source throws X::Cannot::Lazy before
+    /// reaching here (see `lazy_list_needs_forcing`).
     pub(super) fn eval_produce_over_items(
         &mut self,
         callable: Value,
@@ -171,6 +174,10 @@ impl Interpreter {
             .unwrap_or(false)
     }
 
+    /// Cost: O(e) callable calls, e = elements, plus whatever each step costs on
+    /// its growing accumulator: `.reduce(&[~])` copies the accumulator on every
+    /// concatenation, so it is O(e * t) = O(t^2 / m) in the result's chars t
+    /// (m = average element length). Rakudo: O(t) (rope concatenation) -- see #9161.
     pub(crate) fn reduce_items(
         &mut self,
         callable: Value,

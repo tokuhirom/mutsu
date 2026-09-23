@@ -224,7 +224,12 @@ pub(crate) fn scalar_var(input: &str) -> PResult<'_, Expr> {
         return Ok((input, Expr::Var("/".to_string())));
     }
     // Handle $=finish and other Pod variables ($=pod, $=data, etc.)
-    if let Some(after_eq) = input.strip_prefix('=') {
+    if let Some(after_eq) = input.strip_prefix('=')
+        && after_eq
+            .chars()
+            .next()
+            .is_some_and(is_raku_identifier_start)
+    {
         let (rest, name) = parse_ident_with_hyphens(after_eq)?;
         let full_name = format!("={}", name);
         return Ok((rest, Expr::Var(full_name)));

@@ -1345,6 +1345,9 @@ impl Interpreter {
                 map.contains_key(&key)
             }
             // List/Array ~~ List/Array: element-wise smartmatch with ** support
+            // Cost: O(e_l + e_r) to copy both sides out, then O(e) element smartmatches
+            // stopping at the first mismatch (no length short-circuit, same as Rakudo);
+            // each `**` in the pattern adds a backtracking factor of up to e_l.
             (_, _) if Self::is_list_like(right) => {
                 // Non-iterable LHS: return False (don't treat scalars as a list)
                 if !Self::is_iterable(left) {
@@ -2106,6 +2109,8 @@ impl Interpreter {
     /// Perform list smartmatch with ** (HyperWhatever) support.
     /// Each RHS element is smartmatched against the corresponding LHS element.
     /// ** matches 0 or more elements. Consecutive **s are collapsed.
+    /// Cost: O(e) element smartmatches without `**`; with k `**` wildcards the
+    /// backtracking search is O(e^k) worst case.
     fn list_smartmatch(&mut self, lhs: &[Value], rhs: &[Value]) -> bool {
         // Collapse consecutive HyperWhatevers in rhs
         let rhs_collapsed: Vec<&Value> = {

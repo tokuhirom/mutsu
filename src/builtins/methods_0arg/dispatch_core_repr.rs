@@ -88,6 +88,9 @@ enum GistRoute {
 /// already walked, which keeps a diamond-shaped graph from being re-walked once
 /// per path. The depth cap is the backstop for a pathologically deep acyclic
 /// structure.
+/// Cost: O(t), t = total nodes reachable from the receiver (every element is
+/// probed even though at most `GIST_ELEM_CAP` are rendered). Rakudo: O(1) for
+/// the 100-element head -- see #9162.
 fn gist_route(v: &Value) -> GistRoute {
     /// A `:=`-bound element holds a `ContainerRef` cell, and a cycle can close
     /// through one (`my @e; @e.push(@e)` stores a cell whose contents reach the
@@ -584,6 +587,9 @@ pub(super) fn dispatch(
             // matching Rakudo's `[...]`.
             Some(Ok(Value::str_from("[...]")))
         }
+        // Cost: O(min(e, 100) * d), e = elements, d = rendered size of each shown
+        // element (nested aggregates render in full); the pre-render `gist_route`
+        // probe adds O(t) for the whole structure.
         ValueView::Array(items, kind) if method == "gist" => {
             fn gist_item(v: &Value) -> String {
                 match v.view() {

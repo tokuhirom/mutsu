@@ -174,6 +174,9 @@ impl Interpreter {
         }
     }
 
+    // Cost: O(1) amortized for a single index on a plain array (trailing holes are
+    // trimmed, each at most once); O(k) for a slice, k = indices. A shaped target pays
+    // `delete_array_multidim`'s O(E).
     pub(super) fn exec_delete_index_named_op(
         &mut self,
         code: &CompiledCode,

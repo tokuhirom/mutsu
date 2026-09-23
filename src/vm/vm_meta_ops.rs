@@ -136,6 +136,10 @@ impl Interpreter {
                     self.eval_infix_shape(op_shape.as_ref(), &right, &left)?
                 }
             }
+            // Cost: O(e_l + e_r + e_l * e_r), e = elements of each operand (both
+            // copied, then every pair built eagerly). An infinite operand is cut to
+            // a 256-element prefix, so `((1..*) X (1,2))[600]` is `Nil` where
+            // Rakudo streams the product at O(1) per pair -- see #9159.
             MetaKind::Cross => {
                 let value_is_lazy = |v: &Value| match v.view() {
                     // A finite closure sequence must be forced below. Its
@@ -202,6 +206,11 @@ impl Interpreter {
                     Value::seq(results)
                 }
             }
+            // Cost: O(e_l + e_r), e = elements of each operand (each list operand is
+            // copied into a `ZipIter`, twice: once as a length probe), plus
+            // O(min(e_l, e_r)) results built eagerly. Two infinite operands are cut
+            // at MAX_ZIP_EXPAND (1000) results, so `((1..*) Z (1..*))[1500]` is
+            // `Nil`. Rakudo: O(min(e_l, e_r)), lazy -- see #9159.
             MetaKind::Zip => {
                 // Use lazy index-based iteration for ranges to avoid
                 // materializing huge/infinite lists like 1..*. An infinite
@@ -385,6 +394,10 @@ impl Interpreter {
     /// List-associative n-ary cross (`X`) / zip (`Z`). `a X b X c` combines all
     /// operands at once so each result is a flat n-tuple (or an n-way reduction
     /// when an operator is attached), matching Raku's list associativity.
+    ///
+    /// Cost: `X` is O(sum e_i + prod e_i) and `Z` is O(sum e_i + n * min e_i),
+    /// e_i = elements of the i-th of n operands (each copied, results built
+    /// eagerly), with the same infinite-operand prefix caps as `exec_meta_op`.
     pub(super) fn exec_meta_op_nary(
         &mut self,
         meta: MetaKind,

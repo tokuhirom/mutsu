@@ -89,6 +89,8 @@ impl Value {
         match (self.view(), other.view()) {
             // Arrays/Lists: must be same container type (Array vs List) and recursively eqv
             // eqv ignores Scalar wrapping — only Array vs List distinction matters
+            // Cost: O(1) on a kind/length mismatch, else O(i) to the first differing
+            // element (recursing into it), O(e) when equal.
             (ValueView::Array(a, a_kind), ValueView::Array(b, b_kind)) => {
                 a_kind.is_real_array() == b_kind.is_real_array()
                     && a.len() == b.len()
@@ -480,12 +482,31 @@ impl Value {
             ) => {
                 let a_map = a_attrs.to_map();
                 let b_map = b_attrs.to_map();
+                // The full object constructor materializes inherited/redeclared
+                // attributes under `Class\0name` keys, while native constructors
+                // may retain only the bare public slot.  A qualified slot that
+                // still equals its bare mirror carries no additional value
+                // information; collapse just those mirrors so the two
+                // construction paths compare the same.  Keep role-owned slots
+                // and qualified slots with different values: they are observable
+                // through the declaring class and must remain part of eqv.
+                let mut visible_entries = |map: &AttrMap| {
+                    map.iter()
+                        .filter(|(key, value)| {
+                            !is_redundant_qualified_attribute(map, key, value, seen)
+                        })
+                        .map(|(key, value)| (*key, value.clone()))
+                        .collect::<Vec<_>>()
+                };
+                let a_entries = visible_entries(&a_map);
+                let b_entries = visible_entries(&b_map);
                 a_class == b_class
-                    && a_map.iter().count() == b_map.iter().count()
-                    && a_map.iter().all(|(key, value)| {
-                        b_map
-                            .get(key)
-                            .is_some_and(|other| value.eqv_inner(other, seen))
+                    && a_entries.len() == b_entries.len()
+                    && a_entries.iter().all(|(key, value)| {
+                        b_entries
+                            .iter()
+                            .find(|(other_key, _)| other_key == key)
+                            .is_some_and(|(_, other)| value.eqv_inner(other, seen))
                     })
             }
             // The Nil value IS the Nil type object: a `Package("Nil")` obtained
@@ -554,4 +575,25 @@ impl Value {
             _ => false,
         }
     }
+}
+
+/// Whether a qualified instance slot is merely a constructor-generated copy of
+/// the corresponding bare public attribute. The qualified form is also used by
+/// role attributes, whose values remain semantically distinct even when their
+/// name suffix matches a bare slot.
+fn is_redundant_qualified_attribute(
+    map: &AttrMap,
+    key: &Symbol,
+    value: &Value,
+    seen: &mut std::collections::HashSet<(u64, u64)>,
+) -> bool {
+    let key = key.resolve();
+    let Some((owner, bare_name)) = key.rsplit_once('\0') else {
+        return false;
+    };
+    if owner.is_empty() || owner.starts_with("__mutsu_role_attr__") {
+        return false;
+    }
+    map.get(bare_name)
+        .is_some_and(|bare_value| value.eqv_inner(bare_value, seen))
 }

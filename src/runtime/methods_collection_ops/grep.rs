@@ -3,6 +3,9 @@ use crate::ast::{CallArg, ControlFlowKind};
 use crate::value::ValueView;
 
 impl Interpreter {
+    /// Cost: O(e) matcher calls, e = elements of the invocant, eager on a finite
+    /// source (a later `.head` does not stop it); `:k`/`:kv`/`:p` only change the
+    /// shape of each O(1) result entry.
     pub(in crate::runtime) fn dispatch_grep(
         &mut self,
         target: Value,

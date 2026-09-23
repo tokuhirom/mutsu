@@ -264,11 +264,11 @@ pub(crate) fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Val
                 .collect();
             Some(Ok(Value::seq(parts)))
         }
-        // Cost: O(n), n = chars of the argument (copy + grapheme count, nothing
-        // cached). Rakudo: O(1) -- see #9140.
-        "chars" => Some(Ok(Value::int(crate::builtins::string_pos::grapheme_len(
-            &arg.to_string_value(),
-        ) as i64))),
+        // Cost: O(1) amortized for a cached `Str` (index built once in O(n) and
+        // cached per payload, see `grapheme_index`); O(n) otherwise.
+        "chars" => Some(Ok(Value::int(
+            crate::builtins::grapheme_index::with_str_index(arg, |_, idx| idx.len()) as i64,
+        ))),
         "chr" => {
             let (code, display) = match arg.view() {
                 ValueView::Int(i) => (i, format!("{}", i)),
@@ -324,15 +324,14 @@ pub(crate) fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Val
                 ))))
             }
         }
-        // Cost: O(n), n = chars of the argument (copied to read one codepoint).
-        // Rakudo: O(1) -- see #9140.
-        "ord" => {
-            if let Some(ch) = arg.to_string_value().chars().next() {
-                Some(Ok(Value::int(ch as u32 as i64)))
-            } else {
-                Some(Ok(Value::NIL))
-            }
-        }
+        // Cost: O(1) (borrows the payload).
+        "ord" => Some(Ok(crate::builtins::grapheme_index::with_str(
+            arg,
+            |s| match s.chars().next() {
+                Some(ch) => Value::int(ch as u32 as i64),
+                None => Value::NIL,
+            },
+        ))),
         "uniname" => {
             match arg.view() {
                 ValueView::Int(i) => match crate::builtins::unicode::uniname_from_int(i) {

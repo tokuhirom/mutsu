@@ -82,6 +82,25 @@ impl Interpreter {
         } else {
             args.to_vec()
         };
+        if args.len() == 2 {
+            match op {
+                "(elem)" | "∈" => {
+                    return self.eval_binary_with_junctions(
+                        args[0].clone(),
+                        args[1].clone(),
+                        Self::eval_set_elem_values,
+                    );
+                }
+                "(cont)" | "∋" => {
+                    return self.eval_binary_with_junctions(
+                        args[0].clone(),
+                        args[1].clone(),
+                        Self::eval_set_cont_values,
+                    );
+                }
+                _ => {}
+            }
+        }
         if op == "x" || op == "xx" {
             return self.call_repeat_infix(op, &args);
         }

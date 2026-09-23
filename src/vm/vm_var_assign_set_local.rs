@@ -2949,6 +2949,9 @@ impl Interpreter {
         Ok(())
     }
 
+    // Cost: O(1) in a loop body's steady state; otherwise O(L), L = frame locals (the
+    // `is_body_local` / `has_coherent_slot` by-name scans of `code.locals`), so a
+    // routine declaring L lexicals pays O(L^2) per call. Rakudo: O(1) -- see #9171.
     pub(super) fn exec_set_var_dynamic_op(
         &mut self,
         code: &CompiledCode,

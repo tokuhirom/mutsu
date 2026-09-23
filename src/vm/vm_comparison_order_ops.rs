@@ -693,6 +693,9 @@ impl Interpreter {
         Ok(())
     }
 
+    // Cost: O(t1 + t2), t = elements of a list-shaped operand counted
+    // recursively to depth 16 (`warm_which_identity` visits each one looking for
+    // a user `WHICH`), O(1) for scalars. Rakudo: O(1) -- see #9172.
     pub(super) fn exec_strict_eq_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
@@ -707,6 +710,7 @@ impl Interpreter {
         Ok(())
     }
 
+    // Cost: O(t1 + t2), as `exec_strict_eq_op`. Rakudo: O(1) -- see #9172.
     pub(super) fn exec_strict_ne_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
@@ -824,6 +828,11 @@ impl Interpreter {
     /// b` operator form. The routine path used to land on the pure
     /// `apply_reduction_op` fold instead, so `cmp-ok $consumed1, 'eqv',
     /// $consumed2` silently answered `False` where the operator throws.
+    /// Cost: O(e_l + e_r), e = total nodes of each operand, on every call: the
+    /// Proxy pre-scan (`resolve_proxies_in_value`) walks both operands in full
+    /// before `Value::eqv` runs, so a length mismatch or an early difference does
+    /// not short-circuit. Rakudo: O(1) on length mismatch, O(i) to the first
+    /// difference -- see #9162.
     pub(crate) fn eqv_values(&mut self, left: Value, right: Value) -> Result<Value, RuntimeError> {
         // A user `multi sub infix:<eqv>` is part of the operator's candidate
         // set. It must get first refusal for object operands (for example,

@@ -943,6 +943,8 @@ impl Value {
     /// paths (container identity §3): mutations write through the shared
     /// node, so every place with copy semantics (`my @b = @a`, `is copy`
     /// params) must detach at copy time.
+    // Cost: O(e), e = elements or entries of a shared Array/Hash (shallow copy);
+    // O(1) when the node is singly owned or the value is not a container.
     pub(crate) fn detach_shared_container(self) -> Value {
         let fresh = match self.view() {
             ValueView::Array(gc, kind) if gc.strong_count() > 1 => Some(Value::array_with_kind(

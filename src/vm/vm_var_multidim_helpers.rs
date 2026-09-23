@@ -5,6 +5,8 @@ use crate::symbol::Symbol;
 use num_traits::Zero;
 
 impl Interpreter {
+    // Cost: O(E) on a shaped array, E = leaves (via `shaped_array_shape`); O(d) on a
+    // plain nested array, d = nesting depth. Rakudo: O(1) -- see #9157.
     pub(super) fn array_depth(value: &Value) -> usize {
         if let Some(shape) = crate::runtime::utils::shaped_array_shape(value)
             && !shape.is_empty()
@@ -88,6 +90,7 @@ impl Interpreter {
         err
     }
 
+    // Cost: O(d), d = indices; a `*`/`Inf` index level is O(k), k = elements it spans.
     pub(super) fn index_array_multidim(
         target: &Value,
         indices: &[Value],
@@ -146,6 +149,10 @@ impl Interpreter {
         Self::index_array_multidim(&items[i], &indices[1..], strict_oob)
     }
 
+    // Cost: O(E), E = leaves of a shaped target (`shaped_array_shape` plus
+    // `array_depth` each validate the whole structure) -- the store itself is O(d),
+    // d = indices. `my @a[N]; @a[$i] = $v for ^N` is quadratic.
+    // Rakudo: O(d) -- see #9157.
     pub(super) fn assign_array_multidim(
         target: &mut Value,
         indices: &[Value],
@@ -207,6 +214,9 @@ impl Interpreter {
         res
     }
 
+    // Cost: O(E), E = leaves of a shaped target (same shape re-validation as
+    // `assign_array_multidim`); the delete itself is O(d), d = indices.
+    // Rakudo: O(d) -- see #9157.
     pub(super) fn delete_array_multidim(
         target: &mut Value,
         indices: &[Value],

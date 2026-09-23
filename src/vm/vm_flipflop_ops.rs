@@ -371,6 +371,25 @@ impl Interpreter {
         } else {
             call_args
         };
+        if call_args.len() == 2 {
+            match name {
+                "(elem)" | "∈" => {
+                    return self.eval_binary_with_junctions(
+                        call_args[0].clone(),
+                        call_args[1].clone(),
+                        Self::eval_set_elem_values,
+                    );
+                }
+                "(cont)" | "∋" => {
+                    return self.eval_binary_with_junctions(
+                        call_args[0].clone(),
+                        call_args[1].clone(),
+                        Self::eval_set_cont_values,
+                    );
+                }
+                _ => {}
+            }
+        }
         if call_args.len() >= 2 {
             // `apply_reduction_op` is always a NATIVE reduction (`+`, `mod`,
             // junctions, ...) — never a call that could bind an `is rw`

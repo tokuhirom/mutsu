@@ -239,6 +239,9 @@ impl Interpreter {
         Ok(())
     }
 
+    /// Cost: O(1) amortized (a push onto the enclosing gather's buffer), so a
+    /// gather that takes e values builds its list in O(e); taking an unforced
+    /// gather coroutine forces it whole first.
     pub(super) fn exec_take_op(&mut self) -> Result<(), RuntimeError> {
         let mut val = self.stack.pop().unwrap_or(Value::NIL);
         // `take <gather>` (a coroutine-backed lazy `Seq`, e.g. the recursive

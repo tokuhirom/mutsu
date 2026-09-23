@@ -1,6 +1,8 @@
 use super::*;
 
 impl Interpreter {
+    /// Cost: O(e), e = elements of the invocant (one comparison against the
+    /// running best each; ties are appended, a new best clears them).
     pub(in crate::runtime) fn dispatch_minmaxpairs(
         &mut self,
         target: Value,

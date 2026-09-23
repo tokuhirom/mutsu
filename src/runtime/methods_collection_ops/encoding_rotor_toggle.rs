@@ -98,6 +98,10 @@ impl Interpreter {
         err
     }
 
+    /// Cost: O(e + s), e = elements of the invocant (decomposed eagerly), s = total
+    /// elements of the produced sublists (overlapping specs copy an element more
+    /// than once). A lazy invocant throws X::Cannot::Lazy before reaching here.
+    /// Rakudo: O(1) per call, O(n) per sublist pulled -- see #9158.
     pub(in crate::runtime) fn dispatch_rotor(
         &mut self,
         target: Value,
