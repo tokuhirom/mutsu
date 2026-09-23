@@ -14,6 +14,25 @@ impl Interpreter {
         value
     }
 
+    /// Whether `current` is the very (mutable) `Array`/`Hash` the receiver
+    /// `target` holds -- what `.self` hands back. An immutable `List` is not.
+    // Cost: O(1).
+    fn is_same_mutable_container(target: &Value, current: &Value) -> bool {
+        let target = Self::deref_lvalue_value(target.clone());
+        match (target.view(), current.view()) {
+            (ValueView::Array(a, kind), ValueView::Array(b, _)) => {
+                matches!(
+                    kind,
+                    crate::value::ArrayKind::Array
+                        | crate::value::ArrayKind::ItemArray
+                        | crate::value::ArrayKind::Shaped
+                ) && crate::gc::Gc::ptr_eq(&a, &b)
+            }
+            (ValueView::Hash(a), ValueView::Hash(b)) => crate::gc::Gc::ptr_eq(&a, &b),
+            _ => false,
+        }
+    }
+
     fn detached_lvalue_value(value: &Value) -> Value {
         match value.view() {
             ValueView::ContainerRef(cell) => {
@@ -513,6 +532,51 @@ impl Interpreter {
                 }
                 _ => {}
             }
+        }
+
+        // `$p.self[i] = v` / `$h.self<k> = v` on a plain (non-instance)
+        // receiver: `.self` hands back the receiver's own container, so the
+        // element store belongs in it, in place -- there is no accessor to
+        // call back as a setter (#9197). An immutable `List` falls through to
+        // the setter, which refuses it as raku does.
+        if method == "self" && dims.len() < 2 && Self::is_same_mutable_container(&target, &current)
+        {
+            match current.view() {
+                ValueView::Hash(h) if h.key_type.is_none() => {
+                    let key = index.to_string_value();
+                    if let Some(entry) = current.hash_autovivify(&key) {
+                        entry.hash_entry_write(effective_value.clone());
+                        return Ok(effective_value);
+                    }
+                }
+                ValueView::Array(items, _) => {
+                    let idx = crate::runtime::to_int(&index) as usize;
+                    if idx >= items.len() && !crate::runtime::utils::is_shaped_array(&current) {
+                        current.array_grow_to(idx);
+                    }
+                    if current.array_set_in_place(idx, effective_value.clone()) {
+                        return Ok(effective_value);
+                    }
+                }
+                _ => {}
+            }
+        }
+        // `.self` on an immutable `List` hands back the List itself; a store
+        // into one of its bare elements is refused naming the List, before the
+        // copy-and-rebind below could leak the write into the variable.
+        if method == "self"
+            && let ValueView::Array(items, kind) = current.view()
+            && matches!(
+                kind,
+                crate::value::ArrayKind::List | crate::value::ArrayKind::ItemList
+            )
+            && !crate::runtime::to_int(&index)
+                .try_into()
+                .ok()
+                .and_then(|idx: usize| items.get(idx))
+                .is_some_and(Value::is_container_ref)
+        {
+            return Err(RuntimeError::assignment_ro_value(current.clone()));
         }
 
         // Modify the container
