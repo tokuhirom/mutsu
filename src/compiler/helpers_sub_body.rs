@@ -595,6 +595,9 @@ impl Compiler {
         // declaration metadata so `Code.line` can report it without a second
         // channel (the closure paths already read `CompiledCode::source_line`).
         sub_compiler.code.source_line = self.last_source_line;
+        // ADR-0113: bind the body's call-only `my sub`s as frame lexicals.
+        // Before `compute_needs_env_sync`, which finalizes the chunk.
+        sub_compiler.resolve_frame_lexical_routines(body);
         sub_compiler.code.compute_needs_env_sync();
         // See the twin call in `compile_closure_body_with_routine_flag`: a
         // parameter default / `where` constraint reads its outer lexicals from
@@ -664,7 +667,20 @@ impl Compiler {
         // is exactly the by-name resolution TRIR replaces; `is rw`/`is raw`
         // on the ROUTINE decline because the caller then owns the returned
         // container.
-        if !multi && !is_rw && !is_raw && !is_cached && !cf.has_inner_subs {
+        // A frame-lexical routine (ADR-0113) no longer sets `has_inner_subs`,
+        // but TRIR resolves calls from the AST and knows nothing of it.
+        let declares_frame_lexical = cf
+            .code
+            .sub_decl_plans
+            .iter()
+            .any(|p| p.frame_lexical.is_some());
+        if !multi
+            && !is_rw
+            && !is_raw
+            && !is_cached
+            && !cf.has_inner_subs
+            && !declares_frame_lexical
+        {
             cf.trir = crate::trir::entry::compile_routine(
                 crate::symbol::Symbol::intern(name),
                 param_defs,

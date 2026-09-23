@@ -337,12 +337,17 @@ impl Interpreter {
         crate::vm::vm_stats::record_function_dispatch();
         let arity_usize = arity as usize;
         let spec = &code.named_arg_specs[spec_idx as usize];
+        // ADR-0113: a frame-lexical callee must not be served by the
+        // name-keyed light-call cache below (which could hold a same-named
+        // package sub); the materializing fallback reaches its dispatch.
+        let frame_lexical = code.lexical_routine(code.const_sym(name_idx)).is_some();
         // Fast path: light-call cache hit, spec-aware binding. Mirrors the
         // CallFunc light-cache block, with the container/junction guards
         // folded into one conservative scan (an Array/Hash value anywhere
         // may need container sharing; a Junction may need autothreading —
         // both fall back to the materializing slow path).
-        if self.stack.len() >= arity_usize
+        if !frame_lexical
+            && self.stack.len() >= arity_usize
             && (self.amp_param_shadowed_names.is_empty()
                 || !self
                     .amp_param_shadowed_names
@@ -456,6 +461,24 @@ impl Interpreter {
         compiled_fns: &CompiledFns,
     ) -> Result<(), RuntimeError> {
         crate::vm::vm_stats::record_function_dispatch();
+        // ADR-0113: a frame-lexical routine is resolved at compile time and is
+        // in no registry the name-keyed dispatch below could consult.
+        if let Some(r) = code.lexical_routine(code.const_sym(name_idx))
+            && let Some(result) = self.exec_frame_lexical_call(
+                code,
+                r,
+                FrameLexicalCallSite {
+                    arity,
+                    arg_sources_idx,
+                    track_sources: true,
+                    call_has_named,
+                },
+                compiled_fns,
+            )?
+        {
+            self.stack.push(result);
+            return Ok(());
+        }
         // An `nqp::` op is a compiler-known primitive in a reserved namespace:
         // nothing below can answer it differently than the op table, so it
         // goes there directly (see `exec_nqp_call_op`). One memoized flag

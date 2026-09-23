@@ -14,6 +14,24 @@ impl Interpreter {
         // entries want, rather than re-interning the same constant per call
         // (#7766 unit 2).
         let name_sym = code.const_sym(name_idx);
+        // ADR-0113: a frame-lexical callee is resolved at compile time.
+        if let Some(r) = code.lexical_routine(name_sym) {
+            let call_has_named = Self::stack_args_have_named(code, arg_sources_idx);
+            if let Some(value) = self.exec_frame_lexical_call(
+                code,
+                r,
+                FrameLexicalCallSite {
+                    arity,
+                    arg_sources_idx,
+                    track_sources: true,
+                    call_has_named,
+                },
+                compiled_fns,
+            )? {
+                self.sink_discarded_call_value(&value)?;
+                return Ok(());
+            }
+        }
         let name = Self::const_str(code, name_idx).to_string();
         let arity = arity as usize;
         if self.stack.len() < arity {
@@ -203,6 +221,28 @@ impl Interpreter {
     ) -> Result<(), RuntimeError> {
         // See `exec_exec_call_op`: the pre-interned form of the same constant.
         let name_sym = code.const_sym(name_idx);
+        // ADR-0113: a frame-lexical callee is resolved at compile time. The
+        // named arguments already travel as Pairs.
+        if let Some(r) = code.lexical_routine(name_sym)
+            && let Some(value) = self.exec_frame_lexical_call(
+                code,
+                r,
+                FrameLexicalCallSite {
+                    arity,
+                    arg_sources_idx,
+                    track_sources: false,
+                    call_has_named: true,
+                },
+                compiled_fns,
+            )?
+        {
+            if keep_value {
+                self.stack.push(value);
+            } else {
+                self.sink_discarded_call_value(&value)?;
+            }
+            return Ok(());
+        }
         let name = Self::const_str(code, name_idx).to_string();
         let arity = arity as usize;
         if self.stack.len() < arity {

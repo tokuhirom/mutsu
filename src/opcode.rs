@@ -3399,6 +3399,24 @@ pub(crate) struct CompiledSubDeclPlan {
     /// Keeping it beside the plan prevents the registry adapter from walking
     /// `legacy_body` merely to reconstruct signature and identity facts.
     pub(crate) routine_metadata: CompiledRoutineMetadata,
+    /// Set by the compiler's frame-lexical routine pass
+    /// (`compiler/frame_lexical_routines.rs`, ADR-0113) when this declaration
+    /// is a `my sub` the enclosing routine body only ever *calls* by name.
+    /// Executing the plan then derives the routine's definition once per
+    /// interpreter and binds nothing in the program-global registry; every
+    /// call site resolves it through [`CompiledCode::lexical_routines`].
+    pub(crate) frame_lexical: Option<FrameLexicalRef>,
+}
+
+/// Identity of a frame-lexical routine (ADR-0113): the routine's bare name,
+/// the package its compiled body was keyed under, and that body's
+/// fingerprint. All three are compile-time facts, so a call site and the
+/// declaration agree on the key without consulting the registry.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub(crate) struct FrameLexicalRef {
+    pub(crate) name: Symbol,
+    pub(crate) package: Symbol,
+    pub(crate) fingerprint: u64,
 }
 
 #[derive(Debug, Clone)]
@@ -5154,6 +5172,13 @@ pub(crate) struct CompiledCode {
     /// unrelated same-named local in a sibling block (which would wrongly box e.g.
     /// a `let`-restored variable; same-named `my` locals share one slot).
     pub(crate) named_sub_captures: Vec<(Vec<Symbol>, Vec<Symbol>)>,
+    /// Frame-lexical routines (ADR-0113) this chunk calls by bare name. A
+    /// `CallFunc`/`CallFuncNamed`/`ExecCall`/`ExecCallPairs` whose callee is
+    /// listed here dispatches straight to that routine, never through the
+    /// name-keyed resolution: the routine is not in the registry at all.
+    /// Empty for almost every chunk, so the call handlers' probe is one
+    /// `is_empty` test.
+    pub(crate) lexical_routines: Vec<FrameLexicalRef>,
     /// Full free-variable set (reads AND writes) of each directly-nested
     /// *registered routine*'s finalized `CompiledCode`
     /// (`CompiledFunction::code.free_var_syms`) — one entry per nested
@@ -5775,15 +5800,36 @@ impl CompiledCode {
     /// `CompiledFunction` wrapper of its own to cache this on.
     pub(crate) fn declares_inner_routines(&self) -> bool {
         self.ops.iter().any(|op| match op {
-            OpCode::RegisterDecl(idx) => {
-                matches!(
-                    self.decl_plans.get(*idx as usize),
-                    Some(CompiledDeclPlanRef::Sub(_))
-                )
-            }
+            OpCode::RegisterDecl(idx) => match self.decl_plans.get(*idx as usize) {
+                // A frame-lexical routine (ADR-0113) never enters the
+                // registry, so there is nothing to take away on return.
+                Some(CompiledDeclPlanRef::Sub(plan)) => !self.is_frame_lexical_sub_plan(*plan),
+                _ => false,
+            },
             OpCode::RegisterSubset(..) => true,
             _ => false,
         })
+    }
+
+    /// Whether sub-declaration plan `plan_idx` is a frame-lexical routine
+    /// (ADR-0113).
+    pub(crate) fn is_frame_lexical_sub_plan(&self, plan_idx: u32) -> bool {
+        self.sub_decl_plans
+            .get(plan_idx as usize)
+            .is_some_and(|plan| plan.frame_lexical.is_some())
+    }
+
+    /// The frame-lexical routine (ADR-0113) a bare call to `name` in this
+    /// chunk denotes, if any.
+    #[inline]
+    pub(crate) fn lexical_routine(&self, name: Symbol) -> Option<FrameLexicalRef> {
+        if self.lexical_routines.is_empty() {
+            return None;
+        }
+        self.lexical_routines
+            .iter()
+            .find(|r| r.name == name)
+            .copied()
     }
 
     pub(crate) fn remap_sub_decl_compiled_routine_keys(
@@ -6001,6 +6047,7 @@ impl CompiledCode {
             free_var_writes: Vec::new(),
             free_var_container_writes: Vec::new(),
             named_sub_captures: Vec::new(),
+            lexical_routines: Vec::new(),
             nested_routine_free_reads: Vec::new(),
             needs_cell_named_sub: Vec::new(),
             needs_cell_ref_capture_slots: Vec::new(),
@@ -7157,7 +7204,7 @@ impl CompiledCode {
     /// name-bearing op for that variable at all and silently RESET
     /// `free_var_syms` to empty, losing the capture record while
     /// `upvalue_syms` still names it.
-    fn op_name_const_idx(op: &OpCode) -> Option<u32> {
+    pub(crate) fn op_name_const_idx(op: &OpCode) -> Option<u32> {
         match op {
             OpCode::GetUpvalue { name_idx: idx, .. }
             | OpCode::GetGlobal(idx)
@@ -7491,7 +7538,7 @@ impl CompiledCode {
     /// call through a code variable, `&f.()`). The constant holds the SIGIL-LESS
     /// name (`"f"`), but the lexical itself lives under `&f` in `locals`/`env`,
     /// so the free-var scan must re-key it with the sigil before matching.
-    fn op_code_var_read_const_idx(op: &OpCode) -> Option<u32> {
+    pub(crate) fn op_code_var_read_const_idx(op: &OpCode) -> Option<u32> {
         match op {
             OpCode::GetCodeVar(idx) => Some(*idx),
             OpCode::CallOnCodeVar { name_idx, .. } => Some(*name_idx),
@@ -7504,7 +7551,7 @@ impl CompiledCode {
     /// the lexical `&f` before the global function registry, so when an
     /// enclosing scope declares `&f` (see `outer_code_var_names`) the call is
     /// really a code-variable read this closure must capture.
-    fn op_callee_name_const_idx(op: &OpCode) -> Option<u32> {
+    pub(crate) fn op_callee_name_const_idx(op: &OpCode) -> Option<u32> {
         match op {
             OpCode::CallFunc { name_idx, .. }
             | OpCode::CallFuncNamed { name_idx, .. }
@@ -9234,6 +9281,7 @@ impl CompiledCode {
             signature_alternates: signature_alternates.clone(),
             alternate_metadata,
             compiled_routine_keys: Vec::new(),
+            frame_lexical: None,
             free_var_decl_slots: Vec::new(),
             multi: *multi,
             is_rw: *is_rw,
@@ -9639,6 +9687,16 @@ impl CompiledFns {
         if changed {
             self.id = Self::next_id();
         }
+    }
+
+    /// Mutable access to one body, copying it out of a shared `Arc` first.
+    /// Re-draws the version token like every other mutating entry point.
+    pub(crate) fn make_mut(
+        &mut self,
+        key: &crate::symbol::Symbol,
+    ) -> Option<&mut CompiledFunction> {
+        self.id = Self::next_id();
+        self.map.get_mut(key).map(Arc::make_mut)
     }
 
     pub(crate) fn retain(
@@ -10364,6 +10422,17 @@ impl CompiledFunction {
     pub(crate) fn detect_inner_subs(&mut self) {
         self.has_inner_subs = !self.code.closure_compiled_codes.is_empty()
             || self.code.ops.iter().any(|op| {
+                // A frame-lexical routine (ADR-0113) is not an inner sub in
+                // this sense: it is never registered, and every local it can
+                // read by name is kept env-synced by `compute_needs_env_sync`
+                // (its `RegisterDecl` still counts as a lazy body there).
+                if let OpCode::RegisterDecl(idx) = op
+                    && let Some(CompiledDeclPlanRef::Sub(plan)) =
+                        self.code.decl_plans.get(*idx as usize)
+                    && self.code.is_frame_lexical_sub_plan(*plan)
+                {
+                    return false;
+                }
                 matches!(
                     op,
                     OpCode::RegisterDecl(..)
