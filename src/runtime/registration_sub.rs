@@ -925,7 +925,20 @@ impl Interpreter {
         // call — reuse that cached `Arc` instead of re-running the full AST→def
         // derivation. Restricted to simple single subs (no multi/our/traits/assoc)
         // so the streamlined install below covers every side effect the full path
-        // would apply for this shape.
+        // would apply for this shape — EXCEPT the one below, which is why a
+        // same-named outer multi family excludes this path rather than being
+        // "covered": the full path (further down) `retain`s every
+        // `{pkg}::{name}/…` candidate key out of the registry so the lexical
+        // single takes the name over completely (a `my sub` shadowing a
+        // `multi` of the same name). That `retain` ran on this routine's
+        // FIRST call, which took the full path (nothing was cached in
+        // `prepared_fn_defs` yet) — but a routine-scope restore puts the
+        // multi's candidate keys straight back (the whole `functions` map is
+        // swapped back to its pre-call snapshot), so every call after the
+        // first found `!self.registry().functions.contains_key(&fq_sym)` true
+        // again and took THIS path, which never re-runs that `retain` and so
+        // left the shadowed multi visible again from the second call on
+        // (issue #9080).
         if let Some(site_fp) = site_fingerprint
             && !multi
             && !is_method_value_decl
@@ -937,7 +950,13 @@ impl Interpreter {
             let pkg = self.current_package().to_string();
             let fq = format!("{}::{}", pkg, name);
             let fq_sym = Symbol::intern(&fq);
-            if !self.registry().functions.contains_key(&fq_sym)
+            let multi_prefix = format!("{pkg}::{name}/");
+            let shadows_outer_multi = self
+                .fn_keys_for_base(name)
+                .iter()
+                .any(|k| k.resolve().starts_with(&multi_prefix));
+            if !shadows_outer_multi
+                && !self.registry().functions.contains_key(&fq_sym)
                 && let Some(cached) = self
                     .prepared_fn_defs
                     .get(&fq_sym)
