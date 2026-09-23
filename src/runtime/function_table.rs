@@ -286,7 +286,7 @@ impl FunctionTableTransitions {
                 self.parents.insert(table.version(), (memo_key.0, key));
             }
         }
-        self.audit(&**functions);
+        self.audit(functions);
     }
 
     /// The keys that installs recorded here added to get from the map named
