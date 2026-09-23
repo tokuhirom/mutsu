@@ -6214,15 +6214,31 @@ impl Interpreter {
                 let val = self.stack.pop().unwrap_or(Value::NIL);
                 let result = match val.view() {
                     ValueView::LazyList(ll) => {
+                        // A gather body writes an outer lexical by name in env
+                        // (`$was-lazy = 0`); carry THOSE writes back into this
+                        // frame's slots. Only a name whose env value the force
+                        // actually changed is copied: a slot-only local's env
+                        // entry can be stale (the slot took writes the env never
+                        // saw), and copying it unconditionally reset a loop
+                        // counter every iteration (`for ^3 { eager gather {...};
+                        // $t += 1 }` left `$t` at 1).
+                        let pre_env: Vec<Option<Value>> = code
+                            .locals
+                            .iter()
+                            .map(|name| self.env().get(name).cloned())
+                            .collect();
                         let items = self.force_lazy_list_vm(&ll)?;
-                        // Sync interpreter env changes back to Interpreter locals.
-                        // This ensures side effects from gather bodies propagate
-                        // to outer-scope variables (e.g., `$was-lazy = 0`).
                         for (i, name) in code.locals.iter().enumerate() {
-                            if let Some(v) = self.env().get(name)
-                                && i < self.locals.len()
-                            {
-                                self.locals[i] = v.clone();
+                            if i >= self.locals.len() {
+                                break;
+                            }
+                            if let Some(v) = self.env().get(name) {
+                                let unchanged = pre_env[i]
+                                    .as_ref()
+                                    .is_some_and(|pre| crate::runtime::values_identical(pre, v));
+                                if !unchanged {
+                                    self.locals[i] = v.clone();
+                                }
                             }
                         }
                         Value::array(items)
