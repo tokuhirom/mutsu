@@ -162,6 +162,7 @@ pub(crate) fn native_function_2arg(
             // roots($number, $n) — compute nth roots of $number
             Some(Ok(crate::builtins::methods_narg::compute_roots(arg1, arg2)))
         }
+        // Cost: O(n), n = chars of the string.
         "chop" => {
             // Type objects (Package) should throw
             if let ValueView::Package(type_name) = arg1.view() {
@@ -234,6 +235,8 @@ pub(crate) fn native_function_2arg(
                 _ => Some(Ok(Value::NIL)),
             }
         }
+        // Cost: O(n + m), n = chars of the string, m = chars of the needle (copy,
+        // search, char-offset conversion). Rakudo: O(p + m), p = match position -- see #9140.
         "index" => {
             // Skip native path for junctions — fall through to interpreter for auto-threading
             if matches!(arg1.view(), ValueView::Junction { .. })
@@ -259,6 +262,9 @@ pub(crate) fn native_function_2arg(
             // Fall through to runtime -- handles named params, overlap, etc.
             None
         }
+        // Cost: O(n + m), n = chars of the string, m = chars of the needle (copy,
+        // reverse search, char-offset conversion of the prefix). Rakudo: O(n - p + m),
+        // p = match position -- see #9140.
         "rindex" => {
             // Fall through to runtime for arrays (list of needles)
             if matches!(arg2.view(), ValueView::Array(..)) {
@@ -273,6 +279,8 @@ pub(crate) fn native_function_2arg(
                 None => Value::NIL,
             }))
         }
+        // Cost: O(n), n = chars of the string (see `native_substr_slice`).
+        // Rakudo: O(k), k = chars returned -- see #9140.
         "substr" => {
             if matches!(arg1.view(), ValueView::Junction { .. })
                 || matches!(arg2.view(), ValueView::Junction { .. })

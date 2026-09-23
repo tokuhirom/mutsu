@@ -63,6 +63,8 @@ pub(crate) fn native_method_2arg(
     // out-of-range positions and the case-/mark-insensitive named-arg forms
     // (`:i`/`:m`, which arrive as an extra Pair argument) keep the interpreter's
     // position resolution + Failure semantics (runtime/methods_string.rs).
+    // Cost: O(n + m), n = chars of the invocant, m = chars of the needle (copy,
+    // full codepoint count for the bounds check, skip to `$pos`). Rakudo: O(m) -- see #9140.
     if method == "substr-eq"
         && let ValueView::Str(_) = target.view()
     {
@@ -226,6 +228,8 @@ pub(crate) fn native_method_2arg(
                 )))
             }
         }
+        // Cost: O(n), n = chars of the invocant (see `native_substr_slice`).
+        // Rakudo: O(k), k = chars returned -- see #9140.
         "substr" => crate::builtins::substr::native_substr_slice(
             &target.to_string_value(),
             arg1,

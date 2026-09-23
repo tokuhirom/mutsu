@@ -55,6 +55,7 @@ pub(crate) fn format_zprintf_args(fmt: &str, args: &[Value]) -> String {
     format_sprintf_impl(fmt, args, true)
 }
 
+// Cost: O(f + sum of rendered argument lengths), f = bytes of the format.
 fn format_sprintf_impl(fmt: &str, args: &[Value], z_mode: bool) -> String {
     let bytes = fmt.as_bytes();
     let len = bytes.len();

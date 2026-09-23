@@ -28,6 +28,9 @@
 //!
 //! # Complexity annotations
 //!
+//! (The shared rules for every annotated family are in
+//! `docs/complexity-annotations.md`; this section is the `nqp::` specifics.)
+//!
 //! Every op arm in the dispatch tables (and each `NqpPure` body) carries one
 //! comment line in a single, grep-able form:
 //!

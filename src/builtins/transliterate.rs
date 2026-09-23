@@ -59,6 +59,8 @@ fn expand_trans_spec(spec: &str) -> Vec<char> {
 /// - `delete`: unmapped characters in the `from` set are deleted
 /// - `squeeze`: consecutive identical replacements are collapsed to one
 /// - `complement`: characters NOT in `from` are replaced instead
+// Cost: O(n * k), n = chars of the text, k = expanded from-chars (linear
+// `position` scan per char).
 pub fn transliterate(
     text: &str,
     from_spec: &str,

@@ -47,6 +47,8 @@ fn substr_cool_to_i64(val: &Value) -> Result<i64, RuntimeError> {
 }
 
 impl Interpreter {
+    // Cost: O(n + m), n = chars of the invocant, m = chars of the needle (copy,
+    // full codepoint count, skip to `$pos`). Rakudo: O(m) -- see #9140.
     pub(super) fn dispatch_substr_eq(
         &mut self,
         target: Value,
@@ -113,6 +115,8 @@ impl Interpreter {
         Ok(Value::truth(eq))
     }
 
+    // Cost: O(n), n = chars of the invocant (copy + grapheme split of the whole
+    // string before the O(k) slice). Rakudo: O(k), k = chars returned -- see #9140.
     pub(super) fn dispatch_substr(
         &mut self,
         target: Value,
@@ -205,6 +209,7 @@ impl Interpreter {
 
     /// substr-rw in non-lvalue context: just return the substring (same as substr).
     /// When a variable name is available, returns a Proxy for binding support.
+    // Cost: as `dispatch_substr`: O(n). Rakudo: O(k) -- see #9140.
     pub(super) fn dispatch_substr_rw(
         &mut self,
         target: Value,
