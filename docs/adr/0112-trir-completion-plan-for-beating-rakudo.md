@@ -1,6 +1,6 @@
 # ADR-0112: Finishing ADR-0110 for the JSON::Fast goal — whole-unit linkage, the string path in TRIR, typed container ops, then native lowering with inlining
 
-- Status: Accepted (2026-09-23, approved by tokuhirom; Steps 1 and 2 landed — see "Implementation status")
+- Status: Accepted (2026-09-23, approved by tokuhirom; Steps 1 and 2 landed, Step 3 in progress — see "Implementation status")
 - Date: 2026-09-23
 - Deciders: tokuhirom, Claude
 - Tracked by: [#8673](https://github.com/tokuhirom/mutsu/issues/8673) (goal: `bench-json-fast-spdx@section+jit` below 1.0, i.e. faster than rakudo)
@@ -209,3 +209,36 @@ where §3 had estimated ~8x after Step 2. Pins:
 `t/vm/codegen/adr0112-trir-string-path.t` and
 `t/fixtures/trir-string-path.raku`.
 
+
+### Step 3 — first slice landed 2026-09-23 (typed list ops)
+
+`nqp::elems`, `nqp::shift_i` and `nqp::push_i` on a boxed operand now have
+TRIR ops of their own (`ElemsO`, `ShiftIO`, `PushIO`), which call the
+dispatch table's own bodies (`nqp_elems_count`, `nqp_shift_int`,
+`push_elem`) directly: no argument vector, no op-name walk, and `elems` and
+`shift_i` answer on the native bank. `shift_i` used to box its result and
+then re-read the op's name (`coerce_like`'s `rsplit_once`) to convert it,
+which alone was ~240 instructions a character.
+
+| | before | after | gate |
+|---|---:|---:|---|
+| slow-string loop, 400-char strings | 546 ns/char | **359 ns/char** | ≤ 100 ns: not met |
+| 727-record `from-json` | ~0.21 s | **~0.17 s** | — |
+
+The gate is not met, and the measurement says why:
+
+- **Front removal is O(n).** `nqp::shift` is `Vec::remove(0)`, so the
+  per-char cost grows with the string: 2,247 ns/char at 2,000 characters.
+  MoarVM keeps a start offset. Filed as #9121.
+- **What is left of the loop is interpreter overhead.** About 3,800
+  instructions a character, spread over op dispatch, refcounting of the
+  operand clones and `nqp_backing_array`'s clone of the `Uni`'s codes. This is
+  what Step 4 compiles away. An operand-direct form of these ops (no
+  `LoadObj` clone) is the one cheap interpreter-level cut left.
+- **`[]` and `{}` elements** are dominated by `LoadBareWord`'s full untyped
+  bareword resolution for `List`/`Array`/`IterationBuffer` (~32K
+  instructions an element) and the `bindattr`/`getattr`/`create` calls through
+  the dispatch table (~28K). Filed as #9122.
+
+Pin: `t/vm/codegen/adr0112-trir-list-ops.t` and `t/fixtures/trir-list-ops.raku`
+(checked against rakudo).

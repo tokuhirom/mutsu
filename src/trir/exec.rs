@@ -388,6 +388,23 @@ impl Interpreter {
                     let v = self.env().get(&name).cloned().unwrap_or(Value::NIL);
                     self.trir.os.push(v);
                 }
+                TrOp::ElemsO => {
+                    let v = self.opop();
+                    let n = self.nqp_elems_count(&v)?;
+                    self.trir.ns.push(n);
+                }
+                TrOp::ShiftIO => {
+                    let v = self.opop();
+                    let r = Self::nqp_shift_int(&v)?;
+                    self.trir.ns.push(r);
+                }
+                TrOp::PushIO => {
+                    let i = self.ipop();
+                    let target = self.opop();
+                    let r =
+                        crate::runtime::nqp_ops_text::push_elem("push_i", &target, Value::int(i))?;
+                    self.trir.os.push(r);
+                }
                 TrOp::NqpOpGen { id, arity } => {
                     let n = *arity as usize;
                     let base = self.trir.os.len().saturating_sub(n);
