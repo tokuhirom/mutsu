@@ -122,14 +122,23 @@ impl Interpreter {
     }
 
     /// Execute a `CallGen` site: box the arguments, dispatch by name through
-    /// the ordinary machinery, and take the result back boxed.
+    /// the ordinary machinery, and take the result back boxed — unless the
+    /// site has been linked to the TRIR routine it reaches (`gen_link.rs`).
+    /// `Ok(None)` means a linked callee bailed, which bails this chunk too.
     pub(super) fn exec_trir_generic_call(
         &mut self,
         chunk: &TrChunk,
         site: u32,
         frame: TrFrame,
-    ) -> Result<(), RuntimeError> {
-        let call = chunk.calls[site as usize].clone();
+        compiled_fns: &CompiledFns,
+    ) -> Result<Option<()>, RuntimeError> {
+        let call = &chunk.calls[site as usize];
+        match self.try_trir_gen_link(chunk, site, call, frame, compiled_fns)? {
+            super::gen_link::GenOutcome::Done => return Ok(Some(())),
+            super::gen_link::GenOutcome::Bail => return Ok(None),
+            super::gen_link::GenOutcome::NotLinked => {}
+        }
+        let call = call.clone();
         let nbase = frame.nbase as usize;
         let obase = frame.obase as usize;
         // Only a by-variable argument can be handed over as a container, so a
@@ -196,7 +205,9 @@ impl Interpreter {
         // literal mask: a TRIR site's arguments are never literals, but the
         // mask must be published rather than inherited from the caller.
         let saved = std::mem::replace(&mut self.literal_native_args, 0);
+        let armed = self.trir_gen_arm(call.name);
         let result = self.call_function(&name, args.clone());
+        self.trir_gen_settle(chunk, site, armed);
         self.literal_native_args = saved;
         let result = result?;
         // Read the containers back, so an `is rw` parameter's write lands in
@@ -223,7 +234,7 @@ impl Interpreter {
             }
         }
         self.push_trir_result(result, call.result);
-        Ok(())
+        Ok(Some(()))
     }
 
     /// Which of the routine named `name`'s first 64 positional parameters are
@@ -256,7 +267,7 @@ impl Interpreter {
     }
 
     /// Put a call's result on the bank the compiler expects it on.
-    fn push_trir_result(&mut self, v: Value, kind: TrKind) {
+    pub(super) fn push_trir_result(&mut self, v: Value, kind: TrKind) {
         match kind {
             TrKind::Int => self.trir.ns.push(v.as_int().unwrap_or(0)),
             TrKind::Num => self.trir.ns.push(v.to_f64().to_bits() as i64),

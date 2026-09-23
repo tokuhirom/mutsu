@@ -554,6 +554,16 @@ impl Interpreter {
             // same rule in `push_multi_dispatch_frame`; this call path is the
             // one a Callable *value* (`&e`, `my &c = &e; c()`) takes.
             let pushed_dispatch = !all_candidates.is_empty();
+            // ADR-0111 Step 1: a TRIR `CallGen` armed an observer for this
+            // name. This is the branch that picks one plain routine by name,
+            // so what it picked is what the site may link to. Taken either
+            // way, so a nested dispatch cannot record into the outer site.
+            if let Some(armed) = self.trir.gen_links.observe.take()
+                && armed == def.name
+                && !pushed_dispatch
+            {
+                self.trir.gen_links.observed = def.compiled.clone();
+            }
             let def_fp = def.body_fingerprint();
             if pushed_dispatch {
                 // Compare through the memoized fingerprint (plan-seeded for

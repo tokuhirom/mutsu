@@ -1,6 +1,6 @@
 # ADR-0111: Finishing ADR-0110 for the JSON::Fast goal — whole-unit linkage, the string path in TRIR, typed container ops, then native lowering with inlining
 
-- Status: Accepted (2026-09-23, approved by tokuhirom; Step 1 in progress)
+- Status: Accepted (2026-09-23, approved by tokuhirom; Step 1 landed — see "Implementation status")
 - Date: 2026-09-23
 - Deciders: tokuhirom, Claude
 - Tracked by: [#8673](https://github.com/tokuhirom/mutsu/issues/8673) (goal: `bench-json-fast-spdx@section+jit` below 1.0, i.e. faster than rakudo)
@@ -132,3 +132,34 @@ Steps 1-3 cannot close the gap on their own, and are not presented as doing so. 
 - The word-only variant: the same document with every string passed through `.trans([':', '/', '.', '-', ' ', ','] => ['c', 's', 'd', 'h', '_', 'm'])` before the timed call.
 - The call cost model: a module declaring `early` (before), `via-back` / `via-fwd` (callers, each looping `$n` times on `nqp::while(nqp::islt_i($p, $n), early/late($t, $p))`), and `late` (after), where `early`/`late` are `my sub (str $t, int $p is rw) { $p = nqp::add_i($p, 1); $p }`. Call each caller directly from an `our sub` in the same module. Calling through a `&f` variable enters the untyped path and measures something else.
 - The per-character loop: `unjsonify-string`'s `nqp::while(nqp::elems($codes), ...)` body in a routine taking `$codes`, fed `nqp::strtocodes(..., NORMALIZE_NFD, nqp::create(NFD))` of a 1,008-character URL string.
+
+## Implementation status
+
+### Step 1 — landed 2026-09-23, by a different mechanism than §2 describes
+
+§2 proposed patching pending links when the enclosing scope finishes compiling, with links as indices into a per-unit chunk table. Reading the compiler showed what that costs. The TRIR compile of every routine would have to be deferred to the end of its scope, with its AST retained. Nested scopes hand their routines to the enclosing routine's own table, so the chunks would have to be re-attached into tables that have already moved. And a callee that turns out to decline would force its callers to recompile. All of that serves a question the running program already answers.
+
+What landed links each `CallGen` site **at run time, to what the generic dispatch did** (`src/trir/gen_link.rs`):
+
+- The first call of a site goes the generic way, with an observer armed for the callee name.
+- `call_function_fallback`'s plain user-routine branch records the def it picks for that name, but not when multi dispatch is involved.
+- If the def has a chunk, the site keeps it, keyed by what the resolution read: `fn_resolve_gen`, the current package, and the running frame's lexical package, the two inputs of `bare_name_packages_syms`.
+- A later call in the same state binds its arguments with `CallTr`'s own checks, by peeking before consuming anything, and runs the chunk.
+- A wrapped callee, a junction or aggregate argument, a type the chunk cannot bind, or a changed state takes the generic path, as the first call did.
+- Observers nest. An untyped callee can reach a TRIR routine that makes its own generic call, so the enclosing observer is set aside and restored rather than cleared. Clearing it lost every link whose callee makes a generic call, which is `parse-thing` reached from `parse-array`.
+
+This is sound because the routine linked is by construction the one the generic path picks in that state, and running its chunk is the equivalence ADR-0110's differential gate holds TRIR to. It also covers what compile-time linkage could not: a call into another compunit's routine.
+
+It does not by itself give Step 4 a compile-time unit. Step 4 can link at lowering time, when every routine exists, by the same observation.
+
+Measured, release, 4-core container:
+
+| | before | after | gate |
+|---|---:|---:|---|
+| forward-call microbenchmark (§1.3) | 8,857 ns | **174.5 ns** | ≤ 1.2x the backward call (174.5 ns): **met** |
+| `trir: entries` from outside TRIR, 100-record decode | 1,949 | **70** | ~1 per `from-json`: partly met; the rest are first-call observations and the untyped string path's own calls |
+| `gen-links` (calls served through a link), same run | 0 | 1,088 | — |
+| 727-record `from-json` | 1.67 s | ~1.55 s (3 runs: 1.50 / 1.61 / 1.55) | — (as §3 estimated: Step 1 alone is worth ~0.07 s) |
+
+The decoded result is byte-identical to rakudo's. Pins: `t/vm/codegen/adr0111-trir-forward-link.t`, which covers a forward `is rw` write, mutual recursion, an aggregate declining then a scalar linking, and a `.wrap` installed after linking, all with TRIR on = off and `gen-links` > 0. Also `t/modules/adr0110-trir-module-linkage.t`.
+

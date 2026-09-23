@@ -13,6 +13,10 @@
 //!   re-ran the routine from the start;
 //! - `bind-declines`: its arguments could not be bound, so it never started.
 //!
+//! - `gen-links`: a `CallGen` site ran its callee's chunk through the link
+//!   the generic dispatch established (ADR-0111 Step 1), not the generic
+//!   dispatch itself.
+//!
 //! In a program where TRIR is doing its job, `completed` is close to
 //! `entries`. A `bails` count of the same order as `entries` means the typed
 //! run is pure overhead.
@@ -23,6 +27,16 @@ static ENTRIES: AtomicU64 = AtomicU64::new(0);
 static COMPLETED: AtomicU64 = AtomicU64::new(0);
 static BAILS: AtomicU64 = AtomicU64::new(0);
 static BIND_DECLINES: AtomicU64 = AtomicU64::new(0);
+static GEN_LINKS: AtomicU64 = AtomicU64::new(0);
+
+/// A `CallGen` site served through its link (`gen_link.rs`) rather than by
+/// the generic dispatch.
+#[inline]
+pub(crate) fn record_gen_link() {
+    if crate::vm::vm_stats::enabled() {
+        GEN_LINKS.fetch_add(1, Ordering::Relaxed);
+    }
+}
 
 /// The outcome of one entry into a TRIR chunk from the ordinary VM.
 #[derive(Clone, Copy)]
@@ -49,10 +63,11 @@ pub(crate) fn record(outcome: TrirEntry) {
 /// The report line, printed with the rest of `MUTSU_VM_STATS`.
 pub(crate) fn report() {
     eprintln!(
-        "[mutsu vm-stats] trir: entries={} completed={} bails={} bind-declines={}",
+        "[mutsu vm-stats] trir: entries={} completed={} bails={} bind-declines={} gen-links={}",
         ENTRIES.load(Ordering::Relaxed),
         COMPLETED.load(Ordering::Relaxed),
         BAILS.load(Ordering::Relaxed),
         BIND_DECLINES.load(Ordering::Relaxed),
+        GEN_LINKS.load(Ordering::Relaxed),
     );
 }
