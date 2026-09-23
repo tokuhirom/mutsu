@@ -227,6 +227,9 @@ impl Interpreter {
     /// the if/else case to Slice 3b). The branch runs once, so reusing the
     /// per-iteration `owned_captures`/box-on-capture machinery is harmless and
     /// keeps closure capture of the branch-local correct.
+    // Cost: O(b + v) per execution plus the body, b = ops in the branch (declaration
+    // scans), v = env entries (`env_had_before` collects every visible key).
+    // Rakudo: O(1) -- see #NNNN.
     pub(super) fn exec_block_local_scope_op(
         &mut self,
         code: &CompiledCode,

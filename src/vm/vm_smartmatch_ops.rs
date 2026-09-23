@@ -33,6 +33,11 @@ impl Interpreter {
         Some(declared == base)
     }
 
+    // Cost: O(L) + the RHS, L = local slots of the current frame, on every `~~`:
+    // `sync_regex_interpolation_env_from_locals` re-broadcasts every slot to env
+    // (one env probe + write each), `code.locals.iter().any(|n| n == "/")` scans
+    // them again, and a non-pure match runs `writeback_match_locals` over them.
+    // Rakudo: O(1) + the RHS -- see #NNNN.
     #[allow(clippy::too_many_arguments)]
     pub(super) fn exec_smart_match_expr_op(
         &mut self,

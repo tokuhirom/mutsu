@@ -111,6 +111,7 @@ impl Interpreter {
         RuntimeError::typed("X::Comp::BeginTime", attrs)
     }
 
+    // Cost: O(p), p = ops of the chunk, on every `run_inner`/`run_reuse` entry.
     fn validate_labels(code: &CompiledCode) -> Result<(), RuntimeError> {
         let mut seen: HashSet<String> = HashSet::new();
         for op in &code.ops {
@@ -204,6 +205,9 @@ impl Interpreter {
     /// The exec loop, borrowing `&mut self` so the `catch_unwind` closure in
     /// `run` does not move `self.interpreter` out (the caller must always get the
     /// interpreter back, even on panic).
+    // Cost: O(p + L) entry (label validation, env->locals seeding, L = frame locals) and
+    // exit (state/env sync), then O(1) per dispatched op: one cached `vm_poll::armed()`
+    // load (a GC safepoint / profiler sample amortized O(1)) plus `exec_one`.
     fn run_inner(
         &mut self,
         code: &CompiledCode,
@@ -566,6 +570,8 @@ impl Interpreter {
 
     /// Run compiled bytecode without consuming self.
     /// Used by map/grep to avoid Interpreter creation/destruction per iteration.
+    // Cost: O(p + L) per call, p = ops of the body (label validation), L = its locals
+    // (seeded from env by name) -- paid per map/grep iteration -- then O(1) per op.
     pub(crate) fn run_reuse(
         &mut self,
         code: &CompiledCode,
@@ -808,6 +814,8 @@ impl Interpreter {
     /// share state (the loop re-invokes the same clone), which is why this
     /// runs at statement entry, not per iteration. Callers must skip this when
     /// resuming a suspended gather coroutine into the same loop opcode.
+    // Cost: O(t * b), t = state locals of the chunk, b = ops in [start, end) (one
+    // `state_local_init_in_range` scan per state local). Rakudo: O(t) -- see #NNNN.
     pub(crate) fn reset_state_locals_in_range(
         &mut self,
         code: &CompiledCode,
@@ -870,6 +878,8 @@ impl Interpreter {
         }
     }
 
+    // Cost: O(1) amortized JIT-entry probe (4-slot lock-free cache; O(r) under a mutex
+    // for a chunk with more hot ranges, r = its ranges) plus O(1) per op run.
     pub(crate) fn run_range(
         &mut self,
         code: &CompiledCode,
@@ -927,6 +937,8 @@ impl Interpreter {
 
     /// The interpreter loop of [`Self::run_range`], entered at `from` (== `start`
     /// except when resuming mid-range after a JIT'd body's goto/warn).
+    // Cost: O(1) per dispatched op (cached safepoint-poll load plus `exec_one`); a `goto`
+    // pays `find_label_target`, O(p), p = ops of the chunk.
     fn run_range_from(
         &mut self,
         code: &CompiledCode,
@@ -994,6 +1006,7 @@ impl Interpreter {
     /// run independently. If one throws, the error is collected and execution
     /// continues with the next phaser. Collected exceptions are returned as
     /// an `X::PhaserExceptions` error at the end.
+    // Cost: O(q) guard scan plus the phasers run, q = ops in the LEAVE/KEEP/UNDO queue.
     pub(crate) fn run_leave_queue_guarded(
         &mut self,
         code: &CompiledCode,
@@ -1058,6 +1071,7 @@ impl Interpreter {
         }
     }
 
+    // Cost: O(p), p = ops of the chunk (linear `Label` search per goto).
     pub(crate) fn find_label_target(&self, code: &CompiledCode, label: &str) -> Option<usize> {
         code.ops.iter().enumerate().find_map(|(i, op)| match op {
             OpCode::Label(name_idx) => {

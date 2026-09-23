@@ -2145,6 +2145,8 @@ impl Interpreter {
         self.suppress_shared_publish = saved_suppress;
     }
 
+    // Cost: O(L), L = local slots of `code` (an env probe, and for a live slot an
+    // env write, per slot). Called on every `~~`. Rakudo: O(1) -- see #NNNN.
     pub(super) fn sync_regex_interpolation_env_from_locals(&mut self, code: &CompiledCode) {
         let saved_suppress = self.suppress_shared_publish;
         self.suppress_shared_publish = true;
@@ -2603,6 +2605,8 @@ impl Interpreter {
         }
     }
 
+    // Cost: O(L), L = frame locals (linear by-name scan of `code.locals`).
+    // Rakudo: O(1) (static lexpad index) -- see #NNNN.
     pub(super) fn find_local_slot(&self, code: &CompiledCode, name: &str) -> Option<usize> {
         code.locals.iter().position(|n| n == name)
     }

@@ -58,6 +58,10 @@ impl Interpreter {
         Ok(())
     }
 
+    // Cost: O(1) plus the body; a scope-isolating block (string-interpolation `{...}`)
+    // adds O(v + L), v = env entries (cloned view walked and diffed), L = frame locals
+    // (copied and reverted); `scope_routines` adds O(R), R = routine-registry entries.
+    // Rakudo: O(1) -- see #NNNN.
     #[allow(clippy::too_many_arguments)]
     pub(super) fn exec_do_block_expr_op(
         &mut self,
@@ -332,6 +336,8 @@ impl Interpreter {
         }
     }
 
+    // Cost: O(1) for a scalar; O(t) for an Array/Hash, t = total nodes (recursive
+    // `deep_copy_value`). Rakudo: O(e) (shallow clone) -- see #NNNN.
     pub(super) fn exec_let_save_op(
         &mut self,
         code: &CompiledCode,

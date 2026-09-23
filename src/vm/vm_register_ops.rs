@@ -148,6 +148,8 @@ impl Interpreter {
         }
     }
 
+    // Cost: O(f + v), f = free vars boxed, v = entries of the current env overlay (the
+    // `Arc` snapshot is copied on its first insert). Rakudo: O(1) -- see #NNNN.
     pub(super) fn exec_make_gather_op(
         &mut self,
         code: &CompiledCode,
@@ -1039,6 +1041,10 @@ impl Interpreter {
     /// `env_dirty` path and, for captured-and-mutated locals, the shared
     /// `ContainerRef` cell that `box_captured_lexicals` installs in both the slot
     /// and `env`.
+    // Cost: O(v + f + L) per closure creation on a capture-cache miss, v = visible env
+    // entries (every tier is walked by `filtered_flat_capture`), f = free vars, L = frame
+    // locals (`materialize_frame_self_into_capture` scans them for `self`); O(f + L) on a
+    // hit. Rakudo: O(f) -- see #NNNN.
     pub(super) fn capture_closure_env(
         &mut self,
         code: &CompiledCode,

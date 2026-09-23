@@ -693,6 +693,9 @@ impl Interpreter {
         Ok(())
     }
 
+    // Cost: O(t1 + t2), t = elements of a list-shaped operand counted
+    // recursively to depth 16 (`warm_which_identity` visits each one looking for
+    // a user `WHICH`), O(1) for scalars. Rakudo: O(1) -- see #NNNN.
     pub(super) fn exec_strict_eq_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
@@ -707,6 +710,7 @@ impl Interpreter {
         Ok(())
     }
 
+    // Cost: O(t1 + t2), as `exec_strict_eq_op`. Rakudo: O(1) -- see #NNNN.
     pub(super) fn exec_strict_ne_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
