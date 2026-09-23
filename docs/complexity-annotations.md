@@ -1,14 +1,25 @@
 # Complexity annotations
 
-Some hot built-in families carry one comment per operation stating its
-per-call time complexity. The comment always has the same grep-able form:
+Every built-in method, routine and `nqp::` op implementation carries one
+comment stating its per-call time complexity (the project rule in
+`CLAUDE.md` "Conventions", adopted 2026-09-23). The comment always has the
+same grep-able form:
 
 ```text
 // Cost: O(n), n = chars of the invocant.
 // Cost: O(n), n = chars of the invocant. Rakudo: O(1) -- see #NNNN.
 ```
 
-Annotated families so far:
+**When the rule applies.** Adding a method arm, a native method, a runtime
+method handler, a builtin routine or an `nqp::` op, or changing what an
+existing one costs, requires the `// Cost:` line directly above it (or a
+`/// Cost:` line in its doc comment). If the new bound is worse than the
+reference implementation's, file a `todo:perf` issue and put its real
+number in the suffix; a literal `#NNNN` is never committed outside this
+document. Families not yet audited are annotated as their code is touched.
+
+Fully audited families so far (every operation annotated, deficits
+measured and filed):
 
 | family | where | reference suffix | measurement script |
 |---|---|---|---|
