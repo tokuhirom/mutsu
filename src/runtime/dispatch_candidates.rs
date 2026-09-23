@@ -717,8 +717,16 @@ impl Interpreter {
     /// `f(42)`; `f(Int $a)` beats `f(*@a)` and `f($a, $b?)`).  Fewer optionals
     /// wins.  Used as a tiebreaker AFTER type distance (a narrower type still
     /// wins even when it is the optional one — `f(Int $y?)` beats `f(Cool $x)`
-    /// for `f(42)`), and BEFORE required-named ranking.
+    /// for `f(42)`), and BEFORE required-named ranking.  Once both candidates
+    /// declare named parameters, however, an omitted optional positional does
+    /// not make one candidate narrower: `multi f($x = 1, :$a)` and
+    /// `multi f(:$b)` tie and declaration order decides.  The positional
+    /// optionality step only applies to candidates without named parameters;
+    /// the named-parameter step already decides a mixed pair.
     fn candidate_optional_positional_count(def: &FunctionDef) -> usize {
+        if Self::candidate_declares_named(def) {
+            return 0;
+        }
         Self::dispatch_visible_params(def)
             .iter()
             .filter(|p| !p.named && (p.is_variadic() || p.optional_marker || p.default.is_some()))

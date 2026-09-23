@@ -672,6 +672,20 @@ impl Interpreter {
                 .any(|p| !p.named && !p.slurpy && !p.double_slurpy)
                 && self.candidate_specificity_rank_for_args(def, arg_values).1 == 0
         });
+        // An exact-arity group made only of named parameters must compete with
+        // flexible candidates that also carry a named parameter.  Rakudo
+        // treats `multi f($x = 1, :$a)` and `multi f(:$b)` as an equal-
+        // narrowness tie for `f()`, so declaration order decides. Returning
+        // the exact named-only candidate here would skip that comparison and
+        // make the later flexible candidate unreachable. A zero-arity
+        // positional candidate (`multi f()`) still gets the fast path: unlike
+        // the named-only case, it is the exact-arity winner over an optional
+        // positional candidate.
+        let exact_candidate_has_unnamed = candidates.iter().any(|(_, def)| {
+            !def.param_defs
+                .iter()
+                .any(|p| p.named && !p.slurpy && !p.double_slurpy)
+        });
         // An exact-arity candidate with no optional positional parameter is
         // already narrower than every default-arity fallback. Preserve that
         // fast path; otherwise `multi f(Int $x)` would lose to
@@ -681,6 +695,7 @@ impl Interpreter {
         // more precisely (the `is-approx` tolerance overloads).
         if !exact_candidate_consumes_optional
             && !exact_candidate_untyped
+            && exact_candidate_has_unnamed
             && let Some(def) =
                 self.choose_best_matching_candidate(name, arg_values, candidates.clone())
         {
