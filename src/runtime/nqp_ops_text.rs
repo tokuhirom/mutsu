@@ -156,7 +156,7 @@ fn scan_bounds(args: &[Value]) -> (std::rc::Rc<Vec<char>>, usize, usize) {
 /// `push_s`/`push_n` all hand back the element just appended, which is what
 /// lets idioms like `has-word`'s
 /// `nqp::add_i(nqp::push_i(@positions,$pos),$move)` chain off it directly.
-fn push_elem(op: &str, target: &Value, val: Value) -> Result<Value, RuntimeError> {
+pub(crate) fn push_elem(op: &str, target: &Value, val: Value) -> Result<Value, RuntimeError> {
     Interpreter::nqp_with_elems_mut(op, target, |elems| elems.push(val.clone()))?;
     Ok(val)
 }

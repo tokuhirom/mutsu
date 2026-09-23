@@ -110,6 +110,36 @@ impl Interpreter {
         )))
     }
 
+    /// `nqp::shift` and its typed twins: remove and return the first element.
+    /// Shared by the dispatch table and TRIR's typed `ShiftIO`, so the two
+    /// cannot drift.
+    pub(crate) fn nqp_shift(op: &str, target: &Value) -> Result<Value, RuntimeError> {
+        let elem = Self::nqp_with_elems_mut(op, target, |elems| {
+            if elems.is_empty() {
+                None
+            } else {
+                Some(elems.remove(0))
+            }
+        })?;
+        Ok(coerce_like(op, elem))
+    }
+
+    /// `nqp::shift_i` as a native int: [`Self::nqp_shift`]'s removal and
+    /// `coerce_like`'s `_i` conversion (an empty list answers 0), with no
+    /// boxing and no reading of the op's name.
+    pub(crate) fn nqp_shift_int(target: &Value) -> Result<i64, RuntimeError> {
+        let elem = Self::nqp_with_elems_mut("shift_i", target, |elems| {
+            if elems.is_empty() {
+                None
+            } else {
+                Some(elems.remove(0))
+            }
+        })?;
+        Ok(elem.map_or(0, |v| {
+            v.as_int().unwrap_or_else(|| crate::runtime::to_int(&v))
+        }))
+    }
+
     /// How many elements a list-ish nqp value has, without materializing them.
     ///
     /// `nqp::elems` is a loop *condition* in nqp code (`while $i < elems($a)`),
@@ -126,6 +156,22 @@ impl Interpreter {
             return crate::value::value_buf::buf_len(&attributes);
         }
         None
+    }
+
+    /// `nqp::elems` as a native int, for TRIR's typed `ElemsO`: the in-place
+    /// count when the value is list-ish, else the generic op (a Hash, a Str
+    /// coerced by the op's own rules, ...).
+    pub(crate) fn nqp_elems_count(&mut self, target: &Value) -> Result<i64, RuntimeError> {
+        if let ValueView::Array(items, _) = target.view() {
+            return Ok(items.len() as i64);
+        }
+        if let Some(n) = Self::nqp_elems_len_of(target) {
+            return Ok(n as i64);
+        }
+        let id =
+            crate::runtime::nqp_op_ids::nqp_op_id("elems").expect("elems is a registered nqp op");
+        let r = self.dispatch_nqp_op_by_id(id, std::slice::from_ref(target))?;
+        Ok(r.as_int().unwrap_or_else(|| r.to_f64() as i64))
     }
 
     /// One element of a list-ish nqp value, without materializing the rest —
@@ -291,20 +337,7 @@ impl Interpreter {
             // FIRST element. `JSON::Fast`'s string scanner drives its whole
             // `Uni` of codepoints this way.
             "shift" | "shift_s" | "shift_i" | "shift_n" => {
-                match Self::nqp_with_elems_mut(
-                    op,
-                    &args.first().cloned().unwrap_or(Value::NIL),
-                    |elems| {
-                        if elems.is_empty() {
-                            None
-                        } else {
-                            Some(elems.remove(0))
-                        }
-                    },
-                ) {
-                    Ok(elem) => Ok(coerce_like(op, elem)),
-                    Err(e) => Err(e),
-                }
+                Self::nqp_shift(op, &args.first().cloned().unwrap_or(Value::NIL))
             }
             // nqp::bindpos($list, $i, $value): store at an index, untyped,
             // growing the list when the index is past the end. nqp code builds

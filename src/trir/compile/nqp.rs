@@ -129,6 +129,9 @@ impl TrirCompiler<'_> {
             self.nqp_sourced = true;
             return Some(result);
         }
+        if let Some(kind) = self.try_typed_list_op(op, args) {
+            return kind;
+        }
         // `nqp::const::CCLASS_WORD` and friends are compile-time integers,
         // not ops.
         if let Some(v) = crate::compiler::nqp_forms::nqp_const_value(name) {
@@ -157,6 +160,45 @@ impl TrirCompiler<'_> {
         });
         self.nqp_sourced = true;
         Some(TrKind::Obj)
+    }
+
+    /// The typed list ops of ADR-0112 Step 3: `elems`, `shift_i`, `push_i` on
+    /// a boxed list operand, reached without the dispatch table. `None` means
+    /// "not one of these shapes" and nothing has been emitted; `Some(r)` is
+    /// the compile's answer (`r == None` declines, as any operand may).
+    fn try_typed_list_op(&mut self, op: &str, args: &[Expr]) -> Option<Option<TrKind>> {
+        let r = match (op, args.len()) {
+            ("elems", 1) => (|| {
+                let got = self.compile_nqp_operand(&args[0])?;
+                self.coerce(got, TrKind::Obj)?;
+                self.ops.push(TrOp::ElemsO);
+                Some(TrKind::Int)
+            })(),
+            ("shift_i", 1) => (|| {
+                let got = self.compile_nqp_operand(&args[0])?;
+                self.coerce(got, TrKind::Obj)?;
+                self.ops.push(TrOp::ShiftIO);
+                Some(TrKind::Int)
+            })(),
+            ("push_i", 2) => (|| {
+                let got = self.compile_nqp_operand(&args[0])?;
+                self.coerce(got, TrKind::Obj)?;
+                let val = self.compile_nqp_operand(&args[1])?;
+                if val == TrKind::Int {
+                    self.ops.push(TrOp::PushIO);
+                } else {
+                    // Only a native int is the typed shape; anything else
+                    // keeps the dispatch table's own coercion.
+                    self.coerce(val, TrKind::Obj)?;
+                    let id = crate::runtime::nqp_op_ids::nqp_op_id("push_i")?;
+                    self.ops.push(TrOp::NqpOpGen { id, arity: 2 });
+                }
+                Some(TrKind::Obj)
+            })(),
+            _ => return None,
+        };
+        self.nqp_sourced = r.is_some();
+        Some(r)
     }
 
     /// Compile one operand of an `nqp::` op. A sigilless parameter is
