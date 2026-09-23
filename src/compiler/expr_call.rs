@@ -273,7 +273,40 @@ impl Compiler {
 
     pub(super) fn compile_expr_call(&mut self, name: &Symbol, args: &[Expr]) {
         self.fold_lexical_sub_free_vars(name);
+        if let Some(named) = Self::named_sub_lvalue_with_target_var(name, args) {
+            self.compile_expr_call_inner(name, &named, false);
+            return;
+        }
         self.compile_expr_call_inner(name, args, false);
+    }
+
+    /// `substr-rw($t, ...) = v` / `subbuf-rw($b, ...) = v` reach the runtime as
+    /// `__mutsu_assign_named_sub_lvalue("substr-rw", [ARGS], v)`, where the
+    /// first argument is only a VALUE. The runtime used to find the variable to
+    /// write back by scanning the env for an identical value, which picks any
+    /// other variable holding an equal string (#9183). When that argument is
+    /// written as a plain scalar variable, append its name as a fourth argument
+    /// -- the same hint `__mutsu_assign_method_lvalue` carries for the method
+    /// form (`$t.substr-rw(...) = v`).
+    fn named_sub_lvalue_with_target_var(name: &Symbol, args: &[Expr]) -> Option<Vec<Expr>> {
+        if name.resolve() != "__mutsu_assign_named_sub_lvalue" || args.len() != 3 {
+            return None;
+        }
+        let Expr::Literal(callee) = &args[0] else {
+            return None;
+        };
+        if !matches!(callee.as_str(), Some("substr-rw" | "subbuf-rw")) {
+            return None;
+        }
+        let Expr::ArrayLiteral(call_args) = &args[1] else {
+            return None;
+        };
+        let Some(Expr::Var(var)) = call_args.first() else {
+            return None;
+        };
+        let mut named = args.to_vec();
+        named.push(Expr::Literal(Value::str(var.to_string())));
+        Some(named)
     }
 
     pub(super) fn compile_expr_user_routine_call(&mut self, name: &Symbol, args: &[Expr]) {
