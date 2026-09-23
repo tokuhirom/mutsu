@@ -491,6 +491,20 @@ impl Interpreter {
         call_args: Vec<Value>,
         value: Value,
     ) -> Result<Value, RuntimeError> {
+        self.assign_named_sub_lvalue_hinted(name, call_args, value, None)
+    }
+
+    /// [`Self::assign_named_sub_lvalue_with_values`] with the name of the
+    /// variable the first argument was read from, when the call site knows it.
+    /// `substr-rw` / `subbuf-rw` write back to that variable; without it they
+    /// fall back to searching the env for an identical value.
+    pub(super) fn assign_named_sub_lvalue_hinted(
+        &mut self,
+        name: &str,
+        call_args: Vec<Value>,
+        value: Value,
+        target_var_hint: Option<String>,
+    ) -> Result<Value, RuntimeError> {
         // Perl-style slurp idiom used in roast/t/fudge.t:
         //   local(@ARGV, $/) = $path; <>
         // Preserve support when `local(...) = ...` is lowered as named-sub lvalue assignment.
@@ -530,12 +544,12 @@ impl Interpreter {
         }
 
         // substr-rw as a function: substr-rw($str, from, len) = $value
-        // Cost: O(V + n + r), V = env entries scanned to find the target variable,
-        // plus `assign_substr_rw`.
+        // Cost: O(n + r) for `assign_substr_rw` when the call site names the
+        // variable; O(V + n + r) otherwise, V = env entries scanned for it.
         if name == "substr-rw" && !call_args.is_empty() {
             let target = call_args[0].clone();
             let method_args = call_args[1..].to_vec();
-            let target_var = {
+            let target_var = target_var_hint.clone().or_else(|| {
                 let mut found = None;
                 for (k, v) in self.env.iter() {
                     if crate::runtime::values_identical(v, &target) && !k.starts_with("__") {
@@ -544,7 +558,7 @@ impl Interpreter {
                     }
                 }
                 found
-            };
+            });
             // Single-store coherence: `assign_method_lvalue_with_values` writes
             // the mutated string back into `env[target_var]` but not the caller's
             // local slot. The default build's blanket reconcile carried this;
@@ -572,7 +586,7 @@ impl Interpreter {
             let method_args = call_args[1..].to_vec();
             // We need to find the variable name for the target to update it.
             // Search the env for a variable whose value matches the target by identity.
-            let target_var = {
+            let target_var = target_var_hint.clone().or_else(|| {
                 let mut found = None;
                 for (k, v) in self.env.iter() {
                     if crate::runtime::values_identical(v, &target) && !k.starts_with("__") {
@@ -581,7 +595,7 @@ impl Interpreter {
                     }
                 }
                 found
-            };
+            });
             if let Some(ref tv) = target_var {
                 self.pending_rw_writeback_sources.push(tv.clone());
                 // Retain-on-miss too, for the bound-Proxy form.
@@ -695,7 +709,10 @@ impl Interpreter {
         let name = args[0].to_string_value();
         let call_args = Self::sub_call_args_from_value(args.get(1));
         let value = args[2].clone();
-        self.assign_named_sub_lvalue_with_values(&name, call_args, value)
+        // The compiler appends the first argument's variable name for
+        // `substr-rw` / `subbuf-rw` (`named_sub_lvalue_with_target_var`).
+        let target_var = args.get(3).and_then(|v| v.as_str().map(str::to_string));
+        self.assign_named_sub_lvalue_hinted(&name, call_args, value, target_var)
     }
 
     pub(super) fn builtin_assign_callable_lvalue(
