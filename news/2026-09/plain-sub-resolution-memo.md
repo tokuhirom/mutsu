@@ -52,6 +52,14 @@ repro shape): `function-full-resolve` for `unjsonify-string` goes from 330 to 1
 and for `parse-string-slow` (an `int $pos is rw` plain sub on the same path)
 from 221 to 1.
 
+Wall clock, release builds side by side, both warmed first, mean of 7 paired
+runs of the same repro with 20000 strings: 2447 ms before, 2359 ms after
+(about 3.6%).
+
+While writing the regression test, a user `sub caller` turned out to receive
+mutsu's internal `__callframe_line` named argument and die; that is
+pre-existing and filed as [#9093](https://github.com/tokuhirom/mutsu/issues/9093).
+
 The structural direction the issue also names -- binding an inner sub as a
 frame lexical so `has_inner_subs` no longer excludes the body from the light
 paths -- is not part of this change.
