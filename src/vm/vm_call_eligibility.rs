@@ -508,7 +508,7 @@ impl Interpreter {
     /// param to a shared cell and registers the rw writeback. The common case
     /// (scalar args to `$` params, e.g. `fib($n)`) returns false cheaply, so the
     /// fast paths are preserved.
-    pub(super) fn call_shares_container_into_scalar_param(
+    pub(crate) fn call_shares_container_into_scalar_param(
         cf: &CompiledFunction,
         args: &[Value],
     ) -> bool {

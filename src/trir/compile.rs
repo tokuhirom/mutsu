@@ -458,6 +458,7 @@ impl<'a> TrirCompiler<'a> {
 
 mod binary;
 mod call;
+mod dump;
 mod expr;
 mod inline;
 mod method;
@@ -479,27 +480,6 @@ pub(crate) fn compile_routine(
     scope: TrirScope<'_>,
 ) -> Option<std::sync::Arc<TrChunk>> {
     let chunk = TrirCompiler::compile(name, param_defs, params, return_type, body, scope);
-    if dump_enabled() {
-        match &chunk {
-            Some(c) => eprintln!(
-                "trir: {} accepted ({} ops, {} native slots, {} obj slots, {} outers, {} calls)",
-                name.as_str(),
-                c.ops.len(),
-                c.n_native,
-                c.n_obj,
-                c.outers.len(),
-                c.calls.len(),
-            ),
-            None => eprintln!("trir: {} declined", name.as_str()),
-        }
-    }
+    dump::report(name, chunk.as_ref());
     chunk.map(std::sync::Arc::new)
-}
-
-/// Whether `MUTSU_TRIR_DUMP` asked for the eligibility decisions to be
-/// reported. Read once: this runs per routine declaration.
-fn dump_enabled() -> bool {
-    use std::sync::OnceLock;
-    static ON: OnceLock<bool> = OnceLock::new();
-    *ON.get_or_init(|| std::env::var("MUTSU_TRIR_DUMP").is_ok())
 }

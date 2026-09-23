@@ -242,3 +242,22 @@ The gate is not met, and the measurement says why:
 
 Pin: `t/vm/codegen/adr0112-trir-list-ops.t` and `t/fixtures/trir-list-ops.raku`
 (checked against rakudo).
+
+### Step 3 — second slice landed 2026-09-23 (the resolving call enters TRIR)
+
+Investigating #9122's ~138K instructions per `[]` element found that
+TRIR was entered from untyped code only on `exec_call_func_op`'s
+resolution-cache hit. The call that resolves a name ran the untyped body. For a
+recursive-descent parser that is the outermost call, so the top-level
+container's loop ran untyped for the whole first `from-json`
+(`gen-links=0`). `dispatch_func_call_inner` and
+`compile_and_call_function_def_at` now enter the chunk on that call too, with
+the arguments as the hit path sees them (`src/trir/entry_values.rs`).
+`nqp::create` also allocates through `dispatch_create` directly, not through
+`call_method_with_values`. `[]` element: ~138K → ~65K instructions.
+
+The largest single remaining cost of the SPDX decode is `LoadBareWord`: 10% of
+the whole run (callgrind, 100 records), spent resolving the same core type
+names (`List`, `Array`, `IterationBuffer`, `Map`, `Hash`, `Uni`, `NFD`) through
+the untyped path's full bareword resolution. A cache for it needs a key that
+covers everything that resolution reads, which is the next slice (#9122).

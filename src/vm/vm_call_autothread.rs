@@ -202,6 +202,7 @@ impl Interpreter {
                     call_has_named,
                     call_me_override,
                     compiled_fns,
+                    None,
                 )?;
                 results.push(result);
             }

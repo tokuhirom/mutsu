@@ -40,6 +40,7 @@ use crate::value::Value;
 
 pub(crate) mod compile;
 pub(crate) mod entry;
+mod entry_values;
 pub(crate) mod exec;
 pub(crate) mod exec_call;
 mod exec_str;
