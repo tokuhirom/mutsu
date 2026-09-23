@@ -691,7 +691,10 @@ impl Interpreter {
             ClassDef {
                 parents: Vec::new(),
                 attributes: Vec::new(),
-                native_methods: ["cancel"].iter().map(|s| s.to_string()).collect(),
+                native_methods: ["cancel", "cancelled"]
+                    .iter()
+                    .map(|s| s.to_string())
+                    .collect(),
                 mro: sym_mro(&["Cancellation"]),
                 attribute_types: HashMap::new(),
                 attribute_smileys: HashMap::new(),

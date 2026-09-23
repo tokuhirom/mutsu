@@ -1023,9 +1023,10 @@ impl Interpreter {
                     }
                     return Ok(Value::make_instance(*class_name, attrs));
                 }
-                "ThreadPoolScheduler" | "CurrentThreadScheduler" | "Tap" | "Cancellation" => {
+                "ThreadPoolScheduler" | "CurrentThreadScheduler" | "Tap" => {
                     return Ok(Value::make_instance(*class_name, HashMap::new()));
                 }
+                "Cancellation" => return Ok(Self::cancellation_instance()),
                 "FakeScheduler" => {
                     // Shared single implementation with the VM's native fast path.
                     return Ok(Self::build_native_fakescheduler_value());

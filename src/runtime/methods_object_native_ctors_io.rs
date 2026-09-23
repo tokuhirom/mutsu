@@ -407,10 +407,12 @@ impl Interpreter {
             Some(Ok(Value::make_instance(class_name, HashMap::new())))
         } else if matches!(
             cn.as_str(),
-            "ThreadPoolScheduler" | "CurrentThreadScheduler" | "Tap" | "Cancellation"
+            "ThreadPoolScheduler" | "CurrentThreadScheduler" | "Tap"
         ) {
             // These take no construction args — just an empty instance.
             Some(Ok(Value::make_instance(class_name, HashMap::new())))
+        } else if cn == "Cancellation" {
+            Some(Ok(Self::cancellation_instance()))
         } else if matches!(cn.as_str(), "Lock" | "Lock::Async" | "Lock::Soft") {
             // A lock is pure data: a fresh global lock id (and an `async` flag for
             // `Lock::Async`). `next_lock_id` only bumps a process-global counter —
