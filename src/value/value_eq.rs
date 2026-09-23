@@ -54,9 +54,9 @@ impl PartialEq for Value {
             (ValueView::Seq(a), ValueView::Seq(b)) => a[..] == b[..],
             (ValueView::Slip(a), ValueView::Slip(b)) => *a == *b,
             (ValueView::Array(a, ..), ValueView::Seq(b))
-            | (ValueView::Seq(b), ValueView::Array(a, ..)) => a.items[..] == b[..],
+            | (ValueView::Seq(b), ValueView::Array(a, ..)) => *a.items() == b[..],
             (ValueView::Array(a, ..), ValueView::Slip(b))
-            | (ValueView::Slip(b), ValueView::Array(a, ..)) => a.items == **b,
+            | (ValueView::Slip(b), ValueView::Array(a, ..)) => *a.items() == b[..],
             (ValueView::Seq(a), ValueView::Slip(b)) | (ValueView::Slip(b), ValueView::Seq(a)) => {
                 &a[..] == b.as_ref().as_slice()
             }

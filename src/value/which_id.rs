@@ -146,7 +146,10 @@ mod tests {
         // Measured 2026-09-07: 200 -> 208 bytes for both, i.e. exactly the
         // field, with no padding growth. Pinned so a later field cannot slip in
         // unmeasured on the two hottest container types.
-        assert_eq!(size_of::<crate::value::ArrayData>(), 208);
+        // `ArrayData` then went 208 -> 216 on 2026-09-23 (#9121): the `head`
+        // offset that makes a front shift amortized O(1) instead of a memmove
+        // of the whole array.
+        assert_eq!(size_of::<crate::value::ArrayData>(), 216);
         // `HashData` then went 208 -> 192 on 2026-09-13 (ADR-0103): its two maps
         // (`map` and `original_keys`) carry their `BuildHasher` inline, and
         // `foldhash::fast::RandomState` is one `u64` where std's `RandomState`

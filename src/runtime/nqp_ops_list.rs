@@ -110,17 +110,34 @@ impl Interpreter {
         )))
     }
 
-    /// `nqp::shift` and its typed twins: remove and return the first element.
-    /// Shared by the dispatch table and TRIR's typed `ShiftIO`, so the two
-    /// cannot drift.
-    pub(crate) fn nqp_shift(op: &str, target: &Value) -> Result<Value, RuntimeError> {
-        let elem = Self::nqp_with_elems_mut(op, target, |elems| {
+    /// Remove the first element of a list-ish nqp value. A list goes through
+    /// [`crate::value::ArrayData::shift_front`], which is amortized O(1)
+    /// (#9121): JSON::Fast's `unjsonify-string` `shift_i`s every codepoint
+    /// off a `Uni`, and `Vec::remove(0)` made that loop quadratic.
+    fn nqp_shift_elem(op: &str, target: &Value) -> Result<Option<Value>, RuntimeError> {
+        if let Some(array) = nqp_backing_array(target)
+            && let ValueView::Array(items, _) = array.view()
+        {
+            // SAFETY: audited aliased in-place container write (see
+            // `nqp_with_elems_mut`) — a pure element removal that never
+            // re-enters the interpreter.
+            let data = unsafe { crate::value::gc_contents_mut(&items) };
+            return Ok(data.shift_front());
+        }
+        Self::nqp_with_elems_mut(op, target, |elems| {
             if elems.is_empty() {
                 None
             } else {
                 Some(elems.remove(0))
             }
-        })?;
+        })
+    }
+
+    /// `nqp::shift` and its typed twins: remove and return the first element.
+    /// Shared by the dispatch table and TRIR's typed `ShiftIO`, so the two
+    /// cannot drift.
+    pub(crate) fn nqp_shift(op: &str, target: &Value) -> Result<Value, RuntimeError> {
+        let elem = Self::nqp_shift_elem(op, target)?;
         Ok(coerce_like(op, elem))
     }
 
@@ -128,13 +145,7 @@ impl Interpreter {
     /// `coerce_like`'s `_i` conversion (an empty list answers 0), with no
     /// boxing and no reading of the op's name.
     pub(crate) fn nqp_shift_int(target: &Value) -> Result<i64, RuntimeError> {
-        let elem = Self::nqp_with_elems_mut("shift_i", target, |elems| {
-            if elems.is_empty() {
-                None
-            } else {
-                Some(elems.remove(0))
-            }
-        })?;
+        let elem = Self::nqp_shift_elem("shift_i", target)?;
         Ok(elem.map_or(0, |v| {
             v.as_int().unwrap_or_else(|| crate::runtime::to_int(&v))
         }))
@@ -339,7 +350,8 @@ impl Interpreter {
             // nqp::shift($list) and its typed twins: remove and return the
             // FIRST element. `JSON::Fast`'s string scanner drives its whole
             // `Uni` of codepoints this way.
-            // Cost: O(e), e = elements (Vec::remove(0)). MoarVM: O(1) -- see #9121.
+            // Cost: O(1) amortized on a list (ArrayData's head offset, #9121); O(e) on a Buf.
+            // MoarVM: O(1) -- see #9132.
             "shift" | "shift_s" | "shift_i" | "shift_n" => {
                 Self::nqp_shift(op, &args.first().cloned().unwrap_or(Value::NIL))
             }

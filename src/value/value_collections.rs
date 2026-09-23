@@ -171,6 +171,7 @@ impl ArrayData {
     pub fn new(items: Vec<Value>) -> Self {
         ArrayData {
             items,
+            head: 0,
             which_id: crate::value::which_id::WhichId::default(),
             native: None,
             value_type: None,
@@ -210,9 +211,9 @@ impl ArrayData {
     }
 
     /// Borrow the element vector through the representation chokepoint.
-    pub(crate) fn items(&self) -> &Vec<Value> {
+    pub(crate) fn items(&self) -> &[Value] {
         match &self.native {
-            None => &self.items,
+            None => &self.items[self.head..],
             Some(nb) => nb.sync_and_borrow(&self.items),
         }
     }
@@ -226,6 +227,7 @@ impl ArrayData {
         if let Some(nb) = &mut self.native {
             nb.sync_into_seed_mut(&mut self.items);
         }
+        self.compact_head();
         &mut self.items
     }
 
@@ -234,6 +236,7 @@ impl ArrayData {
         // A shaped array stores row arrays at this level. Native storage is
         // promoted per flat numeric array only; encoding a row object as a
         // scalar would destroy the shape (and its nested values).
+        self.compact_head();
         if self
             .items
             .iter()
@@ -287,6 +290,7 @@ impl ArrayData {
         if let Some(nb) = &mut self.native {
             nb.sync_into_seed_readonly(&mut self.items);
         }
+        self.compact_head();
         std::mem::take(&mut self.items)
     }
 
@@ -295,6 +299,7 @@ impl ArrayData {
         if let Some(nb) = &mut self.native {
             nb.sync_into_seed_readonly(&mut self.items);
         }
+        self.compact_head();
         self.items
     }
 
@@ -313,7 +318,7 @@ impl ArrayData {
     /// before this arm was removed -- see ADR-0049 §5 open question 1 and
     /// §8's slice 5 entry.
     pub fn hole_at(&self, i: usize) -> bool {
-        match self.items.get(i).map(Value::view) {
+        match self.items[self.head..].get(i).map(Value::view) {
             None => true,
             Some(crate::value::ValueView::Package(name)) => {
                 let is_gap_marker =
@@ -338,15 +343,35 @@ impl ArrayData {
     }
 }
 
+/// Field-wise clone, except that the copy carries only the live elements:
+/// [`ArrayData::shift_front`]'s dead prefix is not worth duplicating.
+impl Clone for ArrayData {
+    fn clone(&self) -> Self {
+        ArrayData {
+            items: self.items[self.head..].to_vec(),
+            head: 0,
+            which_id: self.which_id.clone(),
+            native: self.native.clone(),
+            value_type: self.value_type.clone(),
+            key_type: self.key_type.clone(),
+            declared_type: self.declared_type.clone(),
+            default: self.default.clone(),
+            shape: self.shape.clone(),
+            initialized: self.initialized.clone(),
+            descriptor_name: self.descriptor_name.clone(),
+        }
+    }
+}
+
 impl std::ops::Deref for ArrayData {
-    type Target = Vec<Value>;
-    fn deref(&self) -> &Vec<Value> {
+    type Target = [Value];
+    fn deref(&self) -> &[Value] {
         self.items()
     }
 }
 
 impl std::ops::DerefMut for ArrayData {
-    fn deref_mut(&mut self) -> &mut Vec<Value> {
+    fn deref_mut(&mut self) -> &mut [Value] {
         self.items_mut()
     }
 }
@@ -361,7 +386,7 @@ impl From<Vec<Value>> for ArrayData {
 /// (preserves the prior `Arc<Vec<Value>>` PartialEq semantics).
 impl PartialEq for ArrayData {
     fn eq(&self, other: &Self) -> bool {
-        self.items == other.items
+        self.items[self.head..] == other.items[other.head..]
     }
 }
 
@@ -375,6 +400,6 @@ impl<'a> IntoIterator for &'a ArrayData {
     type Item = &'a Value;
     type IntoIter = std::slice::Iter<'a, Value>;
     fn into_iter(self) -> Self::IntoIter {
-        self.items.iter()
+        self.items[self.head..].iter()
     }
 }
