@@ -1652,6 +1652,31 @@ impl Interpreter {
                     result
                 }
             }
+            // A Pair index is passed to a user-defined AT-KEY unchanged. This
+            // is the protocol used by associative objects whose key has more
+            // than one component (for example Keyring's attribute/label
+            // lookup); treating the Pair as an unhandled index silently
+            // returned Nil instead of dispatching the method.
+            (
+                ValueView::Instance { class_name, .. },
+                ValueView::Pair(..) | ValueView::ValuePair(..),
+            ) => {
+                let cn = class_name.resolve();
+                let result = match self.try_compiled_method_or_interpret(
+                    target.clone(),
+                    "AT-KEY",
+                    vec![index.clone()],
+                ) {
+                    Ok(v) => v,
+                    Err(e) if self.has_user_method(&cn, "AT-KEY") => return Err(e),
+                    Err(_) => Value::NIL,
+                };
+                if result.is_nil() {
+                    self.typed_container_default(&target)
+                } else {
+                    result
+                }
+            }
             // A `CArray[T]` *native handle* — what `nativecast(CArray[T], $ptr)`
             // returns — is a C pointer, not a Raku array: read element `i` out of
             // native memory. This is the same trust NativeCall already extends to
