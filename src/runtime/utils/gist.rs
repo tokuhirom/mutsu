@@ -243,6 +243,30 @@ pub(crate) fn setbagmix_gist_named(value: &Value, type_override: Option<&str>) -
     }
 }
 
+/// Rakudo caps an aggregate's gist at its first 100 elements, then appends
+/// ` ...` (`List.gist` stops the element walk at 101), so `say @a` on a huge
+/// array prints the same head `@a.gist` does, nested aggregates included.
+const GIST_ELEM_CAP: usize = 100;
+
+/// Gist every element of `items`, joined by `sep`, stopping after
+/// [`GIST_ELEM_CAP`] elements with a trailing ` ...`.
+///
+/// Cost: O(t), t = rendered size of at most the first 100 elements.
+fn gist_elements<'a>(items: impl Iterator<Item = &'a Value>, sep: &str) -> String {
+    let mut out = String::new();
+    for (i, item) in items.enumerate() {
+        if i > 0 {
+            out.push_str(sep);
+        }
+        if i == GIST_ELEM_CAP {
+            out.push_str("...");
+            break;
+        }
+        out.push_str(&gist_value(item));
+    }
+    out
+}
+
 pub(crate) fn gist_value(value: &Value) -> String {
     // Cycle detection for recursive data structures (shared hash/array Gcs).
     //
@@ -338,9 +362,8 @@ pub(crate) fn gist_value(value: &Value) -> String {
             // `[...]` held in `@` array context, `(...)` for a bare Seq.
             crate::value::lazy_list_placeholder("gist", ll.in_array_context())
         }
-        // Cost: O(t), t = total rendered size of every element: this renderer (the
-        // `say @a` path) has no 100-element cap, unlike `.gist`. Rakudo: O(1) for the
-        // 100-element head -- see #9162.
+        // Cost: O(t), t = rendered size of at most the first 100 elements (the
+        // gist head, as in Rakudo).
         ValueView::Array(items, kind) => {
             let ptr = crate::gc::Gc::as_ptr(&items) as usize;
             // The `$id` Rakudo's `gistseen` names the node with is its type.
@@ -373,7 +396,7 @@ pub(crate) fn gist_value(value: &Value) -> String {
             } else {
                 " "
             };
-            let inner = items.iter().map(gist_value).collect::<Vec<_>>().join(sep);
+            let inner = gist_elements(items.iter(), sep);
             let looped = SEEN_PTRS.with(|seen| pop_ptr(seen, ptr));
             let rendered = match kind {
                 crate::value::ArrayKind::Array
@@ -453,17 +476,9 @@ pub(crate) fn gist_value(value: &Value) -> String {
             format!("{} => {}", key_gist, gist_value(v))
         }
         ValueView::Seq(items) | ValueView::HyperSeq(items) | ValueView::RaceSeq(items) => {
-            format!(
-                "({})",
-                items.iter().map(gist_value).collect::<Vec<_>>().join(" ")
-            )
+            format!("({})", gist_elements(items.iter(), " "))
         }
-        ValueView::Slip(items) => {
-            format!(
-                "({})",
-                items.iter().map(gist_value).collect::<Vec<_>>().join(" ")
-            )
-        }
+        ValueView::Slip(items) => format!("({})", gist_elements(items.iter(), " ")),
         ValueView::Version { .. } => format!("v{}", value.to_string_value()),
         ValueView::Nil => "Nil".to_string(),
         // Range.gist is identical to Range.raku in Rakudo: it shows the range
