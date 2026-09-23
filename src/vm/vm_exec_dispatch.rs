@@ -203,6 +203,8 @@ impl Interpreter {
         match &code.ops[*ip] {
             // ADR-0110 §3.3: a statically resolved call into a typed routine.
             // First arm because it is the whole of a hot call site.
+            // Cost: O(a), a = arguments bound into the statically linked TRIR frame (the
+            // callee body is its own cost); the by-name fallback also clones the call site, O(a).
             OpCode::CallTrir { site: site_idx, .. } => {
                 let site = &code.trir_call_sites[*site_idx as usize];
                 let result = match self.exec_call_trir_site(site, compiled_fns, code) {
@@ -223,10 +225,12 @@ impl Interpreter {
                 *ip += 1;
             }
             // -- Constants --
+            // Cost: O(1).
             OpCode::LoadConst(idx) => {
                 self.stack.push(code.constants[*idx as usize].clone());
                 *ip += 1;
             }
+            // Cost: O(c), c = captured names (one scope-map insert, and a name copy, each).
             OpCode::LoadRegexClosure {
                 const_idx,
                 captures,
@@ -239,18 +243,23 @@ impl Interpreter {
                 self.stack.push(v);
                 *ip += 1;
             }
+            // Cost: O(1).
             OpCode::LoadNil => {
                 self.stack.push(Value::NIL);
                 *ip += 1;
             }
+            // Cost: O(1).
             OpCode::LoadTrue => {
                 self.stack.push(Value::TRUE);
                 *ip += 1;
             }
+            // Cost: O(1).
             OpCode::LoadFalse => {
                 self.stack.push(Value::FALSE);
                 *ip += 1;
             }
+            // Cost: O(t), t = nodes of the regex's boxed `source_tree` (deep-copied with the
+            // `RegexAdverbs` payload); the match that consumes it is at least O(t) anyway.
             OpCode::PatchRegexAdverbPos => {
                 let pos_val = self.stack.pop().unwrap_or(Value::NIL);
                 let regex_val = self.stack.pop().unwrap_or(Value::NIL);
@@ -258,6 +267,7 @@ impl Interpreter {
                 self.stack.push(regex_val.with_regex_pos_value(pos));
                 *ip += 1;
             }
+            // Cost: O(t), t = nodes of the regex's boxed `source_tree` (as PatchRegexAdverbPos).
             OpCode::PatchRegexAdverbContinue => {
                 let pos_val = self.stack.pop().unwrap_or(Value::NIL);
                 let regex_val = self.stack.pop().unwrap_or(Value::NIL);
@@ -267,9 +277,12 @@ impl Interpreter {
             }
 
             // -- Variables --
+            // Cost: O(1) upvalue slot read; the by-name env fallback is O(d), d = env tiers.
             OpCode::GetUpvalue { index, name_idx } => {
                 self.exec_get_upvalue_op(code, *index, *name_idx, ip)?;
             }
+            // Cost: O(d) on a hit, d = env tiers walked (overlay -> parent chain -> base);
+            // a miss runs the fallback chain, O(d + p*|name|), p = enclosing packages probed.
             OpCode::GetGlobal(name_idx) => {
                 let name = Self::const_str(code, *name_idx);
                 if name == "?CALLER::LINE" {
@@ -628,6 +641,7 @@ impl Interpreter {
                 self.stack.push(val);
                 *ip += 1;
             }
+            // Cost: O(d), one env probe for `self`.
             OpCode::GetSelfOrNoSelf(name_idx) => {
                 // Load `self` for a `$.attr` accessor from the captured env.
                 if let Some(self_val) = self.get_env_self() {
@@ -649,6 +663,8 @@ impl Interpreter {
                     return Err(err);
                 }
             }
+            // Cost: O(d) env probe; O(e) when the name holds a Hash (a pair list is built),
+            // e = entries.
             OpCode::GetArrayVar(name_idx) => {
                 let name = Self::const_str(code, *name_idx);
                 // Reject @!attr (private attribute twigil) when no self is available
@@ -809,6 +825,7 @@ impl Interpreter {
                 self.stack.push(val);
                 *ip += 1;
             }
+            // Cost: O(d) env probe (`%?RESOURCES` builds its hash, O(r) resources).
             OpCode::GetHashVar(name_idx) => {
                 let name = Self::const_str(code, *name_idx);
                 // Reject %!attr (private attribute twigil) when no self is available
@@ -915,6 +932,8 @@ impl Interpreter {
                 }
                 *ip += 1;
             }
+            // Cost: O(p*|name|), p = packages on the bare-name search path (each probe formats
+            // a qualified key); independent of the registry size (measured).
             OpCode::GetBareWord(name_idx) => {
                 self.exec_get_bare_word_op(code, *name_idx, compiled_fns)?;
                 // Slice F: a bareword that resolved to a qualified/`our` sub call
@@ -923,6 +942,7 @@ impl Interpreter {
                 self.apply_pending_rw_writeback(code);
                 *ip += 1;
             }
+            // Cost: O(1).
             OpCode::GetShadowableTerm {
                 name_idx,
                 fallback_idx,
@@ -933,26 +953,35 @@ impl Interpreter {
                 self.stack.push(value);
                 *ip += 1;
             }
+            // Cost: O(v), v = entries of the whole env (plus `our_vars` for GLOBAL): every
+            // `Pkg::`/`OUTER::`/`MY::`/`DYNAMIC::` read builds a fresh stash map (see
+            // exec_get_pseudo_stash_op). Rakudo: O(1) -- see #NNNN.
             OpCode::GetPseudoStash(name_idx) => {
                 self.exec_get_pseudo_stash_op(code, *name_idx);
                 *ip += 1;
             }
+            // Cost: O(s + v), s = compiler-selected lexicals, v = env overlay entries
+            // (scanned for package aliases). Rakudo's MY:: measured the same order.
             OpCode::GetLexicalStash(spec_idx) => {
                 self.exec_get_lexical_stash_op(code, *spec_idx);
                 *ip += 1;
             }
+            // Cost: O(1) (one registry probe).
             OpCode::RoleGroupToCandidate => {
                 self.exec_role_group_to_candidate_op();
                 *ip += 1;
             }
+            // Cost: O(1).
             OpCode::PushLastRegisteredClass => {
                 self.exec_push_last_registered_class_op();
                 *ip += 1;
             }
+            // Cost: O(1).
             OpCode::PushLastRegisteredRole => {
                 self.exec_push_last_registered_role_op();
                 *ip += 1;
             }
+            // Cost: O(1) (`our_vars` hash probe; O(d) env fallback).
             OpCode::GetOurVar(name_idx) => {
                 let name = Self::const_str(code, *name_idx);
                 let val = self
@@ -990,6 +1019,7 @@ impl Interpreter {
                 self.stack.push(val);
                 *ip += 1;
             }
+            // Cost: O(d), one env membership probe plus two hash-set probes.
             OpCode::CheckDynamicVarDeclared(name_idx) => {
                 // A genuine assignment to a dynamic variable (`$*x = ...`) that is
                 // not present in the dynamic scope throws X::Dynamic::NotFound
@@ -1016,6 +1046,11 @@ impl Interpreter {
                 }
                 *ip += 1;
             }
+            // Cost: O(v + L) per store, v = entries of the running frame's env overlay (the
+            // reverse-alias propagation at the end scans every env key for a
+            // `__mutsu_sigilless_alias::` entry naming this variable), L = locals of the chunk
+            // (the attr-twigil slot scan); plus O(e) when an `@`/`%` target copies its
+            // container. Rakudo: O(1) -- see #NNNN.
             OpCode::SetGlobalRaw(name_idx) | OpCode::SetGlobal(name_idx) => {
                 let raw_mode = matches!(code.ops[*ip], OpCode::SetGlobalRaw(_));
                 let is_bind_ctx = self.bind_context().get();
@@ -2432,12 +2467,15 @@ impl Interpreter {
                 self.mirror_attr_env_to_cell(code, *name_idx, None);
                 *ip += 1;
             }
+            // Cost: O(p) (see exec_set_var_type).
             OpCode::SetVarType { name_idx, tc_idx } => {
                 self.exec_set_var_type(code, ip, *name_idx, *tc_idx, false, false)?;
             }
+            // Cost: O(p) (see exec_set_var_type).
             OpCode::SetVarTypeScoped { name_idx, tc_idx } => {
                 self.exec_set_var_type(code, ip, *name_idx, *tc_idx, true, false)?;
             }
+            // Cost: O(p) (see exec_set_var_type).
             OpCode::SetVarTypeHoisted {
                 name_idx,
                 tc_idx,
@@ -2445,33 +2483,39 @@ impl Interpreter {
             } => {
                 self.exec_set_var_type(code, ip, *name_idx, *tc_idx, *scoped, true)?;
             }
+            // Cost: O(1).
             OpCode::SetTopic => {
                 let val = self.stack.pop().unwrap_or(Value::NIL);
                 self.last_topic_value = Some(val.clone());
                 self.env_mut().insert("_".to_string(), val);
                 *ip += 1;
             }
+            // Cost: O(1).
             OpCode::PushEnterResult => {
                 let val = self.stack.pop().unwrap_or(Value::NIL);
                 self.enter_result_stack.push(val);
                 *ip += 1;
             }
+            // Cost: O(1).
             OpCode::LoadEnterResult => {
                 let val = self.enter_result_stack.pop().unwrap_or(Value::NIL);
                 self.stack.push(val);
                 *ip += 1;
             }
+            // Cost: O(1) (one env probe of `_`).
             OpCode::SaveTopic => {
                 let current = self.env().get("_").cloned().unwrap_or(Value::NIL);
                 self.topic_save_stack.push(current);
                 *ip += 1;
             }
+            // Cost: O(1).
             OpCode::RestoreTopic => {
                 if let Some(saved) = self.topic_save_stack.pop() {
                     self.env_mut().insert("_".to_string(), saved);
                 }
                 *ip += 1;
             }
+            // Cost: O(1).
             OpCode::EnterPointyTopic => {
                 let saved_topic = self.env().get("_").cloned().unwrap_or(Value::NIL);
                 let saved_source = self.topic_source_var.take();
@@ -2479,6 +2523,7 @@ impl Interpreter {
                     .push((saved_topic, saved_source));
                 *ip += 1;
             }
+            // Cost: O(1).
             OpCode::ExitPointyTopic => {
                 if let Some((saved_topic, saved_source)) = self.topic_source_save_stack.pop() {
                     self.env_mut().insert("_".to_string(), saved_topic);
@@ -2488,54 +2533,70 @@ impl Interpreter {
             }
 
             // -- Arithmetic --
+            // Cost: O(1) on Int/Num/Rat operands; O(d) on BigInt, d = digits (a Str operand is
+            // numified first, O(n)).
             OpCode::Add => {
                 self.exec_add_op()?;
                 *ip += 1;
             }
+            // Cost: O(1) on Int/Num/Rat operands; O(d) on BigInt, d = digits.
             OpCode::Sub => {
                 self.exec_sub_op()?;
                 *ip += 1;
             }
+            // Cost: O(1) on Int/Num/Rat operands; O(d1*d2) on BigInt, d = digits of each operand.
             OpCode::Mul => {
                 self.exec_mul_op()?;
                 *ip += 1;
             }
+            // Cost: O(1).
             OpCode::NativeIntArithmetic { op, unsigned } => {
                 self.exec_native_int_arithmetic_op(*op, *unsigned)?;
                 *ip += 1;
             }
+            // Cost: O(1) on Int/Num/Rat operands (plus a gcd); O(d1*d2) on BigInt operands.
             OpCode::Div => {
                 self.exec_div_op()?;
                 *ip += 1;
             }
+            // Cost: O(1) on Int/Num/Rat operands; O(d1*d2) on BigInt operands.
             OpCode::Mod => {
                 self.exec_mod_op()?;
                 *ip += 1;
             }
+            // Cost: O(1) for Int ** Int with exponent <= 30 (fast path); otherwise bigint
+            // exponentiation by squaring, O(M(d) log k) (measured on par with Rakudo).
             OpCode::Pow => {
                 self.exec_pow_op()?;
                 *ip += 1;
             }
+            // Cost: O(1) (O(n) to numify a Str operand, O(d) on BigInt).
             OpCode::Negate => {
                 self.exec_negate_op()?;
                 *ip += 1;
             }
+            // Cost: O(1) (O(d) on BigInt).
             OpCode::IntBitNeg => {
                 self.exec_int_bit_neg_op()?;
                 *ip += 1;
             }
+            // Cost: O(1).
             OpCode::BoolBitNeg => {
                 self.exec_bool_bit_neg_op();
                 *ip += 1;
             }
+            // Cost: O(n), n = chars (or bytes of a Buf) of the operand.
             OpCode::StrBitNeg => {
                 self.exec_str_bit_neg_op();
                 *ip += 1;
             }
+            // Cost: O(e), e = elements slipped (copied into the Slip; a deferred Seq or gather
+            // is pulled first).
             OpCode::MakeSlip => {
                 self.exec_make_slip_op()?;
                 *ip += 1;
             }
+            // Cost: O(e), e = elements of a multi-item returned Slip (copied into an Array).
             OpCode::NormalizeReturnSlip => {
                 let val = self.stack.pop().unwrap_or(Value::NIL);
                 let normalized = match val.view() {
@@ -2549,6 +2610,7 @@ impl Interpreter {
                 self.stack.push(normalized);
                 *ip += 1;
             }
+            // Cost: O(e), e = elements of a Slip operand (copied into a Seq); O(1) otherwise.
             OpCode::DeSlip => {
                 // A `.Slip`/`slip(...)` VALUE handed to a `**@`-slurpy consumer
                 // (say/put/print/note) stays a single argument and gists as a
@@ -2563,24 +2625,29 @@ impl Interpreter {
                 self.stack.push(demoted);
                 *ip += 1;
             }
+            // Cost: O(1).
             OpCode::DerefContainer => {
                 let val = self.stack.pop().unwrap_or(Value::NIL);
                 self.stack.push(val.into_deref());
                 *ip += 1;
             }
+            // Cost: O(1).
             OpCode::Decont => {
                 self.exec_decont_op();
                 *ip += 1;
             }
+            // Cost: O(e), e = elements of the list-assignment RHS (snapshotted by value).
             OpCode::DecontListElems => {
                 self.exec_decont_list_elems_op();
                 *ip += 1;
             }
+            // Cost: O(1).
             OpCode::Itemize => {
                 let val = self.stack.pop().unwrap_or(Value::NIL);
                 self.stack.push(Self::itemize_value(val));
                 *ip += 1;
             }
+            // Cost: O(1).
             OpCode::DeitemizeZen => {
                 let val = self.stack.pop().unwrap_or(Value::NIL);
                 let deitemized = match val.view() {
@@ -2611,12 +2678,14 @@ impl Interpreter {
                 self.stack.push(deitemized);
                 *ip += 1;
             }
+            // Cost: O(1) for a typed/contained aggregate; otherwise one `.list` method call.
             OpCode::DeitemizeForBind => {
                 let val = self.stack.pop().unwrap_or(Value::NIL);
                 let deitemized = self.deitemize_for_bind(val)?;
                 self.stack.push(deitemized);
                 *ip += 1;
             }
+            // Cost: O(1) (one env probe; an Instance/Mixin operand adds a method-table probe).
             OpCode::ItemizeVar(name_idx) => {
                 // Itemize a scalar variable's value for `@a = $var`, UNLESS the
                 // scalar was bound (`:=`) to a Positional. A bound scalar is not
@@ -2678,6 +2747,7 @@ impl Interpreter {
                 self.stack.push(result);
                 *ip += 1;
             }
+            // Cost: O(1).
             OpCode::WrapScalar => {
                 // Wrap the top-of-stack value in a Scalar container.
                 // Used for `my $ = expr` (anonymous scalar) in argument position
@@ -2686,6 +2756,7 @@ impl Interpreter {
                 self.stack.push(Value::scalar(val));
                 *ip += 1;
             }
+            // Cost: O(1) (plus a copy of the type name).
             OpCode::WrapTypedContainer(type_idx) => {
                 // Wrap a typed anonymous scalar (`my T $`) in a ContainerRef cell
                 // and record its `of`-type, so the constraint travels with the
@@ -2697,6 +2768,7 @@ impl Interpreter {
                 self.stack.push(Value::container_ref(cell));
                 *ip += 1;
             }
+            // Cost: O(e), e = flattened elements (a Range operand is expanded).
             OpCode::FlattenSlurpy => {
                 let val = self.stack.pop().unwrap_or(Value::NIL);
                 let mut items = Vec::new();
@@ -2706,51 +2778,66 @@ impl Interpreter {
             }
 
             // -- Logic / coercion --
+            // Cost: O(1) for most values; a not-yet-run `.map`/`.grep` Seq is forced whole,
+            // O(e) callbacks, e = source elements (see eval_truthy). Rakudo: O(1) -- see #NNNN.
             OpCode::Not => {
                 self.exec_not_op();
                 *ip += 1;
             }
+            // Cost: O(1) for most values; a not-yet-run `.map`/`.grep` Seq is forced whole,
+            // O(e) callbacks, e = source elements (see eval_truthy). Rakudo: O(1) -- see #NNNN.
             OpCode::BoolCoerce => {
                 self.sync_source_line(code, *ip);
                 self.exec_bool_coerce_op();
                 *ip += 1;
             }
+            // Cost: O(c), c = the chunk's container-ref capture names (a linear
+            // `Vec::contains`), O(1) when it has none.
             OpCode::WrapVarRef { name_idx, slot } => {
                 self.exec_wrap_var_ref_op(code, *name_idx, *slot);
                 *ip += 1;
             }
+            // Cost: O(1) with the compiler's slot hint; O(L) by-name locals fallback.
             OpCode::CaptureVarCell => {
                 self.exec_capture_var_cell_op(code);
                 *ip += 1;
             }
+            // Cost: O(1) (attribute map probes).
             OpCode::AttrContainerRef(name_idx) => {
                 self.exec_attr_container_ref_op(code, *name_idx);
                 *ip += 1;
             }
+            // Cost: O(1) (attribute map probes).
             OpCode::ResolveAttrRwCandidate(name_idx) => {
                 self.exec_resolve_attr_rw_candidate_op(code, *name_idx);
                 *ip += 1;
             }
+            // Cost: O(1).
             OpCode::MarkBindContext => {
                 self.bind_context().set(true);
                 *ip += 1;
             }
+            // Cost: O(1).
             OpCode::MarkParamRawBindContext => {
                 self.param_raw_bind_context().set(true);
                 *ip += 1;
             }
+            // Cost: O(1).
             OpCode::MarkScalarBindContext => {
                 self.scalar_bind_context().set(true);
                 *ip += 1;
             }
+            // Cost: O(1).
             OpCode::MarkRebindContext => {
                 self.rebind_context().set(true);
                 *ip += 1;
             }
+            // Cost: O(1).
             OpCode::MarkAccessorRefContext => {
                 self.accessor_ref_pending = true;
                 *ip += 1;
             }
+            // Cost: O(1).
             OpCode::MarkLvalueInvocantRefContext(method_name_idx) => {
                 // ADR-0067's E6 producer: only a raw-invocant callee can consume
                 // the container this asks for, so ask slice 3a's filter first.
@@ -2774,6 +2861,8 @@ impl Interpreter {
                 }
                 *ip += 1;
             }
+            // Cost: O(k*q), k = registered candidates of the callee's base name (indexed
+            // lookup), q = their parameters; O(1) for an ordinary single sub.
             OpCode::MarkRwArgRefContext {
                 callee_idx,
                 positional,
@@ -2797,6 +2886,8 @@ impl Interpreter {
                 }
                 *ip += 1;
             }
+            // Cost: O(1) behind the program-wide filter; a method callee then resolves the
+            // method along the invocant's MRO, O(m).
             OpCode::MarkRwArgRefContextCallee(mark) => {
                 // The same producer for a callee with no compile-time name: the
                 // callee itself is on the stack (or is a named code variable),
@@ -2806,32 +2897,39 @@ impl Interpreter {
                 }
                 *ip += 1;
             }
+            // Cost: O(1) (plus a copy of the name).
             OpCode::MarkArrayShareSource(name_idx) => {
                 self.array_share_context().set(true);
                 self.array_share_source()
                     .set(Some(Self::const_str(code, *name_idx).to_string()));
                 *ip += 1;
             }
+            // Cost: O(1).
             OpCode::MarkElementShare => {
                 self.element_share_pending = true;
                 *ip += 1;
             }
+            // Cost: O(1).
             OpCode::MarkConstantContext => {
                 self.constant_context().set(true);
                 *ip += 1;
             }
+            // Cost: O(1).
             OpCode::MarkExplicitInitializerContext => {
                 self.explicit_initializer_context().set(true);
                 *ip += 1;
             }
+            // Cost: O(1).
             OpCode::MarkVarDeclContext => {
                 self.vardecl_context().set(true);
                 *ip += 1;
             }
+            // Cost: O(1).
             OpCode::MarkShapedDeclContext => {
                 self.shaped_decl_context = true;
                 *ip += 1;
             }
+            // Cost: O(1).
             OpCode::StashVarDeclInit => {
                 // Peek, do NOT pop: the value still has to reach the SetLocal
                 // that follows.
@@ -2840,6 +2938,7 @@ impl Interpreter {
             }
 
             // -- String --
+            // Cost: O(n1 + n2) (see exec_concat_op). Rakudo: amortized O(1) (strands) -- see #9141.
             OpCode::Concat => {
                 self.sync_source_line(code, *ip);
                 self.exec_concat_op()?;
@@ -2847,44 +2946,56 @@ impl Interpreter {
             }
 
             // -- Numeric comparison --
+            // Cost: O(1) on scalars; O(e_l + e_r) for two list operands (see num_eq_values).
+            // Rakudo: O(1) for reified arrays -- see #9162.
             OpCode::NumEq => {
                 self.exec_num_eq_op()?;
                 *ip += 1;
             }
+            // Cost: as NumEq: O(1) on scalars, O(e_l + e_r) for two list operands. Rakudo: O(1)
+            // for reified arrays -- see #9162.
             OpCode::NumNe => {
                 self.exec_num_ne_op()?;
                 *ip += 1;
             }
+            // Cost: O(1) (native operands).
             OpCode::NumNeNative(flags) => {
                 let flags = *flags;
                 self.exec_num_ne_native_op(flags)?;
                 *ip += 1;
             }
+            // Cost: O(1) (a list operand numifies to its element count).
             OpCode::NumLt => {
                 self.exec_num_lt_op()?;
                 *ip += 1;
             }
+            // Cost: O(1) (a list operand numifies to its element count).
             OpCode::NumLe => {
                 self.exec_num_le_op()?;
                 *ip += 1;
             }
+            // Cost: O(1) (a list operand numifies to its element count).
             OpCode::NumGt => {
                 self.exec_num_gt_op()?;
                 *ip += 1;
             }
+            // Cost: O(1) (a list operand numifies to its element count).
             OpCode::NumGe => {
                 self.exec_num_ge_op()?;
                 *ip += 1;
             }
+            // Cost: O(1) (plus one `$*TOLERANCE` dynamic lookup).
             OpCode::ApproxEq => {
                 self.exec_approx_eq_op()?;
                 *ip += 1;
             }
+            // Cost: O(1) (pointer identity); two plain Str values compare by content, O(n).
             OpCode::ContainerEq(flags) => {
                 let flags = *flags;
                 self.exec_container_eq_op(flags);
                 *ip += 1;
             }
+            // Cost: O(a), a = length of the `:=` alias chains resolved for both names.
             OpCode::ContainerEqNamed {
                 left_name_idx,
                 right_name_idx,
@@ -2892,10 +3003,12 @@ impl Interpreter {
                 self.exec_container_eq_named_op(code, *left_name_idx, *right_name_idx);
                 *ip += 1;
             }
+            // Cost: O(a), a = length of the name's `:=` alias chain.
             OpCode::ContainerEqDeconted { name_idx } => {
                 self.exec_container_eq_deconted_op(code, *name_idx);
                 *ip += 1;
             }
+            // Cost: O(1) (one env probe and one element read per side).
             OpCode::ContainerEqIndexed {
                 left_name_idx,
                 right_name_idx,
@@ -2903,77 +3016,118 @@ impl Interpreter {
                 self.exec_container_eq_indexed_op(code, *left_name_idx, *right_name_idx);
                 *ip += 1;
             }
+            // Cost: O(1).
             OpCode::ContainerEqRaw => {
                 self.exec_container_eq_raw_op();
                 *ip += 1;
             }
 
             // -- String comparison --
+            // Cost: O(n1 + n2) (see exec_str_eq_op). Rakudo: O(p), p = common prefix, O(1)
+            // when the lengths differ -- see #9147.
             OpCode::StrEq => {
                 self.exec_str_eq_op()?;
                 *ip += 1;
             }
+            // Cost: O(n1 + n2) (see exec_str_ne_op). Rakudo: O(p), p = common prefix, O(1)
+            // when the lengths differ -- see #9147.
             OpCode::StrNe => {
                 self.exec_str_ne_op()?;
                 *ip += 1;
             }
+            // Cost: O(n1 + n2) (see exec_str_lt_op). Rakudo: O(p), p = common prefix -- see #9147.
             OpCode::StrLt => {
                 self.exec_str_lt_op()?;
                 *ip += 1;
             }
+            // Cost: O(n1 + n2), n = chars of each operand (both copied) (see
+            // exec_str_gt_op). Rakudo: O(p), p = common prefix -- see #9147.
             OpCode::StrGt => {
                 self.exec_str_gt_op()?;
                 *ip += 1;
             }
+            // Cost: O(n1 + n2), n = chars of each operand (both copied) (see
+            // exec_str_le_op). Rakudo: O(p), p = common prefix -- see #9147.
             OpCode::StrLe => {
                 self.exec_str_le_op()?;
                 *ip += 1;
             }
+            // Cost: O(n1 + n2), n = chars of each operand (both copied) (see
+            // exec_str_ge_op). Rakudo: O(p), p = common prefix -- see #9147.
             OpCode::StrGe => {
                 self.exec_str_ge_op()?;
                 *ip += 1;
             }
 
             // -- Three-way comparison --
+            // Cost: O(1) for Int/Num operands; O(b) for BigInt/Rat, b = digits
+            // (see spaceship_values).
             OpCode::Spaceship => {
                 self.exec_spaceship_op()?;
                 *ip += 1;
             }
+            // Cost: O(1) numeric; O(min(e1, e2)) for list operands; O(n1 + n2) for
+            // Str operands, n = chars (both copied in spaceship_ordering).
+            // Rakudo: O(p), p = common prefix, for Str -- see #9147.
             OpCode::Before | OpCode::After => {
                 let is_before = matches!(code.ops[*ip], OpCode::Before);
                 self.exec_before_after_op(is_before)?;
                 *ip += 1;
             }
+            // Cost: O(1) numeric; O(min(e1, e2)) for list operands (a Range
+            // compared with a list is expanded, O(r)); O(n1 + n2) for Str
+            // operands, n = chars (both copied in spaceship_ordering). Rakudo:
+            // O(p), p = common prefix, for Str -- see #9147.
             OpCode::Cmp => {
                 self.exec_cmp_op()?;
                 *ip += 1;
             }
+            // Cost: O(n1 + n2), n = chars of each operand (stringified, then
+            // collation keys built), plus one `$*COLLATION` dynamic lookup.
             OpCode::Coll => {
                 self.exec_coll_op()?;
                 *ip += 1;
             }
+            // Cost: O(n1 + n2), n = chars of each operand (stringified, then
+            // collation keys built).
             OpCode::Unicmp => {
                 self.exec_unicmp_op()?;
                 *ip += 1;
             }
+            // Cost: O(n1 + n2), n = chars of each operand (both copied) (see
+            // exec_leg_op). Rakudo: O(p), p = common prefix -- see #9147.
             OpCode::Leg => {
                 self.exec_leg_op()?;
                 *ip += 1;
             }
 
             // -- Identity/value equality --
+            // Cost: O(t1 + t2), t = elements of a list-shaped operand, counted
+            // recursively to depth 16 (warm_which_identity walks them all before
+            // the pointer compare); O(1) for scalars (see exec_strict_eq_op).
+            // Rakudo: O(1) -- see #NNNN.
             OpCode::StrictEq => {
                 self.exec_strict_eq_op()?;
                 *ip += 1;
             }
+            // Cost: O(t1 + t2), as StrictEq (see exec_strict_ne_op). Rakudo:
+            // O(1) -- see #NNNN.
             OpCode::StrictNe => {
                 self.exec_strict_ne_op()?;
                 *ip += 1;
             }
+            // Cost: O(e_l + e_r), e = total nodes of each operand, on every call
+            // (see eqv_values). Rakudo: O(1) on length mismatch, O(i) to the
+            // first difference -- see #9162.
             OpCode::Eqv => {
                 self.exec_eqv_op()?;
                 *ip += 1;
             }
+            // Cost: O(L) + the RHS, L = local slots of the current frame
+            // (sync_regex_interpolation_env_from_locals re-broadcasts every slot
+            // to env, a `code.locals` scan looks for `$/`, and a non-pure match
+            // runs writeback_match_locals) (see exec_smart_match_expr_op).
+            // Rakudo: O(1) + the RHS -- see #NNNN.
             OpCode::SmartMatchExpr {
                 rhs_end,
                 negate,
@@ -2997,56 +3151,80 @@ impl Interpreter {
                     compiled_fns,
                 )?;
             }
+            // Cost: O(1).
             OpCode::ScalarizeRegexMatchResult => {
                 self.exec_scalarize_regex_match_result_op()?;
                 *ip += 1;
             }
 
             // -- Divisibility --
+            // Cost: O(1) for Int operands; O(b) for BigInt/Rat, b = digits.
             OpCode::DivisibleBy => {
                 self.exec_divisible_by_op()?;
                 *ip += 1;
             }
+            // Cost: O(1) for Int operands; O(b) for BigInt/Rat, b = digits.
             OpCode::NotDivisibleBy => {
                 self.exec_not_divisible_by_op()?;
                 *ip += 1;
             }
 
             // -- Keyword math --
+            // Cost: O(1) for Int operands; O(b^2) for BigInt, b = limbs.
             OpCode::IntDiv => {
                 self.exec_int_div_op()?;
                 *ip += 1;
             }
+            // Cost: O(1) for Int operands; O(b^2) for BigInt, b = limbs.
             OpCode::IntMod => {
                 self.exec_int_mod_op()?;
                 *ip += 1;
             }
+            // Cost: O(1) for machine ints (through a BigInt round trip); O(b^2)
+            // for BigInt, b = limbs.
             OpCode::Gcd => {
                 self.exec_gcd_op()?;
                 *ip += 1;
             }
+            // Cost: O(1) for machine ints (through a BigInt round trip); O(b^2)
+            // for BigInt, b = limbs.
             OpCode::Lcm => {
                 self.exec_lcm_op()?;
                 *ip += 1;
             }
+            // Cost: O(1) numeric; O(n1 + n2) for Str operands, n = chars (both
+            // copied in spaceship_ordering). Rakudo: O(p), p = common prefix --
+            // see #9147.
             OpCode::InfixMin => {
                 self.exec_infix_min_op()?;
                 *ip += 1;
             }
+            // Cost: O(1) numeric; O(n1 + n2) for Str operands, n = chars (both
+            // copied in spaceship_ordering). Rakudo: O(p), p = common prefix --
+            // see #9147.
             OpCode::InfixMax => {
                 self.exec_infix_max_op()?;
                 *ip += 1;
             }
 
             // -- Repetition --
+            // Cost: O(n * c), n = chars of the left operand, c = repeat count
+            // (see exec_string_repeat_op). Rakudo: O(1) for a flat operand --
+            // see #9147.
             OpCode::StringRepeat => {
                 self.exec_string_repeat_op()?;
                 *ip += 1;
             }
+            // Cost: O(k * s), k = repeat count (capped at 4096 for `xx *` or a
+            // count above 10**6), s = Slip width; every element is materialized
+            // eagerly (see exec_list_repeat_op). Rakudo: O(1) until consumed --
+            // see #9159.
             OpCode::ListRepeat => {
                 self.exec_list_repeat_op()?;
                 *ip += 1;
             }
+            // Cost: O(p), p = parameters of the right callable (its signature is
+            // copied into the composed Sub).
             OpCode::FunctionCompose => {
                 self.sync_source_line(code, *ip);
                 self.exec_function_compose_op();
@@ -3054,40 +3232,61 @@ impl Interpreter {
             }
 
             // -- Mixin / Type check --
+            // Cost: O(L + m) + role composition, L = local slots of the current
+            // frame (snapshot_carrier_overwritable_env runs on every `but`), m =
+            // keys of an existing mixin map (cloned) (see exec_but_mixin_op).
+            // Rakudo: O(1) with the mixin type cache -- see #NNNN.
             OpCode::ButMixin => {
                 self.exec_but_mixin_op(code)?;
                 *ip += 1;
             }
+            // Cost: O(m) + role composition, m = keys of the existing mixin map
+            // (cloned per element).
             OpCode::ButMixinTupleElem { first } => {
                 self.exec_but_mixin_tuple_elem_op(*first)?;
                 *ip += 1;
             }
+            // Cost: O(d), d = MRO depth of the left operand (plus a copy of the
+            // type name).
             OpCode::Isa => {
                 self.exec_isa_op();
                 *ip += 1;
             }
+            // Cost: O(L) + role composition, L = local slots of the current frame
+            // (sync_env_from_locals, a pre-snapshot and a writeback diff over all
+            // of them) (see exec_does_op). Rakudo: O(1) with the mixin type cache
+            // -- see #NNNN.
             OpCode::Does => {
                 self.exec_does_op(code)?;
                 *ip += 1;
             }
+            // Cost: O(L) + role composition, as Does (see exec_does_var_op).
+            // Rakudo: O(1) with the mixin type cache -- see #NNNN.
             OpCode::DoesVar(name_idx, slot, is_bareword) => {
                 self.exec_does_var_op(code, *name_idx, *slot, *is_bareword)?;
                 *ip += 1;
             }
+            // Cost: O(1).
             OpCode::SetDoesContext(flag) => {
                 self.in_does_rhs = *flag;
                 *ip += 1;
             }
 
             // -- Pair --
+            // Cost: O(1); a `key => $var` value boxes the variable's slot, O(1)
+            // with the compiler's slot hint, O(L) by-name scan without one.
             OpCode::MakePair => {
                 self.exec_make_pair_op(code);
                 *ip += 1;
             }
+            // Cost: O(m), m = chars of a Str key (copied into the Pair); the
+            // value is boxed as for MakePair. Rakudo: O(1) -- see #9147.
             OpCode::MakeNamedArg => {
                 self.exec_make_named_arg_op(code);
                 *ip += 1;
             }
+            // Cost: O(m), m = chars of the key (the `String` key is copied).
+            // Rakudo: O(1) -- see #9147.
             OpCode::ContainerizePair => {
                 let val = self.stack.pop().unwrap();
                 let containerized = match val.view() {

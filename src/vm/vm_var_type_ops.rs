@@ -15,6 +15,10 @@ impl Interpreter {
     /// belongs to an enclosing scope and MUST NOT be written. It therefore only
     /// registers the constraint, and seeds the type object solely for a name
     /// that has no binding at all.
+    // Cost: O(p), p = packages probed to qualify a user type name
+    // (`resolve_type_in_current_package`, skipped for unshadowed core names); the type-object
+    // seed path adds an O(L) by-name local update, L = locals of the chunk, only while the
+    // variable is still unbound.
     pub(super) fn exec_set_var_type(
         &mut self,
         code: &CompiledCode,
