@@ -312,6 +312,7 @@ pub(crate) fn try_eval_native(op: NqpPure, args: &[Value]) -> Option<Value> {
 /// The one implementation of each of these ops, shared with the string-keyed
 /// table in [`crate::runtime::nqp_ops`].
 pub(crate) fn eval(op: NqpPure, args: &[Value]) -> Value {
+    // Cost: every arm O(1) (native int/num arithmetic).
     match op {
         NqpPure::AddI => Value::int(iarg(args, 0).wrapping_add(iarg(args, 1))),
         NqpPure::SubI => Value::int(iarg(args, 0).wrapping_sub(iarg(args, 1))),
