@@ -86,6 +86,17 @@ fn discriminant_of(s: &Stmt) -> String {
         .to_string()
 }
 
+/// What the enclosing compile hands a routine's TRIR compile: the routines
+/// already registered with a chunk and the function table (for static
+/// linkage), and the body's ADR-0113 frame-lexical inner subs (for
+/// inlining).
+#[derive(Clone, Copy, Default)]
+pub(crate) struct TrirScope<'a> {
+    pub(crate) routines: Option<&'a TrirRoutineMap>,
+    pub(crate) fns: Option<&'a crate::opcode::CompiledFns>,
+    pub(crate) frame_lexicals: &'a [Symbol],
+}
+
 /// `(routine name, positional arity)` -> its `CompiledFns` key and body
 /// fingerprint.
 pub(crate) type TrirRoutineMap = HashMap<(String, usize), (Symbol, u64)>;
@@ -100,10 +111,13 @@ impl<'a> TrirCompiler<'a> {
         params: &[String],
         return_type: Option<&str>,
         body: &[Stmt],
-        routines: Option<&'a TrirRoutineMap>,
-        fns: Option<&'a crate::opcode::CompiledFns>,
-        frame_lexicals: &[Symbol],
+        scope: TrirScope<'a>,
     ) -> Option<TrChunk> {
+        let TrirScope {
+            routines,
+            fns,
+            frame_lexicals,
+        } = scope;
         if !TrChunk::enabled() {
             return None;
         }
@@ -458,20 +472,9 @@ pub(crate) fn compile_routine(
     params: &[String],
     return_type: Option<&str>,
     body: &[crate::ast::Stmt],
-    routines: Option<&TrirRoutineMap>,
-    fns: Option<&crate::opcode::CompiledFns>,
-    frame_lexicals: &[Symbol],
+    scope: TrirScope<'_>,
 ) -> Option<std::sync::Arc<TrChunk>> {
-    let chunk = TrirCompiler::compile(
-        name,
-        param_defs,
-        params,
-        return_type,
-        body,
-        routines,
-        fns,
-        frame_lexicals,
-    );
+    let chunk = TrirCompiler::compile(name, param_defs, params, return_type, body, scope);
     if dump_enabled() {
         match &chunk {
             Some(c) => eprintln!(

@@ -685,9 +685,11 @@ impl Compiler {
                 params,
                 return_type.map(String::as_str),
                 body,
-                Some(&self.trir_routines),
-                Some(&self.compiled_functions),
-                &frame_lexicals,
+                crate::trir::compile::TrirScope {
+                    routines: Some(&self.trir_routines),
+                    fns: Some(&self.compiled_functions),
+                    frame_lexicals: &frame_lexicals,
+                },
             );
         }
         // Contribute this directly-nested named sub's cell-requiring capture set
