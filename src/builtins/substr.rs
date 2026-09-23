@@ -20,6 +20,11 @@ use crate::value::{RuntimeError, Value, ValueView};
 /// non-negative integer `len`. Returns `None` (defer to the interpreter) when
 /// `start`/`len` is negative or non-`Int`, or when `start` is past the end (the
 /// interpreter then returns a `Failure`).
+///
+/// Cost: O(n), n = chars of `text`: `grapheme_units` builds a `Vec` of every
+/// grapheme (one slice per byte even on flat ASCII) before the O(k) slice is
+/// copied out, and every caller has already copied the invocant with
+/// `to_string_value`. Rakudo: O(k), k = chars returned -- see #NNNN.
 pub(crate) fn native_substr_slice(
     text: &str,
     start: &Value,

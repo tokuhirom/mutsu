@@ -804,6 +804,8 @@ impl Interpreter {
                 true
             }
             // :g (global) -- find all non-overlapping matches
+            // Cost: `~~ m:g//`: O(n + r log r) plus per-match engine work, n = chars of
+            // the topic, r = matches (one shared MatchTarget; every Match shares it).
             (_, ValueView::RegexWithAdverbs(a)) if a.global && !a.overlap && !a.exhaustive => {
                 let pattern = &a.pattern;
                 let repeat = &a.repeat;
@@ -979,6 +981,9 @@ impl Interpreter {
                 false
             }
             // Single match: plain Regex or RegexWithAdverbs without multi-match flags
+            // Cost: `Str ~~ /rx/`: O(n) setup, n = chars of the topic (the subject is
+            // copied by `regex_match_text` and again into a MatchTarget), plus the search,
+            // even when the match is at the front. Rakudo: O(1) setup -- see #NNNN.
             (_, ValueView::Regex(_)) | (_, ValueView::RegexWithAdverbs(_))
                 if matches!(right.view(), ValueView::Regex(_))
                     || matches!(
@@ -1800,6 +1805,7 @@ impl Interpreter {
             (ValueView::Rat(an, ad), ValueView::Rat(bn, bd)) => an * bd == bn * ad,
             (ValueView::Int(a), ValueView::Rat(n, d)) => a * d == n,
             (ValueView::Rat(n, d), ValueView::Int(b)) => n == b * d,
+            // Cost: `Str ~~ Str`: O(n), n = bytes of the shorter operand.
             (ValueView::Str(a), ValueView::Str(b)) => *a == *b,
             // Str ~~ Numeric: numify LHS and compare
             (ValueView::Str(a), ValueView::Int(b)) => a.trim().parse::<f64>() == Ok(b as f64),

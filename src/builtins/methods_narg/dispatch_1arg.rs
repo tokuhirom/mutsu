@@ -301,6 +301,7 @@ pub(crate) fn native_method_1arg(
             // Default: just stringify
             Some(Ok(Value::str(target.to_string_value())))
         }
+        // Cost: O(n), n = chars of the invocant.
         "chop" => {
             // Type objects (Package) should throw
             if let ValueView::Package(type_name) = target.view() {
@@ -417,6 +418,9 @@ pub(crate) fn native_method_1arg(
                 .collect();
             Some(Ok(Value::array(props)))
         }
+        // Cost: O(n + m), n = chars of the invocant, m = chars of the needle (the
+        // invocant is copied before the search, even for a hit near the front).
+        // Rakudo: O(p + m), p = match position -- see #NNNN.
         "contains" => {
             if let ValueView::Package(type_name) = arg.view() {
                 return Some(Err(RuntimeError::new(format!(
@@ -438,6 +442,8 @@ pub(crate) fn native_method_1arg(
         // (`:i`/`:ignorecase`/`:m`/`:ignoremark`) carry a second (Pair) argument
         // and so never reach this 1-arg path — they keep falling through to the
         // interpreter's `dispatch_prefix_suffix_check` (runtime/methods_string.rs).
+        // Cost: O(n + m), n = chars of the invocant, m = chars of the needle (the
+        // invocant is copied to compare its first/last m chars). Rakudo: O(m) -- see #NNNN.
         "starts-with" | "ends-with" if matches!(target.view(), ValueView::Str(_)) => {
             if let ValueView::Package(type_name) = arg.view() {
                 return Some(Err(RuntimeError::new(format!(
@@ -527,6 +533,9 @@ pub(crate) fn native_method_1arg(
             };
             Some(Ok(result))
         }
+        // Cost: O(n + m), n = chars of the invocant, m = chars of the needle (copy,
+        // search, and a flat-ASCII check or grapheme count to turn the byte offset
+        // into a char offset). Rakudo: O(p + m), p = match position -- see #NNNN.
         "index" => {
             // Fall through to runtime dispatch for type objects, named args (Pairs),
             // array of needles, and multi-arg calls handled by dispatch_index
@@ -546,6 +555,8 @@ pub(crate) fn native_method_1arg(
                 None => Some(Ok(Value::NIL)),
             }
         }
+        // Cost: O(n), n = chars of the invocant (see `native_substr_slice`).
+        // Rakudo: O(k), k = chars returned -- see #NNNN.
         "substr" => {
             crate::builtins::substr::native_substr_slice(&target.to_string_value(), arg, None)
         }
@@ -1141,6 +1152,9 @@ pub(crate) fn native_method_1arg(
                 .collect();
             Some(Ok(Value::seq(batches)))
         }
+        // Cost: O(n + m), n = chars of the invocant, m = chars of the needle (copy,
+        // reverse search, char-offset conversion of the prefix). Rakudo: O(n - p + m),
+        // p = match position -- see #NNNN.
         "rindex" => {
             // Fall through to runtime dispatch for arrays (list of needles)
             // and type objects

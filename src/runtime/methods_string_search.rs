@@ -20,6 +20,10 @@ fn fold_for_contains(s: &str, ignore_case: bool, ignore_mark: bool) -> String {
 }
 
 impl Interpreter {
+    // Cost: O(n + d * m), n = chars of the invocant, m = chars of the needle,
+    // d = chars searched (copy, codepoint count and re-collect of the suffix
+    // from `$pos`, whatever `$pos` is; :i/:m fold the whole suffix). Rakudo:
+    // O(d * m) -- see #NNNN.
     pub(super) fn dispatch_contains(
         &mut self,
         target: Value,
@@ -73,6 +77,9 @@ impl Interpreter {
             ));
         }
         let hay: String = text.chars().skip(start as usize).collect();
+        // Cost (Regex needle): O(n) setup (the copies above plus a MatchTarget
+        // in `regex_find_first`) plus the search, n = chars of the invocant,
+        // even for a hit at the front. Rakudo: O(1) setup -- see #NNNN.
         // A Regex needle means "does the pattern match anywhere from `start`?"
         // (`"abc".contains(/b/)`), not a literal search for the regex's gist.
         if let ValueView::Regex(pattern) = needle.view() {
@@ -123,6 +130,8 @@ impl Interpreter {
         self.dispatch_prefix_suffix_check(target, args, false)
     }
 
+    // Cost: O(n + m), n = chars of the invocant, m = chars of the needle (copy;
+    // :i/:m fold the whole invocant). Rakudo: O(m) -- see #NNNN.
     pub(super) fn dispatch_prefix_suffix_check(
         &self,
         target: Value,

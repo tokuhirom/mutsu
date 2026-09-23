@@ -6,9 +6,9 @@ impl Interpreter {
     // copied into one MatchTarget per call, which every returned Match shares).
     // `:g` is O(n + r) plus per-match engine work, r = matches; `:ov`/`:ex`
     // collect every end at every start and then sort, O(n + r log r) plus engine
-    // work. `:c($pos)` / `:p($pos)` still pay the O(n) setup per call (so is a
-    // `while .match(:c($p))` loop over r matches, O(n*r) -- measured quadratic on
-    // Rakudo too).
+    // work. Even a single-match call (plain, `:c($pos)`, `:p($pos)`) pays the O(n)
+    // subject copy, so a `while .match(/.../, :p($p))` tokenizer loop over r
+    // matches is O(n*r). Rakudo: O(1) setup per call -- see #NNNN.
     pub(crate) fn dispatch_match_method(
         &mut self,
         target: Value,

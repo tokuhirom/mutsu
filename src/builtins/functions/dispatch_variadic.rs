@@ -94,6 +94,7 @@ pub(crate) fn native_function_variadic(
             }
             Some(Ok(acc))
         }
+        // Cost: O(e), e = codepoints passed.
         "chrs" => {
             let mut result = String::new();
             let push_chr = |result: &mut String, v: &Value| {

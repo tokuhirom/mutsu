@@ -35,6 +35,8 @@ pub(crate) fn native_function_3arg(
                 }
             }
         }
+        // Cost: O(n), n = chars of the string (see `native_substr_slice`).
+        // Rakudo: O(k), k = chars returned -- see #NNNN.
         "substr" => {
             if matches!(arg1.view(), ValueView::Junction { .. })
                 || matches!(arg2.view(), ValueView::Junction { .. })

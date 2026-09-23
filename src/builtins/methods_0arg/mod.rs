@@ -318,6 +318,8 @@ pub(crate) fn native_method_0arg(
     // `hash`, `caps`, ...) fall through and materialize as before.
     if target.is_lazy_match_value() {
         match method {
+            // Cost: O(1) (`.from`/`.to`/`.pos` read the capture node; `.orig`
+            // returns the shared subject Value; `.Str` copies the k matched chars).
             "from" => return Some(Ok(Value::int(target.match_from().unwrap_or(0)))),
             "to" | "pos" => return Some(Ok(Value::int(target.match_to().unwrap_or(0)))),
             "Str" => {
