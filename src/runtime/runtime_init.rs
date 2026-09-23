@@ -3448,6 +3448,7 @@ impl Interpreter {
             registered_stub_decl_sites: Default::default(),
             prepared_fn_defs: HashMap::new(),
             frame_lexical_routines: Default::default(),
+            frame_lexical_closure_bodies: Default::default(),
             method_resolve_cache: rustc_hash::FxHashMap::default(),
             method_cache_generation: 0,
             last_method_resolve: None,

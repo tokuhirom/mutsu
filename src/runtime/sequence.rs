@@ -1243,7 +1243,13 @@ impl Interpreter {
                                 self.current_package()
                             };
                             compiler.set_current_package(scope);
-                            Some(compiler.compile(&data.body))
+                            let (mut code, mut fns) = compiler.compile(&data.body);
+                            if let Some(origin) = data.compiled_code.as_deref() {
+                                crate::compiler::frame_lexical_inherit::inherit_frame_lexical_routines(
+                                    &mut code, &mut fns, origin,
+                                );
+                            }
+                            Some((code, fns))
                         } else {
                             None
                         }

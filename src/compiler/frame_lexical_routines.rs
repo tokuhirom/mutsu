@@ -162,7 +162,7 @@ impl AstScan {
 }
 
 /// Every chunk reachable from `code` through nested closures, depth first.
-fn visit_code(code: &CompiledCode, f: &mut impl FnMut(&CompiledCode)) {
+pub(super) fn visit_code(code: &CompiledCode, f: &mut impl FnMut(&CompiledCode)) {
     f(code);
     for nested in &code.closure_compiled_codes {
         visit_code(nested, f);
@@ -171,7 +171,7 @@ fn visit_code(code: &CompiledCode, f: &mut impl FnMut(&CompiledCode)) {
 
 /// [`visit_code`] with mutable access. A nested closure chunk is copied out
 /// of its `Arc` only when `wants` says `f` has something to change in it.
-fn visit_code_mut(
+pub(super) fn visit_code_mut(
     code: &mut CompiledCode,
     wants: &impl Fn(&CompiledCode) -> bool,
     f: &mut impl FnMut(&mut CompiledCode),
@@ -190,7 +190,10 @@ fn visit_code_mut(
 
 /// Names of candidate routines this chunk calls by bare name, and whether it
 /// references any of them in a way a lexical call site cannot serve.
-fn scan_chunk(code: &CompiledCode, names: &HashSet<Symbol>) -> (Vec<Symbol>, Vec<Symbol>) {
+pub(super) fn scan_chunk(
+    code: &CompiledCode,
+    names: &HashSet<Symbol>,
+) -> (Vec<Symbol>, Vec<Symbol>) {
     let mut called = Vec::new();
     let mut bad = Vec::new();
     let const_sym = |idx: u32| -> Option<Symbol> {
@@ -235,12 +238,38 @@ fn scan_chunk(code: &CompiledCode, names: &HashSet<Symbol>) -> (Vec<Symbol>, Vec
     }
     // A body stashed as AST and compiled at run time (a `gather` or
     // `whenever` body) would compile its calls without this chunk's table.
-    if !code.stmt_pool.is_empty()
-        && let Ok(json) = serde_json::to_string(&code.stmt_pool)
-    {
-        for sym in names {
-            if json.contains(&format!("\"{}\"", sym.as_str())) {
-                bad.push(*sym);
+    // A closure literal's pool slot is exempt when every op that creates it
+    // carries its compiled chunk: that chunk is what runs, and it is visited
+    // (and equipped) as one of `closure_compiled_codes`.
+    if !code.stmt_pool.is_empty() {
+        let mut compiled_slots: HashSet<u32> = HashSet::new();
+        let mut ast_slots: HashSet<u32> = HashSet::new();
+        for op in &code.ops {
+            if let OpCode::MakeAnonSub(idx, cc, _)
+            | OpCode::MakeAnonSubParams(idx, cc, _)
+            | OpCode::MakeLambda(idx, cc, _)
+            | OpCode::MakeBlockClosure(idx, cc) = op
+            {
+                if cc.is_some() {
+                    compiled_slots.insert(*idx);
+                } else {
+                    ast_slots.insert(*idx);
+                }
+            }
+        }
+        for (idx, stmt) in code.stmt_pool.iter().enumerate() {
+            let idx = idx as u32;
+            if compiled_slots.contains(&idx) && !ast_slots.contains(&idx) {
+                continue;
+            }
+            let Ok(json) = serde_json::to_string(stmt) else {
+                bad.extend(names.iter().copied());
+                continue;
+            };
+            for sym in names {
+                if json.contains(&format!("\"{}\"", sym.as_str())) {
+                    bad.push(*sym);
+                }
             }
         }
     }
@@ -416,6 +445,7 @@ impl Compiler {
             }
         };
         visit_code_mut(&mut self.code, &wants, &mut equip);
+        super::frame_lexical_inherit::mark_lexical_subtree(&mut self.code);
         let owned_callers: Vec<Symbol> = owned
             .iter()
             .copied()
@@ -430,6 +460,7 @@ impl Compiler {
         for key in owned_callers {
             if let Some(cf) = self.compiled_functions.make_mut(&key) {
                 visit_code_mut(&mut cf.code, &wants, &mut equip);
+                super::frame_lexical_inherit::mark_lexical_subtree(&mut cf.code);
             }
         }
     }

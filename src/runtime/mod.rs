@@ -4310,6 +4310,13 @@ pub struct Interpreter {
     /// closures that call routines their parent already declared.
     pub(crate) frame_lexical_routines:
         Arc<rustc_hash::FxHashMap<crate::opcode::FrameLexicalRef, crate::vm::FrameLexicalTarget>>,
+    /// Closure bodies whose compiled chunk calls a frame-lexical routine
+    /// (ADR-0113), keyed by the address of the body's shared statement
+    /// buffer. A carrier path that compiles such a body again from its AST
+    /// looks its origin chunk up here and inherits the call table. The entry
+    /// keeps the body `Arc` alive, so an address is never reused for another
+    /// body while it is in the table.
+    pub(crate) frame_lexical_closure_bodies: Arc<crate::vm::FrameLexicalClosureBodies>,
     pub(crate) method_resolve_cache:
         rustc_hash::FxHashMap<(Symbol, Symbol), crate::vm::MethodResolveEntry>,
     /// ADR-0019 E3: the generation-keyed resolved-sequence cache (design

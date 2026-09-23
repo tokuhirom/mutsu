@@ -617,6 +617,7 @@ impl Interpreter {
             // walk-and-sort that derives them used to run on every creation.
             let signature = code.closure_signature(idx as usize);
             let compiled_code = Self::resolve_closure_code(code, cc_idx);
+            self.note_frame_lexical_closure_body(code, idx, &compiled_code);
             // A bare block that performs a regex match is not a routine
             // boundary: its `$/` belongs to the lexical scope where it was
             // written, even when another routine invokes the block. Only such
@@ -759,6 +760,7 @@ impl Interpreter {
             self.check_param_custom_traits(param_defs)?;
             let signature = code.closure_signature(idx as usize);
             let compiled_code = Self::resolve_closure_code(code, cc_idx);
+            self.note_frame_lexical_closure_body(code, idx, &compiled_code);
             self.box_captured_lexicals(code, &compiled_code);
             let owned_captures = self.compute_owned_captures(&compiled_code);
             let authoritative_captures = self.compute_authoritative_captures(&compiled_code);
