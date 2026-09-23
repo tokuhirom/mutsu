@@ -408,7 +408,14 @@ impl Interpreter {
                                 }
                             }
                             "ENV" => {
-                                if let ValueView::Hash(map) = val.view() {
+                                // Accepts anything `.hash` would coerce, not
+                                // only a literal Hash -- `:ENV(%*ENV,
+                                // |%extra)` parses as a `List` (a Hash
+                                // followed by a `Slip` of Pairs); rakudo lets
+                                // it through by coercing with hash semantics
+                                // (issue #9085).
+                                let coerced = crate::runtime::utils::coerce_to_hash(val.clone());
+                                if let ValueView::Hash(map) = coerced.view() {
                                     cmd.env_clear();
                                     for (env_key, env_val) in map.iter() {
                                         cmd.env(env_key, env_val.to_string_value());
