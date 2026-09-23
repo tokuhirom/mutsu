@@ -28,5 +28,5 @@ call-return merge does not copy it out. Closures that call the inner sub
 capture it the same way they already capture the sub's free variables
 (mutsu#9106), and writes through it are no longer replayed into the caller.
 
-Pinned by `t/routines/closure/routine-nested-sub-shadowed-free-var.t`
+Pinned by `t/routines/routine-nested-sub-shadowed-free-var.t`
 (mutsu#9111).
