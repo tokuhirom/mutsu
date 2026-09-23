@@ -118,10 +118,8 @@ pub(crate) fn native_function_variadic(
             }
             Some(Ok(Value::str(result)))
         }
-        // Cost: O(sum e_i + n * min(e_i, 1000)), e_i = elements of the i-th of n
-        // lists (each copied whole). The row count is capped at 1000 even when every
-        // list is finite, so `zip(@a, @b)` on 5000-element arrays yields 1000 rows
-        // where Rakudo yields 5000 -- see #9160.
+        // Cost: O(sum e_i + n * min(e_i)), e_i = elements of the i-th of n lists
+        // (each copied whole); rows are capped at 1000 only when a column is lazy.
         "zip" => {
             // zip([@a], [@b], ...) — interleave elements from each list
             // zip takes a single list-of-lists argument; each sub-list is a
@@ -134,17 +132,18 @@ pub(crate) fn native_function_variadic(
             } else {
                 (args.to_vec(), false)
             };
-            let all_lazy = if single_arg {
-                // For single-arg zip, check if all sub-lists are lazy
-                raw_inputs.iter().all(is_lazy_input)
-            } else {
-                args.iter().all(is_lazy_input)
-            };
+            let columns: &[Value] = if single_arg { &raw_inputs } else { args };
+            let all_lazy = columns.iter().all(is_lazy_input);
+            let any_lazy = columns.iter().any(is_lazy_input);
             let lists: Vec<Vec<Value>> = raw_inputs.iter().map(runtime::value_to_list).collect();
             if lists.is_empty() {
                 return Some(Ok(Value::seq(vec![])));
             }
-            let max_expand: usize = 1_000;
+            // The cap bounds how much of an infinite column is materialized;
+            // an all-finite zip keeps every row (`zip(^5000, ^5000)` has 5000).
+            // TODO: a truly lazy zip would drop the cap altogether; the lazy
+            // columns are still reified to a bounded prefix here.
+            let max_expand: usize = if any_lazy { 1_000 } else { usize::MAX };
             let min_len = lists
                 .iter()
                 .map(|l| l.len())

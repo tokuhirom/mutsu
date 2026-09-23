@@ -480,6 +480,9 @@ impl Interpreter {
     }
 
     /// zip:with — zip lists using a custom combining function.
+    // Cost: O(sum e_i + n * r), e_i = elements of the i-th of n lists (each
+    // copied whole), r = rows (the shortest list; capped at 1000 only when a
+    // column is lazy), plus one combiner call per pair folded.
     pub(super) fn builtin_zip_with(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
         let mut raw_inputs: Vec<&Value> = Vec::new();
         let mut with_fn: Option<Value> = None;
@@ -505,6 +508,7 @@ impl Interpreter {
                 })
         };
         let all_lazy = raw_inputs.iter().all(|v| is_lazy_input(v));
+        let any_lazy = raw_inputs.iter().any(|v| is_lazy_input(v));
         let lists: Vec<Vec<Value>> = raw_inputs
             .iter()
             .map(|v| crate::runtime::value_to_list(v))
@@ -524,7 +528,10 @@ impl Interpreter {
         // symmetric difference) that requires passing all elements at once
         // rather than folding pairwise.
         let use_multi_arg = Self::combiner_needs_multi_arg(&combiner);
-        let max_expand: usize = 1_000;
+        // The cap bounds how much of an infinite column is materialized; an
+        // all-finite zip keeps every row (same rule as the plain `zip`).
+        // TODO: a truly lazy zip would drop the cap altogether.
+        let max_expand: usize = if any_lazy { 1_000 } else { usize::MAX };
         let min_len = lists
             .iter()
             .map(|l| l.len())
