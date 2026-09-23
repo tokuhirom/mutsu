@@ -53,6 +53,16 @@ impl Compiler {
         else {
             return false;
         };
+        // Link the chunk itself (#9072): the run-time table in hand is not
+        // guaranteed to hold the callee.
+        let Some(link) = self
+            .compiled_functions
+            .get(&key)
+            .filter(|cf| cf.fingerprint == fingerprint)
+            .and_then(|cf| crate::trir::TrLink::to(key, cf))
+        else {
+            return false;
+        };
         let mut arg_slots = Vec::with_capacity(args.len());
         for a in args {
             let Expr::Var(n) = a else { return false };
@@ -78,8 +88,7 @@ impl Compiler {
         let arg_sources_idx = self.add_arg_sources_constant(args);
         let site_idx = self.code.trir_call_sites.len() as u32;
         self.code.trir_call_sites.push(TrCallSite {
-            key,
-            fingerprint,
+            link,
             name: *name,
             arg_slots,
         });

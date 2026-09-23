@@ -499,7 +499,7 @@ impl Interpreter {
     /// (non-GLOBAL, non-mangled) `current_package`, so a bare reference after the
     /// block (running under GLOBAL) never resolves here. A name shadowed by the
     /// sub's own `my`/param is a local slot (GetLocal), so it never reaches here.
-    pub(super) fn package_scope_lexical(&self, name: &str) -> Option<Value> {
+    pub(crate) fn package_scope_lexical(&self, name: &str) -> Option<Value> {
         // Most programs never run a bare `package P { my $x; ... }` block, so
         // the store is empty and nothing below can resolve: answer before the
         // package probe and the two name scans, which every free-variable read

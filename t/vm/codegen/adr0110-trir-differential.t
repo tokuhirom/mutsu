@@ -17,7 +17,12 @@ my $fixture = $?FILE.IO.parent(3).add('fixtures/trir-shapes.raku').Str;
 ok $fixture.IO.e, "fixture is where this test expects it ($fixture)";
 
 sub transcript(%extra-env) {
-    my $proc = run($*EXECUTABLE, $fixture, :out, :err, :env(%*ENV, |%extra-env));
+    # A hash built by assignment, not `:env(%*ENV, |%extra-env)`: mutsu drops
+    # the extra pairs of that list form (#9085), so the "off" run silently
+    # ran with TRIR on and the comparison was vacuous.
+    my %env = %*ENV;
+    %env{$_} = %extra-env{$_} for %extra-env.keys;
+    my $proc = run($*EXECUTABLE, $fixture, :out, :err, :%env);
     my $out = $proc.out.slurp(:close);
     my $err = $proc.err.slurp(:close);
     ($proc.exitcode, $out, $err)

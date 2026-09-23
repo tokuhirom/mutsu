@@ -123,6 +123,30 @@ impl Interpreter {
         {
             return Some(v.clone());
         }
+        // A module routine's free `my` lives in a package-keyed store, not in
+        // the environment: the compunit's own unit lexicals, the loaded
+        // module's scope lexicals, or a package block's lexicals. The untyped
+        // read finds it there by the running routine's package; both TRIR
+        // doors enter the callee's own package before seeding its free
+        // variables, so the current package IS the routine's. Before the
+        // environment, as on the untyped path: a compunit's lexical must not be
+        // read through the loading scope's same-named entry. Without this,
+        // every `nom-ws` call from another module routine bailed (#9072).
+        let pkg = self.current_package_sym();
+        if !crate::qualified::is_global_package(pkg) {
+            if let Some(v) = Self::lookup_in_package_chain(&self.unit_lexicals, pkg.as_str(), name)
+            {
+                return Some(v.clone());
+            }
+            if let Some(v) = self.module_scope_lexical_for_owner(pkg.as_str(), name) {
+                return Some(v.clone());
+            }
+            // A `my` inside a `module P { ... }` / `package P { ... }` block,
+            // which is where JSON::Fast declares `$ws`.
+            if let Some(v) = self.package_scope_lexical(name) {
+                return Some(v);
+            }
+        }
         // A free variable the capture pass did not put in a bucket is an
         // ordinary environment name (a mainline `my` the sub reads while the
         // mainline frame is still live). It may well be a plain value rather

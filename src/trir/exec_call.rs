@@ -32,23 +32,18 @@ impl Interpreter {
         compiled_fns: &CompiledFns,
     ) -> Result<Option<()>, RuntimeError> {
         let call = &chunk.calls[site as usize];
-        let TrCallee::Trir { key, fingerprint } = call.callee else {
+        let TrCallee::Trir(link) = &call.callee else {
             return Ok(None);
         };
         // ADR-0110 §3.3's run-time guard, as on the outermost door.
         if self.any_routine_wrapped() && self.routine_is_wrapped(&call.name.resolve()) {
             return Ok(None);
         }
-        let Some(cf) = compiled_fns
-            .get(&key)
-            .filter(|cf| cf.fingerprint == fingerprint)
-        else {
+        if !link.current_in(compiled_fns) {
             return Ok(None);
-        };
-        let Some(callee) = cf.trir.clone() else {
-            return Ok(None);
-        };
-        let callee_pkg = super::entry::trir_body_package(cf);
+        }
+        let callee = link.chunk.clone();
+        let callee_pkg = link.pkg;
         if callee.params.len() != call.args.len() {
             return Ok(None);
         }

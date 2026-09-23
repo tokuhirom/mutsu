@@ -43,7 +43,11 @@ pub(crate) mod entry;
 pub(crate) mod exec;
 pub(crate) mod exec_call;
 pub(crate) mod frame;
+mod link;
 pub(crate) mod outers;
+pub(crate) mod stats;
+
+pub(crate) use link::TrLink;
 // `#[path]`-spelled so `scripts/check-panic-surface.py` recognizes the whole
 // file as test scaffolding (see its doc comment) rather than charging its
 // assertions to the production budget.
@@ -326,7 +330,7 @@ pub(crate) enum TrArg {
 pub(crate) enum TrCallee {
     /// Another TRIR routine, resolved at compile time exactly as a
     /// [`TrCallSite`] resolves one.
-    Trir { key: Symbol, fingerprint: u64 },
+    Trir(TrLink),
     /// Anything else, dispatched by name through the ordinary machinery.
     Generic,
 }
@@ -384,12 +388,11 @@ pub(crate) struct TrParam {
 /// written straight back to them.
 #[derive(Debug, Clone)]
 pub(crate) struct TrCallSite {
-    /// The callee's `CompiledFns` key, as its declaration produced it.
-    pub(crate) key: Symbol,
-    /// The callee's body fingerprint at compile time. Re-checked per call, so
-    /// a routine that has since been replaced (or `.wrap`ped into a different
-    /// body) falls back instead of running the wrong chunk.
-    pub(crate) fingerprint: u64,
+    /// The callee, resolved when the site was compiled. Re-checked per call
+    /// against the table in hand ([`TrLink::current_in`]), so a routine that
+    /// has since been replaced falls back instead of running the wrong chunk;
+    /// a `.wrap`ped one is caught by the wrapper-table probe.
+    pub(crate) link: TrLink,
     /// The callee's name, for the cold fallback and for error messages.
     pub(crate) name: Symbol,
     /// The CALLER's local slot holding each positional argument, in signature

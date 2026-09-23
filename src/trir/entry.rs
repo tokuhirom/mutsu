@@ -44,7 +44,7 @@ type RwPlan = ([(u16, RwTarget); 4], usize);
 /// found at all. A routine-scoped mangled package (`Pkg::&sub/arity`, used for
 /// nested subs) is skipped for the same reason the untyped path skips it: it
 /// is not a package name.
-pub(super) fn trir_body_package(cf: &CompiledFunction) -> Option<Symbol> {
+pub(crate) fn trir_body_package(cf: &CompiledFunction) -> Option<Symbol> {
     let sym = cf.package_sym();
     (!crate::qualified::is_global_package(sym) && !cf.package_is_routine_scoped()).then_some(sym)
 }
@@ -69,14 +69,14 @@ impl Interpreter {
         if self.any_routine_wrapped() && self.routine_is_wrapped(&site.name.resolve()) {
             return None;
         }
-        let cf = compiled_fns
-            .get(&site.key)
-            .filter(|cf| cf.fingerprint == site.fingerprint)?;
-        let chunk = cf.trir.as_ref()?.clone();
+        if !site.link.current_in(compiled_fns) {
+            return None;
+        }
+        let chunk = site.link.chunk.clone();
         if chunk.params.len() != site.arg_slots.len() {
             return None;
         }
-        let pkg = trir_body_package(cf);
+        let pkg = site.link.pkg;
         self.run_trir_from_outside(&chunk, pkg, compiled_fns, |me, frame| {
             me.trir_bind_from_slots(&chunk, frame, site, caller_code)
         })
@@ -129,6 +129,7 @@ impl Interpreter {
         let frame = self.trir.push_frame(chunk.n_native + spills, chunk.n_obj);
         let Some((rw, rw_len)) = bind(self, frame) else {
             self.trir.pop_frame(frame);
+            super::stats::record(super::stats::TrirEntry::BindDeclined);
             return None;
         };
         // The body's own package, for the duration of the body only: seeding
@@ -138,6 +139,7 @@ impl Interpreter {
         if !self.trir_seed_outers(chunk, frame) {
             drop(guard);
             self.trir.pop_frame(frame);
+            super::stats::record(super::stats::TrirEntry::BindDeclined);
             return None;
         }
         let outcome = self.run_trir_chunk(chunk, frame, compiled_fns);
@@ -150,6 +152,7 @@ impl Interpreter {
                 // the routine from the beginning is equivalent to never having
                 // started it, so the untyped path can take the call whole.
                 self.trir.pop_frame(frame);
+                super::stats::record(super::stats::TrirEntry::Bailed);
                 return None;
             }
             Err(e) => {
@@ -182,6 +185,7 @@ impl Interpreter {
                 RwTarget::Slot(slot) => self.locals[slot as usize] = v,
             }
         }
+        super::stats::record(super::stats::TrirEntry::Completed);
         Some(Ok(result))
     }
 
