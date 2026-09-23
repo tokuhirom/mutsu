@@ -44,7 +44,7 @@ thread_local! {
 
 /// Park a caught panic payload for [`resume_parked_panic`] (shim side).
 #[cfg(feature = "jit")]
-pub(crate) fn park_panic(payload: Box<dyn std::any::Any + Send>) {
+pub(super) fn park_panic(payload: Box<dyn std::any::Any + Send>) {
     PARKED_PANIC.with(|slot| *slot.borrow_mut() = Some(payload));
 }
 
@@ -52,7 +52,7 @@ pub(crate) fn park_panic(payload: Box<dyn std::any::Any + Send>) {
 /// Rust side of the native frame, so the panic propagates to the same
 /// run-loop / worker `catch_unwind` boundaries as interpreted execution.
 #[cfg(feature = "jit")]
-pub(crate) fn resume_parked_panic() -> ! {
+fn resume_parked_panic() -> ! {
     let payload = PARKED_PANIC
         .with(|slot| slot.borrow_mut().take())
         .expect("JIT returned panic status without a parked payload");
@@ -240,7 +240,7 @@ fn jit_enabled_from_env() -> bool {
 
 /// Call-count threshold before a chunk is considered hot and compiled.
 #[cfg(feature = "jit")]
-pub(crate) fn jit_threshold() -> u32 {
+fn jit_threshold() -> u32 {
     static THRESHOLD: std::sync::OnceLock<u32> = std::sync::OnceLock::new();
     *THRESHOLD.get_or_init(|| {
         std::env::var("MUTSU_JIT_THRESHOLD")

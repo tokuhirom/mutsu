@@ -1,12 +1,13 @@
-# The ops ADR-0116's native lowering emits inline rather than stepping
-# through the interpreter: native int and num arithmetic, comparisons,
-# shifts, sized-int wrapping, the `is rw` references, the short-circuit jumps
-# that keep their operand, backward jumps, and slots handed to a callee.
+# Native int and num ops inside TRIR routines (ADR-0110): arithmetic,
+# comparisons, shifts, sized-int wrapping, the `is rw` references, the
+# short-circuit jumps that keep their operand, backward jumps, slots handed to
+# a callee, and the three division/remainder answers that depend on the
+# operands' signs.
 #
-# `t/vm/codegen/adr0116-trir-native.t` runs this file with the lowering on at
-# a threshold of 1 (every chunk native from its first run), with it off, and
-# with TRIR off, and requires all three to agree. Every routine is called
-# more than once, so a first-run-only answer cannot pass.
+# `t/vm/codegen/adr0110-trir-int-ops.t` runs this file with TRIR on and off
+# and requires both to print rakudo's transcript. Every routine is called
+# twice, so a first-run-only answer cannot pass. The file doubled as the
+# differential fixture of ADR-0116's native-lowering prototype.
 use nqp;
 
 my sub int-ops(int $a, int $b) {

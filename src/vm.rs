@@ -201,8 +201,6 @@ mod vm_jit_compile;
 #[cfg(feature = "jit")]
 mod vm_jit_dump;
 #[cfg(feature = "jit")]
-pub(crate) mod vm_jit_engine;
-#[cfg(feature = "jit")]
 mod vm_jit_helpers;
 #[cfg(feature = "jit")]
 mod vm_jit_layout;

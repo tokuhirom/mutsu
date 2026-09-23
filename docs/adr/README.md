@@ -140,3 +140,4 @@ The role of an ADR is to preserve the *context of the judgment* — something th
 | [0113](0113-frame-lexical-inner-subs.md) | A call-only `my sub` in a routine body is a frame lexical: its declaration registers nothing and its call sites are resolved at compile time | Accepted (slice 1 implemented) |
 | [0114](0114-routine-nested-sub-free-var-aliases.md) | A sub declared in a routine reads its free variables through per-activation aliases bound by its declaration | Accepted (implemented) |
 | [0115](0115-core-type-names-in-nqp-operands-fold-at-parse-time.md) | A CORE type name used as an `nqp::` operand folds to its type object at parse time, unless the compunit binds the name | Accepted (implemented) |
+| [0116](0116-trir-native-lowering-measured-before-building.md) | ADR-0112 Step 4 measured before it was built: native lowering of TRIR is capped at ~1/5 of the decode, so Step 4 becomes "shrink the op bodies" | Proposed |

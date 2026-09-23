@@ -17,9 +17,6 @@
 //!   the generic dispatch established (ADR-0112 Step 1), not the generic
 //!   dispatch itself.
 //!
-//! - `native`: chunks lowered to native code (ADR-0116), chunks the lowering
-//!   declined, and chunk runs that executed as native code.
-//!
 //! In a program where TRIR is doing its job, `completed` is close to
 //! `entries`. A `bails` count of the same order as `entries` means the typed
 //! run is pure overhead.
@@ -31,31 +28,6 @@ static COMPLETED: AtomicU64 = AtomicU64::new(0);
 static BAILS: AtomicU64 = AtomicU64::new(0);
 static BIND_DECLINES: AtomicU64 = AtomicU64::new(0);
 static GEN_LINKS: AtomicU64 = AtomicU64::new(0);
-static NATIVE_COMPILES: AtomicU64 = AtomicU64::new(0);
-static NATIVE_DECLINES: AtomicU64 = AtomicU64::new(0);
-static NATIVE_RUNS: AtomicU64 = AtomicU64::new(0);
-
-/// What the native lowering (ADR-0116) did with a hot chunk, or that a chunk
-/// ran as native code.
-#[derive(Clone, Copy)]
-pub(crate) enum TrirNative {
-    Compiled,
-    Declined,
-    Ran,
-}
-
-#[inline]
-pub(crate) fn record_native(event: TrirNative) {
-    if !crate::vm::vm_stats::enabled() {
-        return;
-    }
-    let counter = match event {
-        TrirNative::Compiled => &NATIVE_COMPILES,
-        TrirNative::Declined => &NATIVE_DECLINES,
-        TrirNative::Ran => &NATIVE_RUNS,
-    };
-    counter.fetch_add(1, Ordering::Relaxed);
-}
 
 /// A `CallGen` site served through its link (`gen_link.rs`) rather than by
 /// the generic dispatch.
@@ -91,14 +63,11 @@ pub(crate) fn record(outcome: TrirEntry) {
 /// The report line, printed with the rest of `MUTSU_VM_STATS`.
 pub(crate) fn report() {
     eprintln!(
-        "[mutsu vm-stats] trir: entries={} completed={} bails={} bind-declines={} gen-links={} native: compiled={} declined={} runs={}",
+        "[mutsu vm-stats] trir: entries={} completed={} bails={} bind-declines={} gen-links={}",
         ENTRIES.load(Ordering::Relaxed),
         COMPLETED.load(Ordering::Relaxed),
         BAILS.load(Ordering::Relaxed),
         BIND_DECLINES.load(Ordering::Relaxed),
         GEN_LINKS.load(Ordering::Relaxed),
-        NATIVE_COMPILES.load(Ordering::Relaxed),
-        NATIVE_DECLINES.load(Ordering::Relaxed),
-        NATIVE_RUNS.load(Ordering::Relaxed),
     );
 }

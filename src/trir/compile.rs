@@ -201,8 +201,6 @@ impl<'a> TrirCompiler<'a> {
             calls: c.calls,
             methods: c.methods,
             def_file: std::sync::OnceLock::new(),
-            #[cfg(feature = "jit")]
-            jit: Default::default(),
         })
     }
 
