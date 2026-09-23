@@ -104,6 +104,24 @@ impl Interpreter {
         };
         let (inner, mixins) = (inner.clone(), mixins.clone());
         let mut updated_mixins = (*mixins).clone();
+        // A role mixed directly onto an Array keeps the Array as the Mixin's
+        // inner value.  Indexed stores must mutate that backing Array in place;
+        // treating it as an ordinary named variable would instead fall through
+        // to a fresh Hash and lose both the role and the array contents.  Use
+        // the same small container-slot helper as delegated role attributes,
+        // then copy its rebuilt backing node into the original node so aliases
+        // of the Mixin continue to observe the write.
+        if let ValueView::Array(old_gc, kind) = inner.view() {
+            let mut updated = Value::array_with_kind(old_gc.clone(), kind);
+            if Self::assign_mixin_container_slot(&mut updated, idx, val, range_slice)? {
+                if let ValueView::Array(new_gc, _) = updated.view()
+                    && !crate::gc::Gc::ptr_eq(&old_gc, &new_gc)
+                {
+                    Self::array_inplace_reassign(&old_gc, &new_gc, kind);
+                }
+                return Ok(Some(target.clone()));
+            }
+        }
         // A role mixed into a Hash keeps the Hash as the Mixin's inner value.
         // Handle ordinary associative stores before the role-attribute
         // delegation below: the generic variable-assignment path only knows
@@ -286,7 +304,7 @@ impl Interpreter {
                         && max_idx >= updated.len()
                     {
                         Self::autoviv_resize(
-                            &mut updated,
+                            updated.items_mut(),
                             max_idx + 1,
                             Value::package(crate::symbol::wk::any()),
                         )?;
@@ -296,7 +314,7 @@ impl Interpreter {
                     }
                 } else if let Some(i) = Self::index_to_usize(idx) {
                     Self::autoviv_resize(
-                        &mut updated,
+                        updated.items_mut(),
                         i + 1,
                         Value::package(crate::symbol::wk::any()),
                     )?;
@@ -407,7 +425,11 @@ impl Interpreter {
                 };
                 if let Some(res) = container.with_array_mut(|items, _| {
                     let arr = crate::value::gc_data_mut(items);
-                    Self::autoviv_resize(arr, i + 1, Value::package(crate::symbol::wk::any()))?;
+                    Self::autoviv_resize(
+                        arr.items_mut(),
+                        i + 1,
+                        Value::package(crate::symbol::wk::any()),
+                    )?;
                     arr[i] = value.take().unwrap_or(Value::NIL);
                     Ok(())
                 }) {
@@ -437,7 +459,11 @@ impl Interpreter {
             };
             let Some(res) = container.with_array_mut(|items, _| {
                 let arr = crate::value::gc_data_mut(items);
-                Self::autoviv_resize(arr, i + 1, Value::package(crate::symbol::wk::any()))?;
+                Self::autoviv_resize(
+                    arr.items_mut(),
+                    i + 1,
+                    Value::package(crate::symbol::wk::any()),
+                )?;
                 arr[i] = value;
                 Ok(())
             }) else {

@@ -99,6 +99,15 @@ pub(crate) const BLOCK_LEXICAL_SUB_PREFIX: &str = "__mutsu_block_lexical_sub::";
 /// to that parameter — see `Compiler::self_is_signature_param`.
 pub(crate) const LEX_SELF: &str = "$self";
 
+/// Internal assignment target emitted for `self = ...` inside a method.
+///
+/// A method's implicit invocant is normally immutable, but an aggregate
+/// invocant such as `@items` is a caller-owned container and Raku lets a
+/// method replace that container through `self`.  Keeping this marker out of
+/// the user namespace lets the ordinary assignment machinery perform the
+/// write-through without making plain object/scalar invocants mutable.
+pub(crate) const IMPLICIT_SELF_ASSIGN_NAME: &str = "__mutsu_implicit_self_assign";
+
 /// Render a scalar variable's env/AST name with its `$` sigil, without doubling
 /// the sigil [`LEX_SELF`] already carries.
 pub(crate) fn sigiled_scalar_name(name: &str) -> String {

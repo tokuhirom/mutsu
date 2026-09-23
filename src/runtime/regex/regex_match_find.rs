@@ -92,6 +92,8 @@ impl Interpreter {
 
     /// Match regex anchored at a specific character position.
     /// Returns captures only if the match starts exactly at `pos`.
+    // Cost: O(n), n = chars of `text`, to build the MatchTarget, plus one
+    // anchored attempt at `pos`. Rakudo: O(1) setup -- see #9144.
     pub(crate) fn regex_match_with_captures_at(
         &mut self,
         pattern: &str,
@@ -151,6 +153,8 @@ impl Interpreter {
     /// Unlike `regex_match_with_captures_at` which only matches starting exactly
     /// at `pos`, this tries each position from `from_pos` onwards until a match
     /// is found (like `:c(N)` / `:continue(N)` in Raku).
+    // Cost: O(n), n = chars of `text`, to build the MatchTarget, plus the
+    // search from `from_pos`. Rakudo: O(1) setup -- see #9144.
     pub(crate) fn regex_match_with_captures_from(
         &mut self,
         pattern: &str,
@@ -269,6 +273,8 @@ impl Interpreter {
         self.regex_match_captures_impl(pattern, text, true, true)
     }
 
+    // Cost: O(n + r log r) plus engine work, n = chars of `text`, r = matches
+    // kept; one MatchTarget shared by every match.
     fn regex_match_captures_impl(
         &mut self,
         pattern: &str,

@@ -5,7 +5,7 @@ use Test;
 # therefore capture those variables itself, or a call made after the
 # routine returned finds none of them (mutsu#9106).
 
-plan 7;
+plan 12;
 
 sub escaping($p) {
     my sub twice() { $p * 2 }
@@ -31,3 +31,19 @@ is rec(42)(), 42, 'recursive inner sub';
 
 sub setter($p) { my $v = 0; my sub set($x) { $v = $x + $p }; -> $x { set($x); $v } }
 is setter(10)(5), 15, 'write-only free variable of the inner sub';
+
+# Referencing the inner sub as `&t` (not a call) must capture too (mutsu#9110).
+sub ref-only($p) { my sub t() { $p * 2 }; -> { &t } }
+is ref-only(7)()(), 14, 'closure returning `&t` of an inner sub';
+
+sub ref-call($p) { my sub t() { $p * 2 }; -> { &t() } }
+is ref-call(7)(), 14, 'closure calling `&t()` of an inner sub';
+
+sub ref-nested($p) { my sub t() { $p * 2 }; -> { -> { &t } } }
+is ref-nested(7)()()(), 14, '`&t` two closures deep';
+
+sub shadow-param($p) { my sub t() { $p * 2 }; -> &t { &t() } }
+is shadow-param(7)(-> { 99 }), 99, 'a `&t` parameter shadows the inner sub';
+
+sub shadow-my($p) { my sub t() { $p * 2 }; -> { my &t = -> { 5 }; &t() } }
+is shadow-my(7)(), 5, 'a `my &t` shadows the inner sub';

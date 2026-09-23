@@ -53,6 +53,7 @@ fn char_digit_value(ch: char, radix: u32) -> Option<u32> {
 
 /// Parse a string in the given base. The `source` parameter is used for error
 /// reporting and should be the original string before any sign stripping.
+// Cost: O(d^2), d = digits (a BigInt multiply-add per digit over a growing value).
 pub(crate) fn parse_base(s: &str, radix: i64) -> Result<Value, RuntimeError> {
     if !(2..=36).contains(&radix) {
         return Err(radix_out_of_range(radix));

@@ -190,7 +190,7 @@ impl NanBox {
             | Kind::ArrayItemList
             | Kind::ArrayItemArray
             | Kind::ArrayShaped
-            | Kind::ArrayLazy => Some(&unsafe { peek_gc::<ArrayData>(bits) }.items[..]),
+            | Kind::ArrayLazy => Some(unsafe { peek_gc::<ArrayData>(bits) }.live_slice_raw()),
             Kind::Slip | Kind::SlipItemized => Some(&unsafe { peek_arc::<Vec<Value>>(bits) }[..]),
             Kind::Seq => Some(&unsafe { peek_arc::<crate::value::SeqBody>(bits) }[..]),
             Kind::HyperSeq | Kind::RaceSeq if with_hyper => {

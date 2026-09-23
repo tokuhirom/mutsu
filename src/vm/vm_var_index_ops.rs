@@ -661,6 +661,21 @@ impl Interpreter {
         if matches!(index.view(), ValueView::ContainerRef(_)) {
             index = index.deref_container();
         }
+        // A role-mixed Array used as a positional slice keeps its Mixin
+        // wrapper for method dispatch, but the wrapper is transparent when it
+        // supplies the slice indices (`self[@subgrid.flip: ...]`).  Expose the
+        // underlying aggregate before the Array-slice arms below inspect the
+        // index shape.
+        while let ValueView::Mixin(inner, _) = index.view() {
+            let inner = inner.as_ref().clone();
+            if !matches!(
+                inner.view(),
+                ValueView::Array(..) | ValueView::Seq(..) | ValueView::Slip(_)
+            ) {
+                break;
+            }
+            index = inner;
+        }
         // ADR-0058: a slice index can be a not-yet-run `.map`/`.grep` Seq
         // (`@f[(^$n).grep({...})]`, Text::CSV's fragment selector), and every
         // reader below takes its elements through pure code -- so the slice
@@ -1643,6 +1658,31 @@ impl Interpreter {
                     // X::Hash::NoImplementation) must propagate. Only swallow the
                     // error for a non-Associative instance that has no AT-KEY,
                     // where `$obj<foo>` yields Nil.
+                    Err(e) if self.has_user_method(&cn, "AT-KEY") => return Err(e),
+                    Err(_) => Value::NIL,
+                };
+                if result.is_nil() {
+                    self.typed_container_default(&target)
+                } else {
+                    result
+                }
+            }
+            // A Pair index is passed to a user-defined AT-KEY unchanged. This
+            // is the protocol used by associative objects whose key has more
+            // than one component (for example Keyring's attribute/label
+            // lookup); treating the Pair as an unhandled index silently
+            // returned Nil instead of dispatching the method.
+            (
+                ValueView::Instance { class_name, .. },
+                ValueView::Pair(..) | ValueView::ValuePair(..),
+            ) => {
+                let cn = class_name.resolve();
+                let result = match self.try_compiled_method_or_interpret(
+                    target.clone(),
+                    "AT-KEY",
+                    vec![index.clone()],
+                ) {
+                    Ok(v) => v,
                     Err(e) if self.has_user_method(&cn, "AT-KEY") => return Err(e),
                     Err(_) => Value::NIL,
                 };

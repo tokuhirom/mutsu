@@ -84,6 +84,7 @@ impl Interpreter {
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
         Some(match op {
+            // Cost: O(m), m = chars of the key (copied by to_string_value, then hashed); a non-Hash target adds an AT-KEY method dispatch.
             "atkey" => {
                 let hash = args.first().cloned().unwrap_or(Value::NIL);
                 let key = args.get(1).map(|v| v.to_string_value()).unwrap_or_default();
@@ -95,6 +96,7 @@ impl Interpreter {
                     }
                 }
             }
+            // Cost: O(1) (an IterationBuffer target's attribute lookup is a hash probe).
             "atpos" => {
                 let list = args.first().cloned().unwrap_or(Value::NIL);
                 let idx = args
@@ -125,6 +127,7 @@ impl Interpreter {
             // took ~14s); memoizing via `nqp_char_cache` — the same fix already
             // applied to `substr`/`index`/`iscclass` for this exact scanner —
             // makes each call O(1) amortized.
+            // Cost: O(1) amortized on a nqp_char_cache hit; O(n) on a miss, n = chars of $s. A loop alternating two strings (Text::Diff::Sift4) misses every call, making the loop O(n^2). MoarVM: O(1) -- see #9129.
             "ordat" => {
                 let chars = super::nqp_char_cache::cached_chars(args, 0);
                 let pos = args
@@ -145,6 +148,7 @@ impl Interpreter {
             // as 40 uppercase hex digits. Needed by two components mutsu ships:
             // the vendored zef (`Zef::Distribution.id` and the source-path
             // computation) and bundled OpenSSL's `dll-resource()`.
+            // Cost: O(n), n = bytes of $s.
             "sha1" => {
                 let s = args
                     .first()
@@ -156,6 +160,7 @@ impl Interpreter {
             }
             // nqp::gethostname(): the system hostname as a native str. Used by
             // Sys::Hostname's `hostname` sub (`nqp::gethostname.subst(...)`).
+            // Cost: O(1) (one gethostname syscall).
             "gethostname" => Ok(Value::str(Self::hostname())),
             // nqp::gethllsym($hll, $name) / nqp::bindhllsym($hll, $name, $value):
             // MoarVM's per-HLL symbol table, a global name -> value registry
@@ -168,6 +173,7 @@ impl Interpreter {
             // the one binding it needs (`bootstrap_hll_syms`) and otherwise
             // treats this as a genuinely general get/set pair backed by
             // [`Interpreter::hll_syms`], not a special case for that one key.
+            // Cost: O(m), m = chars of $hll + $name (copied into an owned key tuple, then hashed).
             "gethllsym" => {
                 let hll = args
                     .first()
@@ -176,6 +182,7 @@ impl Interpreter {
                 let name = args.get(1).map(|v| v.to_string_value()).unwrap_or_default();
                 Ok(self.get_hll_sym(&hll, &name))
             }
+            // Cost: O(m), m = chars of $hll + $name (copied, then hashed).
             "bindhllsym" => {
                 let hll = args
                     .first()
@@ -195,6 +202,7 @@ impl Interpreter {
             // name: NQP code reaches for it to read a dynamic whose name it
             // only has as a string, `%*COMPILING` (Rakudo::Options, issue
             // #8572) chief among them in the wild.
+            // Cost: O(m + s), m = chars of $name, s = scope-chain depth walked by get_env_with_main_alias.
             "getlexdyn" => {
                 let name = args
                     .first()
@@ -213,6 +221,8 @@ impl Interpreter {
             // The typed variants coerce first: an nqp `int`/`num`/`str`
             // attribute holds a native value, and code that reads it back with
             // `getattr_i` expects one.
+            // Cost: O(a), a = attributes of $obj (the whole map is cloned by to_map and committed back); O(e) for a
+            // '$!reified'/'$!storage' bind, e = elements copied from the storage. MoarVM: O(1) -- see #9134.
             "bindattr" | "bindattr_i" | "bindattr_n" | "bindattr_s" => {
                 let obj = args.first().cloned().unwrap_or(Value::NIL);
                 let attr = args.get(2).map(|v| v.to_string_value()).unwrap_or_default();
@@ -231,6 +241,7 @@ impl Interpreter {
             // nqp::decont($x): strip the container off a value. Raku's `.item`
             // twin at the nqp level; the ops below take their argument through
             // it, so a `$`-variable argument does not arrive as a Scalar.
+            // Cost: O(1).
             "decont" => Ok(crate::runtime::types::unwrap_varref_value(
                 args.first().cloned().unwrap_or(Value::NIL),
             )),
@@ -241,6 +252,7 @@ impl Interpreter {
             // native payload" case compose correctly with this op (the pattern
             // `nqp::ifnull(nqp::getpayload($ex), $ex)`, from Rakudo's core
             // `X::Wrapper` role, needs exactly this fallback-to-`$ex` behavior).
+            // Cost: O(1).
             "ifnull" => Ok({
                 let a = args.first().cloned().unwrap_or(Value::NIL);
                 if a.is_nil() {
@@ -259,6 +271,7 @@ impl Interpreter {
             // wrapper (e.g. for a future NativeCall exception-trapping
             // feature), thread its payload through instead of always
             // reporting "none" -- see #8573.
+            // Cost: O(1).
             "getpayload" => Ok(Value::NIL),
             // nqp::getmessage($ex): the message of a low-level exception
             // object. Reuses raku's own message-derivation rules
@@ -266,6 +279,7 @@ impl Interpreter {
             // stored attribute) for a Raku exception instance, and falls back
             // to stringifying anything else (mutsu has no separate native
             // exception representation to introspect).
+            // Cost: O(n), n = chars of the message (a user `method message` runs at its own cost).
             "getmessage" => {
                 let ex = args.first().cloned().unwrap_or(Value::NIL);
                 let msg = self
@@ -284,11 +298,13 @@ impl Interpreter {
             // TODO: thread the exception's own captured frames through here
             // once `Backtrace.new` can be constructed from an explicit frame
             // list instead of always sampling the live stack -- see #8573.
+            // Cost: O(1).
             "backtrace" => Ok(Value::array(Vec::new())),
             // nqp::unbox_i($x): the native integer inside a boxed value. A
             // NativeCall `Pointer` unboxes to its address, which is what makes
             // pointer arithmetic expressible — `NativeHelpers::Pointer` builds
             // `.add`/`.succ`/`.pred` out of exactly that.
+            // Cost: O(1).
             "unbox_i" => {
                 let v = crate::runtime::types::unwrap_varref_value(
                     args.first().cloned().unwrap_or(Value::NIL),
@@ -308,6 +324,7 @@ impl Interpreter {
             // of Int needs an instance carrying the native payload so that
             // `nqp::istype` and value coercion still see the requested type;
             // plain Int targets remain the immediate scalar below.
+            // Cost: O(d), d = MRO length of the target type (class_mro, cached Arc); O(1) for a Pointer/Int target.
             "box_i" => {
                 let n = args.first().map(crate::runtime::to_int).unwrap_or(0);
                 let target = args
@@ -345,6 +362,8 @@ impl Interpreter {
             // it both for a native array (`nqp::create(array[uint32])`) and to
             // hand-build an iterator (`nqp::create(self)` followed by
             // `bindattr`), so it must not go anywhere near `new`.
+            // Cost: O(c) + CREATE/new dispatch, c = registered VMHash/VMArray classes (both sets are scanned with an
+            // rsplit per entry whenever the name is not an exact member). MoarVM: O(1) -- see #9134.
             "create" => {
                 let ty = args.first().cloned().unwrap_or(Value::NIL);
                 // A native array / Buf / Blob is allocated with its REPR's
@@ -432,6 +451,8 @@ impl Interpreter {
             // than a per-class slot table. (A private attribute of the same
             // name in two classes of one hierarchy would therefore collide;
             // that is the same limitation `$!name` access already has.)
+            // Cost: O(a), a = attributes of $obj (nqp_attr_value clones the whole attribute map via to_map);
+            // getattr_s adds O(n), n = chars of the value. MoarVM: O(1) -- see #9134.
             "getattr" | "getattr_i" | "getattr_n" | "getattr_s" => {
                 let obj = args.first().cloned().unwrap_or(Value::NIL);
                 let name = args.get(2).map(|v| v.to_string_value()).unwrap_or_default();
@@ -452,6 +473,8 @@ impl Interpreter {
             // extra ones zero. `NativeHelpers::Blob`'s `blob-allocate` is
             // `blob.new` followed by this, so a `Buf` out-parameter of a native
             // call is allocated through it.
+            // Cost: O(e + n) for a Buf/Blob (all elements decoded and re-encoded), e = old elements, n = new size;
+            // O(|n - e|) amortized for an array.
             "setelems" => {
                 let target = crate::runtime::types::unwrap_varref_value(
                     args.first().cloned().unwrap_or(Value::NIL),

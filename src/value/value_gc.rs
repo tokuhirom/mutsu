@@ -488,6 +488,7 @@ impl Trace for ArrayData {
         // supplied by the collector via the backing `Arc` (gc::gc_drop_edges).
         // Dropping `native` cascades through every retained generation.
         self.items.clear();
+        self.head = 0;
         self.native = None;
         self.default = None;
     }

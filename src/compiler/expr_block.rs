@@ -1163,6 +1163,7 @@ impl Compiler {
         // the same block is writable when called with an lvalue.
         let bare_args = !args.is_empty() && args.iter().all(Self::expr_yields_container_less_value);
         if let Expr::CodeVar(name) = target {
+            self.fold_lexical_sub_free_vars_for_code_var(name);
             let arg_sources_idx = self.add_arg_sources_constant(args);
             // ADR-0067's argument producer: `&g($c.v)` has no callee on the
             // stack, but the code variable's NAME is a compile-time constant,

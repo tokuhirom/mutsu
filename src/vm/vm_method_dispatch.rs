@@ -653,8 +653,14 @@ impl Interpreter {
                 // `method m($s is raw:) { $s = 7 }` writes the caller's
                 // variable. `base` itself stays the plain value — it is what
                 // `self`, the attribute seeding and the dispatch frame use.
-                let arrival =
-                    self.take_raw_invocant_arrival(method_name, method_def.param_defs.get(idx));
+                let arrival = self
+                    .take_raw_invocant_arrival(method_name, method_def.param_defs.get(idx))
+                    .or_else(|| {
+                        self.take_implicit_self_invocant_arrival(
+                            method_name,
+                            method_def.param_defs.get(idx),
+                        )
+                    });
                 // A location either arrived boxed from the VM's gate, or `base`
                 // is itself the caller's container (the `$a.m = v` lvalue path
                 // hands one straight in).
@@ -1742,7 +1748,9 @@ impl Interpreter {
                 // eligibility gate above (`has_rw_params`), and the sigil-less
                 // `\S:` spelling lands here while `$s is raw:` lands there, so
                 // both have to learn the container.
-                let arrival = self.take_raw_invocant_arrival(method_name, pd);
+                let arrival = self
+                    .take_raw_invocant_arrival(method_name, pd)
+                    .or_else(|| self.take_implicit_self_invocant_arrival(method_name, pd));
                 let bound_to_container = arrival.is_some() || base.is_container_ref();
                 let invocant_value = arrival.unwrap_or_else(|| base.clone());
                 param_values.push((binding_name, invocant_value));

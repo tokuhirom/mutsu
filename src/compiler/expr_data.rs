@@ -21,6 +21,18 @@ impl Compiler {
         // exactly this assignment. Taken (not read) so a nested assignment inside
         // the right-hand side compiles as an ordinary one.
         let dot_twigil_rmw = std::mem::take(&mut self.dot_twigil_rmw_assign);
+        // Statement assignment has a dedicated marker too, because plain
+        // `AssignExpr("self")` would rebind an ordinary object invocant.  The
+        // VM accepts this marker only when the implicit invocant is a live
+        // aggregate container supplied by the caller.
+        if !is_bind && name == "self" && self.lexically_in_method {
+            self.with_escape(true, |c| c.compile_expr(expr));
+            let marker = self.code.add_constant(Value::str(
+                crate::env::IMPLICIT_SELF_ASSIGN_NAME.to_string(),
+            ));
+            self.code.emit(OpCode::AssignExpr(marker, false));
+            return;
+        }
         // When `is_bind` is true, this is a `:=` rebind in expression context
         // (e.g., `if $_ := $c { }`). We compile it like `Stmt::Assign { op: Bind }`
         // so the old alias is broken and a new one is set up.

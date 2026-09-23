@@ -30,7 +30,7 @@ pub(in crate::runtime) fn positional_values_from_unpack_target(value: &Value) ->
         // bound to a single destructuring positional via the single-argument
         // rule. `value_to_list` would otherwise return an itemized list as a
         // single opaque element, which fails the destructuring arity check.
-        ValueView::Array(data, _) => data.items().clone(),
+        ValueView::Array(data, _) => data.items().to_vec(),
         ValueView::Seq(items) => items.to_vec(),
         ValueView::Slip(items) => (**items).clone(),
         _ => crate::runtime::value_to_list(value),

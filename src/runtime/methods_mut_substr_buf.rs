@@ -5,6 +5,8 @@ use crate::value::value_buf::{
 };
 
 impl Interpreter {
+    // Cost: O(n + r), n = chars of the target, r = chars of the replacement (the
+    // whole string is rebuilt; Rakudo's strings are immutable too).
     pub(crate) fn assign_substr_rw(
         &mut self,
         target_var: Option<&str>,

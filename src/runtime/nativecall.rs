@@ -1260,7 +1260,7 @@ fn marshal_carray_arg(
         .ok_or_else(|| "CArray parameter is missing its element type".to_string())?;
     let list = match resolve_array_value(raw) {
         Some(arr) => arr
-            .with_array_inplace(|data, _| data.items().clone())
+            .with_array_inplace(|data, _| data.items().to_vec())
             .unwrap_or_default(),
         // A bare type object / Any becomes a null pointer.
         None => Vec::new(),

@@ -301,6 +301,7 @@ pub(crate) fn native_method_1arg(
             // Default: just stringify
             Some(Ok(Value::str(target.to_string_value())))
         }
+        // Cost: O(n), n = chars of the invocant.
         "chop" => {
             // Type objects (Package) should throw
             if let ValueView::Package(type_name) = target.view() {
@@ -417,6 +418,9 @@ pub(crate) fn native_method_1arg(
                 .collect();
             Some(Ok(Value::array(props)))
         }
+        // Cost: O(n + m), n = chars of the invocant, m = chars of the needle (the
+        // invocant is copied before the search, even for a hit near the front).
+        // Rakudo: O(p + m), p = match position -- see #9140.
         "contains" => {
             if let ValueView::Package(type_name) = arg.view() {
                 return Some(Err(RuntimeError::new(format!(
@@ -438,6 +442,8 @@ pub(crate) fn native_method_1arg(
         // (`:i`/`:ignorecase`/`:m`/`:ignoremark`) carry a second (Pair) argument
         // and so never reach this 1-arg path — they keep falling through to the
         // interpreter's `dispatch_prefix_suffix_check` (runtime/methods_string.rs).
+        // Cost: O(n + m), n = chars of the invocant, m = chars of the needle (the
+        // invocant is copied to compare its first/last m chars). Rakudo: O(m) -- see #9140.
         "starts-with" | "ends-with" if matches!(target.view(), ValueView::Str(_)) => {
             if let ValueView::Package(type_name) = arg.view() {
                 return Some(Err(RuntimeError::new(format!(
@@ -454,6 +460,7 @@ pub(crate) fn native_method_1arg(
             };
             Some(Ok(Value::truth(ok)))
         }
+        // Cost: O(n + m), n = chars of the invocant, m = chars of the mark source.
         "samemark" => {
             let target_str = target.to_string_value();
             let source_str = arg.to_string_value();
@@ -462,6 +469,7 @@ pub(crate) fn native_method_1arg(
                 &source_str,
             ))))
         }
+        // Cost: O(n + m), n = chars of the invocant, m = chars of the case pattern.
         "samecase" => {
             let source_str = target.to_string_value();
             let pattern_str = arg.to_string_value();
@@ -525,6 +533,9 @@ pub(crate) fn native_method_1arg(
             };
             Some(Ok(result))
         }
+        // Cost: O(n + m), n = chars of the invocant, m = chars of the needle (copy,
+        // search, and a flat-ASCII check or grapheme count to turn the byte offset
+        // into a char offset). Rakudo: O(p + m), p = match position -- see #9140.
         "index" => {
             // Fall through to runtime dispatch for type objects, named args (Pairs),
             // array of needles, and multi-arg calls handled by dispatch_index
@@ -544,9 +555,12 @@ pub(crate) fn native_method_1arg(
                 None => Some(Ok(Value::NIL)),
             }
         }
+        // Cost: O(n), n = chars of the invocant (see `native_substr_slice`).
+        // Rakudo: O(k), k = chars returned -- see #9140.
         "substr" => {
             crate::builtins::substr::native_substr_slice(&target.to_string_value(), arg, None)
         }
+        // Cost: O(n + L * s), n = chars of the invocant, L = lines, s = |steps|.
         "indent" => {
             let s = target.to_string_value();
             let (result, warning) = str_indent(&s, arg);
@@ -732,6 +746,7 @@ pub(crate) fn native_method_1arg(
             }
             None
         }
+        // Cost: see `native_split_method`.
         "split" => {
             if let ValueView::Instance { class_name, .. } = target.view()
                 && (class_name == "Supply"
@@ -764,6 +779,8 @@ pub(crate) fn native_method_1arg(
             // builtins::comb); Regex/Sub/bare matchers return None -> interpreter.
             crate::builtins::comb::native_comb_method(target, std::slice::from_ref(arg))
         }
+        // Cost: O(n + k), n = bytes of the invocant, k = lines, and O(n) even for
+        // `.lines($limit)` (all lines are split, then truncated). Rakudo: O(prefix) -- see #9147.
         "lines" => {
             if let ValueView::Instance { class_name, .. } = target.view()
                 && class_name == "Supply"
@@ -814,6 +831,8 @@ pub(crate) fn native_method_1arg(
             let lines: Vec<Value> = lines.into_iter().map(Value::str).collect();
             Some(Ok(Value::seq(lines)))
         }
+        // Cost: O(n + k), n = chars of the invocant, k = words, and O(n) even for
+        // `.words($limit)` (all words are split, then truncated). Rakudo: O(prefix) -- see #9147.
         "words" => {
             let s = target.to_string_value();
             let limit = match arg.view() {
@@ -1133,6 +1152,9 @@ pub(crate) fn native_method_1arg(
                 .collect();
             Some(Ok(Value::seq(batches)))
         }
+        // Cost: O(n + m), n = chars of the invocant, m = chars of the needle (copy,
+        // reverse search, char-offset conversion of the prefix). Rakudo: O(n - p + m),
+        // p = match position -- see #9140.
         "rindex" => {
             // Fall through to runtime dispatch for arrays (list of needles)
             // and type objects
@@ -1271,10 +1293,12 @@ pub(crate) fn native_method_1arg(
                 if has_directives && fmt_value_needs_coercion(target) {
                     return None;
                 }
+                // Cost: O(f + n), f = chars of the format, n = chars of the rendered value.
                 let rendered = runtime::format_sprintf(&fmt, Some(target));
                 Some(Ok(Value::str(rendered)))
             }
         }
+        // Cost: O(f + n), f = chars of the format (the invocant), n = rendered length.
         "sprintf" => {
             // Method form: '%f'.sprintf(value) — target is the format string.
             // The `*@args` slurpy spreads a single positional container across the
@@ -1328,6 +1352,7 @@ pub(crate) fn native_method_1arg(
             let rendered = runtime::format_zprintf(&fmt, Some(arg));
             Some(Ok(Value::str(rendered)))
         }
+        // Cost: see `parse_base` (src/builtins/parse_base.rs).
         "parse-base" => {
             let radix = match arg.view() {
                 ValueView::Int(n) => n,

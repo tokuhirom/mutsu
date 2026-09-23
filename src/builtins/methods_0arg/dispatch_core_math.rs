@@ -198,12 +198,16 @@ pub(super) fn dispatch(
     method: &str,
 ) -> Option<Option<Result<Value, RuntimeError>>> {
     match method {
+        // Cost: O(n), n = chars of the invocant.
         "tclc" => Some(Some(Ok(Value::str(crate::value::tclc_str(
             &target.to_string_value(),
         ))))),
+        // Cost: O(n), n = chars of the invocant (one segmenting pass, tclc per word).
         "wordcase" => Some(Some(Ok(Value::str(crate::value::wordcase_str(
             &target.to_string_value(),
         ))))),
+        // Cost: O(1) for a numeric invocant; O(n) for a Str, n = chars (the string
+        // is rebuilt around the incremented segment).
         "succ" => Some(match target.view() {
             ValueView::Enum { .. } | ValueView::Instance { .. } => None,
             ValueView::Int(i) => Some(Ok(Value::int(i + 1))),
@@ -218,6 +222,8 @@ pub(super) fn dispatch(
             )))),
             _ => Some(Ok(target.clone())),
         }),
+        // Cost: O(1) for a numeric invocant; O(n) for a Str, n = chars (the string
+        // is rebuilt around the decremented segment).
         "pred" => Some(match target.view() {
             ValueView::Enum { .. } | ValueView::Instance { .. } => None,
             ValueView::Int(i) => Some(Ok(Value::int(i - 1))),
@@ -418,6 +424,7 @@ pub(super) fn dispatch(
                     crate::builtins::methods_0arg::dispatch_core_coerce::str_numeric_failure(&s),
                 ))
             }
+            // Cost: O(d^2), d = digits (parsed twice: the guard above and `str_to_rat`).
             ValueView::Str(s) => Some(Ok(str_to_rat(&s))),
             ValueView::Complex(r, im) => {
                 if im.abs() <= 1e-15 {
@@ -623,6 +630,7 @@ pub(super) fn dispatch(
             }
         }),
         "tree" => Some(Some(Ok(tree_to_depth(target, usize::MAX)))),
+        // Cost: O(n), n = bytes of the invocant.
         "encode" => {
             let s = target.to_string_value();
             Some(Some(Ok(crate::value::value_buf::make_buf_from_bytes(
@@ -697,6 +705,7 @@ pub(super) fn dispatch(
             };
             Some(Some(Ok(result)))
         }
+        // Cost: O(n), n = codepoints of the invocant.
         "NFC" | "NFD" | "NFKC" | "NFKD" => {
             use unicode_normalization::UnicodeNormalization;
             let s = uni_or_str(target);

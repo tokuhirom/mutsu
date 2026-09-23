@@ -25,6 +25,39 @@
 //! declines it (see `dispatch_nqp_op_by_id`). So adding an op arm without
 //! registering it here costs speed, not correctness — which is what the
 //! `nqp_op_registry_names_all_dispatch` test pins.
+//!
+//! # Complexity annotations
+//!
+//! (The shared rules for every annotated family are in
+//! `docs/complexity-annotations.md`; this section is the `nqp::` specifics.)
+//!
+//! Every op arm in the dispatch tables (and each `NqpPure` body) carries one
+//! comment line in a single, grep-able form:
+//!
+//! ```text
+//! // Cost: O(n), n = chars of $s.
+//! // Cost: O(n), n = chars of $s. MoarVM: O(1) -- see #NNNN.
+//! ```
+//!
+//! * The bound is the op body's own work, per call. The fixed dispatch
+//!   overhead every op pays (`exec_nqp_op`'s prologue, the table `match`;
+//!   see `nqp_pure`) is a constant and is NOT counted.
+//! * Variables name what they measure, per op. The usual letters are
+//!   `n` (length of the string / buffer operand, in chars or bytes as
+//!   stated), `e` (elements of the array / hash operand), `k` (elements or
+//!   chars produced / requested), `m` (needle / separator length).
+//! * Converting a `Str` operand with `to_string_value()` copies it, so it is
+//!   O(n); cloning a `Value` is a refcount bump, O(1). A `nqp_char_cache`
+//!   hit is O(1); a miss collects the string, O(n) — a cost written as
+//!   "amortized" relies on the hit, i.e. on consecutive calls passing the
+//!   SAME string.
+//! * A `MoarVM: O(..)` suffix appears only where mutsu's bound is WORSE than
+//!   the one MoarVM gives the same op. Each such gap has a tracking issue,
+//!   so `grep -rn 'MoarVM: O(' src/` lists every known complexity deficit.
+//! * `scripts/nqp-complexity-check.sh` measures the claims empirically (each
+//!   op in a loop at N and 2N; a time ratio near 4 means the loop is
+//!   quadratic). When a deficit is fixed, re-run its case there and drop the
+//!   `MoarVM:` suffix together with the issue.
 
 /// Which of the chained `nqp::` dispatch tables implements an op.
 ///

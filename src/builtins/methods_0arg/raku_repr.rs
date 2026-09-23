@@ -8,6 +8,7 @@ use super::range_endpoint_display;
 /// escapes (`\0 \b \t \n \r`), and render every other control character
 /// (Unicode category Cc: U+0000-U+001F, U+007F-U+009F) as `\x[HEX]` with
 /// upper-case, no-leading-zero hex. Non-control characters pass through as-is.
+// Cost: O(n), n = chars of `s`.
 pub(crate) fn escape_raku_str(s: &str) -> String {
     let mut out = String::with_capacity(s.len() + 2);
     out.push('"');

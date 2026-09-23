@@ -1457,7 +1457,7 @@ impl Interpreter {
                         if data.items().is_empty() {
                             crate::runtime::utils::make_empty_array_failure_what(method, "Array")
                         } else if method == "shift" {
-                            data.items_mut().remove(0)
+                            data.remove(0)
                         } else {
                             data.items_mut().pop().unwrap_or(Value::NIL)
                         }

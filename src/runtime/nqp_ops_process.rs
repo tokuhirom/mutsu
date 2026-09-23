@@ -31,6 +31,8 @@ impl Interpreter {
             // capture object still gets the real stdout here, which is the
             // whole reason nqp code reaches for them (Test.rakumod unbuffers
             // the real streams so TAP output cannot be reordered).
+            // Cost: getstdout/getstderr/getstdin O(h), h = open IO handles (the handle table is scanned for the
+            // lowest id of that target). MoarVM: O(1) -- see #9134.
             "getstdout" => Ok(self.std_handle(IoHandleTarget::Stdout)),
             "getstderr" => Ok(self.std_handle(IoHandleTarget::Stderr)),
             "getstdin" => Ok(self.std_handle(IoHandleTarget::Stdin)),
@@ -39,6 +41,7 @@ impl Interpreter {
             // buffer capacity (0 = unbuffered) and return the handle. Maps
             // onto the same state as Raku's `$fh.out-buffer = $size`, so any
             // pending bytes are flushed before the capacity changes.
+            // Cost: O(1) plus flushing any pending buffered bytes.
             "setbuffersizefh" => {
                 let fh = args.first().cloned().unwrap_or(Value::NIL);
                 let size = args
@@ -55,11 +58,13 @@ impl Interpreter {
             // nqp::time — wall clock as an integer number of NANOseconds since
             // the epoch (MoarVM's `time`, which replaced the older float-valued
             // `time_n`).
+            // Cost: O(1).
             "time" => Ok(Value::int(Self::epoch_nanos())),
 
             // nqp::eqaddr($a, $b) — object identity as an int 0/1. Same
             // relation as Raku's `=:=`, which is already identity over the
             // container-kind values and by-name over type objects.
+            // Cost: O(1) (a user WHICH on an Instance compares memoized strings, O(len)).
             "eqaddr" => Ok(Value::int(i64::from(crate::runtime::values_identical(
                 args.first().unwrap_or(&Value::NIL),
                 args.get(1).unwrap_or(&Value::NIL),
@@ -67,6 +72,8 @@ impl Interpreter {
 
             // nqp::can($obj, $name) — int 0/1: does this object have a method
             // of that name (the low-level form of `$obj.^can($name)`).
+            // Cost: O(d + m), d = MRO length walked by collect_can_methods, m = size of matching method bodies it
+            // clones into Sub values. MoarVM: O(1) avg (method cache) -- see #9134.
             "can" => {
                 let target = args.first().cloned().unwrap_or(Value::NIL);
                 let name = args.get(1).map(|v| v.to_string_value()).unwrap_or_default();
@@ -80,6 +87,7 @@ impl Interpreter {
             // splitting the empty string yields the empty list, and every
             // separator occurrence produces a field (so trailing empties are
             // kept).
+            // Cost: O(t), t = total chars of $sep and every element (all copied via to_string_value).
             "join" => {
                 let sep = args
                     .first()
@@ -88,6 +96,7 @@ impl Interpreter {
                 let parts = args.get(1).map(Self::nqp_list_strings).unwrap_or_default();
                 Ok(Value::str(parts.join(&sep)))
             }
+            // Cost: O(n + m), n = chars of $str, m = chars of $sep (std str::split, two-way search); plus O(k) values produced.
             "split" => {
                 let sep = args
                     .first()
@@ -116,6 +125,7 @@ impl Interpreter {
             // sibling of `isconcrete`; operands are already decontainerized
             // once at the `call_nqp_op` boundary (`nqp_ops.rs`), so it shares
             // this implementation.
+            // Cost: O(1).
             "defined" | "isconcrete" | "isconcrete_nd" => Ok(Value::int(i64::from(
                 crate::runtime::types::value_is_defined(args.first().unwrap_or(&Value::NIL)),
             ))),
@@ -125,6 +135,7 @@ impl Interpreter {
             // exposed for nqp-level code that inspects a native attribute
             // directly (AttrX::Mooish's `composed` method boolifies a
             // `nqp::getattr_i` int this way rather than going through `?`).
+            // Cost: O(1) for scalars (truthy() of a lazy list may reify its head).
             "istrue" => Ok(Value::int(i64::from(
                 args.first().unwrap_or(&Value::NIL).truthy(),
             ))),
@@ -147,6 +158,7 @@ impl Interpreter {
             // ordinary Raku data), so it stays a loud gap rather than a
             // silent one: TODO: track the raw-list/boxed-Array distinction
             // at the representation level rather than approximating it here.
+            // Cost: O(1).
             "islist" => Ok(Value::int(i64::from(matches!(
                 args.first().map(|v| v.view()),
                 Some(ValueView::Array(..) | ValueView::Slip(_))
@@ -156,11 +168,13 @@ impl Interpreter {
             // value. mutsu has no separate nqp/HLL value representation (see
             // `p6box_*`/`unbox_*` above), so every value here is already its
             // own HLL box and this is the identity function.
+            // Cost: O(1).
             "hllize" => Ok(args.first().cloned().unwrap_or(Value::NIL)),
 
             // nqp::what($v) — the type object of $v, i.e. `$v.WHAT` at the
             // nqp level. Routed through the ordinary method dispatcher, which
             // already answers `WHAT` generically for every value shape.
+            // Cost: O(1) plus a slow-path method dispatch.
             "what" => {
                 let v = args.first().cloned().unwrap_or(Value::NIL);
                 self.call_method_with_values(v, "WHAT", Vec::new())
@@ -172,10 +186,12 @@ impl Interpreter {
             // `runtime/native_methods/concurrency.rs`); AttrX::Mooish takes
             // this path directly around a `Lock.new` attribute rather than
             // calling the methods.
+            // Cost: O(1) plus a slow-path method dispatch (blocking time excluded).
             "lock" => {
                 let lock = args.first().cloned().unwrap_or(Value::NIL);
                 self.call_method_with_values(lock, "lock", Vec::new())
             }
+            // Cost: O(1) plus a slow-path method dispatch.
             "unlock" => {
                 let lock = args.first().cloned().unwrap_or(Value::NIL);
                 self.call_method_with_values(lock, "unlock", Vec::new())
@@ -183,12 +199,15 @@ impl Interpreter {
 
             // nqp::list(...) — an untyped VM list; mutsu represents one as an
             // ordinary array, same as the typed `list_s`/`list_i`/`list_n`.
+            // Cost: O(k), k = arguments copied into a fresh Vec.
             "list" => Ok(Value::array(args.to_vec())),
 
             // nqp::unshift(@l, $v) — the positional peer of
             // `push_s`/`push_i`/`push_n` (nqp_ops_text.rs): insert at the
             // front of an nqp list / native array in place, returning the
             // list.
+            // Cost: O(1) amortized on a list (ArrayData's head offset doubles as front slack, #9121);
+            // O(e) on a Buf, which is decoded and re-encoded whole. MoarVM: O(1) amortized -- see #9132.
             "unshift" => {
                 let target = args.first().cloned().unwrap_or(Value::NIL);
                 let val = args.get(1).cloned().unwrap_or(Value::NIL);
@@ -198,7 +217,7 @@ impl Interpreter {
                         // (see value::aliased_mut) — the same pattern
                         // `push_elem` uses; no borrow into the node is live.
                         let data = unsafe { crate::value::gc_contents_mut(&items) };
-                        data.items_mut().insert(0, val);
+                        data.insert(0, val);
                         Ok(target)
                     }
                     ValueView::Instance { attributes, .. } => {

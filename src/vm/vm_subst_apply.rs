@@ -8,6 +8,8 @@ impl Interpreter {
     /// Create a Match object for a substitution match, including its positional
     /// (`$0`, `$1`, ...) and named (`$<name>`) captures, so the post-`s///` `$/`
     /// exposes them like a plain `m//` match does.
+    // Cost: O(n), n = chars of `text`: a fresh MatchTarget (copy of the string
+    // and its chars) per Match. Rakudo: O(1) -- see #9143.
     pub(super) fn make_subst_match(
         text: &str,
         start: usize,
@@ -153,6 +155,8 @@ impl Interpreter {
         Ok(out)
     }
 
+    // Cost: O(n*r), n = chars of `text`, r = ranges: `char_idx_to_byte` rescans
+    // from the start for both ends of every range. Rakudo: O(n + r) -- see #9143.
     pub(super) fn apply_substitutions(
         text: &str,
         ranges: &[(usize, usize)],
@@ -190,6 +194,9 @@ impl Interpreter {
     /// match -- which is what makes `$0`, `$<name>`, `%h{$/}` and `{ ... }`
     /// blocks see the right capture values.
     #[allow(clippy::too_many_arguments)]
+    // Cost: O(n*r) plus one replacement evaluation per range, n = chars of
+    // `text`, r = ranges: per-range `char_idx_to_byte` rescans, plus a per-match
+    // MatchTarget when the replacement reads `$/`. Rakudo: O(n + r) -- see #9143.
     pub(super) fn apply_substitutions_dynamic(
         &mut self,
         text: &str,

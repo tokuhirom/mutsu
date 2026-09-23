@@ -160,6 +160,8 @@ impl Interpreter {
         }
     }
 
+    // Cost: O(n), n = chars of the invocant (optional normalization, then one
+    // encoding pass).
     pub(super) fn dispatch_encode(
         &mut self,
         target: &Value,

@@ -75,7 +75,7 @@ mod tests {
     #[test]
     fn retired_generations_are_never_overwritten_in_place() {
         let data = native_array();
-        let gen0 = data.items() as *const Vec<Value>;
+        let gen0 = data.items() as *const [Value];
         simulate_native_write(&data, 0, 111);
         let gen1 = data.items();
         assert_eq!(gen1[0], Value::int(111));

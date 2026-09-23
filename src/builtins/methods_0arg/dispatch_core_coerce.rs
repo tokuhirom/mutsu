@@ -438,6 +438,8 @@ pub(super) fn dispatch(
                 ValueView::Int(n) => format!("Int|{}", n),
                 ValueView::BigInt(n) => format!("Int|{}", *n),
                 ValueView::Num(n) => format!("Num|{}", n),
+                // Cost: O(n), n = chars of the invocant (formats a fresh key). Rakudo: O(1)
+                // -- see #9147.
                 ValueView::Str(s) => format!("Str|{}", *s),
                 ValueView::Bool(b) => format!("Bool|{}", if b { 1 } else { 0 }),
                 ValueView::Rat(n, d) => format!("Rat|{}/{}", n, d),
@@ -692,6 +694,7 @@ pub(super) fn dispatch(
             which_str.hash(&mut hasher);
             Some(Some(Ok(Value::int((hasher.finish() >> 1) as i64))))
         }
+        // Cost: O(1) for a Str invocant (emptiness test).
         "Bool" => {
             if matches!(target.view(), ValueView::Instance { .. })
                 && (target.does_check("Real") || target.does_check("Numeric"))
@@ -760,6 +763,8 @@ pub(super) fn dispatch(
             ValueView::Regex(_)
             | ValueView::RegexWithAdverbs(..)
             | ValueView::Routine { is_regex: true, .. } => None,
+            // Cost: O(n) for a Str invocant, n = chars (the payload is copied, not
+            // shared). Rakudo: O(1) -- see #9147.
             _ => Some(Ok(Value::str(target.to_string_value()))),
         }),
         "Int" => {
@@ -854,6 +859,7 @@ pub(super) fn dispatch(
                 }
                 // Do not clamp: a big rational's truncation is a big integer.
                 ValueView::BigRat(n, d) if !d.is_zero() => Value::from_bigint(n / d),
+                // Cost: O(d^2), d = digits (num-bigint radix parse; a few O(n) copies first).
                 ValueView::Str(s) => {
                     if s.trim().is_empty() {
                         // An empty or whitespace-only string coerces to 0, like
@@ -940,6 +946,7 @@ pub(super) fn dispatch(
                 }
                 ValueView::Bool(b) => Some(Value::int(if b { 1 } else { 0 })),
                 ValueView::Str(s) if s.trim().is_empty() => Some(Value::int(0)),
+                // Cost: O(d^2), d = digits (num-bigint radix parse; a few O(n) copies first).
                 ValueView::Str(s) => {
                     if let Some(v) = parse_raku_int_from_str(&s) {
                         Some(v)
@@ -998,6 +1005,7 @@ pub(super) fn dispatch(
                 Some(None)
             }
         }
+        // Cost: O(n), n = chars of the invocant.
         "Version" => match target.view() {
             // Cool.Version: Version.new(self.Str). A Version invocant is
             // already its own version.
@@ -1064,6 +1072,8 @@ pub(super) fn dispatch(
                     let den = d.to_f64().unwrap_or(1.0);
                     Value::num(num / den)
                 }
+                // Cost: O(d^2) for a d-digit integer string, O(n) otherwise (as `.Numeric`,
+                // plus a trimmed copy).
                 ValueView::Str(s) => {
                     let trimmed = s.trim();
                     if trimmed.is_empty() {
@@ -1158,6 +1168,7 @@ pub(super) fn dispatch(
                         ))));
                     }
                 }
+                // Cost: O(d^2) for a d-digit integer string, O(n) otherwise (as `.Numeric`).
                 ValueView::Str(s) => {
                     // `.Real` yields the natural numeric type (Int/Rat/Num); use the
                     // canonical parser so radix prefixes and underscores work and the
@@ -1230,6 +1241,8 @@ pub(super) fn dispatch(
                 ValueView::Rat(_, _) | ValueView::FatRat(_, _) | ValueView::BigRat(_, _) => {
                     target.clone()
                 }
+                // Cost: O(d^2) for a d-digit integer string (num-bigint radix parse), O(n)
+                // otherwise, n = chars of the invocant.
                 ValueView::Str(s) => {
                     if let Some(v) = crate::runtime::str_numeric::parse_raku_str_to_numeric(&s) {
                         v

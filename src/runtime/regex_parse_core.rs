@@ -2128,6 +2128,9 @@ impl Interpreter {
             // so this flag threads the same provenance to the eventual
             // `RegexToken` push further down, mirroring `in_non_declarative_interp`.
             let mut runtime_value_atom = false;
+            // Set when a sigil alias (`$<a>=`) sits on a *negated* subrule
+            // assertion (`<!foo>`, `<!before y>`); see the `'<'` arm below.
+            let mut aliased_negated_subrule = false;
             let atom = match c {
                 '.' => RegexAtom::Any,
                 '\\' => {
@@ -2625,6 +2628,39 @@ impl Interpreter {
                         chars.next();
                         RegexAtom::CaptureStartMarker
                     } else {
+                        // A sigil alias on a `<?name …>` / `<!name …>` *subrule*
+                        // assertion (`$<a>=<?foo>`, `$<a>=<?before x>`,
+                        // `$<a>=<!foo>`) does not keep the assertion's zero
+                        // width: Rakudo's `metachar:sym<var>` action runs
+                        // `subrule_alias` on any subrule-typed atom, which renames
+                        // it `a=foo` and resets its subtype to `capture`,
+                        // overwriting the `zerowidth` the `?`/`!` prefix set. So
+                        // `$<a>=<?foo>` is exactly `$<a>=<foo>` (it consumes and
+                        // captures both `a` and `foo`), and `$<a>=<?before x>` is
+                        // `$<a>=<before x>` (`before` is itself zero-width, so both
+                        // keys hold an empty match). Drop the `?` and parse the
+                        // capturing call. A negated one keeps its `negate` flag but
+                        // is now a capturing call: when the subrule fails, the
+                        // cursor moves to the failed match's (negative) position,
+                        // so the match can never succeed -- see the atom override
+                        // below. Non-subrule assertions (`<?[x]>`, `<?{…}>`,
+                        // `<?:L>`, `<?@a>`) become an ordinary subcapture and stay
+                        // zero-width, so they are left alone.
+                        if pending_named_capture.is_some()
+                            && !pending_named_capture_is_angle_alias
+                            && let Some(&polarity @ ('?' | '!')) = chars.peek()
+                            && {
+                                let mut la = chars.clone();
+                                la.next();
+                                is_subrule_lookahead_name(&la.take(2).collect::<String>())
+                            }
+                        {
+                            if polarity == '?' {
+                                chars.next();
+                            } else {
+                                aliased_negated_subrule = true;
+                            }
+                        }
                         // Check for lookaround assertions: <?before ...>, <!before ...>,
                         // <?after ...>, <!after ...>
                         let peek_str: String = chars.clone().collect();
@@ -2718,6 +2754,14 @@ impl Interpreter {
                         } else if let Some((negated, is_behind, head_len)) =
                             lookaround_keyword(&peek_str)
                         {
+                            // The bare `<before …>` / `<after …>` spelling is a
+                            // subrule call like any other, so it publishes a
+                            // (zero-width) `before`/`after` capture; the `?`, `!`
+                            // and `.` spellings do not.
+                            if !peek_str.starts_with(['?', '!', '.']) {
+                                pending_builtin_named_capture =
+                                    Some(if is_behind { "after" } else { "before" }.to_string());
+                            }
                             // Skip the optional `?`/`!`/`.`, the keyword and the
                             // whitespace that separates it from the body.
                             for _ in 0..peek_str[..head_len].chars().count() {
@@ -4406,6 +4450,13 @@ impl Interpreter {
             let token_separator = self.consume_repeat_separator(&mut chars, &quant, mode);
             // When both a user alias ($<name>=) and a builtin class name are pending,
             // the alias becomes the primary capture and the builtin name becomes secondary.
+            // See the `'<'` arm: an aliased negated subrule assertion can never
+            // produce a successful match in Rakudo.
+            let atom = if aliased_negated_subrule {
+                RegexAtom::Named("!".into())
+            } else {
+                atom
+            };
             let user_alias = pending_named_capture.take();
             let user_alias_is_angle = pending_named_capture_is_angle_alias;
             pending_named_capture_is_angle_alias = false;

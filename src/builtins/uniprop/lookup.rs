@@ -257,17 +257,17 @@ pub(crate) fn unicode_property_value(ch: char, prop: &str) -> Value {
         }
         // Grapheme cluster break
         "Grapheme_Cluster_Break" | "GCB" => {
-            Value::str(super::text_seg::unicode_grapheme_cluster_break(ch))
+            Value::str_from(super::text_seg::unicode_grapheme_cluster_break(ch))
         }
         // Joining
-        "Joining_Group" | "jg" => Value::str(super::text_seg::unicode_joining_group(ch)),
-        "Joining_Type" | "jt" => Value::str(super::text_seg::unicode_joining_type(ch)),
+        "Joining_Group" | "jg" => Value::str_from(super::text_seg::unicode_joining_group(ch)),
+        "Joining_Type" | "jt" => Value::str_from(super::text_seg::unicode_joining_type(ch)),
         // Sentence Break
-        "Sentence_Break" | "SB" => Value::str(super::text_seg::unicode_sentence_break(ch)),
+        "Sentence_Break" | "SB" => Value::str_from(super::text_seg::unicode_sentence_break(ch)),
         // Word Break
-        "Word_Break" | "WB" => Value::str(super::text_seg::unicode_word_break(ch)),
+        "Word_Break" | "WB" => Value::str_from(super::text_seg::unicode_word_break(ch)),
         // Line Break
-        "Line_Break" | "lb" => Value::str(super::text_seg::unicode_line_break(ch)),
+        "Line_Break" | "lb" => Value::str_from(super::text_seg::unicode_line_break(ch)),
         // NFC/NFD/NFKC/NFKD Quick Check
         "NFC_Quick_Check" | "NFC_QC" => Value::str(unicode_nfc_quick_check(ch)),
         "NFD_Quick_Check" | "NFD_QC" => Value::str(unicode_nfd_quick_check(ch)),

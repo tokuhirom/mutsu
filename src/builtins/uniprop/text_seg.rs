@@ -18,70 +18,69 @@ fn is_gcb_spacingmark_exception(cp: u32) -> bool {
 }
 
 /// Grapheme_Cluster_Break property (UAX #29 GraphemeBreakProperty).
-pub(crate) fn unicode_grapheme_cluster_break(ch: char) -> String {
+pub(crate) fn unicode_grapheme_cluster_break(ch: char) -> &'static str {
     let cp = ch as u32;
     match cp {
-        0x000D => return "CR".to_string(),
-        0x000A => return "LF".to_string(),
-        0x200D => return "ZWJ".to_string(),
+        0x000D => return "CR",
+        0x000A => return "LF",
+        0x200D => return "ZWJ",
         // Regional indicator symbols.
-        0x1F1E6..=0x1F1FF => return "Regional_Indicator".to_string(),
+        0x1F1E6..=0x1F1FF => return "Regional_Indicator",
         _ => {}
     }
     // Prepend must precede Extend/Control (some Prepend are gc=Cf).
     if is_gcb_prepend(cp) {
-        return "Prepend".to_string();
+        return "Prepend";
     }
     if super::binary_props::check_binary_property(ch, r"^\p{Grapheme_Extend}$") {
-        return "Extend".to_string();
+        return "Extend";
     }
     // Hangul jamo / syllables.
     match cp {
-        0x1100..=0x115F | 0xA960..=0xA97C => return "L".to_string(),
-        0x1160..=0x11A7 | 0xD7B0..=0xD7C6 => return "V".to_string(),
-        0x11A8..=0x11FF | 0xD7CB..=0xD7FB => return "T".to_string(),
+        0x1100..=0x115F | 0xA960..=0xA97C => return "L",
+        0x1160..=0x11A7 | 0xD7B0..=0xD7C6 => return "V",
+        0x11A8..=0x11FF | 0xD7CB..=0xD7FB => return "T",
         0xAC00..=0xD7A3 => {
             return if (cp - 0xAC00).is_multiple_of(28) {
                 "LV"
             } else {
                 "LVT"
-            }
-            .to_string();
+            };
         }
         _ => {}
     }
     // SpacingMark: spacing combining marks plus U+0E33 / U+0EB3.
     let gc = crate::builtins::unicode::unicode_general_category(ch);
     if (gc == "Mc" && !is_gcb_spacingmark_exception(cp)) || cp == 0x0E33 || cp == 0x0EB3 {
-        return "SpacingMark".to_string();
+        return "SpacingMark";
     }
     // Control: line/paragraph separators, control and format characters.
     if gc == "Cc" || gc == "Cf" || gc == "Zl" || gc == "Zp" {
-        return "Control".to_string();
+        return "Control";
     }
-    "Other".to_string()
+    "Other"
 }
 
 /// Joining_Type property (ArabicShaping.txt). Everything not in the
 /// dual/right/left/causing/transparent sets below is Non_Joining (U).
-pub(crate) fn unicode_joining_type(ch: char) -> String {
+pub(crate) fn unicode_joining_type(ch: char) -> &'static str {
     let cp = ch as u32;
     if is_jt_c(cp) {
-        return "C".to_string(); // Join_Causing
+        return "C"; // Join_Causing
     }
     if is_jt_d(cp) {
-        return "D".to_string(); // Dual_Joining
+        return "D"; // Dual_Joining
     }
     if is_jt_r(cp) {
-        return "R".to_string(); // Right_Joining
+        return "R"; // Right_Joining
     }
     if is_jt_l(cp) {
-        return "L".to_string(); // Left_Joining
+        return "L"; // Left_Joining
     }
     if is_jt_t(cp) {
-        return "T".to_string(); // Transparent
+        return "T"; // Transparent
     }
-    "U".to_string() // Non_Joining
+    "U" // Non_Joining
 }
 
 fn is_jt_c(cp: u32) -> bool {
@@ -130,8 +129,8 @@ fn is_jt_r(cp: u32) -> bool {
 
 /// Joining_Group property (ArabicShaping.txt): letters that share a shaping
 /// shape are grouped; everything else is No_Joining_Group.
-pub(crate) fn unicode_joining_group(ch: char) -> String {
-    let g = match ch as u32 {
+pub(crate) fn unicode_joining_group(ch: char) -> &'static str {
+    match ch as u32 {
         0x0620
         | 0x0626
         | 0x0649..=0x064A
@@ -271,8 +270,7 @@ pub(crate) fn unicode_joining_group(ch: char) -> String {
         0x10D02 | 0x10D09 | 0x10D1C => "HANIFI ROHINGYA PA",
         0x10D19 | 0x10D1E | 0x10D20 | 0x10D23 => "HANIFI ROHINGYA KINNA YA",
         _ => "No_Joining_Group",
-    };
-    g.to_string()
+    }
 }
 
 /// UAX #29 Sentence_Break=SContinue set.
@@ -307,12 +305,12 @@ fn is_sb_scontinue(cp: u32) -> bool {
 }
 
 /// Sentence_Break property (UAX #29 SentenceBreakProperty).
-pub(crate) fn unicode_sentence_break(ch: char) -> String {
+pub(crate) fn unicode_sentence_break(ch: char) -> &'static str {
     let cp = ch as u32;
     match cp {
-        0x000D => return "CR".to_string(),
-        0x000A => return "LF".to_string(),
-        0x0085 | 0x2028 | 0x2029 => return "Sep".to_string(),
+        0x000D => return "CR",
+        0x000A => return "LF",
+        0x0085 | 0x2028 | 0x2029 => return "Sep",
         _ => {}
     }
     let gc = crate::builtins::unicode::unicode_general_category(ch);
@@ -321,40 +319,40 @@ pub(crate) fn unicode_sentence_break(ch: char) -> String {
         || cp == 0x200D
         || super::binary_props::check_binary_property(ch, r"^\p{Grapheme_Extend}$")
     {
-        return "Extend".to_string();
+        return "Extend";
     }
     if gc == "Cf" {
-        return "Format".to_string();
+        return "Format";
     }
     if super::binary_props::check_binary_property(ch, r"^\p{White_Space}$") {
-        return "Sp".to_string();
+        return "Sp";
     }
     if gc == "Nd" {
-        return "Numeric".to_string();
+        return "Numeric";
     }
     if cp == 0x002E || cp == 0x2024 || cp == 0xFF0E {
-        return "ATerm".to_string();
+        return "ATerm";
     }
     if super::binary_props::check_binary_property(ch, r"^\p{Sentence_Terminal}$") {
-        return "STerm".to_string();
+        return "STerm";
     }
     // Close: open/close/quotation punctuation plus straight quotes.
     if matches!(gc, "Ps" | "Pe" | "Pi" | "Pf") || cp == 0x0022 || cp == 0x0027 {
-        return "Close".to_string();
+        return "Close";
     }
     if is_sb_scontinue(cp) {
-        return "SContinue".to_string();
+        return "SContinue";
     }
     if gc == "Lt" || super::binary_props::check_binary_property(ch, r"^\p{Uppercase}$") {
-        return "Upper".to_string();
+        return "Upper";
     }
     if super::binary_props::check_binary_property(ch, r"^\p{Lowercase}$") {
-        return "Lower".to_string();
+        return "Lower";
     }
     if super::binary_props::check_binary_property(ch, r"^\p{Alphabetic}$") {
-        return "OLetter".to_string();
+        return "OLetter";
     }
-    "Other".to_string()
+    "Other"
 }
 
 /// Is `cp` in the UAX #29 Word_Break=Katakana set (includes Common-script
@@ -367,53 +365,53 @@ fn is_wb_katakana(cp: u32) -> bool {
 }
 
 /// Word_Break property (UAX #29 WordBreakProperty).
-pub(crate) fn unicode_word_break(ch: char) -> String {
+pub(crate) fn unicode_word_break(ch: char) -> &'static str {
     let cp = ch as u32;
     // Line separators, joiners, and explicit punctuation classes.
     match cp {
-        0x000D => return "CR".to_string(),
-        0x000A => return "LF".to_string(),
-        0x000B | 0x000C | 0x0085 | 0x2028 | 0x2029 => return "Newline".to_string(),
-        0x200D => return "ZWJ".to_string(),
-        0x0022 => return "Double_Quote".to_string(),
-        0x0027 => return "Single_Quote".to_string(),
+        0x000D => return "CR",
+        0x000A => return "LF",
+        0x000B | 0x000C | 0x0085 | 0x2028 | 0x2029 => return "Newline",
+        0x200D => return "ZWJ",
+        0x0022 => return "Double_Quote",
+        0x0027 => return "Single_Quote",
         // MidNumLet
         0x002E | 0x2018 | 0x2019 | 0x2024 | 0xFE52 | 0xFF07 | 0xFF0E => {
-            return "MidNumLet".to_string();
+            return "MidNumLet";
         }
         // MidLetter
         0x003A | 0x00B7 | 0x0387 | 0x05F4 | 0x2027 | 0xFE13 | 0xFE55 | 0xFF1A => {
-            return "MidLetter".to_string();
+            return "MidLetter";
         }
         // MidNum
         0x002C | 0x003B | 0x037E | 0x0589 | 0x060C | 0x060D | 0x066C | 0x07F8 | 0x2044 | 0xFE10
         | 0xFE14 | 0xFE50 | 0xFE54 | 0xFF0C | 0xFF1B => {
-            return "MidNum".to_string();
+            return "MidNum";
         }
         _ => {}
     }
     if is_wb_katakana(cp) {
-        return "Katakana".to_string();
+        return "Katakana";
     }
     let gc = crate::builtins::unicode::unicode_general_category(ch);
     // Connector_Punctuation is exactly the ExtendNumLet base set.
     if gc == "Pc" {
-        return "ExtendNumLet".to_string();
+        return "ExtendNumLet";
     }
     // Extend: grapheme-extending marks and ZWNJ.
     if super::binary_props::check_binary_property(ch, r"^\p{Grapheme_Extend}$") {
-        return "Extend".to_string();
+        return "Extend";
     }
     // Format controls (joiners and ZWSP already handled above).
     if gc == "Cf" && cp != 0x200B {
-        return "Format".to_string();
+        return "Format";
     }
     match gc {
-        "Nd" => "Numeric".to_string(),
+        "Nd" => "Numeric",
         "Lu" | "Ll" | "Lt" | "Lm" | "Lo" => {
             let script = crate::builtins::unicode::unicode_script_name(ch);
             if script == "Hebrew" && (gc == "Lo" || gc == "Lm") {
-                return "Hebrew_Letter".to_string();
+                return "Hebrew_Letter";
             }
             // ALetter excludes ideographs, Hiragana, and Complex_Context
             // (Line_Break=SA: Thai/Lao/Myanmar/Khmer/...) letters.
@@ -421,59 +419,59 @@ pub(crate) fn unicode_word_break(ch: char) -> String {
                 || script == "Hiragana"
                 || unicode_line_break(ch) == "SA"
             {
-                "Other".to_string()
+                "Other"
             } else {
-                "ALetter".to_string()
+                "ALetter"
             }
         }
-        _ => "Other".to_string(),
+        _ => "Other",
     }
 }
 
 /// Line_Break property.
-pub(crate) fn unicode_line_break(ch: char) -> String {
+pub(crate) fn unicode_line_break(ch: char) -> &'static str {
     let cp = ch as u32;
     match cp {
-        0x000A => "LF".to_string(),
-        0x000D => "CR".to_string(),
-        0x000B => "BK".to_string(),
-        0x000C => "BK".to_string(),
-        0x0085 => "NL".to_string(),
-        0x2028 => "BK".to_string(),
-        0x2029 => "BK".to_string(),
-        0x0020 => "SP".to_string(),
-        0x200D => "ZWJ".to_string(),
-        0x200B => "ZW".to_string(),
-        0x00AD => "BA".to_string(), // SOFT HYPHEN
+        0x000A => "LF",
+        0x000D => "CR",
+        0x000B => "BK",
+        0x000C => "BK",
+        0x0085 => "NL",
+        0x2028 => "BK",
+        0x2029 => "BK",
+        0x0020 => "SP",
+        0x200D => "ZWJ",
+        0x200B => "ZW",
+        0x00AD => "BA", // SOFT HYPHEN
         _ => {
             // Check for surrogates (not valid Rust chars but handle codepoints)
             if (0xD800..=0xDFFF).contains(&cp) {
-                return "SG".to_string();
+                return "SG";
             }
             // Noncharacters
             if (cp & 0xFFFE == 0xFFFE) || (0xFDD0..=0xFDEF).contains(&cp) {
-                return "XX".to_string();
+                return "XX";
             }
             let gc = crate::builtins::unicode::unicode_general_category(ch);
             match gc {
-                "Ps" => "OP".to_string(),
-                "Pe" => "CL".to_string(),
-                "Zs" => "SP".to_string(),
+                "Ps" => "OP",
+                "Pe" => "CL",
+                "Zs" => "SP",
                 "Mn" | "Mc" | "Me" => {
                     // Southeast Asian scripts use SA for combining marks too
                     let script = crate::builtins::unicode::unicode_script_name(ch);
                     match script {
                         "Thai" | "Lao" | "Myanmar" | "Khmer" | "Javanese" | "Tai_Tham"
-                        | "New_Tai_Lue" | "Tai_Le" => "SA".to_string(),
-                        _ => "CM".to_string(),
+                        | "New_Tai_Lue" | "Tai_Le" => "SA",
+                        _ => "CM",
                     }
                 }
-                "Nd" => "NU".to_string(),
+                "Nd" => "NU",
                 "Lu" | "Ll" | "Lt" | "Lm" | "Lo" => {
                     let script = crate::builtins::unicode::unicode_script_name(ch);
                     match script {
                         "Thai" | "Lao" | "Myanmar" | "Khmer" | "Javanese" | "Tai_Tham"
-                        | "New_Tai_Lue" | "Tai_Le" => "SA".to_string(),
+                        | "New_Tai_Lue" | "Tai_Le" => "SA",
                         // Ideographic scripts have Line_Break=ID (not AL), e.g. a
                         // CJK ideograph or a Hiragana/Katakana letter.
                         "Han"
@@ -483,30 +481,30 @@ pub(crate) fn unicode_line_break(ch: char) -> String {
                         | "Yi"
                         | "Tangut"
                         | "Nushu"
-                        | "Khitan_Small_Script" => "ID".to_string(),
-                        _ => "AL".to_string(),
+                        | "Khitan_Small_Script" => "ID",
+                        _ => "AL",
                     }
                 }
-                "Sm" => "AL".to_string(),
-                "Sc" => "PR".to_string(),
-                "Sk" => "AL".to_string(),
-                "So" => "AL".to_string(),
-                "Pi" => "QU".to_string(),
-                "Pf" => "QU".to_string(),
-                "Pd" => "HY".to_string(),
+                "Sm" => "AL",
+                "Sc" => "PR",
+                "Sk" => "AL",
+                "So" => "AL",
+                "Pi" => "QU",
+                "Pf" => "QU",
+                "Pd" => "HY",
                 "Po" => {
                     if cp == 0x002E || cp == 0x002C || cp == 0x003A || cp == 0x003B {
-                        "IS".to_string()
+                        "IS"
                     } else {
-                        "AL".to_string()
+                        "AL"
                     }
                 }
-                "Pc" => "AL".to_string(),
-                "Cc" => "CM".to_string(),
-                "Cf" => "CM".to_string(),
-                "Cn" => "XX".to_string(),
-                "Co" => "XX".to_string(),
-                _ => "XX".to_string(),
+                "Pc" => "AL",
+                "Cc" => "CM",
+                "Cf" => "CM",
+                "Cn" => "XX",
+                "Co" => "XX",
+                _ => "XX",
             }
         }
     }

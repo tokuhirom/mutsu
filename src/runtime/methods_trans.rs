@@ -229,6 +229,8 @@ fn regex_value_pattern(v: &Value) -> Option<String> {
 }
 
 impl Interpreter {
+    // Cost: O(k + t) to build the rules (k = expanded from-chars, t = token chars),
+    // then `apply_trans_rules` / `apply_trans_complement` (see there).
     pub(crate) fn dispatch_trans(
         &mut self,
         target: Value,
@@ -552,6 +554,12 @@ impl Interpreter {
         }
     }
 
+    // Cost: O(n * (k + p*n + g*n)) worst case, n = chars of the text, k = from-chars
+    // of the CharMap/CharClosure rules (linear `position` scan per char), p = TokenMap
+    // rules (each copies the remaining text, `chars[i..]`, at every position), g =
+    // Regex rules (each rebuilds a `MatchTarget` of the whole text at every position).
+    // So a single token or regex key makes one call O(n^2).
+    // Rakudo: O(n * p) -- see #9142.
     fn apply_trans_rules(
         &mut self,
         text: &str,
@@ -776,6 +784,9 @@ impl Interpreter {
         Ok(result.to_string_value())
     }
 
+    // Cost: O(n * (k + p*n + g*n)) worst case, same shape as `apply_trans_rules`:
+    // token and regex rules copy the remaining text at every position (O(n^2)).
+    // Rakudo: O(n * p) -- see #9142.
     fn apply_trans_complement(
         &mut self,
         text: &str,
