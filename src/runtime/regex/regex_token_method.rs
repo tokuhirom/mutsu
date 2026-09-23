@@ -128,6 +128,14 @@ impl Interpreter {
         receiver_pkg: &str,
         name: &str,
     ) -> Option<Vec<(u64, Value)>> {
+        // The regex engine asks this for every named atom and `<.ws>` it
+        // visits, and the walk below clones the receiver's whole MRO into
+        // `String`s plus two more per owner for the registry key. With no
+        // method wrap installed anywhere (the overwhelmingly common case)
+        // the answer is known without any of that: bail on the empty table.
+        if !self.has_any_wrap_chains() {
+            return None;
+        }
         let owners = self.mro_readonly(receiver_pkg);
         owners
             .into_iter()
