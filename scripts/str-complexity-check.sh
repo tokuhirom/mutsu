@@ -46,6 +46,9 @@ CASES=(
     'append ~= (plain local, control)|20000|my $x = "";|$x ~= "あ"|loop'
     'append ~= (stmt modifier, control)|10000|my $w = "";|$w ~= "あ" if True|loop'
     'append ~= (hash element)|10000|my %h = k => "";|%h<k> ~= "あ"|loop'
+    'append ~= (array element)|10000|my @a = "";|@a[0] ~= "あ"|loop'
+    'append ~= (closure-captured, #9209)|10000|my $x = ""; my &g = { $x ~= "あ" };|g()|loop'
+    'append ~= (attribute, #9209)|10000|class C { has $.s = ""; method go($n) { for ^$n { $!s ~= "あ" } } };|C.new.go(NN)|once'
     'append ~= (in given/when)|10000||given 1 { when 1 { my $x = ""; for ^NN { $x ~= "あ" } } }|once'
     'concat reassign $y = $y ~|10000|my $y = "";|$y = $y ~ "あ"|loop'
     # --- transform ---------------------------------------------------------

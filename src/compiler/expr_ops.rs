@@ -303,6 +303,7 @@ impl Compiler {
                             is_positional: *is_positional,
                             index_first: false,
                             target_slot,
+                            concat_append: false,
                         });
                     }
                     // For complex targets without a simple name, leave result on stack.

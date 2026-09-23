@@ -60,7 +60,7 @@ pub(super) fn compile_range(code: &CompiledCode, start: usize, end: usize) -> Op
             OpCode::LoadConst(_)
             | OpCode::GetLocal(_)
             | OpCode::SetLocal(_)
-            | OpCode::ConcatAssignLocal(_)
+            | OpCode::ConcatAssignLocal(..)
             | OpCode::SetLocalDecl { .. }
             | OpCode::ContainerizePair
             | OpCode::CallFunc { .. }
@@ -490,14 +490,14 @@ fn build(
             // The append's own fast path lives in the interpreter handler, so
             // there is nothing to inline here — this exists so a loop that
             // contains one still gets a JIT body at all.
-            OpCode::ConcatAssignLocal(slot) => {
+            OpCode::ConcatAssignLocal(slot, seed) => {
                 let slotv = b.ins().iconst(types::I32, *slot as i64);
-                let status = call_helper(
-                    &mut b,
-                    sigs.s_code_u32,
-                    helpers::concat_assign_local as *const () as usize,
-                    &[interp, codep, slotv],
-                )?;
+                let helper = if *seed {
+                    helpers::concat_assign_local as *const () as usize
+                } else {
+                    helpers::concat_reassign_local as *const () as usize
+                };
+                let status = call_helper(&mut b, sigs.s_code_u32, helper, &[interp, codep, slotv])?;
                 check_status(&mut b, status);
             }
             OpCode::SetLocalDecl {

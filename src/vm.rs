@@ -194,6 +194,7 @@ pub(crate) mod vm_hyper_func;
 mod vm_hyper_method_ops;
 pub(crate) mod vm_hyper_ops;
 mod vm_hyper_race_parallel;
+mod vm_index_concat_append;
 mod vm_infix_shape;
 pub(crate) mod vm_jit;
 #[cfg(feature = "jit")]

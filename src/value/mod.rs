@@ -557,7 +557,7 @@ mod value_methods_c;
 mod value_setbagmix;
 mod value_str_append;
 mod value_str_append_nfc;
-pub(crate) use value_str_append_nfc::StrAppendPlan;
+pub(crate) use value_str_append_nfc::{StrAppendPlan, has_nfc_boundary_before};
 mod view;
 pub(crate) mod waker;
 

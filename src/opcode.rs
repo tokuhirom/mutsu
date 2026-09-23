@@ -798,7 +798,13 @@ pub(crate) enum OpCode {
     /// Reading the LHS after the RHS is also what rakudo does: `$s ~= f()`
     /// where `f` assigns to `$s` answers with `f`'s write in rakudo, and with
     /// the pre-call value in mutsu's unfused sequence (measured, 2026-09-18).
-    ConcatAssignLocal(u32),
+    ///
+    /// The `bool` is `true` for the METAOP_ASSIGN spelling (`$s ~= rhs`),
+    /// whose general path seeds an undefined LHS with `''` silently, and
+    /// `false` for the literal re-assignment `$s = $s ~ rhs` (#9141), whose
+    /// general path is a plain `Concat` (warning on an undefined LHS). The
+    /// in-place fast path only ever sees a defined `Str`, where the two agree.
+    ConcatAssignLocal(u32, bool),
     /// Like GetLocal but does NOT resolve HashEntryRef values.
     /// Used by `=:=` to compare raw container references.
     GetLocalRaw(u32),
@@ -2156,6 +2162,14 @@ pub(crate) enum OpCode {
         /// `my $a` writes its own slot. Byte-identical with shadows off (baked ==
         /// position). See docs/lexical-scope-slot-campaign.md.
         target_slot: Option<u32>,
+        /// `%h{$k} ~= rhs` / `@a[$i] ~= rhs` fused with its `Concat` (#9141).
+        /// The stack is `[index, element, rhs]` instead of `[index, value]`,
+        /// and the op concatenates before storing. The fusion exists for
+        /// ownership: an unfused `Concat` sees the element held twice (the
+        /// container and the stack) and must copy the whole accumulated
+        /// string, O(len) per append; the fused store can release the
+        /// container's reference first and grow the buffer in place.
+        concat_append: bool,
     },
     IndexAssignPseudoStashNamed {
         stash_name_idx: u32,
@@ -5960,7 +5974,7 @@ impl CompiledCode {
                 | OpCode::AssignExprLocal(slot)
                 // Reads AND writes its slot, so it counts as an access on both
                 // halves of every scan that asks about one.
-                | OpCode::ConcatAssignLocal(slot)
+                | OpCode::ConcatAssignLocal(slot, _)
                 | OpCode::StateVarInit(slot, _) => Some(*slot),
                 OpCode::GetLocalMetaAssign { slot, .. } | OpCode::SetLocalDecl { slot, .. } => {
                     Some(*slot)
@@ -7937,7 +7951,7 @@ impl CompiledCode {
             let store_slot = match op {
                 OpCode::SetLocal(slot)
                 | OpCode::AssignExprLocal(slot)
-                | OpCode::ConcatAssignLocal(slot) => Some(*slot),
+                | OpCode::ConcatAssignLocal(slot, _) => Some(*slot),
                 OpCode::SetLocalDecl { slot, .. } => Some(*slot),
                 _ => None,
             };
@@ -7970,7 +7984,7 @@ impl CompiledCode {
                 OpCode::SetLocalDecl { .. } => pending_decl = false,
                 // `$x ~= ...` is a reassignment of an own local, exactly like
                 // the `SetLocal` it replaces (it never declares one).
-                OpCode::ConcatAssignLocal(slot) | OpCode::AssignExprLocal(slot) => {
+                OpCode::ConcatAssignLocal(slot, _) | OpCode::AssignExprLocal(slot) => {
                     if let Some(name) = self.locals.get(*slot as usize) {
                         self_mutated.insert(Symbol::intern(name));
                     }
