@@ -1,6 +1,6 @@
 # ADR-0112: Finishing ADR-0110 for the JSON::Fast goal — whole-unit linkage, the string path in TRIR, typed container ops, then native lowering with inlining
 
-- Status: Accepted (2026-09-23, approved by tokuhirom; Step 1 landed — see "Implementation status")
+- Status: Accepted (2026-09-23, approved by tokuhirom; Steps 1 and 2 landed — see "Implementation status")
 - Date: 2026-09-23
 - Deciders: tokuhirom, Claude
 - Tracked by: [#8673](https://github.com/tokuhirom/mutsu/issues/8673) (goal: `bench-json-fast-spdx@section+jit` below 1.0, i.e. faster than rakudo)
@@ -162,4 +162,44 @@ Measured, release, 4-core container:
 | 727-record `from-json` | 1.67 s | ~1.55 s (3 runs: 1.50 / 1.61 / 1.55) | — (as §3 estimated: Step 1 alone is worth ~0.07 s) |
 
 The decoded result is byte-identical to rakudo's. Pins: `t/vm/codegen/adr0112-trir-forward-link.t`, which covers a forward `is rw` write, mutual recursion, an aggregate declining then a scalar linking, and a `.wrap` installed after linking, all with TRIR on = off and `gen-links` > 0. Also `t/modules/adr0110-trir-module-linkage.t`.
+
+### Step 2 — landed 2026-09-23
+
+All six routines are accepted, and `unjsonify-string`'s inner
+`fetch-codepoint` runs inside it. Two mechanisms differ from §2:
+
+- **The inner sub is inlined, not a nested chunk with a static link.** An
+  ADR-0113 frame lexical has no identity a program can observe. A call to it
+  is therefore its body, compiled at the call site in the scope its
+  declaration sees (the enclosing bindings as they stand at the declaration
+  statement). That needs no new frame kind and no link, and it gives Step 4
+  the inlining for free. Shapes where that equivalence is not plain decline:
+  parameters, a return type, `return`, recursion, and reads of the sub's own
+  `$_`/`$/`/`$!` (`src/trir/compile/inline.rs`).
+- **Only value-reading methods are called out** (`MethodGen`: `.Numeric`,
+  `.Bool`, `.raku`, `.base`, ...). The untyped path's `CallMethodMut` writes
+  an autovivified receiver back into its variable. A TRIR slot holds a value,
+  so a method that could rebind its receiver stays out
+  (`src/trir/compile/method.rs`).
+
+Also admitted: a nominal boxed parameter type, checked at bind time by
+`type_matches_value`. A failed check declines the call. `CallTr` refuses such
+a callee, so the check always runs. Bare blocks in value position are admitted
+too.
+
+Differential testing found one real divergence, which was older than this
+step. A boxed `nqp::` result stored into a native `int` variable used
+`UnboxI`'s lenient `iarg` coercion (a type object reads as 0), where the
+untyped path dies. The store now has its own op, `NarrowStoreI`, which runs
+the untyped path's `validate_native_int_assignment`.
+
+| | before | after | gate |
+|---|---:|---:|---|
+| 727-record `from-json` | ~1.38 s | **~0.21 s** | ≤ 0.334 s: **met** |
+| `trir:` line, 100-record decode | `bails=0 gen-links=1088` | `bails=0 gen-links=2285` | — |
+
+The decoded result is byte-identical to rakudo's. Against rakudo's ~0.058 s
+the ratio is ~3.6x, where §3 had estimated ~8x after Step 2. Pins:
+`t/vm/codegen/adr0112-trir-string-path.t` and
+`t/fixtures/trir-string-path.raku`.
 
