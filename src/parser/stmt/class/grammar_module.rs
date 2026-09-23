@@ -112,12 +112,6 @@ pub(crate) fn token_decl(input: &str) -> PResult<'_, Stmt> {
     if is_rule {
         pattern = inject_implicit_rule_ws(&pattern);
         pattern = inject_separator_ws(&pattern);
-        if name.contains(":sym<") || name.contains(":sym\u{ab}") {
-            if !pattern.ends_with(' ') {
-                pattern.push(' ');
-            }
-            pattern.push_str("<.ws>?");
-        }
     }
     if is_ratchet {
         pattern = format!(":ratchet {pattern}");
