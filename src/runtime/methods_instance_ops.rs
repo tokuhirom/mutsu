@@ -3416,7 +3416,7 @@ impl Interpreter {
                             _ => new_items.push(arg.clone()),
                         }
                     }
-                    new_items.append(items);
+                    new_items.append(items.items_mut());
                     *items = crate::value::ArrayData::new(new_items);
                 }
                 _ => {}

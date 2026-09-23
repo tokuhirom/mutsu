@@ -286,7 +286,7 @@ impl Interpreter {
                         && max_idx >= updated.len()
                     {
                         Self::autoviv_resize(
-                            &mut updated,
+                            updated.items_mut(),
                             max_idx + 1,
                             Value::package(crate::symbol::wk::any()),
                         )?;
@@ -296,7 +296,7 @@ impl Interpreter {
                     }
                 } else if let Some(i) = Self::index_to_usize(idx) {
                     Self::autoviv_resize(
-                        &mut updated,
+                        updated.items_mut(),
                         i + 1,
                         Value::package(crate::symbol::wk::any()),
                     )?;
@@ -407,7 +407,11 @@ impl Interpreter {
                 };
                 if let Some(res) = container.with_array_mut(|items, _| {
                     let arr = crate::value::gc_data_mut(items);
-                    Self::autoviv_resize(arr, i + 1, Value::package(crate::symbol::wk::any()))?;
+                    Self::autoviv_resize(
+                        arr.items_mut(),
+                        i + 1,
+                        Value::package(crate::symbol::wk::any()),
+                    )?;
                     arr[i] = value.take().unwrap_or(Value::NIL);
                     Ok(())
                 }) {
@@ -437,7 +441,11 @@ impl Interpreter {
             };
             let Some(res) = container.with_array_mut(|items, _| {
                 let arr = crate::value::gc_data_mut(items);
-                Self::autoviv_resize(arr, i + 1, Value::package(crate::symbol::wk::any()))?;
+                Self::autoviv_resize(
+                    arr.items_mut(),
+                    i + 1,
+                    Value::package(crate::symbol::wk::any()),
+                )?;
                 arr[i] = value;
                 Ok(())
             }) else {
