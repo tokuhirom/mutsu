@@ -113,7 +113,7 @@ Rakudo measured 0.044–0.061 s on the same SPDX decode.
 
 ## 6. Pins
 
-- `t/lang/core-type-fold-nqp-operand.t`, with `t/lib/CoreNamedTypeExport.rakumod`. It covers
+- `t/vm/nqp-core-type-operand-fold.t`, with `t/lib/CoreNamedTypeExport.rakumod`. It covers
   the folded operands, plus four names that must not fold: a sigilless parameter, a nested
   sigilless binding, a class declared later in the unit, and an imported type. All of it is
   checked against rakudo.

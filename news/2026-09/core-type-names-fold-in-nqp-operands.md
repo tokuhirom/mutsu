@@ -39,7 +39,7 @@ Measured on a release build in a 4-core container:
 - `{}` element: ~5.0 → ~3.6 µs;
 - escaped string element: ~12.5 → ~10.0 µs.
 
-Pin: `t/lang/core-type-fold-nqp-operand.t`, with `t/lib/CoreNamedTypeExport.rakumod`,
+Pin: `t/vm/nqp-core-type-operand-fold.t`, with `t/lib/CoreNamedTypeExport.rakumod`,
 checked against rakudo. It covers what folds and four bindings that must win over the CORE
 name: a sigilless parameter, a nested sigilless `my`, a later class declaration, and an
 imported type.
