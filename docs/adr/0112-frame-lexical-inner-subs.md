@@ -105,4 +105,7 @@ Anything outside the proof keeps the registry-based behaviour unchanged.
 ## Implementation status
 
 - Slice 1 (this ADR's PR): call-only inner subs of `sub`/`method` bodies compiled through
-  `Compiler::compile_sub_body`.
+  `Compiler::compile_sub_body`. Callgrind, per unit of input: the microbenchmark of §1
+  went from 71.4K to 19.8K instructions per call of the enclosing routine (hoisted: 12.7K);
+  the #9103 `from-json` repro from 541K to 444K per string (-18%).
+- Open: a frame-lexical code object for an inner sub used as a value (`&name`).
