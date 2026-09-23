@@ -130,7 +130,7 @@ fn is_jt_r(cp: u32) -> bool {
 /// Joining_Group property (ArabicShaping.txt): letters that share a shaping
 /// shape are grouped; everything else is No_Joining_Group.
 pub(crate) fn unicode_joining_group(ch: char) -> &'static str {
-    let g = match ch as u32 {
+    match ch as u32 {
         0x0620
         | 0x0626
         | 0x0649..=0x064A
@@ -270,8 +270,7 @@ pub(crate) fn unicode_joining_group(ch: char) -> &'static str {
         0x10D02 | 0x10D09 | 0x10D1C => "HANIFI ROHINGYA PA",
         0x10D19 | 0x10D1E | 0x10D20 | 0x10D23 => "HANIFI ROHINGYA KINNA YA",
         _ => "No_Joining_Group",
-    };
-    g
+    }
 }
 
 /// UAX #29 Sentence_Break=SContinue set.
