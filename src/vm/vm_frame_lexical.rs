@@ -20,6 +20,9 @@ pub(crate) struct FrameLexicalTarget {
     pub(crate) cf: Arc<CompiledFunction>,
     pub(crate) package: Symbol,
     pub(crate) name: Symbol,
+    /// The definition registration derived, from which `&name` builds the
+    /// routine's code object.
+    pub(crate) def: Option<Arc<crate::ast::FunctionDef>>,
 }
 
 /// `Interpreter::frame_lexical_closure_bodies`: a closure body's shared
@@ -47,7 +50,15 @@ impl Interpreter {
         r: FrameLexicalRef,
         compiled_fns: &CompiledFns,
     ) -> Result<(), RuntimeError> {
-        if self.frame_lexical_routines.contains_key(&r) {
+        let plan_value = code
+            .sub_decl_plans
+            .get(plan_idx as usize)
+            .is_some_and(|plan| plan.frame_lexical_value);
+        if let Some(target) = self.frame_lexical_routines.get(&r) {
+            if plan_value {
+                let package = target.package;
+                self.mint_frame_lexical_callable_id(package, r.name);
+            }
             return Ok(());
         }
         // The ordinary registration performs every check and derivation a
@@ -76,16 +87,45 @@ impl Interpreter {
                 r.name.as_str()
             )));
         };
-        let package = def.map_or_else(|| self.current_package_sym(), |def| def.package);
+        let package = def
+            .as_ref()
+            .map_or_else(|| self.current_package_sym(), |def| def.package);
         crate::runtime::cow_table_mut(&mut self.frame_lexical_routines).insert(
             r,
             FrameLexicalTarget {
                 cf,
                 package,
                 name: r.name,
+                def,
             },
         );
+        if plan_value {
+            self.mint_frame_lexical_callable_id(package, r.name);
+        }
         Ok(())
+    }
+
+    /// Give this activation of a frame-lexical routine used as a value its
+    /// own callable identity, as a registration would: every `&name` read
+    /// until the declaration runs again denotes the same routine object.
+    fn mint_frame_lexical_callable_id(&mut self, package: Symbol, name: Symbol) {
+        let key = crate::runtime::meta_ns::MetaNs::CallableId.key_pair(package, name);
+        self.env_mut()
+            .insert_sym_noting(key, Value::int(crate::value::next_instance_id() as i64));
+    }
+
+    /// `&name` for a frame-lexical routine this chunk lists: the routine's
+    /// code object, capturing the environment at the point of use (where
+    /// every enclosing lexical the routine reads is already declared).
+    /// `None` when this interpreter has not derived the routine yet.
+    pub(super) fn frame_lexical_code_object(
+        &self,
+        code: &CompiledCode,
+        name: Symbol,
+    ) -> Option<Value> {
+        let r = code.lexical_routine(name)?;
+        let def = self.frame_lexical_routines.get(&r)?.def.as_ref()?;
+        Some(self.sub_value_from_function_def((**def).clone()))
     }
 
     /// The cold path of a `CallTrir` site whose callee is a frame-lexical
@@ -188,6 +228,11 @@ impl Interpreter {
         site: FrameLexicalCallSite,
         compiled_fns: &CompiledFns,
     ) -> Result<Option<Value>, RuntimeError> {
+        // A wrapper installed through `&name.wrap` intercepts calls by name;
+        // step aside so the ordinary dispatch runs it.
+        if self.any_routine_wrapped() && self.routine_is_wrapped(r.name.as_str()) {
+            return Ok(None);
+        }
         let Some(target) = self.frame_lexical_routines.get(&r).cloned() else {
             return Ok(None);
         };

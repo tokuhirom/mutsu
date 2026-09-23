@@ -1122,6 +1122,7 @@ mod expr_method;
 mod expr_ops;
 mod expr_postfix;
 mod expr_unary;
+mod frame_lexical_ast_scan;
 pub(crate) mod frame_lexical_inherit;
 pub(crate) mod frame_lexical_routines;
 mod helpers;

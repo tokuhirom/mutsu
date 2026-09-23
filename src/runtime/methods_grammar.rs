@@ -1625,13 +1625,33 @@ impl Interpreter {
         if let Some(ValueView::Hash(named_hash)) = attributes.as_map().get("named").map(Value::view)
         {
             let mut updated_named = named_hash.as_ref().clone();
-            let mut children: Vec<(String, Value)> = named_hash
-                .iter()
-                .map(|(k, v)| (k.clone(), v.clone()))
-                .collect();
+            // A quantified named capture is stored as one Array under its
+            // capture name, but grammar actions run at each cursor's reduce
+            // point. Sorting the named-capture slots first therefore grouped
+            // all `<line>` actions together ahead of an interleaved
+            // `<section>` or `<include>` action. Stateful actions (including
+            // parsers that maintain scope or interpolation variables) observe
+            // the wrong order. Flatten the individual captures before sorting
+            // so sibling capture types are interleaved by source position.
+            let mut children: Vec<(String, Option<usize>, Value)> = Vec::new();
+            let mut array_children: std::collections::HashMap<
+                String,
+                (crate::value::ArrayKind, Vec<Value>),
+            > = std::collections::HashMap::new();
+            for (child_name, child_match) in named_hash.iter() {
+                if let ValueView::Array(items, kind) = child_match.view() {
+                    let values = items.to_vec();
+                    for (index, item) in values.iter().enumerate() {
+                        children.push((child_name.clone(), Some(index), item.clone()));
+                    }
+                    array_children.insert(child_name.clone(), (kind, values));
+                } else {
+                    children.push((child_name.clone(), None, child_match.clone()));
+                }
+            }
             // `match_from` is the non-materializing seam read — a lazy child
             // is not forced just to be sorted.
-            children.sort_by_key(|(_, v)| v.match_from().unwrap_or(0));
+            children.sort_by_key(|(_, _, v)| v.match_from().unwrap_or(0));
             // A non-suppressing alias (`<x=rule>`) files ONE capture node under
             // both `x` and `rule`, so the same cursor appears twice among these
             // siblings. Rakudo dispatches an action per reduced cursor, not per
@@ -1641,7 +1661,7 @@ impl Interpreter {
             // give both slots the same updated child — which is also what
             // `$<x> === $<rule>` means.
             let mut seen: Vec<(usize, Value)> = Vec::new();
-            for (child_name, child_match) in children {
+            for (child_name, array_index, child_match) in children {
                 // Probe Match first (non-materializing); only non-Match values
                 // (arrays of per-iteration Matches) go through `view()`.
                 if child_match.is_match_instance() {
@@ -1653,27 +1673,13 @@ impl Interpreter {
                         actions,
                         &dispatch_name,
                     ));
-                    updated_named.insert(child_name, updated_child);
-                } else if let ValueView::Array(items, meta) = child_match.view() {
-                    let mut updated_items = Vec::with_capacity(items.len());
-                    for item in items.as_ref() {
-                        let dispatch_name =
-                            Self::get_action_name(item).unwrap_or_else(|| child_name.clone());
-                        let updated_item = restore_on_error!(self.invoke_grammar_actions_once(
-                            &mut seen,
-                            item.clone(),
-                            actions,
-                            &dispatch_name,
-                        ));
-                        updated_items.push(updated_item);
+                    if let Some(index) = array_index {
+                        if let Some((_, items)) = array_children.get_mut(&child_name) {
+                            items[index] = updated_child;
+                        }
+                    } else {
+                        updated_named.insert(child_name, updated_child);
                     }
-                    updated_named.insert(
-                        child_name,
-                        Value::array_with_kind(
-                            crate::gc::Gc::new(crate::value::ArrayData::new(updated_items)),
-                            meta,
-                        ),
-                    );
                 } else {
                     let dispatch_name =
                         Self::get_action_name(&child_match).unwrap_or_else(|| child_name.clone());
@@ -1683,8 +1689,23 @@ impl Interpreter {
                         actions,
                         &dispatch_name,
                     ));
-                    updated_named.insert(child_name, updated_child);
+                    if let Some(index) = array_index {
+                        if let Some((_, items)) = array_children.get_mut(&child_name) {
+                            items[index] = updated_child;
+                        }
+                    } else {
+                        updated_named.insert(child_name, updated_child);
+                    }
                 }
+            }
+            for (child_name, (kind, items)) in array_children {
+                updated_named.insert(
+                    child_name,
+                    Value::array_with_kind(
+                        crate::gc::Gc::new(crate::value::ArrayData::new(items)),
+                        kind,
+                    ),
+                );
             }
             updated_attrs.insert("named".to_string(), Value::hash_bare_values(updated_named));
         }

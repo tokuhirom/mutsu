@@ -60,9 +60,12 @@ Decided by `compiler/frame_lexical_routines.rs` after the routine body is compil
   exported, no `is rw`/`is raw`, no alternate signatures, not the body's final statement
   (whose value is the `&name` code object), a plain identifier that no builtin answers to,
   declared once in the body, parameters carrying only `copy`/`rw`/`raw`/`readonly`.
-- The body's AST, serialized, mentions the name only as the callee of a `Call` node and as
-  the declaration. Any other mention — `&name`, a qualified `Pkg::name`, a string literal —
-  disqualifies that name. Any `EVAL`, symbolic or indirect lookup, pseudo-package
+- The body's AST, serialized, mentions the name only as the callee of a `Call` node, as
+  the declaration, as a bare `&name` read (`CodeVar`, slice 3), or as the name of a
+  scalar variable or parameter (`$name` is `name` in the AST, a different symbol than
+  `&name`; slice 3). Any other mention — `&name` bound or declared as a variable,
+  `&name(...)`, a qualified `Pkg::name`, a string literal, a bare word — disqualifies
+  that name. Any `EVAL`, symbolic or indirect lookup, pseudo-package
   (`MY::`, `OUTER::`, `CALLER::`, ...), `callframe`, `&?ROUTINE`, dispatcher redispatch
   (`samewith`, `callsame`, ...) or lexical type declaration disqualifies every name in the
   body.
@@ -97,9 +100,9 @@ Anything outside the proof keeps the registry-based behaviour unchanged.
 - The name-keyed dispatch caches can no longer be poisoned by an inner sub: a frame-lexical
   call never reads or fills them, so a same-named package routine on either side of the
   call is unaffected.
-- An inner sub that is used as a value (`&name`, returned, passed to `.map`) still takes the
-  registry path. Extending the frame-lexical binding to those uses needs a code object whose
-  captured env is taken at the point of use, and is the natural next slice.
+- An inner sub that is used as a value (`&name`, returned, passed to `.map`) took the
+  registry path until slice 3 gave it a code object whose captured env is taken at the
+  point of use (see "Implementation status").
 - Known and unchanged: a closure that escapes its routine and then calls an inner sub reads
   the inner sub's free variables from the caller's env, not from the routine's frame. That
   is a pre-existing gap of the dynamic free-variable resolution of named inner subs; it is
@@ -124,7 +127,30 @@ Anything outside the proof keeps the registry-based behaviour unchanged.
   took every "called only from a closure" rejection to zero (18 -> 26 distinct
   frame-lexical inner subs), among them the SHA-1/SHA-2/RIPEMD round helpers of `Digest`, whose
   `sha1`+`sha256` of a 9 KB string went from 4.2 s to 3.7 s (-12%, release, wall clock).
-- Open: a frame-lexical code object for an inner sub used as a value (`&name`). In the
-  vendored corpus this is five distinct inner subs, none on a hot path (JSON::Fast's
-  `from-json-changed`/`to-json-changed`, Template::Mustache's `pragma`, zef's
-  `dir-delete`, Slangify's `EXPORT`).
+- Slice 3: a frame-lexical code object for an inner sub used as a value (`&name`). The
+  AST scan accepts a `CodeVar` node naming the routine, and the bytecode scan counts a
+  `GetCodeVar` of its bare name as a use the lexical table serves, so such a chunk lists
+  the routine in `lexical_routines` like a call site does. `FrameLexicalTarget` keeps the
+  definition registration derived, and `GetCodeVar` builds the code object from it
+  (`sub_value_from_function_def`, the same builder a registered routine's `&name` goes
+  through), capturing the env at the point of use — which is where §3's objection to an
+  env-bound `&name` does not apply: the value is built when it is read, not at the
+  hoisted declaration. The declaration plan carries `frame_lexical_value`, and each
+  execution of such a declaration mints the routine's callable identity in the frame's
+  env, as registration did, so every `&name` read in one activation is the same object
+  and each activation a new one. Two guards keep the observable behaviour: a bare call
+  steps aside to the ordinary dispatch while a wrapper installed through `&name.wrap`
+  is active (wrappers intercept by name), and everything the proof of §2 rejects
+  (`&name` bound as a variable or parameter name, `&name(...)`, a qualified name,
+  dispatcher redispatch) still keeps the registry path.
+  The same slice stops a scalar variable or parameter of the routine's name from
+  disqualifying it: the AST scan accepts it in `Var`, `VarDecl`, `Assign`, `AssignExpr`,
+  `MarkReadonly`, `MarkBoundContainer` and parameter-name position, and the bytecode scan
+  skips a by-name variable op (`CompiledCode::op_name_const_idx`) whose constant is the
+  bare name. That was what kept JSON::Fast's `from-json-changed`/`to-json-changed`
+  (`sub EXPORT` holds `$from-json-changed` beside `&from-json-changed`) out, and both are
+  frame lexicals now. Of the five value-used inner subs the vendored corpus had,
+  zef's `dir-delete` (`*.&dir-delete`), Slangify's inner `EXPORT` and Template::Mustache's
+  `pragma` are still rejected by other clauses of §2. None of the five is on a hot path:
+  the gain is that a lexical routine keeps one mechanism whether or not it is used as a
+  value.

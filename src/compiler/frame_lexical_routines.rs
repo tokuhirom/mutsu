@@ -7,159 +7,29 @@
 //! (`has_inner_subs`), moved `fn_resolve_gen` twice per call, and resolved
 //! every call to the inner sub by name through the registry.
 //!
-//! When the only thing the enclosing body ever does with such a sub is call
-//! it by its bare name, none of that is observable: nothing can see the
-//! registry entry, the `&name` code object, or its identity. This pass proves
-//! that from the body's AST and bytecode, then
+//! When the only things the enclosing body ever does with such a sub are to
+//! call it by its bare name and read it as a bare `&name`, none of that is
+//! observable: nothing can see the registry entry, and a `&name` read is
+//! served by the chunk's lexical table (the code object is built at the point
+//! of use). This pass proves that from the body's AST and bytecode, then
 //!
 //! - marks the declaration plans `frame_lexical`, so executing them derives
 //!   the routine's definition once per interpreter and registers nothing;
 //! - lists the routine in [`CompiledCode::lexical_routines`] of every chunk
-//!   that calls it, so those call sites dispatch straight to the routine's
-//!   compiled body without any name resolution.
+//!   that calls it or reads `&name`, so those call sites dispatch straight to
+//!   the routine's compiled body without any name resolution, and `&name`
+//!   builds the code object from the routine's derived definition.
 //!
 //! Anything the proof cannot cover leaves the declaration exactly as before.
 
+use super::frame_lexical_ast_scan::AstScan;
 use super::*;
 use crate::opcode::{CompiledCode, FrameLexicalRef};
 use crate::value::ValueView;
-use serde_json::Value as Json;
 use std::collections::{HashMap, HashSet};
-
-/// String leaves that make the whole body ineligible: they reach a routine
-/// by a name computed at run time, or observe the routine as a code object
-/// or through the dispatcher.
-const REJECT_ALL_STRINGS: &[&str] = &[
-    "EVAL",
-    "EVALFILE",
-    "evalbytes",
-    "callframe",
-    "callframes",
-    "samewith",
-    "callsame",
-    "nextsame",
-    "callwith",
-    "nextwith",
-    "nextcallee",
-    "lastcall",
-    "?ROUTINE",
-    "&?ROUTINE",
-];
-
-/// Pseudo-packages that can reach a lexical by name.
-const REJECT_ALL_PREFIXES: &[&str] = &[
-    "MY::",
-    "OUTER::",
-    "OUTERS::",
-    "CALLER::",
-    "CALLERS::",
-    "LEXICAL::",
-    "UNIT::",
-    "DYNAMIC::",
-];
-
-/// AST node kinds that make the whole body ineligible. Symbolic and
-/// indirect lookups reach a routine by a computed name; a lexical type
-/// declaration makes a parameter's type constraint resolve differently per
-/// call, which the once-per-interpreter derivation could not follow.
-const REJECT_ALL_VARIANTS: &[&str] = &[
-    "IndirectCodeLookup",
-    "IndirectTypeLookup",
-    "IndirectTypeLookupAssign",
-    "SymbolicDeref",
-    "SymbolicDerefAssign",
-    "PseudoStash",
-    "UserRoutineCall",
-    "ClassDecl",
-    "RoleDecl",
-    "EnumDecl",
-    "SubsetDecl",
-    "Package",
-    "AugmentClass",
-];
 
 /// Parameter traits the plain call paths bind themselves.
 const PLAIN_PARAM_TRAITS: &[&str] = &["copy", "rw", "raw", "readonly"];
-
-#[derive(Default)]
-struct AstScan {
-    names: HashSet<String>,
-    calls: HashMap<String, usize>,
-    decls: HashMap<String, usize>,
-    rejected: HashSet<String>,
-    reject_all: bool,
-}
-
-impl AstScan {
-    fn walk(&mut self, v: &Json, variant: Option<&str>, field: Option<&str>) {
-        if self.reject_all {
-            return;
-        }
-        match v {
-            Json::String(s) => self.check_str(s, variant, field),
-            Json::Array(items) => {
-                for item in items {
-                    self.walk(item, None, None);
-                }
-            }
-            Json::Object(map) => {
-                if map.len() == 1
-                    && let Some((key, inner)) = map.iter().next()
-                    && key.starts_with(|c: char| c.is_ascii_uppercase())
-                {
-                    if REJECT_ALL_VARIANTS.contains(&key.as_str()) {
-                        self.reject_all = true;
-                        return;
-                    }
-                    match inner {
-                        Json::Object(fields)
-                            if !(fields.len() == 1
-                                && fields.keys().next().is_some_and(|k| {
-                                    k.starts_with(|c: char| c.is_ascii_uppercase())
-                                })) =>
-                        {
-                            for (f, fv) in fields {
-                                self.walk(fv, Some(key), Some(f));
-                            }
-                        }
-                        other => self.walk(other, Some(key), None),
-                    }
-                    return;
-                }
-                for (f, fv) in map {
-                    self.walk(fv, None, Some(f));
-                }
-            }
-            _ => {}
-        }
-    }
-
-    fn check_str(&mut self, s: &str, variant: Option<&str>, field: Option<&str>) {
-        if REJECT_ALL_STRINGS.contains(&s) || REJECT_ALL_PREFIXES.iter().any(|p| s.contains(p)) {
-            self.reject_all = true;
-            return;
-        }
-        if self.names.contains(s) {
-            match (variant, field) {
-                (Some("Call"), Some("name")) => *self.calls.entry(s.to_string()).or_default() += 1,
-                (Some("SubDecl"), Some("name")) => {
-                    *self.decls.entry(s.to_string()).or_default() += 1
-                }
-                _ => {
-                    self.rejected.insert(s.to_string());
-                }
-            }
-            return;
-        }
-        // `&name`, `Pkg::name`, `&Pkg::name`: the routine as a code object or
-        // by a qualified name.
-        let tail = s.rsplit("::").next().unwrap_or(s);
-        let tail = tail.strip_prefix('&').unwrap_or(tail);
-        if tail != s && self.names.contains(tail) {
-            self.rejected.insert(tail.to_string());
-        }
-    }
-}
 
 /// Every chunk reachable from `code` through nested closures, depth first.
 pub(super) fn visit_code(code: &CompiledCode, f: &mut impl FnMut(&CompiledCode)) {
@@ -188,8 +58,9 @@ pub(super) fn visit_code_mut(
     }
 }
 
-/// Names of candidate routines this chunk calls by bare name, and whether it
-/// references any of them in a way a lexical call site cannot serve.
+/// Names of candidate routines this chunk calls by bare name or reads as a
+/// bare `&name` code object (both served by [`CompiledCode::lexical_routines`]),
+/// and the ones it references in a way the lexical table cannot serve.
 pub(super) fn scan_chunk(
     code: &CompiledCode,
     names: &HashSet<Symbol>,
@@ -235,6 +106,27 @@ pub(super) fn scan_chunk(
                     bad.push(sym)
                 }
             }
+            continue;
+        }
+        // `&name` as a value: the lexical table builds the code object.
+        if let OpCode::GetCodeVar(idx) = op
+            && let Some(sym) = const_sym(*idx)
+            && matches!(
+                code.constants.get(*idx as usize).map(Value::view),
+                Some(ValueView::Str(s)) if s.as_str() == sym.as_str()
+            )
+        {
+            called.push(sym);
+            continue;
+        }
+        // A variable op naming the bare `name` reads or writes `$name`, a
+        // different symbol than the routine `&name`.
+        if let Some(idx) = CompiledCode::op_name_const_idx(op)
+            && matches!(
+                code.constants.get(idx as usize).map(Value::view),
+                Some(ValueView::Str(s)) if Symbol::lookup(s.as_str()).is_some_and(|sym| names.contains(&sym))
+            )
+        {
             continue;
         }
         let other = CompiledCode::op_code_var_read_const_idx(op)
@@ -443,6 +335,7 @@ impl Compiler {
         for plan in &mut self.code.sub_decl_plans {
             if names.contains(&plan.name) {
                 plan.frame_lexical = Some(refs[&plan.name].0);
+                plan.frame_lexical_value = scan.values.contains(plan.name.as_str());
             }
         }
         let wants = |c: &CompiledCode| !scan_chunk(c, &names).0.is_empty();
