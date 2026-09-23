@@ -257,10 +257,12 @@ impl Interpreter {
         // map positions back to the original text.
         if pattern.ignore_mark {
             use super::regex_helpers::{map_pos, remap_caps_spans_derived_offset};
+            use super::regex_ltm_fate::{ltm_fate_frame_close_into, ltm_fate_frame_open};
             if let Some(target) = super::regex_helpers::current_match_target() {
                 let stripped = target.stripped();
                 let derived_start = stripped.original_to_stripped(start);
                 let stripped_pattern = strip_marks_pattern(pattern);
+                let enclosing_fate = ltm_fate_frame_open();
                 let mut results = self.regex_match_ends_from_caps_in_pkg_impl(
                     &stripped_pattern,
                     &stripped.chars()[derived_start..],
@@ -269,6 +271,9 @@ impl Interpreter {
                     first_only,
                     stop_at_full,
                 );
+                ltm_fate_frame_close_into(enclosing_fate, |fate| {
+                    stripped.stripped_to_original(fate + derived_start)
+                });
                 let orig_len = target.chars().len();
                 // `start` is the position this call was offered, which may be
                 // a character `:ignoremark` strips away entirely (a bare
@@ -317,6 +322,7 @@ impl Interpreter {
             let text_slice = &chars[start..];
             let (stripped_chars, pos_map) = strip_marks_text(text_slice);
             let stripped_pattern = strip_marks_pattern(pattern);
+            let enclosing_fate = ltm_fate_frame_open();
             let mut results = self.regex_match_ends_from_caps_in_pkg_impl(
                 &stripped_pattern,
                 &stripped_chars,
@@ -326,6 +332,9 @@ impl Interpreter {
                 stop_at_full,
             );
             let orig_len = text_slice.len();
+            ltm_fate_frame_close_into(enclosing_fate, |fate| {
+                map_pos(fate, &pos_map, orig_len) + start
+            });
             for (end, caps) in &mut results {
                 *end = map_pos(*end, &pos_map, orig_len) + start;
                 if let Some(cs) = caps.capture_start.as_mut() {
@@ -674,18 +683,6 @@ impl Interpreter {
         store: &mut CapStore,
         matches: &mut MatchSink<'_>,
     ) -> bool {
-        // A code atom ended the declarative prefix (LTM measurement, ADR-0009):
-        // record how far we got and stop walking. Checked before the end-of-pattern
-        // arm so `anchor_end` does not reject a prefix that legitimately stops
-        // short, and returning `true` unwinds the whole DFS — including out of a
-        // subrule, so the enclosing pattern stops here too.
-        if super::regex_helpers::LTM_DECLARATIVE_MODE.with(std::cell::Cell::get)
-            && super::regex_helpers::LTM_PREFIX_TERMINATED.with(std::cell::Cell::get)
-        {
-            let snap = store.snapshot();
-            matches.accept(self, pos, snap);
-            return true;
-        }
         if idx == ctx.pattern.tokens.len() {
             if !ctx.pattern.anchor_end || pos == ctx.chars.len() {
                 let snap = store.snapshot();
@@ -712,10 +709,8 @@ impl Interpreter {
         if token.from_runtime_interpolation
             && super::regex_helpers::LTM_DECLARATIVE_MODE.with(std::cell::Cell::get)
         {
-            super::regex_helpers::LTM_PREFIX_TERMINATED.with(|f| f.set(true));
-            let snap = store.snapshot();
-            matches.accept(self, pos, snap);
-            return true;
+            super::regex_ltm_fate::ltm_record_fate(pos);
+            return false;
         }
         let pos_base = store.caps().positional.len();
         // Separator quantifiers (`atom +% sep`, `atom **N..M %% sep`, ...):
@@ -925,10 +920,8 @@ impl Interpreter {
                 if let RegexQuant::RepeatCode(_) = token.quant
                     && super::regex_helpers::LTM_DECLARATIVE_MODE.with(std::cell::Cell::get)
                 {
-                    super::regex_helpers::LTM_PREFIX_TERMINATED.with(|f| f.set(true));
-                    let snap = store.snapshot();
-                    matches.accept(self, pos, snap);
-                    return true;
+                    super::regex_ltm_fate::ltm_record_fate(pos);
+                    return false;
                 }
                 let (min, max) = match &token.quant {
                     RegexQuant::Repeat(min, max) => {
@@ -1148,6 +1141,13 @@ impl Interpreter {
         // of the pattern matches, so defer it to the general chain, which honors
         // frugality even under ratchet (raku grows `\S+?` inside a `token`).
         if token.frugal {
+            return None;
+        }
+        // A declarative-prefix measurement walks every path the way Rakudo's
+        // NFA does, which ignores `:ratchet`, and a fate can sit at the end of
+        // the subject where these loops stop without trying the atom
+        // (`regex_ltm_fate`). The general chain covers it.
+        if super::regex_helpers::LTM_DECLARATIVE_MODE.with(std::cell::Cell::get) {
             return None;
         }
         if is_simple_atom(&token.atom) {

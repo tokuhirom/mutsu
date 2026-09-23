@@ -9,6 +9,9 @@
   2026-08-11, closing the file's last failure — `longest-alternative.t` is now
   fully green (62/62) and whitelisted; Slice 4 (this ledger update) landed in the
   same PR. See `news/2026-08/adr0022-slice5-nonconstant-interpolation.md`.
+- **Amended by**: [ADR-0111](0111-ltm-stoppers-end-one-path.md) (2026-09-23) — a
+  `Terminate` atom now records a fate and fails its own path instead of unwinding the
+  whole walk (§4.2), so the prefix is the furthest fate, as in Rakudo's NFA.
 - **Context**: `todo/deep/regex-alternation-ltm-longest-literal-prefix.md`;
   `Cro::HTTP` `t/http-router.rakutest` test 61 (the file's last remaining failure);
   `roast/S05-metasyntax/longest-alternative.t` tests 28/50/54 (the file's only failures,

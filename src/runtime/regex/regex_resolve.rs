@@ -168,7 +168,12 @@ impl Interpreter {
         let saved_mode = super::regex_helpers::LTM_DECLARATIVE_MODE.replace(true);
         let saved_terminated = super::regex_helpers::LTM_PREFIX_TERMINATED.replace(false);
         let saved_epsilon = super::regex_helpers::LTM_SEQALT_EPSILON.replace(false);
-        let result = self.regex_match_len_at_start(pattern, text);
+        let enclosing_fate = super::regex_ltm_fate::ltm_fate_frame_open();
+        let matched = self.regex_match_len_at_start(pattern, text);
+        // The furthest place any path got: a full match or a fate
+        // (`regex_ltm_fate`).
+        let fate = super::regex_ltm_fate::ltm_fate_frame_close(enclosing_fate);
+        let result = matched.into_iter().chain(fate).max();
         // A `||` epsilon bypass makes a `None` unsound to filter on, same as a
         // code atom — see `LTM_SEQALT_EPSILON`.
         let stopped_at_code_atom = super::regex_helpers::LTM_PREFIX_TERMINATED.get()

@@ -1,9 +1,9 @@
 use super::super::*;
 use super::regex_helpers::{
-    LTM_DECLARATIVE_MODE, LTM_PREFIX_TERMINATED, NamedRegexLookupSpec, alternation_capture_slots,
-    merge_regex_captures,
+    LTM_DECLARATIVE_MODE, NamedRegexLookupSpec, alternation_capture_slots, merge_regex_captures,
 };
 use super::regex_lr_state::{LrKey, lr_end_activation, lr_seed_was_consulted, lr_store_seed};
+use super::regex_ltm_fate::ltm_record_fate;
 use super::regex_ltm_rank::{LtmAtomMode, ltm_atom_mode};
 
 /// ADR-0022 §4.4(a): one `|` branch's rank key (prefix_len, litlen) paired
@@ -109,17 +109,7 @@ impl Interpreter {
         pkg: Symbol,
     ) -> Vec<RankedAlternationBranch> {
         let mut out = Vec::new();
-        // Each alternative is an independent measurement/match attempt, not a
-        // continuation of the previous one's token sequence — see the matching
-        // note in `regex_match_capture.rs`'s singular Alternation arm. Restore
-        // the loop's starting value before every attempt so a declarative-
-        // prefix stopper hit while walking one branch cannot leave
-        // `LTM_PREFIX_TERMINATED` set for the next branch's own walk (which
-        // would short-circuit it to a bogus zero-width match at
-        // `walk_tokens`'s entry check before comparing a single atom).
-        let term_at_loop_start = LTM_PREFIX_TERMINATED.with(std::cell::Cell::get);
         for alt in alts {
-            LTM_PREFIX_TERMINATED.with(|f| f.set(term_at_loop_start));
             let raw_ends = self.regex_match_ends_from_caps_in_pkg(alt, chars, pos, pkg);
             if raw_ends.is_empty() {
                 continue;
@@ -322,23 +312,16 @@ impl Interpreter {
         // here and are unaffected by this guard.
         if LTM_DECLARATIVE_MODE.with(std::cell::Cell::get) {
             match ltm_atom_mode(atom) {
+                // A fate ends this path of the measurement: record where, and
+                // fail the path so the walk goes on with the others
+                // (`regex_ltm_fate`).
                 LtmAtomMode::Terminate => {
-                    LTM_PREFIX_TERMINATED.with(|f| f.set(true));
-                    return vec![(pos, RegexCaptures::default())];
+                    ltm_record_fate(pos);
+                    return Vec::new();
                 }
                 LtmAtomMode::TerminateAfter(inner) => {
-                    // Measure the inner pattern BEFORE setting TERMINATED: the
-                    // inner walk checks the flag at its own entry, so setting
-                    // it first would short-circuit the inner measurement to
-                    // zero-width instead of letting it consume.
-                    let best_end = self
-                        .regex_match_ends_from_caps_in_pkg(inner, chars, pos, pkg)
-                        .into_iter()
-                        .map(|(end, _)| end)
-                        .max()
-                        .unwrap_or(pos);
-                    LTM_PREFIX_TERMINATED.with(|f| f.set(true));
-                    return vec![(best_end, RegexCaptures::default())];
+                    self.ltm_record_lookahead_fates(inner, chars, pos, pkg);
+                    return Vec::new();
                 }
                 LtmAtomMode::SkipZeroWidth => {
                     return vec![(pos, RegexCaptures::default())];

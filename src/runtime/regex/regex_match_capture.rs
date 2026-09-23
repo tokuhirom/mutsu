@@ -1,9 +1,10 @@
 use super::super::unicode::check_unicode_property;
 use super::super::*;
 use super::regex_helpers::{
-    LTM_DECLARATIVE_MODE, LTM_PREFIX_TERMINATED, alternation_capture_slots, is_word_char,
-    matches_named_builtin, merge_regex_captures,
+    LTM_DECLARATIVE_MODE, alternation_capture_slots, is_word_char, matches_named_builtin,
+    merge_regex_captures,
 };
+use super::regex_ltm_fate::ltm_record_fate;
 use super::regex_ltm_rank::{LtmAtomMode, ltm_atom_mode};
 
 impl Interpreter {
@@ -222,21 +223,12 @@ impl Interpreter {
         if LTM_DECLARATIVE_MODE.with(std::cell::Cell::get) {
             match ltm_atom_mode(atom) {
                 LtmAtomMode::Terminate => {
-                    LTM_PREFIX_TERMINATED.with(|f| f.set(true));
-                    return Some((pos, RegexCaptures::default()));
+                    ltm_record_fate(pos);
+                    return None;
                 }
                 LtmAtomMode::TerminateAfter(inner) => {
-                    // Measure the inner pattern BEFORE setting TERMINATED —
-                    // see the identical ordering note in
-                    // `regex_match_atom_all_with_capture_in_pkg`.
-                    let best_end = self
-                        .regex_match_ends_from_caps_in_pkg(inner, chars, pos, pkg)
-                        .into_iter()
-                        .map(|(end, _)| end)
-                        .max()
-                        .unwrap_or(pos);
-                    LTM_PREFIX_TERMINATED.with(|f| f.set(true));
-                    return Some((best_end, RegexCaptures::default()));
+                    self.ltm_record_lookahead_fates(inner, chars, pos, pkg);
+                    return None;
                 }
                 LtmAtomMode::SkipZeroWidth => {
                     return Some((pos, RegexCaptures::default()));
@@ -327,20 +319,7 @@ impl Interpreter {
                 // key). Replaces the old "longest end wins" rule.
                 let mut best: Option<((usize, usize), usize, RegexCaptures)> = None;
                 let capture_slots = alternation_capture_slots(alternatives);
-                // Each alternative is an independent measurement/match attempt,
-                // not a continuation of the previous one's token sequence. A
-                // branch that hits a declarative-prefix stopper sets
-                // `LTM_PREFIX_TERMINATED` so ITS OWN walk unwinds — but that
-                // flag must not leak into the NEXT branch's own walk, or
-                // `walk_tokens`'s entry check (which fires whenever the flag is
-                // already set) short-circuits a sibling branch's real match to
-                // a bogus zero-width "success" before it ever compares a single
-                // atom, corrupting both its match check and its rank. Restore
-                // the loop's starting value before every attempt so a stopper
-                // hit while evaluating one branch cannot bleed into another.
-                let term_at_loop_start = LTM_PREFIX_TERMINATED.with(std::cell::Cell::get);
                 for alt in alternatives {
-                    LTM_PREFIX_TERMINATED.with(|f| f.set(term_at_loop_start));
                     let matched = self.regex_match_end_from_caps_in_pkg(alt, chars, pos, pkg);
                     if let Some((next, mut inner_caps)) = matched {
                         if !super::regex_helpers::IN_QUANTIFIED_ALTERNATION_MATCH.with(Cell::get) {
@@ -527,11 +506,10 @@ impl Interpreter {
                     }
                     // "However, code blocks do terminate LTM": `token
                     // block:sym<a> { a {} .+ }` has declarative prefix `a` only, so
-                    // on 'aaa' the bare `aa` candidate wins. Stop the walk and let
-                    // it unwind — including out of a subrule, so an enclosing
-                    // pattern stops here too.
-                    super::regex_helpers::LTM_PREFIX_TERMINATED.with(|f| f.set(true));
-                    return Some((pos, RegexCaptures::default()));
+                    // on 'aaa' the bare `aa` candidate wins. The block is a fate:
+                    // it ends this path of the measurement (`regex_ltm_fate`).
+                    super::regex_ltm_fate::ltm_record_fate(pos);
+                    return None;
                 }
                 // Failure-position probe: don't execute, don't stop — a code atom is
                 // a zero-width no-op so the probe measures the declarative skeleton.
