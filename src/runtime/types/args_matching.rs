@@ -579,10 +579,7 @@ impl Interpreter {
                     && !pd.slurpy
                     && pd.type_constraint.is_none()
                     && let Some(arg) = arg_for_checks.as_ref()
-                    && !matches!(
-                        arg.view(),
-                        ValueView::Array(..) | ValueView::Slip(..) | ValueView::Nil
-                    )
+                    && !matches!(arg.view(), ValueView::Array(..) | ValueView::Slip(..))
                     && !self.type_matches_value("Positional", arg)
                 {
                     return false;
@@ -592,7 +589,7 @@ impl Interpreter {
                     && !pd.slurpy
                     && pd.type_constraint.is_none()
                     && let Some(arg) = arg_for_checks.as_ref()
-                    && !matches!(arg.view(), ValueView::Hash(..) | ValueView::Nil)
+                    && !matches!(arg.view(), ValueView::Hash(..))
                     && !self.type_matches_value("Associative", arg)
                 {
                     return false;

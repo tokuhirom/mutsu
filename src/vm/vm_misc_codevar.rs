@@ -72,6 +72,15 @@ impl Interpreter {
                 return Ok(());
             }
         }
+        // ADR-0113: a frame-lexical `my sub` is in no registry; this chunk's
+        // lexical table builds its code object.
+        if !code.lexical_routines.is_empty()
+            && let Some(sym) = Symbol::lookup(name)
+            && let Some(val) = self.frame_lexical_code_object(code, sym)
+        {
+            self.stack.push(val);
+            return Ok(());
+        }
         let mut val = loan_env!(self, resolve_code_var(name));
         // The same module-scope lexical the bare-call path consults (see
         // `lexical_amp_var_callable`): an imported CODE variable outlives its
