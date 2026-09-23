@@ -14,7 +14,7 @@
         "nok": 0,
         "ok": 14,
         "plan": 14,
-        "secs": 0.2,
+        "secs": 0.17,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -24,7 +24,7 @@
         "nok": 0,
         "ok": 14,
         "plan": 14,
-        "secs": 2.48,
+        "secs": 1.6,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -36,7 +36,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 0.28,
+        "secs": 0.22,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -46,7 +46,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 0.87,
+        "secs": 0.58,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -58,9 +58,9 @@
       "raku": {
         "first_failure": "Type check failed for return value; expected Promise:D but got Promise (Promise)",
         "nok": 0,
-        "ok": 6,
+        "ok": 0,
         "plan": 12,
-        "secs": 1.11,
+        "secs": 0.69,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -72,7 +72,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 1.19,
+        "secs": 1.11,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -82,7 +82,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 1.77,
+        "secs": 1.48,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -95,7 +95,7 @@
         "nok": 0,
         "ok": 21,
         "plan": 25,
-        "secs": 0.21,
+        "secs": 0.11,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -105,20 +105,19 @@
         "nok": 0,
         "ok": 25,
         "plan": 25,
-        "secs": 0.7,
+        "secs": 0.54,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "no_baseline",
-      "flaky": true,
+      "cmp": "parity",
       "mutsu": {
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 0.18,
+        "secs": 0.11,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -128,7 +127,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 0.78,
+        "secs": 0.41,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -140,7 +139,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 1.2,
+        "secs": 1.14,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -150,7 +149,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 1.69,
+        "secs": 1.39,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -163,7 +162,7 @@
         "nok": 9,
         "ok": 1,
         "plan": 10,
-        "secs": 1.44,
+        "secs": 1.23,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -173,7 +172,7 @@
         "nok": 0,
         "ok": 10,
         "plan": 10,
-        "secs": 1.81,
+        "secs": 1.34,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -185,7 +184,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 0.16,
+        "secs": 0.1,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -195,7 +194,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 0.73,
+        "secs": 0.42,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -208,7 +207,7 @@
         "nok": 2,
         "ok": 11,
         "plan": 13,
-        "secs": 0.24,
+        "secs": 0.11,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -218,7 +217,7 @@
         "nok": 0,
         "ok": 13,
         "plan": 13,
-        "secs": 1.07,
+        "secs": 0.53,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -230,10 +229,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-22",
+    "date": "2026-09-23",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "61fb271",
+    "mutsu_commit": "910f926",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -246,10 +245,10 @@
   },
   "status": "partial",
   "totals": {
-    "baseline_assertions": 71,
-    "baseline_files": 8,
-    "mutsu_assertions": 56,
-    "parity_files": 5,
+    "baseline_assertions": 73,
+    "baseline_files": 9,
+    "mutsu_assertions": 58,
+    "parity_files": 6,
     "regressed_files": 3
   },
   "version": "0.3.4"
