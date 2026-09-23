@@ -1,8 +1,8 @@
 # ADR-0111: Finishing ADR-0110 for the JSON::Fast goal — whole-unit linkage, the string path in TRIR, typed container ops, then native lowering with inlining
 
-- Status: Proposed (2026-09-23; awaiting the maintainer's decision)
+- Status: Accepted (2026-09-23, approved by tokuhirom; Step 1 in progress)
 - Date: 2026-09-23
-- Deciders: tokuhirom (pending), Claude
+- Deciders: tokuhirom, Claude
 - Tracked by: [#8673](https://github.com/tokuhirom/mutsu/issues/8673) (goal: `bench-json-fast-spdx@section+jit` below 1.0, i.e. faster than rakudo)
 - Related:
   [ADR-0110](0110-typed-resolved-ir-for-statically-typed-routines.md) (the typed, resolved IR this completes; its decision stands, its Stage 3-4 plan is replaced here),
