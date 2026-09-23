@@ -266,13 +266,17 @@ impl Interpreter {
             // The pure ops below delegate to `nqp_pure::eval`, which is also
             // what `exec_nqp_op` runs when it takes the direct path (#8900).
             // One implementation, so the two paths cannot drift.
+            // Cost: O(1).
             "add_i" => Ok(pure(NqpPure::AddI, args)),
+            // Cost: O(1).
             "sub_i" => Ok(pure(NqpPure::SubI, args)),
+            // Cost: O(1).
             "mul_i" => Ok(pure(NqpPure::MulI, args)),
             // nqp::div_i uses floor division, unlike Rust's `/` for negative
             // operands.  Array::Sorted::Util uses this to choose the midpoint
             // of its binary search, so this is observable in ordinary module
             // code rather than only in low-level NQP callers.
+            // Cost: O(1).
             "div_i" => {
                 let lhs = iarg(args, 0);
                 let rhs = iarg(args, 1);
@@ -296,59 +300,94 @@ impl Interpreter {
                     Ok(Value::int(quotient))
                 }
             }
+            // Cost: O(1).
             "neg_i" => Ok(pure(NqpPure::NegI, args)),
+            // Cost: O(1).
             "abs_i" => Ok(pure(NqpPure::AbsI, args)),
+            // Cost: O(1).
             "bitor_i" => Ok(pure(NqpPure::BitOrI, args)),
+            // Cost: O(1).
             "bitand_i" => Ok(pure(NqpPure::BitAndI, args)),
+            // Cost: O(1).
             "bitxor_i" => Ok(pure(NqpPure::BitXorI, args)),
+            // Cost: O(1).
             "bitneg_i" => Ok(pure(NqpPure::BitNegI, args)),
+            // Cost: O(1).
             "bitshiftl_i" => Ok(pure(NqpPure::ShlI, args)),
+            // Cost: O(1).
             "bitshiftr_i" => Ok(pure(NqpPure::ShrI, args)),
             // Arbitrary-precision add: nqp::add_I($a, $b, Int) — the third
             // argument is the boxing target type and is ignored here.
+            // Cost: O(d), d = digits of the larger operand (both converted to BigInt).
             "add_I" => Ok(Value::from_bigint(
                 args.first().map(|v| v.to_bigint()).unwrap_or_default()
                     + args.get(1).map(|v| v.to_bigint()).unwrap_or_default(),
             )),
+            // Cost: O(d), d = digits of the larger operand (both converted to BigInt).
             "sub_I" => Ok(Value::from_bigint(
                 args.first().map(|v| v.to_bigint()).unwrap_or_default()
                     - args.get(1).map(|v| v.to_bigint()).unwrap_or_default(),
             )),
 
             // -- native int comparisons (yield int 0/1, as in nqp) --
+            // Cost: O(1).
             "iseq_i" => Ok(pure(NqpPure::IsEqI, args)),
+            // Cost: O(1).
             "isne_i" => Ok(pure(NqpPure::IsNeI, args)),
+            // Cost: O(1).
             "islt_i" => Ok(pure(NqpPure::IsLtI, args)),
+            // Cost: O(1).
             "isle_i" => Ok(pure(NqpPure::IsLeI, args)),
+            // Cost: O(1).
             "isgt_i" => Ok(pure(NqpPure::IsGtI, args)),
+            // Cost: O(1).
             "isge_i" => Ok(pure(NqpPure::IsGeI, args)),
+            // Cost: O(1).
             "cmp_i" => Ok(pure(NqpPure::CmpI, args)),
+            // Cost: O(1).
             "not_i" => Ok(pure(NqpPure::NotI, args)),
 
             // -- native num arithmetic --
+            // Cost: O(1).
             "add_n" => Ok(pure(NqpPure::AddN, args)),
+            // Cost: O(1).
             "sub_n" => Ok(pure(NqpPure::SubN, args)),
+            // Cost: O(1).
             "mul_n" => Ok(pure(NqpPure::MulN, args)),
+            // Cost: O(1).
             "div_n" => Ok(pure(NqpPure::DivN, args)),
+            // Cost: O(1).
             "neg_n" => Ok(pure(NqpPure::NegN, args)),
+            // Cost: O(1).
             "abs_n" => Ok(pure(NqpPure::AbsN, args)),
 
             // nqp::radix($radix, $str, $pos, $flags) returns the wrapped
             // native-int result, the number of significant digits, and the
             // offset after consuming the input.
+            // Cost: O(n), n = chars of $str (copied and fully collected into a Vec<char>
+            // regardless of $pos). MoarVM: O(k), k = digits consumed from $pos -- see #NNNN.
             "radix" => nqp_radix(args),
 
             // -- native num comparisons --
+            // Cost: O(1).
             "iseq_n" => Ok(pure(NqpPure::IsEqN, args)),
+            // Cost: O(1).
             "isne_n" => Ok(pure(NqpPure::IsNeN, args)),
+            // Cost: O(1).
             "islt_n" => Ok(pure(NqpPure::IsLtN, args)),
+            // Cost: O(1).
             "isle_n" => Ok(pure(NqpPure::IsLeN, args)),
+            // Cost: O(1).
             "isgt_n" => Ok(pure(NqpPure::IsGtN, args)),
+            // Cost: O(1).
             "isge_n" => Ok(pure(NqpPure::IsGeN, args)),
+            // Cost: O(1).
             "cmp_n" => Ok(pure(NqpPure::CmpN, args)),
+            // Cost: O(1).
             "isnanorinf" => Ok(pure(NqpPure::IsNanOrInf, args)),
 
             // -- native str comparison --
+            // Cost: O(n1+n2), n1/n2 = chars of the operands (both copied).
             "cmp_s" => {
                 let lhs = args
                     .first()
@@ -357,12 +396,16 @@ impl Interpreter {
                 let rhs = args.get(1).map(|v| v.to_string_value()).unwrap_or_default();
                 Ok(Value::int(cmp_result(lhs.cmp(&rhs))))
             }
+            // Cost: O(n1+n2), n1/n2 = chars of the operands (both copied first). MoarVM: O(1) on
+            // differing lengths, else O(n) -- see #NNNN.
             "iseq_s" => Ok(bool_int(
                 args.first()
                     .map(|v| v.to_string_value())
                     .unwrap_or_default()
                     == args.get(1).map(|v| v.to_string_value()).unwrap_or_default(),
             )),
+            // Cost: O(n1+n2), n1/n2 = chars of the operands (both copied first). MoarVM: O(1) on
+            // differing lengths, else O(n) -- see #NNNN.
             "isne_s" => Ok(bool_int(
                 args.first()
                     .map(|v| v.to_string_value())
@@ -374,6 +417,7 @@ impl Interpreter {
             // configured cwd) and reports the basic filesystem predicates
             // needed by the standard `paths` module. `metadata` follows
             // symlinks, matching the POSIX stat operation rather than lstat.
+            // Cost: O(p) + one syscall, p = length of $path.
             "stat" => {
                 let path = args
                     .first()
@@ -408,6 +452,7 @@ impl Interpreter {
             // values. The entry names are captured at open time, while the
             // cursor lives in the instance's shared attribute cell so aliases
             // to the handle observe the same iteration state.
+            // Cost: O(d) + syscalls, d = entries in the directory (all read at open).
             "opendir" => {
                 let path = args
                     .first()
@@ -443,6 +488,7 @@ impl Interpreter {
                     attrs,
                 ))
             }
+            // Cost: O(1).
             "nextfiledir" => {
                 let handle = args.first().cloned().unwrap_or(Value::NIL);
                 let crate::value::ValueView::Instance {
@@ -484,6 +530,7 @@ impl Interpreter {
                 attributes.insert("index", Value::int((index + 1) as i64));
                 Ok(name)
             }
+            // Cost: O(1).
             "closedir" => {
                 let handle = args.first().cloned().unwrap_or(Value::NIL);
                 if let crate::value::ValueView::Instance { attributes, .. } = handle.view() {
@@ -491,6 +538,7 @@ impl Interpreter {
                 }
                 Ok(Value::NIL)
             }
+            // Cost: O(p) + one syscall, p = length of $path.
             "fileislink" => {
                 let path = args
                     .first()
@@ -503,6 +551,7 @@ impl Interpreter {
                         .unwrap_or(false),
                 )))
             }
+            // Cost: O(p) + syscalls, p = length of $path.
             "filereadable" => {
                 let path = args
                     .first()
@@ -521,6 +570,8 @@ impl Interpreter {
             // already decontainerizes every operand once at this function's
             // boundary (see the comment above), so the two ops observe the
             // same value here and share one implementation.
+            // Cost: O(d), d = depth of the value's MRO/role closure (full type check,
+            // no type-check cache). MoarVM: O(1) amortized (type-check cache) -- see #NNNN.
             "istype" | "istype_nd" => {
                 // Operands are already decontainerized at the `call_nqp_op`
                 // boundary, so a promoted element container answers about what
@@ -556,12 +607,15 @@ impl Interpreter {
             }
 
             // -- boxing --
+            // Cost: O(n), n = chars of $s (copied). MoarVM: O(1) -- see #NNNN.
             "p6box_s" => Ok(Value::str(
                 args.first()
                     .map(|v| v.to_string_value())
                     .unwrap_or_default(),
             )),
+            // Cost: O(1).
             "p6box_i" => Ok(Value::int(iarg(args, 0))),
+            // Cost: O(1).
             "p6box_n" => Ok(Value::num(narg(args, 0))),
             // nqp::unbox_s($x): the native str inside a boxed `Str`. mutsu
             // has no separate native-str representation, so this is the
@@ -569,6 +623,7 @@ impl Interpreter {
             // `unbox_s` round-trips through the same string either way.
             // `Net::Netmask::Fast`'s constructors unbox their `Str:D`
             // parameters before parsing them.
+            // Cost: O(n), n = chars of $s (copied). MoarVM: O(1) -- see #NNNN.
             "unbox_s" => Ok(Value::str(
                 args.first()
                     .map(|v| v.to_string_value())
@@ -577,6 +632,7 @@ impl Interpreter {
             // nqp::coerce_is($i): a native int coerced to its decimal string,
             // as `nqp::coerce_in`/`nqp::coerce_ni`/... are for num<->int.
             // `Net::Netmask::Fast` stringifies netmask bit counts this way.
+            // Cost: O(1).
             "coerce_is" => Ok(Value::str(iarg(args, 0).to_string())),
             // nqp::coerce_si($s): the inverse -- a native str parsed as a
             // leading-integer prefix (`strtol` style: skip leading
@@ -584,6 +640,7 @@ impl Interpreter {
             // parses as 0; an out-of-i64-range magnitude saturates rather
             // than erroring). `Net::Netmask::Fast` parses CIDR bit counts and
             // octet strings this way.
+            // Cost: O(n), n = chars of $s (copied, then parsed).
             "coerce_si" => Ok(Value::int(parse_leading_int(
                 &args
                     .first()
@@ -599,6 +656,7 @@ impl Interpreter {
             // verified against `nqp::objprimspec(uint32)` under rakudo.
             // `AttrX::Mooish`'s `is mooish` trait handler uses this to reject
             // attributes declared with a native type (`nqp::objprimspec($attr.type)`).
+            // Cost: O(1).
             "objprimspec" => {
                 let v = args.first().cloned().unwrap_or(Value::NIL);
                 let type_name = match v.view() {
@@ -617,11 +675,13 @@ impl Interpreter {
             }
 
             // -- string / aggregate queries --
+            // Cost: O(n), n = bytes of $s (copied, then counted). MoarVM: O(1) -- see #NNNN.
             "chars" => Ok(Value::int(
                 args.first()
                     .map(|v| v.to_string_value().chars().count() as i64)
                     .unwrap_or(0),
             )),
+            // Cost: O(1).
             "elems" => {
                 let v = args.first().cloned().unwrap_or(Value::NIL);
                 let n = match v.view() {
@@ -644,6 +704,7 @@ impl Interpreter {
             }
 
             // -- byte-string decode (nqp::decode(buf, 'utf8') -> str) --
+            // Cost: O(n), n = bytes of $buf (copied, then decoded).
             "decode" => {
                 let buf = args.first().cloned().unwrap_or(Value::NIL);
                 let enc = args
@@ -670,6 +731,8 @@ impl Interpreter {
             }
 
             // -- positional element access (buf bytes or array elements) --
+            // Cost: O(1) on a width-1 Buf / array; O(e) on a wider buf (every element's low
+            // byte is collected first), e = elements. MoarVM: O(1) -- see #NNNN.
             "atpos_i" | "atpos_n" => {
                 let target = args.first().cloned().unwrap_or(Value::NIL);
                 let idx = iarg(args, 1);
@@ -699,6 +762,8 @@ impl Interpreter {
                     Ok(Value::int(crate::runtime::to_int(&elem)))
                 }
             }
+            // Cost: array O(1) amortized; Buf O(e) (whole buffer decoded to Values and
+            // re-encoded per write), e = elements. MoarVM: O(1) -- see #NNNN.
             "bindpos_i" | "bindpos_n" => {
                 let target = args.first().cloned().unwrap_or(Value::NIL);
                 let idx = iarg(args, 1).max(0) as usize;
@@ -738,6 +803,8 @@ impl Interpreter {
 
             // -- slice / splice (buf) --
             // nqp::slice($buf, $start, $end) — END-INCLUSIVE, same class out.
+            // Cost: O(e + k), e = bytes of $buf (whole buffer copied), k = bytes sliced.
+            // MoarVM: O(k) -- see #NNNN.
             "slice" => {
                 let buf = args.first().cloned().unwrap_or(Value::NIL);
                 let start = iarg(args, 1).max(0) as usize;
@@ -765,6 +832,8 @@ impl Interpreter {
             }
             // nqp::splice($target, $source, $offset, $count) — replace
             // target[offset .. offset+count) with source's elements, in place.
+            // Cost: list O(s + t), s = source elems, t = target elems after $offset; Buf O(e + s)
+            // (whole target decoded and re-encoded), e = target bytes. MoarVM: O(s + t) -- see #NNNN.
             "splice" => {
                 let target = args.first().cloned().unwrap_or(Value::NIL);
                 let source = args.get(1).cloned().unwrap_or(Value::NIL);
@@ -796,6 +865,8 @@ impl Interpreter {
             }
 
             // -- sized binary reads/writes --
+            // Cost: O(e), e = bytes of $buf (whole buffer copied per read).
+            // MoarVM: O(1) -- see #NNNN.
             "readuint" | "readint" => {
                 let buf = args.first().cloned().unwrap_or(Value::NIL);
                 let offset = iarg(args, 1).max(0) as usize;
@@ -820,6 +891,8 @@ impl Interpreter {
                     }
                 }
             }
+            // Cost: O(e), e = bytes of $buf (whole buffer copied per read).
+            // MoarVM: O(1) -- see #NNNN.
             "readnum" => {
                 let buf = args.first().cloned().unwrap_or(Value::NIL);
                 let offset = iarg(args, 1).max(0) as usize;
@@ -847,6 +920,8 @@ impl Interpreter {
                     }
                 }
             }
+            // Cost: O(e), e = elements of $buf (decoded to Values and re-encoded per write).
+            // MoarVM: O(1) amortized -- see #NNNN.
             "writeuint" | "writeint" => {
                 let buf = args.first().cloned().unwrap_or(Value::NIL);
                 let offset = iarg(args, 1);
@@ -865,6 +940,8 @@ impl Interpreter {
                     Err(e) => Err(e),
                 }
             }
+            // Cost: O(e), e = elements of $buf (decoded to Values and re-encoded per write).
+            // MoarVM: O(1) amortized -- see #NNNN.
             "writenum" => {
                 let buf = args.first().cloned().unwrap_or(Value::NIL);
                 let offset = iarg(args, 1).max(0) as usize;
@@ -904,6 +981,7 @@ impl Interpreter {
             // append (create), 'x' exclusive create. Always binary; nqp
             // string reads go through explicit decode ops, not the handle.
             // Driver: Crypt::Random reads /dev/urandom this way.
+            // Cost: O(p) + syscalls, p = length of $path.
             "open" => {
                 let path = args
                     .first()
@@ -944,6 +1022,7 @@ impl Interpreter {
             // nqp::readfh($fh, $buf, $count) — read up to $count bytes,
             // REPLACING the buffer's contents (MoarVM semantics), and return
             // the buffer. A short read (EOF) is not an error.
+            // Cost: O(e + c) + syscalls, e = old elements of $buf (decoded), c = bytes read.
             "readfh" => {
                 let fh = args.first().cloned().unwrap_or(Value::NIL);
                 let buf = args.get(1).cloned().unwrap_or(Value::NIL);
@@ -962,6 +1041,7 @@ impl Interpreter {
                 }
             }
             // nqp::closefh($fh) — close and return the handle.
+            // Cost: O(1) + syscall.
             "closefh" => {
                 let fh = args.first().cloned().unwrap_or(Value::NIL);
                 match self.close_handle_value(&fh) {
