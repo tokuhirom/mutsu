@@ -1,3 +1,4 @@
+pub(crate) mod core_type_fold;
 mod expr;
 // ADR-0033: `crate::whatever_curry::build_closure` (the WhateverCode closure
 // construction that moved out of the parser) needs these priming-scope
@@ -629,6 +630,7 @@ pub(crate) fn parse_program(input: &str) -> Result<(Vec<Stmt>, Option<String>), 
     // buffer at the same address (see `memo::MemoKey`).
     let _memo_generation = memo::begin_parse_generation();
     stmt::reset_user_subs();
+    let _core_type_fold = core_type_fold::begin_unit();
     crate::trace::trace_log!("parse", "parser start memo={}", memo_enabled);
     primary::set_original_source(input);
     // Split off =finish content before parsing
@@ -650,6 +652,9 @@ pub(crate) fn parse_program(input: &str) -> Result<(Vec<Stmt>, Option<String>), 
             // (`Expr::Whatever`) or a priming argument (`Expr::WhateverArg`)
             // now that the whole program tree exists. Pure annotation --
             // behaviour-preserving by construction (section 2.2's invariant).
+            // The CORE type fold (ADR-0115) rides the same whole-program walk,
+            // once every scope's bindings are known.
+            stmt::simple::settle_core_type_fold();
             crate::whatever_curry::mark::mark_program(&mut stmts);
             let rest_trimmed = rest.trim();
             if !rest_trimmed.is_empty() {

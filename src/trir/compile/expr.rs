@@ -197,7 +197,9 @@ impl TrirCompiler<'_> {
                 self.ops.push(TrOp::ConstI(n.to_bits() as i64));
                 Some(TrKind::Num)
             }
-            ValueView::Str(_) | ValueView::Bool(_) => {
+            // A type object is immutable, so sharing the constant is exact:
+            // ADR-0115's folded CORE type names arrive here.
+            ValueView::Str(_) | ValueView::Bool(_) | ValueView::Package(_) => {
                 let idx = self.add_const(v.clone());
                 self.ops.push(TrOp::ConstObj(idx));
                 Some(TrKind::Obj)
