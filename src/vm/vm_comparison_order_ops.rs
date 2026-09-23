@@ -824,6 +824,11 @@ impl Interpreter {
     /// b` operator form. The routine path used to land on the pure
     /// `apply_reduction_op` fold instead, so `cmp-ok $consumed1, 'eqv',
     /// $consumed2` silently answered `False` where the operator throws.
+    /// Cost: O(e_l + e_r), e = total nodes of each operand, on every call: the
+    /// Proxy pre-scan (`resolve_proxies_in_value`) walks both operands in full
+    /// before `Value::eqv` runs, so a length mismatch or an early difference does
+    /// not short-circuit. Rakudo: O(1) on length mismatch, O(i) to the first
+    /// difference -- see #9162.
     pub(crate) fn eqv_values(&mut self, left: Value, right: Value) -> Result<Value, RuntimeError> {
         // A user `multi sub infix:<eqv>` is part of the operator's candidate
         // set. It must get first refusal for object operands (for example,

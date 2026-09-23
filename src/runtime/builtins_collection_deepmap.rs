@@ -44,6 +44,10 @@ fn range_as_list(value: &Value) -> Option<Value> {
 impl Interpreter {
     /// `cross(@a, @b, ...)` — Cartesian product of lists.
     /// With `with => &op`, applies the operator to each pair instead of making tuples.
+    ///
+    /// Cost: O(n * prod e_i), e_i = elements of the i-th of n lists: every
+    /// n-tuple is materialized (and each partial tuple re-cloned per level)
+    /// before any is returned.
     pub(super) fn builtin_cross(&mut self, args: Vec<Value>) -> Result<Value, RuntimeError> {
         let mut lists: Vec<Vec<Value>> = Vec::new();
         let mut with_func: Option<Value> = None;
@@ -184,6 +188,11 @@ impl Interpreter {
         self.call_method_with_values(thing, "rotor", positional)
     }
 
+    /// Cost: O(sum e_i), e_i = elements of the i-th stream (each copied into a
+    /// Vec, then every round built eagerly). An infinite stream is not pulled
+    /// lazily: `roundrobin(1..*, (5, 6)).head(4)` panics (the `1..*` expansion
+    /// overflows the Vec capacity) and a lazy `.map` stream is taken as one
+    /// element, where Rakudo pulls O(1) per element -- see #9159.
     pub(super) fn builtin_roundrobin(&self, raw_args: &[Value]) -> Result<Value, RuntimeError> {
         // Split off the `:slip` adverb (a `slip => Bool` named arg); the rest are
         // the lists-of-lists streams. With `:slip`, the tuples are concatenated
@@ -302,6 +311,8 @@ impl Interpreter {
 
     /// Iterate over the elements of a value, applying duckmap to each.
     /// This is the entry point for both the method and function forms.
+    /// Cost: O(t) block calls/visits, t = nodes of the structure (each node is
+    /// tried once and recursed into only when the block does not accept it).
     pub(crate) fn duckmap_iterate(
         &mut self,
         block: &Value,
@@ -372,6 +383,8 @@ impl Interpreter {
     }
 
     /// Recursively apply a block to every leaf element, preserving structure.
+    /// Cost: O(t), t = nodes of the structure (one block call per leaf, one
+    /// rebuild per aggregate).
     pub(crate) fn deepmap_iterate(
         &mut self,
         block: &Value,

@@ -201,6 +201,8 @@ impl Interpreter {
         }
     }
 
+    /// Cost: O(max(e_l, e_r)) operator applications, e = elements of each operand
+    /// (nested structures recurse, so O(total leaves)); results built eagerly.
     pub(super) fn exec_hyper_op(
         &mut self,
         op: Symbol,

@@ -107,6 +107,7 @@ pub(super) fn dispatch(
             }
             Some(Some(Ok(Value::truth(!target.truthy()))))
         }
+        // Cost: O(1) (inspects the invocant's own lazy flag / range end only).
         "is-lazy" => {
             // For Iterator instances, check the stored is_lazy attribute
             if let ValueView::Instance {
@@ -316,6 +317,8 @@ pub(super) fn dispatch(
                 }
             })
         }
+        // Cost: O(e + t), e = elements of the invocant, t = total chars of the result
+        // (each element stringified once, one `join` into a single buffer).
         "join" => {
             if matches!(target.view(), ValueView::LazyList(_)) {
                 return Some(None); // fall through to runtime to force

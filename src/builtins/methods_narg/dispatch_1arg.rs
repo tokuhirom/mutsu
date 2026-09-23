@@ -856,6 +856,8 @@ pub(crate) fn native_method_1arg(
             }
             Some(Ok(Value::seq(words)))
         }
+        // Cost: O(e + t), e = elements of the invocant, t = total chars of the result
+        // (each element stringified once, one `join` into a single buffer).
         "join" => {
             // A Uni/NFC/NFD/NFKC/NFKD value has no itemization wrapper of its
             // own and decomposes into its codepoints in their original
@@ -996,6 +998,9 @@ pub(crate) fn native_method_1arg(
         // shuffle each inner array's own elements). Slice 1 drew the same
         // distinction for the 0-arg forms in `dispatch_core_range.rs`; this is
         // the n-arg half.
+        // Cost: O(k) on an Array or an integer Range, k = elements requested; O(e)
+        // on any other list-like, e = elements of the invocant (decomposed into a Vec
+        // first). Rakudo: O(k) -- see #9162.
         "head" => {
             let n: i64 = match arg.view() {
                 ValueView::Int(i) => i,
@@ -1037,6 +1042,10 @@ pub(crate) fn native_method_1arg(
                 }
             }
         }
+        // Cost: O(k) on an Array, k = elements requested; O(e) otherwise, e = elements
+        // of the invocant (decomposed into a Vec first). `@a.tail(k)` on a named
+        // array measures O(e): that call reaches `dispatch_tail` instead. Rakudo:
+        // O(k) -- see #9162.
         "tail" => match target.view() {
             ValueView::Array(items, ..) => {
                 let n = match arg.view() {
@@ -1057,6 +1066,10 @@ pub(crate) fn native_method_1arg(
                 Some(Ok(Value::seq(items[start..].to_vec())))
             }
         },
+        // Cost: O(e + C(e, k) * k), e = elements of the invocant, k = combination size
+        // (every combination is materialized eagerly, so `.combinations(k).head` or
+        // `.elems` pays for the full output). Rakudo: O(k) per combination pulled --
+        // see #9158.
         "combinations" => {
             let items = target
                 .as_list_items()
@@ -1113,6 +1126,9 @@ pub(crate) fn native_method_1arg(
                 }
             }
         }
+        // Cost: O(e), e = elements of the invocant (decomposed, then chunked eagerly;
+        // a lazy invocant throws X::Cannot::Lazy before reaching here). Rakudo: O(1)
+        // per call, O(n) per batch pulled -- see #9158.
         "batch" => {
             // `.batch(N)` and the named `.batch(:elems(N))` are equivalent.
             let n = match arg.view() {
@@ -1639,6 +1655,9 @@ pub(crate) fn native_method_1arg(
                 }
             }
         }
+        // Cost: O(e + k) on a list/array, e = elements of the invocant (copied),
+        // k = elements picked (each an O(1) swap_remove); `.pick(*)` is an O(e)
+        // Fisher-Yates shuffle; O(k) on an integer Range.
         "pick" => {
             if matches!(target.view(), ValueView::Mix(_, _)) {
                 return Some(Err(RuntimeError::new(
@@ -1911,6 +1930,9 @@ pub(crate) fn native_method_1arg(
             }
             _ => None,
         },
+        // Cost: O(e + k) on a list/array, e = elements of the invocant (copied into
+        // the sampling pool even for a small k), k = elements rolled; O(k) on an
+        // integer Range. Rakudo: O(k) -- see #9162.
         "roll" => {
             if matches!(target.view(), ValueView::Package(_)) {
                 return None;

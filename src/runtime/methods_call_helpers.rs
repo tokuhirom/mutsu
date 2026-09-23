@@ -383,6 +383,11 @@ impl Interpreter {
             _ => crate::value::ArrayKind::Array,
         };
         match method {
+            // Cost: push/append O(k) amortized, k = added elements (plus an O(e)
+            // head-offset compaction via `items_mut` after a shift/unshift);
+            // unshift/prepend O(e + k), e = elements of the array (`Vec::splice` at the
+            // front moves every element, so a one-element unshift loop on
+            // `%h<k>`/`@a[0]` is O(e) per step). Rakudo: O(k) amortized -- see #9156.
             "push" | "append" | "unshift" | "prepend" => {
                 // ADR-0040 slice 1: itemize per element, after the
                 // one-arg-rule flattening decision.
@@ -403,6 +408,8 @@ impl Interpreter {
                 });
                 Ok(target)
             }
+            // Cost: shift O(1) amortized (`ArrayData::remove(0)`, #9121); pop O(1) plus
+            // an O(e) head-offset compaction via `items_mut` after a shift/unshift.
             "pop" | "shift" => {
                 if !args.is_empty() {
                     return Err(RuntimeError::new(format!(
@@ -441,6 +448,9 @@ impl Interpreter {
     /// place, returning the removed elements. Shared by the by-value invocant
     /// path (`array_mutate_copy`) and the shared-context atomic-store path
     /// (`shared_array_mutate` callers in the VM).
+    // Cost: O(e + r * (e - s)), e = elements of the array, s = offset, r = replacement
+    // elements (`drain` compacts and moves the tail, then one `Vec::insert` per
+    // replacement). Rakudo: O(r + e - s), O(r) at the front -- see #9156.
     pub(crate) fn splice_array_data(
         data: &mut crate::value::ArrayData,
         args: &[Value],

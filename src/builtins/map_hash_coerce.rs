@@ -134,6 +134,8 @@ where
 
 /// Coerce `target` to a `Hash`. `check_odd` controls the odd-element check for
 /// flat list receivers. Mirrors the interpreter's `dispatch_to_hash_impl`.
+/// Cost: O(e), e = elements (or pairs) of the invocant, one hash insert each;
+/// O(1) on a plain Hash (identity).
 pub(crate) fn to_hash(target: Value, check_odd: bool) -> Result<Value, RuntimeError> {
     match target.view() {
         ValueView::Hash(map) => {
@@ -218,6 +220,8 @@ pub(crate) fn to_hash(target: Value, check_odd: bool) -> Result<Value, RuntimeEr
 /// `Hash` Arc. An already-`Map` Hash is returned by identity (its
 /// pointer-based `.WHICH` is preserved). Mirrors the interpreter's
 /// `dispatch_to_map` + `tag_container_metadata(..., declared_type="Map")`.
+/// Cost: O(e), e = pairs of the invocant (one decont + insert each); O(1)
+/// on an existing Map (identity).
 pub(crate) fn to_map(target: Value) -> Result<Value, RuntimeError> {
     let mut result = 'hash: {
         if let ValueView::Hash(map) = target.view() {

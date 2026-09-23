@@ -31,6 +31,13 @@ impl Interpreter {
         result
     }
 
+    /// Cost: O(1) per iteration on an integer Range or a lazy pipe/gather/sequence
+    /// (pulled one element at a time); otherwise O(e) at loop entry, e = elements
+    /// of the iterable (copied into a Vec by `value_to_list` before the first
+    /// iteration), then O(1) per iteration. So `for @a { last }` costs O(e), and a
+    /// `for @big { ... last if ... }` nested in an outer loop is O(outer * e).
+    /// A live-array continuation re-copies the grown array once per pass.
+    /// Rakudo: O(1) at entry, O(1) per iteration -- see #9158.
     fn exec_for_loop_op_inner(
         &mut self,
         code: &CompiledCode,

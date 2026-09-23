@@ -701,6 +701,8 @@ pub(crate) fn hash_cycle_exit(ptr: usize) -> bool {
     had_cycle
 }
 
+/// Cost: O(t), t = total output length for the whole structure (elements are
+/// rendered and joined once; the cycle guard is a stack of ancestor depth).
 pub fn raku_value(v: &Value) -> String {
     // Cycle detection for recursive data structures: track Arc pointers
     // that we're currently rendering. If we encounter the same pointer

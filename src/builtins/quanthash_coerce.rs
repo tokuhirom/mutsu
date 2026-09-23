@@ -28,6 +28,7 @@ use std::collections::{HashMap, HashSet};
 
 /// Coerce `target` to a `Set` (immutable). The caller flips the mutable flag for
 /// `.SetHash`.
+/// Cost: O(e), e = elements of the (flattened) invocant; one hash insert each.
 pub(crate) fn to_set(target: Value, what: &str) -> Result<Value, RuntimeError> {
     // Check for lazy/infinite values
     if Interpreter::is_lazy_for_coerce(&target) {
@@ -231,6 +232,7 @@ fn pair_weight(v: &Value) -> Result<BigInt, RuntimeError> {
 /// Coerce `target` to a `Bag` (immutable). `what` is the coercer name (`Bag` /
 /// `BagHash`) used for the lazy error message. The caller flips the mutable flag
 /// for `.BagHash`.
+/// Cost: O(e), e = elements of the (flattened) invocant; one hash upsert each.
 pub(crate) fn to_bag(target: Value, what: &str) -> Result<Value, RuntimeError> {
     // Check for lazy/infinite inputs
     if Interpreter::is_lazy_for_coerce(&target) {
@@ -636,6 +638,7 @@ fn mix_add_item_with_keys(
 
 /// Coerce `target` to a `Mix` (immutable). The caller flips the mutable flag (and
 /// registers `MixHash` type metadata) for `.MixHash`.
+/// Cost: O(e), e = elements of the (flattened) invocant; one hash upsert each.
 pub(crate) fn to_mix(target: Value, what: &str) -> Result<Value, RuntimeError> {
     // Check for lazy iterables
     if Interpreter::is_lazy_for_set_ops(&target) {

@@ -77,6 +77,9 @@ pub(super) fn dispatch(
     method: &str,
 ) -> Option<Option<Result<Value, RuntimeError>>> {
     match method {
+        // Cost: O(1) on an Array or a Range; O(e) on any other list-like, e = elements
+        // of the invocant (decomposed into a Vec to read one slot). Rakudo: O(1) --
+        // see #9162.
         "head" => Some(match target.view() {
             // User-defined class instances may have a `head` attribute or
             // method — defer to runtime dispatch so the user accessor wins
@@ -142,6 +145,10 @@ pub(super) fn dispatch(
                 Some(Ok(items.first().cloned().unwrap_or(Value::NIL)))
             }
         }),
+        // Cost: O(1) on an Array; O(e) otherwise, e = elements of the invocant
+        // (decomposed into a Vec to read the last slot). `@a.tail` on a named array
+        // measures O(e): that call reaches `dispatch_tail` instead. Rakudo: O(1) --
+        // see #9162.
         "tail" => Some(match target.view() {
             // User-defined class instances may have a `tail` attribute or
             // method — defer to runtime dispatch so the user accessor wins
@@ -153,6 +160,9 @@ pub(super) fn dispatch(
                 Some(Ok(items.last().cloned().unwrap_or(Value::NIL)))
             }
         }),
+        // Cost: O(e), e = elements of a list/array invocant (the receiver is copied
+        // into a fresh Vec just to index one slot); O(1) on an integer Range.
+        // Rakudo: O(1) -- see #9162.
         "pick" => Some(match target.view() {
             ValueView::Mix(_, _) => Some(Err(RuntimeError::new(
                 "Cannot call .pick on a Mix (immutable)",
@@ -213,6 +223,9 @@ pub(super) fn dispatch(
                 }
             }
         }),
+        // Cost: O(e), e = elements of a list/array invocant (the receiver is copied
+        // into a fresh Vec just to index one slot); O(1) on an integer Range.
+        // Rakudo: O(1) -- see #9162.
         "roll" => {
             if let ValueView::Mix(items, _) = target.view() {
                 return Some(Some(Ok(
@@ -338,6 +351,7 @@ pub(super) fn dispatch(
             ValueView::Array(items, ..) => Some(Ok(items.first().cloned().unwrap_or(Value::NIL))),
             _ => None,
         }),
+        // Cost: O(e) comparisons on an Array, e = elements; O(1) on a Range.
         "min" => Some(match target.view() {
             ValueView::Array(items, ..) => Some(Ok(items
                 .iter()
@@ -389,6 +403,7 @@ pub(super) fn dispatch(
             ValueView::Seq(..) | ValueView::Slip(..) => None,
             _ => Some(Ok(target.clone())),
         }),
+        // Cost: O(e) comparisons on an Array, e = elements; O(1) on a Range.
         "max" => Some(match target.view() {
             ValueView::Array(items, ..) => Some(Ok(items
                 .iter()

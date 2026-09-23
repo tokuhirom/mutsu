@@ -555,6 +555,7 @@ impl Interpreter {
     ///
     /// The stack is only *peeked*; the caller pops exactly when this answers
     /// `Some`, so a `None` leaves the operand stack untouched.
+    // Cost: O(1) (in-range `Int` read of a plain array).
     #[inline]
     fn index_fast_path_element(&self, is_positional: bool) -> Option<Value> {
         // The core-subscript re-entry guard means this dispatch is not an
@@ -635,6 +636,9 @@ impl Interpreter {
         }
     }
 
+    // Cost: O(1) for a single `Int` index (a `*-1` WhateverCode index is one closure
+    // call on `.elems`, also O(1)); O(k) for a slice, k = indices (the result copies
+    // only the addressed elements, not the array).
     pub(crate) fn exec_index_op_with_positional(
         &mut self,
         is_positional: bool,

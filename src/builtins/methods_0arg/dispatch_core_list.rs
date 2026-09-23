@@ -42,6 +42,7 @@ pub(super) fn dispatch(
     method: &str,
 ) -> Option<Option<Result<Value, RuntimeError>>> {
     match method {
+        // Cost: O(1) on a reified list/array, hash, set/bag/mix or buf (a length read).
         "end" => {
             // A lazy (infinite-backed) array/list has no last index; raku throws
             // `X::Cannot::Lazy` (`Cannot .elems a lazy list`) rather than
@@ -70,6 +71,9 @@ pub(super) fn dispatch(
                 _ => Some(Ok(Value::int(0))),
             })
         }
+        // Cost: O(t), t = leaves reached through flattenable (non-itemized) nesting,
+        // copied eagerly even when only a prefix is consumed; O(1) on a LazyList
+        // or infinite Range. Rakudo: O(1) per call, O(1) per leaf pulled -- see #9158.
         "flat" => Some(match target.view() {
             ValueView::Array(_, crate::value::ArrayKind::Shaped) => {
                 let leaves = crate::runtime::utils::shaped_array_leaves(target);
@@ -97,6 +101,8 @@ pub(super) fn dispatch(
                 Some(Ok(Value::seq(result)))
             }
         }),
+        // Cost: O(e log e) comparisons, e = elements of the invocant (copied, then
+        // sorted with `compare_values`).
         "sort" => Some(match target.view() {
             ValueView::Array(items, kind) => {
                 let mut sorted = if kind == crate::value::ArrayKind::Shaped
@@ -113,6 +119,8 @@ pub(super) fn dispatch(
             }
             _ => None,
         }),
+        // Cost: O(e), e = elements of the invocant (copied in reverse; a finite Range
+        // is expanded first).
         "reverse" => Some(match target.view() {
             ValueView::Array(items, kind) => {
                 // Multi-dim shaped arrays cannot be reversed
@@ -207,6 +215,11 @@ pub(super) fn dispatch(
             }
             _ => None,
         }),
+        // Cost: O(e) average when every element is an Int/BigInt/Str/Bool/Num (hash
+        // buckets in `IdentityIndex`); O(e * u) otherwise, e = elements, u = distinct
+        // elements of any other kind (Rat, Pair, object, list, ...), which the index
+        // cannot bucket and so compares against every candidate. Rakudo: O(e) (keyed
+        // on `.WHICH`) -- see #9161.
         "unique" => Some(match target.view() {
             ValueView::Array(items, ..) => Some(Ok(unique_seq(items.iter()))),
             ValueView::Seq(items) => Some(Ok(unique_seq(items.iter()))),
@@ -216,6 +229,8 @@ pub(super) fn dispatch(
             ValueView::Instance { class_name, .. } if class_name == "Supply" => None,
             _ => Some(Ok(target.clone())),
         }),
+        // Cost: same as `unique`: O(e) average for Int/BigInt/Str/Bool/Num elements,
+        // O(e * u) for any other kind. Rakudo: O(e) -- see #9161.
         "repeated" => Some(match target.view() {
             ValueView::Array(items, ..) => Some(Ok(repeated_seq(items.iter()))),
             ValueView::Seq(items) => Some(Ok(repeated_seq(items.iter()))),

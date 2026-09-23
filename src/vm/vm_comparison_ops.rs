@@ -325,6 +325,9 @@ impl Interpreter {
             };
             vm.reify_map_grep_seq(&l)?;
             vm.reify_map_grep_seq(&r)?;
+            // Cost: O(e_l + e_r), e = elements of each operand: both are copied out via
+            // `value_to_list` (a Range is expanded) only to compare lengths. Rakudo: O(1)
+            // for reified arrays -- see #9162.
             if is_numeric_collection(&l) && is_numeric_collection(&r) {
                 return Ok(Value::truth(
                     crate::runtime::utils::value_to_list(&l).len()

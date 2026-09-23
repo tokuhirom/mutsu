@@ -25,6 +25,7 @@ impl Interpreter {
     /// (`Array[Int].new` → `X::TypeCheck::Assignment`) and container-metadata
     /// tagging for typed arrays. The caller has already resolved any parametric
     /// type name into `base_class_name` + `type_args`.
+    // Cost: O(k), k = elements supplied (flattened and copied into the new container).
     pub(crate) fn try_native_array_construct(
         &mut self,
         class_name: Symbol,
