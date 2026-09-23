@@ -51,7 +51,7 @@ impl Interpreter {
     /// straight off the shared deadline heap, which is much cheaper and
     /// observationally identical, so only a user scheduler needs the real
     /// `.cue` dispatch.
-    fn user_scheduler(&mut self) -> Option<Value> {
+    pub(super) fn user_scheduler(&mut self) -> Option<Value> {
         let sched = self.env().get("*SCHEDULER")?.clone();
         let ValueView::Instance { class_name, .. } = sched.view() else {
             return None;
