@@ -327,10 +327,22 @@ impl Interpreter {
                 // key). Replaces the old "longest end wins" rule.
                 let mut best: Option<((usize, usize), usize, RegexCaptures)> = None;
                 let capture_slots = alternation_capture_slots(alternatives);
+                // Each alternative is an independent measurement/match attempt,
+                // not a continuation of the previous one's token sequence. A
+                // branch that hits a declarative-prefix stopper sets
+                // `LTM_PREFIX_TERMINATED` so ITS OWN walk unwinds — but that
+                // flag must not leak into the NEXT branch's own walk, or
+                // `walk_tokens`'s entry check (which fires whenever the flag is
+                // already set) short-circuits a sibling branch's real match to
+                // a bogus zero-width "success" before it ever compares a single
+                // atom, corrupting both its match check and its rank. Restore
+                // the loop's starting value before every attempt so a stopper
+                // hit while evaluating one branch cannot bleed into another.
+                let term_at_loop_start = LTM_PREFIX_TERMINATED.with(std::cell::Cell::get);
                 for alt in alternatives {
-                    if let Some((next, mut inner_caps)) =
-                        self.regex_match_end_from_caps_in_pkg(alt, chars, pos, pkg)
-                    {
+                    LTM_PREFIX_TERMINATED.with(|f| f.set(term_at_loop_start));
+                    let matched = self.regex_match_end_from_caps_in_pkg(alt, chars, pos, pkg);
+                    if let Some((next, mut inner_caps)) = matched {
                         if !super::regex_helpers::IN_QUANTIFIED_ALTERNATION_MATCH.with(Cell::get) {
                             inner_caps
                                 .positional

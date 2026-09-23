@@ -109,7 +109,17 @@ impl Interpreter {
         pkg: Symbol,
     ) -> Vec<RankedAlternationBranch> {
         let mut out = Vec::new();
+        // Each alternative is an independent measurement/match attempt, not a
+        // continuation of the previous one's token sequence — see the matching
+        // note in `regex_match_capture.rs`'s singular Alternation arm. Restore
+        // the loop's starting value before every attempt so a declarative-
+        // prefix stopper hit while walking one branch cannot leave
+        // `LTM_PREFIX_TERMINATED` set for the next branch's own walk (which
+        // would short-circuit it to a bogus zero-width match at
+        // `walk_tokens`'s entry check before comparing a single atom).
+        let term_at_loop_start = LTM_PREFIX_TERMINATED.with(std::cell::Cell::get);
         for alt in alts {
+            LTM_PREFIX_TERMINATED.with(|f| f.set(term_at_loop_start));
             let raw_ends = self.regex_match_ends_from_caps_in_pkg(alt, chars, pos, pkg);
             if raw_ends.is_empty() {
                 continue;
