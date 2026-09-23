@@ -328,6 +328,7 @@ impl Interpreter {
             fingerprint: site_fp,
             routine_metadata,
             frame_lexical: _,
+            frame_lexical_value: _,
         }) = code.sub_decl_plans.get(idx as usize)
         {
             let resolved_name = if let Some(chunk) = name_chunk {
