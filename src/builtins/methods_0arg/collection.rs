@@ -541,6 +541,9 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 _ => Some(Ok(Value::seq(crate::runtime::utils::value_to_list(target)))),
             }
         }
+        // Cost: O(e), e = elements (or pairs) of the invocant: all 2e keys and values
+        // are built eagerly, so `for @a.kv -> $i, $v { last }` still pays O(e).
+        // Rakudo: O(1) per call, O(1) per pair pulled -- see #NNNN.
         "kv" => {
             if crate::runtime::utils::is_shaped_array(target) {
                 let indexed = crate::runtime::utils::shaped_array_indexed_leaves(target);
@@ -636,6 +639,8 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 )))),
             }
         }
+        // Cost: O(e), e = elements (or pairs) of the invocant, one Pair allocated per
+        // element eagerly. Rakudo: O(1) per call, O(1) per pair pulled -- see #NNNN.
         "pairs" => {
             if crate::runtime::utils::is_shaped_array(target) {
                 let indexed = crate::runtime::utils::shaped_array_indexed_leaves(target);
@@ -760,6 +765,8 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 Some(Ok(Value::seq(pairs)))
             }
         },
+        // Cost: O(e), e = elements (or pairs) of the invocant, one Pair allocated per
+        // element eagerly. Rakudo: O(1) per call, O(1) per pair pulled -- see #NNNN.
         "antipairs" => {
             if crate::runtime::utils::is_shaped_array(target) {
                 let indexed = crate::runtime::utils::shaped_array_indexed_leaves(target);
@@ -1184,6 +1191,8 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
             }
             _ => None,
         },
+        // Cost: O(e + t), e = elements of the invocant, t = total chars of their
+        // stringifications (each element is stringified to compare with the previous).
         "squish" => match target.view() {
             ValueView::Array(items, ..) => {
                 let mut result = Vec::new();
