@@ -3,6 +3,7 @@ use super::*;
 use crate::runtime::meta_ns::MetaNs;
 use crate::symbol::Symbol;
 use crate::value::ArrayData;
+use crate::value::types::is_stash_class_name;
 
 /// What a positional slice adverb reports for a slot the index does not reach.
 #[derive(Clone, Copy)]
@@ -290,16 +291,33 @@ impl Interpreter {
         // with a fresh Hash that shares nothing with the source container, so
         // promoting a slot in it would be invisible to the source.
         let mut target_is_real_hash = assoc_instance.is_none();
-        let target = if target.with_deref(|v| {
-            matches!(
-                v.view(),
-                ValueView::Set(..) | ValueView::Bag(..) | ValueView::Mix(..)
-            )
-        }) {
-            target_is_real_hash = false;
-            self.call_method_with_values(target.deref_container(), "hash", vec![])?
-        } else {
-            target
+        let target = match target.view() {
+            ValueView::Instance {
+                class_name,
+                attributes,
+                ..
+            } if is_stash_class_name(class_name.as_str()) => {
+                // Package stashes are associative maps of symbol names to
+                // values. Materialize the symbols for the ordinary Hash
+                // adverb path so `EXPORT::TAG::{...}:p` can return the same
+                // key/value pairs as a real hash.
+                target_is_real_hash = false;
+                match attributes.as_map().get("symbols").map(Value::view) {
+                    Some(ValueView::Hash(symbols)) => Value::hash((**symbols).clone()),
+                    _ => Value::hash(ValueMap::default()),
+                }
+            }
+            _ if target.with_deref(|v| {
+                matches!(
+                    v.view(),
+                    ValueView::Set(..) | ValueView::Bag(..) | ValueView::Mix(..)
+                )
+            }) =>
+            {
+                target_is_real_hash = false;
+                self.call_method_with_values(target.deref_container(), "hash", vec![])?
+            }
+            _ => target,
         };
         let mode = args[2].to_string_value();
         let var_name = args

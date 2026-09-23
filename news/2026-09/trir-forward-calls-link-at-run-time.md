@@ -1,6 +1,6 @@
 # A TRIR routine's call to a later-declared routine is 50x cheaper
 
-ADR-0111 Step 1. A TRIR body statically links a call (`CallTr`) only to a
+ADR-0112 Step 1. A TRIR body statically links a call (`CallTr`) only to a
 routine declared *before* it, because that is all its compile has seen. Every
 forward call was a `CallGen`, and paid for it:
 
@@ -56,12 +56,12 @@ Measured on a release build in a 4-core container:
 | calls served through a link, same run | — | 1,088 |
 | 727-record `from-json` | 1.67 s | ~1.55 s |
 
-The wall-clock gain is the ~0.07 s ADR-0111 §3 estimated for this step. About
+The wall-clock gain is the ~0.07 s ADR-0112 §3 estimated for this step. About
 80% of the decode is still the slow string path (`parse-string-slow` /
 `unjsonify-string`, which are not TRIR at all), and that is Step 2. The decoded
 result is byte-identical to rakudo's.
 
-Pinned by `t/vm/codegen/adr0111-trir-forward-link.t`, which covers:
+Pinned by `t/vm/codegen/adr0112-trir-forward-link.t`, which covers:
 
 - a forward `is rw` write;
 - mutual recursion;

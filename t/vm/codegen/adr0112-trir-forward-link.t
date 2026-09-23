@@ -1,4 +1,4 @@
-# ADR-0111 Step 1: a TRIR routine's call to a routine declared AFTER it.
+# ADR-0112 Step 1: a TRIR routine's call to a routine declared AFTER it.
 #
 # Such a call is a `CallGen` (the compile has not seen the callee yet). It
 # used to go through the whole by-name dispatch every time and run the

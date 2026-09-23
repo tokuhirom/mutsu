@@ -890,7 +890,7 @@ impl Interpreter {
                 ValueView::Array(arr, ..) => key
                     .parse::<usize>()
                     .ok()
-                    .and_then(|i| arr.get(i).cloned())
+                    .and_then(|i| arr.get(i).cloned().map(|value| value.deref_container()))
                     .unwrap_or(Value::NIL),
                 _ => Value::NIL,
             };
@@ -933,7 +933,7 @@ impl Interpreter {
                                 i + 1,
                                 Self::native_fill_for_constraint(None),
                             )?;
-                            data[i] = new_val.clone();
+                            Value::assign_element_slot(&mut data[i], new_val.clone());
                             // Materialize the "all present" range before
                             // recording `i` as present, so a skipped
                             // intermediate slot from the resize above is
@@ -962,7 +962,10 @@ impl Interpreter {
                     .unwrap_or(Value::NIL),
                 ValueView::Array(arr, ..) => {
                     if let Ok(i) = key.parse::<usize>() {
-                        arr.get(i).cloned().unwrap_or(Value::NIL)
+                        arr.get(i)
+                            .cloned()
+                            .map(|value| value.deref_container())
+                            .unwrap_or(Value::NIL)
                     } else {
                         Value::NIL
                     }
@@ -1178,7 +1181,7 @@ impl Interpreter {
                         let fill =
                             Self::native_fill_for_constraint(declared_constraint_incdec.as_deref());
                         Self::autoviv_resize(a, i + 1, fill)?;
-                        a[i] = new_val.clone();
+                        Value::assign_element_slot(&mut a[i], new_val.clone());
                         Ok(true)
                     } else {
                         Ok(false)

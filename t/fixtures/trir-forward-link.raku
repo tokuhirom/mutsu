@@ -1,4 +1,4 @@
-# Driver for t/vm/codegen/adr0111-trir-forward-link.t (ADR-0111 Step 1).
+# Driver for t/vm/codegen/adr0112-trir-forward-link.t (ADR-0112 Step 1).
 # Every call below is from a TRIR routine to one declared AFTER it, which a
 # TRIR body can only reach through `CallGen`. Each shape is called several
 # times, because the first call links the site and the later ones run through

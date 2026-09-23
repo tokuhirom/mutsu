@@ -347,6 +347,14 @@ impl Interpreter {
         name: &str,
         arg_values: &[Value],
     ) -> Option<Arc<FunctionDef>> {
+        // The plain-routine tail below does not read the arguments, so its
+        // answer is memoized (#9081, `plain_fn_resolve_memo.rs`).
+        let plain_key = self.plain_fn_resolve_key(name);
+        if let Some(key) = &plain_key
+            && let Some(def) = self.plain_fn_resolve_memo_get(key)
+        {
+            return Some(def);
+        }
         crate::vm::vm_stats::record_function_full_resolve(name);
         // The full resolution walk is the subsystem a slow Raku line most
         // often turns out to be spending its time in (ADR-0106 D4).
@@ -542,6 +550,13 @@ impl Interpreter {
         // wins over every package entry: it is a lexical of that compunit, and
         // the shared registry may hold an unrelated same-named routine
         // belonging to the scope that loaded it (`runtime/unit_private_routines.rs`).
+        if let Some(def) = self.current_unit_private_routine(name) {
+            if let Some(key) = plain_key {
+                self.plain_fn_resolve_memo_insert(key, &def);
+            }
+            return Some(def);
+        }
+        // The frame-dependent fallback of the same lookup; not memoized.
         if let Some(def) = self.unit_private_routine(name) {
             return Some(def);
         }
@@ -576,6 +591,11 @@ impl Interpreter {
                 if let Some(def) = dispatch_key::qualified_lookup(pkg, name)
                     .and_then(|key| self.registry().functions.get(&key).cloned())
                 {
+                    if let Some(key) = plain_key
+                        && !self.is_unit_scoped_routine_name(name)
+                    {
+                        self.plain_fn_resolve_memo_insert(key, &def);
+                    }
                     return Some(def);
                 }
             }

@@ -439,10 +439,9 @@ impl Interpreter {
             // while direct closure dispatch supplies a fresh closure scope.
             // A deferred direct closure can run after the enclosing routine has
             // returned, so the closure scope is also the only surviving key in
-            // that case.
-            let scope = if self.routine_stack().iter().any(|frame| frame.is_block)
-                || self.state_scope_belongs_to_routine()
-            {
+            // that case. A closure frame is still a block frame, so use the
+            // state scope itself to distinguish these two cases.
+            let scope = if self.state_scope_belongs_to_routine() {
                 self.enclosing_routine_invocation_id()
             } else {
                 self.state_scope_id.get().unwrap_or(0)

@@ -14,7 +14,7 @@
 //! - `bind-declines`: its arguments could not be bound, so it never started.
 //!
 //! - `gen-links`: a `CallGen` site ran its callee's chunk through the link
-//!   the generic dispatch established (ADR-0111 Step 1), not the generic
+//!   the generic dispatch established (ADR-0112 Step 1), not the generic
 //!   dispatch itself.
 //!
 //! In a program where TRIR is doing its job, `completed` is close to

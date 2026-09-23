@@ -1,4 +1,4 @@
-# ADR-0111: Finishing ADR-0110 for the JSON::Fast goal — whole-unit linkage, the string path in TRIR, typed container ops, then native lowering with inlining
+# ADR-0112: Finishing ADR-0110 for the JSON::Fast goal — whole-unit linkage, the string path in TRIR, typed container ops, then native lowering with inlining
 
 - Status: Accepted (2026-09-23, approved by tokuhirom; Step 1 landed — see "Implementation status")
 - Date: 2026-09-23
@@ -161,5 +161,5 @@ Measured, release, 4-core container:
 | `gen-links` (calls served through a link), same run | 0 | 1,088 | — |
 | 727-record `from-json` | 1.67 s | ~1.55 s (3 runs: 1.50 / 1.61 / 1.55) | — (as §3 estimated: Step 1 alone is worth ~0.07 s) |
 
-The decoded result is byte-identical to rakudo's. Pins: `t/vm/codegen/adr0111-trir-forward-link.t`, which covers a forward `is rw` write, mutual recursion, an aggregate declining then a scalar linking, and a `.wrap` installed after linking, all with TRIR on = off and `gen-links` > 0. Also `t/modules/adr0110-trir-module-linkage.t`.
+The decoded result is byte-identical to rakudo's. Pins: `t/vm/codegen/adr0112-trir-forward-link.t`, which covers a forward `is rw` write, mutual recursion, an aggregate declining then a scalar linking, and a `.wrap` installed after linking, all with TRIR on = off and `gen-links` > 0. Also `t/modules/adr0110-trir-module-linkage.t`.
 

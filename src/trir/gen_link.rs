@@ -1,5 +1,5 @@
 //! Linking a `CallGen` site to the TRIR routine it turns out to reach
-//! (ADR-0111 Step 1).
+//! (ADR-0112 Step 1).
 //!
 //! A TRIR body links a call statically (`CallTr`) only to a routine declared
 //! BEFORE it, because that is all its compile has seen. Every other call is a
@@ -9,7 +9,7 @@
 //! every value, because `parse-obj`/`parse-array` call `parse-thing`, which is
 //! declared after them. Mutual recursion makes one direction a forward
 //! reference, whatever the order. Measured at 8.9 µs a call, against 172 ns
-//! for a `CallTr` and 80 ns in rakudo (ADR-0111 §1.3).
+//! for a `CallTr` and 80 ns in rakudo (ADR-0112 §1.3).
 //!
 //! The fix links such a site at run time, from what the generic dispatch
 //! actually did. The first call of a site goes the generic way, with an

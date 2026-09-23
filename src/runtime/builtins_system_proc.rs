@@ -161,11 +161,7 @@ impl Interpreter {
                         }
                         "env" => {
                             opts.env_explicit = true;
-                            if let ValueView::Hash(env_map) = inner.view() {
-                                for (ek, ev) in env_map.iter() {
-                                    opts.env.insert(ek.clone(), ev.to_string_value());
-                                }
-                            }
+                            Self::extract_env_option(inner, &mut opts);
                         }
                         "err" => {
                             opts.err_explicit = true;
@@ -196,11 +192,7 @@ impl Interpreter {
                     "cwd" => opts.cwd = Some(inner.to_string_value()),
                     "env" => {
                         opts.env_explicit = true;
-                        if let ValueView::Hash(env_map) = inner.view() {
-                            for (ek, ev) in env_map.iter() {
-                                opts.env.insert(ek.clone(), ev.to_string_value());
-                            }
-                        }
+                        Self::extract_env_option(inner, &mut opts);
                     }
                     "err" => {
                         opts.err_explicit = true;
@@ -219,6 +211,21 @@ impl Interpreter {
             }
         }
         opts
+    }
+
+    /// `:env(...)` accepts anything `.hash` would coerce, not only a literal
+    /// Hash -- `:env(%*ENV, |%extra)` parses as a `List` (a Hash followed by
+    /// a `Slip` of Pairs), and rakudo lets it through by coercing with hash
+    /// semantics before building the child environment (issue #9085).
+    /// `coerce_to_hash` already implements exactly that flattening (nested
+    /// Hashes expand to their pairs, a later same-named entry wins).
+    fn extract_env_option(value: &Value, opts: &mut ProcOptions) {
+        let coerced = crate::runtime::utils::coerce_to_hash(value.clone());
+        if let ValueView::Hash(env_map) = coerced.view() {
+            for (ek, ev) in env_map.iter() {
+                opts.env.insert(ek.clone(), ev.to_string_value());
+            }
+        }
     }
 
     fn extract_in_option(value: &Value, opts: &mut ProcOptions) {

@@ -39,13 +39,30 @@ pub(crate) use type_registry::{ROLE_PRETENDS_TO_BE, is_builtin_role_name};
 use signature::code_signature_matches_value;
 
 const TEST_CALLSITE_LINE_KEY: &str = "__mutsu_test_callsite_line";
+// The parser attaches these to every literal `caller(...)`/`callframe(...)`
+// call, unconditionally -- it cannot know at parse time whether the name
+// will resolve to the builtin or to a user-declared `sub caller`/`sub
+// callframe` shadowing it. The builtins read them straight off the raw
+// argument list (`builtin_caller`/`builtin_callframe`, a native dispatch
+// path that never reaches the general binder below), so filtering them out
+// here is safe for that case and is what stops them from reaching a
+// shadowing user sub's signature as a genuine, unexpected named argument
+// (issue #9093).
+const CALLFRAME_LINE_KEY: &str = "__callframe_line";
+const CALLFRAME_BLOCKS_KEY: &str = "__callframe_blocks";
 
 #[inline]
 fn is_internal_named_arg(arg: &Value) -> bool {
+    fn is_internal_key(key: &str) -> bool {
+        matches!(
+            key,
+            TEST_CALLSITE_LINE_KEY | CALLFRAME_LINE_KEY | CALLFRAME_BLOCKS_KEY
+        )
+    }
     match arg.view() {
-        ValueView::Pair(key, _) => key == TEST_CALLSITE_LINE_KEY,
+        ValueView::Pair(key, _) => is_internal_key(key.as_str()),
         ValueView::ValuePair(key, _) => {
-            matches!(key.view(), ValueView::Str(s) if s.as_str() == TEST_CALLSITE_LINE_KEY)
+            matches!(key.view(), ValueView::Str(s) if is_internal_key(s.as_str()))
         }
         _ => false,
     }
@@ -654,6 +671,7 @@ impl Interpreter {
                 }) else {
                     continue;
                 };
+                let elem = elem.deref_container();
                 match src_idx {
                     Some(i) => {
                         // Array source: replace element `i` in the caller's array,
@@ -665,7 +683,7 @@ impl Interpreter {
                         {
                             let mut data = (*arr).clone();
                             if i < data.items().len() {
-                                data.items_mut()[i] = elem;
+                                Value::assign_element_slot(&mut data.items_mut()[i], elem);
                                 target_env.insert(
                                     source_name.clone(),
                                     Value::array_with_kind(crate::gc::Gc::new(data), kind),

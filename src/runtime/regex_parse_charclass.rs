@@ -1,4 +1,5 @@
 use super::regex_parse::*;
+use super::regex_parse_charclass_alts::CharClassAltTally;
 use super::*;
 use unicode_normalization::UnicodeNormalization;
 
@@ -13,6 +14,18 @@ enum TokenClassFold {
 
 impl Interpreter {
     pub(super) fn parse_raku_char_class(&self, inner: &str, negated: bool) -> Option<CharClass> {
+        self.parse_raku_char_class_tallied(inner, negated, &mut CharClassAltTally::default())
+    }
+
+    /// [`Interpreter::parse_raku_char_class`], also recording in `tally` how
+    /// many alternatives Rakudo would compile the enumeration into (see
+    /// `regex_parse_charclass_alts`).
+    pub(super) fn parse_raku_char_class_tallied(
+        &self,
+        inner: &str,
+        negated: bool,
+        tally: &mut CharClassAltTally,
+    ) -> Option<CharClass> {
         // Parse Raku-style character class: a..z, \n, \t, \c[NAME], \x[HEX], etc.
         let mut items = Vec::new();
         let mut chars = inner.chars().peekable();
@@ -88,6 +101,9 @@ impl Interpreter {
                             }
                             if !is_neg {
                                 all_negated_escapes = false;
+                                tally.plain();
+                            } else {
+                                tally.separate();
                             }
                             EscResult::Multi
                         } else if chars.peek().is_some_and(|c| c.is_ascii_digit()) {
@@ -213,8 +229,16 @@ impl Interpreter {
                                 return None;
                             }
                             items.push(ClassItem::Range(ch, end));
+                            tally.separate();
                         } else {
                             items.push(ClassItem::Char(ch));
+                            // `\n` also matches `\r\n` in Raku, so Rakudo keeps
+                            // it out of the plain enumeration.
+                            if esc == 'n' {
+                                tally.separate();
+                            } else {
+                                tally.plain();
+                            }
                         }
                         all_negated_escapes = false;
                         has_items = true;
@@ -223,10 +247,12 @@ impl Interpreter {
                         // From \X[HEX] — the char itself, but the negation is tracked
                         // via all_negated_escapes (which stays true for \X)
                         items.push(ClassItem::Char(ch));
+                        tally.separate();
                         // Don't set all_negated_escapes = false — it stays true
                         has_items = true;
                     }
                     EscResult::Item(item) => {
+                        tally.escape_item(&item);
                         items.push(item);
                         all_negated_escapes = false;
                         has_items = true;
@@ -268,6 +294,7 @@ impl Interpreter {
                     return None;
                 }
                 items.extend(lookahead.chars().map(ClassItem::Char));
+                tally.plain();
                 all_negated_escapes = false;
                 has_items = true;
             } else if Self::peek_dotdot(&chars) {
@@ -291,6 +318,7 @@ impl Interpreter {
                     return None;
                 }
                 items.push(ClassItem::Range(c, end));
+                tally.separate();
                 all_negated_escapes = false;
                 has_items = true;
             } else if c == '-'
@@ -307,6 +335,7 @@ impl Interpreter {
                 return None;
             } else {
                 items.push(ClassItem::Char(c));
+                tally.plain();
                 all_negated_escapes = false;
                 has_items = true;
             }
@@ -414,6 +443,7 @@ impl Interpreter {
         // First part may be just [content] (implicitly positive) or +[content] or -[content]
         let mut first = true;
         let mut parts = 0usize;
+        let mut tally = CharClassAltTally::default();
         while !remaining.is_empty() {
             let adding;
             if remaining.starts_with('+') {
@@ -447,7 +477,9 @@ impl Interpreter {
                 // Skip whitespace after ']'
                 remaining = Self::skip_charclass_whitespace_and_comments(remaining);
                 // Parse the bracket content as a char class
-                if let Some(class) = self.parse_raku_char_class(bracket_content, false) {
+                if let Some(class) =
+                    self.parse_raku_char_class_tallied(bracket_content, false, &mut tally)
+                {
                     // If the class itself is negated (e.g. due to \C/\X escapes),
                     // swap the positive/negative assignment
                     let effective_adding = if class.negated { !adding } else { adding };
@@ -476,10 +508,23 @@ impl Interpreter {
                 items: positive_items,
                 negated: false,
             }))
+        } else if positive_items.is_empty() && parts <= 1 && tally.negation_terminates_ltm() {
+            // A negated single-part class Rakudo compiles into several
+            // alternatives (`<-[Z \n]>`, `<-[a..c x]>`) becomes "`.` unless one
+            // of them matches" -- the same shape as a subtraction from any
+            // character, and like one it is a fate in Rakudo's NFA. The
+            // `CompositeClass` with an empty `positive` matches exactly what
+            // the negated `CharClass` would, and `ltm_atom_mode` terminates
+            // the declarative prefix on it (issue #9053).
+            Some(RegexAtom::CompositeClass {
+                positive: Vec::new(),
+                negative: negative_items,
+            })
         } else if positive_items.is_empty() && parts <= 1 {
             // Purely negated single-part class: <-[aeiou]> = match anything NOT
             // in [aeiou]. Kept as a plain `CharClass` because that is what it
-            // is: no set *subtraction* was written.
+            // is: no set *subtraction* was written, and Rakudo compiles it to
+            // one negated NFA edge.
             Some(RegexAtom::CharClass(CharClass {
                 items: negative_items,
                 negated: true,

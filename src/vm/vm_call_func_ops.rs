@@ -227,13 +227,17 @@ impl Interpreter {
         code: Option<&CompiledCode>,
         name: &str,
     ) -> Option<Value> {
+        let imported_alias = self
+            .imported_env_aliases
+            .contains_key(&Symbol::intern(&format!("&{name}")));
         if Self::is_control_flow_function_name(name)
-            || crate::runtime::Interpreter::is_builtin_function(name)
             || Self::is_interpreter_carrier_function(name)
             || self.is_interpreter_handled_function(name)
-            || self.has_function(name)
-            || self.has_proto_cached(name)
-            || self.has_multi_candidates_cached(name)
+            || (!imported_alias
+                && (crate::runtime::Interpreter::is_builtin_function(name)
+                    || self.has_function(name)
+                    || self.has_proto_cached(name)
+                    || self.has_multi_candidates_cached(name)))
         {
             return None;
         }
@@ -2150,6 +2154,20 @@ impl Interpreter {
                     self.set_pending_call_arg_sources(None);
                     let result = result?;
                     loan_env!(self, maybe_fetch_rw_proxy(result, true))
+                } else if self
+                    .imported_env_aliases
+                    .contains_key(&Symbol::intern(&format!("&{name}")))
+                    && let Some(callable) = self.lexical_amp_var_callable(Some(code), name)
+                {
+                    // A custom EXPORT hook can install an imported CODE alias
+                    // without registering a FunctionDef (List::Util does this
+                    // for its :SUPPORTED tag). That alias still shadows a
+                    // same-named CORE routine, so resolve it before native
+                    // dispatch just as a normal imported sub does.
+                    self.set_pending_call_arg_sources(arg_sources.clone());
+                    let result = self.vm_call_on_value(callable, args, Some(compiled_fns));
+                    self.set_pending_call_arg_sources(None);
+                    result
                 } else if let Some(native_result) = self.try_native_function(name_sym, &args) {
                     native_result
                 } else if !self.is_interpreter_handled_function(name)

@@ -2033,12 +2033,22 @@ impl Interpreter {
                             {
                                 // An array source (`incr(@arr)`): each element of
                                 // `@arr` becomes a slurpy element aliasing `@arr[idx]`.
-                                for (idx, item) in arr.iter().cloned().enumerate() {
+                                let source_array = source_value.clone();
+                                for idx in 0..arr.len() {
+                                    let Some(cell) = source_array.array_slot_ref(idx, true) else {
+                                        continue;
+                                    };
                                     rw_bindings.push((
                                         encode_slurpy_rw_param(&slurpy_key, items.len(), Some(idx)),
                                         source_name.clone(),
                                     ));
-                                    items.push(item);
+                                    // Keep each raw-slurpy element writable as
+                                    // an lvalue too. This matters for
+                                    // `my \\a := @args[$i]`: the existing
+                                    // slurpy writeback handles `@args[$i]++`,
+                                    // but a sigilless alias needs the source's
+                                    // own array-slot cell, not a copied cell.
+                                    items.push(cell);
                                 }
                             } else {
                                 // A scalar source (`incr($a, $b)`) or an indexed
@@ -2047,7 +2057,13 @@ impl Interpreter {
                                     encode_slurpy_rw_param(&slurpy_key, items.len(), source_index),
                                     source_name,
                                 ));
-                                items.push(source_value);
+                                items.push(if source_value.is_container_ref() {
+                                    source_value
+                                } else {
+                                    Value::container_ref(crate::gc::Gc::new(
+                                        crate::value::ContainerCell::new(source_value),
+                                    ))
+                                });
                             }
                             positional_idx += 1;
                             continue;

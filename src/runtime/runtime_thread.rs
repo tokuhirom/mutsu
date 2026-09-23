@@ -969,6 +969,7 @@ impl Interpreter {
             state_scope_id: Box::new(std::cell::Cell::new(None)),
             pending_nested_state_scope: None,
             fn_resolve_cache: Default::default(),
+            plain_fn_resolve_memo: Default::default(),
             fn_resolve_gen: 0,
             multi_compiled_key_cache: Default::default(),
             multi_candidates_cache: Default::default(),

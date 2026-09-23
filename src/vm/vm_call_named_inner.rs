@@ -695,7 +695,7 @@ impl Interpreter {
         // no compiled slot, so it never obliges a pull.
         // Fast path: if the env wasn't mutated during the call (Arc still shared),
         // we can skip the expensive env merge and just restore directly.
-        if restored_env.ptr_eq(self.env()) {
+        if restored_env.ptr_eq(self.env()) && rw_bindings.is_empty() {
             self.pop_caller_env();
         } else {
             let mut restored_env = restored_env;

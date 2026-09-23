@@ -31,6 +31,7 @@ impl Interpreter {
         // but not for the interpreter -- a wrapped routine answering with its
         // pre-wrap resolution. Emptying them has no such failure mode.
         self.fn_resolve_cache.clear();
+        self.plain_fn_resolve_memo.clear();
         self.multi_compiled_key_cache.clear();
         self.multi_candidates_cache.clear();
         self.declared_fn_cache.clear();
