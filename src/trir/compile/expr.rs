@@ -452,6 +452,8 @@ impl TrirCompiler<'_> {
 
     fn compile_call(&mut self, name: &str, args: &[Expr]) -> Option<TrKind> {
         match name {
+            // Lexotic, not a call: see `ret.rs`.
+            "return" => self.compile_return(args),
             "nqp::stmts" => self.compile_nqp_stmts(args),
             "nqp::while" | "nqp::until" if args.len() == 2 => {
                 self.compile_nqp_loop(name == "nqp::while", &args[0], &args[1])

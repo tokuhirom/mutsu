@@ -50,6 +50,8 @@ pub(crate) struct TrirCompiler<'a> {
     /// semantics, where the general binder would reject the same narrowing
     /// on a `my int $x = <arbitrary boxed>`.
     pub(super) nqp_sourced: bool,
+    /// The routine declares `--> Nil`, so every `return` discards its value.
+    pub(super) returns_nil: bool,
 }
 
 /// A statement's variant name, for a decline report.
@@ -146,11 +148,12 @@ impl<'a> TrirCompiler<'a> {
             fns,
             why: None,
             nqp_sourced: false,
+            returns_nil: return_type == Some("Nil"),
         };
         if c.declare_params(param_defs).is_none() {
             return c.declined(name);
         }
-        let returns_nil = return_type == Some("Nil");
+        let returns_nil = c.returns_nil;
         let Some(last) = c.compile_body(body, returns_nil) else {
             return c.declined(name);
         };
@@ -401,12 +404,7 @@ impl<'a> TrirCompiler<'a> {
                     self.ops.push(TrOp::PopObj);
                 }
                 Stmt::Return(e) => {
-                    let kind = self.compile_expr(e)?;
-                    self.ops.push(match kind {
-                        TrKind::Int => TrOp::ReturnI,
-                        TrKind::Num => TrOp::ReturnN,
-                        TrKind::Obj => TrOp::ReturnObj,
-                    });
+                    self.compile_return(std::slice::from_ref(e))?;
                     // A `return` ends this statement list's value flow; a
                     // following statement is dead but still has to compile,
                     // and `last` stays whatever the tail yields.
@@ -734,3 +732,4 @@ impl<'a> TrirCompiler<'a> {
 
 mod call;
 mod expr;
+mod ret;

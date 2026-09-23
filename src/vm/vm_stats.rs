@@ -1492,6 +1492,7 @@ pub(crate) fn dump() {
     );
     let program_table_cow_clones = PROGRAM_TABLE_COW_CLONES.load(Ordering::Relaxed);
     eprintln!("[mutsu vm-stats] program-table-cow: clones={program_table_cow_clones}");
+    crate::trir::stats::report();
     let carrier_hits = CARRIER_COMPILE_HITS.load(Ordering::Relaxed);
     let carrier_misses = CARRIER_COMPILE_MISSES.load(Ordering::Relaxed);
     eprintln!("[mutsu vm-stats] carrier-compile: hits={carrier_hits} misses={carrier_misses}");

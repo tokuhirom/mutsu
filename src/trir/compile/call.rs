@@ -20,7 +20,7 @@
 use super::{Binding, TrirCompiler};
 use crate::ast::Expr;
 use crate::token_kind::TokenKind;
-use crate::trir::{TrArg, TrCallee, TrInnerCall, TrKind, TrOp};
+use crate::trir::{TrArg, TrCallee, TrInnerCall, TrKind, TrLink, TrOp};
 
 impl TrirCompiler<'_> {
     /// Compile `name(args)`, answering the kind it leaves on a bank.
@@ -30,7 +30,7 @@ impl TrirCompiler<'_> {
             return None;
         }
         let callee = self.resolve_trir_callee(name, args.len());
-        let params = callee.as_ref().map(|(_, _, p)| p.clone());
+        let params = callee.as_ref().map(|link| link.chunk.params.clone());
         let mut plan = Vec::with_capacity(args.len());
         for (i, a) in args.iter().enumerate() {
             // A parameter the callee declares `is rw` takes the variable, not
@@ -51,9 +51,9 @@ impl TrirCompiler<'_> {
             }
         }
         let (kind, site_callee, sym) = match callee {
-            Some((key, fingerprint, _)) => (
+            Some(link) => (
                 TrKind::Obj,
-                TrCallee::Trir { key, fingerprint },
+                TrCallee::Trir(link),
                 crate::symbol::Symbol::intern(name),
             ),
             None => (
@@ -163,23 +163,16 @@ impl TrirCompiler<'_> {
                 .any(|p| p.is_rw && p.slot == slot && p.kind.is_native())
     }
 
-    /// The callee's key, fingerprint and signature when this compile has
-    /// already registered it with a chunk.
-    fn resolve_trir_callee(
-        &self,
-        name: &str,
-        arity: usize,
-    ) -> Option<(crate::symbol::Symbol, u64, Vec<crate::trir::TrParam>)> {
+    /// The link to the callee when this compile has already registered it
+    /// with a chunk.
+    fn resolve_trir_callee(&self, name: &str, arity: usize) -> Option<TrLink> {
         let (key, fingerprint) = *self.routines?.get(&(name.to_string(), arity))?;
         let cf = self.fns?.get(&key)?;
         if cf.fingerprint != fingerprint {
             return None;
         }
-        let chunk = cf.trir.as_ref()?;
-        if chunk.params.len() != arity {
-            return None;
-        }
-        Some((key, fingerprint, chunk.params.clone()))
+        let link = TrLink::to(key, cf)?;
+        (link.chunk.params.len() == arity).then_some(link)
     }
 
     /// True for a named argument (`key => v`) or a `|EXPR` spread, neither
