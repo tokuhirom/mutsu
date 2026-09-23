@@ -23,4 +23,4 @@ Found along the way and filed separately: the sub form `substr-rw($t, ...)`
 finds its target variable by scanning for an equal value, so it can write to
 a different variable holding the same string (#9183).
 
-Pinned by `t/types/str-positioned-search-graphemes.t`.
+Pinned by `t/types/string/str-positioned-search-graphemes.t`.
