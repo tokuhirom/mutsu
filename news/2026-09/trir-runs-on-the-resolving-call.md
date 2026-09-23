@@ -34,6 +34,21 @@ admissions: no named argument, no `|` slip, no junction, no callsite-line
 marker, no aggregate shared into a `$` parameter, no multi, no wrapped
 routine.
 
+## A TRIR body now runs under its own routine frame
+
+Running more calls as TRIR surfaced an older gap. A TRIR frame never appeared
+on `routine_stack`, and `CALLER::` components count routine frames, validated
+against that stack's depth. An untyped callee of a TRIR routine therefore saw
+one frame fewer than there were: `CALLER::CALLER::.BIND-KEY` from two calls
+down died with "frame is gone" (`tests/stash_bind_key.rs`). A
+resolution-cache hit already had this gap; it was only unexercised.
+
+Every TRIR routine body now runs under the frame the untyped light path
+pushes for the same call (`src/trir/routine_frame.rs`). The chunk records its
+declaring file once the function is stamped, and every entry pushes the frame
+and pops it on exit: from outside, through `CallTr`, and through a gen-link.
+The SPDX decode measured the same before and after, within run-to-run noise.
+
 ## `nqp::create` no longer goes through method dispatch
 
 `nqp::create(IterationBuffer)` reached its allocation through
@@ -56,6 +71,8 @@ is 10% of the whole SPDX decode, and it is the next slice (#9122).
 `MUTSU_TRIR_DUMP=ops` now also lists each accepted chunk's ops and constants,
 which is how the bareword sites were found.
 
-Pins: `t/vm/codegen/adr0112-trir-first-call.t` (with
-`t/fixtures/trir-first-call.raku`) and `t/vm/nqp-create-skips-user-create.t`,
-both checked against rakudo.
+Pins, all checked against rakudo:
+
+- `t/vm/codegen/adr0112-trir-first-call.t` (with `t/fixtures/trir-first-call.raku`);
+- `t/vm/codegen/adr0112-trir-caller-frames.t` (with `t/fixtures/trir-caller-frames.raku`);
+- `t/vm/nqp-create-skips-user-create.t`.

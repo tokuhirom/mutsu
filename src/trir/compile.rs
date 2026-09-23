@@ -194,6 +194,7 @@ impl<'a> TrirCompiler<'a> {
             name,
             calls: c.calls,
             methods: c.methods,
+            def_file: std::sync::OnceLock::new(),
         })
     }
 

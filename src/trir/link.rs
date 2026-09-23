@@ -33,6 +33,9 @@ pub(crate) struct TrLink {
 impl TrLink {
     /// Link to `cf`, registered under `key`, when it has a chunk.
     pub(crate) fn to(key: Symbol, cf: &crate::opcode::CompiledFunction) -> Option<Self> {
+        if let Some(chunk) = &cf.trir {
+            chunk.note_def_file(cf);
+        }
         Some(TrLink {
             key,
             fingerprint: cf.fingerprint,
