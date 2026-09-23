@@ -170,6 +170,7 @@ impl Interpreter {
                 "__mutsu_subscript_adverb expects target, index, and mode",
             ));
         }
+        let index = args[1].clone();
         // Which bracket the subscript was written with, as recorded by the
         // parser. `None` for a call shape that predates the marker.
         let subscript_is_positional = args.iter().skip(4).find_map(|a| match a.view() {
@@ -203,7 +204,17 @@ impl Interpreter {
                     ))
             {
                 target_is_coerced_list = true;
-                Value::real_array(crate::runtime::utils::value_to_list(&t))
+                let items = if let ValueView::LazyList(ll) = t.view() {
+                    // `value_to_list` only returns the already cached prefix of a
+                    // LazyList. A subscript adverb is itself a positional read,
+                    // so force the prefix needed by its index before taking the
+                    // array snapshot. Without this, `$lazy[0]:v` sees an empty
+                    // list when the source has not been consumed yet.
+                    self.force_lazy_list_for_index(&ll, &index)?
+                } else {
+                    crate::runtime::utils::value_to_list(&t)
+                };
+                Value::real_array(items)
             } else if subscript_is_positional == Some(true)
                 && t.is_one_element_under_positional_subscript()
             {
@@ -290,7 +301,6 @@ impl Interpreter {
         } else {
             target
         };
-        let index = args[1].clone();
         let mode = args[2].to_string_value();
         let var_name = args
             .get(3)
