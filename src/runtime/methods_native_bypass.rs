@@ -494,7 +494,7 @@ impl Interpreter {
                 || self.is_native_method(owner, method)
                 || self.has_user_method(owner, "Bridge")
                 || (!is_pseudo_method
-                    && (self.has_user_method(owner, method)
+                    && (self.grammar_has_user_method(owner, method)
                         || self.has_public_accessor(owner, method)
                         || (self.has_class_level_attr(owner, method)
                             && !self.has_public_accessor(owner, method))));
@@ -561,7 +561,18 @@ impl Interpreter {
             ValueView::Package(class_name) => {
                 let class_name = class_name.resolve();
                 !is_pseudo_method
-                    && (self.package_has_applicable_user_method(target, method, args)
+                    && (self.grammar_has_user_method(&class_name, method)
+                        && (!matches!(method, "gist" | "raku" | "perl")
+                            || !args.is_empty()
+                            || self
+                                .resolve_method_with_owner_invocant(
+                                    &class_name,
+                                    method,
+                                    args,
+                                    target,
+                                )
+                                .is_some())
+                        || self.package_has_applicable_user_method(target, method, args)
                         || (self.has_class_level_attr(&class_name, method)
                             && !self.has_public_accessor(&class_name, method)))
             }

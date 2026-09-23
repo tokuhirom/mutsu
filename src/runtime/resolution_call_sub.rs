@@ -375,6 +375,36 @@ impl Interpreter {
             return Ok(Value::junction(kind, results));
         }
         if let ValueView::Sub(data) = func.view() {
+            // The terminal of a wrapped grammar token/rule/regex is a
+            // synthetic Sub created by `regex_token_method`. It must bypass
+            // ordinary Sub binding and run the token against the cursor that
+            // the wrapper received; `callsame` has already advanced to this
+            // terminal through the normal wrap-dispatch frame.
+            let token_terminal = data
+                .env
+                .get("__mutsu_token_method_wrapper_package")
+                .and_then(|pkg| pkg.as_str())
+                .zip(
+                    data.env
+                        .get("__mutsu_token_method_wrapper_name")
+                        .and_then(|name| name.as_str()),
+                )
+                .map(|(pkg, name)| (pkg.to_string(), name.to_string()));
+            if let Some((pkg, name)) = token_terminal {
+                let Some(cursor) = args.first() else {
+                    return Ok(Value::NIL);
+                };
+                let Some((orig, pos, _)) = Self::cursor_call_position(cursor) else {
+                    return Ok(Value::NIL);
+                };
+                return self.run_token_method_at_unwrapped(
+                    crate::symbol::Symbol::intern(&pkg),
+                    &name,
+                    &args[1..],
+                    &orig,
+                    pos,
+                );
+            }
             // Multi-method dispatcher Sub (`^find_method`/`.can` on a multi):
             // re-dispatch with args[0] as invocant instead of binding the
             // first candidate's signature (see sub_multi_method_dispatcher_name).
@@ -844,6 +874,7 @@ impl Interpreter {
                 is_method: false,
                 is_submethod: false,
                 is_block: true,
+                is_hidden_from_backtrace: false,
                 // The file this block's body was DECLARED in, exactly as the
                 // compiled closure dispatch records it
                 // (`vm_closure_dispatch.rs`'s `push_block_routine_with_location`).

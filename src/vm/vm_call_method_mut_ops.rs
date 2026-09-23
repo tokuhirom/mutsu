@@ -1519,9 +1519,10 @@ impl Interpreter {
             if let Some(cn) = class_name
                 && match target.view() {
                     ValueView::Package(_) => {
-                        self.package_has_applicable_user_method(&target, method, &args)
+                        self.grammar_has_user_method(&cn, method)
+                            || self.package_has_applicable_user_method(&target, method, &args)
                     }
-                    _ => self.has_user_method(&cn, method),
+                    _ => self.grammar_has_user_method(&cn, method),
                 }
             {
                 skip_native = true;

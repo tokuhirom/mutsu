@@ -678,7 +678,17 @@ impl Interpreter {
         // remain live through reduction and its own action, then be restored
         // before the parse returns to the caller.
         let mut active_start_dynvars = None;
+        if !is_method_start_rule {
+            self.push_routine_with_location(
+                Symbol::intern(package_name),
+                Symbol::intern(&start_rule),
+                self.current_source_line(),
+                self.executing_source_file_sym(),
+                None,
+            );
+        }
         let result = (|| -> Result<Value, RuntimeError> {
+            let _farthest_scope = super::regex::regex_helpers::RegexFarthestPositionScope::enter();
             if is_method_start_rule {
                 return self.dispatch_package_parse_via_method(
                     super::methods_grammar_method_start::MethodStartRuleCall {
@@ -714,9 +724,12 @@ impl Interpreter {
                         {
                             return outcome;
                         }
+                        self.update_grammar_highwater_from_regex_farthest(text.chars().count());
                         self.env.insert("/".to_string(), Value::NIL);
                         if is_full_parse {
-                            return Ok(self.parse_failure_for_pattern(&text, None));
+                            return Ok(
+                                self.parse_failure_for_pattern(&text, start_source.as_deref())
+                            );
                         }
                         return Ok(self.make_failed_match_value(&text, start_pos.unwrap_or(0)));
                     }
@@ -809,6 +822,14 @@ impl Interpreter {
                 // already ran their actions. Dispatch the longest partial tree
                 // (which includes the start rule's own action) when there is one,
                 // then replay whatever reduced outside it.
+                if let Some(best_end) = partial_match.as_ref().map(|caps| caps.to)
+                    && let Some(current) = self.env.get("*HIGHWATER").and_then(Value::as_int)
+                    && best_end as i64 > current
+                {
+                    self.env
+                        .insert("*HIGHWATER".to_string(), Value::int(best_end as i64));
+                }
+                self.update_grammar_highwater_from_regex_farthest(text.chars().count());
                 if let Some(ref mut actions) = actions_obj {
                     match partial_match.take() {
                         Some(mut caps) => {
@@ -889,6 +910,7 @@ impl Interpreter {
                 if let Some(ref mut actions) = actions_obj {
                     self.dispatch_partial_parse_actions(&captures, actions, &start_rule, &text)?;
                 }
+                self.update_grammar_highwater_from_regex_farthest(text.chars().count());
                 self.env.insert("/".to_string(), Value::NIL);
                 return Ok(self.make_parse_failure_value(&text, captures.to));
             }
@@ -980,6 +1002,10 @@ impl Interpreter {
             Ok(match_obj)
         })();
 
+        if !is_method_start_rule {
+            self.routine_stack.pop();
+        }
+
         if let Some(frame) = active_start_dynvars.take() {
             let _ = self.exit_grammar_rule_dynvars(frame);
         }
@@ -1039,6 +1065,34 @@ impl Interpreter {
             return Ok(Value::NIL);
         }
         result
+    }
+
+    /// Run a grammar parse through the instance constructor first. Rakudo's
+    /// native Grammar parse creates a fresh cursor from an existing grammar
+    /// instance; that constructor pass is observable when a grammar role uses
+    /// `new` to install per-grammar regex wrappers (as Grammar::PrettyErrors
+    /// does). The parser itself is package-based in mutsu, so preserve the
+    /// constructor side effect before entering that shared implementation.
+    pub(super) fn dispatch_instance_parse(
+        &mut self,
+        invocant: Value,
+        package_name: &str,
+        method: &str,
+        args: &[Value],
+    ) -> Result<Value, RuntimeError> {
+        if self.grammar_has_user_method(package_name, "new") {
+            let constructor_target = match invocant.view() {
+                ValueView::Package(_) => self
+                    .env
+                    .get("self")
+                    .filter(|value| matches!(value.view(), ValueView::Instance { .. }))
+                    .cloned()
+                    .unwrap_or(invocant),
+                _ => invocant,
+            };
+            self.dispatch_instance_and_fallback(constructor_target, "new", Vec::new())?;
+        }
+        self.dispatch_package_parse(package_name, method, args)
     }
 
     /// Build the Match object a capture node describes, with `orig` set to the
@@ -1918,7 +1972,39 @@ impl Interpreter {
         let best_end = pattern
             .map(|pat| self.longest_complete_prefix_end(pat, text))
             .unwrap_or(0);
+        if let Some(current) = self.env.get("*HIGHWATER").and_then(Value::as_int)
+            && best_end as i64 > current
+        {
+            self.env
+                .insert("*HIGHWATER".to_string(), Value::int(best_end as i64));
+        }
         self.make_parse_failure_value(text, best_end)
+    }
+
+    fn update_grammar_highwater_from_regex_farthest(&mut self, text_len: usize) {
+        let Some(farthest) = super::regex::regex_helpers::RegexFarthestPositionScope::current()
+        else {
+            return;
+        };
+        let Some(current) = self
+            .env
+            .get("*HIGHWATER")
+            .and_then(Value::as_int)
+            .and_then(|value| usize::try_from(value).ok())
+        else {
+            return;
+        };
+        // PrettyErrors deliberately records the start of the wrapped token,
+        // rather than the engine's furthest consumed cursor. A failed literal
+        // can nevertheless leave the cursor one character beyond that marker
+        // (for example, the `f` in `flox`); bridge exactly that one-character
+        // gap without replacing a wrapper's more conservative position with a
+        // whitespace or custom-token endpoint.
+        let best_end = farthest.min(text_len);
+        if best_end == current.saturating_add(1) {
+            self.env
+                .insert("*HIGHWATER".to_string(), Value::int(best_end as i64));
+        }
     }
 
     /// How far a failed `.parse` got, for the failure message: the longest prefix of

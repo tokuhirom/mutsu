@@ -1559,7 +1559,7 @@ impl Interpreter {
             // native IO::Handle `Str` ("IO::Handle()") instead of the user
             // `method Str` (Text::CSV 46_eol_si).
             if self.is_native_method(&class_name.resolve(), method)
-                && !self.has_user_method(&class_name.resolve(), method)
+                && !self.grammar_has_user_method(&class_name.resolve(), method)
             {
                 return self.call_native_instance_method(
                     &class_name.resolve(),
@@ -1825,7 +1825,7 @@ impl Interpreter {
                 self.resolve_user_method_or_accessor(&cn_resolved, method),
                 Some(UserMethodOrAccessor::Accessor)
             );
-            if !accessor_wins && self.has_user_method(&cn_resolved, method) {
+            if !accessor_wins && self.grammar_has_user_method(&cn_resolved, method) {
                 // ADR-0019 F6: try the VM-level direct compiled-dispatch path
                 // first (no `run_instance_method` carrier, no recursion risk —
                 // see `try_dispatch_compiled_method_direct`'s doc comment).
@@ -2272,7 +2272,9 @@ impl Interpreter {
                 return Err(make_method_not_found_error(pm_name, &name.resolve(), true));
             }
             // Package (type object) dispatch -- check user-defined methods
-            if self.package_has_applicable_user_method(&target, method, &args) {
+            if self.grammar_has_user_method(&name.resolve(), method)
+                || self.package_has_applicable_user_method(&target, method, &args)
+            {
                 // ADR-0019 F6: VM-level direct-dispatch path first (see
                 // `try_dispatch_compiled_method_direct`'s doc comment).
                 if let Some(result) =
@@ -3090,7 +3092,10 @@ impl Interpreter {
                         attributes,
                         ..
                     } = target.view()
-                    && matches!(class_name.resolve().as_str(), "Method" | "Submethod")
+                    && matches!(
+                        class_name.resolve().as_str(),
+                        "Method" | "Submethod" | "Regex"
+                    )
                     && let Some(wrapper) = args.first().cloned()
                 {
                     let am = attributes.as_map();
@@ -3128,7 +3133,10 @@ impl Interpreter {
                         attributes,
                         ..
                     } = target.view()
-                    && matches!(class_name.resolve().as_str(), "Method" | "Submethod")
+                    && matches!(
+                        class_name.resolve().as_str(),
+                        "Method" | "Submethod" | "Regex"
+                    )
                     && let am = attributes.as_map()
                     && let (
                         Some(ValueView::Str(cls)),

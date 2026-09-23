@@ -1737,6 +1737,8 @@ pub(crate) struct RoutineFrame {
     pub is_submethod: bool,
     /// Whether this frame is a block/closure (not a named routine).
     pub is_block: bool,
+    /// Whether this routine carries `is hidden-from-backtrace`.
+    pub is_hidden_from_backtrace: bool,
     /// The file this routine's BODY lives in (None = same as the caller /
     /// main script). `line`/`file` above record the call-site; a backtrace
     /// displays each frame at its defining file (module subs report the

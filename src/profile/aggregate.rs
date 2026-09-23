@@ -308,6 +308,7 @@ mod tests {
             is_method: false,
             is_submethod: false,
             is_block: false,
+            is_hidden_from_backtrace: false,
             def_file: Some(Symbol::intern("fixture.raku")),
             invocation_id: 1,
         }
@@ -383,6 +384,7 @@ mod tests {
                 is_method: false,
                 is_submethod: false,
                 is_block: false,
+                is_hidden_from_backtrace: false,
                 def_file: Some(module),
                 invocation_id: 1,
             },
@@ -397,6 +399,7 @@ mod tests {
                 is_method: false,
                 is_submethod: false,
                 is_block: false,
+                is_hidden_from_backtrace: false,
                 def_file: Some(module),
                 invocation_id: 2,
             },

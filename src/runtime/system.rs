@@ -458,6 +458,7 @@ impl Interpreter {
                     is_default: *is_default_candidate,
                     deprecated_message: deprecated_message.clone(),
                     is_submethod: false,
+                    is_hidden_from_backtrace: false,
                     captured_env: None,
                     source_file: self.current_source_file(),
                     role_param_bindings: None,

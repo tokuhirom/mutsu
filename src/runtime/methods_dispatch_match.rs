@@ -259,16 +259,24 @@ impl Interpreter {
             "invert" => self.dispatch_invert_enum(&target),
             "subparse" | "parse" | "parsefile" => {
                 match target.view() {
-                    ValueView::Package(package_name) => {
+                    ValueView::Package(package_name)
+                        if !self.grammar_has_user_method(&package_name.resolve(), method) =>
+                    {
                         Some(self.dispatch_package_parse(&package_name.resolve(), method, &args))
                     }
                     // A grammar *instance* (`G.new`) dispatches `.parse` just like
                     // the type object; grammars are stateless so the instance name
                     // is its grammar package name.
                     ValueView::Instance { class_name, .. }
-                        if self.class_is_grammar(&class_name.resolve()) =>
+                        if self.class_is_grammar(&class_name.resolve())
+                            && !self.grammar_has_user_method(&class_name.resolve(), method) =>
                     {
-                        Some(self.dispatch_package_parse(&class_name.resolve(), method, &args))
+                        Some(self.dispatch_instance_parse(
+                            target.clone(),
+                            &class_name.resolve(),
+                            method,
+                            &args,
+                        ))
                     }
                     _ => None,
                 }

@@ -683,6 +683,7 @@ impl Interpreter {
         store: &mut CapStore,
         matches: &mut MatchSink<'_>,
     ) -> bool {
+        super::regex_helpers::record_regex_farthest_position(pos);
         if idx == ctx.pattern.tokens.len() {
             if !ctx.pattern.anchor_end || pos == ctx.chars.len() {
                 let snap = store.snapshot();
@@ -1172,7 +1173,10 @@ impl Interpreter {
             }
             return Some(self.walk_tokens(ctx, idx + 1, current, store, matches));
         }
+        let named_atom_wrapped = matches!(&token.atom, RegexAtom::Named(name)
+            if self.token_method_has_wrap_chain(ctx.pkg.as_str(), &name.spec().lookup_name));
         if is_silent_named_atom(&token.atom)
+            && !named_atom_wrapped
             && let Some((resolved, resolved_pkg)) =
                 self.try_resolve_named_to_pattern(&token.atom, ctx.pkg)
         {
@@ -1199,6 +1203,7 @@ impl Interpreter {
             return Some(self.walk_tokens(ctx, idx + 1, current, store, matches));
         }
         if is_named_atom_no_args(&token.atom)
+            && !named_atom_wrapped
             && let Some((resolved, resolved_pkg)) =
                 self.try_resolve_named_to_pattern(&token.atom, ctx.pkg)
         {
@@ -1296,6 +1301,7 @@ impl Interpreter {
         if next == current {
             return None;
         }
+        super::regex_helpers::record_regex_farthest_position(next);
         store.merge_delta(delta);
         Self::store_apply_named_capture(store, token, current, next, pos_base);
         let hash_base = if hash_per_iter {

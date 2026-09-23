@@ -110,6 +110,112 @@ impl Interpreter {
         text: &str,
         pos: usize,
     ) -> Result<Value, RuntimeError> {
+        // `Grammar.^find_method($name).wrap(...)` returns a Regex object for a
+        // token/rule/regex. The regex engine normally evaluates token bodies
+        // directly, so ordinary method-wrap dispatch would never see that
+        // call. Re-enter the wrapper chain through the same `callsame` frame
+        // used for wrapped subs, with a synthetic callable whose terminal
+        // invokes this token at the current cursor.
+        if let Some(chain) = self.token_method_wrap_chain(pkg.as_str(), name) {
+            return self.call_wrapped_token_method(pkg, name, extra_args, text, pos, &chain);
+        }
+
+        self.run_token_method_at_unwrapped(pkg, name, extra_args, text, pos)
+    }
+
+    pub(super) fn token_method_wrap_chain(
+        &self,
+        receiver_pkg: &str,
+        name: &str,
+    ) -> Option<Vec<(u64, Value)>> {
+        let owners = self.mro_readonly(receiver_pkg);
+        owners
+            .into_iter()
+            .find_map(|owner| self.get_method_wrap_chain(&owner, name, 0))
+    }
+
+    pub(super) fn token_method_has_wrap_chain(&self, receiver_pkg: &str, name: &str) -> bool {
+        self.token_method_wrap_chain(receiver_pkg, name).is_some()
+    }
+
+    fn call_wrapped_token_method(
+        &mut self,
+        pkg: Symbol,
+        name: &str,
+        extra_args: &[Value],
+        text: &str,
+        pos: usize,
+        chain: &[(u64, Value)],
+    ) -> Result<Value, RuntimeError> {
+        if chain.is_empty() {
+            return Err(RuntimeError::new(
+                "Cannot dispatch an empty token method wrap chain",
+            ));
+        }
+        let cursor = Value::make_match_object_full(
+            pos as i64,
+            pos as i64,
+            &[],
+            &Default::default(),
+            MatchTarget::new(text),
+        );
+        let mut call_args = vec![cursor];
+        call_args.extend(extra_args.iter().cloned());
+
+        let mut original_env = crate::env::Env::new();
+        original_env.insert(
+            "__mutsu_token_method_wrapper_package".to_string(),
+            Value::str(pkg.to_string()),
+        );
+        original_env.insert(
+            "__mutsu_token_method_wrapper_name".to_string(),
+            Value::str(name.to_string()),
+        );
+        let original = Value::make_sub(
+            pkg,
+            Symbol::intern(name),
+            crate::value::empty_params(),
+            crate::value::empty_param_defs(),
+            Vec::new(),
+            false,
+            original_env,
+        );
+        let original_id = original
+            .as_sub()
+            .map(|data| data.id)
+            .ok_or_else(|| RuntimeError::new("Synthetic token wrapper terminal is not a Sub"))?;
+        let mut remaining = Vec::with_capacity(chain.len());
+        for i in (0..chain.len() - 1).rev() {
+            remaining.push(chain[i].1.clone());
+        }
+        remaining.push(original);
+        let outermost = chain
+            .last()
+            .map(|(_, value)| value.clone())
+            .ok_or_else(|| RuntimeError::new("Cannot dispatch an empty token method wrap chain"))?;
+        self.push_wrap_dispatch_frame(super::super::WrapDispatchFrame {
+            sub_id: original_id,
+            remaining,
+            args: call_args.clone(),
+            arg_sources: None,
+            dispatch_token: 0,
+        });
+        let result = self.call_sub_value(outermost, call_args, false);
+        self.pop_wrap_dispatch_frame();
+        result
+    }
+
+    /// Run the token body without consulting a `.wrap()` chain. The synthetic
+    /// terminal used by `run_token_method_at` calls this after `callsame` has
+    /// advanced through the wrapper frame.
+    pub(crate) fn run_token_method_at_unwrapped(
+        &mut self,
+        pkg: Symbol,
+        name: &str,
+        extra_args: &[Value],
+        text: &str,
+        pos: usize,
+    ) -> Result<Value, RuntimeError> {
         let tail: String = text.chars().skip(pos).collect();
         let saved_pkg = self.current_package();
         let saved_topic = self.env.get("_").cloned();
@@ -135,12 +241,26 @@ impl Interpreter {
         // captures this publishes are already in absolute coordinates.
         let target = MatchTarget::new(text);
         let _target_scope = super::regex_helpers::MatchTargetScope::enter(target.clone());
+        // A token/rule is a named grammar routine for backtrace purposes even
+        // though its body is evaluated through the regex engine rather than
+        // ordinary method dispatch. Keep that frame live while matching so a
+        // hidden wrapper can identify the rule that called it (`TOP`, in
+        // Grammar::PrettyErrors).
+        self.push_routine_with_location(
+            pkg,
+            Symbol::intern(name),
+            self.current_source_line(),
+            self.executing_source_file_sym(),
+            None,
+        );
         let matches = self.regex_match_ends_from_caps_in_pkg(&parsed, target.chars(), pos, pkg);
         // Matches come HIGHEST FIRST: the first entry is the token's best
         // (ratcheted) match, which is what a cursor method call returns.
         let Some((end, mut caps)) = matches.into_iter().next() else {
+            self.routine_stack.pop();
             return Ok(Value::NIL);
         };
+        self.routine_stack.pop();
         caps.set_target(Some(target.clone()));
         let m = Value::make_match_object_full(
             pos as i64,
@@ -159,6 +279,120 @@ impl Interpreter {
             });
         });
         Ok(m)
+    }
+
+    /// Apply a `.wrap()` chain while a regex subrule is being matched. This is
+    /// the regex-engine counterpart of `run_token_method_at`: the ordinary
+    /// parser path evaluates token patterns directly instead of calling the
+    /// first-class Regex value, so it needs to turn the wrapped token result
+    /// back into the engine's `(end, captures)` representation here.
+    pub(super) fn try_wrapped_token_subrule_dispatch(
+        &mut self,
+        spec: &NamedRegexLookupSpec,
+        chars: &[char],
+        pos: usize,
+        pkg: Symbol,
+        arg_values: &[Value],
+    ) -> Option<Vec<(usize, RegexCaptures)>> {
+        let chain = self.token_method_wrap_chain(pkg.as_str(), &spec.lookup_name)?;
+        let text: String = chars.iter().collect();
+        LAST_TOKEN_METHOD_MATCH.with(|slot| slot.borrow_mut().take());
+        let result = match self.call_wrapped_token_method(
+            pkg,
+            &spec.lookup_name,
+            arg_values,
+            &text,
+            pos,
+            &chain,
+        ) {
+            Ok(result) => result,
+            Err(error) => {
+                crate::runtime::regex_parse::PENDING_REGEX_ERROR.with(|slot| {
+                    *slot.borrow_mut() = Some(error);
+                });
+                return Some(Vec::new());
+            }
+        };
+        let side = LAST_TOKEN_METHOD_MATCH.with(|slot| slot.borrow_mut().take());
+        let to_abs = result
+            .match_to()
+            .or_else(|| {
+                if let ValueView::Instance { attributes, .. } = result.view() {
+                    attributes
+                        .as_map()
+                        .get("to")
+                        .and_then(|value| value.as_int())
+                } else {
+                    None
+                }
+            })
+            .filter(|&to| to >= pos as i64 && to <= chars.len() as i64)
+            .map(|to| to as usize);
+        let Some(to_abs) = to_abs else {
+            return Some(Vec::new());
+        };
+        let inner_caps = match side {
+            Some(token)
+                if token.pkg == pkg.as_str()
+                    && token.name == spec.lookup_name
+                    && token.from == pos
+                    && token.to == to_abs =>
+            {
+                token.caps
+            }
+            _ => RegexCaptures {
+                from: pos,
+                to: to_abs,
+                ..RegexCaptures::default()
+            },
+        };
+        let sym = inner_caps.sym().cloned();
+        Some(Self::build_named_candidates_from_inner(
+            vec![(to_abs, inner_caps)],
+            pos,
+            spec,
+            sym.as_ref(),
+        ))
+    }
+
+    /// Run a wrapped whitespace rule from the compact `WsRule` regex atom.
+    /// `<.ws>` is lowered to that atom, so it bypasses the ordinary named
+    /// subrule path even when the grammar supplied its own `ws` method.
+    pub(super) fn try_wrapped_token_end(
+        &mut self,
+        chars: &[char],
+        pos: usize,
+        pkg: Symbol,
+        name: &str,
+    ) -> Option<Option<usize>> {
+        let chain = self.token_method_wrap_chain(pkg.as_str(), name)?;
+        let text: String = chars.iter().collect();
+        LAST_TOKEN_METHOD_MATCH.with(|slot| slot.borrow_mut().take());
+        let result = match self.call_wrapped_token_method(pkg, name, &[], &text, pos, &chain) {
+            Ok(result) => result,
+            Err(error) => {
+                crate::runtime::regex_parse::PENDING_REGEX_ERROR.with(|slot| {
+                    *slot.borrow_mut() = Some(error);
+                });
+                return Some(None);
+            }
+        };
+        Some(
+            result
+                .match_to()
+                .or_else(|| {
+                    if let ValueView::Instance { attributes, .. } = result.view() {
+                        attributes
+                            .as_map()
+                            .get("to")
+                            .and_then(|value| value.as_int())
+                    } else {
+                        None
+                    }
+                })
+                .filter(|&to| to >= pos as i64 && to <= chars.len() as i64)
+                .map(|to| to as usize),
+        )
     }
 
     /// Custom-HOW subrule dispatch: when the dispatch package was declared as

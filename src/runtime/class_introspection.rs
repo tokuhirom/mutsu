@@ -310,6 +310,21 @@ impl Interpreter {
             .is_some_and(|defs| defs.iter().any(|d| !d.is_private))
     }
 
+    /// Grammar dispatch also has to see public methods declared by an
+    /// un-punned role composed onto the grammar. Those methods remain in the
+    /// role registry rather than the class method table, but they override
+    /// Grammar's native `parse`/`subparse`/`parsefile` entry points.
+    pub(crate) fn grammar_has_user_method(&mut self, name: &str, method_name: &str) -> bool {
+        let direct = self.has_user_method(name, method_name);
+        let role = self.class_is_grammar(name)
+            && self.mro_readonly(name).iter().any(|owner| {
+                self.registry()
+                    .role_method_overloads(owner, method_name)
+                    .is_some_and(|defs| defs.iter().any(|d| !d.is_private))
+            });
+        direct || role
+    }
+
     /// Check if a class has a public attribute accessor for the given name.
     ///
     /// The most-derived declaration of an attribute name decides its

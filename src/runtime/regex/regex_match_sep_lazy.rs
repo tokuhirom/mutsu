@@ -133,6 +133,7 @@ impl Interpreter {
                              store: &mut CapStore,
                              end: usize,
                              caps: RegexCaptures| {
+                super::regex_helpers::record_regex_farthest_position(end);
                 w.atom_caps.push(caps);
                 let stop = interp.sep_extend_chain(w, token, pattern, chars, end, pkg, store, on);
                 w.atom_caps.pop();
@@ -181,6 +182,7 @@ impl Interpreter {
             return false;
         }
         walk.nodes += 1;
+        super::regex_helpers::record_regex_farthest_position(cur);
         let can_extend = walk.max.is_none_or(|m| walk.atom_caps.len() < m);
         if can_extend {
             let sep = token.separator.as_ref().unwrap();
@@ -190,6 +192,7 @@ impl Interpreter {
             // this ADR set out to fix.
             let sep_ends = self.regex_match_ends_from_caps_in_pkg(&sep.pattern, chars, cur, pkg);
             for (sep_end, scaps) in sep_ends {
+                super::regex_helpers::record_regex_farthest_position(sep_end);
                 let stopped = {
                     let w = &mut *walk;
                     let scaps = &scaps;
@@ -197,6 +200,7 @@ impl Interpreter {
                                     store: &mut CapStore,
                                     atom_end: usize,
                                     acaps: RegexCaptures| {
+                        super::regex_helpers::record_regex_farthest_position(atom_end);
                         if atom_end <= cur {
                             return false;
                         }

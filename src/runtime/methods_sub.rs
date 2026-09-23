@@ -59,12 +59,18 @@ impl Interpreter {
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
         match target.view() {
-            ValueView::Routine { name, package, .. } => self.dispatch_routine_method(
+            ValueView::Routine {
+                name,
+                package,
+                is_regex,
+                ..
+            } => self.dispatch_routine_method(
                 target,
                 &name.resolve(),
                 &package.resolve(),
                 method,
                 args.to_vec(),
+                is_regex,
             ),
             ValueView::Sub(data) => {
                 let data = data.clone();
@@ -86,8 +92,51 @@ impl Interpreter {
         package: &str,
         method: &str,
         args: Vec<Value>,
+        is_regex: bool,
     ) -> Option<Result<Value, RuntimeError>> {
         if matches!(method, "wrap" | "unwrap") {
+            if is_regex {
+                let (name, package) = (name.to_string(), package.to_string());
+                if method == "wrap" {
+                    let Some(wrapper) = args.first().cloned() else {
+                        return Some(Err(RuntimeError::new("wrap requires a wrapper argument")));
+                    };
+                    self.wrap_handle_counter += 1;
+                    let handle_id = self.wrap_handle_counter;
+                    self.registry_mut()
+                        .push_method_wrap(&package, &name, 0, handle_id, wrapper);
+                    let attrs = method_wrap_handle_attrs(&package, &name, 0, handle_id, target);
+                    return Some(Ok(Value::make_instance(
+                        Symbol::intern("Routine::WrapHandle"),
+                        attrs,
+                    )));
+                }
+                if args.is_empty() {
+                    return Some(
+                        match self.registry_mut().pop_method_wrap(&package, &name, 0) {
+                            Some(_) => Ok(Value::TRUE),
+                            None => Err(routine_unwrap_error("Cannot unwrap routine: not wrapped")),
+                        },
+                    );
+                }
+                let Some(handle_id) = self.extract_wrap_handle_id(&args[0]) else {
+                    return Some(Err(routine_unwrap_error(
+                        "Cannot unwrap routine: invalid wrap handle",
+                    )));
+                };
+                return Some(
+                    if self
+                        .registry_mut()
+                        .remove_method_wrap(&package, &name, 0, handle_id)
+                    {
+                        Ok(Value::TRUE)
+                    } else {
+                        Err(routine_unwrap_error(
+                            "Cannot unwrap routine: handle is not active",
+                        ))
+                    },
+                );
+            }
             // Routine is a name-only handle, but wraps are stored against a
             // concrete Sub identity.  Use a forwarding Sub which re-enters
             // named dispatch, so a wrapper installed through `&dir` also

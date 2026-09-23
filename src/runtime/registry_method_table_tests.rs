@@ -20,6 +20,7 @@ fn dummy_method_def() -> MethodDef {
         is_default: false,
         deprecated_message: None,
         is_submethod: false,
+        is_hidden_from_backtrace: false,
         captured_env: None,
         source_file: None,
         role_param_bindings: None,
