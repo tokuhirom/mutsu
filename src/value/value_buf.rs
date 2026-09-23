@@ -50,6 +50,11 @@ use super::{AttrMap, BufData, ElemKind, InstanceAttrs, Value, ValueRepr, ValueVi
 use crate::gc::Gc;
 use crate::symbol::Symbol;
 
+mod inplace;
+pub(crate) use inplace::{
+    buf_target, pop_buf_elem, set_buf_elem, shift_buf_elem, with_buf_bytes_mut,
+};
+
 /// The attribute a `Buf`/`Blob`-shaped instance keeps its storage under.
 ///
 /// Private on purpose. If you find yourself wanting it outside this module, the

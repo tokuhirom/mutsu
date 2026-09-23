@@ -191,12 +191,17 @@ fn write_method_for(size: usize, signed: bool) -> &'static str {
     }
 }
 
-/// The bytes of a Buf/Blob instance, or an error naming the op.
-fn buf_bytes_of(op: &str, v: &Value) -> Result<Vec<u8>, RuntimeError> {
+/// Run `f` over the bytes of a Buf/Blob instance, borrowed (no copy for a
+/// width-1 buffer), or error naming the op.
+fn with_buf_bytes_of<R>(
+    op: &str,
+    v: &Value,
+    f: impl FnOnce(&[u8]) -> R,
+) -> Result<R, RuntimeError> {
     if let ValueView::Instance { attributes, .. } = v.view()
-        && let Some(bytes) = value_buf::buf_bytes(&attributes)
+        && let Some(r) = value_buf::with_buf_bytes(&attributes, f)
     {
-        return Ok(bytes);
+        return Ok(r);
     }
     Err(RuntimeError::new(format!(
         "nqp::{op}: expected a Buf/Blob, got {}",
@@ -205,25 +210,18 @@ fn buf_bytes_of(op: &str, v: &Value) -> Result<Vec<u8>, RuntimeError> {
 }
 
 /// Mutate a Buf instance's bytes in place through its shared attribute cell
-/// (alias-visible), or error naming the op.
+/// (alias-visible), or error naming the op. On a width-1 buffer this edits the
+/// storage directly, so it costs only what `f` touches (see
+/// [`value_buf::with_buf_bytes_mut`]).
 fn buf_bytes_mutate(
     op: &str,
     v: &Value,
     f: impl FnOnce(&mut Vec<u8>) -> Result<(), RuntimeError>,
 ) -> Result<(), RuntimeError> {
-    if let ValueView::Instance { attributes, .. } = v.view() {
-        let done = value_buf::with_buf_elems_mut(&attributes, |elems| {
-            let mut bytes: Vec<u8> = elems
-                .iter()
-                .map(|e| crate::runtime::to_int(e) as u8)
-                .collect();
-            let r = f(&mut bytes);
-            *elems = value_buf::bytes_to_elems(&bytes);
-            r
-        });
-        if let Some(r) = done {
-            return r;
-        }
+    if let ValueView::Instance { attributes, .. } = v.view()
+        && let Some(r) = value_buf::with_buf_bytes_mut(&attributes, f)
+    {
+        return r;
     }
     Err(RuntimeError::new(format!(
         "nqp::{op}: expected a Buf/Blob, got {}",
@@ -704,29 +702,29 @@ impl Interpreter {
             }
 
             // -- byte-string decode (nqp::decode(buf, 'utf8') -> str) --
-            // Cost: O(n), n = bytes of $buf (copied, then decoded).
+            // Cost: O(n), n = bytes of $buf (decoded into a fresh string).
             "decode" => {
                 let buf = args.first().cloned().unwrap_or(Value::NIL);
                 let enc = args
                     .get(1)
                     .map(|v| v.to_string_value().to_lowercase())
                     .unwrap_or_else(|| "utf8".to_string());
-                match buf_bytes_of(op, &buf) {
-                    Err(e) => Err(e),
-                    Ok(bytes) => match enc.as_str() {
-                        "utf8" | "utf-8" => match String::from_utf8(bytes) {
-                            Ok(s) => Ok(Value::str(s)),
-                            Err(_) => Err(RuntimeError::new(
-                                "Malformed UTF-8 in nqp::decode".to_string(),
-                            )),
-                        },
-                        "ascii" | "latin-1" | "iso-8859-1" => Ok(Value::str(
-                            bytes.iter().map(|&b| b as char).collect::<String>(),
+                match with_buf_bytes_of(op, &buf, |bytes| match enc.as_str() {
+                    "utf8" | "utf-8" => match std::str::from_utf8(bytes) {
+                        Ok(s) => Ok(Value::str(s.to_owned())),
+                        Err(_) => Err(RuntimeError::new(
+                            "Malformed UTF-8 in nqp::decode".to_string(),
                         )),
-                        other => Err(RuntimeError::new(format!(
-                            "nqp::decode: unsupported encoding '{other}'"
-                        ))),
                     },
+                    "ascii" | "latin-1" | "iso-8859-1" => Ok(Value::str(
+                        bytes.iter().map(|&b| b as char).collect::<String>(),
+                    )),
+                    other => Err(RuntimeError::new(format!(
+                        "nqp::decode: unsupported encoding '{other}'"
+                    ))),
+                }) {
+                    Err(e) | Ok(Err(e)) => Err(e),
+                    Ok(Ok(v)) => Ok(v),
                 }
             }
 
@@ -759,22 +757,15 @@ impl Interpreter {
                     Ok(Value::int(crate::runtime::to_int(&elem)))
                 }
             }
-            // Cost: array O(1) amortized; Buf O(e) (whole buffer decoded to Values and
-            // re-encoded per write), e = elements. MoarVM: O(1) -- see #9132.
+            // Cost: O(1) amortized on an array and on a Buf (one element encoded in place);
+            // O(i - e) when growing, i = index, e = elements.
             "bindpos_i" | "bindpos_n" => {
                 let target = args.first().cloned().unwrap_or(Value::NIL);
                 let idx = iarg(args, 1).max(0) as usize;
                 let val = args.get(2).cloned().unwrap_or(Value::int(0));
                 match target.view() {
                     ValueView::Instance { attributes, .. } => {
-                        let stored = val.clone();
-                        let done = value_buf::with_buf_elems_mut(&attributes, |elems| {
-                            if elems.len() <= idx {
-                                elems.resize(idx + 1, Value::int(0));
-                            }
-                            elems[idx] = stored;
-                        });
-                        if done.is_none() {
+                        if value_buf::set_buf_elem(&attributes, idx, &val).is_none() {
                             return Some(Err(RuntimeError::new(format!(
                                 "nqp::{op}: expected a Buf/Blob or array"
                             ))));
@@ -800,25 +791,26 @@ impl Interpreter {
 
             // -- slice / splice (buf) --
             // nqp::slice($buf, $start, $end) — END-INCLUSIVE, same class out.
-            // Cost: O(e + k), e = bytes of $buf (whole buffer copied), k = bytes sliced.
-            // MoarVM: O(k) -- see #9132.
+            // Cost: O(k), k = bytes sliced (the source is borrowed, not copied).
             "slice" => {
                 let buf = args.first().cloned().unwrap_or(Value::NIL);
                 let start = iarg(args, 1).max(0) as usize;
                 let end = iarg(args, 2);
-                match (buf.view(), buf_bytes_of(op, &buf)) {
-                    (ValueView::Instance { class_name, .. }, Ok(bytes)) => {
-                        let end = if end < 0 {
-                            (bytes.len() as i64 + end).max(0) as usize
-                        } else {
-                            end as usize
-                        };
-                        let upper = (end + 1).min(bytes.len());
-                        let piece = if start < upper {
-                            bytes[start..upper].to_vec()
-                        } else {
-                            Vec::new()
-                        };
+                let piece = with_buf_bytes_of(op, &buf, |bytes| {
+                    let end = if end < 0 {
+                        (bytes.len() as i64 + end).max(0) as usize
+                    } else {
+                        end as usize
+                    };
+                    let upper = end.saturating_add(1).min(bytes.len());
+                    if start < upper {
+                        bytes[start..upper].to_vec()
+                    } else {
+                        Vec::new()
+                    }
+                });
+                match (buf.view(), piece) {
+                    (ValueView::Instance { class_name, .. }, Ok(piece)) => {
                         Ok(value_buf::make_buf_from_bytes(class_name, &piece))
                     }
                     (_, Err(e)) => Err(e),
@@ -829,8 +821,8 @@ impl Interpreter {
             }
             // nqp::splice($target, $source, $offset, $count) — replace
             // target[offset .. offset+count) with source's elements, in place.
-            // Cost: list O(s + t), s = source elems, t = target elems after $offset; Buf O(e + s)
-            // (whole target decoded and re-encoded), e = target bytes. MoarVM: O(s + t) -- see #9132.
+            // Cost: O(s + t), s = source elems, t = target elems after $offset (a Buf target is
+            // spliced in place; a width-1 source is copied once).
             "splice" => {
                 let target = args.first().cloned().unwrap_or(Value::NIL);
                 let source = args.get(1).cloned().unwrap_or(Value::NIL);
@@ -843,7 +835,7 @@ impl Interpreter {
                 if let Some(r) = Self::nqp_splice_elems(op, &target, &source, offset, count) {
                     return Some(r);
                 }
-                let src_bytes = match buf_bytes_of(op, &source) {
+                let src_bytes = match with_buf_bytes_of(op, &source, <[u8]>::to_vec) {
                     Ok(b) => b,
                     Err(e) => return Some(Err(e)),
                 };
@@ -862,63 +854,63 @@ impl Interpreter {
             }
 
             // -- sized binary reads/writes --
-            // Cost: O(e), e = bytes of $buf (whole buffer copied per read).
-            // MoarVM: O(1) -- see #9132.
+            // Cost: O(1) on a width-1 buffer (read straight off the storage); O(e) on a
+            // wider one, e = elements (projected to low bytes first). MoarVM: O(1) -- see #9191.
             "readuint" | "readint" => {
                 let buf = args.first().cloned().unwrap_or(Value::NIL);
                 let offset = iarg(args, 1).max(0) as usize;
                 let (size, endian) = flag_size_endian(iarg(args, 2));
-                match buf_bytes_of(op, &buf) {
-                    Err(e) => Err(e),
-                    Ok(bytes) => {
-                        if bytes.len() < offset + size {
-                            Err(RuntimeError::new(mvm_array_read_buf_oob_message(
-                                offset,
-                                bytes.len(),
-                                size,
-                            )))
-                        } else {
-                            Ok(crate::builtins::read_int_value(
-                                &bytes[offset..],
-                                size,
-                                op == "readint",
-                                endian,
-                            ))
-                        }
+                match with_buf_bytes_of(op, &buf, |bytes| {
+                    if bytes.len() < offset.saturating_add(size) {
+                        Err(RuntimeError::new(mvm_array_read_buf_oob_message(
+                            offset,
+                            bytes.len(),
+                            size,
+                        )))
+                    } else {
+                        Ok(crate::builtins::read_int_value(
+                            &bytes[offset..],
+                            size,
+                            op == "readint",
+                            endian,
+                        ))
                     }
+                }) {
+                    Err(e) | Ok(Err(e)) => Err(e),
+                    Ok(Ok(v)) => Ok(v),
                 }
             }
-            // Cost: O(e), e = bytes of $buf (whole buffer copied per read).
-            // MoarVM: O(1) -- see #9132.
+            // Cost: O(1) on a width-1 buffer (read straight off the storage); O(e) on a
+            // wider one, e = elements (projected to low bytes first). MoarVM: O(1) -- see #9191.
             "readnum" => {
                 let buf = args.first().cloned().unwrap_or(Value::NIL);
                 let offset = iarg(args, 1).max(0) as usize;
                 let (size, endian) = flag_size_endian(iarg(args, 2));
-                match buf_bytes_of(op, &buf) {
-                    Err(e) => Err(e),
-                    Ok(bytes) => {
-                        if bytes.len() < offset + size {
-                            Err(RuntimeError::new(mvm_array_read_buf_oob_message(
-                                offset,
-                                bytes.len(),
-                                size,
-                            )))
-                        } else if size == 4 {
-                            Ok(Value::num(crate::builtins::read_f32_endian(
-                                &bytes[offset..],
-                                endian,
-                            )))
-                        } else {
-                            Ok(Value::num(crate::builtins::read_f64_endian(
-                                &bytes[offset..],
-                                endian,
-                            )))
-                        }
+                match with_buf_bytes_of(op, &buf, |bytes| {
+                    if bytes.len() < offset.saturating_add(size) {
+                        Err(RuntimeError::new(mvm_array_read_buf_oob_message(
+                            offset,
+                            bytes.len(),
+                            size,
+                        )))
+                    } else if size == 4 {
+                        Ok(Value::num(crate::builtins::read_f32_endian(
+                            &bytes[offset..],
+                            endian,
+                        )))
+                    } else {
+                        Ok(Value::num(crate::builtins::read_f64_endian(
+                            &bytes[offset..],
+                            endian,
+                        )))
                     }
+                }) {
+                    Err(e) | Ok(Err(e)) => Err(e),
+                    Ok(Ok(v)) => Ok(v),
                 }
             }
-            // Cost: O(e), e = elements of $buf (decoded to Values and re-encoded per write).
-            // MoarVM: O(1) amortized -- see #9132.
+            // Cost: O(1) amortized on a width-1 buffer (bytes written in place); O(e) on a
+            // wider one, e = elements (re-encoded whole). MoarVM: O(1) amortized -- see #9191.
             "writeuint" | "writeint" => {
                 let buf = args.first().cloned().unwrap_or(Value::NIL);
                 let offset = iarg(args, 1);
@@ -937,8 +929,8 @@ impl Interpreter {
                     Err(e) => Err(e),
                 }
             }
-            // Cost: O(e), e = elements of $buf (decoded to Values and re-encoded per write).
-            // MoarVM: O(1) amortized -- see #9132.
+            // Cost: O(1) amortized on a width-1 buffer (bytes written in place); O(e) on a
+            // wider one, e = elements (re-encoded whole). MoarVM: O(1) amortized -- see #9191.
             "writenum" => {
                 let buf = args.first().cloned().unwrap_or(Value::NIL);
                 let offset = iarg(args, 1).max(0) as usize;
@@ -1019,7 +1011,7 @@ impl Interpreter {
             // nqp::readfh($fh, $buf, $count) — read up to $count bytes,
             // REPLACING the buffer's contents (MoarVM semantics), and return
             // the buffer. A short read (EOF) is not an error.
-            // Cost: O(e + c) + syscalls, e = old elements of $buf (decoded), c = bytes read.
+            // Cost: O(c) + syscalls, c = bytes read (a width-1 $buf is overwritten in place).
             "readfh" => {
                 let fh = args.first().cloned().unwrap_or(Value::NIL);
                 let buf = args.get(1).cloned().unwrap_or(Value::NIL);

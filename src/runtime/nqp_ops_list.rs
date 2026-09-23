@@ -12,6 +12,7 @@
 
 use crate::runtime::{Interpreter, RuntimeError};
 use crate::value::ValueMap;
+use crate::value::value_buf;
 use crate::value::{Value, ValueView};
 
 /// The attribute an `IterationBuffer` instance keeps its elements in. Spelled
@@ -121,6 +122,11 @@ impl Interpreter {
             // re-enters the interpreter.
             let data = unsafe { crate::value::gc_contents_mut(&items) };
             return Ok(data.shift_front());
+        }
+        if let Some((_, attrs)) = value_buf::buf_target(target)
+            && let Some(elem) = value_buf::shift_buf_elem(&attrs)
+        {
+            return Ok(elem);
         }
         Self::nqp_with_elems_mut(op, target, |elems| {
             if elems.is_empty() {
@@ -322,25 +328,25 @@ impl Interpreter {
             // contract as the typed twins (`push_s`/`push_i`/`push_n`, in
             // `nqp_ops_text.rs`), which nqp code chains off directly (e.g.
             // `nqp::add_i(nqp::push_i(@positions,$pos),$move)`).
-            // Cost: O(1) amortized.
+            // Cost: O(1) amortized (a Buf encodes just the new element, in place).
             "push" => {
                 let target = args.first().cloned().unwrap_or(Value::NIL);
                 let val = args.get(1).cloned().unwrap_or(Value::NIL);
-                match Self::nqp_with_elems_mut(op, &target, |elems| elems.push(val.clone())) {
-                    Ok(()) => Ok(val),
-                    Err(e) => Err(e),
-                }
+                crate::runtime::nqp_ops_text::push_elem(op, &target, val)
             }
             // nqp::pop($list) and its typed twins: remove and return the LAST
             // element. An empty list yields the type's zero rather than an
             // error, matching how `atpos_*` answers out of range.
-            // Cost: O(1); pop_s O(n), n = chars of the popped element (copied).
+            // Cost: O(1) (a Buf drops its last element in place); pop_s O(n), n = chars of
+            // the popped element (copied).
             "pop" | "pop_s" | "pop_i" | "pop_n" => {
-                match Self::nqp_with_elems_mut(
-                    op,
-                    &args.first().cloned().unwrap_or(Value::NIL),
-                    |elems| elems.pop(),
-                ) {
+                let target = args.first().cloned().unwrap_or(Value::NIL);
+                if let Some((_, attrs)) = value_buf::buf_target(&target)
+                    && let Some(elem) = value_buf::pop_buf_elem(&attrs)
+                {
+                    return Some(Ok(coerce_like(op, elem)));
+                }
+                match Self::nqp_with_elems_mut(op, &target, |elems| elems.pop()) {
                     Ok(elem) => Ok(coerce_like(op, elem)),
                     Err(e) => Err(e),
                 }
@@ -348,8 +354,8 @@ impl Interpreter {
             // nqp::shift($list) and its typed twins: remove and return the
             // FIRST element. `JSON::Fast`'s string scanner drives its whole
             // `Uni` of codepoints this way.
-            // Cost: O(1) amortized on a list (ArrayData's head offset, #9121); O(e) on a Buf.
-            // MoarVM: O(1) -- see #9132.
+            // Cost: O(1) amortized on a list (ArrayData's head offset, #9121); O(e) on a Buf, e =
+            // elements (the rest shifted down in place). MoarVM: O(1) -- see #9191.
             "shift" | "shift_s" | "shift_i" | "shift_n" => {
                 Self::nqp_shift(op, &args.first().cloned().unwrap_or(Value::NIL))
             }
@@ -363,6 +369,11 @@ impl Interpreter {
                 let target = args.first().cloned().unwrap_or(Value::NIL);
                 let idx = iarg(args, 1).max(0) as usize;
                 let val = args.get(2).cloned().unwrap_or(Value::NIL);
+                if let Some((_, attrs)) = value_buf::buf_target(&target)
+                    && value_buf::set_buf_elem(&attrs, idx, &val).is_some()
+                {
+                    return Some(Ok(val));
+                }
                 let stored = val.clone();
                 match Self::nqp_with_elems_mut(op, &target, |elems| {
                     if elems.len() <= idx {

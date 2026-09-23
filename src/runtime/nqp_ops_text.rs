@@ -157,6 +157,18 @@ fn scan_bounds(args: &[Value]) -> (std::rc::Rc<Vec<char>>, usize, usize) {
 /// lets idioms like `has-word`'s
 /// `nqp::add_i(nqp::push_i(@positions,$pos),$move)` chain off it directly.
 pub(crate) fn push_elem(op: &str, target: &Value, val: Value) -> Result<Value, RuntimeError> {
+    // A Buf encodes just the new element onto its storage (#7680, #9132);
+    // the generic element editor below would decode and re-encode it whole.
+    if let Some((class_name, attrs)) = crate::value::value_buf::buf_target(target) {
+        let end = crate::value::value_buf::BufEnd::Back;
+        crate::value::value_buf::extend_buf_elems(
+            &attrs,
+            class_name,
+            std::slice::from_ref(&val),
+            end,
+        );
+        return Ok(val);
+    }
     Interpreter::nqp_with_elems_mut(op, target, |elems| elems.push(val.clone()))?;
     Ok(val)
 }

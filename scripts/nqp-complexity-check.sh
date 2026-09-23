@@ -49,6 +49,8 @@ CASES=(
     'readuint|my $b := buf8.new(0 xx NN);|nqp::readuint($b, $i, 0)'
     'slice|my $b := buf8.new(0 xx NN);|nqp::slice($b, $i, $i)'
     'splice (buf8 append)|my $b := buf8.new; my $one := buf8.new(1);|nqp::splice($b, $one, nqp::elems($b), 0)'
+    'push_i (buf16)|my $b := buf16.new;|nqp::push_i($b, $i)'
+    'pop_i (buf16)|my $b := buf16.new(1 xx NN);|nqp::pop_i($b)'
 )
 
 time_case() {

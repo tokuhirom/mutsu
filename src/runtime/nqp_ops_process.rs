@@ -207,7 +207,8 @@ impl Interpreter {
             // front of an nqp list / native array in place, returning the
             // list.
             // Cost: O(1) amortized on a list (ArrayData's head offset doubles as front slack, #9121);
-            // O(e) on a Buf, which is decoded and re-encoded whole. MoarVM: O(1) amortized -- see #9132.
+            // O(e) on a Buf, e = elements (the storage shifted up in place). MoarVM: O(1) amortized
+            // -- see #9191.
             "unshift" => {
                 let target = args.first().cloned().unwrap_or(Value::NIL);
                 let val = args.get(1).cloned().unwrap_or(Value::NIL);
@@ -220,14 +221,15 @@ impl Interpreter {
                         data.insert(0, val);
                         Ok(target)
                     }
-                    ValueView::Instance { attributes, .. } => {
-                        let stored = val;
-                        let done =
-                            crate::value::value_buf::with_buf_elems_mut(&attributes, |elems| {
-                                elems.insert(0, stored)
-                            });
-                        match done {
-                            Some(()) => Ok(target),
+                    ValueView::Instance { .. } => {
+                        use crate::value::value_buf;
+                        match value_buf::buf_target(&target) {
+                            Some((class_name, attrs)) => {
+                                let front = value_buf::BufEnd::Front;
+                                let new = std::slice::from_ref(&val);
+                                value_buf::extend_buf_elems(&attrs, class_name, new, front);
+                                Ok(target)
+                            }
                             None => Err(RuntimeError::new(
                                 "nqp::unshift: expected a Buf/Blob or array".to_string(),
                             )),
