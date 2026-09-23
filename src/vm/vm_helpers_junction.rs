@@ -1,7 +1,7 @@
 use super::*;
 
 impl Interpreter {
-    pub(super) fn eval_binary_with_junctions(
+    pub(crate) fn eval_binary_with_junctions(
         &mut self,
         left: Value,
         right: Value,
