@@ -1129,6 +1129,36 @@ impl Interpreter {
                             }
                             break 'body_redo;
                         }
+                        Err(mut e) if e.is_return() => {
+                            // A pointy `sub` matcher is itself a routine, so
+                            // the return belongs to this callback and is its
+                            // predicate result. A normal closure call catches
+                            // that signal at the callback boundary; consume it
+                            // here because this path runs the body inline.
+                            if data.compiled_code.as_ref().is_some_and(|cc| cc.is_routine)
+                                && e.return_target_callable_id().is_none_or(|id| id == data.id)
+                            {
+                                let pred = e.return_value.unwrap_or(Value::NIL);
+                                if vm.eval_predicate_truthy(&pred) {
+                                    found = Some((idx, item.clone()));
+                                }
+                                break 'body_redo;
+                            }
+                            // A `return` inside the first matcher targets the
+                            // callback routine, not the routine containing the
+                            // `.first` call. The batched path runs the body
+                            // inline, so stamp the signal with the callback's
+                            // callable id before it leaves this loop; the
+                            // ordinary closure-call path does this at its
+                            // call boundary.
+                            if e.return_target_callable_id().is_none()
+                                && let Some(ValueView::Int(id)) =
+                                    data.env.get("__mutsu_callable_id").map(Value::view)
+                            {
+                                e.set_return_target_callable_id(Some(id as u64));
+                            }
+                            return Err(e);
+                        }
                         Err(e) => return Err(e),
                     }
                 }

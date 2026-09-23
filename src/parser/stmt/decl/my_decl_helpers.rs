@@ -46,8 +46,26 @@ fn build_sigilless_bind_stmt(
     is_state: bool,
     is_our: bool,
 ) -> Stmt {
-    let binds_a_container = match expr {
+    let binds_a_container = match &expr {
         Expr::Var(_) | Expr::Index { .. } | Expr::MethodCall { .. } => true,
+        Expr::Grouped(inner) => matches!(
+            inner.as_ref(),
+            Expr::Var(_) | Expr::Index { .. } | Expr::MethodCall { .. }
+        ),
+        Expr::Ternary {
+            then_expr,
+            else_expr,
+            ..
+        } => matches!(
+            (then_expr.as_ref(), else_expr.as_ref()),
+            (
+                Expr::Var(_) | Expr::Index { .. } | Expr::MethodCall { .. },
+                _
+            ) | (
+                _,
+                Expr::Var(_) | Expr::Index { .. } | Expr::MethodCall { .. }
+            )
+        ),
         // A SIGILLESS source (`my \y := $a; my \x := y`) denotes whatever `y`
         // was bound to, so the chain must be able to reach the first alias's
         // container. A bareword is only admitted when it is a declared
@@ -55,7 +73,7 @@ fn build_sigilless_bind_stmt(
         // call) keeps the readonly path. The sigiled-target twin
         // (`my $x := y`) already routes this way, through the `__scalar_bind`
         // branch in `compile_stmt`'s `VarDecl` arm.
-        Expr::BareWord(ref n) => crate::parser::stmt::simple::is_user_declared_value_term(n),
+        Expr::BareWord(n) => crate::parser::stmt::simple::is_user_declared_value_term(n),
         _ => false,
     };
     let decl = Stmt::VarDecl {

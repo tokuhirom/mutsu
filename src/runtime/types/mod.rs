@@ -654,6 +654,7 @@ impl Interpreter {
                 }) else {
                     continue;
                 };
+                let elem = elem.deref_container();
                 match src_idx {
                     Some(i) => {
                         // Array source: replace element `i` in the caller's array,
@@ -665,7 +666,7 @@ impl Interpreter {
                         {
                             let mut data = (*arr).clone();
                             if i < data.items().len() {
-                                data.items_mut()[i] = elem;
+                                Value::assign_element_slot(&mut data.items_mut()[i], elem);
                                 target_env.insert(
                                     source_name.clone(),
                                     Value::array_with_kind(crate::gc::Gc::new(data), kind),
