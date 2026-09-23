@@ -311,6 +311,20 @@ pub(super) fn dispatch(
             {
                 return Some(Some(Err(crate::value::seq_consumed_error())));
             }
+            // Uni is a Positional[uint32], so its default `.join` separator
+            // joins the numeric codepoints rather than stringifying the Uni
+            // as a whole. The one-argument path has the same rule in
+            // `methods_narg/dispatch_1arg.rs`; keep the zero-argument fast
+            // path consistent (`'abc'.NFD.join` is `"979899"`).
+            if let ValueView::Uni(u) = target.view() {
+                let joined = u
+                    .codepoints()
+                    .iter()
+                    .map(|cp| cp.to_string())
+                    .collect::<Vec<_>>()
+                    .join("");
+                return Some(Some(Ok(Value::str(joined))));
+            }
             if crate::runtime::utils::is_shaped_array(target) {
                 let leaves = crate::runtime::utils::shaped_array_leaves(target);
                 let joined = leaves

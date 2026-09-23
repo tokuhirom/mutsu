@@ -146,7 +146,11 @@ pub(crate) fn flat_val(v: &Value, out: &mut Vec<Value>, flatten_arrays: bool) {
         | ValueView::RangeExclStart(..)
         | ValueView::RangeExclBoth(..)
         | ValueView::GenericRange { .. } => {
-            out.extend(crate::runtime::utils::value_to_list(v));
+            if flatten_arrays {
+                out.extend(crate::runtime::utils::value_to_list(v));
+            } else {
+                out.push(v.clone());
+            }
         }
         // A bare (non-itemized) Hash in LIST context flattens into its pairs —
         // `flat %new, @new` splices the hash's pairs in (an empty hash
