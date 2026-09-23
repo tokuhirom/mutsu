@@ -235,7 +235,7 @@ the syntax it uses). The ecosystem sweep only measures, and nightly at that, so 
 say in a comment which distribution it came from.
 
 Then the standard gate, before publishing: `cargo fmt --all`, `make lint`, `make test`,
-`make roast`, reading `tmp/make-test.log` / `tmp/make-roast.log` with the Grep tool rather than
+`make roast`, reading `tmp/make-test.log` / `tmp/make-roast.log` by searching them rather than
 re-running a suite. In a remote container, confirm any red `make roast` is a subset **by name** of
 the environment-only failures in
 [docs/agent-environments.md](../../../docs/agent-environments.md).
