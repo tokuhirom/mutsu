@@ -31,4 +31,4 @@ among them the round helpers of `Digest::SHA1`, `Digest::SHA2` and
 
 What remains open under #9103 is an inner sub used as a value (`&name`), which
 still takes the registry path; in the vendored corpus that is five inner subs,
-none on a hot path. Pinned by `t/vm/scope/frame-lexical-inner-sub-closures.t`.
+none on a hot path. Pinned by `t/routines/closure/frame-lexical-inner-sub-closures.t`.
