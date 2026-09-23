@@ -1002,6 +1002,16 @@ impl Interpreter {
         first_only: bool,
     ) -> Vec<(usize, RegexCaptures)> {
         let (sub_pkg, frame_pkg) = packages;
+        // The frame is only read by a wrapped token recording its caller, and
+        // pushing it costs a routine-stack frame per subrule call (~5% of
+        // bench-grammar-parse-big). With no method wrap installed there is no
+        // reader, so match without it.
+        // TODO: a Backtrace taken from a code block inside a rule should also
+        // see this frame (as in Rakudo); make the frame cheap enough to push
+        // unconditionally instead of gating it on the wrap table.
+        if !self.has_any_wrap_chains() {
+            return self.subrule_candidate_ends(parsed, chars, pos, sub_pkg, first_only);
+        }
         self.push_routine_with_location(
             frame_pkg,
             Symbol::intern(rule_name),
