@@ -335,6 +335,13 @@ impl Interpreter {
             }
         }
 
+        // The accessor returned an `is Array` / `is Hash` subclass instance
+        // (`$a.self[1] = 1`, `$o.arr[0] = 7`): store into its backing storage
+        // in place, through the attribute cell every alias shares.
+        if Self::store_into_storage_instance_element(&current, &index, &value) {
+            return Ok(value);
+        }
+
         // The accessor returned a punned ROLE object (`has %.Converter is
         // DBDish::TypeConverter`, then `$obj.Converter{Int} = $sub`). Its
         // subscript is served by the container attribute the role delegates
