@@ -192,7 +192,16 @@ Pinned by `t/vm/codegen/adr0110-trir-int-ops.t` (TRIR on = off = rakudo's transc
   and calls row is 3.5% of a record, and calls are already linked (Step 1). There is not much left
   there to inline away.
 
-## 7. Reproduction
+## 7. Implementation status
+
+- **D2.1-D2.3 landed together** (`news/2026-09/trir-slot-direct-list-ops.md`):
+  the `ElemsLocal` / `ShiftILocal` / `PushILocal` operand-direct forms, the
+  borrowed backing array (`with_nqp_backing_array`), and the ASCII bypass of
+  the normalizer. Section time on the 4-core container went from
+  0.165-0.176 s to 0.116-0.121 s. D2.4 (allocation) and D2.5 (the untyped
+  residue) are next, after re-measuring §3.3's table.
+
+## 8. Reproduction
 
 - Wall clock: `benchmarks/bench-json-fast-spdx.raku`, with and without `MUTSU_TRIR_JIT=off`, on a
   build of `7681f6f9`.

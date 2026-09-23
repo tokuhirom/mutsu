@@ -390,23 +390,12 @@ impl Interpreter {
                     let v = self.env().get(&name).cloned().unwrap_or(Value::NIL);
                     self.trir.os.push(v);
                 }
-                TrOp::ElemsO => {
-                    let v = self.opop();
-                    let n = self.nqp_elems_count(&v)?;
-                    self.trir.ns.push(n);
-                }
-                TrOp::ShiftIO => {
-                    let v = self.opop();
-                    let r = Self::nqp_shift_int(&v)?;
-                    self.trir.ns.push(r);
-                }
-                TrOp::PushIO => {
-                    let i = self.ipop();
-                    let target = self.opop();
-                    let r =
-                        crate::runtime::nqp_ops_text::push_elem("push_i", &target, Value::int(i))?;
-                    self.trir.os.push(r);
-                }
+                TrOp::ElemsO
+                | TrOp::ShiftIO
+                | TrOp::PushIO
+                | TrOp::ElemsLocal(_)
+                | TrOp::ShiftILocal(_)
+                | TrOp::PushILocal(_) => self.trir_list_op(&ops[ip], obase)?,
                 TrOp::NqpOpGen { id, arity } => {
                     let n = *arity as usize;
                     let base = self.trir.os.len().saturating_sub(n);
@@ -479,21 +468,5 @@ impl Interpreter {
             }
             ip += 1;
         }
-    }
-
-    /// Pop the native operand stack.
-    ///
-    /// The compiler balances every bank, so it is never empty here; a
-    /// hand-built chunk that got it wrong reads 0 rather than panicking,
-    /// which keeps an internal bug from becoming a process abort (#8186).
-    #[inline]
-    pub(super) fn ipop(&mut self) -> i64 {
-        self.trir.ns.pop().unwrap_or(0)
-    }
-
-    /// Pop the boxed operand stack, with the same contract.
-    #[inline]
-    pub(super) fn opop(&mut self) -> Value {
-        self.trir.os.pop().unwrap_or(Value::NIL)
     }
 }

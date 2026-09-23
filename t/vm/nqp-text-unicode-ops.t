@@ -8,7 +8,7 @@ use nqp;
 # numbering of our own would run such code silently wrong. Found by making
 # String::Utils's test suite run, which is written almost entirely in these ops.
 
-plan 54;
+plan 58;
 
 #- character classes -----------------------------------------------------------
 
@@ -74,6 +74,18 @@ nqp::strtocodes("ab", nqp::const::NORMALIZE_NFC, $reused);
 nqp::strtocodes("xyz", nqp::const::NORMALIZE_NFC, $reused);
 is nqp::elems($reused), 3, 'strtocodes replaces the target rather than appending to it';
 is nqp::strfromcodes($reused), "xyz", 'strfromcodes turns codepoints back into a string';
+
+# ASCII text skips the normalizer (every form maps it to itself); anything
+# else must still reach it, in every form.
+my $kc := nqp::strtocodes("a\x[FB01]b", nqp::const::NORMALIZE_NFKC, nqp::create(array[uint32]));
+is nqp::strfromcodes($kc), "afib", 'NFKC still expands a compatibility ligature next to ASCII';
+my $kd := nqp::strtocodes("\xE9", nqp::const::NORMALIZE_NFKD, nqp::create(array[uint32]));
+is nqp::elems($kd), 2, 'NFKD still decomposes';
+my $ascii := nqp::strtocodes("a/b: c-d.e", nqp::const::NORMALIZE_NFD, nqp::create(array[uint32]));
+is nqp::strfromcodes($ascii), "a/b: c-d.e", 'an ASCII string round-trips through NFD unchanged';
+my $pair := nqp::create(array[uint32]);
+nqp::push_i($pair, 0x65); nqp::push_i($pair, 0x301);
+is nqp::strfromcodes($pair), "\xE9", 'strfromcodes still composes a non-ASCII sequence';
 
 #- string primitives -----------------------------------------------------------
 

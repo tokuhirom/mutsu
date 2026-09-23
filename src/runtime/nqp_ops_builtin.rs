@@ -106,15 +106,16 @@ impl Interpreter {
                         _ => v.to_string_value().parse::<usize>().ok(),
                     })
                     .unwrap_or(0);
-                match crate::runtime::nqp_ops_list::nqp_backing_array(&list) {
-                    Some(backing) => match backing.view() {
-                        ValueView::Array(items, _) => {
-                            Ok(items.get(idx).cloned().unwrap_or(Value::NIL))
+                Ok(
+                    crate::runtime::nqp_ops_list::with_nqp_backing_array(&list, |backing| {
+                        match backing.view() {
+                            ValueView::Array(items, _) => items.get(idx).cloned(),
+                            _ => None,
                         }
-                        _ => Ok(Value::NIL),
-                    },
-                    None => Ok(Value::NIL),
-                }
+                    })
+                    .flatten()
+                    .unwrap_or(Value::NIL),
+                )
             }
             // nqp::ordat($str, $pos): the Unicode codepoint of the character at
             // position `$pos` in `$str` (equivalent to `$str.substr($pos, 1).ord`).

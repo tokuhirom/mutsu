@@ -20,44 +20,10 @@ use crate::value::{Value, ValueView};
 /// method dispatch; named here because the nqp ops below have to vivify it.
 pub(crate) const ITERATION_BUFFER_ITEMS: &str = "__mutsu_iterationbuffer_items";
 
+pub(crate) use super::nqp_backing::{nqp_backing_array, with_nqp_backing_array};
+
 fn iarg(args: &[Value], i: usize) -> i64 {
     args.get(i).map(crate::runtime::to_int).unwrap_or(0)
-}
-
-/// The array a list-ish nqp value is backed by, as a `Value` that shares the
-/// target's `Gc` node — so an in-place write through it is visible to every
-/// other holder of the original.
-///
-/// A plain array answers for itself. A `Uni` answers with its codepoint array
-/// — rakudo's `Uni` is a `uint32` VMArray and nqp code indexes, consumes and
-/// splices one as exactly that. An `IterationBuffer` answers with its element
-/// array, vivified when absent: `nqp::create(IterationBuffer)` runs `CREATE`,
-/// which by definition installs no attributes, so the buffer nqp code then
-/// pushes onto has no storage yet. A Buf/Blob answers `None` — its elements
-/// live behind `value_buf` and [`Interpreter::nqp_with_elems_mut`] routes those
-/// separately.
-pub(crate) fn nqp_backing_array(v: &Value) -> Option<Value> {
-    match v.view() {
-        ValueView::Array(..) => Some(v.clone()),
-        ValueView::Uni(uni) => Some(uni.codes.clone()),
-        ValueView::Instance {
-            class_name,
-            attributes,
-            ..
-        } if class_name == "IterationBuffer" => {
-            if let Some(items) = attributes.as_map().get(ITERATION_BUFFER_ITEMS)
-                && matches!(items.view(), ValueView::Array(..))
-            {
-                return Some(items.clone());
-            }
-            // One key into the shared cell, not a copy of the whole map
-            // committed back (`InstanceAttrs::insert`, as `value_buf` writes).
-            let fresh = Value::real_array(Vec::new());
-            attributes.insert(ITERATION_BUFFER_ITEMS, fresh.clone());
-            Some(fresh)
-        }
-        _ => None,
-    }
 }
 
 /// Re-point an `IterationBuffer` at `array`'s node, so the two are one store
@@ -87,17 +53,24 @@ impl Interpreter {
         target: &Value,
         f: impl FnOnce(&mut Vec<Value>) -> R,
     ) -> Result<R, RuntimeError> {
-        if let Some(array) = nqp_backing_array(target)
-            && let ValueView::Array(items, _) = array.view()
-        {
-            // SAFETY: audited aliased in-place container write (see
-            // value::aliased_mut and docs/gc-contents-mut-inventory.md) — `f`
-            // is a pure element edit (push/pop/shift/index) that never
-            // re-enters the interpreter, so no other borrow into the node is
-            // live across it.
-            let data = unsafe { crate::value::gc_contents_mut(&items) };
-            return Ok(f(data.items_mut()));
+        let mut f = Some(f);
+        let edited = with_nqp_backing_array(target, |array| match array.view() {
+            ValueView::Array(items, _) => {
+                // SAFETY: audited aliased in-place container write (see
+                // value::aliased_mut and docs/gc-contents-mut-inventory.md) —
+                // `f` is a pure element edit (push/pop/shift/index) that never
+                // re-enters the interpreter, so no other borrow into the node
+                // is live across it.
+                let data = unsafe { crate::value::gc_contents_mut(&items) };
+                f.take().map(|f| f(data.items_mut()))
+            }
+            _ => None,
+        })
+        .flatten();
+        if let Some(r) = edited {
+            return Ok(r);
         }
+        let f = f.expect("the backing-array edit did not run");
         if let ValueView::Instance { attributes, .. } = target.view()
             && let Some(r) = crate::value::value_buf::with_buf_elems_mut(&attributes, f)
         {
@@ -114,14 +87,19 @@ impl Interpreter {
     /// (#9121): JSON::Fast's `unjsonify-string` `shift_i`s every codepoint
     /// off a `Uni`, and `Vec::remove(0)` made that loop quadratic.
     fn nqp_shift_elem(op: &str, target: &Value) -> Result<Option<Value>, RuntimeError> {
-        if let Some(array) = nqp_backing_array(target)
-            && let ValueView::Array(items, _) = array.view()
-        {
-            // SAFETY: audited aliased in-place container write (see
-            // `nqp_with_elems_mut`) — a pure element removal that never
-            // re-enters the interpreter.
-            let data = unsafe { crate::value::gc_contents_mut(&items) };
-            return Ok(data.shift_front());
+        let shifted = with_nqp_backing_array(target, |array| match array.view() {
+            ValueView::Array(items, _) => {
+                // SAFETY: audited aliased in-place container write (see
+                // `nqp_with_elems_mut`) — a pure element removal that never
+                // re-enters the interpreter.
+                let data = unsafe { crate::value::gc_contents_mut(&items) };
+                Some(data.shift_front())
+            }
+            _ => None,
+        })
+        .flatten();
+        if let Some(elem) = shifted {
+            return Ok(elem);
         }
         if let Some((_, attrs)) = value_buf::buf_target(target)
             && let Some(elem) = value_buf::shift_buf_elem(&attrs)
@@ -161,11 +139,11 @@ impl Interpreter {
     /// so answering it via [`Interpreter::nqp_elems_of`]'s whole-vector copy
     /// made every such loop quadratic in its own length.
     pub(crate) fn nqp_elems_len_of(target: &Value) -> Option<usize> {
-        if let Some(array) = nqp_backing_array(target) {
-            return match array.view() {
-                ValueView::Array(items, _) => Some(items.len()),
-                _ => None,
-            };
+        if let Some(len) = with_nqp_backing_array(target, |array| match array.view() {
+            ValueView::Array(items, _) => Some(items.len()),
+            _ => None,
+        }) {
+            return len;
         }
         if let ValueView::Instance { attributes, .. } = target.view() {
             return crate::value::value_buf::buf_len(&attributes);
@@ -194,11 +172,11 @@ impl Interpreter {
     /// the O(1) read behind `nqp::atpos_i`, for the same reason as
     /// [`Interpreter::nqp_elems_len_of`].
     pub(crate) fn nqp_elem_at(target: &Value, idx: usize) -> Option<Value> {
-        if let Some(array) = nqp_backing_array(target) {
-            return match array.view() {
-                ValueView::Array(items, _) => items.get(idx).cloned(),
-                _ => None,
-            };
+        if let Some(elem) = with_nqp_backing_array(target, |array| match array.view() {
+            ValueView::Array(items, _) => items.get(idx).cloned(),
+            _ => None,
+        }) {
+            return elem;
         }
         if let ValueView::Instance { attributes, .. } = target.view() {
             return crate::value::value_buf::buf_elem_at(&attributes, idx);
@@ -208,11 +186,11 @@ impl Interpreter {
 
     /// The elements of a list-ish nqp value, read-only.
     pub(crate) fn nqp_elems_of(target: &Value) -> Option<Vec<Value>> {
-        if let Some(array) = nqp_backing_array(target) {
-            return match array.view() {
-                ValueView::Array(items, _) => Some(items.to_vec()),
-                _ => None,
-            };
+        if let Some(elems) = with_nqp_backing_array(target, |array| match array.view() {
+            ValueView::Array(items, _) => Some(items.to_vec()),
+            _ => None,
+        }) {
+            return elems;
         }
         if let ValueView::Instance { attributes, .. } = target.view() {
             return crate::value::value_buf::with_buf_elems(&attributes, |e| e.to_vec());
