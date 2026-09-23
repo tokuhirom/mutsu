@@ -9,7 +9,7 @@
 //!
 //! The functions here edit the node's bytes directly: they touch only the bytes
 //! a write covers (plus an amortized grow), exactly like MoarVM's `VMArray`.
-//! Like [`put_bytes`](super::put_bytes) they write **through** an unshared node
+//! Like [`put_bytes`] they write **through** an unshared node
 //! (keeping any address C holds valid) and fork a shared one (`.Buf`/`.Blob`
 //! re-tag one node under two names, and Raku's copy semantics mean a write to
 //! one must not show through the other).
