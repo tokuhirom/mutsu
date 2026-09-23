@@ -274,7 +274,7 @@ impl Interpreter {
     /// A private routine named `name_sym` declared by `unit`, or by a unit
     /// `unit` is an `EVAL` of (an `EVAL` compiles in its caller's lexical
     /// scope).
-    fn unit_private_routine_from(
+    pub(super) fn unit_private_routine_from(
         &self,
         unit: Symbol,
         name_sym: Symbol,

@@ -888,6 +888,7 @@ pub(crate) mod thread_compat;
 pub(crate) mod types;
 // `pub(crate)`: the analysis frontend (`crate::analysis`, ADR-0065) calls the
 // interpreter-free entry point directly.
+mod plain_fn_resolve_memo;
 pub(crate) mod undeclared_routines;
 mod unicode;
 mod unit_private_routines;
@@ -4087,6 +4088,10 @@ pub struct Interpreter {
     /// key is rebuilt on every call that reaches `find_compiled_function`.
     pub(crate) fn_resolve_cache:
         GenCache<(Symbol, Symbol, usize, Vec<&'static str>), (Symbol, u64, String)>,
+    /// Memo for the argument-independent plain-routine tail of
+    /// `resolve_function_with_types` (#9081); see `plain_fn_resolve_memo.rs`.
+    pub(crate) plain_fn_resolve_memo:
+        GenCache<plain_fn_resolve_memo::PlainFnResolveKey, Arc<FunctionDef>>,
     /// The version stamp of the registry functions map every generation-tagged
     /// memo above is read and written under: a mirror of
     /// `Registry::functions_version()`, refreshed by
