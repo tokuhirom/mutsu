@@ -391,6 +391,23 @@ impl Interpreter {
                 )
                 .map(|(pkg, name)| (pkg.to_string(), name.to_string()));
             if let Some((pkg, name)) = token_terminal {
+                // A wrapped `.parse` start rule: re-run the whole parse.
+                if let Some(method) = data
+                    .env
+                    .get("__mutsu_token_method_wrapper_parse_method")
+                    .and_then(|m| m.as_str())
+                    .map(str::to_string)
+                {
+                    let parse_args: Vec<Value> = match data
+                        .env
+                        .get("__mutsu_token_method_wrapper_parse_args")
+                        .map(Value::view)
+                    {
+                        Some(ValueView::Array(items, _)) => items.iter().cloned().collect(),
+                        _ => Vec::new(),
+                    };
+                    return self.run_wrapped_start_rule_terminal(&pkg, &method, &parse_args);
+                }
                 let Some(cursor) = args.first() else {
                     return Ok(Value::NIL);
                 };
