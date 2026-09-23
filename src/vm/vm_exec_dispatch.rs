@@ -5749,12 +5749,13 @@ impl Interpreter {
             // -- Package scope --
             // Cost: O(L + v) plus the body, L = locals (copied by `locals.to_vec()`), v = env
             // entries (walked at exit to record package lexicals). One-shot per `package` block.
+            // Rakudo: O(1) plus the body -- see #NNNN.
             OpCode::PackageScope { name_idx, body_end } => {
                 self.sync_source_line(code, *ip);
                 self.exec_package_scope_op(code, *name_idx, *body_end, ip, compiled_fns)?;
             }
             // Cost: O(L), L = locals of the unit (`update_local_if_exists` linear scan), plus O(1)
-            // avg table inserts. One-shot per declaration.
+            // avg table inserts. One-shot per declaration. Rakudo: O(1) -- see #NNNN.
             OpCode::RegisterPackage { name_idx } => {
                 let name = Self::const_str(code, *name_idx).to_string();
                 self.shadow_suppressed_type_with_package(&name);

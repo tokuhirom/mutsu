@@ -2127,6 +2127,9 @@ impl Interpreter {
     /// variables: any name such an override can legitimately reach via env is
     /// either already present in env (declared, captured, `our`, dynamic) or
     /// forced there by the reflective-access flag — never slot-only.
+    // Cost: O(L), L = locals of `code` (every slot is probed against env and
+    // republished), paid by every say/put/print/note whatever it prints.
+    // Rakudo: O(1) -- see #NNNN.
     pub(super) fn sync_env_from_locals_declared(&mut self, code: &CompiledCode) {
         let saved_suppress = self.suppress_shared_publish;
         self.suppress_shared_publish = true;
