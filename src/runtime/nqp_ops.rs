@@ -285,17 +285,7 @@ impl Interpreter {
                     // operation defined in mutsu instead of allowing Rust's
                     // checked arithmetic to panic in debug builds, matching
                     // the wrapping convention of the other *_i operations.
-                    let quotient = if lhs == i64::MIN && rhs == -1 {
-                        i64::MIN
-                    } else {
-                        let quotient = lhs / rhs;
-                        if lhs % rhs != 0 && (lhs < 0) != (rhs < 0) {
-                            quotient - 1
-                        } else {
-                            quotient
-                        }
-                    };
-                    Ok(Value::int(quotient))
+                    Ok(Value::int(floor_div_i(lhs, rhs)))
                 }
             }
             // Cost: O(1).
@@ -1045,5 +1035,23 @@ impl Interpreter {
             // module (file-size limit); an op neither knows still errors.
             _ => return self.call_nqp_op_process(op, args),
         })
+    }
+}
+
+/// `nqp::div_i`'s quotient for a non-zero `rhs`: FLOOR division, unlike
+/// Rust's `/` for operands of opposite signs. The native-int overflow case
+/// (`i64::MIN div -1`) traps in MoarVM; mutsu keeps it defined, wrapping like
+/// the other `*_i` ops, rather than letting Rust's arithmetic panic. Shared
+/// with TRIR's `DivI`, so the two tiers cannot disagree.
+// Cost: O(1).
+pub(crate) fn floor_div_i(lhs: i64, rhs: i64) -> i64 {
+    if lhs == i64::MIN && rhs == -1 {
+        return i64::MIN;
+    }
+    let quotient = lhs / rhs;
+    if lhs % rhs != 0 && (lhs < 0) != (rhs < 0) {
+        quotient - 1
+    } else {
+        quotient
     }
 }

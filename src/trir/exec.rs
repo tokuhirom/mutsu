@@ -134,7 +134,9 @@ impl Interpreter {
                         // through an `is rw` reference.
                         return Err(RuntimeError::new("nqp::div_i: division by zero"));
                     }
-                    self.trir.ns.push(l.wrapping_div(r));
+                    self.trir
+                        .ns
+                        .push(crate::runtime::nqp_ops::floor_div_i(l, r));
                 }
                 TrOp::ModI => {
                     let r = self.ipop();
@@ -144,7 +146,7 @@ impl Interpreter {
                     }
                     // `nqp::mod_i` follows the dividend's sign like Rust's
                     // `%`; Raku's own `%` does not, which is why only the
-                    // `nqp::` spelling reaches here.
+                    // `nqp::` spelling reaches here (`compile/binary.rs`).
                     self.trir.ns.push(l.wrapping_rem(r));
                 }
                 TrOp::NegI => {

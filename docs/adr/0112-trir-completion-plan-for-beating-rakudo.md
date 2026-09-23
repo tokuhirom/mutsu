@@ -269,3 +269,16 @@ a CORE type name used as an `nqp::` operand is a type-object literal when the co
 the name nowhere. 727-record decode ~0.17 s → ~0.146 s; `{}` ~5.0 → ~3.6 µs, escaped string
 ~12.5 → ~10.0 µs. `[]` (~15 µs) is still well above the 5 µs gate, and is what the next slice
 looks at.
+
+### Step 4 — measured before it was built (2026-09-23, [ADR-0116](0116-trir-native-lowering-measured-before-building.md), Proposed)
+
+A first slice of Step 4 (the int bank and native slots in SSA, native branches, every other op
+stepped through the switch loop's own arm) was built and is correct on every TRIR fixture, but it
+made the 727-record decode ~25% slower: 0.17 s against 0.135 s. It also cost ~12.8 M instructions
+to compile each chunk. More decisively, a per-record profile puts the switch loop and its inlined
+arms at 21.4% of the decode, which caps what any native lowering can buy at 1.27x. The goal needs
+2-3x. The prototype is reverted and kept in history (`7681f6f9`). ADR-0116 proposes re-ordering
+Step 4 to shrink the op bodies first (refcounting, list storage, `strtocodes` normalization,
+allocation, and the untyped residue), and to bring native lowering back once the switch loop is
+the majority of the cost.
+
