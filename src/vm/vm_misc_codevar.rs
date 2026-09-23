@@ -53,7 +53,7 @@ impl Interpreter {
     // Cost: O(L + v), L = locals of `code` (`find_local_slot` of `&name`), v =
     // env entries: the Sub value handed back shares the current env tier, so
     // the frame's next env write copies the whole tier (`Env::cow_mut`).
-    // Rakudo: O(1) -- see #NNNN.
+    // Rakudo: O(1) -- see #9169.
     pub(super) fn exec_get_code_var_op(
         &mut self,
         code: &CompiledCode,

@@ -92,7 +92,7 @@ impl Interpreter {
     // Cost: O(1) plus the body, except that a resume-safe CONTROL or a
     // resume-capable CATCH deep-clones the enclosing `CompiledCode` (ops +
     // constants, c) and the `CompiledFns` table (f entries) into its handler
-    // entry on every region entry: O(c + f). Rakudo: O(1) -- see #NNNN.
+    // entry on every region entry: O(c + f). Rakudo: O(1) -- see #9172.
     #[allow(clippy::too_many_arguments)]
     fn exec_try_catch_op_inner(
         &mut self,

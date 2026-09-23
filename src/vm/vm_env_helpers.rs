@@ -2129,7 +2129,7 @@ impl Interpreter {
     /// forced there by the reflective-access flag — never slot-only.
     // Cost: O(L), L = locals of `code` (every slot is probed against env and
     // republished), paid by every say/put/print/note whatever it prints.
-    // Rakudo: O(1) -- see #NNNN.
+    // Rakudo: O(1) -- see #9169.
     pub(super) fn sync_env_from_locals_declared(&mut self, code: &CompiledCode) {
         let saved_suppress = self.suppress_shared_publish;
         self.suppress_shared_publish = true;
@@ -2149,7 +2149,7 @@ impl Interpreter {
     }
 
     // Cost: O(L), L = local slots of `code` (an env probe, and for a live slot an
-    // env write, per slot). Called on every `~~`. Rakudo: O(1) -- see #NNNN.
+    // env write, per slot). Called on every `~~`. Rakudo: O(1) -- see #9169.
     pub(super) fn sync_regex_interpolation_env_from_locals(&mut self, code: &CompiledCode) {
         let saved_suppress = self.suppress_shared_publish;
         self.suppress_shared_publish = true;
@@ -2609,9 +2609,9 @@ impl Interpreter {
     }
 
     // Cost: O(L), L = frame locals (linear by-name scan of `code.locals`).
-    // Rakudo: O(1) (static lexpad index) -- see #NNNN.
+    // Rakudo: O(1) (static lexpad index) -- see #9171.
     // Cost: O(L * m), L = locals of `code`, m = name bytes (linear string scan).
-    // Rakudo: O(1) (lexicals resolved to indices at compile time) -- see #NNNN.
+    // Rakudo: O(1) (lexicals resolved to indices at compile time) -- see #9171.
     pub(super) fn find_local_slot(&self, code: &CompiledCode, name: &str) -> Option<usize> {
         code.locals.iter().position(|n| n == name)
     }

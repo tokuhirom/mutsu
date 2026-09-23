@@ -815,7 +815,7 @@ impl Interpreter {
     /// runs at statement entry, not per iteration. Callers must skip this when
     /// resuming a suspended gather coroutine into the same loop opcode.
     // Cost: O(t * b), t = state locals of the chunk, b = ops in [start, end) (one
-    // `state_local_init_in_range` scan per state local). Rakudo: O(t) -- see #NNNN.
+    // `state_local_init_in_range` scan per state local). Rakudo: O(t) -- see #9173.
     pub(crate) fn reset_state_locals_in_range(
         &mut self,
         code: &CompiledCode,

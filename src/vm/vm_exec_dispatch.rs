@@ -957,7 +957,7 @@ impl Interpreter {
             }
             // Cost: O(v), v = entries of the whole env (plus `our_vars` for GLOBAL): every
             // `Pkg::`/`OUTER::`/`MY::`/`DYNAMIC::` read builds a fresh stash map (see
-            // exec_get_pseudo_stash_op). Rakudo: O(1) -- see #NNNN.
+            // exec_get_pseudo_stash_op). Rakudo: O(1) -- see #9171.
             OpCode::GetPseudoStash(name_idx) => {
                 self.exec_get_pseudo_stash_op(code, *name_idx);
                 *ip += 1;
@@ -1052,7 +1052,7 @@ impl Interpreter {
             // reverse-alias propagation at the end scans every env key for a
             // `__mutsu_sigilless_alias::` entry naming this variable), L = locals of the chunk
             // (the attr-twigil slot scan); plus O(e) when an `@`/`%` target copies its
-            // container. Rakudo: O(1) -- see #NNNN.
+            // container. Rakudo: O(1) -- see #9169.
             OpCode::SetGlobalRaw(name_idx) | OpCode::SetGlobal(name_idx) => {
                 let raw_mode = matches!(code.ops[*ip], OpCode::SetGlobalRaw(_));
                 let is_bind_ctx = self.bind_context().get();
@@ -2781,13 +2781,13 @@ impl Interpreter {
 
             // -- Logic / coercion --
             // Cost: O(1) for most values; a not-yet-run `.map`/`.grep` Seq is forced whole,
-            // O(e) callbacks, e = source elements (see eval_truthy). Rakudo: O(1) -- see #NNNN.
+            // O(e) callbacks, e = source elements (see eval_truthy). Rakudo: O(1) -- see #9158.
             OpCode::Not => {
                 self.exec_not_op();
                 *ip += 1;
             }
             // Cost: O(1) for most values; a not-yet-run `.map`/`.grep` Seq is forced whole,
-            // O(e) callbacks, e = source elements (see eval_truthy). Rakudo: O(1) -- see #NNNN.
+            // O(e) callbacks, e = source elements (see eval_truthy). Rakudo: O(1) -- see #9158.
             OpCode::BoolCoerce => {
                 self.sync_source_line(code, *ip);
                 self.exec_bool_coerce_op();
@@ -3107,13 +3107,13 @@ impl Interpreter {
             // Cost: O(t1 + t2), t = elements of a list-shaped operand, counted
             // recursively to depth 16 (warm_which_identity walks them all before
             // the pointer compare); O(1) for scalars (see exec_strict_eq_op).
-            // Rakudo: O(1) -- see #NNNN.
+            // Rakudo: O(1) -- see #9172.
             OpCode::StrictEq => {
                 self.exec_strict_eq_op()?;
                 *ip += 1;
             }
             // Cost: O(t1 + t2), as StrictEq (see exec_strict_ne_op). Rakudo:
-            // O(1) -- see #NNNN.
+            // O(1) -- see #9172.
             OpCode::StrictNe => {
                 self.exec_strict_ne_op()?;
                 *ip += 1;
@@ -3129,7 +3129,7 @@ impl Interpreter {
             // (sync_regex_interpolation_env_from_locals re-broadcasts every slot
             // to env, a `code.locals` scan looks for `$/`, and a non-pure match
             // runs writeback_match_locals) (see exec_smart_match_expr_op).
-            // Rakudo: O(1) + the RHS -- see #NNNN.
+            // Rakudo: O(1) + the RHS -- see #9169.
             OpCode::SmartMatchExpr {
                 rhs_end,
                 negate,
@@ -3237,7 +3237,7 @@ impl Interpreter {
             // Cost: O(L + m) + role composition, L = local slots of the current
             // frame (snapshot_carrier_overwritable_env runs on every `but`), m =
             // keys of an existing mixin map (cloned) (see exec_but_mixin_op).
-            // Rakudo: O(1) with the mixin type cache -- see #NNNN.
+            // Rakudo: O(1) with the mixin type cache -- see #9169.
             OpCode::ButMixin => {
                 self.exec_but_mixin_op(code)?;
                 *ip += 1;
@@ -3257,13 +3257,13 @@ impl Interpreter {
             // Cost: O(L) + role composition, L = local slots of the current frame
             // (sync_env_from_locals, a pre-snapshot and a writeback diff over all
             // of them) (see exec_does_op). Rakudo: O(1) with the mixin type cache
-            // -- see #NNNN.
+            // -- see #9169.
             OpCode::Does => {
                 self.exec_does_op(code)?;
                 *ip += 1;
             }
             // Cost: O(L) + role composition, as Does (see exec_does_var_op).
-            // Rakudo: O(1) with the mixin type cache -- see #NNNN.
+            // Rakudo: O(1) with the mixin type cache -- see #9169.
             OpCode::DoesVar(name_idx, slot, is_bareword) => {
                 self.exec_does_var_op(code, *name_idx, *slot, *is_bareword)?;
                 *ip += 1;
@@ -3533,7 +3533,7 @@ impl Interpreter {
             // otherwise; with a user `.defined` method, O(L) + its call, L = local
             // slots of the current frame (the env snapshot before and the
             // reconcile after walk every slot). Rakudo: O(1) + the call -- see
-            // #NNNN.
+            // #9169.
             OpCode::CallDefined => {
                 self.sync_source_line(code, *ip);
                 let val = self.stack.pop().unwrap();
@@ -3934,7 +3934,7 @@ impl Interpreter {
             // is drained, k = elements; O(d) for a `user_sink` instance, d = MRO
             // depth; with a user `sink` method, O(L) + its call, L = local slots
             // of the current frame (env snapshot + reconcile_locals_from_env).
-            // Rakudo: O(1) + the call -- see #NNNN.
+            // Rakudo: O(1) + the call -- see #9169.
             OpCode::SinkPop(user_sink, may_explode_failure) => {
                 self.sync_source_line(code, *ip);
                 let user_sink = *user_sink;
@@ -4228,7 +4228,7 @@ impl Interpreter {
             // -- I/O --
             // Cost: O(L + t), L = locals of the executing unit (`sync_env_from_locals_declared`
             // walks every one per call), t = rendered size (see exec_say_op). Rakudo: O(t) -- see
-            // #NNNN.
+            // #9169.
             OpCode::Say(n) => {
                 self.sync_source_line(code, *ip);
                 self.sync_env_from_locals_declared(code);
@@ -4236,7 +4236,7 @@ impl Interpreter {
                 *ip += 1;
             }
             // Cost: O(L + t), L = locals of the executing unit (`sync_env_from_locals_declared`), t
-            // = total `.Str` length (see exec_put_op). Rakudo: O(t) -- see #NNNN.
+            // = total `.Str` length (see exec_put_op). Rakudo: O(t) -- see #9169.
             OpCode::Put(n) => {
                 self.sync_source_line(code, *ip);
                 self.sync_env_from_locals_declared(code);
@@ -4244,7 +4244,7 @@ impl Interpreter {
                 *ip += 1;
             }
             // Cost: O(L + t), L = locals of the executing unit (`sync_env_from_locals_declared`), t
-            // = total `.Str` length. Rakudo: O(t) -- see #NNNN.
+            // = total `.Str` length. Rakudo: O(t) -- see #9169.
             OpCode::Print(n) => {
                 self.sync_source_line(code, *ip);
                 self.sync_env_from_locals_declared(code);
@@ -4252,7 +4252,7 @@ impl Interpreter {
                 *ip += 1;
             }
             // Cost: O(L + t), L = locals of the executing unit (`sync_env_from_locals_declared`), t
-            // = rendered size (see exec_note_op). Rakudo: O(t) -- see #NNNN.
+            // = rendered size (see exec_note_op). Rakudo: O(t) -- see #9169.
             OpCode::Note(n) => {
                 self.sync_source_line(code, *ip);
                 self.sync_env_from_locals_declared(code);
@@ -4361,7 +4361,7 @@ impl Interpreter {
             // Cost: O(a + d^2) plus the method body, a = arguments, d = MRO depth of an
             // Instance/Package receiver: `grammar_has_user_method` walks the parent chain on every
             // call (`class_is_grammar_seen`, a `Vec<String>` seen-list, so O(d^2)) plus O(d)
-            // accessor/method probes. Rakudo: O(a) (method cache) -- see #NNNN.
+            // accessor/method probes. Rakudo: O(a) (method cache) -- see #9172.
             OpCode::CallMethod {
                 name_idx,
                 arity,
@@ -4427,7 +4427,7 @@ impl Interpreter {
             }
             // Cost: O(a + d) plus the method body, a = arguments, d = MRO depth of the receiver's
             // class (per-call MRO scans in the user-method dispatch). Rakudo: O(a) (method cache)
-            // -- see #NNNN.
+            // -- see #9172.
             OpCode::CallMethodDynamic {
                 arity,
                 modifier_idx,
@@ -4473,7 +4473,7 @@ impl Interpreter {
                 *ip += 1;
             }
             // Cost: as CallMethodDynamic, O(a + d) plus the body; the attribute snapshot/mirror is
-            // O(1) for a non-attribute receiver. Rakudo: O(a) -- see #NNNN.
+            // O(1) for a non-attribute receiver. Rakudo: O(a) -- see #9172.
             OpCode::CallMethodDynamicMut {
                 arity,
                 target_name_idx,
@@ -4522,7 +4522,7 @@ impl Interpreter {
             // Cost: O(a + d) plus the method body, a = arguments, d = MRO depth of a user-class
             // receiver (`push_method_dispatch_frame` scans the whole MRO for a public accessor on
             // every call); receiver env snapshot/compare O(1). Rakudo: O(a) (method cache) -- see
-            // #NNNN.
+            // #9172.
             OpCode::CallMethodMut {
                 name_idx,
                 arity,
@@ -4989,7 +4989,7 @@ impl Interpreter {
             }
 
             // Cost: O(e + L), e = elements dropped, L = locals of the unit (`find_local_slot`
-            // linear scan). Rakudo: O(e) -- see #NNNN.
+            // linear scan). Rakudo: O(e) -- see #9171.
             OpCode::UndefineAggregate(name_idx) => {
                 let name = Self::const_str(code, *name_idx);
                 if let Some(val) = self.get_env_with_main_alias(name) {
@@ -5216,7 +5216,7 @@ impl Interpreter {
             }
             // Cost: O(L + v), L = locals of the unit (`find_local_slot` scan of `&name`), v = env
             // entries: the Sub it yields shares the env tier, so the next env write copies the
-            // whole tier. Rakudo: O(1) -- see #NNNN.
+            // whole tier. Rakudo: O(1) -- see #9169.
             OpCode::GetCodeVar(name_idx) => {
                 self.exec_get_code_var_op(code, *name_idx)?;
                 *ip += 1;
@@ -5229,7 +5229,7 @@ impl Interpreter {
                 *ip += 1;
             }
             // Cost: O(1) plus the method call; a whole-container topic adds O(e) coercion and O(L)
-            // `update_local_if_exists` scans. Rakudo: O(1) -- see #NNNN.
+            // `update_local_if_exists` scans. Rakudo: O(1) -- see #9171.
             OpCode::TopicDotAssign(name_idx) => {
                 self.exec_topic_dot_assign_op(code, *name_idx)?;
                 *ip += 1;
@@ -5372,7 +5372,7 @@ impl Interpreter {
             // -- Exception handling --
             // Cost: O(1) plus the body, except a resume-capable CATCH / resume-safe CONTROL: O(c +
             // f) per entry, c = ops + constants of the enclosing CompiledCode, f = compiled
-            // functions (both deep-cloned into the handler entry). Rakudo: O(1) -- see #NNNN.
+            // functions (both deep-cloned into the handler entry). Rakudo: O(1) -- see #9172.
             OpCode::TryCatch {
                 catch_start,
                 control_start,
@@ -5452,7 +5452,7 @@ impl Interpreter {
             }
             // Cost: O(s), s = routine-stack depth: the backtrace string and structured Backtrace
             // are built eagerly at the throw site (attach_backtrace_to_error_with_leading). Rakudo:
-            // O(1) (lazy backtrace) -- see #NNNN.
+            // O(1) (lazy backtrace) -- see #9172.
             OpCode::Die { user_throw } => {
                 let user_throw = *user_throw;
                 self.sync_source_line(code, *ip);
@@ -5749,13 +5749,13 @@ impl Interpreter {
             // -- Package scope --
             // Cost: O(L + v) plus the body, L = locals (copied by `locals.to_vec()`), v = env
             // entries (walked at exit to record package lexicals). One-shot per `package` block.
-            // Rakudo: O(1) plus the body -- see #NNNN.
+            // Rakudo: O(1) plus the body -- see #9171.
             OpCode::PackageScope { name_idx, body_end } => {
                 self.sync_source_line(code, *ip);
                 self.exec_package_scope_op(code, *name_idx, *body_end, ip, compiled_fns)?;
             }
             // Cost: O(L), L = locals of the unit (`update_local_if_exists` linear scan), plus O(1)
-            // avg table inserts. One-shot per declaration. Rakudo: O(1) -- see #NNNN.
+            // avg table inserts. One-shot per declaration. Rakudo: O(1) -- see #9171.
             OpCode::RegisterPackage { name_idx } => {
                 let name = Self::const_str(code, *name_idx).to_string();
                 self.shadow_suppressed_type_with_package(&name);
@@ -5779,7 +5779,7 @@ impl Interpreter {
                 self.registry_mut().package_kinds.insert(name, *kind);
                 *ip += 1;
             }
-            // Cost: O(L), L = frame locals (`update_local_if_exists` scans them by name). Rakudo: O(1) -- see #NNNN.
+            // Cost: O(L), L = frame locals (`update_local_if_exists` scans them by name). Rakudo: O(1) -- see #9171.
             OpCode::RegisterPackageMy { name_idx } => {
                 let name = Self::const_str(code, *name_idx).to_string();
                 self.shadow_suppressed_type_with_package(&name);
@@ -6047,12 +6047,12 @@ impl Interpreter {
                 self.exec_symbolic_deref_op(code, *sigil_idx, *scopes_idx);
                 *ip += 1;
             }
-            // Cost: O(n + L), n = chars of the name, L = frame locals (by-name slot scans). Rakudo: O(1) -- see #NNNN.
+            // Cost: O(n + L), n = chars of the name, L = frame locals (by-name slot scans). Rakudo: O(1) -- see #9171.
             OpCode::SymbolicDerefStore(sigil_idx) => {
                 self.exec_symbolic_deref_store_op(code, *sigil_idx)?;
                 *ip += 1;
             }
-            // Cost: O(n + L), n = chars of the name, L = frame locals (by-name slot scans). Rakudo: O(1) -- see #NNNN.
+            // Cost: O(n + L), n = chars of the name, L = frame locals (by-name slot scans). Rakudo: O(1) -- see #9171.
             OpCode::IndirectTypeLookupStore => {
                 self.exec_indirect_type_lookup_store_op(code)?;
                 *ip += 1;
@@ -6088,16 +6088,16 @@ impl Interpreter {
             }
 
             // -- Block scope --
-            // Cost: O(R) plus the body, R = routine-registry entries snapshotted and diffed (see exec_routine_scope_op). Rakudo: O(1) -- see #NNNN.
+            // Cost: O(R) plus the body, R = routine-registry entries snapshotted and diffed (see exec_routine_scope_op). Rakudo: O(1) -- see #9170.
             OpCode::RoutineScope { body_end } => {
                 self.exec_routine_scope_op(code, *body_end, ip, compiled_fns)?;
             }
-            // Cost: O(F + C) plus the body, F/C = registered routines/classes (import-scope snapshot). Rakudo: O(1) -- see #NNNN.
+            // Cost: O(F + C) plus the body, F/C = registered routines/classes (import-scope snapshot). Rakudo: O(1) -- see #9170.
             OpCode::ImportScope { body_end } => {
                 self.exec_import_scope_op(code, *body_end, ip, compiled_fns)?;
             }
 
-            // Cost: O(b + v + L + R) plus the body, b = ops in the block, v = env entries, L = frame locals, R = registry (see exec_block_scope_op). Rakudo: O(1) -- see #NNNN.
+            // Cost: O(b + v + L + R) plus the body, b = ops in the block, v = env entries, L = frame locals, R = registry (see exec_block_scope_op). Rakudo: O(1) -- see #9170.
             OpCode::BlockScope {
                 pre_end,
                 enter_end,
@@ -6125,7 +6125,7 @@ impl Interpreter {
                     compiled_fns,
                 )?;
             }
-            // Cost: O(b + v) plus the body, b = ops in the branch, v = env entries (key-set snapshot). Rakudo: O(1) -- see #NNNN.
+            // Cost: O(b + v) plus the body, b = ops in the branch, v = env entries (key-set snapshot). Rakudo: O(1) -- see #9170.
             OpCode::BlockLocalScope {
                 body_end,
                 succeed_boundary,
@@ -6144,7 +6144,7 @@ impl Interpreter {
                 self.sync_source_line(code, *ip);
                 self.exec_succeed_barrier_op(code, *body_end, ip, compiled_fns)?;
             }
-            // Cost: O(t * b), t = state locals of the chunk, b = ops in the range (one StateVarInit scan per state). Rakudo: O(t) -- see #NNNN.
+            // Cost: O(t * b), t = state locals of the chunk, b = ops in the range (one StateVarInit scan per state). Rakudo: O(t) -- see #9173.
             OpCode::ResetStateLocals { body_end } => {
                 self.reset_state_locals_in_range(code, *ip + 1, *body_end as usize);
                 *ip += 1;
@@ -6165,7 +6165,7 @@ impl Interpreter {
                 // to find the next LEAVE phaser boundary on error.
                 *ip += 1;
             }
-            // Cost: O(1) plus the body; scope-isolating (`"{...}"`) adds O(v + L), `scope_routines` O(R) (see exec_do_block_expr_op). Rakudo: O(1) -- see #NNNN.
+            // Cost: O(1) plus the body; scope-isolating (`"{...}"`) adds O(v + L), `scope_routines` O(R) (see exec_do_block_expr_op). Rakudo: O(1) -- see #9170.
             OpCode::DoBlockExpr {
                 body_end,
                 label,
@@ -6195,20 +6195,20 @@ impl Interpreter {
                 self.sync_source_line(code, *ip);
                 self.exec_begin_once_expr_op(code, *body_end, *site_id, ip, compiled_fns)?;
             }
-            // Cost: O(L) plus the body, L = frame locals (`find_local_slot("_")` scan). Rakudo: O(1) -- see #NNNN.
+            // Cost: O(L) plus the body, L = frame locals (`find_local_slot("_")` scan). Rakudo: O(1) -- see #9171.
             OpCode::DoGivenExpr { body_end } => {
                 self.sync_source_line(code, *ip);
                 self.exec_do_given_expr_op(code, *body_end, ip, compiled_fns)?;
             }
 
             // -- Closures and registration --
-            // Cost: O(f + v), f = free vars, v = env overlay entries (the snapshot is copied on insert). Rakudo: O(1) -- see #NNNN.
+            // Cost: O(f + v), f = free vars, v = env overlay entries (the snapshot is copied on insert). Rakudo: O(1) -- see #9170.
             OpCode::MakeGather(idx, cc_idx) => {
                 self.sync_source_line(code, *ip);
                 self.exec_make_gather_op(code, *idx, *cc_idx)?;
                 *ip += 1;
             }
-            // Cost: O(k + L + v) on a lazy list, k = elements produced, L = frame locals, v = env entries (sync/merge); O(k) otherwise. Rakudo: O(k) -- see #NNNN.
+            // Cost: O(k + L + v) on a lazy list, k = elements produced, L = frame locals, v = env entries (sync/merge); O(k) otherwise. Rakudo: O(k) -- see #9169.
             OpCode::Eager => {
                 self.sync_source_line(code, *ip);
                 let val = self.stack.pop().unwrap_or(Value::NIL);
@@ -6240,30 +6240,30 @@ impl Interpreter {
                 self.stack.push(result);
                 *ip += 1;
             }
-            // Cost: O(v + f + L), v = visible env entries (capture-cache miss), f = free vars, L = frame locals (see capture_closure_env). Rakudo: O(f) -- see #NNNN.
+            // Cost: O(v + f + L), v = visible env entries (capture-cache miss), f = free vars, L = frame locals (see capture_closure_env). Rakudo: O(f) -- see #9170.
             OpCode::MakeAnonSub(idx, cc_idx, is_block) => {
                 self.sync_source_line(code, *ip);
                 self.exec_make_anon_sub_op(code, *idx, *cc_idx, *is_block)?;
                 *ip += 1;
             }
-            // Cost: O(v + f + L), v = visible env entries (capture-cache miss), f = free vars, L = frame locals (see capture_closure_env). Rakudo: O(f) -- see #NNNN.
+            // Cost: O(v + f + L), v = visible env entries (capture-cache miss), f = free vars, L = frame locals (see capture_closure_env). Rakudo: O(f) -- see #9170.
             OpCode::MakeAnonSubParams(idx, cc_idx, is_wc) => {
                 self.sync_source_line(code, *ip);
                 self.exec_make_anon_sub_params_op(code, *idx, *cc_idx, *is_wc)?;
                 *ip += 1;
             }
-            // Cost: O(v + f + L), v = visible env entries (capture-cache miss), f = free vars, L = frame locals (see capture_closure_env). Rakudo: O(f) -- see #NNNN.
+            // Cost: O(v + f + L), v = visible env entries (capture-cache miss), f = free vars, L = frame locals (see capture_closure_env). Rakudo: O(f) -- see #9170.
             OpCode::MakeLambda(idx, cc_idx, is_wc) => {
                 self.sync_source_line(code, *ip);
                 self.exec_make_lambda_op(code, *idx, *cc_idx, *is_wc)?;
                 *ip += 1;
             }
-            // Cost: O(1) amortized for one index into an Array/Hash; O(e) into an `is Array` instance (storage copied per store). Rakudo: O(1) -- see #NNNN.
+            // Cost: O(1) amortized for one index into an Array/Hash; O(e) into an `is Array` instance (storage copied per store). Rakudo: O(1) -- see #9157.
             OpCode::IndexAssignGeneric { is_positional } => {
                 self.exec_index_assign_generic_op(code, *is_positional)?;
                 *ip += 1;
             }
-            // Cost: O(v + f + L), v = visible env entries (capture-cache miss), f = free vars, L = frame locals (see capture_closure_env). Rakudo: O(f) -- see #NNNN.
+            // Cost: O(v + f + L), v = visible env entries (capture-cache miss), f = free vars, L = frame locals (see capture_closure_env). Rakudo: O(f) -- see #9170.
             OpCode::MakeBlockClosure(idx, cc_idx) => {
                 self.sync_source_line(code, *ip);
                 self.exec_make_block_closure_op(code, *idx, *cc_idx)?;
@@ -6275,7 +6275,7 @@ impl Interpreter {
                 self.exec_register_decl_op(code, *idx, compiled_fns)?;
                 *ip += 1;
             }
-            // Cost: first load O(module); later executions re-import, O(x), x = exported symbols. Rakudo: O(1) at run time -- see #NNNN.
+            // Cost: first load O(module); later executions re-import, O(x), x = exported symbols. Rakudo: O(1) at run time -- see #9170.
             OpCode::UseModule {
                 name_idx,
                 tags_idx,
@@ -6285,7 +6285,7 @@ impl Interpreter {
                 self.exec_use_module_op(code, *name_idx, *tags_idx, *arg_count)?;
                 *ip += 1;
             }
-            // Cost: O(x), x = exported symbols re-aliased per execution. Rakudo: O(1) at run time -- see #NNNN.
+            // Cost: O(x), x = exported symbols re-aliased per execution. Rakudo: O(1) at run time -- see #9170.
             OpCode::ImportModule { name_idx, tags_idx } => {
                 self.sync_source_line(code, *ip);
                 self.exec_import_module_op(code, *name_idx, *tags_idx)?;
@@ -6314,12 +6314,12 @@ impl Interpreter {
                 self.exec_use_lib_path_op(code)?;
                 *ip += 1;
             }
-            // Cost: O(F + C), F/C = registered routines/classes (the whole registry key set is snapshotted). Rakudo: O(1) -- see #NNNN.
+            // Cost: O(F + C), F/C = registered routines/classes (the whole registry key set is snapshotted). Rakudo: O(1) -- see #9170.
             OpCode::PushImportScope => {
                 self.push_import_scope();
                 *ip += 1;
             }
-            // Cost: O(F + C), F/C = registered routines/classes (diffed against the snapshot). Rakudo: O(1) -- see #NNNN.
+            // Cost: O(F + C), F/C = registered routines/classes (diffed against the snapshot). Rakudo: O(1) -- see #9170.
             OpCode::PopImportScope => {
                 self.pop_import_scope();
                 *ip += 1;
@@ -6438,7 +6438,7 @@ impl Interpreter {
                 self.exec_declare_our_scalar_op(code, *slot, *qualified_idx);
                 *ip += 1;
             }
-            // Cost: O(1) in a loop's steady state, else O(L), L = frame locals (by-name scans): O(L^2) per routine call. Rakudo: O(1) -- see #NNNN.
+            // Cost: O(1) in a loop's steady state, else O(L), L = frame locals (by-name scans): O(L^2) per routine call. Rakudo: O(1) -- see #9171.
             OpCode::SetVarDynamic { name_idx, dynamic } => {
                 self.exec_set_var_dynamic_op(code, *name_idx, *dynamic);
                 *ip += 1;
@@ -6494,7 +6494,7 @@ impl Interpreter {
                 self.bind_caller_var(target, source, *depth as usize)?;
                 *ip += 1;
             }
-            // Cost: O(1) via the baked shadow slot; O(L) by-name scan of frame locals otherwise. Rakudo: O(1) -- see #NNNN.
+            // Cost: O(1) via the baked shadow slot; O(L) by-name scan of frame locals otherwise. Rakudo: O(1) -- see #9171.
             OpCode::GetOuterVar {
                 name_idx,
                 depth,
@@ -6505,7 +6505,7 @@ impl Interpreter {
                 self.stack.push(val);
                 *ip += 1;
             }
-            // Cost: O(1) via the baked shadow slot; O(L) by-name scan of frame locals otherwise. Rakudo: O(1) -- see #NNNN.
+            // Cost: O(1) via the baked shadow slot; O(L) by-name scan of frame locals otherwise. Rakudo: O(1) -- see #9171.
             OpCode::GetCallerOuterVar {
                 name_idx,
                 depth,
@@ -6674,7 +6674,7 @@ impl Interpreter {
                 self.sigilless_bind_source = Some((code.const_sym(*name_idx), writable));
                 *ip += 1;
             }
-            // Cost: O(1) after a paired MarkSigillessBindSource; O(L) otherwise (rposition over frame locals). Rakudo: O(1) -- see #NNNN.
+            // Cost: O(1) after a paired MarkSigillessBindSource; O(L) otherwise (rposition over frame locals). Rakudo: O(1) -- see #9171.
             OpCode::MarkSigillessBind(name_idx) => {
                 let name_sym = code.const_sym(*name_idx);
                 // The verdict `MarkSigillessBindSource` took from the bind
@@ -6723,7 +6723,7 @@ impl Interpreter {
             }
 
             // -- Let scope management --
-            // Cost: O(1) for a scalar; O(t) for an Array/Hash, t = total nodes (recursive deep copy). Rakudo: O(e) (shallow clone) -- see #NNNN.
+            // Cost: O(1) for a scalar; O(t) for an Array/Hash, t = total nodes (recursive deep copy). Rakudo: O(e) (shallow clone) -- see #9173.
             OpCode::LetSave {
                 name_idx,
                 index_mode,

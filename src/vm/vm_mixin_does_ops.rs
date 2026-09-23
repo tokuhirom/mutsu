@@ -7,7 +7,7 @@ impl Interpreter {
     // Cost: O(L + m) + role composition, L = local slots of `code`
     // (`snapshot_carrier_overwritable_env` runs on every `but`, and the role path
     // diffs them again), m = keys of an existing mixin map (cloned). Rakudo: O(1)
-    // with the mixin type cache -- see #NNNN.
+    // with the mixin type cache -- see #9169.
     pub(super) fn exec_but_mixin_op(&mut self, code: &CompiledCode) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         // `(role :: { ... })` on the RHS is the individual parametric role, not
@@ -459,7 +459,7 @@ impl Interpreter {
     // Cost: O(L) + role composition, L = local slots of `code`
     // (`sync_env_from_locals`, `snapshot_carrier_overwritable_env` and
     // `carrier_writeback_changed_aggregates` each walk all of them). Rakudo: O(1)
-    // with the mixin type cache -- see #NNNN.
+    // with the mixin type cache -- see #9169.
     pub(super) fn exec_does_op(&mut self, code: &CompiledCode) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
@@ -524,7 +524,7 @@ impl Interpreter {
     }
 
     // Cost: O(L) + role composition, as `exec_does_op`. Rakudo: O(1) with the
-    // mixin type cache -- see #NNNN.
+    // mixin type cache -- see #9169.
     pub(super) fn exec_does_var_op(
         &mut self,
         code: &CompiledCode,

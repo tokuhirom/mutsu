@@ -45,7 +45,7 @@ impl Interpreter {
 
     // Cost: O(F + C), F/C = registered routines/classes (their key sets are
     // collected), paid on every `ImportScope`/`PushImportScope` execution -- per call
-    // of a routine whose body has a `use`. Rakudo: O(1) at run time -- see #NNNN.
+    // of a routine whose body has a `use`. Rakudo: O(1) at run time -- see #9170.
     fn push_import_scope_scoping_classes(&mut self, scope_classes: bool) {
         let snapshot = {
             let reg = self.registry();

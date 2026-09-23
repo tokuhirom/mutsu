@@ -668,7 +668,7 @@ impl Interpreter {
 
     // Cost: O(v), v = entries of the whole env (plus `our_vars` for GLOBAL), independent of the
     // package's own symbol count: the stash is rebuilt by scanning env on every call.
-    // Rakudo: O(1) (the package's persistent Stash) -- see #NNNN.
+    // Rakudo: O(1) (the package's persistent Stash) -- see #9171.
     pub(crate) fn package_stash_value(&self, package: &str) -> Value {
         let package_name = Self::normalize_stash_package(package);
 

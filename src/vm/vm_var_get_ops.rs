@@ -810,7 +810,7 @@ impl Interpreter {
     /// `depth` is the number of OUTER:: prefixes (1 = immediate outer, 2 = two levels up).
     /// Uses the `outer_scope_locals` stack which is populated by BlockScope operations.
     // Cost: O(1) through a baked shadow slot or the captured env; O(L) when no slot was
-    // baked, L = frame locals (by-name scan). Rakudo: O(1) -- see #NNNN.
+    // baked, L = frame locals (by-name scan). Rakudo: O(1) -- see #9171.
     pub(super) fn get_outer_var(
         &self,
         code: &CompiledCode,

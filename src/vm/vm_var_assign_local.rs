@@ -450,7 +450,7 @@ impl Interpreter {
 
     // Cost: O(v), v = entries of the whole env (plus `our_vars` for GLOBAL, locals for MY::):
     // every pseudo/package stash read materializes a fresh map by scanning them all (see
-    // `package_stash_value`), however few symbols the package has. Rakudo: O(1) -- see #NNNN.
+    // `package_stash_value`), however few symbols the package has. Rakudo: O(1) -- see #9171.
     pub(super) fn exec_get_pseudo_stash_op(&mut self, code: &CompiledCode, name_idx: u32) {
         let name = Self::const_str(code, name_idx);
         if let Some(depth) = Self::caller_stash_depth(name) {

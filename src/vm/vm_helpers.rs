@@ -695,7 +695,7 @@ impl Interpreter {
     /// participated in raising the exception but have no VM callframes.
     // Cost: O(s), s = routine-stack depth: both the backtrace string and the
     // structured `Backtrace` are built eagerly, so every `die` pays it.
-    // Rakudo: O(1) at the throw (backtrace materialized lazily) -- see #NNNN.
+    // Rakudo: O(1) at the throw (backtrace materialized lazily) -- see #9172.
     pub(super) fn attach_backtrace_to_error_with_leading(
         &self,
         err: &mut RuntimeError,
