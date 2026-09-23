@@ -73,6 +73,14 @@ pub(crate) fn nil_absorbs_method(method: &str) -> bool {
             // `.hash` is `Any`'s Associative coercion: `Nil.hash` is the empty
             // Hash `{}`, not an absorbed Nil (raku: `Nil.hash.WHAT` is `(Hash)`).
             | "hash"
+            // Any's key/value views: on an undefined invocant they are the
+            // empty List (raku: `Nil.keys` is `()`), not an absorbed Nil.
+            | "keys"
+            | "values"
+            | "kv"
+            | "pairs"
+            | "antipairs"
+            | "invert"
             // Numeric/string coercions that warn rather than absorb.
             | "Rat"
             | "FatRat"
@@ -2123,6 +2131,15 @@ impl Interpreter {
                         // the empty Hash `{}` (raku: `Nil.hash.WHAT` is `(Hash)`),
                         // not an absorbed Nil. Mirrors `nil_absorbs_method` above.
                         "hash" => {
+                            // Fall through to normal dispatch
+                        }
+                        // Any's key/value views (`keys`, `values`, `kv`, `pairs`,
+                        // `antipairs`, `invert`) on an undefined invocant are the
+                        // empty List — raku: `Nil.keys` is `()` — not an absorbed
+                        // Nil. Mirrors `nil_absorbs_method` above.
+                        "keys" | "values" | "kv" | "pairs" | "antipairs" | "invert"
+                            if args.is_empty() =>
+                        {
                             // Fall through to normal dispatch
                         }
                         // I/O routines print rather than absorb: `Nil.say` /

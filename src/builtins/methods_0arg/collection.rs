@@ -431,6 +431,13 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 }
             }
         }
+        // `Any`'s key/value views on an undefined invocant: raku's
+        // `multi method keys(Any:U:) { () }` (and likewise for the rest) makes
+        // `Nil.keys` the empty List, the same as `Any.keys`.
+        // Cost: O(1).
+        "keys" | "values" | "kv" | "pairs" | "antipairs" | "invert" if target.is_nil() => {
+            Some(Ok(Value::array(Vec::new())))
+        }
         // Cost: O(e), e = elements (or pairs) of the invocant, built eagerly even when
         // only a prefix is consumed. Rakudo: O(1) per call (lazy; an Array's keys are a
         // counting iterator) -- see #9158.
@@ -465,7 +472,6 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 }
                 ValueView::Pair(key, _) => Some(Ok(Value::seq(vec![Value::str(key.clone())]))),
                 ValueView::ValuePair(key, _) => Some(Ok(Value::seq(vec![key.clone()]))),
-                ValueView::Nil => Some(Ok(Value::seq(Vec::new()))),
                 // `.keys` reports positional indices of the array's own elements,
                 // independent of itemization: an itemized array (`$[...]`) is still
                 // an Array here, not a single opaque list element. Using the backing
@@ -510,7 +516,6 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 ValueView::Pair(_, value) | ValueView::ValuePair(_, value) => {
                     Some(Ok(Value::seq(vec![value.clone()])))
                 }
-                ValueView::Nil => Some(Ok(Value::seq(Vec::new()))),
                 // Mirror the `.keys` arm: `.values` yields the array's own elements
                 // regardless of itemization, so an itemized array (`$[...]`) does not
                 // collapse to a single element via `value_to_list`. Decontainerize each
@@ -579,7 +584,6 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 ValueView::ValuePair(key, value) => {
                     Some(Ok(Value::seq(vec![key.clone(), value.clone()])))
                 }
-                ValueView::Nil => Some(Ok(Value::seq(Vec::new()))),
                 // Index/value pairs of the array's own elements, itemization-agnostic
                 // (an itemized `$[...]` must not collapse to one element).
                 ValueView::Array(items, _) => Some(Ok(Value::seq(positional_kv(&items)))),
