@@ -2610,6 +2610,8 @@ impl Interpreter {
 
     // Cost: O(L), L = frame locals (linear by-name scan of `code.locals`).
     // Rakudo: O(1) (static lexpad index) -- see #NNNN.
+    // Cost: O(L * m), L = locals of `code`, m = name bytes (linear string scan).
+    // Rakudo: O(1) (lexicals resolved to indices at compile time) -- see #NNNN.
     pub(super) fn find_local_slot(&self, code: &CompiledCode, name: &str) -> Option<usize> {
         code.locals.iter().position(|n| n == name)
     }

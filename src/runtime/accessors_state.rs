@@ -1243,6 +1243,9 @@ impl Interpreter {
         })
     }
 
+    // Cost: O(d), d = MRO depth of `receiver_class`, on every user-method call:
+    // the `accessor_owner` scan walks the whole MRO before the memoized
+    // single-candidate fast path can return. Rakudo: O(1) (method cache) -- see #NNNN.
     pub(crate) fn push_method_dispatch_frame(
         &mut self,
         receiver_class: &str,
