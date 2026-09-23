@@ -959,7 +959,7 @@ impl Interpreter {
                 // Cost: O(1) amortized for one element (`ArrayData::insert(0, ..)` uses the
                 // front head offset, #9121); O(k * e) for k > 1, e = elements of the array
                 // (each later insert compacts and shifts the tail). Rakudo: O(k) amortized
-                // -- see #NNNN.
+                // -- see #9156.
                 "unshift" => {
                     crate::vm::vm_stats::record_dispatch_entry_intercept(
                         "callmethodmutwithvalues",
@@ -1004,7 +1004,7 @@ impl Interpreter {
                 }
                 // Cost: O(1) amortized for one element (front head offset, #9121); O(k * e)
                 // for k > 1, e = elements of the array (each later insert compacts and
-                // shifts the tail). Rakudo: O(k) amortized -- see #NNNN.
+                // shifts the tail). Rakudo: O(k) amortized -- see #9156.
                 "prepend" => {
                     crate::vm::vm_stats::record_dispatch_entry_intercept(
                         "callmethodmutwithvalues",
@@ -1159,7 +1159,7 @@ impl Interpreter {
                 // Cost: O(e + r * (e - s)), e = elements of the array, s = offset, r =
                 // replacement elements (`drain` compacts the head offset and moves the
                 // tail, then `do_splice` does one `Vec::insert` per replacement).
-                // Rakudo: O(r + e - s), O(r) at the front -- see #NNNN.
+                // Rakudo: O(r + e - s), O(r) at the front -- see #9156.
                 "splice" => {
                     crate::vm::vm_stats::record_dispatch_entry_intercept(
                         "callmethodmutwithvalues",
@@ -1924,7 +1924,7 @@ impl Interpreter {
                 // Cost: O(k * e), e = elements of the array, k = unshifted elements: this
                 // arm inserts into `items_mut()`'s raw `Vec`, so even one element shifts
                 // the whole array (the #9121 head offset is bypassed).
-                // Rakudo: O(k) amortized -- see #NNNN.
+                // Rakudo: O(k) amortized -- see #9156.
                 "unshift" => {
                     crate::vm::vm_stats::record_dispatch_entry_intercept(
                         "callmethodmutwithvalues",
@@ -1967,7 +1967,7 @@ impl Interpreter {
                 }
                 // Cost: O(k * e), e = elements of the array, k = prepended elements (raw
                 // `Vec::insert` per element, bypassing the #9121 head offset).
-                // Rakudo: O(k) amortized -- see #NNNN.
+                // Rakudo: O(k) amortized -- see #9156.
                 "prepend" => {
                     crate::vm::vm_stats::record_dispatch_entry_intercept(
                         "callmethodmutwithvalues",

@@ -16,7 +16,7 @@ pub(crate) fn is_shaped_array(value: &Value) -> bool {
 // the whole element structure (`shape_matches_structure`) on every call; O(1) for a
 // non-shaped array. Called per element access by the shaped store/delete paths, so a
 // `@a[$i] = $v` loop over `my @a[N]` is O(N) per store.
-// Rakudo: O(1) (the shape is a fixed attribute of the container) -- see #NNNN.
+// Rakudo: O(1) (the shape is a fixed attribute of the container) -- see #9157.
 pub(crate) fn shaped_array_shape(value: &Value) -> Option<Vec<usize>> {
     let ValueView::Array(items, kind) = value.view() else {
         return None;

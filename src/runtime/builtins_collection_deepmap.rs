@@ -192,7 +192,7 @@ impl Interpreter {
     /// Vec, then every round built eagerly). An infinite stream is not pulled
     /// lazily: `roundrobin(1..*, (5, 6)).head(4)` panics (the `1..*` expansion
     /// overflows the Vec capacity) and a lazy `.map` stream is taken as one
-    /// element, where Rakudo pulls O(1) per element -- see #NNNN.
+    /// element, where Rakudo pulls O(1) per element -- see #9159.
     pub(super) fn builtin_roundrobin(&self, raw_args: &[Value]) -> Result<Value, RuntimeError> {
         // Split off the `:slip` adverb (a `slip => Bool` named arg); the rest are
         // the lists-of-lists streams. With `:slip`, the tuples are concatenated

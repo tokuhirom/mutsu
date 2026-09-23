@@ -223,7 +223,7 @@ impl ArrayData {
     // elements, because `compact_head` drains the dead prefix a `shift`/`unshift`
     // left behind. Every caller that interleaves with `shift`/`unshift` (the
     // `ArrayPush` opcode, the `@a[$i] = $v` fast lane, `splice`) pays it on each
-    // call. Rakudo: O(1) -- see #NNNN.
+    // call. Rakudo: O(1) -- see #9156.
     pub(crate) fn items_mut(&mut self) -> &mut Vec<Value> {
         // Sync first: if native-side code wrote the buffer since the last
         // read, `items` is stale. Marking dirty without syncing would make

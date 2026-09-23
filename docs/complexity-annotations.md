@@ -14,6 +14,7 @@ Annotated families so far:
 |---|---|---|---|
 | `nqp::` ops | `src/runtime/nqp_ops*.rs`, `src/runtime/nqp_pure.rs`, `src/compiler/nqp_forms.rs` | `MoarVM: O(..)` | `scripts/nqp-complexity-check.sh` |
 | `Str` methods | wherever each method's body lives (see the list in `scripts/str-complexity-check.sh`) | `Rakudo: O(..)` | `scripts/str-complexity-check.sh` |
+| `Array` / `List` / `Seq` operations | wherever each operation's body lives (see the list in `scripts/array-complexity-check.sh`) | `Rakudo: O(..)` | `scripts/array-complexity-check.sh` |
 
 ## Rules
 

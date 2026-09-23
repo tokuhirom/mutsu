@@ -332,7 +332,7 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
             // dimensions and replaces Nil slots with the type-default.
             ValueView::Array(..) if crate::runtime::utils::is_shaped_array(target) => None,
             // Cost: O(e), e = elements (a fresh copy, for a List invocant too).
-            // Rakudo: O(e) for an Array, O(1) for a List (`.List` is identity) -- see #NNNN.
+            // Rakudo: O(e) for an Array, O(1) for a List (`.List` is identity) -- see #9162.
             ValueView::Array(items, kind) => {
                 // `.List` materializes array holes as literal `Nil` — even when
                 // the array has an `is default(...)` value (Rakudo semantics:

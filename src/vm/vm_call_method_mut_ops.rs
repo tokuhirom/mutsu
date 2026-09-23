@@ -3290,7 +3290,7 @@ impl Interpreter {
                     // Cost: append O(k) amortized, k = appended elements. prepend: O(1)
                     // amortized for one element (front head offset, #9121), O(k * e) for
                     // k > 1, e = elements of the array (each later insert compacts and
-                    // shifts the tail). Rakudo: O(k) amortized -- see #NNNN.
+                    // shifts the tail). Rakudo: O(k) amortized -- see #9156.
                     "append" | "prepend" => {
                         let flat = precomputed_args
                             .take()
@@ -3310,7 +3310,7 @@ impl Interpreter {
                     // Cost: O(1) amortized for one element (`ArrayData::insert(0, ..)` uses the
                     // front head offset, #9121); O(k * e) for k > 1, e = elements of the array
                     // (each later insert goes through `items_mut`, which compacts, then shifts
-                    // the tail). Rakudo: O(k) amortized -- see #NNNN.
+                    // the tail). Rakudo: O(k) amortized -- see #9156.
                     "unshift" => {
                         let norm = precomputed_args
                             .take()
@@ -3436,7 +3436,7 @@ impl Interpreter {
                 }
                 // Cost: O(1) amortized for one element (front head offset, #9121); O(k * e)
                 // for k > 1, e = elements of the storage (each later insert compacts and
-                // shifts the tail). Rakudo: O(k) amortized -- see #NNNN.
+                // shifts the tail). Rakudo: O(k) amortized -- see #9156.
                 "unshift" => {
                     let norm =
                         crate::runtime::Interpreter::normalize_push_unshift_args(args.to_vec())
@@ -3454,7 +3454,7 @@ impl Interpreter {
                 }
                 // Cost: O(1) amortized for one element (front head offset, #9121); O(k * e)
                 // for k > 1, e = elements of the storage (each later insert compacts and
-                // shifts the tail). Rakudo: O(k) amortized -- see #NNNN.
+                // shifts the tail). Rakudo: O(k) amortized -- see #9156.
                 "prepend" => {
                     let flat = crate::runtime::flatten_append_args(args.to_vec())
                         .into_iter()
@@ -3544,7 +3544,7 @@ impl Interpreter {
     // Cost: O(e + r * (e - s)), e = elements of the array, s = offset, r =
     // replacement elements (`drain` compacts the head offset and moves the tail;
     // then one `Vec::insert` per replacement). Rakudo: O(r + e - s), O(r) at
-    // the front -- see #NNNN.
+    // the front -- see #9156.
     fn try_native_array_splice(
         &mut self,
         target_name: &str,

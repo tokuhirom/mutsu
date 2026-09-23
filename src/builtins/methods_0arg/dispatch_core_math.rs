@@ -93,7 +93,7 @@ fn str_to_rat(s: &str) -> Value {
 /// and `.tree` / `.tree(*)` are `usize::MAX`. Shared with the `.tree(...)`
 /// argument forms in `runtime::…::dispatch_tree`.
 /// Cost: O(t), t = nodes within `depth` levels, built eagerly on every call.
-/// Rakudo: O(1) per call, O(1) per element pulled (a lazy `.map`) -- see #NNNN.
+/// Rakudo: O(1) per call, O(1) per element pulled (a lazy `.map`) -- see #9158.
 pub(crate) fn tree_to_depth(v: &Value, depth: usize) -> Value {
     if depth == 0 {
         return v.clone();

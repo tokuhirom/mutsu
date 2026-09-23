@@ -79,7 +79,7 @@ impl Interpreter {
     /// invocant, when every key is an Int/BigInt/Str/Bool/Num; O(e * u) key
     /// comparisons when keys are of any other kind (u = distinct keys; see
     /// `IdentityIndex`). `:with` is O(e * u) comparator calls, as in Rakudo.
-    /// A lazy invocant is forced whole. Rakudo: O(e) without `:with` -- see #NNNN.
+    /// A lazy invocant is forced whole. Rakudo: O(e) without `:with` -- see #9161.
     pub(in crate::runtime) fn dispatch_unique(
         &mut self,
         target: Value,
@@ -158,9 +158,9 @@ impl Interpreter {
         Ok(Value::seq(unique_items))
     }
 
-    /// Cost: same as [`Interpreter::dispatch_unique`]: O(e) average for
+    /// Cost: same as `Interpreter::dispatch_unique`: O(e) average for
     /// Int/BigInt/Str/Bool/Num keys, O(e * u) for any other kind, O(e * u)
-    /// comparator calls under `:with`. Rakudo: O(e) without `:with` -- see #NNNN.
+    /// comparator calls under `:with`. Rakudo: O(e) without `:with` -- see #9161.
     pub(in crate::runtime) fn dispatch_repeated(
         &mut self,
         target: Value,
@@ -239,7 +239,7 @@ impl Interpreter {
     /// adjacent pair), plus, with `:as`/`:with`, O(V + A) for the env snapshot,
     /// V = env entries, A = total elements of every Array/Hash lexical in scope
     /// (each is detached, i.e. copied) -- so a small squish next to a large array
-    /// costs the large array. Rakudo: O(e) -- see #NNNN.
+    /// costs the large array. Rakudo: O(e) -- see #9162.
     pub(crate) fn dispatch_squish(
         &mut self,
         target: Value,

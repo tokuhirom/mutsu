@@ -40,7 +40,7 @@ impl Interpreter {
     /// sliced off (a `Seq.new($iterator)` body instead pays O(e) `skip-one` calls).
     /// This is the path a method call on a named `@a` takes, so `@a.tail` in a
     /// loop that grows `@a` is quadratic. Rakudo: O(k) on a reified Array/List --
-    /// see #NNNN.
+    /// see #9162.
     pub(in crate::runtime) fn dispatch_tail(
         &mut self,
         target: Value,

@@ -139,7 +139,7 @@ impl Interpreter {
             // Cost: O(e_l + e_r + e_l * e_r), e = elements of each operand (both
             // copied, then every pair built eagerly). An infinite operand is cut to
             // a 256-element prefix, so `((1..*) X (1,2))[600]` is `Nil` where
-            // Rakudo streams the product at O(1) per pair -- see #NNNN.
+            // Rakudo streams the product at O(1) per pair -- see #9159.
             MetaKind::Cross => {
                 let value_is_lazy = |v: &Value| match v.view() {
                     // A finite closure sequence must be forced below. Its
@@ -210,7 +210,7 @@ impl Interpreter {
             // copied into a `ZipIter`, twice: once as a length probe), plus
             // O(min(e_l, e_r)) results built eagerly. Two infinite operands are cut
             // at MAX_ZIP_EXPAND (1000) results, so `((1..*) Z (1..*))[1500]` is
-            // `Nil`. Rakudo: O(min(e_l, e_r)), lazy -- see #NNNN.
+            // `Nil`. Rakudo: O(min(e_l, e_r)), lazy -- see #9159.
             MetaKind::Zip => {
                 // Use lazy index-based iteration for ranges to avoid
                 // materializing huge/infinite lists like 1..*. An infinite

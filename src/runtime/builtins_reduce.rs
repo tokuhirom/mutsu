@@ -177,7 +177,7 @@ impl Interpreter {
     /// Cost: O(e) callable calls, e = elements, plus whatever each step costs on
     /// its growing accumulator: `.reduce(&[~])` copies the accumulator on every
     /// concatenation, so it is O(e * t) = O(t^2 / m) in the result's chars t
-    /// (m = average element length). Rakudo: O(t) (rope concatenation) -- see #NNNN.
+    /// (m = average element length). Rakudo: O(t) (rope concatenation) -- see #9161.
     pub(crate) fn reduce_items(
         &mut self,
         callable: Value,

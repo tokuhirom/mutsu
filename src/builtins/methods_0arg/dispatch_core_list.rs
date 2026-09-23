@@ -73,7 +73,7 @@ pub(super) fn dispatch(
         }
         // Cost: O(t), t = leaves reached through flattenable (non-itemized) nesting,
         // copied eagerly even when only a prefix is consumed; O(1) on a LazyList
-        // or infinite Range. Rakudo: O(1) per call, O(1) per leaf pulled -- see #NNNN.
+        // or infinite Range. Rakudo: O(1) per call, O(1) per leaf pulled -- see #9158.
         "flat" => Some(match target.view() {
             ValueView::Array(_, crate::value::ArrayKind::Shaped) => {
                 let leaves = crate::runtime::utils::shaped_array_leaves(target);
@@ -219,7 +219,7 @@ pub(super) fn dispatch(
         // buckets in `IdentityIndex`); O(e * u) otherwise, e = elements, u = distinct
         // elements of any other kind (Rat, Pair, object, list, ...), which the index
         // cannot bucket and so compares against every candidate. Rakudo: O(e) (keyed
-        // on `.WHICH`) -- see #NNNN.
+        // on `.WHICH`) -- see #9161.
         "unique" => Some(match target.view() {
             ValueView::Array(items, ..) => Some(Ok(unique_seq(items.iter()))),
             ValueView::Seq(items) => Some(Ok(unique_seq(items.iter()))),
@@ -230,7 +230,7 @@ pub(super) fn dispatch(
             _ => Some(Ok(target.clone())),
         }),
         // Cost: same as `unique`: O(e) average for Int/BigInt/Str/Bool/Num elements,
-        // O(e * u) for any other kind. Rakudo: O(e) -- see #NNNN.
+        // O(e * u) for any other kind. Rakudo: O(e) -- see #9161.
         "repeated" => Some(match target.view() {
             ValueView::Array(items, ..) => Some(Ok(repeated_seq(items.iter()))),
             ValueView::Seq(items) => Some(Ok(repeated_seq(items.iter()))),

@@ -18,7 +18,7 @@ impl Interpreter {
     /// `[max]`, `[,]` are O(e). A left fold of `~` copies its accumulator on every
     /// step, so `[~] @a` is O(e * t) = O(t^2 / m) in the result's chars t (m =
     /// average element length), and `[\~]` pays the same. Rakudo: O(t) for `[~]`
-    /// (strand concatenation) -- see #NNNN.
+    /// (strand concatenation) -- see #9161.
     pub(super) fn exec_reduction_op(
         &mut self,
         spec: crate::compiled_operator::ReductionSpec,

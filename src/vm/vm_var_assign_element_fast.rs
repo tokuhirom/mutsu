@@ -237,7 +237,7 @@ impl Interpreter {
     // Cost: O(1) (an in-range `Vec` slot write), except that the write goes through
     // `ArrayData::items_mut`, which compacts a pending front head offset first: O(e),
     // e = elements of the array, on a store that follows a `shift`/`unshift`.
-    // Rakudo: O(1) -- see #NNNN.
+    // Rakudo: O(1) -- see #9156.
     pub(crate) fn try_fast_array_element_assign(
         &mut self,
         code: &CompiledCode,

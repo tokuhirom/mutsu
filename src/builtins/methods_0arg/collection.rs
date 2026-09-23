@@ -433,7 +433,7 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
         }
         // Cost: O(e), e = elements (or pairs) of the invocant, built eagerly even when
         // only a prefix is consumed. Rakudo: O(1) per call (lazy; an Array's keys are a
-        // counting iterator) -- see #NNNN.
+        // counting iterator) -- see #9158.
         "keys" => {
             if crate::runtime::utils::is_shaped_array(target) {
                 let indexed = crate::runtime::utils::shaped_array_indexed_leaves(target);
@@ -493,7 +493,7 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
         }
         // Cost: O(e), e = elements (or pairs) of the invocant, copied eagerly even when
         // only a prefix is consumed. Rakudo: O(1) per call, O(1) per value pulled --
-        // see #NNNN.
+        // see #9158.
         "values" => {
             if crate::runtime::utils::is_shaped_array(target) {
                 let leaves = crate::runtime::utils::shaped_array_leaves(target);
@@ -543,7 +543,7 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
         }
         // Cost: O(e), e = elements (or pairs) of the invocant: all 2e keys and values
         // are built eagerly, so `for @a.kv -> $i, $v { last }` still pays O(e).
-        // Rakudo: O(1) per call, O(1) per pair pulled -- see #NNNN.
+        // Rakudo: O(1) per call, O(1) per pair pulled -- see #9158.
         "kv" => {
             if crate::runtime::utils::is_shaped_array(target) {
                 let indexed = crate::runtime::utils::shaped_array_indexed_leaves(target);
@@ -640,7 +640,7 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
             }
         }
         // Cost: O(e), e = elements (or pairs) of the invocant, one Pair allocated per
-        // element eagerly. Rakudo: O(1) per call, O(1) per pair pulled -- see #NNNN.
+        // element eagerly. Rakudo: O(1) per call, O(1) per pair pulled -- see #9158.
         "pairs" => {
             if crate::runtime::utils::is_shaped_array(target) {
                 let indexed = crate::runtime::utils::shaped_array_indexed_leaves(target);
@@ -766,7 +766,7 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
             }
         },
         // Cost: O(e), e = elements (or pairs) of the invocant, one Pair allocated per
-        // element eagerly. Rakudo: O(1) per call, O(1) per pair pulled -- see #NNNN.
+        // element eagerly. Rakudo: O(1) per call, O(1) per pair pulled -- see #9158.
         "antipairs" => {
             if crate::runtime::utils::is_shaped_array(target) {
                 let indexed = crate::runtime::utils::shaped_array_indexed_leaves(target);
@@ -1210,7 +1210,7 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
         },
         // Cost: O(e! * e), e = elements, generated eagerly for e <= 20 even when only
         // a prefix is consumed (`(^10).permutations.head` builds 3.6M arrays); e > 20
-        // returns a count-only lazy list. Rakudo: O(e) per permutation pulled -- see #NNNN.
+        // returns a count-only lazy list. Rakudo: O(e) per permutation pulled -- see #9158.
         "permutations" => {
             let items = if crate::runtime::utils::is_shaped_array(target) {
                 crate::runtime::utils::shaped_array_leaves(target)
@@ -1249,7 +1249,7 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
             Some(Ok(Value::seq(all_permutations(&items))))
         }
         // Cost: O(2^e * e), e = elements (the whole powerset, eager). Rakudo: O(e) per
-        // combination pulled -- see #NNNN.
+        // combination pulled -- see #9158.
         "combinations" => {
             let items = if crate::runtime::utils::is_shaped_array(target) {
                 crate::runtime::utils::shaped_array_leaves(target)
@@ -1262,7 +1262,7 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
             Some(Ok(Value::seq(combinations_all(&items))))
         }
         // Cost: O(1) on a real Array or an unpulled Seq; O(e) on a reified List/Seq,
-        // e = elements (copied into a fresh List). Rakudo: O(1) -- see #NNNN.
+        // e = elements (copied into a fresh List). Rakudo: O(1) -- see #9162.
         "cache" => {
             // A genuinely-lazy list (infinite sequence, lazy pipe, cat-handle
             // pull, …) must stay lazy under `.cache`: Rakudo's `.cache` reifies

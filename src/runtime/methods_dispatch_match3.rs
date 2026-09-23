@@ -641,7 +641,7 @@ impl Interpreter {
     ///
     /// Cost: O(e), e = elements of the invocant (copied whole before the skip
     /// counts are applied), even when the result is only a short suffix. Rakudo:
-    /// O(1) per call on a reified list, O(1) per element pulled -- see #NNNN.
+    /// O(1) per call on a reified list, O(1) per element pulled -- see #9162.
     fn dispatch_skip_method(
         &mut self,
         target: Value,

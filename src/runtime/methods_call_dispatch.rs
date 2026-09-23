@@ -3258,7 +3258,7 @@ impl Interpreter {
         // Cost (preamble, paid by every method that reaches this block on an Array):
         // O(v + E), v = bindings in the current env (the `is_native` scan below walks
         // them all), E = leaves of a shaped invocant (`shaped_array_shape` validates
-        // the whole structure). Rakudo: O(1) -- see #NNNN.
+        // the whole structure). Rakudo: O(1) -- see #9157.
         if let ValueView::Array(items, arr_kind) = target.view() {
             // Detect shaped array and native typed array properties
             let shape = crate::runtime::utils::shaped_array_shape(&target);
@@ -3328,7 +3328,7 @@ impl Interpreter {
                     }
                     // Cost: O(p + v), p = elements of the arrays on the index path (each
                     // level is copied by `multidim_assign_pos`), v = env bindings (rebind
-                    // scan). Rakudo: O(d), d = dimensions -- see #NNNN.
+                    // scan). Rakudo: O(d), d = dimensions -- see #9157.
                     "ASSIGN-POS" if args.len() >= 3 => {
                         if let Some(ref shape) = shape {
                             let (indices, _) = args.split_at(args.len() - 1);
@@ -3398,7 +3398,7 @@ impl Interpreter {
                 // whole array (`to_vec`), rebinds it by scanning env
                 // (`overwrite_array_bindings_by_identity`), and scans env again for a type
                 // constraint. `@a.ASSIGN-POS($i, $v)` in a loop is quadratic.
-                // Rakudo: O(1) -- see #NNNN.
+                // Rakudo: O(1) -- see #9157.
                 ("ASSIGN-POS", [idx, value]) => {
                     let index = match idx.view() {
                         ValueView::Int(i) if i >= 0 => Some(i as usize),
@@ -3461,7 +3461,7 @@ impl Interpreter {
                     return Ok(value.clone());
                 }
                 // Cost: O(e + v), e = elements of the array, v = env bindings (whole-array
-                // copy plus an env rebind scan, as ASSIGN-POS). Rakudo: O(1) -- see #NNNN.
+                // copy plus an env rebind scan, as ASSIGN-POS). Rakudo: O(1) -- see #9157.
                 ("BIND-POS", [idx, value]) => {
                     if is_native {
                         return Err(RuntimeError::new("Cannot bind to a natively typed array"));

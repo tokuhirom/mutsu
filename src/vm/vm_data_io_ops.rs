@@ -231,7 +231,7 @@ impl Interpreter {
     /// Cost: O(t) per argument, t = total rendered size of the whole aggregate:
     /// the Proxy pre-scan walks it and `gist_value` renders every element (no
     /// 100-element cap, unlike `.gist`/`.say`). Rakudo: O(1) for the 100-element
-    /// head -- see #NNNN.
+    /// head -- see #9162.
     pub(super) fn exec_say_op(&mut self, n: u32) -> Result<(), RuntimeError> {
         let n = n as usize;
         let start = self.stack.len() - n;
@@ -267,7 +267,7 @@ impl Interpreter {
     }
 
     /// Cost: O(t) per argument, as `exec_say_op` (full render, no 100-element
-    /// cap). Rakudo: O(1) for the 100-element head -- see #NNNN.
+    /// cap). Rakudo: O(1) for the 100-element head -- see #9162.
     pub(super) fn exec_note_op(&mut self, n: u32) -> Result<(), RuntimeError> {
         let n = n as usize;
         let content = if n == 0 {

@@ -104,7 +104,7 @@ impl Interpreter {
     /// pulled, so `(1..*).map(&f).head(k)` is O(k). A multi-arity callback
     /// declines here, and on an infinite source the eager fallback then fails
     /// (`(1..*).map(-> $a, $b { ... }).head(3)` dies "Not enough elements")
-    /// where Rakudo pulls O(1) per chunk -- see #NNNN.
+    /// where Rakudo pulls O(1) per chunk -- see #9159.
     pub(crate) fn make_lazy_pipe(target: Value, func: Value, is_grep: bool) -> Option<Value> {
         // Only callbacks that consume one element per call can be pulled lazily.
         // A multi-arity block (`-> $a, $b { }`) or a slurpy param (`*@a`)

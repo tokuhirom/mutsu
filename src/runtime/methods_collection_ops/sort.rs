@@ -624,7 +624,7 @@ impl Interpreter {
     }
 }
 
-/// Cost: O(e) to copy the receiver plus [`sort_items_generic`]'s O(e log e).
+/// Cost: O(e) to copy the receiver plus `sort_items_generic`'s O(e log e).
 ///
 /// Shared `.sort` entry point — engine-agnostic argument parsing + target-shape
 /// dispatch, on top of the shared [`sort_items_generic`] / [`sort_indices_generic`]

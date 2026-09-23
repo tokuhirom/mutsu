@@ -121,7 +121,7 @@ pub(crate) fn native_function_variadic(
         // Cost: O(sum e_i + n * min(e_i, 1000)), e_i = elements of the i-th of n
         // lists (each copied whole). The row count is capped at 1000 even when every
         // list is finite, so `zip(@a, @b)` on 5000-element arrays yields 1000 rows
-        // where Rakudo yields 5000 -- see #NNNN.
+        // where Rakudo yields 5000 -- see #9160.
         "zip" => {
             // zip([@a], [@b], ...) — interleave elements from each list
             // zip takes a single list-of-lists argument; each sub-list is a

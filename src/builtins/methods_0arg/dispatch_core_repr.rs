@@ -90,7 +90,7 @@ enum GistRoute {
 /// structure.
 /// Cost: O(t), t = total nodes reachable from the receiver (every element is
 /// probed even though at most `GIST_ELEM_CAP` are rendered). Rakudo: O(1) for
-/// the 100-element head -- see #NNNN.
+/// the 100-element head -- see #9162.
 fn gist_route(v: &Value) -> GistRoute {
     /// A `:=`-bound element holds a `ContainerRef` cell, and a cycle can close
     /// through one (`my @e; @e.push(@e)` stores a cell whose contents reach the
