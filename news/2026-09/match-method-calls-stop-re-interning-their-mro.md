@@ -66,5 +66,5 @@ spread over the same layers #8888 describes. `try_hash_storage_delegate_mut`,
 a few percent of that loop for a receiver none of them can claim. They are
 the next things to look at.
 
-`t/oo/builtin-mro-table-cache.t` pins the MRO answers the memo now serves,
+`t/oo/class/builtin-mro-table-cache.t` pins the MRO answers the memo now serves,
 including interleaved lookups of different table rows.
