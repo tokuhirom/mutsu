@@ -625,6 +625,29 @@ impl Interpreter {
                 method
             )));
         }
+        // A `.wrap` on the start rule itself (`G.^find_method('TOP').wrap(...)`)
+        // must see the call `.parse` makes into it, just as a wrapped subrule
+        // does (#9190). Run the wrapper here; its `callsame` re-enters this
+        // function with the wrap check bypassed.
+        if !is_method_start_rule
+            && !super::methods_grammar_wrapped_start::take_start_rule_wrap_bypass()
+            && let Some(chain) = self.token_method_wrap_chain(package_name, &start_rule)
+        {
+            self.set_current_package(saved_package);
+            if let Some(made) = saved_made {
+                self.env.insert("made".to_string(), made);
+            }
+            let pos = start_pos.or(continue_pos).unwrap_or(0);
+            return self.call_wrapped_start_rule(
+                package_name,
+                &start_rule,
+                method,
+                args,
+                &text,
+                pos,
+                &chain,
+            );
+        }
         self.env.insert("_".to_string(), Value::str(text.clone()));
         Self::clear_pending_goal_failure();
         let is_full_parse = method == "parse" || method == "parsefile";

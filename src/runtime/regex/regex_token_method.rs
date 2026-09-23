@@ -123,7 +123,7 @@ impl Interpreter {
         self.run_token_method_at_unwrapped(pkg, name, extra_args, text, pos)
     }
 
-    pub(super) fn token_method_wrap_chain(
+    pub(crate) fn token_method_wrap_chain(
         &self,
         receiver_pkg: &str,
         name: &str,
@@ -163,6 +163,25 @@ impl Interpreter {
         pos: usize,
         chain: &[(u64, Value)],
     ) -> Result<Value, RuntimeError> {
+        self.call_wrapped_token_method_with_terminal(pkg, name, extra_args, text, pos, chain, None)
+    }
+
+    /// Dispatch a token's `.wrap` chain with a cursor at `pos`. The terminal
+    /// that `callsame` reaches runs the token body at the cursor, or -- when
+    /// `parse_call` names the `.parse`/`.subparse` call that entered a wrapped
+    /// start rule -- re-runs that whole parse with the wrap check bypassed
+    /// (`methods_grammar_wrapped_start`).
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn call_wrapped_token_method_with_terminal(
+        &mut self,
+        pkg: Symbol,
+        name: &str,
+        extra_args: &[Value],
+        text: &str,
+        pos: usize,
+        chain: &[(u64, Value)],
+        parse_call: Option<(&str, &[Value])>,
+    ) -> Result<Value, RuntimeError> {
         if chain.is_empty() {
             return Err(RuntimeError::new(
                 "Cannot dispatch an empty token method wrap chain",
@@ -187,6 +206,16 @@ impl Interpreter {
             "__mutsu_token_method_wrapper_name".to_string(),
             Value::str(name.to_string()),
         );
+        if let Some((method, parse_args)) = parse_call {
+            original_env.insert(
+                "__mutsu_token_method_wrapper_parse_method".to_string(),
+                Value::str(method.to_string()),
+            );
+            original_env.insert(
+                "__mutsu_token_method_wrapper_parse_args".to_string(),
+                Value::real_array(parse_args.to_vec()),
+            );
+        }
         let original = Value::make_sub(
             pkg,
             Symbol::intern(name),
