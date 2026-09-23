@@ -18,7 +18,7 @@
         "nok": 0,
         "ok": 8,
         "plan": 8,
-        "secs": 0.43,
+        "secs": 0.19,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -28,7 +28,7 @@
         "nok": 0,
         "ok": 8,
         "plan": 8,
-        "secs": 11.33,
+        "secs": 6.34,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -41,7 +41,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.12,
+        "secs": 0.06,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -51,7 +51,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 5.77,
+        "secs": 3.28,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -63,7 +63,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 0,
-        "secs": 0.38,
+        "secs": 0.19,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -73,7 +73,7 @@
         "nok": 0,
         "ok": 116,
         "plan": 116,
-        "secs": 2.2,
+        "secs": 1.45,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -85,7 +85,7 @@
         "nok": 0,
         "ok": 31,
         "plan": 31,
-        "secs": 1.15,
+        "secs": 0.65,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -95,7 +95,7 @@
         "nok": 0,
         "ok": 31,
         "plan": 31,
-        "secs": 4.0,
+        "secs": 2.19,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -105,10 +105,10 @@
       "cmp": "regression",
       "mutsu": {
         "first_failure": "Cannot resolve caller any-declaration(CSS::Grammar::Actions:D: CSS::Grammar::CSS3:D); none of these signatures matches:",
-        "nok": 0,
-        "ok": 51,
+        "nok": 2,
+        "ok": 49,
         "plan": null,
-        "secs": 1.4,
+        "secs": 0.6,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -118,7 +118,7 @@
         "nok": 0,
         "ok": 163,
         "plan": 163,
-        "secs": 2.96,
+        "secs": 1.68,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -130,10 +130,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-22",
+    "date": "2026-09-23",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "61fb271",
+    "mutsu_commit": "910f926",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -148,7 +148,7 @@
   "totals": {
     "baseline_assertions": 321,
     "baseline_files": 5,
-    "mutsu_assertions": 90,
+    "mutsu_assertions": 88,
     "parity_files": 3,
     "regressed_files": 2
   },

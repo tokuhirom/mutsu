@@ -19,11 +19,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "RakuAST: `.AST` does not yet support this construct: Use { module: \"Code::Coverable\", arg: None, tags: [], condition: None }",
+        "first_failure": "No such method 'CALL-ME' for invocant of type 'Sub'",
         "nok": 0,
         "ok": 0,
         "plan": 1,
-        "secs": 1.11,
+        "secs": 0.61,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -33,7 +33,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 12.92,
+        "secs": 7.71,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -46,8 +46,8 @@
         "first_failure": "No such method 'target' for invocant of type 'Any'",
         "nok": 0,
         "ok": 0,
-        "plan": 14,
-        "secs": 0.91,
+        "plan": 6,
+        "secs": 0.49,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -59,10 +59,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-22",
+    "date": "2026-09-23",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "61fb271",
+    "mutsu_commit": "910f926",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -71,7 +71,7 @@
   "schema": 1,
   "source": {
     "index": "fez",
-    "url": "https://360.zef.pm/C/OD/CODE_COVERABLE/1b4454a116456a307fab9eb9c46b8f1a9914e629.tar.gz"
+    "url": "https://360.zef.pm/C/OD/CODE_COVERABLE/9fb204584bc6a6ac5c63c057a8b309586beecfe6.tar.gz"
   },
   "status": "red",
   "totals": {
@@ -81,5 +81,5 @@
     "parity_files": 0,
     "regressed_files": 1
   },
-  "version": "0.0.13"
+  "version": "0.0.14"
 }

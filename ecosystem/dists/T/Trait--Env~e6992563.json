@@ -16,7 +16,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 0.24,
+        "secs": 0.25,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -26,7 +26,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 6.93,
+        "secs": 5.56,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -39,7 +39,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.21,
+        "secs": 0.15,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -49,7 +49,7 @@
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 0.76,
+        "secs": 0.56,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -62,7 +62,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.22,
+        "secs": 0.14,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -72,7 +72,30 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 1.95,
+        "secs": 1.35,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Type check failed in binding to parameter '$attr'; expected Trait::Env::Attribute but got Any",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.19,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/03-default.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 2,
+        "plan": 2,
+        "secs": 0.54,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -90,35 +113,12 @@
         "todo": 0,
         "verdict": "die"
       },
-      "path": "t/03-default.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 2,
-        "plan": 2,
-        "secs": 1.01,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "Type check failed in binding to parameter '$attr'; expected Trait::Env::Attribute but got Any",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 0.18,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
       "path": "t/04-required.rakutest",
       "raku": {
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 0.89,
+        "secs": 0.55,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -131,7 +131,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.18,
+        "secs": 0.17,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -141,7 +141,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 0.89,
+        "secs": 0.61,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -154,7 +154,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.23,
+        "secs": 0.14,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -164,7 +164,7 @@
         "nok": 0,
         "ok": 10,
         "plan": 10,
-        "secs": 1.28,
+        "secs": 0.81,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -177,7 +177,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.2,
+        "secs": 0.21,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -187,7 +187,7 @@
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 1.32,
+        "secs": 0.95,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -200,12 +200,58 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.2,
+        "secs": 0.17,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
       },
       "path": "t/08-attr-single-load.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.47,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Type check failed in binding to parameter '$var'; expected Trait::Env::Variable but got Any",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.19,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/09-basic-variable.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 0.87,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Type check failed in binding to parameter '$var'; expected Trait::Env::Variable but got Any",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.21,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/10-json-variable.rakutest",
       "raku": {
         "nok": 0,
         "ok": 1,
@@ -219,57 +265,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "Type check failed in binding to parameter '$var'; expected Trait::Env::Variable but got Any",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 0.18,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/09-basic-variable.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 3,
-        "plan": 3,
-        "secs": 1.32,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "Type check failed in binding to parameter '$var'; expected Trait::Env::Variable but got Any",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 0.2,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/10-json-variable.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 1,
-        "plan": 1,
-        "secs": 0.99,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
         "first_failure": "Type check failed in binding to parameter '$attr'; expected Trait::Env::Attribute but got Any",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.2,
+        "secs": 0.21,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -279,7 +279,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 1.02,
+        "secs": 0.84,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -295,10 +295,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-22",
+    "date": "2026-09-23",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "61fb271",
+    "mutsu_commit": "910f926",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
