@@ -137,6 +137,13 @@ impl Interpreter {
             // A body observing its caller frame (callframe / CALLER::) needs the
             // frame-pushing path, or introspection resolves to the grand-caller.
             && !cf.code.uses_callframe
+            // A body that declares an inner sub (`my sub`, `proto`, ...)
+            // relies on the full call path's routine-registry
+            // snapshot/restore to take the declaration away again on return;
+            // the fast path skips that entirely, which otherwise permanently
+            // leaks the inner routine's registration into the enclosing
+            // scope after the very first call (issue #9080).
+            && !cf.has_inner_subs
     }
 
     /// Check if a compiled function is eligible for the light call path.
@@ -165,6 +172,13 @@ impl Interpreter {
             && !cf.code.has_once
             // callframe / CALLER:: need the frame-pushing path (see fast path).
             && !cf.code.uses_callframe
+            // A body that declares an inner sub (`my sub`, `proto`, ...)
+            // relies on the full call path's routine-registry
+            // snapshot/restore to take the declaration away again on return;
+            // the light path skips that entirely, which otherwise
+            // permanently leaks the inner routine's registration into the
+            // enclosing scope after the very first call (issue #9080).
+            && !cf.has_inner_subs
             && !cf.param_defs.is_empty()
             && cf.param_defs.iter().any(|pd| pd.named)
             && cf.param_defs.iter().all(|pd| {
