@@ -3298,134 +3298,172 @@ impl Interpreter {
             }
 
             // -- Bitwise --
+            // Cost: O(1) for Int operands; O(b) for BigInt, b = limbs.
             OpCode::BitAnd => {
                 self.exec_bit_and_op()?;
                 *ip += 1;
             }
+            // Cost: O(1) for Int operands; O(b) for BigInt, b = limbs.
             OpCode::BitOr => {
                 self.exec_bit_or_op()?;
                 *ip += 1;
             }
+            // Cost: O(1) for Int operands; O(b) for BigInt, b = limbs.
             OpCode::BitXor => {
                 self.exec_bit_xor_op()?;
                 *ip += 1;
             }
+            // Cost: O(b + s/64), b = limbs of the left operand, s = shift count
+            // (an Int left shift always goes through BigInt).
             OpCode::BitShiftLeft => {
                 self.exec_bit_shift_left_op()?;
                 *ip += 1;
             }
+            // Cost: O(1) for Int operands; O(b) for BigInt, b = limbs.
             OpCode::BitShiftRight => {
                 self.exec_bit_shift_right_op()?;
                 *ip += 1;
             }
+            // Cost: O(1).
             OpCode::BoolBitOr => {
                 self.exec_bool_bit_or_op();
                 *ip += 1;
             }
+            // Cost: O(1).
             OpCode::BoolBitAnd => {
                 self.exec_bool_bit_and_op();
                 *ip += 1;
             }
+            // Cost: O(1).
             OpCode::BoolBitXor => {
                 self.exec_bool_bit_xor_op();
                 *ip += 1;
             }
+            // Cost: O(n1 + n2), n = chars (or bytes of a Buf) of each operand.
             OpCode::StrBitAnd => {
                 self.exec_str_bit_and_op()?;
                 *ip += 1;
             }
+            // Cost: O(n1 + n2), n = chars (or bytes of a Buf) of each operand.
             OpCode::StrBitOr => {
                 self.exec_str_bit_or_op()?;
                 *ip += 1;
             }
+            // Cost: O(n1 + n2), n = chars (or bytes of a Buf) of each operand.
             OpCode::StrBitXor => {
                 self.exec_str_bit_xor_op()?;
                 *ip += 1;
             }
+            // Cost: O(n + s), n = bytes of the left operand, s = shift count in
+            // bits (a per-bit loop).
             OpCode::StrShiftLeft => {
                 self.exec_str_shift_left_op();
                 *ip += 1;
             }
+            // Cost: O(n), n = bytes of the left operand (a per-bit loop).
             OpCode::StrShiftRight => {
                 self.exec_str_shift_right_op();
                 *ip += 1;
             }
 
             // -- Set operations --
+            // Cost: O(e) on a list RHS, O(1) on a Set/Bag/Mix/Hash (see
+            // exec_set_elem_op).
             OpCode::SetElem => {
                 self.exec_set_elem_op()?;
                 *ip += 1;
             }
+            // Cost: O(e) on a list LHS, O(1) on a Set/Bag/Mix/Hash (see
+            // exec_set_cont_op).
             OpCode::SetCont => {
                 self.exec_set_cont_op()?;
                 *ip += 1;
             }
+            // Cost: O(e1 + e2), e = elements of each operand.
             OpCode::SetUnion => {
                 self.exec_set_union_op()?;
                 *ip += 1;
             }
+            // Cost: O(e1 + e2), e = elements of each operand.
             OpCode::SetAddition => {
                 self.exec_set_addition_op()?;
                 *ip += 1;
             }
+            // Cost: O(e1 + e2), e = elements of each operand (both coerced).
             OpCode::SetIntersect => {
                 self.exec_set_intersect_op()?;
                 *ip += 1;
             }
+            // Cost: O(e1 + e2), e = elements of each operand.
             OpCode::SetMultiply => {
                 self.exec_set_multiply_op()?;
                 *ip += 1;
             }
+            // Cost: O(e1 + e2), e = elements of each operand.
             OpCode::SetDiff => {
                 self.exec_set_diff_op();
                 *ip += 1;
             }
+            // Cost: O(e1 + e2), e = elements of each operand.
             OpCode::SetSymDiff => {
                 self.exec_set_sym_diff_op();
                 *ip += 1;
             }
+            // Cost: O(e1 + e2), e = elements of each operand.
             OpCode::SetSubset => {
                 self.exec_set_subset_op();
                 *ip += 1;
             }
+            // Cost: O(e1 + e2), e = elements of each operand.
             OpCode::SetSuperset => {
                 self.exec_set_superset_op();
                 *ip += 1;
             }
+            // Cost: O(e1 + e2), e = elements of each operand.
             OpCode::SetStrictSubset => {
                 self.exec_set_strict_subset_op();
                 *ip += 1;
             }
+            // Cost: O(e1 + e2), e = elements of each operand.
             OpCode::SetStrictSuperset => {
                 self.exec_set_strict_superset_op();
                 *ip += 1;
             }
+            // Cost: O(1) (a two-element junction, no flattening).
             OpCode::JunctionAny => {
                 self.exec_junction_any_op();
                 *ip += 1;
             }
+            // Cost: O(1) (a two-element junction, no flattening).
             OpCode::JunctionAll => {
                 self.exec_junction_all_op();
                 *ip += 1;
             }
+            // Cost: O(1) (a two-element junction, no flattening).
             OpCode::JunctionOne => {
                 self.exec_junction_one_op();
                 *ip += 1;
             }
+            // Cost: O(k), k = operands, plus a memoized user-`infix:<|>` probe.
             OpCode::JunctionAnyN(count) => {
                 self.exec_junction_n_op(*count, JunctionKind::Any, "infix:<|>")?;
                 *ip += 1;
             }
+            // Cost: O(k), k = operands, plus a memoized user-`infix:<&>` probe.
             OpCode::JunctionAllN(count) => {
                 self.exec_junction_n_op(*count, JunctionKind::All, "infix:<&>")?;
                 *ip += 1;
             }
+            // Cost: O(k), k = operands, plus a memoized user-`infix:<^>` probe.
             OpCode::JunctionOneN(count) => {
                 self.exec_junction_n_op(*count, JunctionKind::One, "infix:<^>")?;
                 *ip += 1;
             }
 
             // -- Sequence --
+            // Cost: O(1) when the sequence stays lazy (the common case); O(k)
+            // when eval_sequence answers an eager finite Array, k = elements
+            // produced (then copied once more into the Seq).
             OpCode::Sequence { exclude_end } => {
                 self.sync_source_line(code, *ip);
                 let right = self.stack.pop().unwrap();
@@ -3436,9 +3474,12 @@ impl Interpreter {
             }
 
             // -- Control flow --
+            // Cost: O(1).
             OpCode::Label(_) => {
                 *ip += 1;
             }
+            // Cost: O(c), c = ops of the current code block (find_label_target
+            // scans for the Label linearly).
             OpCode::Goto => {
                 let target = self.stack.pop().unwrap_or(Value::NIL).to_string_value();
                 if let Some(target_ip) = self.find_label_target(code, &target) {
@@ -3447,9 +3488,11 @@ impl Interpreter {
                     return Err(RuntimeError::goto_signal(target));
                 }
             }
+            // Cost: O(1).
             OpCode::Jump(target) => {
                 *ip = *target as usize;
             }
+            // Cost: O(1) (a user `Bool` method costs its call).
             OpCode::JumpIfFalse(target) => {
                 // Mark Failures as handled when tested for truthiness (e.g. && operator)
                 Self::mark_failure_handled_on_stack(&mut self.stack);
@@ -3462,6 +3505,7 @@ impl Interpreter {
                     *ip += 1;
                 }
             }
+            // Cost: O(1) (a user `Bool` method costs its call).
             OpCode::JumpIfTrue(target) => {
                 Self::mark_failure_handled_on_stack(&mut self.stack);
                 let val = self.stack.last().unwrap().clone();
