@@ -3,9 +3,10 @@ use super::super::*;
 use super::regex_casefold::casefold_eq;
 use super::regex_eval_class::{composite_item_matches, composite_probe_chars};
 use super::regex_helpers::{
-    LTM_DECLARATIVE_MODE, LTM_PREFIX_TERMINATED, class_has_only_exact_chars, grapheme_end,
-    is_grapheme_boundary, is_word_char, matches_named_builtin,
+    LTM_DECLARATIVE_MODE, class_has_only_exact_chars, grapheme_end, is_grapheme_boundary,
+    is_word_char, matches_named_builtin,
 };
+use super::regex_ltm_fate::{ltm_fate_frame_close_into, ltm_fate_frame_open, ltm_record_fate};
 use super::regex_ltm_rank::{LtmAtomMode, ltm_atom_mode};
 use crate::runtime::regex_parse::RegexParseMode;
 
@@ -260,21 +261,12 @@ impl Interpreter {
         if LTM_DECLARATIVE_MODE.with(std::cell::Cell::get) {
             match ltm_atom_mode(atom) {
                 LtmAtomMode::Terminate => {
-                    LTM_PREFIX_TERMINATED.with(|f| f.set(true));
-                    return Some(pos);
+                    ltm_record_fate(pos);
+                    return None;
                 }
                 LtmAtomMode::TerminateAfter(inner) => {
-                    // Measure the inner pattern BEFORE setting TERMINATED —
-                    // see the identical ordering note in
-                    // `regex_match_atom_all_with_capture_in_pkg`.
-                    let best_end = self
-                        .regex_match_ends_from_caps_in_pkg(inner, chars, pos, pkg)
-                        .into_iter()
-                        .map(|(end, _)| end)
-                        .max()
-                        .unwrap_or(pos);
-                    LTM_PREFIX_TERMINATED.with(|f| f.set(true));
-                    return Some(best_end);
+                    self.ltm_record_lookahead_fates(inner, chars, pos, pkg);
+                    return None;
                 }
                 LtmAtomMode::SkipZeroWidth => return Some(pos),
                 LtmAtomMode::Normal => {}
@@ -563,6 +555,9 @@ impl Interpreter {
             if !candidates.is_empty() {
                 let remaining: String = chars[pos..].iter().collect();
                 let mut best_len: Option<usize> = None;
+                // The candidates run on `remaining`, so their fates are
+                // relative to `pos` (`regex_ltm_fate`).
+                let enclosing_fate = ltm_fate_frame_open();
                 for (sub_pat, sub_pkg, _sym_key) in candidates {
                     if let Some(len) =
                         self.regex_match_len_at_start_in_pkg(&sub_pat, &remaining, sub_pkg)
@@ -573,6 +568,7 @@ impl Interpreter {
                         }
                     }
                 }
+                ltm_fate_frame_close_into(enclosing_fate, |fate| pos + fate);
                 return best_len.map(|len| pos + len);
             }
             if spec.lookup_name == "wb" && !spec.token_lookup {

@@ -15,6 +15,7 @@ use super::super::*;
 use super::regex_helpers::{
     LTM_DECLARATIVE_MODE, LTM_PREFIX_TERMINATED, LTM_SEQALT_EPSILON, named_lookup_is_ws,
 };
+use super::regex_ltm_fate::{ltm_fate_frame_close, ltm_fate_frame_open};
 use std::cell::Cell;
 use std::collections::HashSet;
 
@@ -66,6 +67,13 @@ pub(super) fn ltm_atom_mode(atom: &RegexAtom) -> LtmAtomMode<'_> {
         // (prefix "food"), enter it, and reach the `||` branch after `<!>` fails
         // for real (verified against `raku`).
         RegexAtom::Named(name) if name == "!" => LtmAtomMode::Terminate,
+        // A package-qualified subrule call (`<CSS::Grammar::Core::_arg>`,
+        // `<G::x>`): Rakudo's NFA looks the rule up by name as a method of the
+        // cursor, finds none, and puts a fate there -- even when the package is
+        // the grammar's own (verified against `raku`; issue #9053).
+        RegexAtom::Named(name) if crate::qualified::is_qualified(name.spec().lookup_sym) => {
+            LtmAtomMode::Terminate
+        }
         // Backreferences depend on a capture made so far in THIS match, not on
         // the pattern's declarative structure — Rakudo's NFA has no method for
         // them, so they terminate.
@@ -154,7 +162,9 @@ impl Interpreter {
         let saved_mode = LTM_DECLARATIVE_MODE.with(|f| f.replace(true));
         let saved_terminated = LTM_PREFIX_TERMINATED.with(|f| f.replace(false));
         let saved_epsilon = LTM_SEQALT_EPSILON.with(|f| f.replace(false));
+        let enclosing_fate = ltm_fate_frame_open();
         let ends = self.regex_match_ends_from_caps_in_pkg(pattern, chars, pos, pkg);
+        let fate = ltm_fate_frame_close(enclosing_fate);
         // A `||` epsilon bypass anywhere in the walk makes a `None` unsound to
         // filter on — see `LTM_SEQALT_EPSILON`.
         let stopped_at_non_declarative =
@@ -162,7 +172,9 @@ impl Interpreter {
         LTM_DECLARATIVE_MODE.with(|f| f.set(saved_mode));
         LTM_PREFIX_TERMINATED.with(|f| f.set(saved_terminated));
         LTM_SEQALT_EPSILON.with(|f| f.set(saved_epsilon));
-        let max_end = ends.into_iter().map(|(end, _)| end).max();
+        // The prefix is the furthest place any path got: the end of the
+        // pattern, or a fate (`regex_ltm_fate`).
+        let max_end = ends.into_iter().map(|(end, _)| end).chain(fate).max();
         (max_end.map(|end| end - pos), stopped_at_non_declarative)
     }
 

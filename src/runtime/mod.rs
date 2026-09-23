@@ -800,6 +800,7 @@ mod receiver_class;
 pub(crate) mod regex;
 pub(crate) mod regex_parse;
 mod regex_parse_charclass;
+mod regex_parse_charclass_alts;
 mod regex_parse_core;
 mod regex_parse_grapheme;
 mod regex_parse_ltm;

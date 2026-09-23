@@ -1,6 +1,5 @@
 use super::super::*;
-use super::regex_casefold::{casefold_pattern, casefold_text, needs_casefold_expansion};
-use super::regex_helpers::strip_marks_pattern;
+use super::regex_casefold::needs_casefold_expansion;
 use super::regex_prefilter::regex_scan_positions;
 
 impl Interpreter {
@@ -246,50 +245,18 @@ impl Interpreter {
         let target = MatchTarget::new(text);
         let _target_scope = super::regex_helpers::MatchTargetScope::enter(target.clone());
         let orig_chars = target.chars();
+        // A declarative-prefix measurement asks how far the pattern gets from
+        // the start of `text`, never where it first matches, so it does not
+        // scan: a later start would record fates from positions the measured
+        // candidate never starts at (`regex_ltm_fate`).
+        let measuring = super::regex_helpers::LTM_DECLARATIVE_MODE.with(std::cell::Cell::get);
 
         // When :m (ignoremark) is set, strip combining marks from both text and
         // pattern literals, match on stripped forms, then map positions back.
         // Every recorded span (including sub-captures) is remapped from the
         // stripped space so captured text derives from the original subject.
         if parsed.ignore_mark {
-            let stripped = target.stripped();
-            let stripped_chars = stripped.chars();
-            let stripped_parsed = strip_marks_pattern(parsed);
-            let orig_len = orig_chars.len();
-            if stripped_parsed.anchor_start {
-                return self
-                    .regex_match_end_from_caps_in_pkg(&stripped_parsed, stripped_chars, 0, pkg)
-                    .map(|(end, mut caps)| {
-                        caps.from = caps.capture_start.unwrap_or(0);
-                        caps.to = caps.capture_end.unwrap_or(end);
-                        super::regex_helpers::remap_caps_spans(
-                            &mut caps,
-                            stripped.stripped_map(),
-                            orig_len,
-                        );
-                        caps.set_target(Some(target.clone()));
-                        caps
-                    });
-            }
-            for start in regex_scan_positions(self, &stripped_parsed, stripped_chars, 0, pkg) {
-                if let Some((end, mut caps)) = self.regex_match_end_from_caps_in_pkg(
-                    &stripped_parsed,
-                    stripped_chars,
-                    start,
-                    pkg,
-                ) {
-                    caps.from = caps.capture_start.unwrap_or(start);
-                    caps.to = caps.capture_end.unwrap_or(end);
-                    super::regex_helpers::remap_caps_spans(
-                        &mut caps,
-                        stripped.stripped_map(),
-                        orig_len,
-                    );
-                    caps.set_target(Some(target.clone()));
-                    return Some(caps);
-                }
-            }
-            return None;
+            return self.regex_match_ignoremark_captures(parsed, &target, measuring, pkg);
         }
 
         // When :i (ignorecase) is set and there are characters with multi-char
@@ -302,52 +269,7 @@ impl Interpreter {
         // fold expansion. This prevents false matches in the middle of a fold
         // (e.g., matching 't' from the expansion of 'ﬆ' -> 'st').
         if parsed.ignore_case && needs_casefold_expansion(orig_chars, parsed) {
-            let (folded_chars, pos_map) = casefold_text(orig_chars);
-            let folded_parsed = casefold_pattern(parsed);
-            let orig_len = orig_chars.len();
-
-            // Helper: check if a position in folded space is at a fold boundary
-            // (i.e., the start of an original character's expansion).
-            let is_fold_boundary = |pos: usize| -> bool {
-                pos == 0 || pos >= folded_chars.len() || pos_map[pos] != pos_map[pos - 1]
-            };
-
-            if folded_parsed.anchor_start {
-                return self
-                    .regex_match_end_from_caps_in_pkg(&folded_parsed, &folded_chars, 0, pkg)
-                    .and_then(|(end, mut caps)| {
-                        let end_pos = caps.capture_end.unwrap_or(end);
-                        if !is_fold_boundary(end_pos) {
-                            return None;
-                        }
-                        caps.from = caps.capture_start.unwrap_or(0);
-                        caps.to = end_pos;
-                        super::regex_helpers::remap_caps_spans(&mut caps, &pos_map, orig_len);
-                        caps.set_target(Some(target.clone()));
-                        Some(caps)
-                    });
-            }
-            for start in 0..=folded_chars.len() {
-                // Only try start positions at fold boundaries
-                if !is_fold_boundary(start) {
-                    continue;
-                }
-                if let Some((end, mut caps)) =
-                    self.regex_match_end_from_caps_in_pkg(&folded_parsed, &folded_chars, start, pkg)
-                {
-                    let end_pos = caps.capture_end.unwrap_or(end);
-                    // Only accept matches that end at fold boundaries
-                    if !is_fold_boundary(end_pos) {
-                        continue;
-                    }
-                    caps.from = caps.capture_start.unwrap_or(start);
-                    caps.to = end_pos;
-                    super::regex_helpers::remap_caps_spans(&mut caps, &pos_map, orig_len);
-                    caps.set_target(Some(target.clone()));
-                    return Some(caps);
-                }
-            }
-            return None;
+            return self.regex_match_casefold_captures(parsed, &target, measuring, pkg);
         }
 
         let chars = orig_chars;
@@ -362,6 +284,9 @@ impl Interpreter {
                 });
         }
         for start in regex_scan_positions(self, parsed, chars, 0, pkg) {
+            if measuring && start > 0 {
+                break;
+            }
             if let Some((end, mut caps)) =
                 self.regex_match_end_from_caps_in_pkg(parsed, chars, start, pkg)
             {
