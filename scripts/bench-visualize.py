@@ -290,8 +290,13 @@ __CHROME_NAV__
     <span class="ctl-label">Window</span>
     <div class="seg" id="window" role="group" aria-label="Commit window">
       <button data-v="50" aria-pressed="false">50</button>
-      <button data-v="150" aria-pressed="false">150</button>
-      <button data-v="0" aria-pressed="true">all</button>
+      <button data-v="150" aria-pressed="true">150</button>
+      <button data-v="0" aria-pressed="false">all</button>
+    </div>
+    <span class="ctl-label" id="yaxisLabel">Y axis</span>
+    <div class="seg" id="yaxis" role="group" aria-label="Y axis origin">
+      <button data-v="fit" aria-pressed="true">fit</button>
+      <button data-v="zero" aria-pressed="false">from 0</button>
     </div>
     <span class="ctl-label">View</span>
     <div class="seg" id="view" role="group" aria-label="View">
@@ -316,7 +321,7 @@ __CHROME_FOOTER__
 const DATA = JSON.parse(document.getElementById('data').textContent);
 const commits = DATA.commits, benches = DATA.benches;
 const N = commits.length;
-let metric = 'seconds', windowN = 0, view = 'charts';
+let metric = 'seconds', windowN = 150, view = 'charts', yaxis = 'fit';
 let sortKey = 'name', sortDir = 1;
 
 // A point is [commitIdx, seconds, ratio, instructions, allocations]. The last
@@ -337,7 +342,7 @@ function fmtInstr(v) {
 }
 const fmt = (v) => (metric === 'instr' || metric === 'allocs') ? fmtInstr(v)
   : metric === 'seconds'
-    ? (v < 0.001 ? v.toExponential(1) : v.toFixed(v < 0.1 ? 4 : 3))
+    ? (v === 0 ? '0' : v < 0.001 ? v.toExponential(1) : v.toFixed(v < 0.1 ? 4 : 3))
     : v.toFixed(2);
 const unit = () => metric === 'seconds' ? 's' : metric === 'ratio' ? '×' : '';
 
@@ -365,8 +370,13 @@ function chart(b) {
   }
   if (metric === 'ratio') { lo = Math.min(lo, 1); hi = Math.max(hi, 1); }
   if (!isFinite(lo)) { lo = 0; hi = 1; }
+  // `zero` anchors the axis at 0 so a chart shows a change's size relative to
+  // the whole value; `fit` zooms onto the data's own range so small moves show.
+  if (yaxis === 'zero') { lo = Math.min(lo, 0); hi = Math.max(hi, 0); }
   if (hi === lo) { hi = lo + 1; }
-  const pad = (hi - lo) * 0.12; lo -= pad; hi += pad;
+  const pad = (hi - lo) * 0.12;
+  if (yaxis !== 'zero' || lo < 0) lo -= pad;
+  if (yaxis !== 'zero' || hi > 0) hi += pad;
   const sy = (v) => PADT + (1 - (v - lo) / (hi - lo)) * (H - PADT - PADB);
 
   let svg = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${b.name} trend">`;
@@ -492,11 +502,11 @@ function render() {
    The controls above are the page's entire state, so they belong in the URL:
    a link to "instructions, last 150 commits, as a table" has to reopen exactly
    that, and a reload must not silently throw the reader's selection away.
-   `#metric=instr&window=150&view=table&sort=jit&dir=desc`, with defaults left
+   `#metric=instr&window=50&y=zero` or `#view=table&sort=jit&dir=desc`, with defaults left
    out so an untouched page keeps a bare URL. `replaceState` rather than
    assigning to `location.hash`: clicking through four metrics is one page, not
    four history entries to back out of. */
-const DEFAULTS = { metric: 'seconds', window: '0', view: 'charts', sort: 'name', dir: 'asc' };
+const DEFAULTS = { metric: 'seconds', window: '150', view: 'charts', y: 'fit', sort: 'name', dir: 'asc' };
 const VALID = {
   // `instr` and `allocs` are only offered when the series behind them exists, so
   // a stale link to one must fall back rather than render an empty page. Keep
@@ -508,16 +518,19 @@ const VALID = {
     || (v === 'instr' && DATA.hasDet) || (v === 'allocs' && DATA.hasAllocs),
   window: (v) => v === '0' || v === '50' || v === '150',
   view: (v) => v === 'charts' || v === 'table',
+  y: (v) => v === 'fit' || v === 'zero',
   sort: (v) => v === 'name' || v === 'base' || v === 'jit' || v === 'dpct',
   dir: (v) => v === 'asc' || v === 'desc',
 };
 
 function currentState() {
-  const st = { metric, window: String(windowN), view,
+  const st = { metric, window: String(windowN), view, y: yaxis,
                sort: sortKey, dir: sortDir > 0 ? 'asc' : 'desc' };
   // The sort only exists in the table view; carrying it around in the charts
   // URL would be noise a reader cannot act on.
   if (view !== 'table') { delete st.sort; delete st.dir; }
+  // Likewise the y-axis origin only shapes the charts.
+  else delete st.y;
   return st;
 }
 
@@ -554,6 +567,7 @@ function applyHash() {
   metric = pick('metric');
   windowN = +pick('window');
   view = pick('view');
+  yaxis = pick('y');
   sortKey = pick('sort');
   sortDir = pick('dir') === 'desc' ? -1 : 1;
   syncButtons();
@@ -565,6 +579,10 @@ function syncButtons() {
   press('metric', metric);
   press('window', String(windowN));
   press('view', view);
+  press('yaxis', yaxis);
+  // The origin choice has nothing to act on in the table view.
+  document.getElementById('yaxis').classList.toggle('hidden', view !== 'charts');
+  document.getElementById('yaxisLabel').classList.toggle('hidden', view !== 'charts');
 }
 
 // Adopt whatever the URL says, then normalize it: a hash that named something
@@ -587,6 +605,7 @@ if (DATA.hasAllocs) document.getElementById('metricAllocs').hidden = false;
 seg('metric', v => metric = v);
 seg('window', v => windowN = +v);
 seg('view', v => view = v);
+seg('yaxis', v => yaxis = v);
 
 // A hand-edited URL, or a back/forward step between two states, re-renders.
 window.addEventListener('hashchange', () => {
@@ -602,7 +621,8 @@ const last = commits[N - 1], first = commits[0];
 document.getElementById('meta').textContent =
   `${N} commits · ${first.date.slice(0,10)} → ${last.date.slice(0,10)} · latest ${last.sha}`;
 document.getElementById('foot').innerHTML =
-  `Each chart has an independent y-axis (small multiples). Values are the median of 7 runs; ` +
+  `Each chart has an independent y-axis (small multiples), fitted to the data by default; ` +
+  `<b>Y axis: from 0</b> anchors every axis at zero instead. Values are the median of 7 runs; ` +
   `ratio is mutsu ÷ Rakudo on the same runner (below 1× = faster than raku). ` +
   `Δ latest = last commit vs the previous in the window. ` +
   (DATA.hasDet
