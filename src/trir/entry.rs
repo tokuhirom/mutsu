@@ -10,7 +10,6 @@
 //! Declining is free everywhere: every `None` below leaves the VM state
 //! exactly as it was, and the caller takes its ordinary path.
 
-use super::compile::TrirCompiler;
 use super::exec::TrOutcome;
 use super::frame::TrFrame;
 use super::{TrChunk, TrKind};
@@ -224,7 +223,9 @@ impl Interpreter {
                 continue;
             }
             let idx = caller_slot as usize;
-            if idx >= self.locals.len() {
+            // Every argument here is a caller variable, which a sigilless
+            // parameter would bind as a container.
+            if p.sigilless || idx >= self.locals.len() {
                 return None;
             }
             if let Some(cell) = self.trir_captured_cell(caller_code, idx) {
@@ -273,7 +274,16 @@ impl Interpreter {
                 rw_len += 1;
                 continue;
             }
-            let val = self.stack[args_base + i].unwrap_varref().clone();
+            let arg = &self.stack[args_base + i];
+            if p.sigilless
+                && matches!(
+                    arg.view(),
+                    ValueView::VarRef { .. } | ValueView::ContainerRef(_)
+                )
+            {
+                return None;
+            }
+            let val = arg.unwrap_varref().clone();
             self.bind_ro_param(frame, p, &val)?;
         }
         Some((rw, rw_len))
@@ -318,6 +328,16 @@ impl Interpreter {
             TrKind::Obj => {
                 if p.type_name == "str" && val.as_str().is_none() {
                     return None;
+                }
+                if let Some(check) = &p.check {
+                    if let Some(want) = check.defined
+                        && crate::runtime::types::value_is_defined(val) != want
+                    {
+                        return None;
+                    }
+                    if !self.type_matches_value(&check.base, val) {
+                        return None;
+                    }
                 }
                 self.trir.ol[frame.obase as usize + p.slot as usize] = val.clone();
             }
@@ -401,6 +421,27 @@ impl Interpreter {
         site: &crate::trir::TrCallSite,
         caller_code: &CompiledCode,
     ) -> Result<Value, RuntimeError> {
+        let args = self.trir_site_fallback_args(site, caller_code);
+        let name = site.name.resolve();
+        // Mirror `exec_call_func_op`'s save/restore. A statically linked
+        // site's arguments are all plain lexicals, never literals, so the
+        // mask this call publishes for multi-candidate selection is empty —
+        // but it must be published, or the callee's dispatch would read the
+        // CALLER's.
+        let saved = std::mem::replace(&mut self.literal_native_args, 0);
+        let result = self.call_function(&name, args);
+        self.literal_native_args = saved;
+        result
+    }
+
+    /// The arguments the untyped call site a `CallTrir` replaced would have
+    /// pushed: every plain lexical wrapped in a slotted `VarRef`, which is
+    /// what `WrapVarRef` does.
+    pub(crate) fn trir_site_fallback_args(
+        &self,
+        site: &crate::trir::TrCallSite,
+        caller_code: &CompiledCode,
+    ) -> Vec<Value> {
         let mut args = Vec::with_capacity(site.arg_slots.len());
         for &slot in &site.arg_slots {
             let value = self
@@ -415,16 +456,7 @@ impl Interpreter {
                 .unwrap_or_else(|| Symbol::intern(""));
             args.push(Value::varref_slotted(sym, value, None, Some(slot)));
         }
-        let name = site.name.resolve();
-        // Mirror `exec_call_func_op`'s save/restore. A statically linked
-        // site's arguments are all plain lexicals, never literals, so the
-        // mask this call publishes for multi-candidate selection is empty —
-        // but it must be published, or the callee's dispatch would read the
-        // CALLER's.
-        let saved = std::mem::replace(&mut self.literal_native_args, 0);
-        let result = self.call_function(&name, args);
-        self.literal_native_args = saved;
-        result
+        args
     }
 }
 
@@ -440,43 +472,4 @@ pub(super) fn deref_cell(v: &Value) -> Value {
         ValueView::ContainerRef(cell) => cell.lock().unwrap_or_else(|e| e.into_inner()).clone(),
         _ => v.clone(),
     }
-}
-
-/// Compile a routine to TRIR at declaration time, or answer `None`.
-///
-/// One call site (`compiler/helpers_sub_body.rs`), so the eligibility gate
-/// and the chunk can never disagree about which routines have one.
-pub(crate) fn compile_routine(
-    name: Symbol,
-    param_defs: &[crate::ast::ParamDef],
-    params: &[String],
-    return_type: Option<&str>,
-    body: &[crate::ast::Stmt],
-    routines: Option<&crate::trir::compile::TrirRoutineMap>,
-    fns: Option<&CompiledFns>,
-) -> Option<std::sync::Arc<TrChunk>> {
-    let chunk = TrirCompiler::compile(name, param_defs, params, return_type, body, routines, fns);
-    if dump_enabled() {
-        match &chunk {
-            Some(c) => eprintln!(
-                "trir: {} accepted ({} ops, {} native slots, {} obj slots, {} outers, {} calls)",
-                name.as_str(),
-                c.ops.len(),
-                c.n_native,
-                c.n_obj,
-                c.outers.len(),
-                c.calls.len(),
-            ),
-            None => eprintln!("trir: {} declined", name.as_str()),
-        }
-    }
-    chunk.map(std::sync::Arc::new)
-}
-
-/// Whether `MUTSU_TRIR_DUMP` asked for the eligibility decisions to be
-/// reported. Read once: this runs per routine declaration.
-fn dump_enabled() -> bool {
-    use std::sync::OnceLock;
-    static ON: OnceLock<bool> = OnceLock::new();
-    *ON.get_or_init(|| std::env::var("MUTSU_TRIR_DUMP").is_ok())
 }

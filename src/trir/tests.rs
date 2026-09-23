@@ -37,8 +37,7 @@ fn first_sub_chunk(stmts: &[Stmt]) -> Option<Option<TrChunk>> {
                     params,
                     return_type.as_deref(),
                     body,
-                    None,
-                    None,
+                    super::compile::TrirScope::default(),
                 ));
             }
             Stmt::ClassDecl { body, .. } => {

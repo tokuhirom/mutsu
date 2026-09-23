@@ -212,6 +212,12 @@ impl Interpreter {
                 self.trir.nl[cnb + p.slot as usize] = target as i64;
                 continue;
             }
+            // A variable handed to a sigilless parameter binds its
+            // container; only a computed value is a plain slot.
+            if p.sigilless && !matches!(arg, TrArg::Value(_)) {
+                self.trir.pop_frame(callee_frame);
+                return Ok(GenOutcome::NotLinked);
+            }
             let val = match arg {
                 TrArg::Native(s) => Value::int(self.trir.nl[nbase + *s as usize]),
                 TrArg::Ref(s) => {

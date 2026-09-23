@@ -91,11 +91,50 @@ impl TrirCompiler<'_> {
         want_kind: Option<TrKind>,
     ) -> Option<TrArg> {
         if wants_ref {
-            // `f($pos)` — the variable itself.
-            if let Expr::Var(n) = a
-                && let Some(arg) = self.slot_arg(n)
-            {
-                return Some(arg);
+            // A slot whose reads rely on it never being written, or whose
+            // stores must wrap, cannot be handed to a callee that might
+            // write it.
+            let lvalue = match a {
+                Expr::Var(n) => Some(n.as_str()),
+                Expr::Unary { expr, .. } => match expr.as_ref() {
+                    Expr::Var(n) => Some(n.as_str()),
+                    _ => None,
+                },
+                Expr::AssignExpr { name, .. } => Some(name.as_str()),
+                _ => None,
+            };
+            let fixed = lvalue.and_then(|n| {
+                let Binding { slot, kind } = self.binding_of(n)?;
+                Some((
+                    n.to_string(),
+                    self.slot_is_sized(slot, kind),
+                    kind == TrKind::Obj && self.nqp_bound.contains(&slot),
+                ))
+            });
+            match fixed {
+                Some((n, true, _)) => {
+                    self.note_decline(|| format!("sized {n} passed where a callee might write it"));
+                    return None;
+                }
+                // A `:=`-bound value is not a container, so it goes over as
+                // the value, exactly as the binding itself would: a callee
+                // that writes an `is rw` parameter bound to it dies on the
+                // untyped path too. A resolved `is rw` parameter needs a
+                // slot reference, which a value is not.
+                Some((n, _, true)) => {
+                    if want_kind.is_some() {
+                        self.note_decline(|| format!("the `:=`-bound {n} passed `is rw`"));
+                        return None;
+                    }
+                }
+                _ => {
+                    // `f($pos)` — the variable itself.
+                    if let Expr::Var(n) = a
+                        && let Some(arg) = self.slot_arg(n)
+                    {
+                        return Some(arg);
+                    }
+                }
             }
             // `f(++$pos)` — Raku's `++` yields the container, so this binds
             // the variable too. Emit the increment, then pass the variable.
@@ -116,8 +155,10 @@ impl TrirCompiler<'_> {
                 && let Some(arg) = self.slot_arg(name)
             {
                 let Binding { slot, kind } = self.binding_of(name)?;
+                self.check_not_bound(slot, kind, name)?;
                 let got = self.compile_expr(expr)?;
-                self.coerce(got, kind)?;
+                let tn = self.native_type_name(slot);
+                self.coerce_store(got, kind, tn)?;
                 self.store(slot, kind);
                 return Some(arg);
             }
@@ -172,6 +213,17 @@ impl TrirCompiler<'_> {
             return None;
         }
         let link = TrLink::to(key, cf)?;
+        // A `CallTr` binds by copying, with no type test; a callee whose
+        // parameters carry a nominal check goes through `CallGen`, whose
+        // run-time link binds through `bind_ro_param`.
+        if link
+            .chunk
+            .params
+            .iter()
+            .any(|p| p.check.is_some() || p.sigilless)
+        {
+            return None;
+        }
         (link.chunk.params.len() == arity).then_some(link)
     }
 

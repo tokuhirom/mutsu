@@ -88,6 +88,47 @@ impl Interpreter {
         Ok(())
     }
 
+    /// The cold path of a `CallTrir` site whose callee is a frame-lexical
+    /// routine (ADR-0113). Such a routine is never registered, so the
+    /// by-name fallback cannot find it; the call goes through the lexical
+    /// table the site's chunk carries instead. `None` when the callee is
+    /// not one of this chunk's frame lexicals, or has not been derived.
+    pub(super) fn exec_call_trir_fallback_frame_lexical(
+        &mut self,
+        code: &CompiledCode,
+        site: &crate::trir::TrCallSite,
+        compiled_fns: &CompiledFns,
+    ) -> Result<Option<Value>, RuntimeError> {
+        let Some(r) = code
+            .lexical_routines
+            .iter()
+            .copied()
+            .find(|r| r.name == site.name)
+        else {
+            return Ok(None);
+        };
+        if !self.frame_lexical_routines.contains_key(&r) {
+            return Ok(None);
+        }
+        let args = self.trir_site_fallback_args(site, code);
+        let arity = args.len() as u32;
+        let base = self.stack.len();
+        self.stack.extend(args);
+        let call = FrameLexicalCallSite {
+            arity,
+            arg_sources_idx: None,
+            track_sources: false,
+            call_has_named: false,
+        };
+        let out = self.exec_frame_lexical_call(code, r, call, compiled_fns)?;
+        if out.is_none() {
+            // Declined with the arguments untouched: take them back, so the
+            // by-name fallback starts from the stack it expects.
+            self.stack.truncate(base);
+        }
+        Ok(out)
+    }
+
     /// A closure is being created from `code.stmt_pool[idx]` with the compiled
     /// chunk `cc`. When that chunk calls a frame-lexical routine, remember the
     /// body so a carrier recompile of it inherits the call table (see

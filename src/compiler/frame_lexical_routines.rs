@@ -208,6 +208,17 @@ pub(super) fn scan_chunk(
         }
     };
     for op in &code.ops {
+        // A statically linked call carries its callee in its site, not in a
+        // name constant. Its cold fallback reaches a frame lexical through
+        // this chunk's lexical table, so it counts as a bare call.
+        if let OpCode::CallTrir { site, .. } = op {
+            if let Some(s) = code.trir_call_sites.get(*site as usize)
+                && names.contains(&s.name)
+            {
+                called.push(s.name);
+            }
+            continue;
+        }
         let callee = match op {
             OpCode::ExecCallPairs { name_idx, .. } => Some(*name_idx),
             _ => CompiledCode::op_callee_name_const_idx(op),

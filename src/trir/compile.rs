@@ -6,10 +6,10 @@
 //! path unchanged. There is therefore no fallback arm anywhere below — the
 //! only two outcomes are a complete chunk and `None`.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
-use super::{TrChunk, TrKind, TrOp, TrOuter, TrParam};
-use crate::ast::{Expr, ParamDef, Stmt};
+use super::{TrChunk, TrKind, TrOp, TrOuter, TrParam, TrParamCheck};
+use crate::ast::{ParamDef, Stmt};
 use crate::symbol::Symbol;
 use crate::value::Value;
 
@@ -50,8 +50,33 @@ pub(crate) struct TrirCompiler<'a> {
     /// semantics, where the general binder would reject the same narrowing
     /// on a `my int $x = <arbitrary boxed>`.
     pub(super) nqp_sourced: bool,
+    /// Set while compiling an expression that is DIRECTLY an `nqp::` op's
+    /// operand, and consumed by the sigilless-parameter read it admits.
+    pub(super) nqp_operand: bool,
     /// The routine declares `--> Nil`, so every `return` discards its value.
     pub(super) returns_nil: bool,
+    /// The routine declares a definite return value (`--> True`): the body
+    /// runs for its effects and the routine answers this constant.
+    pub(super) definite_return: Option<Value>,
+    /// Boxed slots bound (`:=`) to an `nqp::` op's result and never written
+    /// again. A read of one is `nqp`-sourced, so `$end + 1` on
+    /// `my $end := nqp::index(...)` narrows exactly as `nqp::index(...) + 1`
+    /// does.
+    pub(super) nqp_bound: HashSet<u16>,
+    /// Native slots declared with a sized type (`uint32`, `int8`, ...):
+    /// `(bits, signed)`. Every store wraps to the width.
+    pub(super) sized: HashMap<u16, (u8, bool, &'static str)>,
+    /// The call-only inner `my sub`s of this body (ADR-0113's frame
+    /// lexicals), inlined at their call sites. `None` until the declaration
+    /// statement has been compiled; see `inline.rs`.
+    pub(super) inline_subs: HashMap<String, Option<inline::InlineSub>>,
+    /// The inner subs being inlined right now, innermost last.
+    pub(super) inline_stack: Vec<String>,
+    /// The method calls this body makes, indexed by `MethodGen`.
+    pub(super) methods: Vec<crate::trir::TrMethodCall>,
+    /// Addresses of the routine body's own top-level statements: only a
+    /// declaration there is a frame lexical.
+    top_level: HashSet<usize>,
 }
 
 /// A statement's variant name, for a decline report.
@@ -64,47 +89,20 @@ fn discriminant_of(s: &Stmt) -> String {
         .to_string()
 }
 
+/// What the enclosing compile hands a routine's TRIR compile: the routines
+/// already registered with a chunk and the function table (for static
+/// linkage), and the body's ADR-0113 frame-lexical inner subs (for
+/// inlining).
+#[derive(Clone, Copy, Default)]
+pub(crate) struct TrirScope<'a> {
+    pub(crate) routines: Option<&'a TrirRoutineMap>,
+    pub(crate) fns: Option<&'a crate::opcode::CompiledFns>,
+    pub(crate) frame_lexicals: &'a [Symbol],
+}
+
 /// `(routine name, positional arity)` -> its `CompiledFns` key and body
 /// fingerprint.
 pub(crate) type TrirRoutineMap = HashMap<(String, usize), (Symbol, u64)>;
-
-/// Whether a parameter's recorded name is a plain `$`-scalar lexical.
-///
-/// `ParamDef::name` carries the spelling with the `$` stripped but every
-/// other marker intact, so this is the gate that keeps out an ATTRIBUTIVE
-/// parameter (`$!t` arrives as `"!t"`, and binding it must reach `self`'s
-/// attribute cell, which only the general binder does — `sub s($!t) {}` with
-/// an empty body is otherwise a perfectly provable TRIR routine that silently
-/// discards its argument), a `@`/`%`/`&` container, a `*`-slurpy, a dynamic
-/// (`*foo`), a compiler variable (`?FILE`), and the anonymous `_`.
-fn plain_scalar_param_name(name: &str) -> bool {
-    let mut chars = name.chars();
-    let Some(first) = chars.next() else {
-        return false;
-    };
-    if !(first.is_alphabetic() || first == '_') {
-        return false;
-    }
-    // `$self` is the reserved invocant lexical (ADR-0061), not an ordinary
-    // parameter name.
-    if name == "_" || name == "self" || name.starts_with("__") {
-        return false;
-    }
-    name.chars()
-        .all(|c| c.is_alphanumeric() || c == '_' || c == '-' || c == '\'')
-}
-
-/// The native scalar spellings TRIR gives a native slot. Everything else —
-/// including the boxed nominal types `Int`/`Str`/`Num` — is a boxed slot,
-/// because a boxed parameter legitimately accepts a bare type object and a
-/// native one must reject it (`FastParamType`'s own note).
-fn native_kind_of(tc: Option<&str>) -> Option<TrKind> {
-    match tc {
-        Some("int") => Some(TrKind::Int),
-        Some("num") => Some(TrKind::Num),
-        _ => None,
-    }
-}
 
 impl<'a> TrirCompiler<'a> {
     /// Compile `body` under `param_defs` to a [`TrChunk`], or decline.
@@ -116,9 +114,13 @@ impl<'a> TrirCompiler<'a> {
         params: &[String],
         return_type: Option<&str>,
         body: &[Stmt],
-        routines: Option<&'a TrirRoutineMap>,
-        fns: Option<&'a crate::opcode::CompiledFns>,
+        scope: TrirScope<'a>,
     ) -> Option<TrChunk> {
+        let TrirScope {
+            routines,
+            fns,
+            frame_lexicals,
+        } = scope;
         if !TrChunk::enabled() {
             return None;
         }
@@ -130,9 +132,15 @@ impl<'a> TrirCompiler<'a> {
         }
         // ADR-0110 §7 Stage 1 supports only `Nil` and an unconstrained
         // return; a nominal return type needs the general path's coercion.
-        if !matches!(return_type, None | Some("Nil")) {
-            return None;
-        }
+        // A definite VALUE (`--> True`) needs none: the body's value is
+        // discarded and the constant answered, which is what #9074 does on
+        // the light call path.
+        let definite_return = match return_type {
+            None | Some("Nil") => None,
+            Some("True") => Some(Value::TRUE),
+            Some("False") => Some(Value::FALSE),
+            Some(_) => return None,
+        };
         let mut c = TrirCompiler {
             ops: Vec::new(),
             constants: Vec::new(),
@@ -148,8 +156,17 @@ impl<'a> TrirCompiler<'a> {
             fns,
             why: None,
             nqp_sourced: false,
-            returns_nil: return_type == Some("Nil"),
+            nqp_operand: false,
+            returns_nil: return_type == Some("Nil") || definite_return.is_some(),
+            definite_return,
+            nqp_bound: HashSet::new(),
+            sized: HashMap::new(),
+            inline_subs: HashMap::new(),
+            inline_stack: Vec::new(),
+            methods: Vec::new(),
+            top_level: body.iter().map(|s| s as *const Stmt as usize).collect(),
         };
+        c.collect_inline_subs(body, frame_lexicals);
         if c.declare_params(param_defs).is_none() {
             return c.declined(name);
         }
@@ -160,6 +177,7 @@ impl<'a> TrirCompiler<'a> {
         // The routine's value: `--> Nil` discards it, otherwise the last
         // statement's value is the result.
         match (returns_nil, last) {
+            (true, _) if c.definite_return.is_some() => c.push_definite_return(),
             (true, _) | (false, None) => c.ops.push(TrOp::ReturnNil),
             (false, Some(TrKind::Int)) => c.ops.push(TrOp::ReturnI),
             (false, Some(TrKind::Num)) => c.ops.push(TrOp::ReturnN),
@@ -175,6 +193,7 @@ impl<'a> TrirCompiler<'a> {
             outers: c.outers,
             name,
             calls: c.calls,
+            methods: c.methods,
         })
     }
 
@@ -192,103 +211,6 @@ impl<'a> TrirCompiler<'a> {
         if self.why.is_none() {
             self.why = Some(what());
         }
-    }
-
-    fn declare_params(&mut self, param_defs: &[ParamDef]) -> Option<()> {
-        for pd in param_defs {
-            // ADR-0110 §4.4: positional scalars only, no slurpy/named/where/
-            // sub-signature/default/capture/attributive forms.
-            let shape_reason = if pd.named {
-                "named"
-            } else if pd.slurpy || pd.double_slurpy || pd.onearg {
-                "slurpy"
-            } else if pd.optional_marker || pd.default.is_some() {
-                "optional or defaulted"
-            } else if pd.sub_signature.is_some() || pd.outer_sub_signature.is_some() {
-                "destructuring"
-            } else if pd.where_constraint.is_some() {
-                "where-constrained"
-            } else if pd.code_signature.is_some() {
-                "code-signature"
-            } else if pd.type_capture.is_some() {
-                "type-capturing"
-            } else if pd.literal_value.is_some() {
-                "literal"
-            } else if pd.shape_constraints.is_some() {
-                "shaped"
-            } else if pd.is_invocant {
-                "invocant"
-            } else if pd.sigilless {
-                "sigilless"
-            } else if !pd.trait_args.is_empty() {
-                "trait-argument"
-            } else {
-                "not a plain $ lexical"
-            };
-            if pd.named
-                || pd.slurpy
-                || pd.double_slurpy
-                || pd.onearg
-                || pd.sigilless
-                || pd.is_invocant
-                || pd.optional_marker
-                || pd.default.is_some()
-                || pd.sub_signature.is_some()
-                || pd.outer_sub_signature.is_some()
-                || pd.where_constraint.is_some()
-                || pd.code_signature.is_some()
-                || pd.type_capture.is_some()
-                || pd.literal_value.is_some()
-                || pd.shape_constraints.is_some()
-                || !pd.trait_args.is_empty()
-                || !plain_scalar_param_name(&pd.name)
-            {
-                let n = pd.name.clone();
-                self.note_decline(|| format!("parameter ${n} is {shape_reason}"));
-                return None;
-            }
-            let is_rw = pd.traits.iter().any(|t| t == "rw");
-            // `is rw` is the only trait Stage 1 understands; `is copy`,
-            // `is raw` and every custom trait decline.
-            if pd.traits.iter().any(|t| t != "rw") {
-                let t = pd.traits.join(" ");
-                self.note_decline(|| format!("parameter trait is {t}"));
-                return None;
-            }
-            let tc = pd.type_constraint.as_deref();
-            let kind = match native_kind_of(tc) {
-                Some(k) => k,
-                // A boxed parameter is admitted only when it is untyped or a
-                // native `str`: any other constraint needs the general
-                // binder's type check, which TRIR does not reproduce.
-                None if tc.is_none() || tc == Some("str") => TrKind::Obj,
-                None => {
-                    let t = tc.unwrap_or("").to_string();
-                    self.note_decline(|| format!("parameter type {t}"));
-                    return None;
-                }
-            };
-            // Only a native parameter may be `is rw` here: a boxed one would
-            // need a real container, which is exactly what the untyped path
-            // already does well (ADR-0109).
-            if is_rw && !kind.is_native() {
-                return None;
-            }
-            let slot = self.alloc(&pd.name, kind);
-            let type_name = match tc {
-                Some("int") => "int",
-                Some("num") => "num",
-                Some("str") => "str",
-                _ => "",
-            };
-            self.params.push(TrParam {
-                slot,
-                kind,
-                is_rw,
-                type_name,
-            });
-        }
-        Some(())
     }
 
     fn alloc(&mut self, name: &str, kind: TrKind) -> u16 {
@@ -366,8 +288,10 @@ impl<'a> TrirCompiler<'a> {
                         });
                         return None;
                     }
+                    self.check_not_bound(slot, kind, name)?;
                     let got = self.compile_expr(expr)?;
-                    self.coerce(got, kind)?;
+                    let tn = self.native_type_name(slot);
+                    self.coerce_store(got, kind, tn)?;
                     self.store(slot, kind);
                     if !sink_all && Some(i) == final_idx {
                         self.load(slot, kind);
@@ -402,6 +326,14 @@ impl<'a> TrirCompiler<'a> {
                 Stmt::Die(e) => {
                     self.compile_routine_call("die", std::slice::from_ref(e))?;
                     self.ops.push(TrOp::PopObj);
+                }
+                // A call-only inner `my sub` (ADR-0113): inlined at its call
+                // sites, so its declaration emits nothing.
+                Stmt::SubDecl { name, .. }
+                    if self.top_level.contains(&(stmt as *const Stmt as usize))
+                        && self.inline_subs.contains_key(name.as_str()) =>
+                {
+                    self.declare_inline_sub(stmt)?;
                 }
                 Stmt::Return(e) => {
                     self.compile_return(std::slice::from_ref(e))?;
@@ -446,103 +378,6 @@ impl<'a> TrirCompiler<'a> {
             _ => return None,
         }
         Some(())
-    }
-
-    /// Compile a `my` declaration. Answers the kind it left on a bank when
-    /// `keep` asked for its value, `None` otherwise.
-    ///
-    /// Shared with the expression form: `(my int $end = EXPR)` is a
-    /// `DoStmt(VarDecl)` in value position, which is how JSON::Fast's
-    /// scanners are written almost throughout.
-    pub(super) fn compile_var_decl(&mut self, stmt: &Stmt, keep: bool) -> Option<Option<TrKind>> {
-        let Stmt::VarDecl {
-            name,
-            expr,
-            type_constraint,
-            is_state,
-            is_our,
-            is_dynamic,
-            is_export,
-            custom_traits,
-            where_constraint,
-            ..
-        } = stmt
-        else {
-            return None;
-        };
-        if *is_state
-            || *is_our
-            || *is_dynamic
-            || *is_export
-            || where_constraint.is_some()
-            || name.starts_with('&')
-        {
-            let n = name.clone();
-            self.note_decline(|| format!("declaration shape {n}"));
-            return None;
-        }
-        // `my %result;` / `my @result;` — a FRESH container per invocation,
-        // held in a boxed slot under its sigiled name. Only the empty form:
-        // an initializer would be a list/hash construction this does not
-        // compile.
-        if name.starts_with(['@', '%']) {
-            let empty = match expr {
-                Expr::Hash(entries) if entries.is_empty() => TrOp::NewHash,
-                Expr::Literal(v) => match v.view() {
-                    crate::value::ValueView::Array(items, _) if items.is_empty() => TrOp::NewArray,
-                    _ => {
-                        let n = name.clone();
-                        self.note_decline(|| format!("initialized container declaration {n}"));
-                        return None;
-                    }
-                },
-                _ => {
-                    let n = name.clone();
-                    self.note_decline(|| format!("initialized container declaration {n}"));
-                    return None;
-                }
-            };
-            self.ops.push(empty);
-            let slot = self.alloc(name, TrKind::Obj);
-            self.store(slot, TrKind::Obj);
-            if keep {
-                self.load(slot, TrKind::Obj);
-                return Some(Some(TrKind::Obj));
-            }
-            return Some(None);
-        }
-        // `__has_initializer` is the parser's own marker for `my T $x = ...`;
-        // `__scalar_bind` marks `my $x := ...`, which binds rather than
-        // assigns — for a fresh `my` in a TRIR frame the two are the same
-        // thing, because nothing else can name the slot. Any other trait
-        // declines.
-        if custom_traits
-            .iter()
-            .any(|(t, _)| t != "__has_initializer" && t != "__scalar_bind")
-        {
-            return None;
-        }
-        let tc = type_constraint.as_deref();
-        let kind = match native_kind_of(tc) {
-            Some(k) => k,
-            None if tc.is_none() || tc == Some("str") => TrKind::Obj,
-            None => {
-                let t = tc.unwrap_or("").to_string();
-                self.note_decline(|| format!("declared type {t}"));
-                return None;
-            }
-        };
-        let init = self.compile_expr(expr)?;
-        self.coerce(init, kind)?;
-        let slot = self.alloc(name, kind);
-        self.store(slot, kind);
-        if keep {
-            // A declaration in value position yields the bound value; re-read
-            // it rather than duplicating a bank.
-            self.load(slot, kind);
-            return Some(Some(kind));
-        }
-        Some(None)
     }
 
     /// Insert `op` at `at`, keeping every jump target pointing at the same
@@ -619,117 +454,52 @@ impl<'a> TrirCompiler<'a> {
             }
         }
     }
-
-    pub(super) fn drop_top(&mut self, kind: TrKind) {
-        match kind {
-            TrKind::Int | TrKind::Num => self.ops.push(TrOp::PopI),
-            TrKind::Obj => self.ops.push(TrOp::PopObj),
-        }
-    }
-
-    /// Whether a native slot holds a REFERENCE rather than a value — true
-    /// exactly for this routine's own `is rw` native parameters, which are
-    /// bound to the caller's slot (ADR-0110 §3.3).
-    /// Whether `slot` holds one of this routine's READ-ONLY parameters.
-    ///
-    /// A Raku parameter is readonly unless declared `is rw`, and writing one
-    /// is `X::Assignment::RO` — which the general binder raises and a typed
-    /// slot store cannot. TRIR therefore declines the routine and lets the
-    /// untyped path raise it, rather than accepting `sub f($x) { $x = 1 }` and
-    /// quietly writing the slot (roast's `S06-traits/misc.t` pins exactly
-    /// that: the assignment form must die, and it stopped dying).
-    ///
-    /// The kind is part of the identity: the native and boxed banks number
-    /// their slots independently, so native slot 0 and boxed slot 0 are
-    /// different bindings.
-    pub(super) fn slot_is_readonly_param(&self, slot: u16, kind: TrKind) -> bool {
-        self.params
-            .iter()
-            .any(|p| !p.is_rw && p.slot == slot && p.kind == kind)
-    }
-
-    pub(super) fn slot_is_ref(&self, slot: u16, kind: TrKind) -> bool {
-        kind.is_native()
-            && self
-                .params
-                .iter()
-                .any(|p| p.is_rw && p.kind.is_native() && p.slot == slot)
-    }
-
-    pub(super) fn load(&mut self, slot: u16, kind: TrKind) {
-        match kind {
-            TrKind::Int | TrKind::Num if self.slot_is_ref(slot, kind) => {
-                self.ops.push(TrOp::GetRefI(slot))
-            }
-            TrKind::Int | TrKind::Num => self.ops.push(TrOp::LoadI(slot)),
-            TrKind::Obj => self.ops.push(TrOp::LoadObj(slot)),
-        }
-    }
-
-    pub(super) fn store(&mut self, slot: u16, kind: TrKind) {
-        match kind {
-            TrKind::Int | TrKind::Num if self.slot_is_ref(slot, kind) => {
-                self.ops.push(TrOp::SetRefI(slot))
-            }
-            TrKind::Int | TrKind::Num => self.ops.push(TrOp::StoreI(slot)),
-            TrKind::Obj => {
-                self.obj_written[slot as usize] = true;
-                self.ops.push(TrOp::StoreObj(slot));
-            }
-        }
-    }
-
-    /// Emit the conversion from `have` to `want`, or decline when there is
-    /// none TRIR performs without the general binder's coercion rules.
-    pub(super) fn coerce(&mut self, have: TrKind, want: TrKind) -> Option<()> {
-        match (have, want) {
-            (a, b) if a == b => Some(()),
-            (TrKind::Int, TrKind::Num) => {
-                self.ops.push(TrOp::IntToNum);
-                Some(())
-            }
-            (TrKind::Num, TrKind::Int) => {
-                self.ops.push(TrOp::NumToInt);
-                Some(())
-            }
-            (TrKind::Int, TrKind::Obj) => {
-                self.ops.push(TrOp::BoxI);
-                Some(())
-            }
-            (TrKind::Num, TrKind::Obj) => {
-                self.ops.push(TrOp::BoxN);
-                Some(())
-            }
-            // Unboxing is a checked boundary op, but "is this boxed value an
-            // int" is a run-time question, so an implicit narrowing from a
-            // boxed expression into a native slot declines instead: TRIR
-            // never silently coerces where the general binder would raise.
-            (TrKind::Obj, TrKind::Int) if self.nqp_sourced => {
-                self.ops.push(TrOp::UnboxI);
-                Some(())
-            }
-            (TrKind::Obj, want) => {
-                self.note_decline(|| format!("narrowing a boxed value to {want:?}"));
-                None
-            }
-            // Unreachable: the equality guard above covers both, but the
-            // exhaustiveness check does not count guarded arms.
-            (TrKind::Int, TrKind::Int) | (TrKind::Num, TrKind::Num) => Some(()),
-        }
-    }
-
-    pub(super) fn binding_of(&self, name: &str) -> Option<Binding> {
-        self.locals.get(name).copied()
-    }
-
-    /// Whether boxed slot `slot` is ever assigned after its declaration. The
-    /// operand-direct string reads memoize the slot's characters for the
-    /// frame, which is only sound while nothing rewrites the slot.
-    pub(super) fn obj_slot_written(&self, slot: u16) -> bool {
-        self.obj_written.get(slot as usize).copied().unwrap_or(true)
-    }
 }
 
+mod binary;
 mod call;
 mod expr;
+mod inline;
+mod method;
+mod nqp;
+mod params;
 mod ret;
+mod slots;
+
+/// Compile a routine to TRIR at declaration time, or answer `None`.
+///
+/// One call site (`compiler/helpers_sub_body.rs`), so the eligibility gate
+/// and the chunk can never disagree about which routines have one.
+pub(crate) fn compile_routine(
+    name: Symbol,
+    param_defs: &[crate::ast::ParamDef],
+    params: &[String],
+    return_type: Option<&str>,
+    body: &[crate::ast::Stmt],
+    scope: TrirScope<'_>,
+) -> Option<std::sync::Arc<TrChunk>> {
+    let chunk = TrirCompiler::compile(name, param_defs, params, return_type, body, scope);
+    if dump_enabled() {
+        match &chunk {
+            Some(c) => eprintln!(
+                "trir: {} accepted ({} ops, {} native slots, {} obj slots, {} outers, {} calls)",
+                name.as_str(),
+                c.ops.len(),
+                c.n_native,
+                c.n_obj,
+                c.outers.len(),
+                c.calls.len(),
+            ),
+            None => eprintln!("trir: {} declined", name.as_str()),
+        }
+    }
+    chunk.map(std::sync::Arc::new)
+}
+
+/// Whether `MUTSU_TRIR_DUMP` asked for the eligibility decisions to be
+/// reported. Read once: this runs per routine declaration.
+fn dump_enabled() -> bool {
+    use std::sync::OnceLock;
+    static ON: OnceLock<bool> = OnceLock::new();
+    *ON.get_or_init(|| std::env::var("MUTSU_TRIR_DUMP").is_ok())
+}

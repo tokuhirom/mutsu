@@ -237,6 +237,34 @@ impl Interpreter {
         Ok(Some(()))
     }
 
+    /// Execute a `MethodGen` site: pop the arguments and the receiver, and
+    /// dispatch the method through the ordinary method dispatch.
+    pub(super) fn exec_trir_method_call(
+        &mut self,
+        chunk: &TrChunk,
+        site: u32,
+    ) -> Result<(), RuntimeError> {
+        let m = &chunk.methods[site as usize];
+        let n = m.arity as usize;
+        let base = self.trir.os.len().saturating_sub(n);
+        let args: Vec<Value> = self.trir.os.drain(base..).collect();
+        let target = self.opop();
+        let name = m.name.resolve();
+        // `CallMethod`'s own rendering of an itemized receiver (`$[1, 2]`),
+        // which the by-value dispatch does not know about.
+        if name == "raku"
+            && n == 0
+            && crate::builtins::methods_0arg::raku_repr::raku_scalar_itemized(&target)
+            && let Some(rendered) = self.raku_repr_with_dispatch(&target)
+        {
+            self.trir.os.push(Value::str(rendered));
+            return Ok(());
+        }
+        let v = self.call_method_with_values(target, &name, args)?;
+        self.trir.os.push(v);
+        Ok(())
+    }
+
     /// Which of the routine named `name`'s first 64 positional parameters are
     /// `is rw`, as a bitmask — the arguments a generic call must hand over as
     /// containers so the callee's write reaches this frame's slot.
