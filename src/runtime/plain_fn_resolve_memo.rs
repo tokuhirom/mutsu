@@ -54,12 +54,12 @@ impl Interpreter {
     /// an empty-signature `proto` is rejected by an arity check that must keep
     /// running on every call, so neither is memoized.
     pub(crate) fn plain_fn_resolve_key(&self, name: &str) -> Option<PlainFnResolveKey> {
-        if name.contains("::") {
-            return None;
-        }
         // `lookup`, not `intern`: every name that was ever registered is
         // interned, so a name that is not has nothing to answer.
         let name_sym = Symbol::lookup(name)?;
+        if crate::qualified::is_qualified(name_sym) {
+            return None;
+        }
         if !self.empty_sig_proto_names.is_empty() && self.empty_sig_proto_names.contains(&name_sym)
         {
             return None;
