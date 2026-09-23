@@ -1,4 +1,4 @@
-# Fixture for t/routines/dispatch/plain-sub-resolution-memo.t (#9081).
+# Fixture for t/routines/dispatch/plain-sub-dispatch-resolution-memo.t (#9081).
 my sub memo-helper(Int:D $x, int $n) {
     my sub tag() { 'B' }
     tag() ~ ($x * $n)

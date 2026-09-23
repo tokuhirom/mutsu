@@ -64,5 +64,5 @@ The structural direction the issue also names -- binding an inner sub as a
 frame lexical so `has_inner_subs` no longer excludes the body from the light
 paths -- is not part of this change.
 
-Pinned by `t/routines/dispatch/plain-sub-resolution-memo.t` and unit tests in
+Pinned by `t/routines/dispatch/plain-sub-dispatch-resolution-memo.t` and unit tests in
 `plain_fn_resolve_memo.rs`.
