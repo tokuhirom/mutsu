@@ -497,13 +497,19 @@ impl Interpreter {
             {
                 return result;
             }
+            let invocant = self
+                .pending_raw_invocant
+                .as_ref()
+                .filter(|pending| pending.implicit_self && pending.method == method)
+                .map(|pending| pending.cell.clone())
+                .unwrap_or_else(|| target.clone());
             let (result, _) = self.run_instance_method_at(
                 "generalcalldispatch",
                 crate::runtime::utils::value_type_name(&target),
                 AttrMap::new(),
                 method,
                 args,
-                Some(target),
+                Some(invocant),
             )?;
             return Ok(result);
         }

@@ -711,13 +711,30 @@ impl Value {
     /// implicit `Associative` constraint on a `:=` target rejects the
     /// itemized holder outright.
     ///
-    /// One level only, and identity-preserving: [`Value::deitemize_element`]
-    /// clears the itemization flag over the SAME `HashData`/`ArrayData` `Gc`,
-    /// so `%v<d> = 9` inside the body still reaches the caller's hash. A
-    /// `Set`/`Bag`/`Mix` bound to a `%` name has no itemization to strip and
-    /// passes through untouched, keeping its type.
+    /// This peels the element holder and the aggregate's own itemization, if
+    /// both are present. A literal such as `[ [1, 2], 0 ]` stores its first
+    /// element as a Scalar around an `ItemArray`; binding that element to an
+    /// `@` parameter must expose the `Array`, not the still-itemized
+    /// `ItemArray`. Each step is identity-preserving: the itemization flag is
+    /// cleared over the SAME `HashData`/`ArrayData` `Gc`, so `%v<d> = 9`
+    /// inside the body still reaches the caller's hash. A `Set`/`Bag`/`Mix`
+    /// bound to a `%` name has no itemization to strip and passes through
+    /// untouched, keeping its type.
     pub fn deitemize_for_sigil_bind(self) -> Value {
-        self.deitemize_element()
+        match self.view() {
+            ValueView::Scalar(inner) => inner.clone().deitemize_for_sigil_bind(),
+            ValueView::ContainerRef(cell) => cell
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .clone()
+                .deitemize_for_sigil_bind(),
+            ValueView::Array(items, kind) if kind.is_itemized() => {
+                Value::array_with_kind(items.clone(), kind.decontainerize())
+            }
+            ValueView::Hash(_) if self.hash_is_itemized() => self.with_hash_itemized(false),
+            ValueView::Slip(_) if self.slip_is_itemized() => self.with_slip_itemized(false),
+            _ => self,
+        }
     }
 
     /// ADR-0040 slice 3: the discriminator, stated once. Are this container's

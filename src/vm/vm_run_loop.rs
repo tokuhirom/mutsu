@@ -1411,10 +1411,25 @@ impl Interpreter {
     /// the binding needs. Every other value flattens via the existing `.list`
     /// semantics (preserving prior behavior exactly).
     pub(crate) fn deitemize_for_bind(&mut self, val: Value) -> Result<Value, RuntimeError> {
-        if let ValueView::Array(data, kind) = val.view()
-            && (data.value_type.is_some() || data.declared_type.is_some())
-        {
-            return Ok(Value::array_with_kind(data.clone(), kind.decontainerize()));
+        let deitemized = val.clone().deitemize_for_sigil_bind();
+        let direct_aggregate = match val.view() {
+            // A nested aggregate element arrives through a Scalar/container
+            // holder.  The sigil binder needs that aggregate itself, not a
+            // one-element list produced by calling `.list` on the holder.
+            ValueView::Scalar(_) | ValueView::ContainerRef(_) => {
+                matches!(
+                    deitemized.view(),
+                    ValueView::Array(..) | ValueView::Hash(..)
+                )
+            }
+            // Preserve the existing typed-array fast path.  A plain outer
+            // array still goes through `.list`, which retains metadata such
+            // as an object-hash default during destructuring.
+            ValueView::Array(data, _) => data.value_type.is_some() || data.declared_type.is_some(),
+            _ => false,
+        };
+        if direct_aggregate {
+            return Ok(deitemized);
         }
         self.call_method_with_values(val, "list", vec![])
     }

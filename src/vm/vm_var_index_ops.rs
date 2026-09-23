@@ -661,6 +661,21 @@ impl Interpreter {
         if matches!(index.view(), ValueView::ContainerRef(_)) {
             index = index.deref_container();
         }
+        // A role-mixed Array used as a positional slice keeps its Mixin
+        // wrapper for method dispatch, but the wrapper is transparent when it
+        // supplies the slice indices (`self[@subgrid.flip: ...]`).  Expose the
+        // underlying aggregate before the Array-slice arms below inspect the
+        // index shape.
+        while let ValueView::Mixin(inner, _) = index.view() {
+            let inner = inner.as_ref().clone();
+            if !matches!(
+                inner.view(),
+                ValueView::Array(..) | ValueView::Seq(..) | ValueView::Slip(_)
+            ) {
+                break;
+            }
+            index = inner;
+        }
         // ADR-0058: a slice index can be a not-yet-run `.map`/`.grep` Seq
         // (`@f[(^$n).grep({...})]`, Text::CSV's fragment selector), and every
         // reader below takes its elements through pure code -- so the slice

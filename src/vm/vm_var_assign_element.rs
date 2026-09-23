@@ -703,6 +703,67 @@ impl Interpreter {
         is_positional: bool,
         target_slot: Option<u32>,
     ) -> Result<(), RuntimeError> {
+        // `self[...] = ...` in a role method names the implicit invocant, not
+        // an ordinary lexical aggregate.  Handle a role-mixed aggregate before
+        // the name-keyed fast lanes: those lanes quite correctly only recognize
+        // `@`/`%` names, while their generic fallback would autovivify a Hash
+        // under the name `self` and discard the Mixin wrapper.
+        if Self::const_str(code, name_idx) == "self"
+            && self.stack.len() >= 2
+            && let Some(target) = target_slot
+                .and_then(|slot| self.locals.get(slot as usize).cloned())
+                .or_else(|| self.env().get_sym(code.const_sym(name_idx)).cloned())
+                .map(|value| value.deref_container())
+            && matches!(target.view(), ValueView::Mixin(..))
+        {
+            let mut idx = self
+                .stack
+                .last()
+                .cloned()
+                .unwrap_or(Value::NIL)
+                .deref_container()
+                .deitemize_for_sigil_bind();
+            while let ValueView::Mixin(inner, _) = idx.view() {
+                let inner = inner.as_ref().clone();
+                if !matches!(
+                    inner.view(),
+                    ValueView::Array(..) | ValueView::Seq(..) | ValueView::Slip(_)
+                ) {
+                    break;
+                }
+                idx = inner;
+            }
+            let val = self.stack[self.stack.len() - 2].clone();
+            let range_indices = Self::slice_indices_from_index(&idx).or_else(|| match idx.view() {
+                ValueView::Array(items, ..) => items
+                    .iter()
+                    .map(Self::index_to_usize)
+                    .collect::<Option<Vec<_>>>(),
+                ValueView::Seq(items) => items
+                    .iter()
+                    .map(Self::index_to_usize)
+                    .collect::<Option<Vec<_>>>(),
+                ValueView::Slip(items) => items
+                    .iter()
+                    .map(Self::index_to_usize)
+                    .collect::<Option<Vec<_>>>(),
+                _ => None,
+            });
+            let range_slice = if let Some(indices) = range_indices {
+                Some((indices, self.assignment_rhs_values(&val)?))
+            } else {
+                None
+            };
+            if self
+                .assign_role_mixin_element(&target, &idx, &val, &range_slice)?
+                .is_some()
+            {
+                self.stack.pop();
+                self.stack.pop();
+                self.stack.push(val);
+                return Ok(());
+            }
+        }
         // #8069 §4.1: a plain `@a[$i] = $v` is a `Vec` slot write, and every
         // probe below asks about a shape that store has already been refused
         // for. Consulted FIRST so the common store pays none of them; it

@@ -224,6 +224,16 @@ pub(crate) fn destructure_binds(
                 is_positional: false,
             };
             let element_expr = apply_coercion(sub, element_expr);
+            // A container-sigil sub-parameter binds the element's aggregate,
+            // not the Scalar/itemized holder used when that aggregate lives in
+            // a positional slot. This is especially visible for an Array
+            // literal such as `[ [3, 4], 0 ]`: `@index` must receive
+            // `[3, 4]`, not a one-element array containing it.
+            let element_expr = if sub.name.starts_with('@') {
+                Expr::DeitemizeForBind(Box::new(element_expr))
+            } else {
+                element_expr
+            };
             // An optional destructure param (`-> ($a, $b?)`) seeds its
             // type object (Mu for untyped — this is a block) when the
             // source has no element at this slot; a default binds the

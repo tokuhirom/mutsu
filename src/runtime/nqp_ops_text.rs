@@ -172,6 +172,8 @@ impl Interpreter {
         Some(match op {
             // -- character classes --
             // nqp::iscclass($cclass, $str, $offset) -> 0/1 for ONE character.
+            // Cost: O(1) amortized on a nqp_char_cache hit; O(n) on a miss, n = chars of $str.
+            // MoarVM: O(1) -- see #9129.
             "iscclass" => {
                 let chars = super::nqp_char_cache::cached_chars(args, 1);
                 let idx = iarg(args, 2).max(0) as usize;
@@ -187,6 +189,8 @@ impl Interpreter {
             // -1 is what lets `findnotcclass(...) == chars($s)` mean "the
             // whole string is of this class", which is how String::Utils's
             // `is-CCLASS` is written.
+            // Cost: O(d) + O(n) on a nqp_char_cache miss, d = chars scanned, n = chars of $str.
+            // MoarVM: O(d) -- see #9129.
             "findcclass" | "findnotcclass" => {
                 let want = op == "findcclass";
                 let cclass = iarg(args, 0);
@@ -201,6 +205,7 @@ impl Interpreter {
 
             // -- Unicode properties --
             // nqp::unipropcode($name) -> the property handle getuniprop_* takes.
+            // Cost: O(m), m = chars of $name (copied, then compared).
             "unipropcode" => {
                 let name = sarg(args, 0);
                 if name.eq_ignore_ascii_case("General_Category") || name.eq_ignore_ascii_case("gc")
@@ -215,6 +220,7 @@ impl Interpreter {
             }
             // nqp::getuniprop_int($codepoint, $propcode) -> the property VALUE
             // code, and nqp::getuniprop_str the same value as its name.
+            // Cost: O(1) (table lookup; astral codepoints O(log r) binary search, r = ranges).
             "getuniprop_int" | "getuniprop_str" => {
                 let cp = iarg(args, 0);
                 let prop = iarg(args, 1);
@@ -249,6 +255,7 @@ impl Interpreter {
             // buffer and re-fills it once per word, and an appending version
             // silently compared every word after the first against the wrong
             // offsets (`root <abcd abce abde>` answered "abc", not "ab").
+            // Cost: O(n + k), n = chars of $str (copied, normalized), k = old elems of $target.
             "strtocodes" => {
                 let text = sarg(args, 0);
                 let mode = iarg(args, 1);
@@ -275,6 +282,7 @@ impl Interpreter {
                 }
             }
             // nqp::strfromcodes($codes) -> the string those codepoints spell.
+            // Cost: O(e), e = elems of $codes (array copied, string built, NFC-normalized).
             "strfromcodes" => {
                 let codes = args.first().cloned().unwrap_or(Value::NIL);
                 let Some(elems) = Self::nqp_elems_of(&codes) else {
@@ -309,6 +317,8 @@ impl Interpreter {
             // -- string primitives --
             // nqp::eqatic($haystack, $needle, $pos) -> 1 when the needle
             // occurs at exactly codepoint offset `$pos`, ignoring case.
+            // Cost: O(m) on a nqp_char_cache hit (haystack); O(n + m) on a miss,
+            // n = chars of $haystack, m = chars of $needle. MoarVM: O(m) -- see #9129.
             "eqatic" => {
                 let haystack = super::nqp_char_cache::cached_chars(args, 0);
                 let needle: Vec<char> = sarg(args, 1).chars().collect();
@@ -329,6 +339,8 @@ impl Interpreter {
             // exactly codepoint offset $pos. The haystack is memoized (see
             // `nqp_char_cache`): JSON::Fast's string-token scan calls this
             // repeatedly against the SAME full document text.
+            // Cost: O(m) on a nqp_char_cache hit (haystack); O(n + m) on a miss,
+            // n = chars of $haystack, m = chars of $needle. MoarVM: O(m) -- see #9129.
             "eqat" => {
                 let haystack = super::nqp_char_cache::cached_chars(args, 0);
                 let needle: Vec<char> = sarg(args, 1).chars().collect();
@@ -343,6 +355,7 @@ impl Interpreter {
 
             // nqp::mod_i is MoarVM's, i.e. TRUNCATED like Rust's `%`
             // (`mod_i(-7, 3)` is -1), not Raku's floored `%`.
+            // Cost: O(1).
             "mod_i" => {
                 let rhs = iarg(args, 1);
                 if rhs == 0 {
@@ -355,6 +368,7 @@ impl Interpreter {
 
             // -- boxing / null --
             // nqp::hllbool($int) -> the HLL's Bool.
+            // Cost: O(1).
             "hllbool" => Ok(if iarg(args, 0) != 0 {
                 Value::TRUE
             } else {
@@ -363,9 +377,11 @@ impl Interpreter {
             // nqp::box_s($str, $type) -> a boxed string. mutsu's Str is not a
             // separate representation, so the type operand only has to be
             // honoured for a subclass, which `box_s` is never asked for here.
+            // Cost: O(n), n = chars of $str (copied). MoarVM: O(1) -- see #9134.
             "box_s" => Ok(Value::str(sarg(args, 0))),
             // The VM-level null. mutsu has one absent value, so `null_s` and
             // `null` are both Nil.
+            // Cost: O(1).
             "null_s" | "null" => Ok(Value::NIL),
             // TODO: compile a real null-string sentinel. MoarVM's `null_s` is
             // DISTINCT from the empty string, and the distinction is load-
@@ -376,6 +392,7 @@ impl Interpreter {
             // `isnull_s` has to count "" as null here, which makes it answer 1
             // for a genuinely empty string too. The correct fix is a null-string
             // value that stays distinguishable through a native `str` slot.
+            // Cost: O(1).
             "isnull" | "isnull_s" => {
                 let v = args.first().cloned().unwrap_or(Value::NIL);
                 let null = if op == "isnull_s" {
@@ -390,7 +407,10 @@ impl Interpreter {
             // nqp::list_s(...) -> a VM list of strings; mutsu represents one as
             // an ordinary array, which is what atpos_s/bindpos_s/push_s below
             // (and the existing atpos_i/bindpos_i) already operate on.
+            // Cost: O(k), k = operands.
             "list_s" | "list_i" | "list_n" => Ok(Value::array(args.to_vec())),
+            // Cost: O(1) amortized (in-place push); push_s adds O(m), m = chars of the value
+            // (copied). MoarVM: O(1) -- see #9134.
             "push_s" | "push_i" | "push_n" => {
                 let target = args.first().cloned().unwrap_or(Value::NIL);
                 let val = args.get(1).cloned().unwrap_or(Value::NIL);
@@ -401,6 +421,7 @@ impl Interpreter {
                 };
                 push_elem(op, &target, val)
             }
+            // Cost: O(m), m = chars of the element (copied). MoarVM: O(1) -- see #9134.
             "atpos_s" => {
                 let target = args.first().cloned().unwrap_or(Value::NIL);
                 let idx = iarg(args, 1);
@@ -422,6 +443,8 @@ impl Interpreter {
                     elem.map(|v| v.to_string_value()).unwrap_or_default(),
                 ))
             }
+            // Cost: O(m) + O(g), m = chars of the value (copied), g = slots grown past the end.
+            // MoarVM: O(1) amortized -- see #9134.
             "bindpos_s" => {
                 let target = args.first().cloned().unwrap_or(Value::NIL);
                 let idx = iarg(args, 1).max(0) as usize;
