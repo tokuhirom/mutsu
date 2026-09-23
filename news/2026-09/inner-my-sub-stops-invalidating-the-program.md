@@ -70,5 +70,5 @@ registry write at all. While writing the regression test, two same-name
 shadowing bugs turned up that are already present on `main`. They are filed as
 [#9080](https://github.com/tokuhirom/mutsu/issues/9080).
 
-Pinned by `t/routines/dispatch/inner-sub-call-cache-survival.t` and by unit
+Pinned by `t/routines/dispatch/lexical-sub-dispatch-cache-survival.t` and by unit
 tests in `gen_cache.rs`, `function_table.rs` and `accessors_state.rs`.
