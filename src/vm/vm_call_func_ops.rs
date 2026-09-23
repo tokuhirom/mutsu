@@ -1363,6 +1363,20 @@ impl Interpreter {
             return Ok(());
         }
 
+        // A custom EXPORT hook may install an &-sigiled routine that has no
+        // package routine under the same bare name. Dispatch that lexical
+        // callable before the registry's unknown-function path; ordinary
+        // exports such as JSON::Tiny's from-json retain the normal dispatch
+        // precedence because they do have a registered package routine.
+        if self.export_amp_override_names.contains(&name_sym)
+            && !self.has_function(&name)
+            && let Some(callable) = self.env().get(&format!("&{name}")).cloned()
+        {
+            let result = self.vm_call_on_value(callable, args, None)?;
+            self.stack.push(result);
+            return Ok(());
+        }
+
         // Check wrap chain for named function calls
         if self.wrap_sub_id_for_name(&name).is_some()
             && let Some(sub_val) = self.get_wrapped_sub(&name)
