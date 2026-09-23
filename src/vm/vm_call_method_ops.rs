@@ -614,6 +614,10 @@ impl Interpreter {
                 method,
                 // Type identity.
                 "WHAT" | "WHICH" | "isa" | "does"
+                // `Mu.self` answers the invocant itself; delegating it handed an
+                // `is Array` instance's backing storage out instead, so
+                // `$a.self[1] = 1` stored into a detached copy (#9168).
+                | "self"
                 // Object construction: `self.new(...)` inside a subclass method
                 // (and the `bless`/`BUILD` protocol it redispatches through)
                 // builds an instance of the CLASS. Delegating it to the backing

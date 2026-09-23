@@ -574,6 +574,7 @@ mod builtins_io_stream;
 mod builtins_lvalue;
 mod builtins_multidim;
 mod builtins_multidim_assign;
+mod builtins_multidim_assign_storage;
 mod builtins_multidim_exists_adverb;
 mod builtins_multidim_ops;
 mod builtins_multidim_subscript;
