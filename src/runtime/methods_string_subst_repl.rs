@@ -10,7 +10,7 @@ impl Interpreter {
     // Cost: string replacement O(|repl| + captures). Closure replacement: one
     // closure call plus an env clone, plus O(n) to build a MatchTarget when
     // `captures` carries none (the literal-Str pattern path), n = chars of
-    // `orig_text`. Rakudo: O(1) Match setup -- see #NNNN.
+    // `orig_text`. Rakudo: O(1) Match setup -- see #9143.
     pub(super) fn eval_subst_replacement_cased(
         &mut self,
         replacement_val: &Option<Value>,

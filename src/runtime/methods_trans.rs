@@ -559,7 +559,7 @@ impl Interpreter {
     // rules (each copies the remaining text, `chars[i..]`, at every position), g =
     // Regex rules (each rebuilds a `MatchTarget` of the whole text at every position).
     // So a single token or regex key makes one call O(n^2).
-    // Rakudo: O(n * p) -- see #NNNN.
+    // Rakudo: O(n * p) -- see #9142.
     fn apply_trans_rules(
         &mut self,
         text: &str,
@@ -786,7 +786,7 @@ impl Interpreter {
 
     // Cost: O(n * (k + p*n + g*n)) worst case, same shape as `apply_trans_rules`:
     // token and regex rules copy the remaining text at every position (O(n^2)).
-    // Rakudo: O(n * p) -- see #NNNN.
+    // Rakudo: O(n * p) -- see #9142.
     fn apply_trans_complement(
         &mut self,
         text: &str,

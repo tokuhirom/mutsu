@@ -37,7 +37,7 @@ pub(super) fn dispatch(
         }),
         "decode" => Some(super::super::decode_buf_method(target, None)),
         // Cost: O(n), n = chars of the invocant (a copy of the payload plus a
-        // grapheme segmentation pass, nothing cached). Rakudo: O(1) -- see #NNNN.
+        // grapheme segmentation pass, nothing cached). Rakudo: O(1) -- see #9140.
         "chars" => {
             // Buf/Blob instances: throw X::Buf::AsStr
             if let ValueView::Instance { class_name, .. } = target.view()
@@ -61,7 +61,7 @@ pub(super) fn dispatch(
             ))))
         }
         // Cost: O(n), n = chars of the invocant (copies the payload to read one
-        // codepoint). Rakudo: O(1) -- see #NNNN.
+        // codepoint). Rakudo: O(1) -- see #9140.
         "ord" => {
             let s = target.to_string_value();
             if let Some(ch) = s.chars().next() {
@@ -148,7 +148,7 @@ pub(super) fn dispatch(
             Some(Some(Ok(Value::seq(props))))
         }
         // Cost: O(n) for a Str invocant (copies the payload to read its first
-        // codepoint), O(1) for an Int. Rakudo: O(1) -- see #NNNN.
+        // codepoint), O(1) for an Int. Rakudo: O(1) -- see #9140.
         "unival" => {
             // Type objects should throw an error
             if matches!(

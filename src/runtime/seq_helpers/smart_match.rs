@@ -983,7 +983,7 @@ impl Interpreter {
             // Single match: plain Regex or RegexWithAdverbs without multi-match flags
             // Cost: `Str ~~ /rx/`: O(n) setup, n = chars of the topic (the subject is
             // copied by `regex_match_text` and again into a MatchTarget), plus the search,
-            // even when the match is at the front. Rakudo: O(1) setup -- see #NNNN.
+            // even when the match is at the front. Rakudo: O(1) setup -- see #9144.
             (_, ValueView::Regex(_)) | (_, ValueView::RegexWithAdverbs(_))
                 if matches!(right.view(), ValueView::Regex(_))
                     || matches!(

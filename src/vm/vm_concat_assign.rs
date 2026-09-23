@@ -23,7 +23,7 @@ impl Interpreter {
     // the fallback (a slot mirrored to env -- e.g. one captured by a closure or
     // declared inside `given`/`when` -- a container, or a non-Str side), n =
     // chars already accumulated, with a full NFC pass when the result is not
-    // ASCII. Rakudo: amortized O(m) -- see #NNNN.
+    // ASCII. Rakudo: amortized O(m) -- see #9141.
     pub(super) fn exec_concat_assign_local_op(
         &mut self,
         code: &CompiledCode,

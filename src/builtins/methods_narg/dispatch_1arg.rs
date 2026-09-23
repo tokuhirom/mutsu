@@ -420,7 +420,7 @@ pub(crate) fn native_method_1arg(
         }
         // Cost: O(n + m), n = chars of the invocant, m = chars of the needle (the
         // invocant is copied before the search, even for a hit near the front).
-        // Rakudo: O(p + m), p = match position -- see #NNNN.
+        // Rakudo: O(p + m), p = match position -- see #9140.
         "contains" => {
             if let ValueView::Package(type_name) = arg.view() {
                 return Some(Err(RuntimeError::new(format!(
@@ -443,7 +443,7 @@ pub(crate) fn native_method_1arg(
         // and so never reach this 1-arg path — they keep falling through to the
         // interpreter's `dispatch_prefix_suffix_check` (runtime/methods_string.rs).
         // Cost: O(n + m), n = chars of the invocant, m = chars of the needle (the
-        // invocant is copied to compare its first/last m chars). Rakudo: O(m) -- see #NNNN.
+        // invocant is copied to compare its first/last m chars). Rakudo: O(m) -- see #9140.
         "starts-with" | "ends-with" if matches!(target.view(), ValueView::Str(_)) => {
             if let ValueView::Package(type_name) = arg.view() {
                 return Some(Err(RuntimeError::new(format!(
@@ -535,7 +535,7 @@ pub(crate) fn native_method_1arg(
         }
         // Cost: O(n + m), n = chars of the invocant, m = chars of the needle (copy,
         // search, and a flat-ASCII check or grapheme count to turn the byte offset
-        // into a char offset). Rakudo: O(p + m), p = match position -- see #NNNN.
+        // into a char offset). Rakudo: O(p + m), p = match position -- see #9140.
         "index" => {
             // Fall through to runtime dispatch for type objects, named args (Pairs),
             // array of needles, and multi-arg calls handled by dispatch_index
@@ -556,7 +556,7 @@ pub(crate) fn native_method_1arg(
             }
         }
         // Cost: O(n), n = chars of the invocant (see `native_substr_slice`).
-        // Rakudo: O(k), k = chars returned -- see #NNNN.
+        // Rakudo: O(k), k = chars returned -- see #9140.
         "substr" => {
             crate::builtins::substr::native_substr_slice(&target.to_string_value(), arg, None)
         }
@@ -780,7 +780,7 @@ pub(crate) fn native_method_1arg(
             crate::builtins::comb::native_comb_method(target, std::slice::from_ref(arg))
         }
         // Cost: O(n + k), n = bytes of the invocant, k = lines, and O(n) even for
-        // `.lines($limit)` (all lines are split, then truncated). Rakudo: O(prefix) -- see #NNNN.
+        // `.lines($limit)` (all lines are split, then truncated). Rakudo: O(prefix) -- see #9147.
         "lines" => {
             if let ValueView::Instance { class_name, .. } = target.view()
                 && class_name == "Supply"
@@ -832,7 +832,7 @@ pub(crate) fn native_method_1arg(
             Some(Ok(Value::seq(lines)))
         }
         // Cost: O(n + k), n = chars of the invocant, k = words, and O(n) even for
-        // `.words($limit)` (all words are split, then truncated). Rakudo: O(prefix) -- see #NNNN.
+        // `.words($limit)` (all words are split, then truncated). Rakudo: O(prefix) -- see #9147.
         "words" => {
             let s = target.to_string_value();
             let limit = match arg.view() {
@@ -1154,7 +1154,7 @@ pub(crate) fn native_method_1arg(
         }
         // Cost: O(n + m), n = chars of the invocant, m = chars of the needle (copy,
         // reverse search, char-offset conversion of the prefix). Rakudo: O(n - p + m),
-        // p = match position -- see #NNNN.
+        // p = match position -- see #9140.
         "rindex" => {
             // Fall through to runtime dispatch for arrays (list of needles)
             // and type objects

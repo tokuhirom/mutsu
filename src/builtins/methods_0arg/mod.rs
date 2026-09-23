@@ -803,7 +803,7 @@ pub(crate) fn native_method_0arg(
         let text = &u.text();
         match method {
             // Cost: O(n), n = codepoints of the Uni (counted on every call).
-            // Rakudo: O(1) -- see #NNNN.
+            // Rakudo: O(1) -- see #9147.
             "chars" | "codes" => {
                 return Some(Ok(Value::int(text.chars().count() as i64)));
             }
@@ -2135,7 +2135,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                 return Some(Ok(target.match_ast().unwrap_or(Value::NIL)));
             }
             // Cost: O(n), n = chars of `.orig`: copies the subject and collects all of
-            // its chars to slice a prefix. Rakudo: O(1) -- see #NNNN.
+            // its chars to slice a prefix. Rakudo: O(1) -- see #9144.
             "prematch" => {
                 if let Some(orig_val) = target.match_orig() {
                     let orig = orig_val.to_string_value();
@@ -2147,7 +2147,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                 return Some(Ok(Value::str(String::new())));
             }
             // Cost: O(n), n = chars of `.orig`: copies the subject and collects all of
-            // its chars to slice a suffix. Rakudo: O(1) -- see #NNNN.
+            // its chars to slice a suffix. Rakudo: O(1) -- see #9144.
             "postmatch" => {
                 if let Some(orig_val) = target.match_orig() {
                     let orig = orig_val.to_string_value();

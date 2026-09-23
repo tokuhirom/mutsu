@@ -118,7 +118,7 @@ impl Interpreter {
     // match (r^2), `apply_substitutions` maps each span char->byte from the start,
     // and `make_subst_match` builds a fresh MatchTarget (string + char copy) per
     // Match, so `$/` also holds r full copies of the subject (O(n*r) memory).
-    // Rakudo: O(n + r) -- see #NNNN.
+    // Rakudo: O(n + r) -- see #9143.
     fn run_subst(&mut self, op: &SubstOp) -> Result<SubstOutcome, RuntimeError> {
         let target = self.env().get("_").cloned().unwrap_or(Value::NIL);
         let text = target.to_string_value();

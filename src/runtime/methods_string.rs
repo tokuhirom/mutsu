@@ -380,7 +380,7 @@ impl Interpreter {
             // invocant, L = distinct match ends per start: `regex_match_all_with_captures`
             // enumerates EVERY end at EVERY start (then keeps the longest), even for a
             // non-`:g` subst, so `("a" x n).subst(/a+/, {...})` is O(n^2). Rakudo: O(n + r)
-            // -- see #NNNN.
+            // -- see #9143.
             ValueView::Regex(_) | ValueView::RegexWithAdverbs(_) => {
                 let pat: String = match pattern.view() {
                     ValueView::Regex(p) => p.to_string(),
@@ -580,7 +580,7 @@ impl Interpreter {
             // Cost: with `:g`/`:nth`/`:x`/`:c`/`:p`, O(n*r), n = bytes of the invocant,
             // r = matches: each match's char offsets are recounted from the start
             // (`text[..start].chars().count()`), and a closure replacement additionally
-            // builds a fresh MatchTarget (O(n)) per match. Rakudo: O(n + r) -- see #NNNN.
+            // builds a fresh MatchTarget (O(n)) per match. Rakudo: O(n + r) -- see #9143.
             // Without adverbs: O(n) (one `find`).
             ValueView::Str(pat) => {
                 let has_adverbs = nth.is_some()

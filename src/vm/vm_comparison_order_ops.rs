@@ -101,7 +101,7 @@ impl Interpreter {
 
     // Cost: O(n1 + n2), n1, n2 = chars of the operands (both are copied by
     // `to_str_context` before comparing). Rakudo: O(p), p = common prefix, O(1)
-    // when the lengths differ -- see #NNNN.
+    // when the lengths differ -- see #9147.
     pub(super) fn exec_str_eq_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
@@ -121,7 +121,7 @@ impl Interpreter {
 
     // Cost: O(n1 + n2), n1, n2 = chars of the operands (both are copied by
     // `to_str_context` before comparing). Rakudo: O(p), p = common prefix, O(1)
-    // when the lengths differ -- see #NNNN.
+    // when the lengths differ -- see #9147.
     pub(super) fn exec_str_ne_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
@@ -149,7 +149,7 @@ impl Interpreter {
     }
 
     // Cost: O(n1 + n2), n1, n2 = chars of the operands (both are copied by
-    // `to_str_context` before comparing). Rakudo: O(p), p = common prefix -- see #NNNN.
+    // `to_str_context` before comparing). Rakudo: O(p), p = common prefix -- see #9147.
     pub(super) fn exec_str_lt_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
@@ -166,7 +166,7 @@ impl Interpreter {
     }
 
     // Cost: O(n1 + n2), n1, n2 = chars of the operands (both are copied by
-    // `to_str_context` before comparing). Rakudo: O(p), p = common prefix -- see #NNNN.
+    // `to_str_context` before comparing). Rakudo: O(p), p = common prefix -- see #9147.
     pub(super) fn exec_str_gt_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
@@ -183,7 +183,7 @@ impl Interpreter {
     }
 
     // Cost: O(n1 + n2), n1, n2 = chars of the operands (both are copied by
-    // `to_str_context` before comparing). Rakudo: O(p), p = common prefix -- see #NNNN.
+    // `to_str_context` before comparing). Rakudo: O(p), p = common prefix -- see #9147.
     pub(super) fn exec_str_le_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
@@ -200,7 +200,7 @@ impl Interpreter {
     }
 
     // Cost: O(n1 + n2), n1, n2 = chars of the operands (both are copied by
-    // `to_str_context` before comparing). Rakudo: O(p), p = common prefix -- see #NNNN.
+    // `to_str_context` before comparing). Rakudo: O(p), p = common prefix -- see #9147.
     pub(super) fn exec_str_ge_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
@@ -453,7 +453,7 @@ impl Interpreter {
             }
             // Str cmp Str lands here.
             // Cost: O(n1 + n2), n1, n2 = chars of the operands (both copied).
-            // Rakudo: O(p), p = common prefix -- see #NNNN.
+            // Rakudo: O(p), p = common prefix -- see #9147.
             _ => left.to_string_value().cmp(&right.to_string_value()),
         }
     }
@@ -683,7 +683,7 @@ impl Interpreter {
     }
 
     // Cost: O(n1 + n2), n1, n2 = chars of the operands (both stringified by copy).
-    // Rakudo: O(p), p = common prefix -- see #NNNN.
+    // Rakudo: O(p), p = common prefix -- see #9147.
     pub(super) fn exec_leg_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();

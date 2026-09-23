@@ -8,7 +8,7 @@ impl Interpreter {
     // collect every end at every start and then sort, O(n + r log r) plus engine
     // work. Even a single-match call (plain, `:c($pos)`, `:p($pos)`) pays the O(n)
     // subject copy, so a `while .match(/.../, :p($p))` tokenizer loop over r
-    // matches is O(n*r). Rakudo: O(1) setup per call -- see #NNNN.
+    // matches is O(n*r). Rakudo: O(1) setup per call -- see #9144.
     pub(crate) fn dispatch_match_method(
         &mut self,
         target: Value,

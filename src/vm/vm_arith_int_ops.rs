@@ -474,7 +474,7 @@ impl Interpreter {
 
     // Cost: O(n * c), n = chars of the left operand, c = repeat count (plus an NFC
     // pass over the whole result when it is not ASCII). Rakudo: O(1) for a flat
-    // operand (one repeat strand) -- see #NNNN.
+    // operand (one repeat strand) -- see #9147.
     pub(super) fn exec_string_repeat_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();

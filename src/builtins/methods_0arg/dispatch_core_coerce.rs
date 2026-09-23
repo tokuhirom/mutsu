@@ -439,7 +439,7 @@ pub(super) fn dispatch(
                 ValueView::BigInt(n) => format!("Int|{}", *n),
                 ValueView::Num(n) => format!("Num|{}", n),
                 // Cost: O(n), n = chars of the invocant (formats a fresh key). Rakudo: O(1)
-                // -- see #NNNN.
+                // -- see #9147.
                 ValueView::Str(s) => format!("Str|{}", *s),
                 ValueView::Bool(b) => format!("Bool|{}", if b { 1 } else { 0 }),
                 ValueView::Rat(n, d) => format!("Rat|{}/{}", n, d),
@@ -764,7 +764,7 @@ pub(super) fn dispatch(
             | ValueView::RegexWithAdverbs(..)
             | ValueView::Routine { is_regex: true, .. } => None,
             // Cost: O(n) for a Str invocant, n = chars (the payload is copied, not
-            // shared). Rakudo: O(1) -- see #NNNN.
+            // shared). Rakudo: O(1) -- see #9147.
             _ => Some(Ok(Value::str(target.to_string_value()))),
         }),
         "Int" => {

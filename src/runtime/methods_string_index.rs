@@ -6,7 +6,7 @@ impl Interpreter {
     // Cost: O(c * (n + m)), n = chars of the invocant, m = chars of a needle,
     // c = needles (copy, grapheme split and re-concatenation of the suffix from
     // `$pos`, whatever `$pos` is). Rakudo: O(d + m), d = chars from `$pos` to the
-    // match -- see #NNNN.
+    // match -- see #9140.
     pub(super) fn dispatch_index(
         &self,
         target: Value,
@@ -96,7 +96,7 @@ impl Interpreter {
     /// Str.indices(needle, pos?, :overlap, :i, :ignorecase, :m, :ignoremark)
     // Cost: O(n * r), n = chars of the invocant, r = matches (the remaining
     // suffix is re-concatenated and its prefix grapheme-counted after every
-    // match). Rakudo: O(n + r) -- see #NNNN.
+    // match). Rakudo: O(n + r) -- see #9140.
     pub(super) fn dispatch_indices(
         &self,
         target: Value,
@@ -189,7 +189,7 @@ impl Interpreter {
 
     // Cost: O(n * m), n = chars of the invocant, m = chars of the needle (the
     // whole invocant is copied and grapheme-split once per needle, then scanned
-    // down from `$pos`). Rakudo: O((pos - p) * m), p = match position -- see #NNNN.
+    // down from `$pos`). Rakudo: O((pos - p) * m), p = match position -- see #9140.
     pub(super) fn dispatch_rindex(
         &self,
         target: Value,

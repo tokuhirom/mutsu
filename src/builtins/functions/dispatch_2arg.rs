@@ -236,7 +236,7 @@ pub(crate) fn native_function_2arg(
             }
         }
         // Cost: O(n + m), n = chars of the string, m = chars of the needle (copy,
-        // search, char-offset conversion). Rakudo: O(p + m), p = match position -- see #NNNN.
+        // search, char-offset conversion). Rakudo: O(p + m), p = match position -- see #9140.
         "index" => {
             // Skip native path for junctions — fall through to interpreter for auto-threading
             if matches!(arg1.view(), ValueView::Junction { .. })
@@ -264,7 +264,7 @@ pub(crate) fn native_function_2arg(
         }
         // Cost: O(n + m), n = chars of the string, m = chars of the needle (copy,
         // reverse search, char-offset conversion of the prefix). Rakudo: O(n - p + m),
-        // p = match position -- see #NNNN.
+        // p = match position -- see #9140.
         "rindex" => {
             // Fall through to runtime for arrays (list of needles)
             if matches!(arg2.view(), ValueView::Array(..)) {
@@ -280,7 +280,7 @@ pub(crate) fn native_function_2arg(
             }))
         }
         // Cost: O(n), n = chars of the string (see `native_substr_slice`).
-        // Rakudo: O(k), k = chars returned -- see #NNNN.
+        // Rakudo: O(k), k = chars returned -- see #9140.
         "substr" => {
             if matches!(arg1.view(), ValueView::Junction { .. })
                 || matches!(arg2.view(), ValueView::Junction { .. })

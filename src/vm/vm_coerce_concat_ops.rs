@@ -247,7 +247,7 @@ impl Interpreter {
         self.stack.push(out);
     }
 
-    // Cost: see `concat_values`: O(n1 + n2). Rakudo: amortized O(1) (strands) -- see #NNNN.
+    // Cost: see `concat_values`: O(n1 + n2). Rakudo: amortized O(1) (strands) -- see #9141.
     pub(crate) fn exec_concat_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
@@ -501,7 +501,7 @@ impl Interpreter {
     // non-ASCII result is re-normalized in full (far slower than the copy).
     // As the append step of `$x = $x ~ $y`, or of a `~=` the fused
     // `ConcatAssignLocal` path declines, that is O(len) per append.
-    // Rakudo: amortized O(1) (strands) -- see #NNNN.
+    // Rakudo: amortized O(1) (strands) -- see #9141.
     pub(crate) fn concat_values(left: Value, right: Value) -> Value {
         // Buf ~ Buf → byte concatenation. Rakudo types the result by whether the
         // two operands have the *same* type: `Blob[uint8] ~ Blob[uint8]` stays

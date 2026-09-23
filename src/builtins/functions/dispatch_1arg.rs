@@ -228,7 +228,7 @@ pub(crate) fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Val
             &arg.to_string_value(),
         )))),
         // Cost: O(n), n = chars of the argument (copied even when nothing is chomped).
-        // Rakudo: O(1) when nothing is chomped -- see #NNNN.
+        // Rakudo: O(1) when nothing is chomped -- see #9147.
         "chomp" => Some(Ok(Value::str(crate::builtins::chomp_one(
             &arg.to_string_value(),
         )))),
@@ -265,7 +265,7 @@ pub(crate) fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Val
             Some(Ok(Value::seq(parts)))
         }
         // Cost: O(n), n = chars of the argument (copy + grapheme count, nothing
-        // cached). Rakudo: O(1) -- see #NNNN.
+        // cached). Rakudo: O(1) -- see #9140.
         "chars" => Some(Ok(Value::int(crate::builtins::string_pos::grapheme_len(
             &arg.to_string_value(),
         ) as i64))),
@@ -325,7 +325,7 @@ pub(crate) fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Val
             }
         }
         // Cost: O(n), n = chars of the argument (copied to read one codepoint).
-        // Rakudo: O(1) -- see #NNNN.
+        // Rakudo: O(1) -- see #9140.
         "ord" => {
             if let Some(ch) = arg.to_string_value().chars().next() {
                 Some(Ok(Value::int(ch as u32 as i64)))

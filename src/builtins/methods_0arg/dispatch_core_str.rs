@@ -239,7 +239,7 @@ pub(super) fn dispatch(
             )))))
         }
         // Cost: O(n), n = chars of the invocant (the payload is copied even when there
-        // is no trailing newline). Rakudo: O(1) when nothing is chomped -- see #NNNN.
+        // is no trailing newline). Rakudo: O(1) when nothing is chomped -- see #9147.
         "chomp" => {
             // IO::Handle.chomp (and any IO::Handle-derived class, e.g.
             // Text::IO::String) is an attribute accessor, not the Str method.

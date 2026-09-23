@@ -45,7 +45,7 @@ pub(crate) fn comb_pure(
 
     match matcher.map(Value::view) {
         // Cost: O(n), n = chars of the invocant, even when `$limit` asks for only k
-        // chunks (all graphemes are segmented first). Rakudo: O(k) -- see #NNNN.
+        // chunks (all graphemes are segmented first). Rakudo: O(k) -- see #9147.
         Some(ValueView::Int(n)) => {
             let chunk_size = if n <= 0 { 1usize } else { n as usize };
             let graphemes: Vec<&str> = text.graphemes(true).collect();

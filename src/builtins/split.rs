@@ -235,7 +235,7 @@ fn split_by_string(
 // Cost: O(s*n*k) worst, n = chars of the invocant, s = separators, k = pieces:
 // every piece re-scans each separator from the piece start, so a separator
 // that is rare or absent is searched to the end once per piece.
-// Rakudo: O(s*n + k) -- see #NNNN.
+// Rakudo: O(s*n + k) -- see #9145.
 fn split_by_strings(
     text: &str,
     splitters: &[String],

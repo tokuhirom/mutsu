@@ -441,7 +441,7 @@ impl Interpreter {
             // Cost: O(n + k) plus the engine's per-match cost, n = chars of the invocant,
             // k = matches, and O(n) even when `$limit` asks for fewer (all matches are
             // found first). With `:match` every Match gets its own `MatchTarget` copy of
-            // the subject (`create_match_object`): O(n*k). Rakudo: O(n + k) -- see #NNNN.
+            // the subject (`create_match_object`): O(n*k). Rakudo: O(n + k) -- see #9144.
             Some(ValueView::Regex(pat)) => {
                 // Use the capturing path only when the regex contains code
                 // blocks whose side effects must fire (e.g. `{ take $/.Str }`).
@@ -538,7 +538,7 @@ impl Interpreter {
 
     /// Create a Match object from regex match positions.
     // Cost: O(n), n = chars of `text`: builds a fresh MatchTarget (copies the
-    // string and collects its chars) per Match. Rakudo: O(1) -- see #NNNN.
+    // string and collects its chars) per Match. Rakudo: O(1) -- see #9144.
     fn create_match_object(&self, text: &str, start: usize, end: usize, _pat: &str) -> Value {
         Value::make_match_object_full(
             start as i64,
