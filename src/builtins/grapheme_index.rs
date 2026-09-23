@@ -203,15 +203,13 @@ impl GraphemeIndex {
         }
         // The last checkpoint at or before `byte`.
         let k = self.marks.partition_point(|&m| m <= byte) - 1;
-        let mut g = k * STRIDE;
-        for (off, _) in Units::from(s, self.marks[k]) {
+        for (g, (off, _)) in (k * STRIDE..).zip(Units::from(s, self.marks[k])) {
             if off == byte {
                 return Some(g);
             }
             if off > byte {
                 return None;
             }
-            g += 1;
         }
         None
     }
@@ -226,12 +224,10 @@ impl GraphemeIndex {
             return byte;
         }
         let k = self.marks.partition_point(|&m| m <= byte) - 1;
-        let mut g = k * STRIDE;
-        for (off, unit) in Units::from(s, self.marks[k]) {
+        for (g, (off, unit)) in (k * STRIDE..).zip(Units::from(s, self.marks[k])) {
             if byte < off + unit.len() {
                 return g;
             }
-            g += 1;
         }
         self.len
     }
