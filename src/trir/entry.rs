@@ -10,7 +10,6 @@
 //! Declining is free everywhere: every `None` below leaves the VM state
 //! exactly as it was, and the caller takes its ordinary path.
 
-use super::compile::TrirCompiler;
 use super::exec::TrOutcome;
 use super::frame::TrFrame;
 use super::{TrChunk, TrKind};
@@ -319,6 +318,16 @@ impl Interpreter {
                 if p.type_name == "str" && val.as_str().is_none() {
                     return None;
                 }
+                if let Some(check) = &p.check {
+                    if let Some(want) = check.defined
+                        && crate::runtime::types::value_is_defined(val) != want
+                    {
+                        return None;
+                    }
+                    if !self.type_matches_value(&check.base, val) {
+                        return None;
+                    }
+                }
                 self.trir.ol[frame.obase as usize + p.slot as usize] = val.clone();
             }
         }
@@ -440,43 +449,4 @@ pub(super) fn deref_cell(v: &Value) -> Value {
         ValueView::ContainerRef(cell) => cell.lock().unwrap_or_else(|e| e.into_inner()).clone(),
         _ => v.clone(),
     }
-}
-
-/// Compile a routine to TRIR at declaration time, or answer `None`.
-///
-/// One call site (`compiler/helpers_sub_body.rs`), so the eligibility gate
-/// and the chunk can never disagree about which routines have one.
-pub(crate) fn compile_routine(
-    name: Symbol,
-    param_defs: &[crate::ast::ParamDef],
-    params: &[String],
-    return_type: Option<&str>,
-    body: &[crate::ast::Stmt],
-    routines: Option<&crate::trir::compile::TrirRoutineMap>,
-    fns: Option<&CompiledFns>,
-) -> Option<std::sync::Arc<TrChunk>> {
-    let chunk = TrirCompiler::compile(name, param_defs, params, return_type, body, routines, fns);
-    if dump_enabled() {
-        match &chunk {
-            Some(c) => eprintln!(
-                "trir: {} accepted ({} ops, {} native slots, {} obj slots, {} outers, {} calls)",
-                name.as_str(),
-                c.ops.len(),
-                c.n_native,
-                c.n_obj,
-                c.outers.len(),
-                c.calls.len(),
-            ),
-            None => eprintln!("trir: {} declined", name.as_str()),
-        }
-    }
-    chunk.map(std::sync::Arc::new)
-}
-
-/// Whether `MUTSU_TRIR_DUMP` asked for the eligibility decisions to be
-/// reported. Read once: this runs per routine declaration.
-fn dump_enabled() -> bool {
-    use std::sync::OnceLock;
-    static ON: OnceLock<bool> = OnceLock::new();
-    *ON.get_or_init(|| std::env::var("MUTSU_TRIR_DUMP").is_ok())
 }

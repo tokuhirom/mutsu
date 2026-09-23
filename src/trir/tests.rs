@@ -39,6 +39,7 @@ fn first_sub_chunk(stmts: &[Stmt]) -> Option<Option<TrChunk>> {
                     body,
                     None,
                     None,
+                    &[],
                 ));
             }
             Stmt::ClassDecl { body, .. } => {

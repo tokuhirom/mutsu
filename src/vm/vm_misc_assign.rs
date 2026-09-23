@@ -891,7 +891,7 @@ impl Interpreter {
 
     /// Validate and coerce a value for native integer type assignment.
     /// Throws on: string values, non-integer numerics (floats), NaN, out-of-range values.
-    pub(super) fn validate_native_int_assignment(
+    pub(crate) fn validate_native_int_assignment(
         &mut self,
         type_name: &str,
         value: &Value,

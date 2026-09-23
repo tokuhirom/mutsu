@@ -28,6 +28,24 @@ impl TrirCompiler<'_> {
     /// operand stacks are truncated when it is popped, so a `return` from the
     /// middle of an expression leaves nothing behind.
     pub(super) fn compile_return(&mut self, args: &[Expr]) -> Option<TrKind> {
+        if !self.inline_stack.is_empty() {
+            // Unreachable: `declare_inline_sub` refuses a body with a
+            // `return`. Declining keeps it that way if that scan misses one.
+            self.note_decline(|| "a `return` inside an inlined inner sub".to_string());
+            return None;
+        }
+        if self.definite_return.is_some() {
+            // `--> True` answers its constant; a `return` WITH a value is a
+            // compile-time error Raku reports, not something to reproduce.
+            if !args.is_empty() {
+                self.note_decline(|| {
+                    "a `return` of a value under a definite return type".to_string()
+                });
+                return None;
+            }
+            self.push_definite_return();
+            return Some(TrKind::Obj);
+        }
         match args {
             [] => self.ops.push(TrOp::ReturnNil),
             [e] => {
@@ -53,5 +71,18 @@ impl TrirCompiler<'_> {
             }
         }
         Some(TrKind::Obj)
+    }
+}
+
+impl TrirCompiler<'_> {
+    /// Return the routine's definite return value (`--> True`).
+    pub(super) fn push_definite_return(&mut self) {
+        let v = self
+            .definite_return
+            .clone()
+            .unwrap_or(crate::value::Value::NIL);
+        let idx = self.add_const(v);
+        self.ops.push(TrOp::ConstObj(idx));
+        self.ops.push(TrOp::ReturnObj);
     }
 }

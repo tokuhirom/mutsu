@@ -667,21 +667,19 @@ impl Compiler {
         // is exactly the by-name resolution TRIR replaces; `is rw`/`is raw`
         // on the ROUTINE decline because the caller then owns the returned
         // container.
-        // A frame-lexical routine (ADR-0113) no longer sets `has_inner_subs`,
-        // but TRIR resolves calls from the AST and knows nothing of it.
-        let declares_frame_lexical = cf
+        // A frame-lexical routine (ADR-0113) no longer sets `has_inner_subs`;
+        // TRIR inlines it at its call sites (ADR-0112 Step 2), so it is
+        // handed the names the frame-lexical proof admitted.
+        let mut frame_lexicals: Vec<crate::symbol::Symbol> = cf
             .code
             .sub_decl_plans
             .iter()
-            .any(|p| p.frame_lexical.is_some());
-        if !multi
-            && !is_rw
-            && !is_raw
-            && !is_cached
-            && !cf.has_inner_subs
-            && !declares_frame_lexical
-        {
-            cf.trir = crate::trir::entry::compile_routine(
+            .filter(|p| p.frame_lexical.is_some())
+            .map(|p| p.name)
+            .collect();
+        frame_lexicals.dedup();
+        if !multi && !is_rw && !is_raw && !is_cached && !cf.has_inner_subs {
+            cf.trir = crate::trir::compile::compile_routine(
                 crate::symbol::Symbol::intern(name),
                 param_defs,
                 params,
@@ -689,6 +687,7 @@ impl Compiler {
                 body,
                 Some(&self.trir_routines),
                 Some(&self.compiled_functions),
+                &frame_lexicals,
             );
         }
         // Contribute this directly-nested named sub's cell-requiring capture set

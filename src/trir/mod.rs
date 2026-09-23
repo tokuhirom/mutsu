@@ -42,6 +42,7 @@ pub(crate) mod compile;
 pub(crate) mod entry;
 pub(crate) mod exec;
 pub(crate) mod exec_call;
+mod exec_str;
 pub(crate) mod frame;
 pub(crate) mod gen_link;
 mod link;
@@ -137,6 +138,13 @@ pub(crate) enum TrOp {
     IntToNum,
     /// Truncate a num-bank double to an integer.
     NumToInt,
+    /// Wrap the top of the int bank to a sized native integer (`uint32`,
+    /// `int8`, ...), exactly as storing into such a variable does: the low
+    /// `bits` bits, sign-extended when `signed`.
+    WrapI {
+        bits: u8,
+        signed: bool,
+    },
 
     // ---- control flow ----
     Jump(u32),
@@ -165,6 +173,12 @@ pub(crate) enum TrOp {
     /// Pop a boxed value, push its integer. Errors if it is not one — the
     /// checked boundary op of ADR-0110 §3.2.
     UnboxI,
+    /// Pop a boxed `nqp::` result being STORED into a native integer
+    /// variable, and push its integer — with the assignment's own check, so
+    /// a type object dies ("Cannot unbox a type object (Nil) to int.") where
+    /// `UnboxI`'s `iarg` coercion reads 0. Operand: the constant holding the
+    /// variable's declared type name.
+    NarrowStoreI(u32),
     /// Drop the top of the boxed bank.
     PopObj,
     /// Drop the top of the int bank.
@@ -293,6 +307,11 @@ pub(crate) enum TrOp {
     /// that is arbitrary Raku, and refusing the whole routine for it would
     /// leave the hot loop untyped too.
     CallGen(u32),
+    /// Call a method on a boxed receiver through the ordinary method
+    /// dispatch: pop the arguments and the receiver, push the boxed result.
+    /// `site` indexes [`TrChunk::methods`]. The method-call twin of
+    /// `CallGen` (ADR-0112 Step 2).
+    MethodGen(u32),
 
     // ---- exits ----
     /// Return the top of the int bank, boxed.
@@ -376,6 +395,28 @@ pub(crate) struct TrParam {
     /// The declared type's spelling, for the boundary coercion's error
     /// message. Empty when unconstrained.
     pub(crate) type_name: &'static str,
+    /// A nominal type constraint on a boxed parameter (`Uni:D \codes`),
+    /// checked at bind time with the general binder's own type test. A
+    /// failed check declines the TRIR call, so the untyped path raises the
+    /// error the program should see.
+    pub(crate) check: Option<TrParamCheck>,
+}
+
+/// A boxed parameter's nominal type check.
+#[derive(Debug, Clone)]
+pub(crate) struct TrParamCheck {
+    /// The constraint without its smiley (`Uni` for `Uni:D`).
+    pub(crate) base: String,
+    /// `Some(true)` for `:D`, `Some(false)` for `:U`, `None` for neither.
+    pub(crate) defined: Option<bool>,
+}
+
+/// One method call inside a TRIR body (`TrOp::MethodGen`).
+#[derive(Debug, Clone)]
+pub(crate) struct TrMethodCall {
+    pub(crate) name: Symbol,
+    /// Positional arguments after the receiver.
+    pub(crate) arity: u8,
 }
 
 /// A compile-time-resolved call to a TRIR routine (ADR-0110 §3.3).
@@ -426,6 +467,8 @@ pub(crate) struct TrChunk {
     pub(crate) name: Symbol,
     /// The calls this body makes, indexed by `CallTr`/`CallGen`.
     pub(crate) calls: Vec<TrInnerCall>,
+    /// The method calls this body makes, indexed by `MethodGen`.
+    pub(crate) methods: Vec<TrMethodCall>,
 }
 
 /// The next chunk identity. Wrapping is unreachable in practice (a program
