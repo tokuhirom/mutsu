@@ -3199,6 +3199,12 @@ pub struct Interpreter {
     /// program with no such capture: zero cost beyond the map-presence check
     /// already paid by `unit_lexical_slot`.
     pub(crate) mainline_lexical_subs: std::sync::Arc<std::collections::HashMap<String, String>>,
+    /// mutsu#9111: a sub declared inside a ROUTINE maps to its free variables
+    /// and the hidden local of the declaring frame each is aliased to. A
+    /// free-variable access from such a sub's frame reads the alias from env
+    /// first (see `vm/vm_lexsub_aliases.rs`). Empty unless a routine declared
+    /// a `my sub` with free variables.
+    pub(crate) lexsub_free_aliases: std::sync::Arc<crate::vm::LexSubAliasTable>,
     /// Shared cells for block lexicals captured by an `our`-scoped named sub
     /// declared inside a *bare* block (not a package block). Unlike a `my sub`, an
     /// `our sub` is installed into the package registry and stays callable after

@@ -106,7 +106,8 @@ Anything outside the proof keeps the registry-based behaviour unchanged.
 - Known and unchanged: a closure that escapes its routine and then calls an inner sub reads
   the inner sub's free variables from the caller's env, not from the routine's frame. That
   is a pre-existing gap of the dynamic free-variable resolution of named inner subs; it is
-  neither introduced nor fixed here.
+  neither introduced nor fixed here. (Fixed since by
+  [ADR-0114](0114-routine-nested-sub-free-var-aliases.md), mutsu#9111.)
 
 ## Implementation status
 

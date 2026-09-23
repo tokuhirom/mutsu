@@ -439,7 +439,13 @@ impl Interpreter {
         // sources up the stack collides with lazy-iteration topics.)
         for sym in &cf.code.free_var_writes {
             sym.with_str(|name| {
-                if name != "_" && name != "@_" && name != "%_" {
+                // mutsu#9111: a write through a routine-nested sub's alias
+                // cell is already where it belongs.
+                if name != "_"
+                    && name != "@_"
+                    && name != "%_"
+                    && !self.is_lexsub_alias_write(fn_name, name)
+                {
                     self.pending_rw_writeback_sources.push(name.to_string());
                 }
             });

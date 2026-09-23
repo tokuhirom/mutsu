@@ -642,6 +642,9 @@ impl Interpreter {
         // (no mainline sub captured a file-scope `my`) cannot have a cell here,
         // and this runs on EVERY element store and delete. Without it those
         // stores paid two SipHash string lookups plus a name scan each.
+        if let Some(ValueView::ContainerRef(arc)) = self.lexsub_alias_slot(name).map(Value::view) {
+            return Some(crate::gc::Gc::clone(&arc));
+        }
         if self.unit_lexicals.is_empty() {
             return None;
         }
@@ -729,6 +732,10 @@ impl Interpreter {
     ///   qualifier IS the current package: an explicitly written `$Other::x` is a
     ///   package variable and must never reach a `my` lexical.
     pub(crate) fn unit_lexical_slot(&self, name: &str) -> Option<&Value> {
+        // mutsu#9111: a routine-nested sub's own binding of its free variable.
+        if let Some(found) = self.lexsub_alias_slot(name) {
+            return Some(found);
+        }
         if self.unit_lexicals.is_empty() || name.is_empty() {
             return None;
         }
@@ -796,6 +803,9 @@ impl Interpreter {
     /// must never be mutated through the loading scope's same-named `env`
     /// entry. Consulted by [`Self::env_root_descended_mut`].
     pub(crate) fn unit_lexical_slot_mut(&mut self, name: &str) -> Option<&mut Value> {
+        if self.lexsub_alias_frame_active() && self.lexsub_alias_slot(name).is_some() {
+            return self.lexsub_alias_slot_mut(name);
+        }
         if self.unit_lexicals.is_empty() || name.is_empty() {
             return None;
         }
@@ -919,6 +929,10 @@ impl Interpreter {
     /// made inside a shadowing block, is the shadow's `my`, not the mainline
     /// lexical the cell already updated (ADR-0024 row 2a).
     pub(crate) fn is_mainline_lexical_write(&self, callee_name: &str, name: &str) -> bool {
+        // mutsu#9111: a routine-nested sub's write through its alias cell.
+        if self.is_lexsub_alias_write(callee_name, name) {
+            return true;
+        }
         let Some(bucket) = self.mainline_lexical_subs.get(callee_name) else {
             return false;
         };

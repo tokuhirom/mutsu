@@ -1251,6 +1251,7 @@ impl Interpreter {
     /// (ADR-0024 row 3). A closure created inside a plain (non-mainline)
     /// frame is unaffected: the predicate is false there, so this is a no-op.
     fn inject_mainline_lexical_captures(&self, cc: &CompiledCode, env: &mut Env) {
+        self.inject_lexsub_alias_captures(cc, env);
         let Some(bucket) = self.active_unit_lexical_bucket() else {
             return;
         };

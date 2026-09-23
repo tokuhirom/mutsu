@@ -3391,6 +3391,12 @@ pub(crate) struct CompiledSubDeclPlan {
     /// where earlier sibling blocks have already run and left their own
     /// same-named slots live. Empty when the plan compiled no bodies.
     pub(crate) free_var_decl_slots: Vec<(Symbol, u32)>,
+    /// A sub declared inside a routine body: one entry per free variable,
+    /// naming the hidden local of the DECLARING frame that each activation
+    /// binds to that variable's cell (mutsu#9111; see
+    /// `vm/vm_lexsub_aliases.rs`). Empty for a mainline or bare-block sub,
+    /// which ADR-0024's `unit_lexicals` buckets serve instead.
+    pub(crate) lexsub_free_aliases: Vec<LexSubFreeAlias>,
     pub(crate) multi: bool,
     pub(crate) is_rw: bool,
     pub(crate) is_raw: bool,
@@ -3416,6 +3422,19 @@ pub(crate) struct CompiledSubDeclPlan {
     /// identity a registration would have, so every `&name` read in one
     /// activation of the enclosing routine denotes the same routine object.
     pub(crate) frame_lexical_value: bool,
+}
+
+/// One free variable of a routine-nested sub and the hidden local its
+/// declaring frame binds to it (mutsu#9111). `var` is the env key (`p` for
+/// `$p`, `@a` for `@a`); `var_slot` is the declaring frame's own slot for it,
+/// or `None` when it belongs to an enclosing frame and reaches this one as a
+/// captured binding; `alias` / `alias_slot` name the hidden local.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct LexSubFreeAlias {
+    pub(crate) var: Symbol,
+    pub(crate) var_slot: Option<u32>,
+    pub(crate) alias: Symbol,
+    pub(crate) alias_slot: u32,
 }
 
 /// Identity of a frame-lexical routine (ADR-0113): the routine's bare name,
@@ -9301,6 +9320,7 @@ impl CompiledCode {
             frame_lexical: None,
             frame_lexical_value: false,
             free_var_decl_slots: Vec::new(),
+            lexsub_free_aliases: Vec::new(),
             multi: *multi,
             is_rw: *is_rw,
             is_raw: *is_raw,
@@ -9432,6 +9452,21 @@ impl CompiledCode {
             panic!("declaration plan is not a sub");
         };
         self.sub_decl_plans[*plan_idx as usize].free_var_decl_slots = slots;
+    }
+
+    /// Companion of [`Self::set_sub_decl_free_var_decl_slots`] for the
+    /// per-activation free-variable aliases of a routine-nested sub
+    /// (see `CompiledSubDeclPlan::lexsub_free_aliases`).
+    pub(crate) fn set_sub_decl_lexsub_free_aliases(
+        &mut self,
+        decl_idx: u32,
+        aliases: Vec<LexSubFreeAlias>,
+    ) {
+        let Some(CompiledDeclPlanRef::Sub(plan_idx)) = self.decl_plans.get(decl_idx as usize)
+        else {
+            panic!("declaration plan is not a sub");
+        };
+        self.sub_decl_plans[*plan_idx as usize].lexsub_free_aliases = aliases;
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -10514,6 +10549,14 @@ impl CompiledFunction {
                     }
                 }
                 _ => {}
+            }
+        }
+        // A routine-nested sub's free-variable aliases (mutsu#9111) are
+        // per-activation locals of this body, bound by `RegisterDecl`: merged
+        // back, one call's alias would answer for the caller's.
+        for plan in &self.code.sub_decl_plans {
+            for alias in &plan.lexsub_free_aliases {
+                declared.insert(alias.alias.resolve());
             }
         }
         self.declared_locals = Some(declared.iter().map(|n| Symbol::intern(n)).collect());

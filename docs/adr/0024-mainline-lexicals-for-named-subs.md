@@ -357,6 +357,11 @@ trigger B).
   buckets here cannot express), and a closure that declares its own local of
   the same name as the sub's free variable. See
   `news/2026-09/closure-captures-free-vars-of-called-inner-sub.md`.)**
+  **(2026-09-23, mutsu#9111: the routine-nested half is DONE —
+  [ADR-0114](0114-routine-nested-sub-free-var-aliases.md). Not through
+  this store, whose name-keyed buckets cannot hold one binding per
+  activation: the declaring frame binds a hidden alias local per free
+  variable on each activation, and the sub's frame resolves through it.)**
 - **Textual-order edge**: a shadowed call *before* the sub's textual
   declaration (`my $c; { my $c; f() }; sub f { $c }`) still resolves
   dynamically — capture has not run yet at that call. Raku-correct programs

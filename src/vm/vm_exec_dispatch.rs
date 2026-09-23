@@ -361,6 +361,7 @@ impl Interpreter {
                         && (name == "_" || !name.contains('_'))
                         && self.escaping_our_lexical_names.is_empty()
                         && !self.mainline_lexical_frame_active()
+                        && !self.lexsub_alias_frame_active()
                         && self.current_package_is_global()
                     {
                         match self.env().get_sym(code.const_sym(*name_idx)) {
