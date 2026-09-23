@@ -4,7 +4,7 @@ use Test;
 # alternation/conjunction branches, or a group body) that matches nothing
 # syntactically. mutsu detects these at parse/compile time.
 
-plan 22;
+plan 24;
 
 # Whole-pattern empties.
 throws-like q[/ /],     X::Syntax::Regex::NullRegex, 'bare empty regex';
@@ -39,3 +39,6 @@ lives-ok { EVAL q[/ "" /] },    'empty string literal atom is fine';
 lives-ok { EVAL q[/ <?> /] },   'zero-width assertion is fine';
 lives-ok { EVAL q[/ | a /] },   'leading empty | branch (alignment) is fine';
 lives-ok { EVAL q[/ (|a) /] },  'leading empty branch in group is fine';
+lives-ok { EVAL q[/ a|||b /] }, 'triple-bar sequential alternation is accepted';
+lives-ok { EVAL q[/ (ps1||pl|||raku||bash||python||ruby) /] },
+    'triple-bar alternation in a grouped module pattern is accepted';

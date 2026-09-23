@@ -290,10 +290,19 @@ impl Interpreter {
                     && depth_brace == 0
                     && depth_angle == 0 =>
                 {
-                    // Check for || (sequential alternation)
+                    // Check for || (sequential alternation). Rakudo also
+                    // accepts a third adjacent bar (`|||`) here: it is the
+                    // sequential separator followed immediately by the
+                    // alignment bar that starts the next branch. Consume it
+                    // with the separator so it does not become a spurious
+                    // empty branch. A fourth bar must remain a real empty
+                    // branch and is rejected by the null-regex check.
                     if chars.peek() == Some(&'|') {
                         chars.next();
                         is_sequential = true;
+                        if chars.peek() == Some(&'|') {
+                            chars.next();
+                        }
                     }
                     parts.push(std::mem::take(&mut current));
                 }
