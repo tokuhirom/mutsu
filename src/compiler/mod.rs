@@ -1543,6 +1543,17 @@ pub(crate) struct Compiler {
     /// declaration in this compiler shadows a captured binding even though the
     /// outer binding has no slot in this chunk.
     enclosing_local_names: std::collections::HashSet<String>,
+    /// Free variables (reads and writes) of each named sub declared inside a
+    /// ROUTINE body that is lexically visible here, keyed by the sub's name.
+    /// Such a sub resolves its free variables against the env live at call
+    /// time rather than its declaring frame, so a closure in the same body
+    /// that calls it must capture those variables itself, or a call made
+    /// after the routine returned finds none of them (mutsu#9106). A call
+    /// site folds the callee's entry into `nested_routine_free_reads` (see
+    /// [`Compiler::fold_lexical_sub_free_vars`]). Inherited by every nested
+    /// compiler, so the fold also reaches a sibling named sub that calls it,
+    /// which makes the capture transitive.
+    lexical_sub_free_vars: std::rc::Rc<std::collections::HashMap<Symbol, Vec<Symbol>>>,
     /// Placeholder params (`^p` caret-form) an interpret-path caller has
     /// already bound in env before re-compiling this body — see
     /// `seed_prebound_placeholders`.
@@ -1777,6 +1788,7 @@ impl Compiler {
             sigilless_locals: std::collections::HashSet::new(),
             enclosing_sigilless: std::collections::HashSet::new(),
             enclosing_local_names: std::collections::HashSet::new(),
+            lexical_sub_free_vars: Default::default(),
             prebound_placeholder_params: std::collections::HashSet::new(),
             with_element_source_capture: None,
             last_source_line: None,
@@ -2222,6 +2234,31 @@ impl Compiler {
             .extend(self.local_map.keys().cloned());
         sub.enclosing_local_names
             .extend(self.enclosing_local_names.iter().cloned());
+        sub.lexical_sub_free_vars = self.lexical_sub_free_vars.clone();
+    }
+
+    /// Record a named sub declared in this scope in
+    /// [`Compiler::lexical_sub_free_vars`]. Only a sub declared inside a
+    /// routine body is recorded: a mainline or bare-block sub already resolves
+    /// its free variables lexically (ADR-0024), and a routine-nested one is
+    /// the case ADR-0024 leaves on dynamic resolution.
+    pub(crate) fn record_lexical_sub_free_vars(&mut self, name: &str, free: Vec<Symbol>) {
+        if !(self.is_routine || self.lexically_in_routine) || name.contains("::") {
+            return;
+        }
+        std::rc::Rc::make_mut(&mut self.lexical_sub_free_vars).insert(Symbol::intern(name), free);
+    }
+
+    /// A call to a lexically visible routine-nested sub (see
+    /// [`Compiler::lexical_sub_free_vars`]): add the callee's free variables
+    /// to this code's capture set, so a closure that outlives the declaring
+    /// routine carries them to the call.
+    pub(crate) fn fold_lexical_sub_free_vars(&mut self, name: &Symbol) {
+        if let Some(free) = self.lexical_sub_free_vars.get(name)
+            && !free.is_empty()
+        {
+            self.code.nested_routine_free_reads.push(free.clone());
+        }
     }
 
     /// Bake the scope chain visible right here into the code chunk, and return

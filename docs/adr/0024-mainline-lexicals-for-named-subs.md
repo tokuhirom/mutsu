@@ -347,6 +347,16 @@ trigger B).
   still excluded. See
   `news/2026-09/free-var-lexical-resolution-inside-a-bare-block.md` and
   `t/free-var-in-bare-block-lexical-scope.t`.)**
+  **(2026-09-23, mutsu#9106: the routine-nested half is still dynamic, but a
+  CLOSURE in the same routine body that calls such a sub now captures the
+  sub's free variables itself — the compiler folds them into the call site's
+  `nested_routine_free_reads` via `Compiler::lexical_sub_free_vars` — so a
+  closure that outlives the routine carries them to the call. Two cases
+  remain dynamic: a `&inner` code object that itself escapes the routine
+  (needs a per-activation environment for the sub, which the name-keyed
+  buckets here cannot express), and a closure that declares its own local of
+  the same name as the sub's free variable. See
+  `news/2026-09/closure-captures-free-vars-of-called-inner-sub.md`.)**
 - **Textual-order edge**: a shadowed call *before* the sub's textual
   declaration (`my $c; { my $c; f() }; sub f { $c }`) still resolves
   dynamically — capture has not run yet at that call. Raku-correct programs

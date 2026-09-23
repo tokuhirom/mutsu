@@ -272,10 +272,12 @@ impl Compiler {
     }
 
     pub(super) fn compile_expr_call(&mut self, name: &Symbol, args: &[Expr]) {
+        self.fold_lexical_sub_free_vars(name);
         self.compile_expr_call_inner(name, args, false);
     }
 
     pub(super) fn compile_expr_user_routine_call(&mut self, name: &Symbol, args: &[Expr]) {
+        self.fold_lexical_sub_free_vars(name);
         self.compile_expr_call_inner(name, args, true);
     }
 
