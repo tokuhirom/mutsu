@@ -412,7 +412,12 @@ impl Interpreter {
                     }
                 }
                 TrOp::CallGen(site) => {
-                    self.exec_trir_generic_call(chunk, *site, frame)?;
+                    if self
+                        .exec_trir_generic_call(chunk, *site, frame, compiled_fns)?
+                        .is_none()
+                    {
+                        return Ok(TrOutcome::Bail);
+                    }
                     if !self.trir_reseed_outers(chunk, frame) {
                         return Ok(TrOutcome::Bail);
                     }

@@ -45,6 +45,9 @@ pub(crate) struct TrStacks {
     /// characters afresh per call was the largest single per-call cost
     /// measured in Stage 1 (345 instructions plus a malloc/free pair).
     pub(crate) chars: TrCharCache,
+    /// `CallGen` sites linked to the TRIR routine they reach (ADR-0112 Step
+    /// 1, `gen_link.rs`).
+    pub(crate) gen_links: super::gen_link::GenLinks,
 }
 
 /// One frame's bases into [`TrStacks`].

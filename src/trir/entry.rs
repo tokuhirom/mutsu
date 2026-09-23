@@ -292,7 +292,7 @@ impl Interpreter {
     /// native `str`. A bare type object, a `BigInt` outside `int`'s range and
     /// everything else decline, so the untyped path raises the error the
     /// program should see.
-    fn bind_ro_param(
+    pub(super) fn bind_ro_param(
         &mut self,
         frame: TrFrame,
         p: &crate::trir::TrParam,
