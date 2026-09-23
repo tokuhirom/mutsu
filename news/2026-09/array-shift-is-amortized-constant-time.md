@@ -41,7 +41,7 @@ with L after this change, but the remainder is not the shift: the same
 (as `unjsonify-string`'s `fetch-codepoint` does) is linear at ~2000
 ns/elem, so what is left belongs to the parent tracking issue (#8673).
 
-Pinned by `t/collections/array-shift-is-constant-time.t`, which checks that
+Pinned by `t/collections/array/array-shift-is-constant-time.t`, which checks that
 the offset is invisible to indexing, iteration, `push`/`unshift`/`pop`,
 `eqv` and `.clone`, and that draining a 4x longer `Uni` with `nqp::shift_i`
 costs ~4x rather than ~16x.
