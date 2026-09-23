@@ -73,8 +73,12 @@ impl Interpreter {
                 "Cannot resolve caller Numeric(Sub:D: ); none of these signatures matches:\n    (Mu:U \\v: *%_)",
             ));
         }
-        // If the value is an Instance, try calling the Numeric method
-        if let ValueView::Instance { .. } = val.view() {
+        // Punned roles are represented as Mixins, so prefix `+` must also
+        // dispatch a role-provided Numeric method before falling back to the
+        // generic value coercion (which cannot see the mixin's method table).
+        if matches!(val.view(), ValueView::Instance { .. })
+            || self.mixin_role_has_method(&val, "Numeric")
+        {
             // Slice F: a user `Numeric` method can mutate a captured-outer caller
             // lexical (`my $c; method Numeric { $c++; ... }`); this op-level
             // redispatch has no surrounding CallMethod op to drain the writeback,
