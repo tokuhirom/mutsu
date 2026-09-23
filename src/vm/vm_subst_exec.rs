@@ -65,6 +65,8 @@ impl Interpreter {
     /// Every match of `op`'s pattern in `text`, with its captures. Only the
     /// first match is searched for when the op can never use more than one
     /// (no `:g`, no `:nth`, no `:x`), so a plain `s///` still stops early.
+    // Cost: O(n + r) plus per-match engine work, n = chars of the subject,
+    // r = matches (one shared MatchTarget).
     fn subst_collect_matches(
         &mut self,
         op: &SubstOp,
@@ -111,6 +113,12 @@ impl Interpreter {
 
     /// Run a substitution against the topic and report what it produced. Shared
     /// by `s///` (which then writes the topic) and `S///` (which does not).
+    // Cost: O(n*r + r^2), n = chars of the subject, r = matches, for `s:g///` /
+    // `S:g///`: `caps` is rebuilt by a linear `find` over all matches per selected
+    // match (r^2), `apply_substitutions` maps each span char->byte from the start,
+    // and `make_subst_match` builds a fresh MatchTarget (string + char copy) per
+    // Match, so `$/` also holds r full copies of the subject (O(n*r) memory).
+    // Rakudo: O(n + r) -- see #NNNN.
     fn run_subst(&mut self, op: &SubstOp) -> Result<SubstOutcome, RuntimeError> {
         let target = self.env().get("_").cloned().unwrap_or(Value::NIL);
         let text = target.to_string_value();

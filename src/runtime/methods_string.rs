@@ -151,6 +151,8 @@ impl Interpreter {
 
     /// `.wordcase(:&filter = &tclc, :$where = True)`: title-case each word,
     /// but only words that smart-match `:where`, transformed by `:filter`.
+    // Cost: O(n) plus one `:where` smartmatch and one `:filter` call per word,
+    // n = chars of the invocant.
     pub(crate) fn dispatch_wordcase(
         &mut self,
         target: Value,
@@ -210,6 +212,9 @@ impl Interpreter {
         Ok(Value::str(result))
     }
 
+    // Cost: the slow path for `.subst` (closure replacement, `:nth`/`:x`/`:c`/`:p`,
+    // case adverbs, non-Str invocants); plain `Str.subst(Str|Regex, Str, :g?)` is
+    // handled by `try_native_subst`. See the per-pattern arms below.
     pub(crate) fn dispatch_subst(
         &mut self,
         target: Value,
@@ -371,6 +376,11 @@ impl Interpreter {
         };
 
         match pattern.view() {
+            // Cost: O(n*L) matches collected before selection, n = chars of the
+            // invocant, L = distinct match ends per start: `regex_match_all_with_captures`
+            // enumerates EVERY end at EVERY start (then keeps the longest), even for a
+            // non-`:g` subst, so `("a" x n).subst(/a+/, {...})` is O(n^2). Rakudo: O(n + r)
+            // -- see #NNNN.
             ValueView::Regex(_) | ValueView::RegexWithAdverbs(_) => {
                 let pat: String = match pattern.view() {
                     ValueView::Regex(p) => p.to_string(),
@@ -567,6 +577,11 @@ impl Interpreter {
                     Ok(Value::str(text))
                 }
             }
+            // Cost: with `:g`/`:nth`/`:x`/`:c`/`:p`, O(n*r), n = bytes of the invocant,
+            // r = matches: each match's char offsets are recounted from the start
+            // (`text[..start].chars().count()`), and a closure replacement additionally
+            // builds a fresh MatchTarget (O(n)) per match. Rakudo: O(n + r) -- see #NNNN.
+            // Without adverbs: O(n) (one `find`).
             ValueView::Str(pat) => {
                 let has_adverbs = nth.is_some()
                     || x_count.is_some()

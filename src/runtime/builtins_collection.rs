@@ -33,6 +33,8 @@ pub(super) fn format_first_result(
 }
 
 /// Raku `val()` builtin: convert a string into an allomorphic type.
+// Cost: O(d^2) for a d-digit integer string (num-bigint radix parse), O(n)
+// otherwise, n = chars of the argument.
 pub(crate) fn builtin_val(args: &[Value]) -> Value {
     let arg = match args.first() {
         Some(v) => v,

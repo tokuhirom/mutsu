@@ -1,6 +1,8 @@
 use crate::value::{Value, ValueView};
 use num_traits::ToPrimitive;
 
+// Cost: O(n + L * s), n = chars of `s`, L = lines, s = |steps| (each line is
+// rebuilt once; only the leading whitespace is scanned for width).
 pub(crate) fn str_indent(s: &str, arg: &Value) -> (String, Option<String>) {
     const TABSTOP: usize = 8;
 

@@ -2,6 +2,13 @@ use super::*;
 
 impl Interpreter {
     /// Dispatch .match method
+    // Cost: O(n) plus the engine's cost, n = chars of the invocant (the subject is
+    // copied into one MatchTarget per call, which every returned Match shares).
+    // `:g` is O(n + r) plus per-match engine work, r = matches; `:ov`/`:ex`
+    // collect every end at every start and then sort, O(n + r log r) plus engine
+    // work. `:c($pos)` / `:p($pos)` still pay the O(n) setup per call (so is a
+    // `while .match(:c($p))` loop over r matches, O(n*r) -- measured quadratic on
+    // Rakudo too).
     pub(crate) fn dispatch_match_method(
         &mut self,
         target: Value,

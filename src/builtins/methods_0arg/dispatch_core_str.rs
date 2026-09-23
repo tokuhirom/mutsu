@@ -11,6 +11,7 @@ pub(super) fn dispatch(
     method: &str,
 ) -> Option<Option<Result<Value, RuntimeError>>> {
     match method {
+        // Cost: O(n + k), n = chars of the invocant, k = words (each copied once).
         "words" => {
             let s = target.to_string_value();
             let words: Vec<Value> = s
@@ -19,10 +20,12 @@ pub(super) fn dispatch(
                 .collect();
             Some(Some(Ok(Value::seq(words))))
         }
+        // Cost: O(n), n = chars of the invocant.
         "codes" => {
             let s = target.to_string_value();
             Some(Some(Ok(Value::int(s.chars().count() as i64))))
         }
+        // Cost: O(n + k), n = bytes of the invocant, k = lines (each copied once).
         "lines" => {
             // Skip for Supply instances -- handled by native Supply.lines
             if let ValueView::Instance { class_name, .. } = target.view()
@@ -44,6 +47,7 @@ pub(super) fn dispatch(
         // Date / DateTime (documented on Str). Str-only — `Int.Date` etc. are
         // method-not-found in raku. Invalid/out-of-range strings surface the
         // same X::Temporal::InvalidFormat / X::OutOfRange the constructors throw.
+        // Cost: O(n), n = chars of the invocant.
         "Date" if matches!(target.view(), ValueView::Str(_)) => {
             let s = target.to_string_value();
             Some(Some(
@@ -51,6 +55,7 @@ pub(super) fn dispatch(
                     .map(|(y, m, d)| super::temporal::make_date(y, m, d)),
             ))
         }
+        // Cost: O(n), n = chars of the invocant.
         "DateTime" if matches!(target.view(), ValueView::Str(_)) => {
             let s = target.to_string_value();
             // A bare `yyyy-mm-dd` (no time component) becomes midnight UTC.
@@ -64,15 +69,20 @@ pub(super) fn dispatch(
             };
             Some(Some(result))
         }
+        // Cost: O(n), n = chars of the invocant (the scan touches only the ends, but the
+        // result is copied).
         "trim" => Some(Some(Ok(Value::str(
             target.to_string_value().trim().to_string(),
         )))),
+        // Cost: O(n), n = chars of the invocant (result copied).
         "trim-leading" => Some(Some(Ok(Value::str(
             target.to_string_value().trim_start().to_string(),
         )))),
+        // Cost: O(n), n = chars of the invocant (result copied).
         "trim-trailing" => Some(Some(Ok(Value::str(
             target.to_string_value().trim_end().to_string(),
         )))),
+        // Cost: O(n), n = chars of the invocant.
         "flip" => {
             let s = target.to_string_value();
             use unicode_normalization::UnicodeNormalization;
@@ -228,6 +238,8 @@ pub(super) fn dispatch(
                 },
             )))))
         }
+        // Cost: O(n), n = chars of the invocant (the payload is copied even when there
+        // is no trailing newline). Rakudo: O(1) when nothing is chomped -- see #NNNN.
         "chomp" => {
             // IO::Handle.chomp (and any IO::Handle-derived class, e.g.
             // Text::IO::String) is an attribute accessor, not the Str method.
@@ -241,6 +253,7 @@ pub(super) fn dispatch(
                 &target.to_string_value(),
             )))))
         }
+        // Cost: O(n), n = chars of the invocant (result copied).
         "chop" => {
             if let ValueView::Package(type_name) = target.view() {
                 return Some(Some(Err(RuntimeError::new(format!(
@@ -252,6 +265,8 @@ pub(super) fn dispatch(
             s.pop();
             Some(Some(Ok(Value::str(s))))
         }
+        // Cost: O(n), n = chars of the invocant (one Str per grapheme; eager, so
+        // `.comb.head(k)` still pays O(n)).
         "comb" => {
             let s = target.to_string_value();
             let parts: Vec<Value> = s

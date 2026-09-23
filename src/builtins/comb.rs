@@ -44,6 +44,8 @@ pub(crate) fn comb_pure(
     }
 
     match matcher.map(Value::view) {
+        // Cost: O(n), n = chars of the invocant, even when `$limit` asks for only k
+        // chunks (all graphemes are segmented first). Rakudo: O(k) -- see #NNNN.
         Some(ValueView::Int(n)) => {
             let chunk_size = if n <= 0 { 1usize } else { n as usize };
             let graphemes: Vec<&str> = text.graphemes(true).collect();
@@ -53,6 +55,8 @@ pub(crate) fn comb_pure(
                 .collect();
             Some(apply_limit(result, limit))
         }
+        // Cost: O(n + k), n = bytes of the invocant, k = matches (substring
+        // search resumes after each hit); an empty needle is O(n) graphemes.
         Some(ValueView::Str(needle)) => {
             if needle.is_empty() {
                 let chars: Vec<Value> = text
@@ -87,6 +91,7 @@ pub(crate) fn comb_pure(
 /// matcher + optional limit (the `:match` adverb only affects the regex path and
 /// is ignored here, exactly as the interpreter ignores it for `Int`/`Str`).
 /// Returns `None` to defer to the interpreter for `Regex`/`Sub`/bare matchers.
+// Cost: O(n) to copy the invocant, plus `comb_pure`'s cost.
 pub(crate) fn native_comb_method(
     target: &Value,
     args: &[Value],
