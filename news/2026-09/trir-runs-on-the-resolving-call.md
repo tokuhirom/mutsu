@@ -49,6 +49,17 @@ declaring file once the function is stamped, and every entry pushes the frame
 and pops it on exit: from outside, through `CallTr`, and through a gen-link.
 The SPDX decode measured the same before and after, within run-to-run noise.
 
+## `&&` / `||` in TRIR yield an operand again
+
+The same exposure found a wrong answer. TRIR compiled `a && b` / `a || b` on
+the int bank and narrowed every operand to its truth value, so a boxed operand
+came back as `1`: `has-interp($s) && 'both'` answered `1`
+(`t/modules/import-export/imported-call-expression-prefix.t`). Only a native
+int operand, whose value is its truth, stays in TRIR now. That includes an
+int-returning `nqp::` op reached through the generic op path (NQP's `_i` and
+`is*` ops, `eqat`, `elems`, ...), which keeps JSON::Fast's `parse-thing`
+accepted. A boxed operand declines to the untyped path.
+
 ## `nqp::create` no longer goes through method dispatch
 
 `nqp::create(IterationBuffer)` reached its allocation through
@@ -75,4 +86,5 @@ Pins, all checked against rakudo:
 
 - `t/vm/codegen/adr0112-trir-first-call.t` (with `t/fixtures/trir-first-call.raku`);
 - `t/vm/codegen/adr0112-trir-caller-frames.t` (with `t/fixtures/trir-caller-frames.raku`);
+- `t/vm/codegen/adr0112-trir-short-circuit.t` (with `t/fixtures/trir-short-circuit.raku`);
 - `t/vm/nqp-create-skips-user-create.t`.
