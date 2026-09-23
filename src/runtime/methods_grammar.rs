@@ -641,10 +641,8 @@ impl Interpreter {
             return self.call_wrapped_start_rule(
                 package_name,
                 &start_rule,
-                method,
-                args,
-                &text,
-                pos,
+                (method, args),
+                Self::token_wrap_cursor(&text, pos),
                 &chain,
             );
         }

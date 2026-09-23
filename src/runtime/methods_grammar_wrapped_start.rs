@@ -30,26 +30,22 @@ pub(super) fn take_start_rule_wrap_bypass() -> bool {
 
 impl Interpreter {
     /// Run the `.wrap` chain of `package_name`'s start rule for the
-    /// `.parse`/`.subparse` call `method(args)`.
-    #[allow(clippy::too_many_arguments)]
+    /// `.parse`/`.subparse` call `parse_call` (its method name and arguments),
+    /// handing the wrapper `cursor`.
     pub(super) fn call_wrapped_start_rule(
         &mut self,
         package_name: &str,
         start_rule: &str,
-        method: &str,
-        args: &[Value],
-        text: &str,
-        pos: usize,
+        parse_call: (&str, &[Value]),
+        cursor: Value,
         chain: &[(u64, Value)],
     ) -> Result<Value, RuntimeError> {
         self.call_wrapped_token_method_with_terminal(
             Symbol::intern(package_name),
             start_rule,
-            &[],
-            text,
-            pos,
+            vec![cursor],
             chain,
-            Some((method, args)),
+            Some(parse_call),
         )
     }
 

@@ -163,22 +163,33 @@ impl Interpreter {
         pos: usize,
         chain: &[(u64, Value)],
     ) -> Result<Value, RuntimeError> {
-        self.call_wrapped_token_method_with_terminal(pkg, name, extra_args, text, pos, chain, None)
+        let mut call_args = vec![Self::token_wrap_cursor(text, pos)];
+        call_args.extend(extra_args.iter().cloned());
+        self.call_wrapped_token_method_with_terminal(pkg, name, call_args, chain, None)
     }
 
-    /// Dispatch a token's `.wrap` chain with a cursor at `pos`. The terminal
-    /// that `callsame` reaches runs the token body at the cursor, or -- when
-    /// `parse_call` names the `.parse`/`.subparse` call that entered a wrapped
-    /// start rule -- re-runs that whole parse with the wrap check bypassed
+    /// The cursor a token's wrapper receives: a Match anchored at `pos`.
+    pub(crate) fn token_wrap_cursor(text: &str, pos: usize) -> Value {
+        Value::make_match_object_full(
+            pos as i64,
+            pos as i64,
+            &[],
+            &Default::default(),
+            MatchTarget::new(text),
+        )
+    }
+
+    /// Dispatch a token's `.wrap` chain with `call_args` (a cursor, then the
+    /// token's own arguments). The terminal that `callsame` reaches runs the
+    /// token body at the cursor, or -- when `parse_call` names the
+    /// `.parse`/`.subparse` call that entered a wrapped start rule -- re-runs
+    /// that whole parse with the wrap check bypassed
     /// (`methods_grammar_wrapped_start`).
-    #[allow(clippy::too_many_arguments)]
     pub(crate) fn call_wrapped_token_method_with_terminal(
         &mut self,
         pkg: Symbol,
         name: &str,
-        extra_args: &[Value],
-        text: &str,
-        pos: usize,
+        call_args: Vec<Value>,
         chain: &[(u64, Value)],
         parse_call: Option<(&str, &[Value])>,
     ) -> Result<Value, RuntimeError> {
@@ -187,15 +198,6 @@ impl Interpreter {
                 "Cannot dispatch an empty token method wrap chain",
             ));
         }
-        let cursor = Value::make_match_object_full(
-            pos as i64,
-            pos as i64,
-            &[],
-            &Default::default(),
-            MatchTarget::new(text),
-        );
-        let mut call_args = vec![cursor];
-        call_args.extend(extra_args.iter().cloned());
 
         let mut original_env = crate::env::Env::new();
         original_env.insert(
