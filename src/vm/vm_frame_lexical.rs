@@ -22,6 +22,11 @@ pub(crate) struct FrameLexicalTarget {
     pub(crate) name: Symbol,
 }
 
+/// `Interpreter::frame_lexical_closure_bodies`: a closure body's shared
+/// statement buffer address -> (that body, kept alive; its compiled chunk).
+pub(crate) type FrameLexicalClosureBodies =
+    rustc_hash::FxHashMap<usize, (Arc<Vec<crate::ast::Stmt>>, Arc<CompiledCode>)>;
+
 /// A call site's argument-shape facts, as its opcode states them.
 #[derive(Debug, Clone, Copy)]
 pub(super) struct FrameLexicalCallSite {
@@ -81,6 +86,54 @@ impl Interpreter {
             },
         );
         Ok(())
+    }
+
+    /// A closure is being created from `code.stmt_pool[idx]` with the compiled
+    /// chunk `cc`. When that chunk calls a frame-lexical routine, remember the
+    /// body so a carrier recompile of it inherits the call table (see
+    /// [`Interpreter::inherit_frame_lexical_for_body`]).
+    #[inline]
+    pub(super) fn note_frame_lexical_closure_body(
+        &mut self,
+        code: &CompiledCode,
+        idx: u32,
+        cc: &Option<Arc<CompiledCode>>,
+    ) {
+        let Some(cc) = cc else { return };
+        if !cc.lexical_subtree {
+            return;
+        }
+        let body = code.closure_body_arc(idx as usize);
+        if body.is_empty() {
+            return;
+        }
+        let key = body.as_ptr() as usize;
+        if !self.frame_lexical_closure_bodies.contains_key(&key) {
+            crate::runtime::cow_table_mut(&mut self.frame_lexical_closure_bodies)
+                .insert(key, (body, Arc::clone(cc)));
+        }
+    }
+
+    /// A carrier path compiled `body` afresh from its AST. When `body` is a
+    /// closure body whose own chunk calls frame-lexical routines, give the
+    /// fresh chunk the same call table.
+    pub(crate) fn inherit_frame_lexical_for_body(
+        &self,
+        body: &[crate::ast::Stmt],
+        code: &mut CompiledCode,
+        fns: &mut CompiledFns,
+    ) {
+        if self.frame_lexical_closure_bodies.is_empty() || body.is_empty() {
+            return;
+        }
+        if let Some((_, origin)) = self
+            .frame_lexical_closure_bodies
+            .get(&(body.as_ptr() as usize))
+        {
+            crate::compiler::frame_lexical_inherit::inherit_frame_lexical_routines(
+                code, fns, origin,
+            );
+        }
     }
 
     /// A bare call site whose callee this chunk lists as a frame-lexical

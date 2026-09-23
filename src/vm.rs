@@ -137,7 +137,7 @@ mod vm_call_helpers;
 mod vm_call_light;
 mod vm_frame_lexical;
 use vm_frame_lexical::FrameLexicalCallSite;
-pub(crate) use vm_frame_lexical::FrameLexicalTarget;
+pub(crate) use vm_frame_lexical::{FrameLexicalClosureBodies, FrameLexicalTarget};
 mod vm_call_light_typed;
 mod vm_call_method_compiled;
 mod vm_call_method_compiled_cache;

@@ -212,7 +212,8 @@ impl Interpreter {
         // `location_at` agreeing with the file a backtrace reports.
         let _unit_file =
             crate::unit_source_file::UnitSourceFileGuard::enter(self.current_source_file_sym());
-        let (mut code, fns) = compiler.compile(body);
+        let (mut code, mut fns) = compiler.compile(body);
+        self.inherit_frame_lexical_for_body(body, &mut code, &mut fns);
         // ADR-0037 Slice 4: bake the resolved target callable id onto this
         // unit's own `CompiledCode` (not a `Compiler` field, and not an
         // `OpCode::Return` payload -- see the ADR's §5 Slice 4 note on the

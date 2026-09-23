@@ -282,7 +282,12 @@ impl Interpreter {
         }
         let mut compiler = crate::compiler::Compiler::new();
         compiler.lexically_in_routine = lexically_in_routine;
-        let (code, fns) = compiler.compile(normalized_body);
+        let (mut code, mut fns) = compiler.compile(normalized_body);
+        if let Some(origin) = data.compiled_code.as_deref() {
+            crate::compiler::frame_lexical_inherit::inherit_frame_lexical_routines(
+                &mut code, &mut fns, origin,
+            );
+        }
         let code = std::sync::Arc::new(code);
         let fns = std::sync::Arc::new(fns);
         if let Some(key) = key {

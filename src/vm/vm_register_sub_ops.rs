@@ -116,6 +116,7 @@ impl Interpreter {
             self.check_param_custom_traits(param_defs)?;
             let signature = code.closure_signature(idx as usize);
             let compiled_code = Self::resolve_closure_code(code, cc_idx);
+            self.note_frame_lexical_closure_body(code, idx, &compiled_code);
             self.box_captured_lexicals(code, &compiled_code);
             if compiled_code
                 .as_ref()
@@ -218,6 +219,7 @@ impl Interpreter {
         let stmt = &code.stmt_pool[idx as usize];
         if let Stmt::Block(_body) = stmt {
             let compiled_code = Self::resolve_closure_code(code, cc_idx);
+            self.note_frame_lexical_closure_body(code, idx, &compiled_code);
             self.box_captured_lexicals(code, &compiled_code);
             let owned_captures = self.compute_owned_captures(&compiled_code);
             let authoritative_captures = self.compute_authoritative_captures(&compiled_code);

@@ -5184,6 +5184,12 @@ pub(crate) struct CompiledCode {
     /// Empty for almost every chunk, so the call handlers' probe is one
     /// `is_empty` test.
     pub(crate) lexical_routines: Vec<FrameLexicalRef>,
+    /// True when this chunk or one of its nested closures has
+    /// `lexical_routines`. A closure created from such a chunk registers its
+    /// body with the interpreter, so a runtime recompile of that body (the
+    /// carrier paths that compile a closure's AST instead of running its
+    /// chunk) inherits the same call table (ADR-0113).
+    pub(crate) lexical_subtree: bool,
     /// Full free-variable set (reads AND writes) of each directly-nested
     /// *registered routine*'s finalized `CompiledCode`
     /// (`CompiledFunction::code.free_var_syms`) — one entry per nested
@@ -6053,6 +6059,7 @@ impl CompiledCode {
             free_var_container_writes: Vec::new(),
             named_sub_captures: Vec::new(),
             lexical_routines: Vec::new(),
+            lexical_subtree: false,
             nested_routine_free_reads: Vec::new(),
             needs_cell_named_sub: Vec::new(),
             needs_cell_ref_capture_slots: Vec::new(),
