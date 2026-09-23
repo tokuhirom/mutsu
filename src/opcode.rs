@@ -3411,6 +3411,11 @@ pub(crate) struct CompiledSubDeclPlan {
     /// interpreter and binds nothing in the program-global registry; every
     /// call site resolves it through [`CompiledCode::lexical_routines`].
     pub(crate) frame_lexical: Option<FrameLexicalRef>,
+    /// A frame-lexical routine the body also reads as a code object
+    /// (`&name`). Each execution of the declaration then mints the callable
+    /// identity a registration would have, so every `&name` read in one
+    /// activation of the enclosing routine denotes the same routine object.
+    pub(crate) frame_lexical_value: bool,
 }
 
 /// Identity of a frame-lexical routine (ADR-0113): the routine's bare name,
@@ -9294,6 +9299,7 @@ impl CompiledCode {
             alternate_metadata,
             compiled_routine_keys: Vec::new(),
             frame_lexical: None,
+            frame_lexical_value: false,
             free_var_decl_slots: Vec::new(),
             multi: *multi,
             is_rw: *is_rw,
