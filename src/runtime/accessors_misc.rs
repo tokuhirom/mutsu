@@ -297,7 +297,10 @@ impl Interpreter {
                 }
             }
         }
-        let mut registry = self.registry_mut();
+        let mut guard = self.registry_mut();
+        // Every write below is to the routine/token tables, never to the four
+        // type maps, so the lexical type-name index survives the restore.
+        let registry = guard.routine_tables_mut();
         registry.functions = functions;
         registry.proto_functions = proto_functions;
         registry.token_defs = token_defs;
@@ -334,7 +337,7 @@ impl Interpreter {
                 registry.functions_mut().insert(key, def);
             }
         }
-        drop(registry);
+        drop(guard);
         // The routine registry just changed: a lexical (`my sub`) registered
         // inside the block was removed. Bump the function-namespace generation
         // so a subsequent call to that name re-resolves against the restored

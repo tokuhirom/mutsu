@@ -1736,6 +1736,31 @@ impl std::ops::Deref for RegistryWriteGuard<'_> {
     }
 }
 
+impl RegistryWriteGuard<'_> {
+    /// `&mut Registry` for a write that touches none of `classes`, `roles`,
+    /// `enum_types` or `subsets` — so, unlike `DerefMut`, it keeps the
+    /// [`Registry::has_lexical_type_key_for`] index those four maps feed.
+    ///
+    /// It exists for the two writes a routine declaring an inner `my sub`
+    /// makes on every call: the re-install ([`Registry::install_function`])
+    /// and the scope restore that gives it back. Through `DerefMut` each of
+    /// them dropped the index, and the next bare type-name lookup rebuilt it
+    /// from every key of all four maps — ~100K instructions per call of
+    /// JSON::Fast's `unjsonify-string`, the largest single cost that routine
+    /// still paid for its inner sub (#9073).
+    ///
+    /// Keep the callers to writes that provably stay off those four maps; any
+    /// other write must go through `DerefMut`, which is what keeps the index
+    /// coherent by construction.
+    pub(crate) fn routine_tables_mut(&mut self) -> &mut Registry {
+        let arc: &mut Arc<Registry> = &mut self.inner;
+        if Arc::strong_count(arc) > 1 {
+            crate::vm::vm_stats::record_registry_cow_clone();
+        }
+        Arc::make_mut(arc)
+    }
+}
+
 impl std::ops::DerefMut for RegistryWriteGuard<'_> {
     #[inline]
     fn deref_mut(&mut self) -> &mut Registry {

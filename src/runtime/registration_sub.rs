@@ -949,7 +949,9 @@ impl Interpreter {
                 // installed, so the map lands in a state it has already been in
                 // and the version stamp should say so rather than name a new one
                 // (#8314, `runtime::function_table`).
-                self.registry_mut().install_function(fq_sym, cached.clone());
+                self.registry_mut()
+                    .routine_tables_mut()
+                    .install_function(fq_sym, cached.clone());
                 // Invalidate name-keyed resolution caches. Exactly one key
                 // moved, so the base-name index keeps every other base name:
                 // this path is the per-call re-install of a routine-local
