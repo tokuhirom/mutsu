@@ -25,7 +25,7 @@ symbol than `&name`). That was what kept JSON::Fast's `sub EXPORT` helpers
 `from-json-changed` / `to-json-changed` on the registry path; both are frame
 lexicals now.
 
-Pinned by `t/routines/closure/frame-lexical-inner-sub-code-object.t`: captures,
+Pinned by `t/vm/scope/frame-lexical-inner-sub-code-object.t`: captures,
 identity per activation, escaping values, same-name shadowing, `map`/`sort`/`xx`,
 recursion through a stored `&name`, `.wrap`/`.unwrap`, `.assuming`, and signature
 checks, all checked against Rakudo.
