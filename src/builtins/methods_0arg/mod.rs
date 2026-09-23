@@ -2185,6 +2185,14 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                 // `Str.clone` falling through to the slow path.)
                 return Some(Ok(target.clone()));
             }
+            // `Mu.so` / `Mu.not` are `.Bool` and its negation: a successful
+            // Match is true even when it matched the empty string. Delegating
+            // them to the matched Str (below) answered from `""` instead, so a
+            // zero-width match (`/<?before x>/`) was `.so` False (#9180).
+            // Cost: O(1).
+            "so" => return Some(Ok(Value::truth(target.truthy()))),
+            // Cost: O(1).
+            "not" => return Some(Ok(Value::truth(!target.truthy()))),
             // A Match has reference identity (`ObjAt.new("Match|<id>")`), not
             // the value identity of its matched string — the Str delegation
             // below would land on `ValueObjAt.new("Str|...")`. Fall through to

@@ -14,6 +14,7 @@ use super::regex_helpers::{
     count_capture_groups, is_named_atom_no_args, is_silent_named_atom, is_simple_atom,
 };
 use super::regex_trail::CapStore;
+use super::regex_zero_width_iter::zero_width_iter_counts;
 use std::collections::HashSet;
 
 /// Read-only context shared by one engine invocation (one pattern level).
@@ -1162,7 +1163,7 @@ impl Interpreter {
                 ctx.pkg,
                 ctx.pattern.ignore_case,
             ) {
-                if next == current {
+                if next == current && !zero_width_iter_counts(count, min, None) {
                     break;
                 }
                 current = next;
@@ -1188,7 +1189,7 @@ impl Interpreter {
                 if let Some(end) =
                     self.regex_match_end_from_in_pkg(&resolved, ctx.chars, current, resolved_pkg)
                 {
-                    if end == current {
+                    if end == current && !zero_width_iter_counts(count, min, None) {
                         break;
                     }
                     current = end;
@@ -1230,7 +1231,7 @@ impl Interpreter {
                 ) else {
                     break;
                 };
-                if end == current {
+                if end == current && !zero_width_iter_counts(count, min, None) {
                     break;
                 }
                 if !capture_name.is_empty() {
@@ -1264,7 +1265,8 @@ impl Interpreter {
     /// General chain quantifier (`*`, `+`, `**min..max`) over a single-match
     /// Grow a quantifier's iteration chain by one: match `token`'s atom at
     /// `current` and apply the resulting captures to the store. `None` when the
-    /// atom does not match, or matches empty (which would not make progress).
+    /// atom does not match, or matches empty while `zero_width_ok` is false
+    /// (see [`super::regex_zero_width_iter::zero_width_iter_counts`]).
     ///
     /// A method rather than a closure inside `walk_quant_chain`: matching an atom
     /// takes `&mut self` (a code assertion runs on this interpreter), and a
@@ -1279,6 +1281,7 @@ impl Interpreter {
         current: usize,
         pos_base: usize,
         hash_per_iter: bool,
+        zero_width_ok: bool,
     ) -> Option<usize> {
         let token = &ctx.pattern.tokens[idx];
         let iter_pos_base = store.caps().positional.len();
@@ -1298,7 +1301,7 @@ impl Interpreter {
             super::regex_helpers::IN_QUANTIFIED_ALTERNATION_MATCH.with(|flag| flag.set(prior));
         }
         let (next, delta) = matched?;
-        if next == current {
+        if next == current && !zero_width_ok {
             return None;
         }
         super::regex_helpers::record_regex_farthest_position(next);
@@ -1377,9 +1380,15 @@ impl Interpreter {
                 if max.is_some_and(|mx| count >= mx) {
                     break;
                 }
-                let Some(next) =
-                    self.grow_one_iter(ctx, idx, store, current, pos_base, hash_per_iter)
-                else {
+                let Some(next) = self.grow_one_iter(
+                    ctx,
+                    idx,
+                    store,
+                    current,
+                    pos_base,
+                    hash_per_iter,
+                    zero_width_iter_counts(count, min, max),
+                ) else {
                     break;
                 };
                 count += 1;
@@ -1401,8 +1410,15 @@ impl Interpreter {
         iter_marks.push(store.mark());
         let mut current = pos;
         while max.is_none_or(|mx| ends.len() - 1 < mx) {
-            let Some(next) = self.grow_one_iter(ctx, idx, store, current, pos_base, hash_per_iter)
-            else {
+            let Some(next) = self.grow_one_iter(
+                ctx,
+                idx,
+                store,
+                current,
+                pos_base,
+                hash_per_iter,
+                zero_width_iter_counts(ends.len() - 1, min, max),
+            ) else {
                 break;
             };
             ends.push(next);
@@ -1541,7 +1557,7 @@ impl Interpreter {
                             store: &mut CapStore,
                             end: usize,
                             delta: RegexCaptures| {
-                if end == current || *budget == 0 {
+                if (end == current && !zero_width_iter_counts(count, min, max)) || *budget == 0 {
                     return false;
                 }
                 *budget -= 1;
@@ -1703,8 +1719,10 @@ impl Interpreter {
             Box::new(cands.into_iter().rev())
         };
         for (next, delta) in iter {
-            if next == current {
-                continue; // zero-width: would loop forever
+            // A zero-width iteration counts only while it is needed to reach
+            // the minimum; beyond that it would loop forever.
+            if next == current && !zero_width_iter_counts(count, min, None) {
+                continue;
             }
             if *budget == 0 {
                 return false;
