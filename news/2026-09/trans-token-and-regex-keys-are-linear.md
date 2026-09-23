@@ -36,4 +36,4 @@ helpers moved to `methods_trans/rules.rs` and the scanning loops to
 `methods_trans/apply.rs`, and `regex_match_with_captures_at` moved out of the
 over-long `regex_match_find.rs` into `regex/regex_match_at.rs`.
 
-Pinned by `t/types/trans-long-subject.t`.
+Pinned by `t/regex/subst/trans-long-subject.t`.
