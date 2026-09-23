@@ -1,6 +1,6 @@
 use Test;
 
-plan 30;
+plan 31;
 
 # Raku clones a block every time its ENCLOSING block runs, and a `state` cell —
 # named, or the implicit one behind a bare `$` — belongs to the CLONE. So a
@@ -18,6 +18,11 @@ plan 30;
     my @r;
     for ^2 { @r.push: (map { ++$ }, ^3).join(',') }
     is @r.join('|'), "1,2,3|1,2,3", 'a map block inside a for body re-clones';
+
+    sub reduce_map() {
+        reduce -> $acc, $value { (map { ++$ }, ^3).join(',') }, '', 1, 2
+    }
+    is reduce_map(), '1,2,3', 'a map block re-clones for each closure callback';
 
     my @s;
     for ^3 { @s.push(++$) }
