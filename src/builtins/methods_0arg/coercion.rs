@@ -331,6 +331,8 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
             // A shaped array falls through to the slow path, which flattens all
             // dimensions and replaces Nil slots with the type-default.
             ValueView::Array(..) if crate::runtime::utils::is_shaped_array(target) => None,
+            // Cost: O(e), e = elements (a fresh copy, for a List invocant too).
+            // Rakudo: O(e) for an Array, O(1) for a List (`.List` is identity) -- see #NNNN.
             ValueView::Array(items, kind) => {
                 // `.List` materializes array holes as literal `Nil` — even when
                 // the array has an `is default(...)` value (Rakudo semantics:
@@ -615,6 +617,9 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 // A shaped array falls through to the slow path (flatten + Nil
                 // → type-default). Non-shaped arrays keep the fast path.
                 ValueView::Array(..) if crate::runtime::utils::is_shaped_array(target) => None,
+                // Cost: O(1) for `.Array`/`.list` on a plain real Array (returns the
+                // invocant); O(e), e = elements, when a List or an itemized array must be
+                // copied into a fresh Array.
                 ValueView::Array(items, kind) => {
                     // ADR-0040 slice 2: `.Array` builds a NEW real Array, which
                     // is not itself an element of anything -- so an itemized

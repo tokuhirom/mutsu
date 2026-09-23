@@ -883,6 +883,7 @@ impl Interpreter {
                     .collect()
             };
             match method {
+                // Cost: O(k) amortized, k = pushed elements (see `push_to_shared_var`).
                 "push" => {
                     crate::vm::vm_stats::record_dispatch_entry_intercept(
                         "callmethodmutwithvalues",
@@ -902,6 +903,8 @@ impl Interpreter {
                     self.reattach_array_type_metadata(&key, &saved_meta);
                     return Ok(result);
                 }
+                // Cost: O(k) amortized, k = appended elements, when the name resolves to
+                // an array slot; the detached-rebuild fallback copies all e elements.
                 "append" => {
                     crate::vm::vm_stats::record_dispatch_entry_intercept(
                         "callmethodmutwithvalues",
@@ -953,6 +956,10 @@ impl Interpreter {
                     self.reattach_array_type_metadata(&key, &saved_meta);
                     return Ok(result);
                 }
+                // Cost: O(1) amortized for one element (`ArrayData::insert(0, ..)` uses the
+                // front head offset, #9121); O(k * e) for k > 1, e = elements of the array
+                // (each later insert compacts and shifts the tail). Rakudo: O(k) amortized
+                // -- see #NNNN.
                 "unshift" => {
                     crate::vm::vm_stats::record_dispatch_entry_intercept(
                         "callmethodmutwithvalues",
@@ -995,6 +1002,9 @@ impl Interpreter {
                     self.reattach_array_type_metadata(&key, &saved_meta);
                     return Ok(result);
                 }
+                // Cost: O(1) amortized for one element (front head offset, #9121); O(k * e)
+                // for k > 1, e = elements of the array (each later insert compacts and
+                // shifts the tail). Rakudo: O(k) amortized -- see #NNNN.
                 "prepend" => {
                     crate::vm::vm_stats::record_dispatch_entry_intercept(
                         "callmethodmutwithvalues",
@@ -1040,6 +1050,8 @@ impl Interpreter {
                     self.reattach_array_type_metadata(&key, &saved_meta);
                     return Ok(result);
                 }
+                // Cost: O(1) when the name resolves to an array slot; the
+                // detached-rebuild fallback copies all e elements.
                 "pop" => {
                     crate::vm::vm_stats::record_dispatch_entry_intercept(
                         "callmethodmutwithvalues",
@@ -1097,6 +1109,9 @@ impl Interpreter {
                     self.reattach_array_type_metadata(&key, &saved_meta);
                     return Ok(out);
                 }
+                // Cost: O(1) amortized (`ArrayData::remove(0)` advances the front head
+                // offset, #9121) when the name resolves to an array slot; the
+                // detached-rebuild fallback copies all e elements.
                 "shift" => {
                     crate::vm::vm_stats::record_dispatch_entry_intercept(
                         "callmethodmutwithvalues",
@@ -1141,6 +1156,10 @@ impl Interpreter {
                     self.reattach_array_type_metadata(&key, &saved_meta);
                     return Ok(out);
                 }
+                // Cost: O(e + r * (e - s)), e = elements of the array, s = offset, r =
+                // replacement elements (`drain` compacts the head offset and moves the
+                // tail, then `do_splice` does one `Vec::insert` per replacement).
+                // Rakudo: O(r + e - s), O(r) at the front -- see #NNNN.
                 "splice" => {
                     crate::vm::vm_stats::record_dispatch_entry_intercept(
                         "callmethodmutwithvalues",
@@ -1751,6 +1770,9 @@ impl Interpreter {
                 },
             };
             match method {
+                // Cost: O(k) amortized, k = pushed elements, when the name resolves to an
+                // array slot or a shared node (`make_mut` on an unshared node does not
+                // copy); the detached-rebuild fallback copies all e elements.
                 "push" | "append" => {
                     crate::vm::vm_stats::record_dispatch_entry_intercept(
                         "callmethodmutwithvalues",
@@ -1836,6 +1858,9 @@ impl Interpreter {
                     self.env.insert(key, result.clone());
                     return Ok(result);
                 }
+                // Cost: O(1) (plus an O(e) head-offset compaction via `items_mut` after a
+                // shift/unshift, e = elements of the array); the detached-rebuild
+                // fallback copies all e elements.
                 "pop" => {
                     crate::vm::vm_stats::record_dispatch_entry_intercept(
                         "callmethodmutwithvalues",
@@ -1896,6 +1921,10 @@ impl Interpreter {
                     );
                     return Ok(out);
                 }
+                // Cost: O(k * e), e = elements of the array, k = unshifted elements: this
+                // arm inserts into `items_mut()`'s raw `Vec`, so even one element shifts
+                // the whole array (the #9121 head offset is bypassed).
+                // Rakudo: O(k) amortized -- see #NNNN.
                 "unshift" => {
                     crate::vm::vm_stats::record_dispatch_entry_intercept(
                         "callmethodmutwithvalues",
@@ -1936,6 +1965,9 @@ impl Interpreter {
                     self.env.insert(key, result.clone());
                     return Ok(result);
                 }
+                // Cost: O(k * e), e = elements of the array, k = prepended elements (raw
+                // `Vec::insert` per element, bypassing the #9121 head offset).
+                // Rakudo: O(k) amortized -- see #NNNN.
                 "prepend" => {
                     crate::vm::vm_stats::record_dispatch_entry_intercept(
                         "callmethodmutwithvalues",
@@ -1979,6 +2011,8 @@ impl Interpreter {
                     );
                     return Ok(result);
                 }
+                // Cost: O(1) amortized (`ArrayData::shift_front`, #9121); the
+                // detached-rebuild fallback copies all e elements.
                 "shift" => {
                     crate::vm::vm_stats::record_dispatch_entry_intercept(
                         "callmethodmutwithvalues",

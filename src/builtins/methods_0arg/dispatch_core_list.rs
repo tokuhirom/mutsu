@@ -42,6 +42,7 @@ pub(super) fn dispatch(
     method: &str,
 ) -> Option<Option<Result<Value, RuntimeError>>> {
     match method {
+        // Cost: O(1) on a reified list/array, hash, set/bag/mix or buf (a length read).
         "end" => {
             // A lazy (infinite-backed) array/list has no last index; raku throws
             // `X::Cannot::Lazy` (`Cannot .elems a lazy list`) rather than

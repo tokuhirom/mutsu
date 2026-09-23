@@ -34,6 +34,9 @@ impl ArrayData {
     /// live range's start advances. The dead prefix is dropped once it
     /// outgrows the live part, so it never costs more than one memmove per
     /// element shifted and never holds more slots than the array has live.
+    // Cost: O(1) amortized for a boxed array; O(e), e = elements, for a native
+    // (`my int @a`) array, which still takes `Vec::remove(0)`.
+    // Rakudo: O(1) amortized -- see #NNNN.
     pub(crate) fn shift_front(&mut self) -> Option<Value> {
         if self.native.is_some() {
             let items = self.items_mut();
@@ -94,6 +97,9 @@ impl ArrayData {
         }
     }
 
+    // Cost: O(1) amortized at index 0 of a boxed array (`unshift_front`); otherwise
+    // O(e), e = elements (compaction via `items_mut` plus `Vec::insert`), including
+    // index 0 of a native array. Rakudo: O(1) amortized at the front -- see #NNNN.
     pub(crate) fn insert(&mut self, index: usize, value: Value) {
         if index == 0 && self.native.is_none() {
             self.unshift_front(value);

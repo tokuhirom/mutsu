@@ -431,6 +431,9 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 }
             }
         }
+        // Cost: O(e), e = elements (or pairs) of the invocant, built eagerly even when
+        // only a prefix is consumed. Rakudo: O(1) per call (lazy; an Array's keys are a
+        // counting iterator) -- see #NNNN.
         "keys" => {
             if crate::runtime::utils::is_shaped_array(target) {
                 let indexed = crate::runtime::utils::shaped_array_indexed_leaves(target);
@@ -488,6 +491,9 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 )))),
             }
         }
+        // Cost: O(e), e = elements (or pairs) of the invocant, copied eagerly even when
+        // only a prefix is consumed. Rakudo: O(1) per call, O(1) per value pulled --
+        // see #NNNN.
         "values" => {
             if crate::runtime::utils::is_shaped_array(target) {
                 let leaves = crate::runtime::utils::shaped_array_leaves(target);
@@ -943,6 +949,8 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
             }
             _ => None,
         },
+        // Cost: O(e), e = elements of the invocant (Range elements contribute their
+        // two endpoints; one pass, two comparisons per candidate).
         "minmax" => match target.view() {
             ValueView::Array(items, ..) if !items.is_empty() => {
                 // Collect all candidates, extracting Range endpoints
@@ -990,6 +998,8 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
             }
             _ => None,
         },
+        // Cost: O(e), e = elements of the invocant (one add each; BigInt growth adds
+        // the digit count of the running total).
         "sum" => match target.view() {
             ValueView::Array(items, ..) => {
                 // If any item is a Junction, fold with junction-aware addition

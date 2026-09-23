@@ -696,6 +696,9 @@ impl Interpreter {
         }
     }
 
+    // Cost: O(1) for a single in-range or autovivifying `Int` index on a plain array
+    // (growing past the end is O(g) amortized, g = new slots); O(k) for a slice
+    // assignment, k = indices. Shaped targets pay `assign_array_multidim`'s O(E).
     pub(super) fn exec_index_assign_expr_named_op(
         &mut self,
         code: &CompiledCode,

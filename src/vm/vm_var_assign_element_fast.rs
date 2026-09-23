@@ -234,6 +234,10 @@ impl Interpreter {
     ///   mean the store must write *through* it;
     /// - no per-element index metadata and no shaped-array declaration exists
     ///   anywhere in the program (the two monotonic latches).
+    // Cost: O(1) (an in-range `Vec` slot write), except that the write goes through
+    // `ArrayData::items_mut`, which compacts a pending front head offset first: O(e),
+    // e = elements of the array, on a store that follows a `shift`/`unshift`.
+    // Rakudo: O(1) -- see #NNNN.
     pub(crate) fn try_fast_array_element_assign(
         &mut self,
         code: &CompiledCode,

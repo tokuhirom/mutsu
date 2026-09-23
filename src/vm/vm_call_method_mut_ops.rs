@@ -3278,6 +3278,7 @@ impl Interpreter {
                 // live across the mutation below.
                 let items = unsafe { crate::value::gc_contents_mut(arc_items) };
                 Some(match method {
+                    // Cost: O(k) amortized, k = pushed elements (in-place `Vec::extend`).
                     "push" => {
                         let norm = precomputed_args.take().expect("precomputed for push above");
                         items.extend(norm);
@@ -3286,6 +3287,10 @@ impl Interpreter {
                             crate::value::ArrayKind::Array,
                         )
                     }
+                    // Cost: append O(k) amortized, k = appended elements. prepend: O(1)
+                    // amortized for one element (front head offset, #9121), O(k * e) for
+                    // k > 1, e = elements of the array (each later insert compacts and
+                    // shifts the tail). Rakudo: O(k) amortized -- see #NNNN.
                     "append" | "prepend" => {
                         let flat = precomputed_args
                             .take()
@@ -3302,6 +3307,10 @@ impl Interpreter {
                             crate::value::ArrayKind::Array,
                         )
                     }
+                    // Cost: O(1) amortized for one element (`ArrayData::insert(0, ..)` uses the
+                    // front head offset, #9121); O(k * e) for k > 1, e = elements of the array
+                    // (each later insert goes through `items_mut`, which compacts, then shifts
+                    // the tail). Rakudo: O(k) amortized -- see #NNNN.
                     "unshift" => {
                         let norm = precomputed_args
                             .take()
@@ -3314,6 +3323,7 @@ impl Interpreter {
                             crate::value::ArrayKind::Array,
                         )
                     }
+                    // Cost: O(1).
                     "pop" => {
                         if items.is_empty() {
                             crate::runtime::utils::make_empty_array_failure_what("pop", "Array")
@@ -3321,6 +3331,8 @@ impl Interpreter {
                             items.pop().unwrap_or(Value::NIL)
                         }
                     }
+                    // Cost: O(1) amortized (`ArrayData::remove(0)` advances the front head
+                    // offset, #9121).
                     "shift" => {
                         if items.is_empty() {
                             crate::runtime::utils::make_empty_array_failure_what("shift", "Array")
@@ -3395,6 +3407,8 @@ impl Interpreter {
             Some(match method {
                 // ADR-0040 slice 1: itemize per element, after the
                 // one-arg-rule flattening decision.
+                // Cost: O(k) amortized, k = pushed elements, when the storage node is
+                // unshared; `Gc::make_mut` copies all e elements first when it is shared.
                 "push" => {
                     let norm =
                         crate::runtime::Interpreter::normalize_push_unshift_args(args.to_vec())
@@ -3407,6 +3421,8 @@ impl Interpreter {
                         crate::value::ArrayKind::Array,
                     )
                 }
+                // Cost: O(k) amortized, k = appended elements (plus the `make_mut`
+                // copy noted on `push`).
                 "append" => {
                     let flat = crate::runtime::flatten_append_args(args.to_vec())
                         .into_iter()
@@ -3418,6 +3434,9 @@ impl Interpreter {
                         crate::value::ArrayKind::Array,
                     )
                 }
+                // Cost: O(1) amortized for one element (front head offset, #9121); O(k * e)
+                // for k > 1, e = elements of the storage (each later insert compacts and
+                // shifts the tail). Rakudo: O(k) amortized -- see #NNNN.
                 "unshift" => {
                     let norm =
                         crate::runtime::Interpreter::normalize_push_unshift_args(args.to_vec())
@@ -3433,6 +3452,9 @@ impl Interpreter {
                         crate::value::ArrayKind::Array,
                     )
                 }
+                // Cost: O(1) amortized for one element (front head offset, #9121); O(k * e)
+                // for k > 1, e = elements of the storage (each later insert compacts and
+                // shifts the tail). Rakudo: O(k) amortized -- see #NNNN.
                 "prepend" => {
                     let flat = crate::runtime::flatten_append_args(args.to_vec())
                         .into_iter()
@@ -3447,6 +3469,7 @@ impl Interpreter {
                         crate::value::ArrayKind::Array,
                     )
                 }
+                // Cost: O(1) (plus the `make_mut` copy noted on `push`).
                 "pop" => {
                     if !args.is_empty() {
                         return None;
@@ -3459,6 +3482,8 @@ impl Interpreter {
                             .unwrap_or(Value::NIL)
                     }
                 }
+                // Cost: O(1) amortized (`ArrayData::remove(0)` advances the front head
+                // offset, #9121), plus the `make_mut` copy noted on `push`.
                 "shift" => {
                     if !args.is_empty() {
                         return None;
@@ -3516,6 +3541,10 @@ impl Interpreter {
     /// WhateverCode/`Whatever`/`Str`/`Num` offset or count, an out-of-range
     /// offset (`X::OutOfRange`), a lazy replacement (`X::Cannot::Lazy`), and
     /// typed/shaped/shared/metadata-bearing arrays.
+    // Cost: O(e + r * (e - s)), e = elements of the array, s = offset, r =
+    // replacement elements (`drain` compacts the head offset and moves the tail;
+    // then one `Vec::insert` per replacement). Rakudo: O(r + e - s), O(r) at
+    // the front -- see #NNNN.
     fn try_native_array_splice(
         &mut self,
         target_name: &str,

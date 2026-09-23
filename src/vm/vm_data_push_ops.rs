@@ -54,6 +54,12 @@ impl Interpreter {
     }
 
     /// Fast path for @arr.push(val) — directly appends to the array Arc.
+    // Cost: O(1) amortized (in-place `Vec::push` on the shared node, relying on
+    // spare capacity); O(k) for a pushed Slip of k elements. But the push goes
+    // through `ArrayData::items_mut`, which first compacts a front head offset left
+    // by `shift`/`unshift`: O(e), e = elements of the array, on every push that
+    // follows one (a `push`+`shift` queue loop is O(e) per step).
+    // Rakudo: O(1) amortized -- see #NNNN.
     pub(super) fn exec_array_push_op(
         &mut self,
         code: &CompiledCode,
