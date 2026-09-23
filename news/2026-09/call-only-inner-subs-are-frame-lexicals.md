@@ -8,7 +8,7 @@ call path, and each call to the inner sub resolved its name through a registry w
 generation had just moved. JSON::Fast's `unjsonify-string` declares `fetch-codepoint` this
 way ([#9103](https://github.com/tokuhirom/mutsu/issues/9103)).
 
-[ADR-0112](../../docs/adr/0112-frame-lexical-inner-subs.md) binds such a sub as a *frame
+[ADR-0113](../../docs/adr/0113-frame-lexical-inner-subs.md) binds such a sub as a *frame
 lexical* when the body provably does nothing with it except call it by its bare name. A
 compile-time pass (`src/compiler/frame_lexical_routines.rs`) proves that from the body's
 serialized AST and its bytecode, marks the declaration plans, and lists the routine in the

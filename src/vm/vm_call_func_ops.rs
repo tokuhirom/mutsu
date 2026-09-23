@@ -337,7 +337,7 @@ impl Interpreter {
         crate::vm::vm_stats::record_function_dispatch();
         let arity_usize = arity as usize;
         let spec = &code.named_arg_specs[spec_idx as usize];
-        // ADR-0112: a frame-lexical callee must not be served by the
+        // ADR-0113: a frame-lexical callee must not be served by the
         // name-keyed light-call cache below (which could hold a same-named
         // package sub); the materializing fallback reaches its dispatch.
         let frame_lexical = code.lexical_routine(code.const_sym(name_idx)).is_some();
@@ -461,7 +461,7 @@ impl Interpreter {
         compiled_fns: &CompiledFns,
     ) -> Result<(), RuntimeError> {
         crate::vm::vm_stats::record_function_dispatch();
-        // ADR-0112: a frame-lexical routine is resolved at compile time and is
+        // ADR-0113: a frame-lexical routine is resolved at compile time and is
         // in no registry the name-keyed dispatch below could consult.
         if let Some(r) = code.lexical_routine(code.const_sym(name_idx))
             && let Some(result) = self.exec_frame_lexical_call(

@@ -3400,7 +3400,7 @@ pub(crate) struct CompiledSubDeclPlan {
     /// `legacy_body` merely to reconstruct signature and identity facts.
     pub(crate) routine_metadata: CompiledRoutineMetadata,
     /// Set by the compiler's frame-lexical routine pass
-    /// (`compiler/frame_lexical_routines.rs`, ADR-0112) when this declaration
+    /// (`compiler/frame_lexical_routines.rs`, ADR-0113) when this declaration
     /// is a `my sub` the enclosing routine body only ever *calls* by name.
     /// Executing the plan then derives the routine's definition once per
     /// interpreter and binds nothing in the program-global registry; every
@@ -3408,7 +3408,7 @@ pub(crate) struct CompiledSubDeclPlan {
     pub(crate) frame_lexical: Option<FrameLexicalRef>,
 }
 
-/// Identity of a frame-lexical routine (ADR-0112): the routine's bare name,
+/// Identity of a frame-lexical routine (ADR-0113): the routine's bare name,
 /// the package its compiled body was keyed under, and that body's
 /// fingerprint. All three are compile-time facts, so a call site and the
 /// declaration agree on the key without consulting the registry.
@@ -5172,7 +5172,7 @@ pub(crate) struct CompiledCode {
     /// unrelated same-named local in a sibling block (which would wrongly box e.g.
     /// a `let`-restored variable; same-named `my` locals share one slot).
     pub(crate) named_sub_captures: Vec<(Vec<Symbol>, Vec<Symbol>)>,
-    /// Frame-lexical routines (ADR-0112) this chunk calls by bare name. A
+    /// Frame-lexical routines (ADR-0113) this chunk calls by bare name. A
     /// `CallFunc`/`CallFuncNamed`/`ExecCall`/`ExecCallPairs` whose callee is
     /// listed here dispatches straight to that routine, never through the
     /// name-keyed resolution: the routine is not in the registry at all.
@@ -5801,7 +5801,7 @@ impl CompiledCode {
     pub(crate) fn declares_inner_routines(&self) -> bool {
         self.ops.iter().any(|op| match op {
             OpCode::RegisterDecl(idx) => match self.decl_plans.get(*idx as usize) {
-                // A frame-lexical routine (ADR-0112) never enters the
+                // A frame-lexical routine (ADR-0113) never enters the
                 // registry, so there is nothing to take away on return.
                 Some(CompiledDeclPlanRef::Sub(plan)) => !self.is_frame_lexical_sub_plan(*plan),
                 _ => false,
@@ -5812,14 +5812,14 @@ impl CompiledCode {
     }
 
     /// Whether sub-declaration plan `plan_idx` is a frame-lexical routine
-    /// (ADR-0112).
+    /// (ADR-0113).
     pub(crate) fn is_frame_lexical_sub_plan(&self, plan_idx: u32) -> bool {
         self.sub_decl_plans
             .get(plan_idx as usize)
             .is_some_and(|plan| plan.frame_lexical.is_some())
     }
 
-    /// The frame-lexical routine (ADR-0112) a bare call to `name` in this
+    /// The frame-lexical routine (ADR-0113) a bare call to `name` in this
     /// chunk denotes, if any.
     #[inline]
     pub(crate) fn lexical_routine(&self, name: Symbol) -> Option<FrameLexicalRef> {
@@ -10422,7 +10422,7 @@ impl CompiledFunction {
     pub(crate) fn detect_inner_subs(&mut self) {
         self.has_inner_subs = !self.code.closure_compiled_codes.is_empty()
             || self.code.ops.iter().any(|op| {
-                // A frame-lexical routine (ADR-0112) is not an inner sub in
+                // A frame-lexical routine (ADR-0113) is not an inner sub in
                 // this sense: it is never registered, and every local it can
                 // read by name is kept env-synced by `compute_needs_env_sync`
                 // (its `RegisterDecl` still counts as a lazy body there).

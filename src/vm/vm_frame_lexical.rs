@@ -1,4 +1,4 @@
-//! Frame-lexical routines at run time (ADR-0112).
+//! Frame-lexical routines at run time (ADR-0113).
 //!
 //! The compiler marks a `my sub` that its enclosing routine body only ever
 //! calls by bare name (`compiler/frame_lexical_routines.rs`). Such a routine

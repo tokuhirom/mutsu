@@ -1,4 +1,4 @@
-# ADR-0112: A call-only `my sub` in a routine body is a frame lexical, not a registry entry
+# ADR-0113: A call-only `my sub` in a routine body is a frame lexical, not a registry entry
 
 - **Status**: Accepted (2026-09-23); first slice implemented in the same PR as the decision
   (see "Implementation status").

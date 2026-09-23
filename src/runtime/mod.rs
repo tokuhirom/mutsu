@@ -4302,7 +4302,7 @@ pub struct Interpreter {
     /// an identical body but differ in name never alias; the stored fingerprint is
     /// re-checked on lookup so a redefined body at the same name re-derives.
     pub(crate) prepared_fn_defs: HashMap<Symbol, (u64, Arc<FunctionDef>)>,
-    /// Frame-lexical routines (ADR-0112) whose definition this interpreter
+    /// Frame-lexical routines (ADR-0113) whose definition this interpreter
     /// has derived, keyed by the compile-time identity both their
     /// declaration and their call sites carry. A declaration derives its
     /// entry the first time it runs; every later declaration and every call

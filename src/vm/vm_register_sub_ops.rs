@@ -285,7 +285,7 @@ impl Interpreter {
         idx: u32,
         compiled_fns: &CompiledFns,
     ) -> Result<(), RuntimeError> {
-        // ADR-0112: a frame-lexical `my sub` registers nothing.
+        // ADR-0113: a frame-lexical `my sub` registers nothing.
         if let Some(r) = code
             .sub_decl_plans
             .get(idx as usize)

@@ -1,6 +1,6 @@
 use Test;
 
-# ADR-0112: a `my sub` its enclosing routine only ever calls by bare name is
+# ADR-0113: a `my sub` its enclosing routine only ever calls by bare name is
 # bound as a frame lexical -- never installed in the routine registry, called
 # straight through its compiled body. Everything below must behave exactly
 # like an ordinary lexical sub.

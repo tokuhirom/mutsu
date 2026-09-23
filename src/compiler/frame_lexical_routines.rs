@@ -1,4 +1,4 @@
-//! Frame-lexical routines (ADR-0112).
+//! Frame-lexical routines (ADR-0113).
 //!
 //! A `my sub` declared directly in a routine body used to be installed into
 //! the program-global routine registry on every call of that routine and
