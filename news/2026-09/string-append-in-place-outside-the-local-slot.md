@@ -4,8 +4,8 @@
 plain local (#8695, #8725). Every other way of building a string by appending
 fell back to the general `Concat`, which copied both operands and then ran a
 full NFC pass over the whole accumulated result whenever it was not ASCII — so
-100,000 appends of one kana into a hash element took 5 s, against rakudo's
-0.05 s ([#9141](https://github.com/tokuhirom/mutsu/issues/9141)).
+20,000 appends of one kana into a hash element took 4.5 s, against rakudo's
+0.02 s ([#9141](https://github.com/tokuhirom/mutsu/issues/9141)).
 
 Four changes. Timings are `scripts/str-complexity-check.sh append concat`,
 t(2N) at N = 10,000 appends of `"あ"` on a release build in a 4-core
