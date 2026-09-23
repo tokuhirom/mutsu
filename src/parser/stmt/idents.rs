@@ -181,14 +181,15 @@ pub(crate) fn var_name(input: &str) -> PResult<'_, String> {
             } else {
                 (r, "")
             };
-        // Handle $_ special
+        // Handle $_ special. `$_x`, `$__x` and `$_ä` are ordinary identifiers,
+        // so only a `_` that is not followed by another identifier character
+        // is the topic.
         if input.starts_with('$')
             && r.starts_with('_')
-            && (r.len() == 1
-                || !r
-                    .as_bytes()
-                    .get(1)
-                    .is_some_and(|c| c.is_ascii_alphanumeric()))
+            && !r[1..]
+                .chars()
+                .next()
+                .is_some_and(|c| c.is_alphanumeric() || c == '_')
         {
             return Ok((&r[1..], "_".to_string()));
         }
