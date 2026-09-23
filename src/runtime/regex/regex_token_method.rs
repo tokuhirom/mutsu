@@ -8,10 +8,10 @@
 //! `find_method` wrap token dispatch in a profiling closure that itself calls
 //! `$meth($cursor)` (roast integration/advent2011-day07.t).
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 
 use super::super::*;
-use super::regex_helpers::NamedRegexLookupSpec;
+use super::regex_helpers::{CODE_ATOMS_INERT, LTM_DECLARATIVE_MODE, NamedRegexLookupSpec};
 
 /// The inner regex captures of the most recent token-method call
 /// (`run_token_method_at`), identified by (pkg, name, from, to) in the
@@ -134,6 +134,14 @@ impl Interpreter {
         // method wrap installed anywhere (the overwhelmingly common case)
         // the answer is known without any of that: bail on the empty table.
         if !self.has_any_wrap_chains() {
+            return None;
+        }
+        // A wrapper is user code. The LTM prefix measurement and the
+        // failure-position probe are side-effect-free passes (ADR-0009) that
+        // re-walk the pattern purely to measure it; Rakudo's NFA measures a
+        // wrapped token by its own body and never enters the wrapper. Running
+        // the wrapper there made each match of `<word>` call it twice (#9151).
+        if LTM_DECLARATIVE_MODE.with(Cell::get) || CODE_ATOMS_INERT.with(Cell::get) {
             return None;
         }
         let owners = self.mro_readonly(receiver_pkg);
