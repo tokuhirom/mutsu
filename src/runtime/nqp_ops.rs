@@ -731,13 +731,14 @@ impl Interpreter {
             }
 
             // -- positional element access (buf bytes or array elements) --
-            // Cost: O(1) on a width-1 Buf / array; O(e) on a wider buf (every element's low
-            // byte is collected first), e = elements. MoarVM: O(1) -- see #9132 (and correctness: #9133).
+            // Cost: O(1) on a Buf of any width (the element is decoded at the buffer's
+            // own width) and on an array. MoarVM: O(1).
             "atpos_i" | "atpos_n" => {
                 let target = args.first().cloned().unwrap_or(Value::NIL);
                 let idx = iarg(args, 1);
-                // A Buf/Blob answers from its bytes; everything else (a plain
-                // array, an IterationBuffer, a Uni's codepoints) from the
+                // A Buf/Blob answers from its storage, one element decoded at
+                // the buffer's own width and signedness; everything else (a
+                // plain array, an IterationBuffer, a Uni's codepoints) from the
                 // shared element accessor.
                 let elem = match target.view() {
                     ValueView::Instance { attributes, .. }
@@ -745,11 +746,7 @@ impl Interpreter {
                     {
                         usize::try_from(idx)
                             .ok()
-                            .and_then(|i| {
-                                value_buf::with_buf_bytes(&attributes, |b| b.get(i).copied())
-                                    .flatten()
-                            })
-                            .map(|b| Value::int(b as i64))
+                            .and_then(|i| value_buf::buf_elem_at(&attributes, i))
                     }
                     _ => usize::try_from(idx)
                         .ok()
