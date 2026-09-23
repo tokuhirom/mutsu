@@ -111,7 +111,6 @@ impl TrirCompiler<'_> {
             (TrKind::Int, TokenKind::Plus) => (&[TrOp::AddI], TrKind::Int),
             (TrKind::Int, TokenKind::Minus) => (&[TrOp::SubI], TrKind::Int),
             (TrKind::Int, TokenKind::Star) => (&[TrOp::MulI], TrKind::Int),
-            (TrKind::Int, TokenKind::Percent) => (&[TrOp::ModI], TrKind::Int),
             (TrKind::Int, TokenKind::EqEq) => (&[TrOp::EqI], TrKind::Int),
             (TrKind::Int, TokenKind::BangEq) => (&[TrOp::NeI], TrKind::Int),
             (TrKind::Int, TokenKind::Lt) => (&[TrOp::LtI], TrKind::Int),
@@ -128,7 +127,10 @@ impl TrirCompiler<'_> {
             (TrKind::Num, TokenKind::Gt) => (&[TrOp::GtN], TrKind::Int),
             (TrKind::Num, TokenKind::Gte) => (&[TrOp::GeN], TrKind::Int),
             // `int / int` is a `Rat` in Raku, not an integer division — it is
-            // deliberately absent here.
+            // deliberately absent here. So is `%`: Raku's `%` takes the
+            // divisor's sign (`-17 % 5 == 3`) where `ModI` is `nqp::mod_i`,
+            // which takes the dividend's, and it raises its own error on a
+            // zero divisor.
             _ => {
                 self.note_decline(|| format!("operator {op:?} on {want:?}"));
                 return None;

@@ -43,9 +43,12 @@ pub(crate) mod entry;
 mod entry_values;
 pub(crate) mod exec;
 pub(crate) mod exec_call;
+mod exec_flow;
 mod exec_str;
 pub(crate) mod frame;
 pub(crate) mod gen_link;
+#[cfg(feature = "jit")]
+mod jit;
 mod link;
 mod op;
 pub(crate) mod outers;
@@ -235,6 +238,9 @@ pub(crate) struct TrChunk {
     /// The file the routine was declared in, for its `routine_stack` frame
     /// (`routine_frame.rs`). Known only once the function is stamped.
     pub(crate) def_file: std::sync::OnceLock<crate::symbol::Symbol>,
+    /// Native code for this chunk (ADR-0116), once it is hot.
+    #[cfg(feature = "jit")]
+    pub(crate) jit: jit::TrJitState,
 }
 
 /// The next chunk identity. Wrapping is unreachable in practice (a program

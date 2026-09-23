@@ -14,27 +14,9 @@ use super::vm_jit_tier_b::{IntArith, IntDivMod, NqpIntOp, NumCmp, TierB};
 use super::*;
 
 use cranelift_codegen::ir::{AbiParam, Block, InstBuilder, SigRef, Type, types};
-use cranelift_codegen::settings::{self, Configurable};
 use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext};
-use cranelift_jit::{JITBuilder, JITModule};
+use cranelift_jit::JITModule;
 use cranelift_module::{Linkage, Module};
-use std::sync::Mutex;
-
-/// The one process-wide JIT module. Compiled code lives for the process
-/// lifetime (entries are cached in `CompiledCode::jit.entry` as raw function
-/// pointers), so the module is created once and never dropped.
-struct Engine {
-    module: JITModule,
-    fn_counter: u64,
-}
-
-// SAFETY: `JITModule` is only manipulated under the `ENGINE` mutex; the
-// finalized code memory it owns is immutable after `finalize_definitions`
-// and is executed (not mutated) from any thread, which is sound regardless
-// of which thread performed the compilation.
-unsafe impl Send for Engine {}
-
-static ENGINE: Mutex<Option<Engine>> = Mutex::new(None);
 
 /// Compile `code` to a native Tier A body. `None` = bailout (unsupported
 /// opcode, or an internal Cranelift failure): the caller marks the chunk so
@@ -158,23 +140,8 @@ fn build(
     // range (and a profiler a per-opcode cost). Off by default; the only cost
     // then is this `OnceLock` read.
     let dump = super::vm_jit_dump::mode();
-    let mut guard = ENGINE.lock().unwrap();
-    let engine = match guard.as_mut() {
-        Some(e) => e,
-        None => {
-            let mut flags = settings::builder();
-            flags.set("opt_level", "speed").ok()?;
-            let isa = cranelift_native::builder()
-                .ok()?
-                .finish(settings::Flags::new(flags))
-                .ok()?;
-            let builder = JITBuilder::with_isa(isa, cranelift_module::default_libcall_names());
-            guard.insert(Engine {
-                module: JITModule::new(builder),
-                fn_counter: 0,
-            })
-        }
-    };
+    let mut guard = super::vm_jit_engine::lock();
+    let engine = super::vm_jit_engine::get_or_init(&mut guard)?;
     let module = &mut engine.module;
 
     let ptr = module.target_config().pointer_type();

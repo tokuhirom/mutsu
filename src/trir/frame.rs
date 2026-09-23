@@ -48,6 +48,9 @@ pub(crate) struct TrStacks {
     /// `CallGen` sites linked to the TRIR routine they reach (ADR-0112 Step
     /// 1, `gen_link.rs`).
     pub(crate) gen_links: super::gen_link::GenLinks,
+    /// A native chunk's return value, handed from the shim that ran the
+    /// return op to the entry that called the native code (ADR-0116).
+    pub(crate) jit_ret: Option<Value>,
 }
 
 /// One frame's bases into [`TrStacks`].
@@ -97,6 +100,7 @@ impl TrStacks {
             .chain(self.os.iter())
             .chain(self.outers.iter())
             .chain(self.chars.sources())
+            .chain(self.jit_ret.iter())
     }
 }
 

@@ -11,27 +11,12 @@
 //! because a TRIR body may now call out (`CallGen`), and a call needs the
 //! whole interpreter.
 
+pub(crate) use super::exec_flow::{TrFlow, TrOutcome};
 use super::frame::TrFrame;
 use super::{TrChunk, TrOp};
 use crate::opcode::CompiledFns;
 use crate::runtime::Interpreter;
 use crate::value::{RuntimeError, Value};
-
-/// What a TRIR chunk did.
-pub(crate) enum TrOutcome {
-    Value(Value),
-    /// An operation met a value whose shape the compiler's proof did not
-    /// cover — an `nqp::atpos_i` on something that is not a list, an
-    /// `UnboxI` of a non-integer, a callee that has been replaced. The caller
-    /// re-runs the routine on the untyped path, which raises whatever the
-    /// program should see.
-    ///
-    /// This is NOT a fallback arm inside the instruction set: it is a bail,
-    /// and the compiler only ever places a bail-capable op where re-running
-    /// the routine from the beginning is equivalent to never having started
-    /// it (see [`super::compile`]'s `effectful` tracking).
-    Bail,
-}
 
 #[inline]
 fn f(bits: i64) -> f64 {
@@ -51,13 +36,39 @@ impl Interpreter {
         frame: TrFrame,
         compiled_fns: &CompiledFns,
     ) -> Result<TrOutcome, RuntimeError> {
+        #[cfg(feature = "jit")]
+        if let Some(out) = super::jit::try_run(self, chunk, frame, compiled_fns) {
+            return out;
+        }
+        let mut ip = 0usize;
+        loop {
+            match self.trir_step(chunk, frame, compiled_fns, ip)? {
+                TrFlow::Next => ip += 1,
+                TrFlow::Jump(t) => ip = t,
+                TrFlow::Done(out) => return Ok(out),
+            }
+        }
+    }
+
+    /// Execute the one op at `ip`: the definition of every op's semantics.
+    ///
+    /// The switch loop above and the native lowering of ADR-0116 both run
+    /// through it (the lowering for every op it does not emit inline), so
+    /// there is one copy of each op's behaviour, not two.
+    // Cost: O(1) dispatch per op; the op's own cost is stated at its body.
+    #[inline(always)]
+    pub(crate) fn trir_step(
+        &mut self,
+        chunk: &TrChunk,
+        frame: TrFrame,
+        compiled_fns: &CompiledFns,
+        ip: usize,
+    ) -> Result<TrFlow, RuntimeError> {
         let nbase = frame.nbase as usize;
         let obase = frame.obase as usize;
         let cbase = frame.outer_base as usize;
-        let ops = &chunk.ops;
-        let mut ip = 0usize;
-        loop {
-            match &ops[ip] {
+        {
+            match &chunk.ops[ip] {
                 TrOp::ConstI(v) => self.trir.ns.push(*v),
                 TrOp::LoadI(n) => {
                     let v = self.trir.nl[nbase + *n as usize];
@@ -134,7 +145,9 @@ impl Interpreter {
                         // through an `is rw` reference.
                         return Err(RuntimeError::new("nqp::div_i: division by zero"));
                     }
-                    self.trir.ns.push(l.wrapping_div(r));
+                    self.trir
+                        .ns
+                        .push(crate::runtime::nqp_ops::floor_div_i(l, r));
                 }
                 TrOp::ModI => {
                     let r = self.ipop();
@@ -144,7 +157,7 @@ impl Interpreter {
                     }
                     // `nqp::mod_i` follows the dividend's sign like Rust's
                     // `%`; Raku's own `%` does not, which is why only the
-                    // `nqp::` spelling reaches here.
+                    // `nqp::` spelling reaches here (`compile/binary.rs`).
                     self.trir.ns.push(l.wrapping_rem(r));
                 }
                 TrOp::NegI => {
@@ -186,31 +199,26 @@ impl Interpreter {
 
                 // ---- control flow ----
                 TrOp::Jump(t) => {
-                    ip = *t as usize;
-                    continue;
+                    return Ok(TrFlow::Jump(*t as usize));
                 }
                 TrOp::JumpIfFalseI(t) => {
                     if self.ipop() == 0 {
-                        ip = *t as usize;
-                        continue;
+                        return Ok(TrFlow::Jump(*t as usize));
                     }
                 }
                 TrOp::JumpIfTrueI(t) => {
                     if self.ipop() != 0 {
-                        ip = *t as usize;
-                        continue;
+                        return Ok(TrFlow::Jump(*t as usize));
                     }
                 }
                 TrOp::JumpIfFalseKeepI(t) => {
                     if self.trir.ns.last().copied().unwrap_or(0) == 0 {
-                        ip = *t as usize;
-                        continue;
+                        return Ok(TrFlow::Jump(*t as usize));
                     }
                 }
                 TrOp::JumpIfTrueKeepI(t) => {
                     if self.trir.ns.last().copied().unwrap_or(0) != 0 {
-                        ip = *t as usize;
-                        continue;
+                        return Ok(TrFlow::Jump(*t as usize));
                     }
                 }
 
@@ -434,7 +442,7 @@ impl Interpreter {
                 TrOp::CallTr(site) => {
                     match self.exec_trir_inner_call(chunk, *site, frame, compiled_fns)? {
                         Some(()) => {}
-                        None => return Ok(TrOutcome::Bail),
+                        None => return Ok(TrFlow::Done(TrOutcome::Bail)),
                     }
                     // A callee may have written a free variable this frame
                     // holds a copy of; re-reading the bindings is the sound
@@ -442,13 +450,13 @@ impl Interpreter {
                     // cell read per CALL, where the untyped path pays a
                     // by-name lookup per ACCESS.
                     if !self.trir_reseed_outers(chunk, frame) {
-                        return Ok(TrOutcome::Bail);
+                        return Ok(TrFlow::Done(TrOutcome::Bail));
                     }
                 }
                 TrOp::MethodGen(site) => {
                     self.exec_trir_method_call(chunk, *site)?;
                     if !self.trir_reseed_outers(chunk, frame) {
-                        return Ok(TrOutcome::Bail);
+                        return Ok(TrFlow::Done(TrOutcome::Bail));
                     }
                 }
                 TrOp::CallGen(site) => {
@@ -456,42 +464,26 @@ impl Interpreter {
                         .exec_trir_generic_call(chunk, *site, frame, compiled_fns)?
                         .is_none()
                     {
-                        return Ok(TrOutcome::Bail);
+                        return Ok(TrFlow::Done(TrOutcome::Bail));
                     }
                     if !self.trir_reseed_outers(chunk, frame) {
-                        return Ok(TrOutcome::Bail);
+                        return Ok(TrFlow::Done(TrOutcome::Bail));
                     }
                 }
 
                 // ---- exits ----
                 TrOp::ReturnI => {
                     let v = self.ipop();
-                    return Ok(TrOutcome::Value(Value::int(v)));
+                    return Ok(TrFlow::Done(TrOutcome::Value(Value::int(v))));
                 }
                 TrOp::ReturnN => {
                     let v = f(self.ipop());
-                    return Ok(TrOutcome::Value(Value::num(v)));
+                    return Ok(TrFlow::Done(TrOutcome::Value(Value::num(v))));
                 }
-                TrOp::ReturnObj => return Ok(TrOutcome::Value(self.opop())),
-                TrOp::ReturnNil => return Ok(TrOutcome::Value(Value::NIL)),
+                TrOp::ReturnObj => return Ok(TrFlow::Done(TrOutcome::Value(self.opop()))),
+                TrOp::ReturnNil => return Ok(TrFlow::Done(TrOutcome::Value(Value::NIL))),
             }
-            ip += 1;
         }
-    }
-
-    /// Pop the native operand stack.
-    ///
-    /// The compiler balances every bank, so it is never empty here; a
-    /// hand-built chunk that got it wrong reads 0 rather than panicking,
-    /// which keeps an internal bug from becoming a process abort (#8186).
-    #[inline]
-    pub(super) fn ipop(&mut self) -> i64 {
-        self.trir.ns.pop().unwrap_or(0)
-    }
-
-    /// Pop the boxed operand stack, with the same contract.
-    #[inline]
-    pub(super) fn opop(&mut self) -> Value {
-        self.trir.os.pop().unwrap_or(Value::NIL)
+        Ok(TrFlow::Next)
     }
 }
