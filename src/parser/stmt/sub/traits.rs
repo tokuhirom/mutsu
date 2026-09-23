@@ -172,6 +172,14 @@ pub(crate) fn parse_sub_traits(mut input: &str) -> PResult<'_, SubTraits> {
                 );
             }
             seen_traits.push(trait_name.to_string());
+            if trait_name == "hidden-from-backtrace" {
+                // Keep this as an internal marker so method declarations can
+                // carry the trait through the AST without exposing it to a
+                // user `trait_mod:<is>` candidate.
+                custom_traits.push(("__hidden_from_backtrace".to_string(), None));
+                input = r;
+                continue;
+            }
             if trait_name == "export" {
                 is_export = true;
                 let (r2, tags) = parse_export_trait_tags(r)?;

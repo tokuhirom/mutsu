@@ -687,6 +687,14 @@ impl Interpreter {
             if name == "Any" || name == "Mu" {
                 break;
             }
+            // A Grammar is a Match/Capture subclass for cursor values, but a
+            // grammar's user-defined `new` chain must reach its Mu/bless
+            // constructor path. Selecting any builtin cursor ancestor here
+            // skips role-provided instance `new` methods and can return a
+            // bare cursor while silently discarding grammar attributes.
+            if self.class_is_grammar(&class_name) {
+                continue;
+            }
             if self.user_declared_classes.contains(&name) {
                 continue;
             }
@@ -761,7 +769,12 @@ impl Interpreter {
             return None;
         }
         let args: Vec<Value> = override_args.map(<[Value]>::to_vec).unwrap_or(orig_args);
-        Some(self.dispatch_package_parse(&receiver_class, &method_name, &args))
+        Some(self.dispatch_instance_parse(
+            frame.invocant.clone(),
+            &receiver_class,
+            &method_name,
+            &args,
+        ))
     }
 
     /// Shared implementation for callsame/nextsame/callwith/nextwith.

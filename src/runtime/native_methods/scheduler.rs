@@ -22,7 +22,7 @@ struct CueParams {
 }
 
 impl Interpreter {
-    fn cancellation_instance() -> Value {
+    pub(in crate::runtime) fn cancellation_instance() -> Value {
         let mut attrs = HashMap::new();
         attrs.insert(
             "cancellation-id".to_string(),
@@ -295,6 +295,16 @@ impl Interpreter {
                     }
                 }
                 Ok(Value::NIL)
+            }
+            "cancelled" => {
+                let cancelled = attributes
+                    .get("cancellation-id")
+                    .and_then(|value| match value.view() {
+                        ValueView::Int(id) if id > 0 => cancellation_state(id as u64),
+                        _ => None,
+                    })
+                    .is_some_and(|flag| flag.load(Ordering::Acquire));
+                Ok(Value::truth(cancelled))
             }
             _ => Err(RuntimeError::new(format!(
                 "No native method '{}' on Cancellation",

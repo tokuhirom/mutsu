@@ -2,6 +2,33 @@ use super::builtins_system::*;
 use super::*;
 
 impl Interpreter {
+    #[cfg(all(unix, feature = "native"))]
+    fn make_merged_output_pipe()
+    -> Result<(std::process::Stdio, std::process::Stdio, std::fs::File), RuntimeError> {
+        use std::os::fd::{FromRawFd, OwnedFd};
+
+        let mut fds = [0; 2];
+        // SAFETY: `fds` points to two writable file-descriptor slots, as
+        // required by pipe(2). Ownership is transferred to the Rust types
+        // immediately below on success.
+        if unsafe { libc::pipe(fds.as_mut_ptr()) } != 0 {
+            return Err(RuntimeError::new(format!(
+                "Cannot create :merge pipe: {}",
+                std::io::Error::last_os_error()
+            )));
+        }
+        let reader = unsafe { std::fs::File::from_raw_fd(fds[0]) };
+        let writer = unsafe { OwnedFd::from_raw_fd(fds[1]) };
+        let stderr_writer = writer
+            .try_clone()
+            .map_err(|err| RuntimeError::new(format!("Cannot duplicate :merge pipe: {err}")))?;
+        Ok((
+            std::process::Stdio::from(writer),
+            std::process::Stdio::from(stderr_writer),
+            reader,
+        ))
+    }
+
     pub(super) fn builtin_run(&self, args: &[Value]) -> Result<Value, RuntimeError> {
         if args.is_empty() {
             return Ok(Self::make_proc_instance(
@@ -58,7 +85,14 @@ impl Interpreter {
             }
         }
 
-        let opts = Self::extract_proc_options(args, 0);
+        let mut opts = Self::extract_proc_options(args, 0);
+        // Rakudo's :merge captures the combined stdout/stderr stream in .out
+        // for run() when no explicit :out(False) disables capture. Keep this
+        // separate from capture_err: a merged Proc exposes the data through
+        // .out and leaves .err undefined.
+        if opts.merge && !opts.out_explicit {
+            opts.capture_out = true;
+        }
 
         if positional.is_empty() {
             return Ok(Self::make_proc_instance(
@@ -106,6 +140,8 @@ impl Interpreter {
 
         // Handle :out with IO::Handle — redirect stdout to that file
         let mut stdout_file_for_merge: Option<std::fs::File> = None;
+        let merge_to_capture = opts.merge && opts.capture_out && opts.out_handle_id.is_none();
+        let mut merged_output_reader: Option<std::fs::File> = None;
         if let Some(handle_id) = opts.out_handle_id {
             let table = self.io_handles();
             let state = table
@@ -126,6 +162,23 @@ impl Interpreter {
                     })?);
             }
             cmd.stdout(std::process::Stdio::from(cloned));
+        } else if merge_to_capture {
+            #[cfg(all(unix, feature = "native"))]
+            {
+                let (stdout, stderr, reader) = Self::make_merged_output_pipe()?;
+                merged_output_reader = Some(reader);
+                cmd.stdout(stdout);
+                cmd.stderr(stderr);
+            }
+            #[cfg(not(all(unix, feature = "native")))]
+            {
+                // The native Unix path above uses one OS pipe for both file
+                // descriptors. Keep the capture behavior on targets without
+                // that primitive; those targets do not provide the same
+                // process support as the native build.
+                cmd.stdout(std::process::Stdio::piped());
+                cmd.stderr(std::process::Stdio::piped());
+            }
         } else if opts.capture_out {
             cmd.stdout(std::process::Stdio::piped());
         } else if opts.out_explicit {
@@ -133,13 +186,15 @@ impl Interpreter {
         } else {
             cmd.stdout(std::process::Stdio::inherit());
         }
-        if opts.merge {
+        if opts.merge && !merge_to_capture {
             if let Some(file) = stdout_file_for_merge {
                 cmd.stderr(std::process::Stdio::from(file));
             } else {
                 // :merge without :out(file) — stderr goes to same pipe as stdout
                 cmd.stderr(std::process::Stdio::piped());
             }
+        } else if merge_to_capture {
+            // Both streams were configured above with the shared capture pipe.
         } else if opts.capture_err {
             cmd.stderr(std::process::Stdio::piped());
         } else if opts.err_explicit {
@@ -175,6 +230,11 @@ impl Interpreter {
         match cmd.spawn() {
             Ok(mut child) => {
                 let pid = child.id() as i64;
+                // `Command` retains its Stdio configuration after spawn. Drop
+                // it before reading our merged pipe so the parent's duplicate
+                // write descriptors do not keep the reader open after the
+                // child exits.
+                drop(cmd);
 
                 if let Some(content) = &opts.in_pipe_content
                     && let Some(mut stdin) = child.stdin.take()
@@ -230,7 +290,12 @@ impl Interpreter {
                     return Ok(proc);
                 }
 
-                let captured_out = if opts.capture_out {
+                let captured_out = if let Some(reader) = merged_output_reader.as_mut() {
+                    let mut buf = String::new();
+                    use std::io::Read;
+                    let _ = reader.read_to_string(&mut buf);
+                    Some(buf)
+                } else if opts.capture_out {
                     child.stdout.take().map(|mut s| {
                         let mut buf = String::new();
                         use std::io::Read;
@@ -240,16 +305,27 @@ impl Interpreter {
                 } else {
                     None
                 };
-                let captured_err = if opts.capture_err {
-                    child.stderr.take().map(|mut s| {
-                        let mut buf = String::new();
-                        use std::io::Read;
-                        let _ = s.read_to_string(&mut buf);
-                        buf
-                    })
-                } else {
-                    None
-                };
+                let captured_err =
+                    if opts.capture_err || (merge_to_capture && merged_output_reader.is_none()) {
+                        child.stderr.take().map(|mut s| {
+                            let mut buf = String::new();
+                            use std::io::Read;
+                            let _ = s.read_to_string(&mut buf);
+                            buf
+                        })
+                    } else {
+                        None
+                    };
+                let (captured_err, captured_out) =
+                    if merge_to_capture && merged_output_reader.is_none() {
+                        (
+                            None,
+                            captured_out
+                                .map(|out| format!("{}{}", out, captured_err.unwrap_or_default())),
+                        )
+                    } else {
+                        (captured_err, captured_out)
+                    };
                 match child.wait() {
                     Ok(status) => {
                         let (exitcode, signal) = super::builtins_system::exit_status_parts(&status);

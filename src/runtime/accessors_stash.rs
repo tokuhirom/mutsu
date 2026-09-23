@@ -773,6 +773,8 @@ impl Interpreter {
         }
 
         let mut symbols: ValueMap = ValueMap::default();
+        let is_lowercase_export_stash =
+            package_name == "EXPORT::all" || package_name.ends_with("::EXPORT::all");
 
         // Top-level `our` variables live in GLOBAL. They persist in the flat
         // `our_vars` store (keyed by bare name), separate from the env, so the
@@ -975,9 +977,17 @@ impl Interpreter {
             if self.is_my_scoped_package_item(&fq_base) {
                 continue;
             }
-            symbols
-                .entry(format!("&{base}"))
-                .or_insert_with(|| Value::routine_parts(def.package, def.name, false));
+            // A custom EXPORT hook reads the lowercase stash as a source of
+            // first-class code values (`EXPORT::all::{...}:p`). Preserve the
+            // compiled definition there; ordinary package stashes keep their
+            // routine references and therefore retain normal import lookup.
+            symbols.entry(format!("&{base}")).or_insert_with(|| {
+                if is_lowercase_export_stash {
+                    self.sub_value_from_function_def((**def).clone())
+                } else {
+                    Value::routine_parts(def.package, def.name, false)
+                }
+            });
         }
 
         // A module that exports anything has an `EXPORT` member in its stash

@@ -691,7 +691,10 @@ impl Interpreter {
             ClassDef {
                 parents: Vec::new(),
                 attributes: Vec::new(),
-                native_methods: ["cancel"].iter().map(|s| s.to_string()).collect(),
+                native_methods: ["cancel", "cancelled"]
+                    .iter()
+                    .map(|s| s.to_string())
+                    .collect(),
                 mro: sym_mro(&["Cancellation"]),
                 attribute_types: HashMap::new(),
                 attribute_smileys: HashMap::new(),
@@ -2872,6 +2875,7 @@ impl Interpreter {
                     is_default: false,
                     deprecated_message: None,
                     is_submethod: false,
+                    is_hidden_from_backtrace: false,
                     captured_env: None,
                     source_file: None,
                     role_param_bindings: None,
@@ -2934,6 +2938,7 @@ impl Interpreter {
                     is_default: false,
                     deprecated_message: None,
                     is_submethod: false,
+                    is_hidden_from_backtrace: false,
                     captured_env: None,
                     source_file: None,
                     role_param_bindings: None,
@@ -3448,6 +3453,7 @@ impl Interpreter {
             registered_stub_decl_sites: Default::default(),
             prepared_fn_defs: HashMap::new(),
             frame_lexical_routines: Default::default(),
+            frame_lexical_closure_bodies: Default::default(),
             method_resolve_cache: rustc_hash::FxHashMap::default(),
             method_cache_generation: 0,
             last_method_resolve: None,

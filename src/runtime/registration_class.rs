@@ -155,6 +155,7 @@ pub(super) fn make_delegation_method(attr_var_name: &str, target_method: &str) -
         is_default: false,
         deprecated_message: None,
         is_submethod: false,
+        is_hidden_from_backtrace: false,
         captured_env: None,
         source_file: None,
         role_param_bindings: None,
@@ -401,6 +402,7 @@ pub(super) fn substitute_type_params_in_method(
         is_default: method.is_default,
         deprecated_message: method.deprecated_message.clone(),
         is_submethod: method.is_submethod,
+        is_hidden_from_backtrace: method.is_hidden_from_backtrace,
         // Carried over like every other field: a role declared inside a routine
         // records its methods' lexical captures on its own `MethodDef`s, and a
         // PARAMETERIZED role reaches its composing class through here rather

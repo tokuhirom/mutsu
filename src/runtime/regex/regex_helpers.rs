@@ -83,6 +83,11 @@ thread_local! {
     /// actually depends on a dynamic variable. The reduce-time action hook only
     /// fires when this is true, so ordinary (non-dyn-var) grammars pay nothing.
     pub(crate) static REGEX_GRAMMAR_DYNVAR_SEEN: Cell<bool> = const { Cell::new(false) };
+    /// Farthest cursor position reached while diagnosing a grammar parse
+    /// failure.  This is enabled only around the parse's real regex walk, so
+    /// ordinary matches pay one disabled-cell check per token and callers that
+    /// do not need a diagnostic never allocate a failure record.
+    pub(crate) static REGEX_FARTHEST_POS: Cell<Option<usize>> = const { Cell::new(None) };
     /// The defining scope of a `<$re>`-interpolated `Regex` closure, active
     /// while `self`/`self.env` is re-parsing/re-interpolating THAT regex's
     /// OWN pattern text (issue #8951). `<$re>` resolves `$re`'s pattern
@@ -126,6 +131,37 @@ thread_local! {
     /// non-inline atom — a subrule reference above all — which is what keeps a
     /// different regex's backreferences scoped to itself.
     pub(crate) static INLINE_OUTER_CAPS_SEED: RefCell<Option<std::sync::Arc<OuterBackrefCaps>>> = const { RefCell::new(None) };
+}
+
+/// Track the furthest cursor position visited by a regex walk.
+pub(crate) struct RegexFarthestPositionScope(Option<usize>);
+
+impl RegexFarthestPositionScope {
+    pub(crate) fn enter() -> Self {
+        let previous = REGEX_FARTHEST_POS.with(|pos| pos.replace(Some(0)));
+        Self(previous)
+    }
+
+    pub(crate) fn current() -> Option<usize> {
+        REGEX_FARTHEST_POS.with(Cell::get)
+    }
+}
+
+impl Drop for RegexFarthestPositionScope {
+    fn drop(&mut self) {
+        REGEX_FARTHEST_POS.with(|pos| pos.set(self.0));
+    }
+}
+
+#[inline]
+pub(crate) fn record_regex_farthest_position(pos: usize) {
+    REGEX_FARTHEST_POS.with(|farthest| {
+        if let Some(current) = farthest.get()
+            && pos > current
+        {
+            farthest.set(Some(pos));
+        }
+    });
 }
 
 /// Marker for one live grammar-rule dynamic-variable frame.

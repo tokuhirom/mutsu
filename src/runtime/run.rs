@@ -1290,7 +1290,9 @@ impl Interpreter {
         // it, so a chunk compiled with no `?FILE` in scope still names a file.
         let _unit_file =
             crate::unit_source_file::UnitSourceFileGuard::enter(self.current_source_file_sym());
-        compiler.compile(stmts)
+        let (mut code, mut fns) = compiler.compile(stmts);
+        self.inherit_frame_lexical_for_body(stmts, &mut code, &mut fns);
+        (code, fns)
     }
 
     pub(crate) fn run_block_raw(&mut self, stmts: &[Stmt]) -> Result<(), RuntimeError> {

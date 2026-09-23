@@ -572,6 +572,8 @@ pub(crate) struct CompiledMethodDecl {
     pub(crate) custom_traits: Vec<(String, Option<Expr>)>,
     pub(crate) is_export: bool,
     pub(crate) export_tags: Vec<String>,
+    /// Whether this method carries Raku's `is hidden-from-backtrace` trait.
+    pub(crate) is_hidden_from_backtrace: bool,
     /// Main-pass-compiled bytecode key for this method's body (ADR-0019
     /// D3-8a), keyed into the program's [`CompiledFns`] table exactly like a
     /// `sub`'s [`CompiledSubDeclPlan::compiled_routine_keys`]. `None` when
@@ -645,6 +647,9 @@ impl CompiledMethodDecl {
             custom_traits: custom_traits.clone(),
             is_export: *is_export,
             export_tags: export_tags.clone(),
+            is_hidden_from_backtrace: custom_traits
+                .iter()
+                .any(|(t, _)| t == "__hidden_from_backtrace"),
             compiled_routine_key: None,
             uses_bare_positional_args,
         }
@@ -5179,6 +5184,12 @@ pub(crate) struct CompiledCode {
     /// Empty for almost every chunk, so the call handlers' probe is one
     /// `is_empty` test.
     pub(crate) lexical_routines: Vec<FrameLexicalRef>,
+    /// True when this chunk or one of its nested closures has
+    /// `lexical_routines`. A closure created from such a chunk registers its
+    /// body with the interpreter, so a runtime recompile of that body (the
+    /// carrier paths that compile a closure's AST instead of running its
+    /// chunk) inherits the same call table (ADR-0113).
+    pub(crate) lexical_subtree: bool,
     /// Full free-variable set (reads AND writes) of each directly-nested
     /// *registered routine*'s finalized `CompiledCode`
     /// (`CompiledFunction::code.free_var_syms`) — one entry per nested
@@ -6048,6 +6059,7 @@ impl CompiledCode {
             free_var_container_writes: Vec::new(),
             named_sub_captures: Vec::new(),
             lexical_routines: Vec::new(),
+            lexical_subtree: false,
             nested_routine_free_reads: Vec::new(),
             needs_cell_named_sub: Vec::new(),
             needs_cell_ref_capture_slots: Vec::new(),

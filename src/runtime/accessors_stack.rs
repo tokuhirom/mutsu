@@ -266,6 +266,7 @@ impl Interpreter {
             is_method: false,
             is_submethod: false,
             is_block: false,
+            is_hidden_from_backtrace: false,
             def_file,
             invocation_id,
         };
@@ -290,6 +291,7 @@ impl Interpreter {
         file: Option<Symbol>,
         def_file: Option<Symbol>,
         is_submethod: bool,
+        is_hidden_from_backtrace: bool,
     ) {
         let invocation_id = self.take_invocation_id();
         let frame = super::RoutineFrame {
@@ -301,6 +303,7 @@ impl Interpreter {
             is_method: true,
             is_submethod,
             is_block: false,
+            is_hidden_from_backtrace,
             def_file,
             invocation_id,
         };
@@ -331,6 +334,7 @@ impl Interpreter {
             is_method: false,
             is_submethod: false,
             is_block: true,
+            is_hidden_from_backtrace: false,
             def_file,
             invocation_id,
         };
@@ -1101,6 +1105,7 @@ mod call_site_file_tests {
             is_method: false,
             is_submethod: false,
             is_block,
+            is_hidden_from_backtrace: false,
             def_file,
             invocation_id: 1,
         }

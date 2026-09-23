@@ -280,6 +280,7 @@ impl Interpreter {
                         is_default: decl.is_default_candidate,
                         deprecated_message: decl.deprecated_message.clone(),
                         is_submethod: decl.is_submethod,
+                        is_hidden_from_backtrace: decl.is_hidden_from_backtrace,
                         captured_env: None,
                         source_file: self.current_source_file(),
                         role_param_bindings: None,

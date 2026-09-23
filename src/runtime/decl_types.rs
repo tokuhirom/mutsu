@@ -203,6 +203,8 @@ pub(crate) struct MethodDef {
     pub(crate) deprecated_message: Option<String>,
     /// Whether this is a submethod (not inherited by subclasses).
     pub(crate) is_submethod: bool,
+    /// Whether this method is omitted by `Backtrace.next-interesting-index`.
+    pub(crate) is_hidden_from_backtrace: bool,
     /// Captured lexical environment for a method. This is populated for a method
     /// installed via `.^add_method` with a closure literal and for a class method
     /// declared inside a routine. In both cases, the plain body+compiled-code

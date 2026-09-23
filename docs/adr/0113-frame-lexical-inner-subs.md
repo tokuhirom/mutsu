@@ -68,7 +68,10 @@ Decided by `compiler/frame_lexical_routines.rs` after the routine body is compil
   body.
 - The compiled bytecode agrees: every op that names the routine is a bare call in the
   body, one of its closures, or a routine declared in it, and no body stashed in a
-  `stmt_pool` for run-time compilation mentions it.
+  `stmt_pool` for run-time compilation mentions it. A closure literal's pool slot is
+  exempt when every op creating it carries its compiled chunk (slice 2): several
+  runtime paths compile such a closure's AST again instead of running that chunk, and
+  those fresh chunks inherit the call table (see "Implementation status").
 - The routine has no `state`/`once` storage and is not `is cached`: that storage is keyed by
   the registration clone the routine no longer gets.
 
@@ -108,4 +111,19 @@ Anything outside the proof keeps the registry-based behaviour unchanged.
   `Compiler::compile_sub_body`. Callgrind, per unit of input: the microbenchmark of §1
   went from 71.4K to 19.8K instructions per call of the enclosing routine (hoisted: 12.7K);
   the #9103 `from-json` repro from 541K to 444K per string (-18%).
-- Open: a frame-lexical code object for an inner sub used as a value (`&name`).
+- Slice 2: calls from inside the routine's closures. Slice 1 disqualified a name that any
+  closure literal's stashed AST mentioned, because the inline `map`/`grep` path, sequence
+  generators and the carrier `eval_block_value`/`compile_block_raw` family compile a
+  closure's body again from its AST and would have compiled the call without the table.
+  Those recompiles now inherit it: `compile_loop_block_cached` and the sequence
+  generator from the closure's own chunk, the carrier compiles through
+  `Interpreter::frame_lexical_closure_bodies`, which every closure-creating op fills
+  (keyed by the shared body `Arc`'s address, the `Arc` kept alive by the entry) when its
+  chunk's `CompiledCode::lexical_subtree` is set. Over the vendored modules and zef this
+  took every "called only from a closure" rejection to zero (18 -> 26 distinct
+  frame-lexical inner subs), among them the SHA-1/SHA-2/RIPEMD round helpers of `Digest`, whose
+  `sha1`+`sha256` of a 9 KB string went from 4.2 s to 3.7 s (-12%, release, wall clock).
+- Open: a frame-lexical code object for an inner sub used as a value (`&name`). In the
+  vendored corpus this is five distinct inner subs, none on a hot path (JSON::Fast's
+  `from-json-changed`/`to-json-changed`, Template::Mustache's `pragma`, zef's
+  `dir-delete`, Slangify's `EXPORT`).
