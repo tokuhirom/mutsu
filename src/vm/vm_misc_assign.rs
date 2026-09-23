@@ -150,6 +150,58 @@ impl Interpreter {
             ValueView::Str(s) => s.to_string(),
             _ => unreachable!("AssignExpr name must be a string constant"),
         };
+        if name == crate::env::IMPLICIT_SELF_ASSIGN_NAME {
+            let raw_val = self.stack.pop().unwrap_or(Value::NIL);
+            let val = match raw_val.view() {
+                ValueView::VarRef { value, .. } => value.clone(),
+                _ => raw_val,
+            };
+            let Some(ValueView::ContainerRef(cell)) = self.env().get("self").map(Value::view)
+            else {
+                return Err(RuntimeError::assignment_ro(None));
+            };
+            let current = cell.lock().unwrap_or_else(|e| e.into_inner()).clone();
+            // `self` on an aggregate is the caller's role-mixed value.  A
+            // whole-container assignment must update that value's backing
+            // Array/Hash while retaining the Mixin wrapper; replacing the
+            // cell with the RHS would silently discard the role and make the
+            // method return the RHS rather than the still-live invocant.
+            let aggregate = match current.view() {
+                ValueView::Mixin(inner, _) => inner.as_ref().clone(),
+                _ => current.clone(),
+            };
+            let assigned_in_place = match aggregate.view() {
+                ValueView::Array(old_gc, _) => {
+                    let new_val = crate::runtime::utils::coerce_to_array(val.clone());
+                    if let ValueView::Array(new_gc, kind) = new_val.view() {
+                        if !crate::gc::Gc::ptr_eq(&old_gc, &new_gc) {
+                            Self::array_inplace_reassign(&old_gc, &new_gc, kind);
+                        }
+                        true
+                    } else {
+                        false
+                    }
+                }
+                ValueView::Hash(old_gc) => {
+                    let new_val = crate::runtime::utils::coerce_to_hash(val.clone());
+                    if let ValueView::Hash(new_gc) = new_val.view() {
+                        if !crate::gc::Gc::ptr_eq(&old_gc, &new_gc) {
+                            Self::hash_inplace_reassign(&old_gc, &new_gc);
+                        }
+                        true
+                    } else {
+                        false
+                    }
+                }
+                _ => false,
+            };
+            if !assigned_in_place {
+                Value::store_through_cell(&cell, &val);
+            }
+            self.stack
+                .push(if assigned_in_place { current } else { val });
+            return Ok(());
+        }
         self.check_readonly_for_modify(&name)?;
         if self.check_dot_twigil_accessor_writable(&name, dot_twigil_rmw)? {
             // The write went to the throwaway itemization; the computed value is

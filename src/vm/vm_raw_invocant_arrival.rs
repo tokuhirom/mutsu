@@ -33,6 +33,8 @@ use super::*;
 pub(crate) struct PendingRawInvocant {
     pub(crate) method: String,
     pub(crate) cell: Value,
+    pub(crate) raw_parameter: bool,
+    pub(crate) implicit_self: bool,
 }
 
 impl Interpreter {
@@ -55,9 +57,11 @@ impl Interpreter {
         method: &str,
         args: &[Value],
     ) -> bool {
-        if !crate::runtime::raw_invocant::any_raw_invocant_method_possible()
-            || target_name.is_empty()
-        {
+        if target_name.is_empty() {
+            return false;
+        }
+        let aggregate_self = is_aggregate_target_name(target_name) && is_role_mixed_array(target);
+        if !crate::runtime::raw_invocant::any_raw_invocant_method_possible() && !aggregate_self {
             return false;
         }
         self.arm_raw_invocant_arrival_slow(code, target_name, target, method, args)
@@ -73,7 +77,10 @@ impl Interpreter {
         method: &str,
         args: &[Value],
     ) -> bool {
-        if !self.method_binds_raw_invocant(target, method, args) {
+        let raw_parameter = self.method_binds_raw_invocant(target, method, args);
+        let implicit_self =
+            !raw_parameter && is_aggregate_target_name(target_name) && is_role_mixed_array(target);
+        if !raw_parameter && !implicit_self {
             return false;
         }
         let cell = if target.is_container_ref() {
@@ -87,9 +94,12 @@ impl Interpreter {
             // receiver) leaves the channel disarmed, so the call behaves exactly
             // as it does today instead of binding a disconnected cell whose
             // writes would be silently dropped.
-            let Some(cell) =
+            let cell = if implicit_self {
+                self.capture_aggregate_invocant_cell(code, target_name, target.clone())
+            } else {
                 self.capture_lvalue_invocant_cell(code, target_name, target.clone(), None)
-            else {
+            };
+            let Some(cell) = cell else {
                 return false;
             };
             cell
@@ -97,6 +107,8 @@ impl Interpreter {
         self.pending_raw_invocant = Some(Box::new(PendingRawInvocant {
             method: method.to_string(),
             cell,
+            raw_parameter,
+            implicit_self,
         }));
         true
     }
@@ -148,9 +160,40 @@ impl Interpreter {
         if pending.method != method_name {
             return None;
         }
-        if !pd.is_some_and(crate::runtime::raw_invocant::param_is_raw_invocant) {
+        if !pending.raw_parameter
+            || !pd.is_some_and(crate::runtime::raw_invocant::param_is_raw_invocant)
+        {
             return None;
         }
         self.pending_raw_invocant.take().map(|p| p.cell)
+    }
+
+    /// Consume the caller's aggregate container for a synthesized implicit
+    /// `self`. Explicit invocant parameters never use this channel.
+    pub(crate) fn take_implicit_self_invocant_arrival(
+        &mut self,
+        method_name: &str,
+        pd: Option<&crate::ast::ParamDef>,
+    ) -> Option<Value> {
+        let pending = self.pending_raw_invocant.as_ref()?;
+        if !pending.implicit_self || pending.method != method_name {
+            return None;
+        }
+        let implicit = pd.is_some_and(|pd| pd.name == "self");
+        if !implicit {
+            return None;
+        }
+        self.pending_raw_invocant.take().map(|p| p.cell)
+    }
+}
+
+fn is_aggregate_target_name(name: &str) -> bool {
+    name == "self" || name.starts_with('@') || name.starts_with('%')
+}
+
+fn is_role_mixed_array(value: &Value) -> bool {
+    match value.view() {
+        ValueView::Mixin(inner, _) => matches!(inner.view(), ValueView::Array(..)),
+        _ => false,
     }
 }

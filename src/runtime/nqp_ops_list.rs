@@ -168,8 +168,9 @@ impl Interpreter {
         if let Some(n) = Self::nqp_elems_len_of(target) {
             return Ok(n as i64);
         }
-        let id =
-            crate::runtime::nqp_op_ids::nqp_op_id("elems").expect("elems is a registered nqp op");
+        let Some(id) = crate::runtime::nqp_op_ids::nqp_op_id("elems") else {
+            return Err(RuntimeError::new("nqp::elems is not registered"));
+        };
         let r = self.dispatch_nqp_op_by_id(id, std::slice::from_ref(target))?;
         Ok(r.as_int().unwrap_or_else(|| r.to_f64() as i64))
     }
