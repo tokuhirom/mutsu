@@ -1277,6 +1277,68 @@ impl Interpreter {
                             .unwrap_or_default();
                         return self.cur_fs_files(&prefix, &args);
                     }
+                    "load" => {
+                        // `.load(IO::Path)` resolves the file relative to
+                        // this repository's own prefix and compiles it as a
+                        // compunit (a syntax error surfaces here), recording
+                        // the result in `.loaded` -- but, verified against
+                        // `raku`, it does NOT merge the file's symbols into
+                        // GLOBAL: `LoadMe::hi` stays unreachable after
+                        // `$r.load("LoadMe.rakumod".IO)` even though the
+                        // module ran under `unit module LoadMe`. So unlike
+                        // `need` below, this never calls `run_block` --
+                        // only the shared `parse_module_source` compile step.
+                        // Rakudo also rejects an absolute path outright
+                        // (searched against the registered `$*REPO` chain,
+                        // which a repo built with `.new` was never added
+                        // to); mutsu instead accepts one when it canonicalizes
+                        // to somewhere under this repo's own prefix, which
+                        // covers the zef `Staging` fallback's own use (an
+                        // absolute path it already resolved from this same
+                        // prefix) without reproducing that unrelated chain.
+                        let file_arg = args.first().cloned().unwrap_or(Value::NIL);
+                        let file_str = file_arg.to_string_value();
+                        let prefix = attributes
+                            .as_map()
+                            .get("prefix")
+                            .map(Value::to_string_value)
+                            .unwrap_or_default();
+                        let canonical_prefix = std::fs::canonicalize(&prefix)
+                            .unwrap_or_else(|_| std::path::PathBuf::from(&prefix));
+                        let requested = std::path::Path::new(&file_str);
+                        let resolved = if requested.is_absolute() {
+                            std::fs::canonicalize(requested)
+                                .ok()
+                                .filter(|p| p.starts_with(&canonical_prefix))
+                        } else {
+                            let candidate = canonical_prefix.join(requested);
+                            candidate.exists().then_some(candidate)
+                        };
+                        let Some(source_path) = resolved else {
+                            return Err(RuntimeError::new(format!(
+                                "Could not find {file_str} in:\n    {}",
+                                canonical_prefix.display()
+                            )));
+                        };
+                        // Rakudo's short-name for a `.load`ed compunit is the
+                        // bare relative file name, not a `::`-joined module
+                        // name -- verified against `raku`.
+                        let short_name_str = source_path
+                            .strip_prefix(&canonical_prefix)
+                            .unwrap_or(&source_path)
+                            .to_string_lossy()
+                            .to_string();
+                        self.parse_module_source(&short_name_str, &source_path)?;
+                        let mut attrs = HashMap::new();
+                        attrs.insert("from".to_string(), Value::str_from("Perl6"));
+                        attrs.insert("repo".to_string(), target.clone());
+                        attrs.insert("repo-id".to_string(), Value::str(short_name_str.clone()));
+                        attrs.insert("short-name".to_string(), Value::str(short_name_str));
+                        attrs.insert("precompiled".to_string(), Value::FALSE);
+                        let compunit = Value::make_instance(Symbol::intern("CompUnit"), attrs);
+                        self.cur_repo_loaded_push(&prefix, compunit.clone());
+                        return Ok(compunit);
+                    }
                     "need" => {
                         // A depspec may arrive either as the native `CompUnitDepSpec`
                         // value (short-name only) or as a full
