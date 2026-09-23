@@ -933,6 +933,7 @@ impl Compiler {
             }
             // Code variable (&foo)
             Expr::CodeVar(name) => {
+                self.fold_lexical_sub_free_vars_for_code_var(name);
                 let name_idx = self.code.add_constant(Value::str(name.clone()));
                 self.code.emit(OpCode::GetCodeVar(name_idx));
             }
