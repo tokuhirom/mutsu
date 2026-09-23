@@ -557,6 +557,13 @@ impl Interpreter {
         target
     }
 
+    /// Cost: O(e) at the call, e = elements of the invocant (copied into the
+    /// deferred `MapGrep` source), then e callback calls at the Seq's FIRST
+    /// consumption, whatever the consumer needs: `@a.map(&f).head(3)`,
+    /// `.first(...)` and `for @a.map(&f) { last }` all run `f` e times. Only an
+    /// infinite/lazy-pipe source (`make_lazy_pipe`) is O(1) per call and one
+    /// callback per element pulled. Rakudo: O(1) per call, one callback per
+    /// element pulled -- see #NNNN.
     fn dispatch_map_method(
         &mut self,
         target: Value,

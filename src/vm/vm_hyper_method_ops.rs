@@ -517,6 +517,8 @@ impl Interpreter {
         Ok(())
     }
 
+    /// Cost: O(e) method calls, e = elements (leaves, for nested input) of the
+    /// invocant; results built eagerly.
     #[allow(clippy::too_many_arguments)]
     pub(super) fn exec_hyper_method_call_op(
         &mut self,

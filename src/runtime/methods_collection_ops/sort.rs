@@ -351,6 +351,12 @@ fn schwartzian_by_keys(items: &mut [Value], keys: &[Value]) {
     items.clone_from_slice(&sorted);
 }
 
+/// Cost: O(e log e) comparisons, e = elements. A 1-arity key extractor runs
+/// exactly e times (Schwartzian transform over precomputed keys, as in Rakudo);
+/// a 2-arity comparator runs O(e log e) times (stable merge sort, which also
+/// copies O(e log e) Values across its levels); `{ $^a <=> $^b }`-shaped blocks
+/// are compared inline with no call.
+///
 /// Shared `.sort` orchestration. `arity` is the resolved callable arity (0 = no
 /// callable, 1 = mapper, >=2 = comparator). User callables / methods are invoked
 /// through `caller`, so the same logic runs under both engines.
@@ -618,6 +624,8 @@ impl Interpreter {
     }
 }
 
+/// Cost: O(e) to copy the receiver plus [`sort_items_generic`]'s O(e log e).
+///
 /// Shared `.sort` entry point — engine-agnostic argument parsing + target-shape
 /// dispatch, on top of the shared [`sort_items_generic`] / [`sort_indices_generic`]
 /// orchestration. Both engines call this with their own [`SortCaller`]:

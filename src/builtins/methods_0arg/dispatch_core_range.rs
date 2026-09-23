@@ -351,6 +351,7 @@ pub(super) fn dispatch(
             ValueView::Array(items, ..) => Some(Ok(items.first().cloned().unwrap_or(Value::NIL))),
             _ => None,
         }),
+        // Cost: O(e) comparisons on an Array, e = elements; O(1) on a Range.
         "min" => Some(match target.view() {
             ValueView::Array(items, ..) => Some(Ok(items
                 .iter()
@@ -402,6 +403,7 @@ pub(super) fn dispatch(
             ValueView::Seq(..) | ValueView::Slip(..) => None,
             _ => Some(Ok(target.clone())),
         }),
+        // Cost: O(e) comparisons on an Array, e = elements; O(1) on a Range.
         "max" => Some(match target.view() {
             ValueView::Array(items, ..) => Some(Ok(items
                 .iter()

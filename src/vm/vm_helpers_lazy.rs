@@ -23,6 +23,10 @@ impl Interpreter {
             SeqSource::IoLines { handle, words, kv } => {
                 self.pull_io_lines_to_vec(handle.clone(), *words, *kv)
             }
+            // Cost: O(e) callback calls, e = source elements: the whole source is
+            // mapped/grepped at the first pull, whatever prefix the consumer needs
+            // (see `dispatch_map_method`). Rakudo: O(1) per element pulled -- see
+            // #NNNN.
             // docs/adr/0058: a `.map`/`.grep` whose callback has not run yet.
             // This IS `dispatch_map_method`'s old eager tail, just moved to
             // first consumption — so a `die`/`fail` it raises surfaces at the
@@ -962,6 +966,11 @@ impl Interpreter {
         self.locals_set_by_name(code, name, restored);
     }
 
+    /// Cost: a method listed here forces the LazyList whole first, O(p) for p
+    /// elements the source produces; on an infinite pipe/sequence the caller
+    /// throws X::Cannot::Lazy instead, so `rotor`, `batch`, `unique`, `repeated`,
+    /// `squish`, `flat` and `produce` over `(1..*).map(...)` fail where Rakudo
+    /// streams them at O(1) per element pulled -- see #NNNN.
     pub(super) fn lazy_list_needs_forcing(method: &str) -> bool {
         matches!(
             method,

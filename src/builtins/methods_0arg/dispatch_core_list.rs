@@ -101,6 +101,8 @@ pub(super) fn dispatch(
                 Some(Ok(Value::seq(result)))
             }
         }),
+        // Cost: O(e log e) comparisons, e = elements of the invocant (copied, then
+        // sorted with `compare_values`).
         "sort" => Some(match target.view() {
             ValueView::Array(items, kind) => {
                 let mut sorted = if kind == crate::value::ArrayKind::Shaped
@@ -117,6 +119,8 @@ pub(super) fn dispatch(
             }
             _ => None,
         }),
+        // Cost: O(e), e = elements of the invocant (copied in reverse; a finite Range
+        // is expanded first).
         "reverse" => Some(match target.view() {
             ValueView::Array(items, kind) => {
                 // Multi-dim shaped arrays cannot be reversed
@@ -211,6 +215,11 @@ pub(super) fn dispatch(
             }
             _ => None,
         }),
+        // Cost: O(e) average when every element is an Int/BigInt/Str/Bool/Num (hash
+        // buckets in `IdentityIndex`); O(e * u) otherwise, e = elements, u = distinct
+        // elements of any other kind (Rat, Pair, object, list, ...), which the index
+        // cannot bucket and so compares against every candidate. Rakudo: O(e) (keyed
+        // on `.WHICH`) -- see #NNNN.
         "unique" => Some(match target.view() {
             ValueView::Array(items, ..) => Some(Ok(unique_seq(items.iter()))),
             ValueView::Seq(items) => Some(Ok(unique_seq(items.iter()))),
@@ -220,6 +229,8 @@ pub(super) fn dispatch(
             ValueView::Instance { class_name, .. } if class_name == "Supply" => None,
             _ => Some(Ok(target.clone())),
         }),
+        // Cost: same as `unique`: O(e) average for Int/BigInt/Str/Bool/Num elements,
+        // O(e * u) for any other kind. Rakudo: O(e) -- see #NNNN.
         "repeated" => Some(match target.view() {
             ValueView::Array(items, ..) => Some(Ok(repeated_seq(items.iter()))),
             ValueView::Seq(items) => Some(Ok(repeated_seq(items.iter()))),

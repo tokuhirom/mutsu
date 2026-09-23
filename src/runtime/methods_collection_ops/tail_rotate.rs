@@ -35,6 +35,12 @@ impl Interpreter {
             .cloned()
     }
 
+    /// Cost: O(e), e = elements of the invocant, for `.tail` and `.tail(k)` alike:
+    /// the receiver is copied whole by `value_to_list` before the last k are
+    /// sliced off (a `Seq.new($iterator)` body instead pays O(e) `skip-one` calls).
+    /// This is the path a method call on a named `@a` takes, so `@a.tail` in a
+    /// loop that grows `@a` is quadratic. Rakudo: O(k) on a reified Array/List --
+    /// see #NNNN.
     pub(in crate::runtime) fn dispatch_tail(
         &mut self,
         target: Value,
@@ -167,6 +173,8 @@ impl Interpreter {
     /// leading elements to keep is `len + n` (clamped to `0..=len`). A bare
     /// `*` (Whatever) keeps the whole list. Plain numeric counts are handled by
     /// the native fast path, not here.
+    /// Cost: O(e), e = elements of the invocant (copied whole; a `*-n` count needs
+    /// the length anyway).
     pub(in crate::runtime) fn dispatch_head(
         &mut self,
         target: Value,
@@ -220,6 +228,8 @@ impl Interpreter {
         (s.to_string(), None)
     }
 
+    /// Cost: O(e), e = elements of the invocant (copied, then placed at their
+    /// rotated index).
     pub(in crate::runtime) fn dispatch_rotate(
         &self,
         target: Value,

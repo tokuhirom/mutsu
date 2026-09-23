@@ -163,6 +163,8 @@ impl Interpreter {
         }
     }
 
+    /// Cost: O(e) comparisons (or `:by` calls), e = elements of the flattened
+    /// arguments (a Range argument contributes its two endpoints).
     pub(super) fn builtin_minmax(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
         let by = args.iter().find_map(|arg| match arg.view() {
             ValueView::Pair(name, value) if name == "by" => Some(value.clone()),
