@@ -3933,6 +3933,17 @@ impl Compiler {
                 // a by-name search over `code.locals`, which under shadow slots
                 // cannot tell one declaring scope's `$a` from another's.
                 let free_var_decl_slots = self.bake_sub_decl_free_var_slots(&compiled_routine_keys);
+                // mutsu#9111: a sub declared inside a routine binds its free
+                // variables per activation of the routine.
+                let lexsub_free_aliases = if name_expr.is_none()
+                    && !*multi
+                    && !custom_traits.iter().any(|(t, _)| t == "__our_scoped")
+                {
+                    let fp = self.code.sub_decl_plan_fingerprint(idx);
+                    self.alloc_lexsub_free_aliases(&name_str, fp, &compiled_routine_keys)
+                } else {
+                    Vec::new()
+                };
                 // The hoist pass registered this same declaration from a plan of
                 // its own, which never sees the compiled bodies. Hand them over,
                 // so a `multi` candidate installed by the hoisted registration
@@ -3950,11 +3961,15 @@ impl Compiler {
                     );
                     self.code
                         .set_sub_decl_free_var_decl_slots(hoisted_idx, free_var_decl_slots.clone());
+                    self.code
+                        .set_sub_decl_lexsub_free_aliases(hoisted_idx, lexsub_free_aliases.clone());
                 }
                 self.code
                     .set_sub_decl_compiled_routine_keys(idx, compiled_routine_keys);
                 self.code
                     .set_sub_decl_free_var_decl_slots(idx, free_var_decl_slots);
+                self.code
+                    .set_sub_decl_lexsub_free_aliases(idx, lexsub_free_aliases);
             }
             Stmt::MethodDecl {
                 name,

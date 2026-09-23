@@ -65,7 +65,9 @@ impl Interpreter {
         // Only a shared CELL may be cached: caching a plain environment value
         // would freeze it. (The capture pass gives a mainline `my` a cell as
         // soon as a named sub reads it, so this is the uncommon shape.)
-        if all_celled {
+        // A routine-nested sub's aliases are per activation of its declaring
+        // routine (mutsu#9111): a cell from one call is not the next call's.
+        if all_celled && !self.lexsub_free_aliases.contains_key(&chunk.name) {
             self.trir_outer_cache.insert(key, (cache_gen, bindings));
         }
         true
@@ -118,6 +120,10 @@ impl Interpreter {
     /// the caller. Asking by the callee's name is what the frame would have
     /// said, without the frame.
     fn trir_outer_binding(&self, callee: Symbol, name: &str) -> Option<Value> {
+        // mutsu#9111: a routine-nested sub's per-activation binding.
+        if let Some(v) = self.lexsub_alias_binding_for(callee, name) {
+            return Some(v);
+        }
         if let Some(bucket) = self.mainline_lexical_subs.get(callee.as_str())
             && let Some(v) = self.unit_lexicals.get(bucket).and_then(|m| m.get(name))
         {
