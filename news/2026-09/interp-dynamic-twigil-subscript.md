@@ -12,4 +12,4 @@ non-interpolated parser builds — and the subscript, zen-slice and
 `.method()` forms all follow. A bare `@*foo` / `%*foo` with no postcircumfix
 stays literal, as in Rakudo.
 
-Pinned by `t/lang/interp-dynamic-twigil-subscript.t` (#9166).
+Pinned by `t/collections/subscript/interp-dynamic-twigil-subscript.t` (#9166).
