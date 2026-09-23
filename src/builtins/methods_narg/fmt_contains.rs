@@ -132,16 +132,17 @@ pub(crate) fn native_contains_with_options(
         Some(_) => return None,
         None => 0,
     };
-    let text = target.to_string_value();
-    let len = text.chars().count() as i64;
-    if start < 0 || start > len {
+    if start < 0 {
         return None;
     }
-    let hay: String = text.chars().skip(start as usize).collect();
-    let result = if ignore_case {
-        contains_value_recursive_ci(&hay.to_lowercase(), needle)
-    } else {
-        contains_value_recursive(&hay, needle)
-    };
-    Some(Ok(result))
+    // The position is a grapheme index, resolved through the cached index
+    // rather than by re-collecting the suffix (#9140).
+    crate::builtins::grapheme_index::with_str_index(target, |text, idx| {
+        let hay = crate::builtins::grapheme_index::suffix_from(text, idx, start as usize)?;
+        Some(Ok(if ignore_case {
+            contains_value_recursive_ci(&hay.to_lowercase(), needle)
+        } else {
+            contains_value_recursive(hay, needle)
+        }))
+    })
 }

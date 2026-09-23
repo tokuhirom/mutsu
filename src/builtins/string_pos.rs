@@ -72,7 +72,7 @@ pub(crate) fn grapheme_offset(s: &str, byte_pos: usize) -> usize {
     if is_flat_ascii(s) {
         return byte_pos;
     }
-    grapheme_units(&s[..byte_pos]).len()
+    crate::builtins::grapheme_index::Units::from(&s[..byte_pos], 0).count()
 }
 
 /// The byte offset at which `s`'s **final** grapheme starts, or `s.len()` when
@@ -125,7 +125,7 @@ pub(crate) fn grapheme_len(s: &str) -> usize {
     if is_flat_ascii(s) {
         return s.len();
     }
-    grapheme_units(s).len()
+    crate::builtins::grapheme_index::Units::from(s, 0).count()
 }
 
 #[cfg(test)]

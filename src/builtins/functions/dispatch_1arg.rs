@@ -260,9 +260,9 @@ pub(crate) fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Val
                 .collect();
             Some(Ok(Value::seq(parts)))
         }
-        "chars" => Some(Ok(Value::int(crate::builtins::string_pos::grapheme_len(
-            &arg.to_string_value(),
-        ) as i64))),
+        "chars" => Some(Ok(Value::int(
+            crate::builtins::grapheme_index::with_str_index(arg, |_, idx| idx.len()) as i64,
+        ))),
         "chr" => {
             let (code, display) = match arg.view() {
                 ValueView::Int(i) => (i, format!("{}", i)),
@@ -318,13 +318,13 @@ pub(crate) fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Val
                 ))))
             }
         }
-        "ord" => {
-            if let Some(ch) = arg.to_string_value().chars().next() {
-                Some(Ok(Value::int(ch as u32 as i64)))
-            } else {
-                Some(Ok(Value::NIL))
-            }
-        }
+        "ord" => Some(Ok(crate::builtins::grapheme_index::with_str(
+            arg,
+            |s| match s.chars().next() {
+                Some(ch) => Value::int(ch as u32 as i64),
+                None => Value::NIL,
+            },
+        ))),
         "uniname" => {
             match arg.view() {
                 ValueView::Int(i) => match crate::builtins::unicode::uniname_from_int(i) {

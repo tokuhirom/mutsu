@@ -78,18 +78,16 @@ pub(crate) fn native_method_2arg(
         if pos < 0 {
             return None;
         }
-        let text = target.to_string_value();
-        let len = text.chars().count() as i64;
-        if pos > len {
-            return None;
-        }
         let needle = arg1.to_string_value();
-        let substr: String = text
-            .chars()
-            .skip(pos as usize)
-            .take(needle.chars().count())
-            .collect();
-        return Some(Ok(Value::truth(substr == needle)));
+        return crate::builtins::grapheme_index::with_str_index(target, |text, idx| {
+            let window = crate::builtins::grapheme_index::substr_eq_window(
+                text,
+                idx,
+                pos as usize,
+                &needle,
+            )?;
+            Some(Ok(Value::truth(window == needle)))
+        });
     }
 
     if method == "split" {
@@ -226,11 +224,7 @@ pub(crate) fn native_method_2arg(
                 )))
             }
         }
-        "substr" => crate::builtins::substr::native_substr_slice(
-            &target.to_string_value(),
-            arg1,
-            Some(arg2),
-        ),
+        "substr" => crate::builtins::substr::native_substr_slice(target, arg1, Some(arg2)),
         "base" => {
             let radix = match arg1.view() {
                 ValueView::Int(r) if (2..=36).contains(&r) => r as u32,

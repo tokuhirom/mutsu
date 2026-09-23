@@ -3,17 +3,20 @@ use super::*;
 /// Fold a string for `.contains` matching: `:ignoremark` strips combining marks
 /// (NFD, drop combining code points), `:ignorecase` lowercases. Applied to both
 /// the haystack and each needle so the comparison is symmetric.
-fn fold_for_contains(s: &str, ignore_case: bool, ignore_mark: bool) -> String {
+fn fold_for_contains(s: &str, ignore_case: bool, ignore_mark: bool) -> std::borrow::Cow<'_, str> {
+    use std::borrow::Cow;
     use unicode_normalization::UnicodeNormalization;
-    let stripped: String = if ignore_mark {
-        s.nfd()
-            .filter(|c| !unicode_normalization::char::is_combining_mark(*c))
-            .collect()
+    let stripped: Cow<'_, str> = if ignore_mark {
+        Cow::Owned(
+            s.nfd()
+                .filter(|c| !unicode_normalization::char::is_combining_mark(*c))
+                .collect(),
+        )
     } else {
-        s.to_string()
+        Cow::Borrowed(s)
     };
     if ignore_case {
-        stripped.to_lowercase()
+        Cow::Owned(stripped.to_lowercase())
     } else {
         stripped
     }
@@ -63,8 +66,9 @@ impl Interpreter {
         } else {
             0
         };
-        let text = target.to_string_value();
-        let len = text.chars().count() as i64;
+        // `start` is a grapheme index, resolved through the cached index (#9140).
+        let (text, idx) = crate::builtins::grapheme_index::str_and_index(&target);
+        let len = idx.len() as i64;
         if start < 0 || start > len {
             return Ok(RuntimeError::out_of_range_failure(
                 "start",
@@ -72,16 +76,16 @@ impl Interpreter {
                 &format!("0..{}", len),
             ));
         }
-        let hay: String = text.chars().skip(start as usize).collect();
+        let hay = &text[idx.byte_at(&text, start as usize)..];
         // A Regex needle means "does the pattern match anywhere from `start`?"
         // (`"abc".contains(/b/)`), not a literal search for the regex's gist.
         if let ValueView::Regex(pattern) = needle.view() {
-            let found = self.regex_find_first(&pattern, &hay).is_some();
+            let found = self.regex_find_first(&pattern, hay).is_some();
             return Ok(Value::truth(found));
         }
         // `:ignorecase`/`:ignoremark` fold the haystack once here; each needle is
         // folded the same way inside contains_value.
-        let folded_hay = fold_for_contains(&hay, ignore_case, ignore_mark);
+        let folded_hay = fold_for_contains(hay, ignore_case, ignore_mark);
         Ok(Self::contains_value(
             &folded_hay,
             &needle,
@@ -100,8 +104,9 @@ impl Interpreter {
                 Value::junction(kind, mapped)
             }
             _ => {
-                let needle = fold_for_contains(&needle.to_string_value(), ignore_case, ignore_mark);
-                let ok = hay.contains(&needle);
+                let raw = needle.to_string_value();
+                let needle = fold_for_contains(&raw, ignore_case, ignore_mark);
+                let ok = hay.contains(needle.as_ref() as &str);
                 Value::truth(ok)
             }
         }
@@ -160,14 +165,31 @@ impl Interpreter {
             .first()
             .map(|v| v.to_string_value())
             .unwrap_or_default();
-        let text = target.to_string_value();
+        crate::builtins::grapheme_index::with_str(&target, |text| {
+            Ok(Value::truth(self.prefix_suffix_matches(
+                text,
+                &needle,
+                is_prefix,
+                ignore_case,
+                ignore_mark,
+            )))
+        })
+    }
 
-        let ok = match (ignore_case, ignore_mark) {
+    fn prefix_suffix_matches(
+        &self,
+        text: &str,
+        needle: &str,
+        is_prefix: bool,
+        ignore_case: bool,
+        ignore_mark: bool,
+    ) -> bool {
+        match (ignore_case, ignore_mark) {
             (false, false) => {
                 if is_prefix {
-                    text.starts_with(needle.as_str())
+                    text.starts_with(needle)
                 } else {
-                    text.ends_with(needle.as_str())
+                    text.ends_with(needle)
                 }
             }
             (true, false) => {
@@ -180,8 +202,8 @@ impl Interpreter {
                 }
             }
             (false, true) => {
-                let t = self.strip_marks(&text);
-                let n = self.strip_marks(&needle);
+                let t = self.strip_marks(text);
+                let n = self.strip_marks(needle);
                 if is_prefix {
                     t.starts_with(n.as_str())
                 } else {
@@ -189,15 +211,14 @@ impl Interpreter {
                 }
             }
             (true, true) => {
-                let t = self.strip_marks(&text).to_lowercase();
-                let n = self.strip_marks(&needle).to_lowercase();
+                let t = self.strip_marks(text).to_lowercase();
+                let n = self.strip_marks(needle).to_lowercase();
                 if is_prefix {
                     t.starts_with(n.as_str())
                 } else {
                     t.ends_with(n.as_str())
                 }
             }
-        };
-        Ok(Value::truth(ok))
+        }
     }
 }

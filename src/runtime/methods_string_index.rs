@@ -1,5 +1,5 @@
 use super::*;
-use crate::builtins::string_pos::{grapheme_len, grapheme_offset, grapheme_units};
+use crate::builtins::string_pos::{grapheme_len, grapheme_offset};
 use crate::symbol::Symbol;
 
 impl Interpreter {
@@ -52,8 +52,10 @@ impl Interpreter {
         } else {
             0
         };
-        let text = target.to_string_value();
-        let len = grapheme_len(&text) as i64;
+        // Positions go through the cached grapheme index: the search starts at
+        // `start`'s byte offset instead of re-collecting the suffix (#9140).
+        let (text, idx) = crate::builtins::grapheme_index::str_and_index(&target);
+        let len = idx.len() as i64;
         if start < 0 {
             return Ok(RuntimeError::out_of_range_failure(
                 "start",
@@ -64,17 +66,19 @@ impl Interpreter {
         if start > len {
             return Ok(Value::NIL);
         }
-        let hay: String = grapheme_units(&text)[(start as usize).min(len as usize)..].concat();
+        let hay_at = idx.byte_at(&text, start as usize);
+        let hay = &text[hay_at..];
         let mut best: Option<usize> = None;
         for needle in &needles {
             let pos = if ignore_case && ignore_mark {
-                self.index_ignorecase_ignoremark(&hay, needle)
+                self.index_ignorecase_ignoremark(hay, needle)
             } else if ignore_case {
-                self.index_ignorecase(&hay, needle)
+                self.index_ignorecase(hay, needle)
             } else if ignore_mark {
-                self.index_ignoremark(&hay, needle)
+                self.index_ignoremark(hay, needle)
             } else {
-                hay.find(needle.as_str()).map(|p| grapheme_offset(&hay, p))
+                crate::builtins::grapheme_index::find_graphemes(&text, &idx, hay_at, needle)
+                    .map(|b| idx.grapheme_at(&text, b) - start as usize)
             };
             if let Some(char_pos) = pos {
                 best = Some(match best {
@@ -131,8 +135,8 @@ impl Interpreter {
         } else {
             0
         };
-        let text = target.to_string_value();
-        let len = grapheme_len(&text) as i64;
+        let (text, idx) = crate::builtins::grapheme_index::str_and_index(&target);
+        let len = idx.len() as i64;
         if start < 0 {
             return Ok(RuntimeError::out_of_range_failure(
                 "start",
@@ -140,25 +144,28 @@ impl Interpreter {
                 &format!("0..{}", len),
             ));
         }
-        let text_chars = grapheme_units(&text);
         let mut results: Vec<Value> = Vec::new();
         if needle.is_empty() {
-            for i in (start as usize)..=text_chars.len() {
+            for i in (start as usize)..=idx.len() {
                 results.push(Value::int(i as i64));
             }
         } else {
             let needle_len = grapheme_len(&needle);
             let mut pos = start as usize;
-            while pos <= text_chars.len() {
-                let hay: String = text_chars[pos..].concat();
+            // Each search resumes at `pos`'s byte offset, so one call is
+            // O(n + hits) rather than re-concatenating the suffix per hit.
+            while pos <= idx.len() {
+                let hay_at = idx.byte_at(&text, pos);
+                let hay = &text[hay_at..];
                 let found = if ignore_case && ignore_mark {
-                    self.index_ignorecase_ignoremark(&hay, &needle)
+                    self.index_ignorecase_ignoremark(hay, &needle)
                 } else if ignore_case {
-                    self.index_ignorecase(&hay, &needle)
+                    self.index_ignorecase(hay, &needle)
                 } else if ignore_mark {
-                    self.index_ignoremark(&hay, &needle)
+                    self.index_ignoremark(hay, &needle)
                 } else {
-                    hay.find(needle.as_str()).map(|p| grapheme_offset(&hay, p))
+                    crate::builtins::grapheme_index::find_graphemes(&text, &idx, hay_at, &needle)
+                        .map(|b| idx.grapheme_at(&text, b) - pos)
                 };
                 match found {
                     Some(char_pos) => {
@@ -209,8 +216,8 @@ impl Interpreter {
                         .unwrap_or_default(),
                 ]
             };
-        let text = target.to_string_value();
-        let char_len = grapheme_len(&text) as i64;
+        let (text, idx) = crate::builtins::grapheme_index::str_and_index(&target);
+        let char_len = idx.len() as i64;
         // Optional position argument (maximum char index to consider)
         let max_pos = if let Some(pos_val) = positional.get(1) {
             // Check for negative values first (returns Failure, not exception)
@@ -273,32 +280,18 @@ impl Interpreter {
         }
         let mut best: Option<usize> = None;
         for needle in &needles {
-            // Search the entire string with rfind
-            let pos = {
-                let chars = grapheme_units(&text);
-                let n_chars = grapheme_units(needle);
-                if n_chars.is_empty() {
-                    match max_pos {
-                        Some(p) => Some(p),
-                        None => Some(chars.len()),
-                    }
-                } else if n_chars.len() > chars.len() {
-                    None
-                } else {
-                    // max_start: the highest starting position where a match can begin
-                    let max_start = match max_pos {
-                        Some(p) => p.min(chars.len() - n_chars.len()),
-                        None => chars.len() - n_chars.len(),
-                    };
-                    let mut found = None;
-                    for i in (0..=max_start).rev() {
-                        if chars[i..i + n_chars.len()] == n_chars[..] {
-                            found = Some(i);
-                            break;
-                        }
-                    }
-                    found
-                }
+            // Search backwards for a match that starts and ends on grapheme
+            // boundaries, starting no later than `max_pos` (#9140: this used
+            // to segment the whole string and compare unit windows).
+            let pos = if needle.is_empty() {
+                Some(max_pos.unwrap_or(idx.len()))
+            } else {
+                let max_start = match max_pos {
+                    Some(p) => idx.byte_at(&text, p),
+                    None => text.len(),
+                };
+                crate::builtins::grapheme_index::rfind_graphemes(&text, &idx, max_start, needle)
+                    .map(|b| idx.grapheme_at(&text, b))
             };
             if let Some(char_pos) = pos {
                 best = Some(match best {

@@ -429,8 +429,9 @@ pub(crate) fn native_method_1arg(
             if let ValueView::Regex(..) = arg.view() {
                 return None;
             }
-            let s = target.to_string_value();
-            Some(Ok(contains_value_recursive(&s, arg)))
+            Some(Ok(crate::builtins::grapheme_index::with_str(target, |s| {
+                contains_value_recursive(s, arg)
+            })))
         }
         // starts-with / ends-with: the plain `.starts-with($needle)` form (a
         // single positional argument) is a pure prefix/suffix check on a Str
@@ -445,13 +446,16 @@ pub(crate) fn native_method_1arg(
                     method, type_name
                 ))));
             }
-            let text = target.to_string_value();
-            let needle = arg.to_string_value();
-            let ok = if method == "starts-with" {
-                text.starts_with(needle.as_str())
-            } else {
-                text.ends_with(needle.as_str())
-            };
+            let is_prefix = method == "starts-with";
+            let ok = crate::builtins::grapheme_index::with_str(target, |text| {
+                crate::builtins::grapheme_index::with_str(arg, |needle| {
+                    if is_prefix {
+                        text.starts_with(needle)
+                    } else {
+                        text.ends_with(needle)
+                    }
+                })
+            });
             Some(Ok(Value::truth(ok)))
         }
         "samemark" => {
@@ -534,19 +538,16 @@ pub(crate) fn native_method_1arg(
             ) {
                 return None;
             }
-            let s = target.to_string_value();
             let needle = arg.to_string_value();
-            match s.find(&needle) {
-                Some(pos) => {
-                    let char_pos = crate::builtins::string_pos::grapheme_offset(&s, pos);
-                    Some(Ok(Value::int(char_pos as i64)))
-                }
-                None => Some(Ok(Value::NIL)),
-            }
+            Some(Ok(crate::builtins::grapheme_index::with_str_index(
+                target,
+                |s, idx| match crate::builtins::grapheme_index::find_graphemes(s, idx, 0, &needle) {
+                    Some(pos) => Value::int(idx.grapheme_at(s, pos) as i64),
+                    None => Value::NIL,
+                },
+            )))
         }
-        "substr" => {
-            crate::builtins::substr::native_substr_slice(&target.to_string_value(), arg, None)
-        }
+        "substr" => crate::builtins::substr::native_substr_slice(target, arg, None),
         "indent" => {
             let s = target.to_string_value();
             let (result, warning) = str_indent(&s, arg);
@@ -1142,15 +1143,19 @@ pub(crate) fn native_method_1arg(
             ) {
                 return None;
             }
-            let s = target.to_string_value();
             let needle = arg.to_string_value();
-            match s.rfind(&needle) {
-                Some(pos) => {
-                    let char_pos = crate::builtins::string_pos::grapheme_offset(&s, pos);
-                    Some(Ok(Value::int(char_pos as i64)))
-                }
-                None => Some(Ok(Value::NIL)),
-            }
+            Some(Ok(crate::builtins::grapheme_index::with_str_index(
+                target,
+                |s, idx| match crate::builtins::grapheme_index::rfind_graphemes(
+                    s,
+                    idx,
+                    s.len(),
+                    &needle,
+                ) {
+                    Some(pos) => Value::int(idx.grapheme_at(s, pos) as i64),
+                    None => Value::NIL,
+                },
+            )))
         }
         "fmt" => {
             // A Format object argument is handled by the slow-path Format dispatch

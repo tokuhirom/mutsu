@@ -57,18 +57,21 @@ pub(crate) fn native_prefix_suffix_with_options(
     if let ValueView::Package(_) = needle_val.view() {
         return None;
     }
-    let text = target.to_string_value();
     let needle = needle_val.to_string_value();
-    let (t, n) = if ignore_case {
-        (text.to_lowercase(), needle.to_lowercase())
-    } else {
-        (text, needle)
-    };
-    let ok = if is_prefix {
-        t.starts_with(n.as_str())
-    } else {
-        t.ends_with(n.as_str())
-    };
+    let ok = crate::builtins::grapheme_index::with_str(target, |text| {
+        if ignore_case {
+            let (t, n) = (text.to_lowercase(), needle.to_lowercase());
+            if is_prefix {
+                t.starts_with(n.as_str())
+            } else {
+                t.ends_with(n.as_str())
+            }
+        } else if is_prefix {
+            text.starts_with(needle.as_str())
+        } else {
+            text.ends_with(needle.as_str())
+        }
+    });
     Some(Ok(Value::truth(ok)))
 }
 
@@ -107,21 +110,18 @@ pub(crate) fn native_substr_eq_with_options(
         Some(_) => return None,
         None => 0,
     };
-    let text = target.to_string_value();
-    let len = text.chars().count() as i64;
-    if start < 0 || start > len {
+    if start < 0 {
         return None;
     }
     let needle = needle_val.to_string_value();
-    let substr: String = text
-        .chars()
-        .skip(start as usize)
-        .take(needle.chars().count())
-        .collect();
-    let eq = if ignore_case {
-        substr.to_lowercase() == needle.to_lowercase()
-    } else {
-        substr == needle
-    };
-    Some(Ok(Value::truth(eq)))
+    crate::builtins::grapheme_index::with_str_index(target, |text, idx| {
+        let window =
+            crate::builtins::grapheme_index::substr_eq_window(text, idx, start as usize, &needle)?;
+        let eq = if ignore_case {
+            window.to_lowercase() == needle.to_lowercase()
+        } else {
+            window == needle
+        };
+        Some(Ok(Value::truth(eq)))
+    })
 }

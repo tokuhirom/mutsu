@@ -246,14 +246,14 @@ pub(crate) fn native_function_2arg(
             if matches!(arg2.view(), ValueView::Array(..)) {
                 return None;
             }
-            let s = arg1.to_string_value();
             let needle = arg2.to_string_value();
-            Some(Ok(match s.find(&needle) {
-                Some(pos) => {
-                    Value::int(crate::builtins::string_pos::grapheme_offset(&s, pos) as i64)
-                }
-                None => Value::NIL,
-            }))
+            Some(Ok(crate::builtins::grapheme_index::with_str_index(
+                arg1,
+                |s, idx| match crate::builtins::grapheme_index::find_graphemes(s, idx, 0, &needle) {
+                    Some(pos) => Value::int(idx.grapheme_at(s, pos) as i64),
+                    None => Value::NIL,
+                },
+            )))
         }
         "indices" => {
             // Fall through to runtime -- handles named params, overlap, etc.
@@ -264,14 +264,19 @@ pub(crate) fn native_function_2arg(
             if matches!(arg2.view(), ValueView::Array(..)) {
                 return None;
             }
-            let s = arg1.to_string_value();
             let needle = arg2.to_string_value();
-            Some(Ok(match s.rfind(&needle) {
-                Some(pos) => {
-                    Value::int(crate::builtins::string_pos::grapheme_offset(&s, pos) as i64)
-                }
-                None => Value::NIL,
-            }))
+            Some(Ok(crate::builtins::grapheme_index::with_str_index(
+                arg1,
+                |s, idx| match crate::builtins::grapheme_index::rfind_graphemes(
+                    s,
+                    idx,
+                    s.len(),
+                    &needle,
+                ) {
+                    Some(pos) => Value::int(idx.grapheme_at(s, pos) as i64),
+                    None => Value::NIL,
+                },
+            )))
         }
         "substr" => {
             if matches!(arg1.view(), ValueView::Junction { .. })
@@ -279,7 +284,7 @@ pub(crate) fn native_function_2arg(
             {
                 return None;
             }
-            crate::builtins::substr::native_substr_slice(&arg1.to_string_value(), arg2, None)
+            crate::builtins::substr::native_substr_slice(arg1, arg2, None)
         }
         "samemark" => {
             let target = arg1.to_string_value();

@@ -1,5 +1,4 @@
 use super::*;
-use crate::builtins::string_pos::grapheme_units;
 use crate::symbol::Symbol;
 
 /// Truncate an already-numeric `Value` towards zero.
@@ -79,9 +78,11 @@ impl Interpreter {
                 type_name
             )));
         }
-        let text = target.to_string_value();
+        // Positions are graphemes, like `substr` (codepoints used to be
+        // counted here, so `"q\x[301]a".substr-eq("a", 1)` was False).
+        let (text, idx) = crate::builtins::grapheme_index::str_and_index(&target);
         let needle = positional[0].to_string_value();
-        let len = text.chars().count() as i64;
+        let len = idx.len() as i64;
         let start = if let Some(pos) = positional.get(1) {
             match self.substr_resolve_position(pos, len as usize) {
                 Ok(v) => v,
@@ -97,17 +98,15 @@ impl Interpreter {
                 &format!("0..{}", len),
             ));
         }
-        let substr: String = text
-            .chars()
-            .skip(start as usize)
-            .take(needle.chars().count())
-            .collect();
+        let substr =
+            crate::builtins::grapheme_index::substr_eq_window(&text, &idx, start as usize, &needle)
+                .unwrap_or("");
         let eq = match (ignore_case, ignore_mark) {
             (false, false) => substr == needle,
             (true, false) => substr.to_lowercase() == needle.to_lowercase(),
-            (false, true) => self.strip_marks(&substr) == self.strip_marks(&needle),
+            (false, true) => self.strip_marks(substr) == self.strip_marks(&needle),
             (true, true) => {
-                self.strip_marks(&substr).to_lowercase() == self.strip_marks(&needle).to_lowercase()
+                self.strip_marks(substr).to_lowercase() == self.strip_marks(&needle).to_lowercase()
             }
         };
         Ok(Value::truth(eq))
@@ -118,9 +117,14 @@ impl Interpreter {
         target: Value,
         args: &[Value],
     ) -> Result<Value, RuntimeError> {
-        let s = target.to_string_value();
-        let chars = grapheme_units(&s);
-        let total_len = chars.len();
+        // Positions are resolved against the cached grapheme index, so a
+        // `substr` costs O(result), not O(invocant) (#9140).
+        let (s, idx) = crate::builtins::grapheme_index::str_and_index(&target);
+        let total_len = idx.len();
+        let slice = |start: usize, end: usize| {
+            let (b0, b1) = idx.byte_range(&s, start, end.saturating_sub(start));
+            Value::str(s[b0..b1].to_string())
+        };
 
         // Check if first arg is a Range — handle substr($str, 6..8) form
         if let Some(first_arg) = args.first()
@@ -129,7 +133,7 @@ impl Interpreter {
         {
             let rs = range_start.min(total_len);
             let re = range_end.min(total_len);
-            return Ok(Value::str(chars[rs..re].concat()));
+            return Ok(slice(rs, re));
         }
 
         // First arg: start position
@@ -200,7 +204,7 @@ impl Interpreter {
             total_len // no length: take rest
         };
 
-        Ok(Value::str(chars[start..end].concat()))
+        Ok(slice(start, end))
     }
 
     /// substr-rw in non-lvalue context: just return the substring (same as substr).
@@ -225,8 +229,7 @@ impl Interpreter {
             .get(var_name)
             .cloned()
             .unwrap_or(Value::str(String::new()));
-        let s = target.to_string_value();
-        let str_len = grapheme_units(&s).len();
+        let str_len = crate::builtins::grapheme_index::with_str_index(&target, |_, idx| idx.len());
 
         // Resolve range
         let (start, end) = self.resolve_substr_rw_range(args, str_len)?;

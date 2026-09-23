@@ -55,17 +55,16 @@ pub(super) fn dispatch(
                 return Some(Some(Err(err)));
             }
             Some(Some(Ok(Value::int(
-                crate::builtins::string_pos::grapheme_len(&target.to_string_value()) as i64,
+                crate::builtins::grapheme_index::with_str_index(target, |_, idx| idx.len()) as i64,
             ))))
         }
-        "ord" => {
-            let s = target.to_string_value();
-            if let Some(ch) = s.chars().next() {
-                Some(Some(Ok(Value::int(ch as u32 as i64))))
-            } else {
-                Some(Some(Ok(Value::NIL)))
-            }
-        }
+        "ord" => Some(Some(Ok(crate::builtins::grapheme_index::with_str(
+            target,
+            |s| match s.chars().next() {
+                Some(ch) => Value::int(ch as u32 as i64),
+                None => Value::NIL,
+            },
+        )))),
         "ords" => {
             let s = target.to_string_value();
             let normalized: String = s.nfc().collect();
@@ -153,10 +152,7 @@ pub(super) fn dispatch(
             }
             let ch = match target.view() {
                 ValueView::Int(i) => char::from_u32(i as u32),
-                _ => {
-                    let s = target.to_string_value();
-                    s.chars().next()
-                }
+                _ => crate::builtins::grapheme_index::with_str(target, |s| s.chars().next()),
             };
             let Some(ch) = ch else {
                 return Some(Some(Ok(Value::NIL)));
