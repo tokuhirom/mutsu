@@ -1274,6 +1274,11 @@ impl Interpreter {
         }
         let start = self.stack.len() - arity;
         let raw_args: Vec<Value> = self.stack.drain(start..).collect();
+        // The arguments exactly as a resolution-cache hit would hand them to
+        // TRIR (`VarRef`-tagged, unspread), so the call that resolves the
+        // name can enter a TRIR routine too (`trir/entry_values.rs`). Only a
+        // positional-only call without a `|` argument has that shape.
+        let trir_args = (!call_has_named && !call_has_slip).then(|| raw_args.clone());
         // ADR-0054 S2: spread only the positions the caller wrote as
         // `|EXPR` -- decided by call-site syntax, not by a value merely
         // evaluating to a Slip (`f(@a.Slip)` stays one argument).
@@ -1491,6 +1496,7 @@ impl Interpreter {
             call_has_named,
             call_me_override,
             compiled_fns,
+            trir_args.as_deref(),
         ) {
             Ok(v) => v,
             Err(e) => {
@@ -1741,6 +1747,7 @@ impl Interpreter {
         call_has_named: bool,
         call_me_override: Option<Value>,
         compiled_fns: &CompiledFns,
+        trir_args: Option<&[Value]>,
     ) -> Result<Value, RuntimeError> {
         // `f(...) = v` where `f` is a LEXICAL code variable rather than a
         // declared sub (`my &nextone := nextcallee; nextone(self,$key) = $v`).
@@ -1811,6 +1818,20 @@ impl Interpreter {
                 return Err(e);
             }
             if let Some(cf) = compiled {
+                // ADR-0110 / ADR-0112: a TRIR routine runs its chunk on the
+                // call that resolved it too, not only on later resolution-
+                // cache hits (see `trir/entry_values.rs`). Same admissions as
+                // the hit path in `exec_call_func_op`; a multi name is left
+                // to the dispatch below, as the name-keyed caches leave it.
+                if let Some(raw) = trir_args
+                    && cf.trir.is_some()
+                    && !self.has_multi_candidates_cached_sym(name_sym)
+                    && let Some(result) = self.try_call_trir_values(cf, raw, code, compiled_fns)
+                {
+                    let result = result?;
+                    self.drain_and_reconcile_after_cached_call(code);
+                    return Ok(result);
+                }
                 // Try positional light call path first (ultra-fast, no env clone).
                 // Skip for multi functions since the cache doesn't differentiate by arg types.
                 if !call_has_named
@@ -2161,8 +2182,12 @@ impl Interpreter {
                         };
                         if gate_ok {
                             let returns_container = Self::routine_is_rw_capable(&def);
-                            let result =
-                                self.compile_and_call_function_def(&def, args, compiled_fns)?;
+                            let result = self.compile_and_call_function_def_at(
+                                &def,
+                                args,
+                                compiled_fns,
+                                trir_args.map(|raw| (code, raw)),
+                            )?;
                             return loan_env!(
                                 self,
                                 maybe_fetch_rw_proxy(result, !returns_container)
@@ -2215,7 +2240,13 @@ impl Interpreter {
                 && Self::def_is_otf_compilable(&def)
                 {
                     let returns_container = Self::routine_is_rw_capable(&def);
-                    let result = self.compile_and_call_function_def(&def, args, compiled_fns)?;
+                    let caller_code = trir_args.map(|raw| (code, raw));
+                    let result = self.compile_and_call_function_def_at(
+                        &def,
+                        args,
+                        compiled_fns,
+                        caller_code,
+                    )?;
                     loan_env!(self, maybe_fetch_rw_proxy(result, !returns_container))
                 } else if let Some(result) = self.try_nativecast(name, &args) {
                     // NativeCall's `nativecast($target-type, $source)` helper.

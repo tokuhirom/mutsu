@@ -135,6 +135,7 @@ impl Interpreter {
         let Some(callee) = cf.trir.clone() else {
             return;
         };
+        callee.note_def_file(&cf);
         let pkg = super::entry::trir_body_package(&cf);
         self.trir.gen_links.links.insert(
             (chunk.id, site),
@@ -252,7 +253,7 @@ impl Interpreter {
         // frame's operand marks, so drop them from under it.
         self.trir.os.drain(os_first..os_first + n_values);
         callee_frame.os_mark -= n_values as u32;
-        let outcome = self.run_trir_chunk(&callee, callee_frame, compiled_fns);
+        let outcome = self.run_trir_routine(&callee, callee_frame, compiled_fns);
         drop(guard);
         self.trir.pop_frame(callee_frame);
         super::stats::record_gen_link();

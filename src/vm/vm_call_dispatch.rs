@@ -390,6 +390,21 @@ impl Interpreter {
         args: Vec<Value>,
         compiled_fns: &CompiledFns,
     ) -> Result<Value, RuntimeError> {
+        self.compile_and_call_function_def_at(def, args, compiled_fns, None)
+    }
+
+    /// [`Self::compile_and_call_function_def`] for a `CallFunc` whose
+    /// positional-only arguments came straight off `caller`'s code stack, as
+    /// they were before normalization (`VarRef`-tagged). That is what lets a
+    /// TRIR routine run its chunk on this, its resolving call
+    /// (`trir/entry_values.rs`): an `is rw` argument names a slot of that code.
+    pub(crate) fn compile_and_call_function_def_at(
+        &mut self,
+        def: &crate::ast::FunctionDef,
+        args: Vec<Value>,
+        compiled_fns: &CompiledFns,
+        caller: Option<(&CompiledCode, &[Value])>,
+    ) -> Result<Value, RuntimeError> {
         // Use the pending callsite line for deprecation tracking,
         // since ?LINE in env may not reflect the call site yet.
         let callsite_line = crate::runtime::Interpreter::peek_callsite_line(&args)
@@ -441,6 +456,23 @@ impl Interpreter {
                 name_sym,
                 (cur_pkg_sym, def.package, Arc::clone(&cf)),
             );
+        }
+
+        // The name cache above now serves the next call, whose resolution-
+        // cache hit enters TRIR; this call enters it the same way.
+        if let Some((code, raw)) = caller
+            && cf.trir.is_some()
+            && !self.has_multi_candidates_cached(&name)
+            && let Some(result) = self.try_call_trir_values(
+                &cf,
+                raw,
+                code,
+                cf.compiled_fns.as_deref().unwrap_or(compiled_fns),
+            )
+        {
+            let result = result?;
+            self.drain_and_reconcile_after_cached_call(code);
+            return Ok(result);
         }
 
         // Set up samewith and multi-dispatch context that call_compiled_function_named

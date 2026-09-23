@@ -159,6 +159,7 @@ impl TrirCompiler<'_> {
             arity: args.len() as u8,
         });
         self.nqp_sourced = true;
+        self.nqp_int_result = nqp_op_returns_int(op);
         Some(TrKind::Obj)
     }
 
@@ -295,4 +296,28 @@ fn nqp_form(op: &str) -> Option<NqpForm> {
         "eqat" => (OOI, Int, &[TrOp::EqAtS]),
         _ => return None,
     })
+}
+
+/// Whether `nqp::op` returns a native int, by NQP's own naming: the typed
+/// `_i` ops, every `is*` predicate, and the int-valued queries.
+fn nqp_op_returns_int(op: &str) -> bool {
+    op.ends_with("_i")
+        || op.starts_with("is")
+        || matches!(
+            op,
+            "eqat"
+                | "elems"
+                | "chars"
+                | "ord"
+                | "ordat"
+                | "index"
+                | "rindex"
+                | "findcclass"
+                | "findnotcclass"
+                | "existskey"
+                | "existspos"
+                | "eqaddr"
+                | "cmp_s"
+                | "cmp_n"
+        )
 }

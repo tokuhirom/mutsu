@@ -10260,6 +10260,9 @@ impl CompiledFunction {
             self.source_file = source_file.clone();
             self.source_file_sym_cache = std::sync::OnceLock::new();
         }
+        if let Some(chunk) = &self.trir {
+            chunk.note_def_file(self);
+        }
         // The bytecode half (ADR-0106 Slice 0): a nested body compiled as part
         // of its parent is built before the parent's file is known, so the
         // ambient stamp `CompiledCode::new()` applies can be `None` here.

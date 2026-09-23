@@ -428,6 +428,17 @@ impl Interpreter {
                 } else {
                     "CREATE"
                 };
+                // `nqp::create` is the REPR-level allocation: it never runs a
+                // user `CREATE` method (rakudo prints nothing for a class whose
+                // `method CREATE` says something). Allocate directly rather
+                // than through `call_method_with_values`, whose resolution
+                // walk before its own `CREATE` arm cost ~20K instructions a
+                // call (#9122).
+                if method == "CREATE"
+                    && let Some(result) = self.dispatch_create(&ty)
+                {
+                    return Some(result);
+                }
                 Ok(match self.call_method_with_values(ty, method, vec![]) {
                     Ok(v) => v,
                     Err(e) => return Some(Err(e)),

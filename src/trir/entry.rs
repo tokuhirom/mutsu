@@ -96,6 +96,7 @@ impl Interpreter {
             return None;
         }
         let chunk = cf.trir.as_ref()?.clone();
+        chunk.note_def_file(cf);
         if self.stack.len() - args_base != chunk.params.len() {
             return None;
         }
@@ -141,7 +142,7 @@ impl Interpreter {
             super::stats::record(super::stats::TrirEntry::BindDeclined);
             return None;
         }
-        let outcome = self.run_trir_chunk(chunk, frame, compiled_fns);
+        let outcome = self.run_trir_routine(chunk, frame, compiled_fns);
         drop(guard);
         let result = match outcome {
             Ok(TrOutcome::Value(v)) => v,
