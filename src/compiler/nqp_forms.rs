@@ -7,6 +7,7 @@ use super::*;
 /// (`1 << (flags >> 2)` bytes).
 pub(crate) fn nqp_const_value(name: &str) -> Option<i64> {
     let konst = name.strip_prefix("nqp::const::")?;
+    // Cost: O(1) at run time (every constant folds to an integer literal at compile time).
     Some(match konst {
         "BINARY_ENDIAN_NATIVE" => 0,
         "BINARY_ENDIAN_LITTLE" => 1,
@@ -62,6 +63,7 @@ impl Compiler {
     pub(super) fn try_compile_nqp_form(&mut self, name: &str, args: &[Expr]) -> bool {
         match name {
             // nqp::stmts(a, b, ..., z) — evaluate in order, yield the last.
+            // Cost: O(1) (compiles to sequenced code + Pop; no runtime op).
             "nqp::stmts" => {
                 if args.is_empty() {
                     let nil_idx = self.code.add_constant(Value::NIL);
@@ -77,6 +79,7 @@ impl Compiler {
                 true
             }
             // nqp::if(c, t) / nqp::if(c, t, e) — lazy, value-yielding.
+            // Cost: O(1) (compiles to jumps; no runtime op).
             "nqp::if" | "nqp::unless" if args.len() == 2 || args.len() == 3 => {
                 self.compile_expr(&args[0]);
                 let jump_else = if name == "nqp::if" {
@@ -105,6 +108,7 @@ impl Compiler {
             // arms ran. mutsu has no VM-level null distinct from an undefined
             // Raku value, so "null" is tested as undefined — which also makes a
             // type object take the `b` arm.
+            // Cost: O(1) (compiles to jumps; no runtime op).
             "nqp::ifnull" if args.len() == 2 => {
                 self.compile_expr(&args[0]);
                 // `JumpIfNotNil` peeks, so the defined value is already the
@@ -119,6 +123,7 @@ impl Compiler {
             // the handler only when it throws. NQP uses this around filesystem
             // operations such as opendir, where the handler can return an
             // empty iterator after a missing directory.
+            // Cost: O(1) (compiles to a try/CATCH region; no runtime op).
             "nqp::handle" if args.len() == 3 => {
                 let body = vec![Stmt::Expr(args[0].clone())];
                 let catch = Some(vec![Stmt::Default(vec![Stmt::Expr(args[2].clone())])]);
@@ -127,6 +132,7 @@ impl Compiler {
             }
             // nqp::while(c, body) / nqp::until(c, body) — re-evaluate the
             // condition each iteration; yields Nil.
+            // Cost: O(1) per iteration (compiles to jumps; no runtime op).
             "nqp::while" | "nqp::until" if args.len() == 2 => {
                 let loop_start = self.code.ops.len();
                 self.compile_expr(&args[0]);

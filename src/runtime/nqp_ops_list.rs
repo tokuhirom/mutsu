@@ -312,6 +312,7 @@ impl Interpreter {
             // contract as the typed twins (`push_s`/`push_i`/`push_n`, in
             // `nqp_ops_text.rs`), which nqp code chains off directly (e.g.
             // `nqp::add_i(nqp::push_i(@positions,$pos),$move)`).
+            // Cost: O(1) amortized.
             "push" => {
                 let target = args.first().cloned().unwrap_or(Value::NIL);
                 let val = args.get(1).cloned().unwrap_or(Value::NIL);
@@ -323,6 +324,7 @@ impl Interpreter {
             // nqp::pop($list) and its typed twins: remove and return the LAST
             // element. An empty list yields the type's zero rather than an
             // error, matching how `atpos_*` answers out of range.
+            // Cost: O(1); pop_s O(n), n = chars of the popped element (copied).
             "pop" | "pop_s" | "pop_i" | "pop_n" => {
                 match Self::nqp_with_elems_mut(
                     op,
@@ -336,6 +338,7 @@ impl Interpreter {
             // nqp::shift($list) and its typed twins: remove and return the
             // FIRST element. `JSON::Fast`'s string scanner drives its whole
             // `Uni` of codepoints this way.
+            // Cost: O(e), e = elements (Vec::remove(0)). MoarVM: O(1) -- see #9121.
             "shift" | "shift_s" | "shift_i" | "shift_n" => {
                 Self::nqp_shift(op, &args.first().cloned().unwrap_or(Value::NIL))
             }
@@ -344,6 +347,7 @@ impl Interpreter {
             // sparse lookup tables this way — `JSON::Fast` indexes one by
             // codepoint to decode a hex digit — so the gaps have to read back
             // as something falsy, which is what `Value::NIL` gives.
+            // Cost: O(1) amortized; O(i - e) when growing, i = index, e = elements.
             "bindpos" => {
                 let target = args.first().cloned().unwrap_or(Value::NIL);
                 let idx = iarg(args, 1).max(0) as usize;
@@ -363,6 +367,7 @@ impl Interpreter {
             // Lower level than Raku's `chr` (no `Cool` coercion), but it
             // rejects a non-scalar value the same way, because there is no
             // string that could hold one.
+            // Cost: O(1).
             "chr" => {
                 let cp = iarg(args, 0);
                 match u32::try_from(cp).ok().and_then(char::from_u32) {
@@ -375,6 +380,7 @@ impl Interpreter {
             // nqp::hash('k', $v, ...): a fresh VM hash from alternating
             // key/value arguments — the associative twin of `nqp::list`. An
             // odd trailing argument binds to Nil, as nqp does.
+            // Cost: O(a + c), a = arguments, c = total chars of the keys.
             "hash" => {
                 let mut map = ValueMap::default();
                 for pair in args.chunks(2) {
@@ -404,6 +410,7 @@ impl Interpreter {
             // `Int`, `Str` and a type object do not. That is narrower than
             // `Value::itemize_for_element_store`, which also itemizes every
             // `Range` variant — right for its own call sites, wrong here.
+            // Cost: O(1).
             "p6scalarwithvalue" => {
                 let value = crate::runtime::types::unwrap_varref_value(
                     args.get(1).cloned().unwrap_or(Value::NIL),
@@ -417,6 +424,8 @@ impl Interpreter {
             // attribute and return the INVOCANT rather than the value, so a
             // mutating method stays chainable. The standard way nqp code
             // hands back a freshly populated object.
+            // Cost: O(a), a = attributes of $obj (whole map cloned); O(e) for a
+            // $!reified/$!storage bind, e = elements copied. MoarVM: O(1) -- see #9134.
             "p6bindattrinvres" => {
                 let obj = args.first().cloned().unwrap_or(Value::NIL);
                 let attr = args.get(2).map(|v| v.to_string_value()).unwrap_or_default();

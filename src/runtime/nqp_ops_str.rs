@@ -48,6 +48,8 @@ impl Interpreter {
             // that runs past the end truncates — nqp's own behaviour, which
             // `String::Utils`'s scanners rely on (they walk with an index that
             // may reach `chars($s)`).
+            // Cost: O(k) cache hit, O(n) miss, k = chars returned, n = chars of $s.
+            // MoarVM: O(k) -- see #9129.
             "substr" => {
                 // Memoized (see `nqp_char_cache`): a hand-rolled NQP scanner
                 // calls `nqp::substr($text, $pos, ...)` once per token over
@@ -69,10 +71,13 @@ impl Interpreter {
                 let end = from.saturating_add(want).min(total);
                 Ok(Value::str(chars[from..end].iter().collect::<String>()))
             }
+            // Cost: O(n1 + n2), n1, n2 = chars of the operands.
             "concat" => Ok(Value::str(format!("{}{}", sarg(args, 0), sarg(args, 1)))),
             // nqp::index / rindex return **-1** when the needle is absent,
             // where Raku's `index` returns Nil. nqp code branches on exactly
             // that, so the -1 is the contract, not a placeholder.
+            // Cost: O((n - from) * m) (+ O(n) on a char-cache miss), n = chars of
+            // haystack, m = chars of needle. MoarVM: O((n - from) * m) -- see #9129.
             "index" | "rindex" => {
                 let needle = sarg(args, 1);
                 // The haystack is memoized (see `nqp_char_cache`): a
@@ -108,6 +113,8 @@ impl Interpreter {
             // contract as `index` above. `has-word`'s own case/mark folding
             // (`find-wordic`/`find-wordim`/`find-wordicim`) is what these
             // exist for.
+            // Cost: O((n - from) * m) (+ O(n) on a char-cache miss), n = chars of
+            // haystack, m = chars of needle. MoarVM: O((n - from) * m) -- see #9129.
             "indexic" | "indexim" | "indexicim" => {
                 let needle = sarg(args, 1);
                 let chars = super::nqp_char_cache::cached_chars(args, 0);
@@ -137,9 +144,13 @@ impl Interpreter {
                 };
                 Ok(Value::int(found.map(|i| i as i64).unwrap_or(-1)))
             }
+            // Cost: O(n), n = chars of $s.
             "flip" => Ok(Value::str(sarg(args, 0).chars().rev().collect::<String>())),
+            // Cost: O(n), n = chars of $s.
             "uc" => Ok(Value::str(sarg(args, 0).to_uppercase())),
+            // Cost: O(n), n = chars of $s.
             "lc" => Ok(Value::str(sarg(args, 0).to_lowercase())),
+            // Cost: O(n * c), n = chars of $s, c = repeat count.
             "x" => {
                 let n = iarg(args, 1);
                 let n = if n < 0 { 0 } else { n as usize };
@@ -151,6 +162,7 @@ impl Interpreter {
             // that is what nqp callers assume: `abbrev` reaches for a Map's
             // storage once and then builds it with bindkey/deletekey, expecting
             // the Map it already holds to reflect every write.
+            // Cost: O(m) average, m = chars of the key.
             "bindkey" | "deletekey" => {
                 let target = args.first().cloned().unwrap_or(Value::NIL);
                 let target = crate::runtime::types::unwrap_varref_value(target);
@@ -172,6 +184,7 @@ impl Interpreter {
                     Ok(data.map.remove(&key).unwrap_or(Value::NIL))
                 }
             }
+            // Cost: O(m) average, m = chars of the key.
             "existskey" => {
                 let target = crate::runtime::types::unwrap_varref_value(
                     args.first().cloned().unwrap_or(Value::NIL),
@@ -190,6 +203,7 @@ impl Interpreter {
             // `clone_nd` is the no-decontainerize sibling; operands are
             // already decontainerized once at the `call_nqp_op` boundary, so
             // it shares this implementation (see `nqp_ops.rs`).
+            // Cost: O(e) for an array/hash, e = elements; O(1) otherwise.
             "clone" | "clone_nd" => {
                 let v = crate::runtime::types::unwrap_varref_value(
                     args.first().cloned().unwrap_or(Value::NIL),
