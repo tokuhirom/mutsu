@@ -396,6 +396,9 @@ def sandbox_wrap(cmd, root, sbx_home, mem_kb=6_000_000, nproc=400, *, writable=(
         "--tmpfs", "/run",
         "--tmpfs", sbx_home,          # writable throwaway HOME (tmpfs over an existing dir)
         "--setenv", "HOME", sbx_home,
+        # Keep interpreter precompilation caches out of the read-only host
+        # filesystem; the parent process may spawn children that also need it.
+        "--setenv", "XDG_CACHE_HOME", os.path.join(sbx_home, ".cache"),
         "--setenv", "NO_NETWORK_TESTING", "1",
         "--chdir", root,
         "--die-with-parent",
@@ -894,6 +897,13 @@ def _self_test() -> int:
                 print(f"sandbox_wrap: malformed NO_NETWORK_TESTING setenv: {wrapped!r}",
                       file=sys.stderr)
                 failures += 1
+        cache_idx = wrapped.index("XDG_CACHE_HOME") if "XDG_CACHE_HOME" in wrapped else -1
+        expected_cache = os.path.join(tmp, "home", ".cache")
+        if (cache_idx < 1 or wrapped[cache_idx - 1] != "--setenv"
+                or wrapped[cache_idx + 1] != expected_cache):
+            print(f"sandbox_wrap: malformed XDG_CACHE_HOME setenv: {wrapped!r}",
+                  file=sys.stderr)
+            failures += 1
 
     print(f"ecosystem_common self-test: "
           f"{'all cases pass' if not failures else f'{failures} failure(s)'}")
