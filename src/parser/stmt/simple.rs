@@ -466,3 +466,33 @@ sub helper() { }
         }
     }
 }
+
+impl LexicalScope {
+    /// Hand every name this scope binds to the CORE type fold
+    /// (`parser::core_type_fold`, ADR-0115), which must not fold a name the
+    /// unit binds anywhere.
+    fn note_bound_names(&self) {
+        use crate::parser::core_type_fold::note_bound;
+        self.user_subs
+            .iter()
+            .chain(&self.imported_functions)
+            .chain(&self.user_types)
+            .chain(&self.user_enum_values)
+            .chain(&self.imported_value_terms)
+            .chain(self.term_symbols.keys())
+            .chain(self.compile_time_constants.keys())
+            .for_each(|n| note_bound(n));
+    }
+}
+
+/// Hand the names of every scope still open to the CORE type fold, and turn
+/// the fold off for a unit whose imports the parse cannot see in full: one
+/// that imported through a `sub EXPORT` hook, or `use`d a module no scan
+/// could resolve (a `use lib` computed at run time, a `require`). Called once,
+/// when the unit has parsed and before the fold runs.
+pub(crate) fn settle_core_type_fold() {
+    SCOPES.with(|s| s.borrow().iter().for_each(LexicalScope::note_bound_names));
+    if term_keywords_shadowable() || !type_index_is_complete() {
+        crate::parser::core_type_fold::disable_unit();
+    }
+}

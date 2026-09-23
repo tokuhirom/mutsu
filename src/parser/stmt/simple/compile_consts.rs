@@ -208,8 +208,10 @@ pub(crate) fn self_available() -> bool {
 pub(crate) fn pop_scope() {
     SCOPES.with(|s| {
         let mut scopes = s.borrow_mut();
-        if scopes.len() > 1 {
-            scopes.pop();
+        if scopes.len() > 1
+            && let Some(scope) = scopes.pop()
+        {
+            scope.note_bound_names();
         }
     });
 }
