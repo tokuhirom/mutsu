@@ -1,13 +1,14 @@
 use Test;
 use nqp;
 
-plan 17;
+plan 22;
 
 # Removing the first element used to be `Vec::remove(0)`, a memmove of the
 # whole remaining array, so consuming a list from the front was quadratic.
 # JSON::Fast's `unjsonify-string` `nqp::shift_i`s every codepoint off a `Uni`,
 # which made decoding a long escaped string quadratic in its length (#9121).
-# The array now keeps a head offset (as MoarVM's VMArray does), so these pin
+# `unshift` (an `insert(0)`) had the same cost at the other end. The array
+# now keeps a head offset (as MoarVM's VMArray does), so these pin
 # both that the offset is invisible to every other operation and that the
 # shift loop is linear.
 
@@ -49,6 +50,20 @@ plan 17;
     is nqp::shift($l), 1, 'nqp::shift answers the first element';
     is nqp::elems($l), 3, 'nqp::elems after nqp::shift';
     is nqp::atpos($l, 0), 2, 'nqp::atpos(0) is the new front';
+}
+
+{
+    my @u;
+    @u.unshift($_) for ^10;
+    is @u.join(','), '9,8,7,6,5,4,3,2,1,0', 'repeated unshift prepends in order';
+    is @u.shift, 9, 'shift after unshifts answers the last one prepended';
+    @u.unshift('x');
+    @u.push('y');
+    is @u.join(','), 'x,8,7,6,5,4,3,2,1,0,y', 'unshift reuses a shifted slot; push still appends';
+    my $l := nqp::list();
+    nqp::unshift($l, $_) for ^5;
+    is nqp::elems($l), 5, 'nqp::elems after nqp::unshift';
+    is nqp::shift($l), 4, 'nqp::unshift puts each element at the front';
 }
 
 # The consuming loop itself, timed at two sizes. The assertion is a *ratio*

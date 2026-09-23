@@ -1,4 +1,4 @@
-//! `ArrayData`'s front-shift head offset (#9121) and the `Vec` mutators that
+//! `ArrayData`'s front head offset (#9121), serving both `shift` and `unshift`, and the `Vec` mutators that
 //! have to be forwarded explicitly now that `Deref` targets the live slice.
 
 use super::{ArrayData, Value};
@@ -95,7 +95,27 @@ impl ArrayData {
     }
 
     pub(crate) fn insert(&mut self, index: usize, value: Value) {
-        self.items_mut().insert(index, value);
+        if index == 0 && self.native.is_none() {
+            self.unshift_front(value);
+        } else {
+            self.items_mut().insert(index, value);
+        }
+    }
+
+    /// Prepend one element in amortized O(1) (#9121): the dead prefix doubles
+    /// as front slack. With none left, it is regrown to the live length, so a
+    /// run of n unshifts moves each element O(1) times rather than O(n).
+    fn unshift_front(&mut self, value: Value) {
+        if self.head == 0 {
+            let gap = self.items.len().max(4);
+            let mut grown = Vec::with_capacity(gap + self.items.len());
+            grown.resize(gap, Value::NIL);
+            grown.append(&mut self.items);
+            self.items = grown;
+            self.head = gap;
+        }
+        self.head -= 1;
+        self.items[self.head] = value;
     }
 
     pub(crate) fn remove(&mut self, index: usize) -> Value {

@@ -1,4 +1,4 @@
-# Shifting an array's first element is amortized O(1)
+# Shifting and unshifting an array's front is amortized O(1)
 
 `nqp::shift` / `nqp::shift_i` and `Array.shift` removed the first element with
 `Vec::remove(0)`, a memmove of the whole remaining array, so consuming a list
@@ -17,7 +17,14 @@ targets the live slice (`[Value]`) instead of `&Vec<Value>`, `items_mut()` /
 `Vec` mutators callers relied on through `DerefMut` (`push`, `pop`, `extend`,
 `insert`, `remove`, ...) are forwarded explicitly -- `remove(0)` routes to
 `shift_front`, which is how the `Array.shift` method paths pick it up. `Clone`
-copies only the live elements. A native-backed (ADR-0030) array never carries
+copies only the live elements.
+
+`unshift` (`nqp::unshift`, `Array.unshift`, any `insert(0, ..)`) had the same
+cost at the other end, and the same offset serves it: the dead prefix doubles
+as front slack, and when there is none left it is regrown to the live length,
+so n unshifts move each element O(1) times. `scripts/nqp-complexity-check.sh
+shift unshift` went from doubling ratios of 3.95 / 3.85 (quadratic) to 1.92 /
+1.76. A native-backed (ADR-0030) array never carries
 a head offset; its shift keeps the old path.
 
 ## Measured
@@ -43,5 +50,5 @@ ns/elem, so what is left belongs to the parent tracking issue (#8673).
 
 Pinned by `t/collections/array/array-shift-is-constant-time.t`, which checks that
 the offset is invisible to indexing, iteration, `push`/`unshift`/`pop`,
-`eqv` and `.clone`, and that draining a 4x longer `Uni` with `nqp::shift_i`
+`eqv` and `.clone`, unshift ordering, and that draining a 4x longer `Uni` with `nqp::shift_i`
 costs ~4x rather than ~16x.
