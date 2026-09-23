@@ -418,9 +418,8 @@ pub(crate) fn native_method_1arg(
                 .collect();
             Some(Ok(Value::array(props)))
         }
-        // Cost: O(n + m), n = chars of the invocant, m = chars of the needle (the
-        // invocant is copied before the search, even for a hit near the front).
-        // Rakudo: O(p + m), p = match position -- see #9140.
+        // Cost: O(p + m), p = match position, m = chars of the needle (the
+        // invocant is borrowed).
         "contains" => {
             if let ValueView::Package(type_name) = arg.view() {
                 return Some(Err(RuntimeError::new(format!(
@@ -433,8 +432,9 @@ pub(crate) fn native_method_1arg(
             if let ValueView::Regex(..) = arg.view() {
                 return None;
             }
-            let s = target.to_string_value();
-            Some(Ok(contains_value_recursive(&s, arg)))
+            Some(Ok(crate::builtins::grapheme_index::with_str(target, |s| {
+                contains_value_recursive(s, arg)
+            })))
         }
         // starts-with / ends-with: the plain `.starts-with($needle)` form (a
         // single positional argument) is a pure prefix/suffix check on a Str
@@ -442,8 +442,7 @@ pub(crate) fn native_method_1arg(
         // (`:i`/`:ignorecase`/`:m`/`:ignoremark`) carry a second (Pair) argument
         // and so never reach this 1-arg path — they keep falling through to the
         // interpreter's `dispatch_prefix_suffix_check` (runtime/methods_string.rs).
-        // Cost: O(n + m), n = chars of the invocant, m = chars of the needle (the
-        // invocant is copied to compare its first/last m chars). Rakudo: O(m) -- see #9140.
+        // Cost: O(m), m = chars of the needle (both are borrowed).
         "starts-with" | "ends-with" if matches!(target.view(), ValueView::Str(_)) => {
             if let ValueView::Package(type_name) = arg.view() {
                 return Some(Err(RuntimeError::new(format!(
@@ -451,13 +450,16 @@ pub(crate) fn native_method_1arg(
                     method, type_name
                 ))));
             }
-            let text = target.to_string_value();
-            let needle = arg.to_string_value();
-            let ok = if method == "starts-with" {
-                text.starts_with(needle.as_str())
-            } else {
-                text.ends_with(needle.as_str())
-            };
+            let is_prefix = method == "starts-with";
+            let ok = crate::builtins::grapheme_index::with_str(target, |text| {
+                crate::builtins::grapheme_index::with_str(arg, |needle| {
+                    if is_prefix {
+                        text.starts_with(needle)
+                    } else {
+                        text.ends_with(needle)
+                    }
+                })
+            });
             Some(Ok(Value::truth(ok)))
         }
         // Cost: O(n + m), n = chars of the invocant, m = chars of the mark source.
@@ -533,9 +535,8 @@ pub(crate) fn native_method_1arg(
             };
             Some(Ok(result))
         }
-        // Cost: O(n + m), n = chars of the invocant, m = chars of the needle (copy,
-        // search, and a flat-ASCII check or grapheme count to turn the byte offset
-        // into a char offset). Rakudo: O(p + m), p = match position -- see #9140.
+        // Cost: O(p + m) amortized, p = match position, m = chars of the needle;
+        // the byte offset is converted through the cached grapheme index.
         "index" => {
             // Fall through to runtime dispatch for type objects, named args (Pairs),
             // array of needles, and multi-arg calls handled by dispatch_index
@@ -545,21 +546,18 @@ pub(crate) fn native_method_1arg(
             ) {
                 return None;
             }
-            let s = target.to_string_value();
             let needle = arg.to_string_value();
-            match s.find(&needle) {
-                Some(pos) => {
-                    let char_pos = crate::builtins::string_pos::grapheme_offset(&s, pos);
-                    Some(Ok(Value::int(char_pos as i64)))
-                }
-                None => Some(Ok(Value::NIL)),
-            }
+            Some(Ok(crate::builtins::grapheme_index::with_str_index(
+                target,
+                |s, idx| match crate::builtins::grapheme_index::find_graphemes(s, idx, 0, &needle) {
+                    Some(pos) => Value::int(idx.grapheme_at(s, pos) as i64),
+                    None => Value::NIL,
+                },
+            )))
         }
-        // Cost: O(n), n = chars of the invocant (see `native_substr_slice`).
-        // Rakudo: O(k), k = chars returned -- see #9140.
-        "substr" => {
-            crate::builtins::substr::native_substr_slice(&target.to_string_value(), arg, None)
-        }
+        // Cost: O(k), k = chars returned, once the invocant's grapheme index is
+        // cached (see `native_substr_slice`).
+        "substr" => crate::builtins::substr::native_substr_slice(target, arg, None),
         // Cost: O(n + L * s), n = chars of the invocant, L = lines, s = |steps|.
         "indent" => {
             let s = target.to_string_value();
@@ -1168,9 +1166,8 @@ pub(crate) fn native_method_1arg(
                 .collect();
             Some(Ok(Value::seq(batches)))
         }
-        // Cost: O(n + m), n = chars of the invocant, m = chars of the needle (copy,
-        // reverse search, char-offset conversion of the prefix). Rakudo: O(n - p + m),
-        // p = match position -- see #9140.
+        // Cost: O(n - p + m) amortized, p = match position, m = chars of the
+        // needle; the byte offset is converted through the cached grapheme index.
         "rindex" => {
             // Fall through to runtime dispatch for arrays (list of needles)
             // and type objects
@@ -1180,15 +1177,19 @@ pub(crate) fn native_method_1arg(
             ) {
                 return None;
             }
-            let s = target.to_string_value();
             let needle = arg.to_string_value();
-            match s.rfind(&needle) {
-                Some(pos) => {
-                    let char_pos = crate::builtins::string_pos::grapheme_offset(&s, pos);
-                    Some(Ok(Value::int(char_pos as i64)))
-                }
-                None => Some(Ok(Value::NIL)),
-            }
+            Some(Ok(crate::builtins::grapheme_index::with_str_index(
+                target,
+                |s, idx| match crate::builtins::grapheme_index::rfind_graphemes(
+                    s,
+                    idx,
+                    s.len(),
+                    &needle,
+                ) {
+                    Some(pos) => Value::int(idx.grapheme_at(s, pos) as i64),
+                    None => Value::NIL,
+                },
+            )))
         }
         "fmt" => {
             // A Format object argument is handled by the slow-path Format dispatch

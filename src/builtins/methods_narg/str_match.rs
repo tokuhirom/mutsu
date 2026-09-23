@@ -37,8 +37,9 @@ fn split_string_match_args(args: &[Value]) -> Option<(Vec<&Value>, bool, bool)> 
 /// Returns `None` (fall through) for: non-Str receivers, a Package needle,
 /// `:m`/`:ignoremark` (strip_marks → interpreter), unknown named args, and the bare
 /// single-needle form.
-// Cost: O(n + m), n = chars of the invocant, m = chars of the needle (copy; :i
-// lowercases the whole invocant). Rakudo: O(m) -- see #9140.
+// Cost: O(n + m), n = chars of the invocant, m = chars of the needle (the
+// payload is borrowed, but :i lowercases the whole invocant). Rakudo: O(m)
+// -- see #9147.
 pub(crate) fn native_prefix_suffix_with_options(
     target: &Value,
     args: &[Value],
@@ -59,18 +60,21 @@ pub(crate) fn native_prefix_suffix_with_options(
     if let ValueView::Package(_) = needle_val.view() {
         return None;
     }
-    let text = target.to_string_value();
     let needle = needle_val.to_string_value();
-    let (t, n) = if ignore_case {
-        (text.to_lowercase(), needle.to_lowercase())
-    } else {
-        (text, needle)
-    };
-    let ok = if is_prefix {
-        t.starts_with(n.as_str())
-    } else {
-        t.ends_with(n.as_str())
-    };
+    let ok = crate::builtins::grapheme_index::with_str(target, |text| {
+        if ignore_case {
+            let (t, n) = (text.to_lowercase(), needle.to_lowercase());
+            if is_prefix {
+                t.starts_with(n.as_str())
+            } else {
+                t.ends_with(n.as_str())
+            }
+        } else if is_prefix {
+            text.starts_with(needle.as_str())
+        } else {
+            text.ends_with(needle.as_str())
+        }
+    });
     Some(Ok(Value::truth(ok)))
 }
 
@@ -83,8 +87,8 @@ pub(crate) fn native_prefix_suffix_with_options(
 /// `:m`/`:ignoremark`, unknown named args, non-Int/Str positions (Whatever resolution),
 /// out-of-range / negative positions (X::OutOfRange Failure), and the bare forms
 /// already handled by the 1-/2-arg arms.
-// Cost: O(n + m), n = chars of the invocant, m = chars of the needle (copy, full
-// codepoint count, skip to `$pos`). Rakudo: O(m) -- see #9140.
+// Cost: O(m) amortized, m = chars of the needle, once the invocant's grapheme
+// index is cached (`$pos` is resolved through it).
 pub(crate) fn native_substr_eq_with_options(
     target: &Value,
     args: &[Value],
@@ -111,21 +115,18 @@ pub(crate) fn native_substr_eq_with_options(
         Some(_) => return None,
         None => 0,
     };
-    let text = target.to_string_value();
-    let len = text.chars().count() as i64;
-    if start < 0 || start > len {
+    if start < 0 {
         return None;
     }
     let needle = needle_val.to_string_value();
-    let substr: String = text
-        .chars()
-        .skip(start as usize)
-        .take(needle.chars().count())
-        .collect();
-    let eq = if ignore_case {
-        substr.to_lowercase() == needle.to_lowercase()
-    } else {
-        substr == needle
-    };
-    Some(Ok(Value::truth(eq)))
+    crate::builtins::grapheme_index::with_str_index(target, |text, idx| {
+        let window =
+            crate::builtins::grapheme_index::substr_eq_window(text, idx, start as usize, &needle)?;
+        let eq = if ignore_case {
+            window.to_lowercase() == needle.to_lowercase()
+        } else {
+            window == needle
+        };
+        Some(Ok(Value::truth(eq)))
+    })
 }

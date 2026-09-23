@@ -36,8 +36,8 @@ pub(super) fn dispatch(
             _ => Some(Ok(Value::int(target.to_string_value().len() as i64))),
         }),
         "decode" => Some(super::super::decode_buf_method(target, None)),
-        // Cost: O(n), n = chars of the invocant (a copy of the payload plus a
-        // grapheme segmentation pass, nothing cached). Rakudo: O(1) -- see #9140.
+        // Cost: O(1) amortized: the grapheme count comes from the payload's
+        // cached index (built in O(n) on first use, `grapheme_index`).
         "chars" => {
             // Buf/Blob instances: throw X::Buf::AsStr
             if let ValueView::Instance { class_name, .. } = target.view()
@@ -57,19 +57,17 @@ pub(super) fn dispatch(
                 return Some(Some(Err(err)));
             }
             Some(Some(Ok(Value::int(
-                crate::builtins::string_pos::grapheme_len(&target.to_string_value()) as i64,
+                crate::builtins::grapheme_index::with_str_index(target, |_, idx| idx.len()) as i64,
             ))))
         }
-        // Cost: O(n), n = chars of the invocant (copies the payload to read one
-        // codepoint). Rakudo: O(1) -- see #9140.
-        "ord" => {
-            let s = target.to_string_value();
-            if let Some(ch) = s.chars().next() {
-                Some(Some(Ok(Value::int(ch as u32 as i64))))
-            } else {
-                Some(Some(Ok(Value::NIL)))
-            }
-        }
+        // Cost: O(1) (borrows the payload).
+        "ord" => Some(Some(Ok(crate::builtins::grapheme_index::with_str(
+            target,
+            |s| match s.chars().next() {
+                Some(ch) => Value::int(ch as u32 as i64),
+                None => Value::NIL,
+            },
+        )))),
         // Cost: O(n), n = chars of the invocant.
         "ords" => {
             let s = target.to_string_value();
@@ -147,8 +145,7 @@ pub(super) fn dispatch(
             // `.uniprops` returns a Seq in raku.
             Some(Some(Ok(Value::seq(props))))
         }
-        // Cost: O(n) for a Str invocant (copies the payload to read its first
-        // codepoint), O(1) for an Int. Rakudo: O(1) -- see #9140.
+        // Cost: O(1): a Str payload is borrowed to read its first codepoint.
         "unival" => {
             // Type objects should throw an error
             if matches!(
@@ -162,10 +159,7 @@ pub(super) fn dispatch(
             }
             let ch = match target.view() {
                 ValueView::Int(i) => char::from_u32(i as u32),
-                _ => {
-                    let s = target.to_string_value();
-                    s.chars().next()
-                }
+                _ => crate::builtins::grapheme_index::with_str(target, |s| s.chars().next()),
             };
             let Some(ch) = ch else {
                 return Some(Some(Ok(Value::NIL)));
