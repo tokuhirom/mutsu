@@ -70,6 +70,9 @@ pub(super) fn dispatch(
                 _ => Some(Ok(Value::int(0))),
             })
         }
+        // Cost: O(t), t = leaves reached through flattenable (non-itemized) nesting,
+        // copied eagerly even when only a prefix is consumed; O(1) on a LazyList
+        // or infinite Range. Rakudo: O(1) per call, O(1) per leaf pulled -- see #NNNN.
         "flat" => Some(match target.view() {
             ValueView::Array(_, crate::value::ArrayKind::Shaped) => {
                 let leaves = crate::runtime::utils::shaped_array_leaves(target);

@@ -73,6 +73,8 @@ pub(super) fn dispatch(
         return result;
     }
     match method {
+        // Cost: O(1) on a reified list/array, hash or integer Range; a finite
+        // LazyList is forced first (O(e), deferred to the runtime), as in Rakudo.
         "elems" => {
             if let ValueView::LazyList(list) = target.view() {
                 // Only a GENUINELY lazy list refuses `.elems`; everything else

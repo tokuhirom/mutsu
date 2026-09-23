@@ -302,6 +302,8 @@ impl Interpreter {
 
     /// Iterate over the elements of a value, applying duckmap to each.
     /// This is the entry point for both the method and function forms.
+    /// Cost: O(t) block calls/visits, t = nodes of the structure (each node is
+    /// tried once and recursed into only when the block does not accept it).
     pub(crate) fn duckmap_iterate(
         &mut self,
         block: &Value,
@@ -372,6 +374,8 @@ impl Interpreter {
     }
 
     /// Recursively apply a block to every leaf element, preserving structure.
+    /// Cost: O(t), t = nodes of the structure (one block call per leaf, one
+    /// rebuild per aggregate).
     pub(crate) fn deepmap_iterate(
         &mut self,
         block: &Value,

@@ -3369,6 +3369,8 @@ impl Interpreter {
                 }
             }
             match (method, args.as_slice()) {
+                // Cost: O(1) expected (bounds check plus an `initialized` HashSet
+                // probe; a sparse array is stored densely, as in Rakudo).
                 ("EXISTS-POS", [idx]) => {
                     let index = match idx.view() {
                         ValueView::Int(i) if i >= 0 => Some(i as usize),

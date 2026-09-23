@@ -1242,6 +1242,8 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
             };
             Some(Ok(Value::seq(combinations_all(&items))))
         }
+        // Cost: O(1) on a real Array or an unpulled Seq; O(e) on a reified List/Seq,
+        // e = elements (copied into a fresh List). Rakudo: O(1) -- see #NNNN.
         "cache" => {
             // A genuinely-lazy list (infinite sequence, lazy pipe, cat-handle
             // pull, …) must stay lazy under `.cache`: Rakudo's `.cache` reifies
