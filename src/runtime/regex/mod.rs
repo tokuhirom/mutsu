@@ -13,6 +13,7 @@ mod regex_lookbehind;
 mod regex_lr_state;
 mod regex_ltm_fate;
 mod regex_ltm_rank;
+mod regex_match_at;
 mod regex_match_atom;
 mod regex_match_atom_simple;
 mod regex_match_capture;
