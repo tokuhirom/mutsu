@@ -154,7 +154,19 @@ impl Interpreter {
                                     positions.push(current);
                                 }
                             }
-                            _ => break,
+                            // Zero-width: every further iteration matches the
+                            // same empty string here, so jump to the count the
+                            // quantifier would reach (#9180).
+                            Some(_) => {
+                                count = super::regex_zero_width_iter::zero_width_saturated_count(
+                                    count, min, max,
+                                );
+                                if count >= min && positions.last() != Some(&current) {
+                                    positions.push(current);
+                                }
+                                break;
+                            }
+                            None => break,
                         }
                     }
                     if count >= min {
