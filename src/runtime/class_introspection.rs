@@ -314,15 +314,36 @@ impl Interpreter {
     /// un-punned role composed onto the grammar. Those methods remain in the
     /// role registry rather than the class method table, but they override
     /// Grammar's native `parse`/`subparse`/`parsefile` entry points.
+    ///
+    /// This sits on the per-call method-dispatch path of every instance (a
+    /// `Match` receiving `.Str`/`.chars`/`.from` included), so the checks run
+    /// cheapest first. `class_is_grammar` goes last: for a built-in receiver
+    /// such as `Match` it is not in the class table and falls back to a
+    /// `::`-tail scan of every registered class, which cost ~115k
+    /// instructions per call and 44% of `bench-regex-capture`.
     pub(crate) fn grammar_has_user_method(&mut self, name: &str, method_name: &str) -> bool {
-        let direct = self.has_user_method(name, method_name);
-        let role = self.class_is_grammar(name)
+        if self.has_user_method(name, method_name) {
+            return true;
+        }
+        let role_declares_it = {
+            let registry = self.registry();
+            !registry.roles.is_empty()
+                && registry.roles.values().any(|role_def| {
+                    role_def
+                        .methods
+                        .get(method_name)
+                        .is_some_and(|defs| defs.iter().any(|d| !d.is_private))
+                })
+        };
+        role_declares_it
             && self.mro_readonly(name).iter().any(|owner| {
                 self.registry()
-                    .role_method_overloads(owner, method_name)
+                    .roles
+                    .get(owner.as_str())
+                    .and_then(|role_def| role_def.methods.get(method_name))
                     .is_some_and(|defs| defs.iter().any(|d| !d.is_private))
-            });
-        direct || role
+            })
+            && self.class_is_grammar(name)
     }
 
     /// Check if a class has a public attribute accessor for the given name.
