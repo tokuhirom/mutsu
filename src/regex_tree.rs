@@ -610,6 +610,9 @@ impl RegexTree {
                         anchor_start,
                     )?;
                     let first = tokens.first_mut()?;
+                    // The aliased atom's own capture (`before` for an aliased
+                    // `<before …>`) survives alongside the alias.
+                    first.secondary_named_capture = first.named_capture.take();
                     first.named_capture = Some(name.clone());
                     first.force_list_capture = *array
                         && match regex.as_ref() {
@@ -2047,6 +2050,26 @@ impl Parser {
         }
         self.skip_whitespace();
         let mut regex = self.parse_atom(&[], true, false)?;
+        // An alias on a `<?before …>` / `<?after …>` assertion drops its zero
+        // width marker: Rakudo's `subrule_alias` resets the aliased subrule's
+        // subtype to `capture`, so `$<a>=<?before x>` is `$<a>=<before x>` and
+        // also publishes the `before` key. The negated spelling can never
+        // match once aliased; the runtime parser models that case.
+        match regex {
+            RegexNode::Lookaround { negated: true, .. } => return None,
+            RegexNode::Lookaround {
+                assertion,
+                negated: false,
+                is_behind,
+            } => {
+                regex = RegexNode::NamedLookaround {
+                    assertion,
+                    is_behind,
+                    capturing: true,
+                };
+            }
+            _ => {}
+        }
         let quantifier = self.parse_quantifier();
         // Aggregate aliases have their own list-context semantics in the
         // legacy matcher. Keep subrule-containing forms there until the
