@@ -70,8 +70,9 @@ impl Interpreter {
         if let Some(r) = edited {
             return Ok(r);
         }
-        let f = f.expect("the backing-array edit did not run");
-        if let ValueView::Instance { attributes, .. } = target.view()
+        // `f` is still here: the edit above took it only when it ran.
+        if let Some(f) = f
+            && let ValueView::Instance { attributes, .. } = target.view()
             && let Some(r) = crate::value::value_buf::with_buf_elems_mut(&attributes, f)
         {
             return Ok(r);

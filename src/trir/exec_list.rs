@@ -52,7 +52,11 @@ impl Interpreter {
                 )?;
                 self.trir.os.push(r);
             }
-            _ => unreachable!("trir_list_op: {op:?} is not a list op"),
+            _ => {
+                return Err(RuntimeError::new(format!(
+                    "internal: trir_list_op handed {op:?}, which is not a list op"
+                )));
+            }
         }
         Ok(())
     }
