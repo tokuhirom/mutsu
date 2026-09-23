@@ -233,6 +233,8 @@ impl Interpreter {
             crate::vm::vm_raw_invocant_arrival::PendingRawInvocant {
                 method: method.to_string(),
                 cell: target,
+                raw_parameter: true,
+                implicit_self: false,
             },
         ));
         true

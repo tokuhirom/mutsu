@@ -201,6 +201,71 @@ impl Interpreter {
         Some(cell)
     }
 
+    /// Box an aggregate lexical for the implicit `self = ...` route. The
+    /// general raw-invocant capture deliberately refuses `@`/`%` locals: raw
+    /// scalar invocants replace a scalar binding, while an aggregate method
+    /// needs the caller's whole aggregate binding to remain live.
+    pub(super) fn capture_aggregate_invocant_cell(
+        &mut self,
+        code: &CompiledCode,
+        name: &str,
+        target: Value,
+    ) -> Option<Value> {
+        if !((name == "self" || Self::is_aggregate_name(name))
+            && Self::is_role_mixed_array(&target))
+        {
+            return None;
+        }
+        // A nested call written as `self.method` reads the method's fast-path
+        // local, which is the plain mixed-in value rather than the implicit
+        // invocant cell.  The corresponding env entry still carries the live
+        // cell captured by the outer method call; reuse it so a nested method
+        // assignment updates the original aggregate.
+        if name == "self"
+            && let Some(existing) = self.env().get("self")
+            && existing.is_container_ref()
+        {
+            return Some(existing.clone());
+        }
+        if let Some(idx) = Self::frame_local_slot(code, name, None) {
+            let current = self.locals.get(idx)?.clone();
+            if current.is_container_ref() {
+                return Some(current);
+            }
+            if Self::is_role_mixed_array(&current) {
+                let cell = current.into_container_ref();
+                self.locals[idx] = cell.clone();
+                let sym = code.locals_sym.get(idx).copied();
+                self.set_env_with_main_alias_sym(name, sym, cell.clone());
+                return Some(cell);
+            }
+        }
+        if let Some(existing) = self.env().get(name).cloned() {
+            if existing.is_container_ref() {
+                return Some(existing);
+            }
+            if Self::is_role_mixed_array(&existing) {
+                let cell = existing.into_container_ref();
+                self.set_env_with_main_alias_sym(name, None, cell.clone());
+                return Some(cell);
+            }
+        }
+        let cell = target.into_container_ref();
+        self.set_env_with_main_alias_sym(name, None, cell.clone());
+        Some(cell)
+    }
+
+    fn is_aggregate_name(name: &str) -> bool {
+        name.starts_with('@') || name.starts_with('%')
+    }
+
+    fn is_role_mixed_array(value: &Value) -> bool {
+        match value.view() {
+            ValueView::Mixin(inner, _) => matches!(inner.view(), ValueView::Array(..)),
+            _ => false,
+        }
+    }
+
     /// Whether a value already IS a storage location, so it must be handed out
     /// rather than boxed into a fresh cell. Mirrors
     /// `capture_var_cell_inner`'s `is_lvalue_container_value`.
