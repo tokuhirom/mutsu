@@ -823,25 +823,6 @@ impl Interpreter {
         fp
     }
 
-    /// Lazily clear `func_multi_resolve_cache`/`func_multi_type_cacheable` when
-    /// `fn_resolve_gen` has advanced since they were last built — the function-dispatch
-    /// analogue of `refresh_method_caches_for_generation`. ADR-0019 Phase F box F5: these
-    /// two caches used to depend entirely on the eager clear in
-    /// `invalidate_method_dispatch_caches`, which covered only 7 call sites even though
-    /// `fn_resolve_gen` itself is bumped at ~15 other sub/multi-registration sites
-    /// (`registration_sub.rs`, `methods_sub.rs`, module load/import, ...) that never called
-    /// it — a real staleness gap, not just duplicated cleanup, since those sites can add a
-    /// new multi-sub candidate that a cached resolution would then silently skip.
-    pub(crate) fn refresh_func_multi_caches_for_generation(&mut self) {
-        if self.func_multi_cache_generation == self.fn_resolve_gen {
-            return;
-        }
-        self.func_multi_cache_generation = self.fn_resolve_gen;
-        self.func_multi_resolve_cache.clear();
-        self.func_multi_type_cacheable.clear();
-        self.func_multi_argkey_cacheable.clear();
-    }
-
     /// Whether a multi *sub* `name` (in `pkg`) has a dispatch that is purely
     /// type+arity based — the function analogue of `multi_dispatch_type_cacheable`.
     /// False when any candidate is value-/identity-dependent (`where` / literal /
@@ -853,14 +834,17 @@ impl Interpreter {
         name_sym: Symbol,
         name: &str,
     ) -> bool {
-        self.refresh_func_multi_caches_for_generation();
         // A name some loaded compunit kept private resolves differently
         // depending on which unit is asking, and this cache is keyed by
         // (package, name) only — never cache such a name's winner.
         if self.is_unit_scoped_routine_name(name) {
             return false;
         }
-        if let Some(&c) = self.func_multi_type_cacheable.get(&(pkg_sym, name_sym)) {
+        let generation = self.fn_resolve_gen;
+        if let Some(&c) = self
+            .func_multi_type_cacheable
+            .get(generation, &(pkg_sym, name_sym))
+        {
             return c;
         }
         let candidates = self.resolve_all_multi_candidates_indexed(name);
@@ -883,7 +867,7 @@ impl Interpreter {
         // many candidates there are.
         let cacheable = !candidates.is_empty() && !value_dependent;
         self.func_multi_type_cacheable
-            .insert((pkg_sym, name_sym), cacheable);
+            .insert(generation, (pkg_sym, name_sym), cacheable);
         cacheable
     }
 
@@ -945,7 +929,8 @@ impl Interpreter {
             return self.resolve_function_with_types(name, args);
         }
         let key = (pkg_sym, name_sym, arg_keys);
-        if let Some(hit) = self.func_multi_resolve_cache.get(&key) {
+        let generation = self.fn_resolve_gen;
+        if let Some(hit) = self.func_multi_resolve_cache.get(generation, &key) {
             return hit.clone();
         }
         let resolved = self.resolve_function_with_types(name, args);
@@ -953,7 +938,12 @@ impl Interpreter {
         // re-raised on every call, so don't cache it.
         let ambiguous = resolved.is_none() && self.pending_dispatch_error.is_some();
         if !ambiguous {
-            self.func_multi_resolve_cache.insert(key, resolved.clone());
+            // Tagged with the generation the resolution ran under: the resolve
+            // itself cannot write the functions map, but assert that rather
+            // than assume it, since a stale tag would be served as fresh.
+            debug_assert_eq!(generation, self.fn_resolve_gen);
+            self.func_multi_resolve_cache
+                .insert(generation, key, resolved.clone());
         }
         resolved
     }
@@ -1738,31 +1728,38 @@ mod func_multi_cache_generation_tests {
     // which only ~7 of the ~20 `fn_resolve_gen`-bumping sites called -- a fresh multi-sub
     // candidate registered at one of the other sites (e.g. `require`, `EVAL`) could leave
     // a stale resolved candidate or a stale cacheable/uncacheable verdict cached under the
-    // old name. `refresh_func_multi_caches_for_generation` closes that gap by checking
-    // `fn_resolve_gen` at every read, independent of which site bumped it.
+    // old name. Every entry now carries the generation it was computed under, so a read
+    // under any other generation misses, independent of which site moved it (#9073).
     #[test]
-    fn stale_entries_are_dropped_when_fn_resolve_gen_advances() {
+    fn entries_are_not_served_under_another_generation() {
         let mut i = Interpreter::new();
         let pkg = Symbol::intern("GLOBAL");
         let name = Symbol::intern("f");
-        i.func_multi_type_cacheable.insert((pkg, name), true);
-        i.func_multi_resolve_cache
-            .insert((pkg, name, vec![Symbol::intern("Int")]), None);
-        assert!(!i.func_multi_type_cacheable.is_empty());
-        assert!(!i.func_multi_resolve_cache.is_empty());
+        let key = (pkg, name, vec![Symbol::intern("Int")]);
+        let base = i.fn_resolve_gen;
+        i.func_multi_type_cacheable.insert(base, (pkg, name), true);
+        i.func_multi_resolve_cache.insert(base, key.clone(), None);
+        assert_eq!(
+            i.func_multi_type_cacheable.get(base, &(pkg, name)),
+            Some(&true)
+        );
+        assert!(i.func_multi_resolve_cache.get(base, &key).is_some());
 
-        // No generation change yet: a stale-looking entry is left alone.
-        i.refresh_func_multi_caches_for_generation();
-        assert!(!i.func_multi_type_cacheable.is_empty());
-        assert!(!i.func_multi_resolve_cache.is_empty());
-
-        // Simulate a registration site that bumps `fn_resolve_gen` without going
-        // through `invalidate_method_dispatch_caches` (e.g. `require`/`EVAL`).
+        // A registration site that moves `fn_resolve_gen` without going through
+        // `invalidate_method_dispatch_caches` (e.g. `require`/`EVAL`).
         i.fn_resolve_gen += 1;
-        i.refresh_func_multi_caches_for_generation();
-        assert!(i.func_multi_type_cacheable.is_empty());
-        assert!(i.func_multi_resolve_cache.is_empty());
-        assert_eq!(i.func_multi_cache_generation, i.fn_resolve_gen);
+        let moved = i.fn_resolve_gen;
+        assert_eq!(i.func_multi_type_cacheable.get(moved, &(pkg, name)), None);
+        assert!(i.func_multi_resolve_cache.get(moved, &key).is_none());
+
+        // The map coming back to the version the entries name (a scope restore
+        // after a routine-local `my sub`) makes them live again.
+        assert!(i.func_multi_resolve_cache.get(base, &key).is_some());
+
+        // The wholesale invalidation drops them for every generation.
+        i.invalidate_fn_resolution();
+        assert!(i.func_multi_resolve_cache.get(base, &key).is_none());
+        assert_eq!(i.func_multi_type_cacheable.get(base, &(pkg, name)), None);
     }
 
     #[test]
@@ -1772,7 +1769,8 @@ mod func_multi_cache_generation_tests {
         let name = Symbol::intern("f");
         // Seed a wrong verdict directly (bypassing the real scan) to prove the
         // read path clears it on a generation mismatch rather than trusting it.
-        i.func_multi_type_cacheable.insert((pkg, name), true);
+        let base = i.fn_resolve_gen;
+        i.func_multi_type_cacheable.insert(base, (pkg, name), true);
         i.fn_resolve_gen += 1;
         // `f` has no registered candidates at all, so a fresh scan answers `false`
         // (not multi). If the stale `true` entry survived, this would wrongly

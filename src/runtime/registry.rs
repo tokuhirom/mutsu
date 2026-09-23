@@ -1380,7 +1380,15 @@ impl Registry {
     }
 
     /// Wholesale-replace the marker set from a snapshot. Bumps `proto_gen`.
+    ///
+    /// Restoring the very set that is installed (the snapshot `Arc` itself,
+    /// untouched since) changes nothing, so it does not bump: a routine scope
+    /// restores this on every return, and the bump retired every
+    /// proto-generation memo in the program once per call (#9073).
     pub(crate) fn proto_subs_restore(&mut self, set: std::sync::Arc<HashSet<String>>) {
+        if std::sync::Arc::ptr_eq(&self.proto_subs, &set) {
+            return;
+        }
         self.proto_subs = set;
         self.bump_proto_gen();
     }
@@ -1411,11 +1419,10 @@ impl Registry {
     /// For a one-off registration it behaves exactly like the plain insert, at
     /// the cost of one hash lookup.
     pub(crate) fn install_function(&mut self, key: Symbol, def: std::sync::Arc<FunctionDef>) {
-        let table = crate::runtime::cow_table_mut(&mut self.functions);
         // `functions` and `fn_transitions` are disjoint fields; the split
-        // borrow is what lets the memo drive the table's stamp.
+        // borrow is what lets the memo drive the table (and its stamp).
         let transitions = &mut self.fn_transitions;
-        transitions.install(table, key, def);
+        transitions.install(&mut self.functions, key, def);
     }
 
     /// Give [`Registry::functions`] a version it has never had before, without
@@ -1726,6 +1733,31 @@ impl std::ops::Deref for RegistryWriteGuard<'_> {
     #[inline]
     fn deref(&self) -> &Registry {
         &self.inner
+    }
+}
+
+impl RegistryWriteGuard<'_> {
+    /// `&mut Registry` for a write that touches none of `classes`, `roles`,
+    /// `enum_types` or `subsets` — so, unlike `DerefMut`, it keeps the
+    /// [`Registry::has_lexical_type_key_for`] index those four maps feed.
+    ///
+    /// It exists for the two writes a routine declaring an inner `my sub`
+    /// makes on every call: the re-install ([`Registry::install_function`])
+    /// and the scope restore that gives it back. Through `DerefMut` each of
+    /// them dropped the index, and the next bare type-name lookup rebuilt it
+    /// from every key of all four maps — ~100K instructions per call of
+    /// JSON::Fast's `unjsonify-string`, the largest single cost that routine
+    /// still paid for its inner sub (#9073).
+    ///
+    /// Keep the callers to writes that provably stay off those four maps; any
+    /// other write must go through `DerefMut`, which is what keeps the index
+    /// coherent by construction.
+    pub(crate) fn routine_tables_mut(&mut self) -> &mut Registry {
+        let arc: &mut Arc<Registry> = &mut self.inner;
+        if Arc::strong_count(arc) > 1 {
+            crate::vm::vm_stats::record_registry_cow_clone();
+        }
+        Arc::make_mut(arc)
     }
 }
 

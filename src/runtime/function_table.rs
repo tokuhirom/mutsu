@@ -188,12 +188,42 @@ pub(crate) struct FunctionTableTransitions {
     /// `Arc::new` receives is therefore guaranteed to differ from every
     /// address already claimed by a live entry, and a memo hit's address can
     /// only ever mean "this is a clone of the very `Arc` recorded here".
-    seen: FxHashMap<(u64, Symbol, usize), (std::sync::Arc<FunctionDef>, u64)>,
+    seen: FxHashMap<TransitionKey, (std::sync::Arc<FunctionDef>, u64)>,
+    /// The whole table a *recurring* transition produced, keyed like `seen`.
+    ///
+    /// Knowing the resulting version is not enough to make the re-install
+    /// cheap: the install still went through `Arc::make_mut` on a map the
+    /// scope snapshot shares, which copies the entire functions map — once per
+    /// call of any routine that declares an inner `my sub`, O(registry) each
+    /// time, and the dominant per-call cost once a module is loaded (#9073).
+    /// The resulting table is immutable content named by its version, so the
+    /// second and later installs just hand this `Arc` back. Only a transition
+    /// seen at least twice is stored, and the table is capped far below
+    /// `seen`, because each entry pins one full copy of the map.
+    tables: FxHashMap<TransitionKey, std::sync::Arc<FunctionTable>>,
+    /// `version after -> (version before, key installed)` for every transition
+    /// recorded in `seen`: what one install did, read backwards. A scope
+    /// restore uses it to name the keys it gives back without diffing two
+    /// whole maps (see [`Self::keys_installed_since`]).
+    parents: FxHashMap<u64, (u64, Symbol)>,
     /// Debug-only: the content hash each version has been observed to name.
     /// Empty (and untouched) in a release build.
     #[cfg(debug_assertions)]
     audit: FxHashMap<u64, u64>,
 }
+
+/// `(version before, key, definition identity)`: one install, as memoized.
+type TransitionKey = (u64, Symbol, usize);
+
+/// How many resulting tables [`FunctionTableTransitions::tables`] keeps before
+/// starting over. Each one is a full copy of the functions map, so this is the
+/// number of distinct inner-`my sub` routines whose steady state is cheap at
+/// once, not a bound on correctness.
+const TABLE_MEMO_CAP: usize = 64;
+
+/// How far [`FunctionTableTransitions::keys_installed_since`] walks back
+/// before giving up and letting the caller diff the maps.
+const PARENT_WALK_LIMIT: usize = 8;
 
 /// How many transitions to remember before starting over.
 ///
@@ -202,35 +232,86 @@ pub(crate) struct FunctionTableTransitions {
 const TRANSITION_MEMO_CAP: usize = 4096;
 
 impl FunctionTableTransitions {
-    /// Insert `key -> def` into `table`, reusing the version this same write
-    /// produced last time it was made from this same starting version.
+    /// Insert `key -> def` into the table behind `functions`, reusing the
+    /// version — and, for a transition that recurs, the very table — this
+    /// same write produced last time it was made from this same starting
+    /// version.
     pub(crate) fn install(
         &mut self,
-        table: &mut FunctionTable,
+        functions: &mut std::sync::Arc<FunctionTable>,
         key: Symbol,
         def: std::sync::Arc<FunctionDef>,
     ) {
-        let memo_key = (table.version(), key, std::sync::Arc::as_ptr(&def) as usize);
+        let memo_key = (
+            functions.version(),
+            key,
+            std::sync::Arc::as_ptr(&def) as usize,
+        );
         let known = self.seen.get(&memo_key).map(|(_, version)| *version);
         crate::vm::vm_stats::record_fn_table_transition(known.is_some());
         match known {
             Some(version) => {
-                table.map_mut().insert(key, def);
-                table.set_version(version);
+                if let Some(table) = self.tables.get(&memo_key) {
+                    // Sound by the same induction as the version reuse: the
+                    // stored table is the content `version` names (it was the
+                    // table that version was stamped on, and a shared `Arc` is
+                    // never written in place — `cow_table_mut` copies it and
+                    // mints a new version first).
+                    debug_assert_eq!(table.version(), version);
+                    *functions = std::sync::Arc::clone(table);
+                } else {
+                    let table = crate::runtime::cow_table_mut(functions);
+                    table.map_mut().insert(key, def);
+                    table.set_version(version);
+                    if self.tables.len() >= TABLE_MEMO_CAP {
+                        self.tables.clear();
+                    }
+                    self.tables
+                        .insert(memo_key, std::sync::Arc::clone(functions));
+                }
             }
             None => {
                 if self.seen.len() >= TRANSITION_MEMO_CAP {
                     self.seen.clear();
+                    self.tables.clear();
+                    self.parents.clear();
                 }
                 // Retain a clone so this address can never be freed and
                 // reused by an unrelated `Arc<FunctionDef>` while this entry
                 // is live -- see the field doc on `seen`.
                 let retained = def.clone();
+                let table = crate::runtime::cow_table_mut(functions);
                 table.map_mut().insert(key, def);
                 self.seen.insert(memo_key, (retained, table.version()));
+                self.parents.insert(table.version(), (memo_key.0, key));
             }
         }
-        self.audit(table);
+        self.audit(functions);
+    }
+
+    /// The keys that installs recorded here added to get from the map named
+    /// `from` to the map named `to`, or `None` when `to` was not reached from
+    /// `from` by recorded installs alone (any other write in between mints a
+    /// version with no parent, so the walk stops there).
+    ///
+    /// A scope restore that puts `from` back uses it to learn which keys it is
+    /// taking away without diffing both maps key by key — which, like the
+    /// install this undoes, was O(registry) per call of a routine declaring an
+    /// inner `my sub` (#9073). A recorded install may have *replaced* a key
+    /// rather than added it; either way the key's binding differs between the
+    /// two maps, which is all the caller needs to know.
+    pub(crate) fn keys_installed_since(&self, from: u64, to: u64) -> Option<Vec<Symbol>> {
+        let mut keys = Vec::new();
+        let mut version = to;
+        for _ in 0..PARENT_WALK_LIMIT {
+            if version == from {
+                return Some(keys);
+            }
+            let (parent, key) = *self.parents.get(&version)?;
+            keys.push(key);
+            version = parent;
+        }
+        (version == from).then_some(keys)
     }
 
     /// Debug-only: assert that no version ever names two different maps.
@@ -358,7 +439,7 @@ mod tests {
         let key = Symbol::intern("GLOBAL::inner");
 
         let snapshot = std::sync::Arc::clone(&table);
-        transitions.install(std::sync::Arc::make_mut(&mut table), key, inner.clone());
+        transitions.install(&mut table, key, inner.clone());
         let installed = table.version();
         assert_ne!(installed, base);
 
@@ -368,7 +449,7 @@ mod tests {
         assert_eq!(table.version(), base);
 
         let snapshot = std::sync::Arc::clone(&table);
-        transitions.install(std::sync::Arc::make_mut(&mut table), key, inner);
+        transitions.install(&mut table, key, inner);
         assert_eq!(
             table.version(),
             installed,
@@ -378,7 +459,7 @@ mod tests {
         // A *different* definition under the same key is a different map, and
         // must not borrow the name of the first one.
         table = snapshot;
-        transitions.install(std::sync::Arc::make_mut(&mut table), key, def());
+        transitions.install(&mut table, key, def());
         assert_ne!(table.version(), installed);
         assert_ne!(table.version(), base);
     }
@@ -398,11 +479,7 @@ mod tests {
         let inner = def();
         let weak = std::sync::Arc::downgrade(&inner);
 
-        transitions.install(
-            std::sync::Arc::make_mut(&mut table),
-            Symbol::intern("GLOBAL::inner"),
-            inner,
-        );
+        transitions.install(&mut table, Symbol::intern("GLOBAL::inner"), inner);
 
         // Every other owner is gone: `inner` was moved into `install`, and
         // the only clone `table.map` held goes away with `table` itself.
@@ -427,11 +504,7 @@ mod tests {
         let inner = def();
         let weak = std::sync::Arc::downgrade(&inner);
 
-        transitions.install(
-            std::sync::Arc::make_mut(&mut table),
-            Symbol::intern("GLOBAL::inner"),
-            inner,
-        );
+        transitions.install(&mut table, Symbol::intern("GLOBAL::inner"), inner);
         // Drop the table's own reference too, so afterwards the *only* thing
         // keeping `inner` alive is the memo's retained clone -- otherwise the
         // fillers below would just prove the table itself still holds it.
@@ -449,7 +522,7 @@ mod tests {
         let mut filler_table = std::sync::Arc::new(FunctionTable::default());
         for i in 0..TRANSITION_MEMO_CAP {
             transitions.install(
-                std::sync::Arc::make_mut(&mut filler_table),
+                &mut filler_table,
                 Symbol::intern(&format!("GLOBAL::filler{i}")),
                 def(),
             );
@@ -474,16 +547,75 @@ mod tests {
 
         for _ in 0..16 {
             let snapshot = std::sync::Arc::clone(&table);
-            transitions.install(
-                std::sync::Arc::make_mut(&mut table),
-                Symbol::intern("GLOBAL::inner"),
-                inner.clone(),
-            );
+            transitions.install(&mut table, Symbol::intern("GLOBAL::inner"), inner.clone());
             seen.insert(table.version());
             table = snapshot;
             seen.insert(table.version());
         }
         assert_eq!(seen.len(), 2, "the cycle names two states, not thirty-two");
+    }
+
+    /// The third and later installs of a recurring transition copy nothing:
+    /// they hand back the table the second one built (#9073).
+    #[test]
+    fn a_recurring_install_reuses_the_table_it_produced() {
+        let mut transitions = FunctionTableTransitions::default();
+        let mut table = std::sync::Arc::new(FunctionTable::default());
+        let inner = def();
+        let key = Symbol::intern("GLOBAL::inner");
+        let mut installed = Vec::new();
+        for _ in 0..3 {
+            let snapshot = std::sync::Arc::clone(&table);
+            transitions.install(&mut table, key, inner.clone());
+            installed.push(std::sync::Arc::clone(&table));
+            table = snapshot;
+        }
+        assert_eq!(installed[0].version(), installed[1].version());
+        assert!(
+            std::sync::Arc::ptr_eq(&installed[1], &installed[2]),
+            "the steady-state install is an Arc hand-back, not a map copy"
+        );
+        assert!(std::sync::Arc::ptr_eq(&installed[2].map[&key], &inner));
+
+        // The memoized table is never written in place: a write through the
+        // registry copies it and names a new version, leaving the memo intact.
+        let snapshot = std::sync::Arc::clone(&table);
+        transitions.install(&mut table, key, inner.clone());
+        let memo_version = table.version();
+        crate::runtime::cow_table_mut(&mut table)
+            .map_mut()
+            .insert(Symbol::intern("GLOBAL::other"), def());
+        assert_ne!(table.version(), memo_version);
+        table = snapshot;
+        transitions.install(&mut table, key, inner);
+        assert_eq!(table.version(), memo_version);
+        assert!(!table.contains_key(&Symbol::intern("GLOBAL::other")));
+    }
+
+    #[test]
+    fn keys_installed_since_walks_recorded_installs_only() {
+        let mut transitions = FunctionTableTransitions::default();
+        let mut table = std::sync::Arc::new(FunctionTable::default());
+        let base = table.version();
+        let (a, b) = (Symbol::intern("GLOBAL::a"), Symbol::intern("GLOBAL::b"));
+        transitions.install(&mut table, a, def());
+        transitions.install(&mut table, b, def());
+        assert_eq!(
+            transitions.keys_installed_since(base, table.version()),
+            Some(vec![b, a])
+        );
+        assert_eq!(
+            transitions.keys_installed_since(table.version(), table.version()),
+            Some(vec![])
+        );
+        // An ordinary write in between leaves no parent link to walk.
+        crate::runtime::cow_table_mut(&mut table)
+            .map_mut()
+            .insert(Symbol::intern("GLOBAL::c"), def());
+        assert_eq!(
+            transitions.keys_installed_since(base, table.version()),
+            None
+        );
     }
 
     #[test]

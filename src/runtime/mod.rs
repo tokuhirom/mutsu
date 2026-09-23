@@ -4197,12 +4197,23 @@ pub struct Interpreter {
     pub(crate) multi_dispatch_candidates_memo_gen: (u64, u64),
     /// Keyed by `(callee name, callsite package)` for the same reason as
     /// [`Self::pos_light_call_cache`] below.
-    pub(crate) light_call_cache: rustc_hash::FxHashMap<(Symbol, Symbol), (Symbol, u64)>,
-    pub(crate) light_call_cache_gen: u64,
+    ///
+    /// All three name-keyed call caches (this one, `pos_light_call_cache` and
+    /// `otf_call_cache`) tag each entry with the `fn_resolve_gen` it was
+    /// resolved under instead of being emptied whenever that generation
+    /// moves. A routine that declares an inner `my sub` moves it on entry and
+    /// moves it back on exit, so the table-wide clear discarded every cached
+    /// call target in the program twice per call of that routine, and the next
+    /// call of every routine paid the full resolve (#9073).
+    pub(crate) light_call_cache: GenCache<(Symbol, Symbol), (Symbol, u64)>,
     /// Keyed by `(callee name, callsite package)`: the same bare name means
     /// different routines in two packages (`PkgA::which` vs `PkgB::which`), and
     /// a name-only key made whichever package called first answer for both.
-    pub(crate) pos_light_call_cache: rustc_hash::FxHashMap<(Symbol, Symbol), PosLightTarget>,
+    pub(crate) pos_light_call_cache: GenCache<(Symbol, Symbol), PosLightTarget>,
+    /// The `fn_resolve_gen` the current [`Self::pos_light_ic_epoch`] was
+    /// issued under. The direct-mapped `call_ic` slots carry no generation of
+    /// their own, so a generation change retires them all by bumping the epoch
+    /// — cheap, and the name-keyed entries above survive it and refill them.
     pub(crate) pos_light_call_cache_gen: u64,
     /// Bare names that appear as a `&`-sigil parameter in some registered sub
     /// (e.g. `foo` from `sub callit(&foo) {...}`). A call to such a name may be
@@ -4387,15 +4398,19 @@ pub struct Interpreter {
     /// based (no `where` / literal / subset / `:D`/`:U` smiley / coercion
     /// candidate), the winning candidate is a function of `(package, name,
     /// positional arg types)`, so it is cached here. Keyed on
-    /// `(package_sym, name_sym, arg-type-keys)`. Cleared with the other dispatch
-    /// caches on any registry change.
+    /// `(package_sym, name_sym, arg-type-keys)`. Each entry is tagged with the
+    /// `fn_resolve_gen` it was computed under (like `fn_resolve_cache`), so it
+    /// is retired by any registry change and live again when a scope restore
+    /// puts that registry back — a routine declaring an inner `my sub` no
+    /// longer empties it twice per call (#9073). The two verdict memos below
+    /// are tagged the same way.
     #[allow(clippy::type_complexity)]
     pub(crate) func_multi_resolve_cache:
-        rustc_hash::FxHashMap<(Symbol, Symbol, Vec<Symbol>), Option<Arc<FunctionDef>>>,
+        GenCache<(Symbol, Symbol, Vec<Symbol>), Option<Arc<FunctionDef>>>,
     /// Memoized `(package, name) -> is this multi sub's dispatch type+arity
     /// deterministic` (i.e. cacheable in `func_multi_resolve_cache`). The
     /// function analogue of `multi_type_cacheable`.
-    pub(crate) func_multi_type_cacheable: rustc_hash::FxHashMap<(Symbol, Symbol), bool>,
+    pub(crate) func_multi_type_cacheable: GenCache<(Symbol, Symbol), bool>,
     /// Memoized `(package, name, argument type keys) -> may this ONE argument
     /// type key use `func_multi_resolve_cache` even though `func_multi_type_cacheable`
     /// said the family as a whole is value-dependent`.
@@ -4406,14 +4421,7 @@ pub struct Interpreter {
     /// family whose value-dependent candidates are ALL excluded that way is
     /// type-deterministic for those argument types after all. See
     /// `dispatch_narrow.rs` for the soundness rules.
-    pub(crate) func_multi_argkey_cacheable: rustc_hash::FxHashMap<FuncMultiResolveKey, bool>,
-    /// The `fn_resolve_gen` value `func_multi_resolve_cache`/`func_multi_type_cacheable`
-    /// were last cleared for (see `refresh_func_multi_caches_for_generation`, ADR-0019
-    /// Phase F box F5). Mirrors `method_cache_generation`'s role for the method-side
-    /// caches: a mismatch means a sub/multi registration happened since these caches
-    /// were built, so they are cleared lazily on next read instead of at every one of
-    /// `fn_resolve_gen`'s many bump sites.
-    pub(crate) func_multi_cache_generation: u64,
+    pub(crate) func_multi_argkey_cacheable: GenCache<FuncMultiResolveKey, bool>,
     /// Names of classes the user declared with a `class`/`role`/`grammar`/`enum`
     /// statement (`register_class_decl`). For such a class the collected public-
     /// attribute list is authoritative: a `.name` accessor resolves ONLY for a
@@ -4539,9 +4547,8 @@ pub struct Interpreter {
     /// table on EVERY call — it profiled as the single largest cost of calling a
     /// block-local sub (`memmove` alone was 15% of the run). Cloning the `Arc`
     /// is one refcount bump and leaves the table untouched.
-    pub(crate) otf_call_cache:
-        rustc_hash::FxHashMap<Symbol, (Symbol, Symbol, Arc<CompiledFunction>)>,
-    pub(crate) otf_call_cache_gen: u64,
+    /// Tagged per entry with `fn_resolve_gen`, like `light_call_cache`.
+    pub(crate) otf_call_cache: GenCache<Symbol, (Symbol, Symbol, Arc<CompiledFunction>)>,
     pub(crate) check_phaser_depth: u32,
     /// ADR-0041 §9: hoist-pass sub registrations whose own in-sequence
     /// `RegisterDecl` has not executed yet, keyed by `Pkg::name`. A BEGIN-time

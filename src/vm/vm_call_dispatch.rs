@@ -435,9 +435,12 @@ impl Interpreter {
             // defining package rides along so a cache hit runs the body under
             // the same package this (uncached) call does.
             let cur_pkg_sym = self.current_package_sym();
-            self.otf_call_cache
-                .insert(name_sym, (cur_pkg_sym, def.package, Arc::clone(&cf)));
-            self.otf_call_cache_gen = self.fn_resolve_gen;
+            let generation = self.fn_resolve_gen;
+            self.otf_call_cache.insert(
+                generation,
+                name_sym,
+                (cur_pkg_sym, def.package, Arc::clone(&cf)),
+            );
         }
 
         // Set up samewith and multi-dispatch context that call_compiled_function_named
