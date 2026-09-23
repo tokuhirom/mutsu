@@ -129,6 +129,12 @@ pub(super) enum StreamDecline {
     GrammarDynvar,
     /// The grammar has a custom HOW, so dispatch is not static.
     CustomHow,
+    /// Some method carries a `.wrap` chain. A wrapped token is dispatched by
+    /// the eager arm (`try_wrapped_token_subrule_dispatch`), and a wrapper
+    /// reads its caller's rule name from the routine frame the eager arm
+    /// pushes around each subrule call, which a stream cannot keep scoped
+    /// to the call (#9151).
+    MethodWrapInstalled,
     /// This `(name, position)` key is already left-recursion-active.
     LrKeyActive,
     /// An embedded `{ ... }` block re-entered the key mid-stream, so the single
@@ -155,6 +161,7 @@ impl StreamDecline {
             Self::DynamicRuleParam => "dynamic-rule-param",
             Self::GrammarDynvar => "grammar-dynvar",
             Self::CustomHow => "custom-how-grammar",
+            Self::MethodWrapInstalled => "method-wrap-installed",
             Self::LrKeyActive => "lr-key-active",
             Self::SeedConsulted => "seed-consulted",
         }
