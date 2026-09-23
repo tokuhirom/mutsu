@@ -117,10 +117,11 @@ mod tests {
         i.resolve_function_with_types(name, &[Value::int(1)])
     }
 
-    /// A second resolution of a plain sub is answered from the memo, and a
-    /// redefinition (a write to the functions map) is not served stale.
+    /// A resolution of a plain sub is memoized, and a later write to the
+    /// functions map retires it rather than letting it be served under the
+    /// new generation.
     #[test]
-    fn plain_sub_resolution_is_memoized_and_follows_redefinition() {
+    fn plain_sub_resolution_is_memoized_per_generation() {
         let mut i = Interpreter::new();
         i.run("sub plain(Int:D $x) { 1 }\n")
             .expect("setup program runs");
@@ -129,14 +130,19 @@ mod tests {
         let memo = i.plain_fn_resolve_memo_get(&key).expect("memoized");
         assert!(Arc::ptr_eq(&first, &memo));
 
-        i.run("sub plain(Int:D $x) { 2 }\n")
-            .expect("redefinition runs");
-        let second = resolve(&mut i, "plain").expect("plain still resolves");
+        let before = i.fn_resolve_gen;
+        i.run("sub another-one() { 2 }\n")
+            .expect("second registration runs");
         assert_ne!(
-            first.body_fingerprint(),
-            second.body_fingerprint(),
-            "the redefinition is what resolves now"
+            i.fn_resolve_gen, before,
+            "a registration moves the generation"
         );
+        assert!(
+            i.plain_fn_resolve_memo_get(&key).is_none(),
+            "the old answer is not served under the new generation"
+        );
+        let again = resolve(&mut i, "plain").expect("plain still resolves");
+        assert_eq!(first.body_fingerprint(), again.body_fingerprint());
     }
 
     /// A name with `multi` candidates never enters the memo: its winner
