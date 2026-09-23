@@ -51,6 +51,10 @@
 //! * A `MoarVM: O(..)` suffix appears only where mutsu's bound is WORSE than
 //!   the one MoarVM gives the same op. Each such gap has a tracking issue,
 //!   so `grep -rn 'MoarVM: O(' src/` lists every known complexity deficit.
+//! * `scripts/nqp-complexity-check.sh` measures the claims empirically (each
+//!   op in a loop at N and 2N; a time ratio near 4 means the loop is
+//!   quadratic). When a deficit is fixed, re-run its case there and drop the
+//!   `MoarVM:` suffix together with the issue.
 
 /// Which of the chained `nqp::` dispatch tables implements an op.
 ///

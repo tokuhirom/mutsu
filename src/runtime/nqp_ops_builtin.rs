@@ -127,7 +127,7 @@ impl Interpreter {
             // took ~14s); memoizing via `nqp_char_cache` — the same fix already
             // applied to `substr`/`index`/`iscclass` for this exact scanner —
             // makes each call O(1) amortized.
-            // Cost: O(1) amortized on a nqp_char_cache hit; O(n) on a miss, n = chars of $s. A loop alternating two strings (Text::Diff::Sift4) misses every call, making the loop O(n^2). MoarVM: O(1) -- see #NNNN.
+            // Cost: O(1) amortized on a nqp_char_cache hit; O(n) on a miss, n = chars of $s. A loop alternating two strings (Text::Diff::Sift4) misses every call, making the loop O(n^2). MoarVM: O(1) -- see #9129.
             "ordat" => {
                 let chars = super::nqp_char_cache::cached_chars(args, 0);
                 let pos = args
@@ -222,7 +222,7 @@ impl Interpreter {
             // attribute holds a native value, and code that reads it back with
             // `getattr_i` expects one.
             // Cost: O(a), a = attributes of $obj (the whole map is cloned by to_map and committed back); O(e) for a
-            // '$!reified'/'$!storage' bind, e = elements copied from the storage. MoarVM: O(1) -- see #NNNN.
+            // '$!reified'/'$!storage' bind, e = elements copied from the storage. MoarVM: O(1) -- see #9134.
             "bindattr" | "bindattr_i" | "bindattr_n" | "bindattr_s" => {
                 let obj = args.first().cloned().unwrap_or(Value::NIL);
                 let attr = args.get(2).map(|v| v.to_string_value()).unwrap_or_default();
@@ -363,7 +363,7 @@ impl Interpreter {
             // hand-build an iterator (`nqp::create(self)` followed by
             // `bindattr`), so it must not go anywhere near `new`.
             // Cost: O(c) + CREATE/new dispatch, c = registered VMHash/VMArray classes (both sets are scanned with an
-            // rsplit per entry whenever the name is not an exact member). MoarVM: O(1) -- see #NNNN.
+            // rsplit per entry whenever the name is not an exact member). MoarVM: O(1) -- see #9134.
             "create" => {
                 let ty = args.first().cloned().unwrap_or(Value::NIL);
                 // A native array / Buf / Blob is allocated with its REPR's
@@ -441,7 +441,7 @@ impl Interpreter {
             // name in two classes of one hierarchy would therefore collide;
             // that is the same limitation `$!name` access already has.)
             // Cost: O(a), a = attributes of $obj (nqp_attr_value clones the whole attribute map via to_map);
-            // getattr_s adds O(n), n = chars of the value. MoarVM: O(1) -- see #NNNN.
+            // getattr_s adds O(n), n = chars of the value. MoarVM: O(1) -- see #9134.
             "getattr" | "getattr_i" | "getattr_n" | "getattr_s" => {
                 let obj = args.first().cloned().unwrap_or(Value::NIL);
                 let name = args.get(2).map(|v| v.to_string_value()).unwrap_or_default();

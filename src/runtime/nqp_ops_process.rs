@@ -32,7 +32,7 @@ impl Interpreter {
             // whole reason nqp code reaches for them (Test.rakumod unbuffers
             // the real streams so TAP output cannot be reordered).
             // Cost: getstdout/getstderr/getstdin O(h), h = open IO handles (the handle table is scanned for the
-            // lowest id of that target). MoarVM: O(1) -- see #NNNN.
+            // lowest id of that target). MoarVM: O(1) -- see #9134.
             "getstdout" => Ok(self.std_handle(IoHandleTarget::Stdout)),
             "getstderr" => Ok(self.std_handle(IoHandleTarget::Stderr)),
             "getstdin" => Ok(self.std_handle(IoHandleTarget::Stdin)),
@@ -73,7 +73,7 @@ impl Interpreter {
             // nqp::can($obj, $name) — int 0/1: does this object have a method
             // of that name (the low-level form of `$obj.^can($name)`).
             // Cost: O(d + m), d = MRO length walked by collect_can_methods, m = size of matching method bodies it
-            // clones into Sub values. MoarVM: O(1) avg (method cache) -- see #NNNN.
+            // clones into Sub values. MoarVM: O(1) avg (method cache) -- see #9134.
             "can" => {
                 let target = args.first().cloned().unwrap_or(Value::NIL);
                 let name = args.get(1).map(|v| v.to_string_value()).unwrap_or_default();
@@ -207,7 +207,7 @@ impl Interpreter {
             // front of an nqp list / native array in place, returning the
             // list.
             // Cost: O(e), e = elements of the list (Vec::insert(0) shifts every element; a Buf is decoded and
-            // re-encoded whole), so n unshifts are O(n^2). MoarVM: O(1) amortized -- see #NNNN.
+            // re-encoded whole), so n unshifts are O(n^2). MoarVM: O(1) amortized -- see #9121.
             "unshift" => {
                 let target = args.first().cloned().unwrap_or(Value::NIL);
                 let val = args.get(1).cloned().unwrap_or(Value::NIL);

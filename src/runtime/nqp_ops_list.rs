@@ -338,7 +338,7 @@ impl Interpreter {
             // nqp::shift($list) and its typed twins: remove and return the
             // FIRST element. `JSON::Fast`'s string scanner drives its whole
             // `Uni` of codepoints this way.
-            // Cost: O(e), e = elements (Vec::remove(0)). MoarVM: O(1) -- see #NNNN.
+            // Cost: O(e), e = elements (Vec::remove(0)). MoarVM: O(1) -- see #9121.
             "shift" | "shift_s" | "shift_i" | "shift_n" => {
                 Self::nqp_shift(op, &args.first().cloned().unwrap_or(Value::NIL))
             }
@@ -425,7 +425,7 @@ impl Interpreter {
             // mutating method stays chainable. The standard way nqp code
             // hands back a freshly populated object.
             // Cost: O(a), a = attributes of $obj (whole map cloned); O(e) for a
-            // $!reified/$!storage bind, e = elements copied. MoarVM: O(1) -- see #NNNN.
+            // $!reified/$!storage bind, e = elements copied. MoarVM: O(1) -- see #9134.
             "p6bindattrinvres" => {
                 let obj = args.first().cloned().unwrap_or(Value::NIL);
                 let attr = args.get(2).map(|v| v.to_string_value()).unwrap_or_default();

@@ -49,7 +49,7 @@ impl Interpreter {
             // `String::Utils`'s scanners rely on (they walk with an index that
             // may reach `chars($s)`).
             // Cost: O(k) cache hit, O(n) miss, k = chars returned, n = chars of $s.
-            // MoarVM: O(k) -- see #NNNN.
+            // MoarVM: O(k) -- see #9129.
             "substr" => {
                 // Memoized (see `nqp_char_cache`): a hand-rolled NQP scanner
                 // calls `nqp::substr($text, $pos, ...)` once per token over
@@ -77,7 +77,7 @@ impl Interpreter {
             // where Raku's `index` returns Nil. nqp code branches on exactly
             // that, so the -1 is the contract, not a placeholder.
             // Cost: O((n - from) * m) (+ O(n) on a char-cache miss), n = chars of
-            // haystack, m = chars of needle. MoarVM: O((n - from) * m) -- see #NNNN.
+            // haystack, m = chars of needle. MoarVM: O((n - from) * m) -- see #9129.
             "index" | "rindex" => {
                 let needle = sarg(args, 1);
                 // The haystack is memoized (see `nqp_char_cache`): a
@@ -114,7 +114,7 @@ impl Interpreter {
             // (`find-wordic`/`find-wordim`/`find-wordicim`) is what these
             // exist for.
             // Cost: O((n - from) * m) (+ O(n) on a char-cache miss), n = chars of
-            // haystack, m = chars of needle. MoarVM: O((n - from) * m) -- see #NNNN.
+            // haystack, m = chars of needle. MoarVM: O((n - from) * m) -- see #9129.
             "indexic" | "indexim" | "indexicim" => {
                 let needle = sarg(args, 1);
                 let chars = super::nqp_char_cache::cached_chars(args, 0);

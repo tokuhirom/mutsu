@@ -365,7 +365,7 @@ impl Interpreter {
             // native-int result, the number of significant digits, and the
             // offset after consuming the input.
             // Cost: O(n), n = chars of $str (copied and fully collected into a Vec<char>
-            // regardless of $pos). MoarVM: O(k), k = digits consumed from $pos -- see #NNNN.
+            // regardless of $pos). MoarVM: O(k), k = digits consumed from $pos -- see #9131.
             "radix" => nqp_radix(args),
 
             // -- native num comparisons --
@@ -397,7 +397,7 @@ impl Interpreter {
                 Ok(Value::int(cmp_result(lhs.cmp(&rhs))))
             }
             // Cost: O(n1+n2), n1/n2 = chars of the operands (both copied first). MoarVM: O(1) on
-            // differing lengths, else O(n) -- see #NNNN.
+            // differing lengths, else O(n) -- see #9134.
             "iseq_s" => Ok(bool_int(
                 args.first()
                     .map(|v| v.to_string_value())
@@ -405,7 +405,7 @@ impl Interpreter {
                     == args.get(1).map(|v| v.to_string_value()).unwrap_or_default(),
             )),
             // Cost: O(n1+n2), n1/n2 = chars of the operands (both copied first). MoarVM: O(1) on
-            // differing lengths, else O(n) -- see #NNNN.
+            // differing lengths, else O(n) -- see #9134.
             "isne_s" => Ok(bool_int(
                 args.first()
                     .map(|v| v.to_string_value())
@@ -571,7 +571,7 @@ impl Interpreter {
             // boundary (see the comment above), so the two ops observe the
             // same value here and share one implementation.
             // Cost: O(d), d = depth of the value's MRO/role closure (full type check,
-            // no type-check cache). MoarVM: O(1) amortized (type-check cache) -- see #NNNN.
+            // no type-check cache). MoarVM: O(1) amortized (type-check cache) -- see #9134.
             "istype" | "istype_nd" => {
                 // Operands are already decontainerized at the `call_nqp_op`
                 // boundary, so a promoted element container answers about what
@@ -607,7 +607,7 @@ impl Interpreter {
             }
 
             // -- boxing --
-            // Cost: O(n), n = chars of $s (copied). MoarVM: O(1) -- see #NNNN.
+            // Cost: O(n), n = chars of $s (copied). MoarVM: O(1) -- see #9134.
             "p6box_s" => Ok(Value::str(
                 args.first()
                     .map(|v| v.to_string_value())
@@ -623,7 +623,7 @@ impl Interpreter {
             // `unbox_s` round-trips through the same string either way.
             // `Net::Netmask::Fast`'s constructors unbox their `Str:D`
             // parameters before parsing them.
-            // Cost: O(n), n = chars of $s (copied). MoarVM: O(1) -- see #NNNN.
+            // Cost: O(n), n = chars of $s (copied). MoarVM: O(1) -- see #9134.
             "unbox_s" => Ok(Value::str(
                 args.first()
                     .map(|v| v.to_string_value())
@@ -675,7 +675,7 @@ impl Interpreter {
             }
 
             // -- string / aggregate queries --
-            // Cost: O(n), n = bytes of $s (copied, then counted). MoarVM: O(1) -- see #NNNN.
+            // Cost: O(n), n = bytes of $s (copied, then counted). MoarVM: O(1) -- see #9130.
             "chars" => Ok(Value::int(
                 args.first()
                     .map(|v| v.to_string_value().chars().count() as i64)
@@ -732,7 +732,7 @@ impl Interpreter {
 
             // -- positional element access (buf bytes or array elements) --
             // Cost: O(1) on a width-1 Buf / array; O(e) on a wider buf (every element's low
-            // byte is collected first), e = elements. MoarVM: O(1) -- see #NNNN.
+            // byte is collected first), e = elements. MoarVM: O(1) -- see #9132 (and correctness: #9133).
             "atpos_i" | "atpos_n" => {
                 let target = args.first().cloned().unwrap_or(Value::NIL);
                 let idx = iarg(args, 1);
@@ -763,7 +763,7 @@ impl Interpreter {
                 }
             }
             // Cost: array O(1) amortized; Buf O(e) (whole buffer decoded to Values and
-            // re-encoded per write), e = elements. MoarVM: O(1) -- see #NNNN.
+            // re-encoded per write), e = elements. MoarVM: O(1) -- see #9132.
             "bindpos_i" | "bindpos_n" => {
                 let target = args.first().cloned().unwrap_or(Value::NIL);
                 let idx = iarg(args, 1).max(0) as usize;
@@ -804,7 +804,7 @@ impl Interpreter {
             // -- slice / splice (buf) --
             // nqp::slice($buf, $start, $end) — END-INCLUSIVE, same class out.
             // Cost: O(e + k), e = bytes of $buf (whole buffer copied), k = bytes sliced.
-            // MoarVM: O(k) -- see #NNNN.
+            // MoarVM: O(k) -- see #9132.
             "slice" => {
                 let buf = args.first().cloned().unwrap_or(Value::NIL);
                 let start = iarg(args, 1).max(0) as usize;
@@ -833,7 +833,7 @@ impl Interpreter {
             // nqp::splice($target, $source, $offset, $count) — replace
             // target[offset .. offset+count) with source's elements, in place.
             // Cost: list O(s + t), s = source elems, t = target elems after $offset; Buf O(e + s)
-            // (whole target decoded and re-encoded), e = target bytes. MoarVM: O(s + t) -- see #NNNN.
+            // (whole target decoded and re-encoded), e = target bytes. MoarVM: O(s + t) -- see #9132.
             "splice" => {
                 let target = args.first().cloned().unwrap_or(Value::NIL);
                 let source = args.get(1).cloned().unwrap_or(Value::NIL);
@@ -866,7 +866,7 @@ impl Interpreter {
 
             // -- sized binary reads/writes --
             // Cost: O(e), e = bytes of $buf (whole buffer copied per read).
-            // MoarVM: O(1) -- see #NNNN.
+            // MoarVM: O(1) -- see #9132.
             "readuint" | "readint" => {
                 let buf = args.first().cloned().unwrap_or(Value::NIL);
                 let offset = iarg(args, 1).max(0) as usize;
@@ -892,7 +892,7 @@ impl Interpreter {
                 }
             }
             // Cost: O(e), e = bytes of $buf (whole buffer copied per read).
-            // MoarVM: O(1) -- see #NNNN.
+            // MoarVM: O(1) -- see #9132.
             "readnum" => {
                 let buf = args.first().cloned().unwrap_or(Value::NIL);
                 let offset = iarg(args, 1).max(0) as usize;
@@ -921,7 +921,7 @@ impl Interpreter {
                 }
             }
             // Cost: O(e), e = elements of $buf (decoded to Values and re-encoded per write).
-            // MoarVM: O(1) amortized -- see #NNNN.
+            // MoarVM: O(1) amortized -- see #9132.
             "writeuint" | "writeint" => {
                 let buf = args.first().cloned().unwrap_or(Value::NIL);
                 let offset = iarg(args, 1);
@@ -941,7 +941,7 @@ impl Interpreter {
                 }
             }
             // Cost: O(e), e = elements of $buf (decoded to Values and re-encoded per write).
-            // MoarVM: O(1) amortized -- see #NNNN.
+            // MoarVM: O(1) amortized -- see #9132.
             "writenum" => {
                 let buf = args.first().cloned().unwrap_or(Value::NIL);
                 let offset = iarg(args, 1).max(0) as usize;
