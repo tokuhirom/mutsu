@@ -354,7 +354,64 @@ impl Interpreter {
             }
         }
 
+        let class_attrs = self.collect_class_attributes(class_name);
+        let attr_type_constraints = self.collect_attribute_type_constraints(class_name);
+
         for (attr_name, smiley) in &smileys {
+            // For an @/% attribute the declared type and its definedness smiley
+            // constrain each element/value, not the collection itself. An empty
+            // collection is therefore valid for either :D or :U, while a
+            // populated collection must check the smiley on every stored item.
+            if let Some(attr) = class_attrs.iter().find(|attr| attr.name == *attr_name)
+                && matches!(attr.sigil, '@' | '%')
+            {
+                let storage_key = super::attribute_storage_key(&class_attrs, attr_name, attr.sigil);
+                if let Some(value) = attrs.get(storage_key) {
+                    let base = super::attribute_type_constraint(
+                        &class_attrs,
+                        attr,
+                        &attr_type_constraints,
+                    )
+                    .unwrap_or_else(|| "Any".to_string());
+                    let constraint = Self::join_constraint_smiley(&base, smiley);
+                    let display = format!("{}!{}", attr.sigil, attr_name);
+                    let mut elements = Vec::new();
+                    match value.view() {
+                        ValueView::Array(items, kind) => {
+                            fn collect_shaped_elements(
+                                items: &crate::value::ArrayData,
+                                out: &mut Vec<Value>,
+                            ) {
+                                for item in items.iter() {
+                                    match item.view() {
+                                        ValueView::Array(nested, _) => {
+                                            collect_shaped_elements(&nested, out)
+                                        }
+                                        _ => out.push(item.clone()),
+                                    }
+                                }
+                            }
+                            if matches!(kind, crate::value::ArrayKind::Shaped) {
+                                collect_shaped_elements(&items, &mut elements);
+                            } else {
+                                elements.extend(items.iter().cloned());
+                            }
+                        }
+                        ValueView::Hash(map) => elements.extend(map.values().cloned()),
+                        _ => {}
+                    }
+                    for element in elements {
+                        if !self.type_matches_value(&constraint, &element) {
+                            return Err(crate::runtime::utils::type_check_element_typed_error(
+                                &display,
+                                &constraint,
+                                &element,
+                            ));
+                        }
+                    }
+                }
+                continue;
+            }
             // For required attributes the missing-value case is left to the
             // required check (it produces the better error) — but a required
             // `:D` attribute that WAS supplied with an undefined value fails

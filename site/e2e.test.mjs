@@ -223,6 +223,17 @@ try {
   await page.click('#view button[data-v="charts"]');
   assert(new URL(page.url()).hash === '#window=50',
          'a control back at its default drops out of the hash again');
+  await page.click('#yaxis button[data-v="zero"]');
+  assert(new URL(page.url()).hash === '#window=50&y=zero',
+         'the y-axis origin is recorded too');
+  assert(await page.evaluate(() =>
+    [...document.querySelectorAll('.bench-card svg')].every(svg =>
+      svg.querySelectorAll('text.axis')[1].textContent.startsWith('0'))),
+    'and every chart\'s axis then starts at zero');
+  await page.click('#window button[data-v="150"]');
+  await page.click('#yaxis button[data-v="fit"]');
+  assert(new URL(page.url()).hash === '',
+         'the 150-commit window and the fitted axis are the defaults');
 
   await page.goto(`${BASE}/bench-trend.html?lang=en#metric=ratio&view=table&sort=jit&dir=desc`,
                   { waitUntil: 'networkidle' });

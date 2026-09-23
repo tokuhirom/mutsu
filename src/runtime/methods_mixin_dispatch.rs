@@ -479,6 +479,12 @@ impl Interpreter {
                     in_wrapper: false,
                 });
             }
+            let invocant = self
+                .pending_raw_invocant
+                .as_ref()
+                .filter(|pending| pending.implicit_self && pending.method == lookup_name)
+                .map(|pending| pending.cell.clone())
+                .unwrap_or_else(|| target.clone());
             let method_result = self.run_resolved_method_compiled_or_treewalk(
                 &role_name,
                 &role_name,
@@ -486,7 +492,7 @@ impl Interpreter {
                 def,
                 method_attrs,
                 args,
-                Some(target.clone()),
+                Some(invocant),
             );
             if pushed_base_dispatch {
                 self.method_dispatch_stack.pop();
