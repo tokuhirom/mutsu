@@ -100,7 +100,7 @@ impl Value {
                 if crate::gc::Gc::ptr_eq(&dst_arc, &src_items) {
                     return true;
                 }
-                let new_items = src_items.items().clone();
+                let new_items = src_items.items().to_vec();
                 // SAFETY: aliased in-place mutation of a shared container; see
                 // `gc_contents_mut`. No borrow into the items is live across
                 // the replacement.
@@ -137,7 +137,7 @@ impl Value {
                 if crate::gc::Gc::ptr_eq(&dst_arc, &src_items) {
                     return true;
                 }
-                let new_items = src_items.items().clone();
+                let new_items = src_items.items().to_vec();
                 let data = unsafe { crate::gc::gc_contents_mut(&dst_arc) };
                 data.clear_native_storage();
                 *data.items_mut() = new_items;

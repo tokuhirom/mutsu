@@ -357,15 +357,20 @@ pub(super) fn dispatch(
             };
             Some(Some(Ok(Value::num(builtin_rand() * max))))
         }
+        // Cost: O(n), n = chars of the invocant (per-grapheme NFD + case map, then NFC).
         "uc" => Some(Some(Ok(Value::str(
             crate::builtins::unicode::grapheme_uppercase(&target.to_string_value()),
         )))),
+        // Cost: O(n), n = chars of the invocant (lowercase, then NFC).
         "lc" => Some(Some(Ok(Value::str(
             crate::builtins::unicode::grapheme_lowercase(&target.to_string_value()),
         )))),
+        // Cost: O(n), n = chars of the invocant (per-grapheme NFD + fold, then NFC).
         "fc" => Some(Some(Ok(Value::str(
             crate::builtins::unicode::grapheme_foldcase(&target.to_string_value()),
         )))),
+        // Cost: O(n), n = chars of the invocant (copies the tail and NFCs the whole
+        // result).
         "tc" => Some(Some(Ok(Value::str(
             crate::builtins::unicode::titlecase_string(&target.to_string_value()),
         )))),

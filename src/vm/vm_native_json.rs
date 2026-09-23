@@ -45,7 +45,7 @@ impl Interpreter {
                     || self.type_matches_value("Positional", val)
             }
             ValueView::Array(arr, _) => {
-                let items = arr.items().clone();
+                let items = arr.items().to_vec();
                 items.iter().any(|i| self.json_subject_needs_prepare(i))
             }
             ValueView::Seq(items) => {
@@ -82,7 +82,7 @@ impl Interpreter {
                     return val.clone();
                 };
                 let items: Vec<Value> = match listed.view() {
-                    ValueView::Array(arr, _) => arr.items().clone(),
+                    ValueView::Array(arr, _) => arr.items().to_vec(),
                     ValueView::Seq(items) => items.to_vec(),
                     ValueView::Slip(items) => items.to_vec(),
                     _ => return val.clone(),

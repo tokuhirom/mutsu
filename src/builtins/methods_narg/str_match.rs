@@ -37,6 +37,9 @@ fn split_string_match_args(args: &[Value]) -> Option<(Vec<&Value>, bool, bool)> 
 /// Returns `None` (fall through) for: non-Str receivers, a Package needle,
 /// `:m`/`:ignoremark` (strip_marks → interpreter), unknown named args, and the bare
 /// single-needle form.
+// Cost: O(n + m), n = chars of the invocant, m = chars of the needle (the
+// payload is borrowed, but :i lowercases the whole invocant). Rakudo: O(m)
+// -- see #9147.
 pub(crate) fn native_prefix_suffix_with_options(
     target: &Value,
     args: &[Value],
@@ -84,6 +87,8 @@ pub(crate) fn native_prefix_suffix_with_options(
 /// `:m`/`:ignoremark`, unknown named args, non-Int/Str positions (Whatever resolution),
 /// out-of-range / negative positions (X::OutOfRange Failure), and the bare forms
 /// already handled by the 1-/2-arg arms.
+// Cost: O(m) amortized, m = chars of the needle, once the invocant's grapheme
+// index is cached (`$pos` is resolved through it).
 pub(crate) fn native_substr_eq_with_options(
     target: &Value,
     args: &[Value],

@@ -20,6 +20,10 @@ use crate::value::{RuntimeError, Value, ValueView};
 /// non-negative integer `len`. Returns `None` (defer to the interpreter) when
 /// `start`/`len` is negative or non-`Int`, or when `start` is past the end (the
 /// interpreter then returns a `Failure`).
+///
+/// Cost: O(k) amortized, k = chars returned: the invocant is borrowed and the
+/// start is resolved through its cached grapheme index (built in O(n) on first
+/// use, `grapheme_index`).
 pub(crate) fn native_substr_slice(
     target: &Value,
     start: &Value,

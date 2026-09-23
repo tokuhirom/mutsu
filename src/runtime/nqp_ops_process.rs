@@ -206,8 +206,8 @@ impl Interpreter {
             // `push_s`/`push_i`/`push_n` (nqp_ops_text.rs): insert at the
             // front of an nqp list / native array in place, returning the
             // list.
-            // Cost: O(e), e = elements of the list (Vec::insert(0) shifts every element; a Buf is decoded and
-            // re-encoded whole), so n unshifts are O(n^2). MoarVM: O(1) amortized -- see #9121.
+            // Cost: O(1) amortized on a list (ArrayData's head offset doubles as front slack, #9121);
+            // O(e) on a Buf, which is decoded and re-encoded whole. MoarVM: O(1) amortized -- see #9132.
             "unshift" => {
                 let target = args.first().cloned().unwrap_or(Value::NIL);
                 let val = args.get(1).cloned().unwrap_or(Value::NIL);
@@ -217,7 +217,7 @@ impl Interpreter {
                         // (see value::aliased_mut) — the same pattern
                         // `push_elem` uses; no borrow into the node is live.
                         let data = unsafe { crate::value::gc_contents_mut(&items) };
-                        data.items_mut().insert(0, val);
+                        data.insert(0, val);
                         Ok(target)
                     }
                     ValueView::Instance { attributes, .. } => {

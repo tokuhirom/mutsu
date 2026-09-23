@@ -39,6 +39,10 @@ fn is_flat_ascii(s: &str) -> bool {
 }
 
 /// Split `s` into its graphemes, the units a positional string method indexes.
+///
+/// Cost: O(n), n = bytes of `s`, and it allocates a `Vec` of n entries even on
+/// the flat-ASCII fast path. Nothing is cached, so a caller that indexes one
+/// grapheme pays for all of them.
 pub(crate) fn grapheme_units(s: &str) -> Vec<&str> {
     if is_flat_ascii(s) {
         return (0..s.len()).map(|i| &s[i..i + 1]).collect();
@@ -68,6 +72,9 @@ pub(crate) fn grapheme_units(s: &str) -> Vec<&str> {
 /// Convert a **byte** offset (what `str::find` returns) into the grapheme
 /// offset Raku reports. `byte_pos` must lie on a grapheme boundary, which it
 /// does for the result of a substring search.
+///
+/// Cost: O(n) for flat ASCII (the `is_flat_ascii` check scans all of `s`),
+/// otherwise O(byte_pos) plus a `Vec` of the prefix's graphemes.
 pub(crate) fn grapheme_offset(s: &str, byte_pos: usize) -> usize {
     if is_flat_ascii(s) {
         return byte_pos;
@@ -121,6 +128,9 @@ pub(crate) fn final_grapheme_is_unextendable(s: &str) -> bool {
 
 /// The number of graphemes in `s` — the length `index`/`substr` positions are
 /// measured against, and what `.chars` reports.
+///
+/// Cost: O(n), n = bytes of `s`, recomputed on every call (flat ASCII: two
+/// byte scans; otherwise a full segmentation pass into a `Vec`).
 pub(crate) fn grapheme_len(s: &str) -> usize {
     if is_flat_ascii(s) {
         return s.len();

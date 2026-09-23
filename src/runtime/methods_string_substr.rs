@@ -46,6 +46,8 @@ fn substr_cool_to_i64(val: &Value) -> Result<i64, RuntimeError> {
 }
 
 impl Interpreter {
+    // Cost: O(m) amortized, m = chars of the needle, once the invocant's
+    // grapheme index is cached (`$pos` is resolved through it).
     pub(super) fn dispatch_substr_eq(
         &mut self,
         target: Value,
@@ -112,6 +114,8 @@ impl Interpreter {
         Ok(Value::truth(eq))
     }
 
+    // Cost: O(k) amortized, k = chars returned, once the invocant's grapheme
+    // index is cached (built in O(n) on first use, `grapheme_index`).
     pub(super) fn dispatch_substr(
         &mut self,
         target: Value,
@@ -209,6 +213,7 @@ impl Interpreter {
 
     /// substr-rw in non-lvalue context: just return the substring (same as substr).
     /// When a variable name is available, returns a Proxy for binding support.
+    // Cost: as `dispatch_substr`: O(k) amortized.
     pub(super) fn dispatch_substr_rw(
         &mut self,
         target: Value,

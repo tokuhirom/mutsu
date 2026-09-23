@@ -7,10 +7,20 @@ use crate::token_kind::TokenKind;
 use crate::trir::{TrKind, TrOp};
 
 impl TrirCompiler<'_> {
-    /// `a && b` / `a || b`, short-circuiting, on native operands.
+    /// `a && b` / `a || b`, short-circuiting, on native int operands.
+    ///
+    /// Only there: the result is an OPERAND, not its truth value, and only an
+    /// int is its own truth value. A boxed operand used to be narrowed to its
+    /// truthiness, so `has-interp($s) && 'both'` answered `1`
+    /// (`t/modules/import-export/imported-call-expression-prefix.t`); such an
+    /// expression now declines, and the untyped path yields the operand.
     fn compile_short_circuit(&mut self, and: bool, l: &Expr, r: &Expr) -> Option<TrKind> {
         let lk = self.compile_expr(l)?;
-        self.truthy(lk)?;
+        let lk = self.narrow_int_operand(lk);
+        if lk != TrKind::Int {
+            self.note_decline(|| "a non-int left operand of && / ||".to_string());
+            return None;
+        }
         // The jump PEEKS: Raku's `&&`/`||` yield an OPERAND rather than a
         // boolean, and on the int bank the operand is its own truth value, so
         // the short-circuit result is the value already there.
@@ -22,13 +32,27 @@ impl TrirCompiler<'_> {
         });
         self.ops.push(TrOp::PopI);
         let rk = self.compile_expr(r)?;
-        self.truthy(rk)?;
+        let rk = self.narrow_int_operand(rk);
+        if rk != TrKind::Int {
+            self.note_decline(|| "a non-int right operand of && / ||".to_string());
+            return None;
+        }
         let end = self.ops.len() as u32;
         match &mut self.ops[jump_at] {
             TrOp::JumpIfFalseKeepI(x) | TrOp::JumpIfTrueKeepI(x) => *x = end,
             _ => return None,
         }
         Some(TrKind::Int)
+    }
+
+    /// Narrow a boxed operand that an int-returning `nqp::` op produced
+    /// (`nqp::isge_i(...) && ...` through the generic op), whose value IS a
+    /// native int; anything else keeps its kind.
+    fn narrow_int_operand(&mut self, kind: TrKind) -> TrKind {
+        if kind == TrKind::Obj && self.nqp_sourced && self.nqp_int_result {
+            return self.narrow_nqp_result(kind);
+        }
+        kind
     }
 
     pub(super) fn compile_binary(

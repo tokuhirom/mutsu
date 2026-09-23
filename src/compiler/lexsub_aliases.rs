@@ -100,4 +100,19 @@ impl Compiler {
         }
         out
     }
+
+    /// A `&name` code-variable read (`&t`, `&t(...)`) of a lexically visible
+    /// routine-nested sub: the fetched Sub may be called after the declaring
+    /// routine returned, so fold its free variables exactly as a call site
+    /// does (mutsu#9110). A `&name` local of this very code (a `&t` parameter
+    /// or `my &t`) shadows the sub, so it folds nothing.
+    pub(crate) fn fold_lexical_sub_free_vars_for_code_var(&mut self, name: &str) {
+        if self.lexical_sub_free_vars.is_empty() || name.contains("::") {
+            return;
+        }
+        if self.local_map.contains_key(&format!("&{name}")) {
+            return;
+        }
+        self.fold_lexical_sub_free_vars(&Symbol::intern(name));
+    }
 }

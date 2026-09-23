@@ -941,7 +941,7 @@ impl Interpreter {
     }
 
     /// Dispatch the CREATE method for CustomType and Package targets.
-    pub(super) fn dispatch_create(
+    pub(crate) fn dispatch_create(
         &mut self,
         target: &Value,
     ) -> Option<Result<Value, RuntimeError>> {

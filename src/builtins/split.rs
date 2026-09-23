@@ -129,6 +129,8 @@ pub(crate) struct SplitMatch {
 }
 
 /// Split a string by a string splitter. Returns list of `(segment, Option<match>)`.
+// Cost: O(n*m) worst, O(n + k) typical, n = chars of the invocant, m = chars
+// of the separator, k = pieces produced (naive char-window search).
 fn split_by_string(
     text: &str,
     sep: &str,
@@ -230,6 +232,10 @@ fn split_by_string(
 }
 
 /// Split a string by multiple string splitters (list form).
+// Cost: O(s*n*k) worst, n = chars of the invocant, s = separators, k = pieces:
+// every piece re-scans each separator from the piece start, so a separator
+// that is rare or absent is searched to the end once per piece.
+// Rakudo: O(s*n + k) -- see #9145.
 fn split_by_strings(
     text: &str,
     splitters: &[String],
@@ -340,6 +346,8 @@ fn push_separator_info(result: &mut Vec<Value>, m: &SplitMatch, opts: &SplitOpts
 }
 
 /// Apply split options to raw split results.
+// Cost: O(n + k), n = total chars of the pieces (each is copied once more),
+// k = pieces.
 pub(crate) fn apply_split_opts(
     parts: Vec<(String, Option<SplitMatch>)>,
     opts: &SplitOpts,
@@ -386,6 +394,8 @@ fn get_string_splitters(splitter: &Value) -> Option<Vec<String>> {
 }
 
 /// Perform string split (no regex). Returns None if splitter contains regex.
+// Cost: O(n) to copy the invocant, plus the chosen splitter's cost
+// (`split_by_string` / `split_by_strings`).
 pub(crate) fn native_split_method(
     target: &Value,
     args: &[Value],

@@ -63,6 +63,8 @@ pub(crate) fn native_method_2arg(
     // out-of-range positions and the case-/mark-insensitive named-arg forms
     // (`:i`/`:m`, which arrive as an extra Pair argument) keep the interpreter's
     // position resolution + Failure semantics (runtime/methods_string.rs).
+    // Cost: O(m) amortized, m = chars of the needle, once the invocant's
+    // grapheme index is cached (`$pos` is resolved through it).
     if method == "substr-eq"
         && let ValueView::Str(_) = target.view()
     {
@@ -224,6 +226,8 @@ pub(crate) fn native_method_2arg(
                 )))
             }
         }
+        // Cost: O(k), k = chars returned, once the invocant's grapheme index is
+        // cached (see `native_substr_slice`).
         "substr" => crate::builtins::substr::native_substr_slice(target, arg1, Some(arg2)),
         "base" => {
             let radix = match arg1.view() {

@@ -87,6 +87,9 @@ fn contains_value_recursive_ci(hay_lc: &str, needle: &Value) -> Value {
 /// (type-object) needle, a `BigInt` position (overflow → X::OutOfRange handled by the
 /// interpreter), and out-of-range / negative positions (X::OutOfRange Failure). The
 /// plain single-needle form (`contains($needle)`) keeps its `native_method_1arg` arm.
+// Cost: O(d * m) amortized, d = chars searched from `$pos`, m = chars of the
+// needle, once the invocant's grapheme index is cached (`$pos` is resolved
+// through it; the suffix is borrowed). :i lowercases the suffix, O(d) extra.
 pub(crate) fn native_contains_with_options(
     target: &Value,
     args: &[Value],

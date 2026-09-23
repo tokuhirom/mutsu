@@ -227,9 +227,12 @@ pub(crate) fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Val
         "wordcase" => Some(Ok(Value::str(crate::value::wordcase_str(
             &arg.to_string_value(),
         )))),
+        // Cost: O(n), n = chars of the argument (copied even when nothing is chomped).
+        // Rakudo: O(1) when nothing is chomped -- see #9147.
         "chomp" => Some(Ok(Value::str(crate::builtins::chomp_one(
             &arg.to_string_value(),
         )))),
+        // Cost: O(n), n = chars of the argument (result copied).
         "chop" => {
             // Type objects (Package) should throw
             if let ValueView::Package(type_name) = arg.view() {
@@ -247,6 +250,7 @@ pub(crate) fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Val
             arg.to_string_value().trim_start().to_string(),
         ))),
         "trim-trailing" => Some(Ok(Value::str(arg.to_string_value().trim_end().to_string()))),
+        // Cost: O(n), n = chars of the argument.
         "flip" => {
             let s = arg.to_string_value();
             let reversed: String = s.graphemes(true).rev().collect::<String>().nfc().collect();
@@ -260,6 +264,8 @@ pub(crate) fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Val
                 .collect();
             Some(Ok(Value::seq(parts)))
         }
+        // Cost: O(1) amortized for a cached `Str` (index built once in O(n) and
+        // cached per payload, see `grapheme_index`); O(n) otherwise.
         "chars" => Some(Ok(Value::int(
             crate::builtins::grapheme_index::with_str_index(arg, |_, idx| idx.len()) as i64,
         ))),
@@ -318,6 +324,7 @@ pub(crate) fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Val
                 ))))
             }
         }
+        // Cost: O(1) (borrows the payload).
         "ord" => Some(Ok(crate::builtins::grapheme_index::with_str(
             arg,
             |s| match s.chars().next() {
@@ -367,6 +374,8 @@ pub(crate) fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Val
             // `uninames` returns a Seq in raku (matters for `.raku`/`.WHAT`).
             Some(Ok(Value::seq(names)))
         }
+        // Cost: O(n), n = chars of the argument; a name no table knows also walks
+        // the CLDR emoji list (O(E) per such name, E = emoji count).
         "uniparse" | "parse-names" => {
             let s = arg.to_string_value();
             Some(uniparse_impl(&s))
@@ -877,6 +886,8 @@ pub(crate) fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Val
         // stringwise compare (`min([2.0, 10])` == 10). Return `None` so the sub
         // form falls through to the authoritative `builtin_min`/`builtin_max`,
         // which flatten a single iterable and fold with `compare_values`.
+        // Cost: O(n), n = chars of the argument. (Normally shadowed by the
+        // `native_method_0arg` delegation at the top of this function.)
         "ords" => {
             let s = arg.to_string_value();
             let codes: Vec<Value> = s.chars().map(|ch| Value::int(ch as u32 as i64)).collect();

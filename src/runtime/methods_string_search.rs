@@ -23,6 +23,10 @@ fn fold_for_contains(s: &str, ignore_case: bool, ignore_mark: bool) -> std::borr
 }
 
 impl Interpreter {
+    // Cost: O(d * m) amortized, d = chars searched from `$pos`, m = chars of
+    // the needle, once the invocant's grapheme index is cached (`$pos` is
+    // resolved through it; the suffix is borrowed). :i/:m fold the suffix,
+    // O(d + m) extra.
     pub(super) fn dispatch_contains(
         &mut self,
         target: Value,
@@ -77,6 +81,9 @@ impl Interpreter {
             ));
         }
         let hay = &text[idx.byte_at(&text, start as usize)..];
+        // Cost (Regex needle): O(n) setup (a MatchTarget in `regex_find_first`)
+        // plus the search, n = chars of the invocant, even for a hit at the
+        // front. Rakudo: O(1) setup -- see #9144.
         // A Regex needle means "does the pattern match anywhere from `start`?"
         // (`"abc".contains(/b/)`), not a literal search for the regex's gist.
         if let ValueView::Regex(pattern) = needle.view() {
@@ -128,6 +135,9 @@ impl Interpreter {
         self.dispatch_prefix_suffix_check(target, args, false)
     }
 
+    // Cost: O(m), m = chars of the needle (the payload is borrowed); :i/:m
+    // fold the whole invocant, O(n + m), n = chars of the invocant.
+    // Rakudo: O(m) -- see #9147.
     pub(super) fn dispatch_prefix_suffix_check(
         &self,
         target: Value,

@@ -91,12 +91,15 @@ impl Interpreter {
             // that route to the native handler (which raises X::NYI on a read-only
             // cat). Without this guard the generic form would silently print the
             // cat's gist instead of throwing.
+            // Cost: O(n), n = chars of the gist of the invocant (rendered, then written).
             "say" if args.is_empty() && !Self::is_io_cathandle(&target) => {
                 Some(self.dispatch_say(&target))
             }
+            // Cost: O(n), n = chars of the stringified invocant (rendered, then written).
             "print" if args.is_empty() && !Self::is_io_cathandle(&target) => {
                 Some(self.dispatch_print(&target))
             }
+            // Cost: O(n), n = chars of the stringified invocant (rendered, then written).
             "put" if args.is_empty() && !Self::is_io_cathandle(&target) => {
                 Some(self.dispatch_put(&target))
             }
@@ -289,6 +292,7 @@ impl Interpreter {
             "subst" => Some(self.with_regex_closure_scope(args.first().cloned(), |me| {
                 me.dispatch_subst(target, &args)
             })),
+            // Cost: see `dispatch_wordcase` (src/runtime/methods_string.rs).
             "wordcase" if !args.is_empty() => Some(self.dispatch_wordcase(target, &args)),
             "comb" if !args.is_empty() => {
                 if matches!(target.view(), ValueView::Instance { class_name, .. } if class_name == "Supply")
@@ -373,6 +377,7 @@ impl Interpreter {
             "substr-eq" => Some(self.dispatch_substr_eq(target, &args)),
             "substr" => Some(self.dispatch_substr(target, &args)),
             "substr-rw" => Some(self.dispatch_substr_rw(target, &args)),
+            // Cost: see `dispatch_trans` (src/runtime/methods_trans.rs).
             "trans" => Some(self.dispatch_trans(target, &args)),
             _ => None,
         }
@@ -433,6 +438,10 @@ impl Interpreter {
                     .expect("comb_pure always handles Int/Str matchers");
                 Some(Ok(make_seq(items)))
             }
+            // Cost: O(n + k) plus the engine's per-match cost, n = chars of the invocant,
+            // k = matches, and O(n) even when `$limit` asks for fewer (all matches are
+            // found first). With `:match` every Match gets its own `MatchTarget` copy of
+            // the subject (`create_match_object`): O(n*k). Rakudo: O(n + k) -- see #9144.
             Some(ValueView::Regex(pat)) => {
                 // Use the capturing path only when the regex contains code
                 // blocks whose side effects must fire (e.g. `{ take $/.Str }`).
@@ -528,6 +537,8 @@ impl Interpreter {
     }
 
     /// Create a Match object from regex match positions.
+    // Cost: O(n), n = chars of `text`: builds a fresh MatchTarget (copies the
+    // string and collects its chars) per Match. Rakudo: O(1) -- see #9144.
     fn create_match_object(&self, text: &str, start: usize, end: usize, _pat: &str) -> Value {
         Value::make_match_object_full(
             start as i64,

@@ -358,6 +358,8 @@ impl Interpreter {
     }
 
     /// Split by a single regex pattern.
+    // Cost: O(n + k) plus the engine's per-match cost, n = chars of the invocant,
+    // k = pieces; one shared MatchTarget, each separator Match shares it (O(1)).
     fn split_by_regex(
         &mut self,
         text: &str,
@@ -442,6 +444,9 @@ impl Interpreter {
     }
 
     /// Split by a list of splitters (mix of string and regex).
+    // Cost: O(s*n*k) worst, n = chars of the invocant, s = splitters, k = pieces:
+    // each piece re-runs every splitter from the piece start, so a rare or absent
+    // splitter scans to the end once per piece. Rakudo: O(s*n + k) -- see #9145.
     fn split_by_regex_list(
         &mut self,
         text: &str,
@@ -574,6 +579,8 @@ impl Interpreter {
 use crate::builtins::split::SplitMatch;
 
 /// Static string split (no interpreter needed).
+// Cost: O(n*m) worst, O(n + k) typical, n = chars of the invocant, m = chars
+// of the separator, k = pieces produced (naive char-window search).
 fn split_by_string_static(
     text: &str,
     sep: &str,
@@ -675,6 +682,9 @@ fn split_by_string_static(
 }
 
 /// Static multi-string split (no interpreter needed).
+// Cost: O(s*n*k) worst, n = chars of the invocant, s = separators, k = pieces:
+// every piece re-scans each separator from the piece start.
+// Rakudo: O(s*n + k) -- see #9145.
 fn split_by_strings_static(
     text: &str,
     splitters: &[String],

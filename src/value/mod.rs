@@ -503,6 +503,7 @@ pub(crate) struct MixData {
 }
 
 mod aliased_mut;
+mod array_data_ops;
 /// The instance-attribute map (`Symbol -> Value`); see [`AttrMap`].
 mod attr_map;
 pub(crate) mod container_lock;
@@ -1765,9 +1766,17 @@ pub struct HashData {
 /// container (instead of an `Arc`-pointer-keyed side table) means it travels
 /// through copy-on-write and can never be inherited by an unrelated array
 /// via pointer reuse.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Default)]
 pub struct ArrayData {
     items: Vec<Value>,
+    /// Number of dead slots at the front of `items` left behind by
+    /// [`ArrayData::shift_front`] (#9121). The live elements are
+    /// `items[head..]`; the dead prefix holds `Value::NIL` so it keeps
+    /// nothing alive. Always `0` while `native` is set, and reset to `0` by
+    /// every mutable/owning accessor, so only the read-only chokepoint has to
+    /// honour it. MoarVM's `VMArray` keeps the same start offset, which is
+    /// what makes a front shift O(1) there.
+    head: usize,
     /// This array's `.WHICH` identity — see the `HashData` twin and
     /// [`which_id::WhichId`].
     pub which_id: which_id::WhichId,

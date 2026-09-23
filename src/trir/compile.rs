@@ -50,6 +50,11 @@ pub(crate) struct TrirCompiler<'a> {
     /// semantics, where the general binder would reject the same narrowing
     /// on a `my int $x = <arbitrary boxed>`.
     pub(super) nqp_sourced: bool,
+    /// Set with [`Self::nqp_sourced`] when the op that produced the value
+    /// returns a native int by NQP's own convention (see
+    /// `nqp::nqp_op_returns_int`). Only such a value is narrowed where the
+    /// VALUE, not merely its truth, is the result: a `&&` / `||` operand.
+    pub(super) nqp_int_result: bool,
     /// Set while compiling an expression that is DIRECTLY an `nqp::` op's
     /// operand, and consumed by the sigilless-parameter read it admits.
     pub(super) nqp_operand: bool,
@@ -156,6 +161,7 @@ impl<'a> TrirCompiler<'a> {
             fns,
             why: None,
             nqp_sourced: false,
+            nqp_int_result: false,
             nqp_operand: false,
             returns_nil: return_type == Some("Nil") || definite_return.is_some(),
             definite_return,
@@ -194,6 +200,7 @@ impl<'a> TrirCompiler<'a> {
             name,
             calls: c.calls,
             methods: c.methods,
+            def_file: std::sync::OnceLock::new(),
         })
     }
 
@@ -458,6 +465,7 @@ impl<'a> TrirCompiler<'a> {
 
 mod binary;
 mod call;
+mod dump;
 mod expr;
 mod inline;
 mod method;
@@ -479,27 +487,6 @@ pub(crate) fn compile_routine(
     scope: TrirScope<'_>,
 ) -> Option<std::sync::Arc<TrChunk>> {
     let chunk = TrirCompiler::compile(name, param_defs, params, return_type, body, scope);
-    if dump_enabled() {
-        match &chunk {
-            Some(c) => eprintln!(
-                "trir: {} accepted ({} ops, {} native slots, {} obj slots, {} outers, {} calls)",
-                name.as_str(),
-                c.ops.len(),
-                c.n_native,
-                c.n_obj,
-                c.outers.len(),
-                c.calls.len(),
-            ),
-            None => eprintln!("trir: {} declined", name.as_str()),
-        }
-    }
+    dump::report(name, chunk.as_ref());
     chunk.map(std::sync::Arc::new)
-}
-
-/// Whether `MUTSU_TRIR_DUMP` asked for the eligibility decisions to be
-/// reported. Read once: this runs per routine declaration.
-fn dump_enabled() -> bool {
-    use std::sync::OnceLock;
-    static ON: OnceLock<bool> = OnceLock::new();
-    *ON.get_or_init(|| std::env::var("MUTSU_TRIR_DUMP").is_ok())
 }

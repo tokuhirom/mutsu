@@ -40,6 +40,7 @@ use crate::value::Value;
 
 pub(crate) mod compile;
 pub(crate) mod entry;
+mod entry_values;
 pub(crate) mod exec;
 pub(crate) mod exec_call;
 mod exec_str;
@@ -48,6 +49,7 @@ pub(crate) mod gen_link;
 mod link;
 mod op;
 pub(crate) mod outers;
+mod routine_frame;
 pub(crate) mod stats;
 
 pub(crate) use link::TrLink;
@@ -230,6 +232,9 @@ pub(crate) struct TrChunk {
     pub(crate) calls: Vec<TrInnerCall>,
     /// The method calls this body makes, indexed by `MethodGen`.
     pub(crate) methods: Vec<TrMethodCall>,
+    /// The file the routine was declared in, for its `routine_stack` frame
+    /// (`routine_frame.rs`). Known only once the function is stamped.
+    pub(crate) def_file: std::sync::OnceLock<crate::symbol::Symbol>,
 }
 
 /// The next chunk identity. Wrapping is unreachable in practice (a program

@@ -84,6 +84,8 @@ impl Interpreter {
                 Some(self.native_subst_regex(&text, pattern, &replacement_str, global))
             }
             // Literal string pattern: pure string replacement, never touches `$/`.
+            // Cost: O(n + r*m'), n = bytes of the invocant, r = replacements, m' =
+            // bytes of the replacement (one `str::replace` pass).
             ValueView::Str(pat) => {
                 let pat = pat.as_str();
                 if pat.is_empty() {
@@ -104,6 +106,9 @@ impl Interpreter {
 
     /// Native regex `.subst`. Mirrors the non-adverb path of `dispatch_subst`'s
     /// `Regex` branch.
+    // Cost: O(n + r) plus per-match engine work, n = chars of the invocant,
+    // r = matches; one shared MatchTarget for the scan and for every `$/` Match,
+    // and the result is built in one pass.
     fn native_subst_regex(
         &mut self,
         text: &str,

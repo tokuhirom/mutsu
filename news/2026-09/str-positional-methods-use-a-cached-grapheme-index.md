@@ -49,7 +49,8 @@ position counted **codepoints** while `.chars`/`.substr` count graphemes, so
 way `.rindex` already did.
 
 `scripts/str-complexity-check.sh` measures each case at N and 2N calls and
-prints the ratio (≈2 linear, ≈4 quadratic). Release build, 4-core container.
+prints the ratio (≈2 linear, ≈4 quadratic); the "after" column was taken with
+ten times the base N (`SCALE=10`). Release build, 4-core container.
 "Before" is the measurement recorded in the issue (not re-run here), at a
 tenth of the N used "after":
 

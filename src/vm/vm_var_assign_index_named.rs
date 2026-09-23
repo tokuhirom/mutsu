@@ -1623,7 +1623,11 @@ impl Interpreter {
                         .and_then(|container| {
                             container.with_array_mut(|items, _| -> Result<(), RuntimeError> {
                                 let arr = crate::value::gc_data_mut(items);
-                                Self::autoviv_resize(arr, idx_usize + 1, native_fill.clone())?;
+                                Self::autoviv_resize(
+                                    arr.items_mut(),
+                                    idx_usize + 1,
+                                    native_fill.clone(),
+                                )?;
                                 arr[idx_usize] = v;
                                 Ok(())
                             })
@@ -1665,7 +1669,11 @@ impl Interpreter {
                         container
                             .with_array_mut(|items, _| -> Result<(), RuntimeError> {
                                 let arr = crate::value::gc_data_mut(items);
-                                Self::autoviv_resize(arr, max_idx + 1, native_fill.clone())?;
+                                Self::autoviv_resize(
+                                    arr.items_mut(),
+                                    max_idx + 1,
+                                    native_fill.clone(),
+                                )?;
                                 Ok(())
                             })
                             .transpose()?;
@@ -1838,7 +1846,7 @@ impl Interpreter {
                                     // Container identity (§3): resize in place.
                                     let arr = crate::value::gc_data_mut(items);
                                     let old_len = arr.len();
-                                    Self::autoviv_resize(arr, max_idx + 1, native_fill.clone())?;
+                                    Self::autoviv_resize(arr.items_mut(), max_idx + 1, native_fill.clone())?;
                                     if arr.len() > old_len
                                         && arr.initialized.is_none()
                                         && !crate::runtime::native_types::is_native_array_element_type(
@@ -1874,7 +1882,11 @@ impl Interpreter {
                                 // Container identity (§3): resize in place.
                                 let arr = crate::value::gc_data_mut(items);
                                 let old_len = arr.len();
-                                Self::autoviv_resize(arr, max_idx + 1, native_fill.clone())?;
+                                Self::autoviv_resize(
+                                    arr.items_mut(),
+                                    max_idx + 1,
+                                    native_fill.clone(),
+                                )?;
                                 if arr.len() > old_len
                                     && arr.initialized.is_none()
                                     && !crate::runtime::native_types::is_native_array_element_type(
@@ -2771,7 +2783,7 @@ impl Interpreter {
                                         && max_idx >= arr.len()
                                     {
                                         Self::autoviv_resize(
-                                            arr,
+                                            arr.items_mut(),
                                             max_idx + 1,
                                             Value::package(crate::symbol::wk::any()),
                                         )?;
@@ -2834,7 +2846,7 @@ impl Interpreter {
                                         crate::gc::Gc::make_mut(items)
                                     };
                                     let old_len = arr.len();
-                                    Self::autoviv_resize(arr, i + 1, native_fill.clone())?;
+                                    Self::autoviv_resize(arr.items_mut(), i + 1, native_fill.clone())?;
                                     // `initialized == None` means every slot in
                                     // a bulk-constructed boxed array exists.
                                     // Once this write grows it, preserve that
@@ -4437,7 +4449,7 @@ impl Interpreter {
         fill: Value,
     ) -> Result<(), RuntimeError> {
         let old_len = arr.len();
-        Self::autoviv_resize(arr, idx + 1, fill)?;
+        Self::autoviv_resize(arr.items_mut(), idx + 1, fill)?;
         if arr.len() > old_len && arr.initialized.is_none() {
             arr.initialized = Some((0..old_len).collect());
         }

@@ -418,7 +418,7 @@ impl Interpreter {
                         if data.items().is_empty() {
                             None
                         } else if method == "shift" {
-                            Some(data.items_mut().remove(0))
+                            Some(data.remove(0))
                         } else {
                             data.items_mut().pop()
                         }

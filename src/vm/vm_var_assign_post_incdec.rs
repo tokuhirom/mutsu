@@ -1180,7 +1180,7 @@ impl Interpreter {
                         // placeholders), or 0/0.0/"" for native arrays.
                         let fill =
                             Self::native_fill_for_constraint(declared_constraint_incdec.as_deref());
-                        Self::autoviv_resize(a, i + 1, fill)?;
+                        Self::autoviv_resize(a.items_mut(), i + 1, fill)?;
                         Value::assign_element_slot(&mut a[i], new_val.clone());
                         Ok(true)
                     } else {

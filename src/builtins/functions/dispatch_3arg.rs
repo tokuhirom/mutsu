@@ -35,6 +35,7 @@ pub(crate) fn native_function_3arg(
                 }
             }
         }
+        // Cost: O(k) amortized, k = chars returned (see `native_substr_slice`).
         "substr" => {
             if matches!(arg1.view(), ValueView::Junction { .. })
                 || matches!(arg2.view(), ValueView::Junction { .. })

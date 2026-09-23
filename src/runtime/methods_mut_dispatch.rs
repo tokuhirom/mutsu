@@ -1431,7 +1431,7 @@ impl Interpreter {
                         && let Some(r) = slot.with_array_mut(|arc_items, _| {
                             // Container identity (§3): splice through a shared node.
                             let items = crate::value::gc_data_mut(arc_items);
-                            do_splice(items, &resolved_args)
+                            do_splice(items.items_mut(), &resolved_args)
                         }) {
                         r
                     } else {
@@ -2000,17 +2000,15 @@ impl Interpreter {
                             .unwrap()
                             .with_array_mut(|arc_items, _| {
                                 // Shared backing array: in-place interior mutation (see `push`).
-                                let items = if crate::gc::Gc::strong_count(arc_items) > 1 {
+                                let data = if crate::gc::Gc::strong_count(arc_items) > 1 {
                                     // SAFETY: same contract as `array_push_in_place`.
-                                    unsafe { crate::value::gc_contents_mut(arc_items).items_mut() }
+                                    unsafe { crate::value::gc_contents_mut(arc_items) }
                                 } else {
-                                    crate::gc::Gc::make_mut(arc_items).items_mut()
+                                    crate::gc::Gc::make_mut(arc_items)
                                 };
-                                if items.is_empty() {
+                                data.shift_front().unwrap_or_else(|| {
                                     make_empty_array_failure_what("shift", &empty_what)
-                                } else {
-                                    items.remove(0)
-                                }
+                                })
                             })
                             .unwrap();
                         return Ok(out);

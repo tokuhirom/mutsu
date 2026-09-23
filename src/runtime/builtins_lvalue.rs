@@ -530,6 +530,8 @@ impl Interpreter {
         }
 
         // substr-rw as a function: substr-rw($str, from, len) = $value
+        // Cost: O(V + n + r), V = env entries scanned to find the target variable,
+        // plus `assign_substr_rw`.
         if name == "substr-rw" && !call_args.is_empty() {
             let target = call_args[0].clone();
             let method_args = call_args[1..].to_vec();

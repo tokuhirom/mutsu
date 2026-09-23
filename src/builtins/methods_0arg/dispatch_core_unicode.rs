@@ -36,6 +36,8 @@ pub(super) fn dispatch(
             _ => Some(Ok(Value::int(target.to_string_value().len() as i64))),
         }),
         "decode" => Some(super::super::decode_buf_method(target, None)),
+        // Cost: O(1) amortized: the grapheme count comes from the payload's
+        // cached index (built in O(n) on first use, `grapheme_index`).
         "chars" => {
             // Buf/Blob instances: throw X::Buf::AsStr
             if let ValueView::Instance { class_name, .. } = target.view()
@@ -58,6 +60,7 @@ pub(super) fn dispatch(
                 crate::builtins::grapheme_index::with_str_index(target, |_, idx| idx.len()) as i64,
             ))))
         }
+        // Cost: O(1) (borrows the payload).
         "ord" => Some(Some(Ok(crate::builtins::grapheme_index::with_str(
             target,
             |s| match s.chars().next() {
@@ -65,6 +68,7 @@ pub(super) fn dispatch(
                 None => Value::NIL,
             },
         )))),
+        // Cost: O(n), n = chars of the invocant.
         "ords" => {
             let s = target.to_string_value();
             let normalized: String = s.nfc().collect();
@@ -123,6 +127,8 @@ pub(super) fn dispatch(
             // `.uninames` returns a Seq in raku (matters for `.raku`/`.WHAT`).
             Some(Some(Ok(Value::seq(names))))
         }
+        // Cost: O(n), n = chars of the invocant; a name no table knows also walks
+        // the CLDR emoji list (O(E) per such name, E = emoji count).
         "uniparse" | "parse-names" => {
             let s = target.to_string_value();
             Some(Some(crate::builtins::functions::uniparse_impl(&s)))
@@ -139,6 +145,7 @@ pub(super) fn dispatch(
             // `.uniprops` returns a Seq in raku.
             Some(Some(Ok(Value::seq(props))))
         }
+        // Cost: O(1): a Str payload is borrowed to read its first codepoint.
         "unival" => {
             // Type objects should throw an error
             if matches!(
@@ -168,6 +175,7 @@ pub(super) fn dispatch(
             }
             Some(Some(Ok(Value::num(f64::NAN))))
         }
+        // Cost: O(n), n = codepoints of the invocant.
         "univals" => {
             // Type objects should throw an error
             if matches!(
@@ -244,6 +252,7 @@ pub(super) fn dispatch(
                 )))))
             }
         }
+        // Cost: O(e), e = elements of the invocant list.
         "chrs" => {
             // .chrs on a list/array of ints or a range
             let val_to_i64 = |v: &Value| -> i64 {

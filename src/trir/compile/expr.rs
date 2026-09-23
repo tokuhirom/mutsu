@@ -15,6 +15,7 @@ impl TrirCompiler<'_> {
     /// Compile `e` for its value, answering the bank/kind it left it on.
     pub(super) fn compile_expr(&mut self, e: &Expr) -> Option<TrKind> {
         self.nqp_sourced = false;
+        self.nqp_int_result = false;
         match e {
             // Transparent, exactly as the untyped compiler treats it: the
             // marker exists for the junction chain-flattener, not for
