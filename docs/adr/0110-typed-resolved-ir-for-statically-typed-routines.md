@@ -320,3 +320,5 @@ The three costs that measurement names are filed on their own, so they survive w
 ### Stages 3-4
 
 Not started; see the consequences recorded under Stage 2 before starting either.
+
+**2026-09-23:** those consequences were drawn from a TRIR that bailed on every linked call (see the correction under Stage 2). A replacement plan, re-derived from measurements of a TRIR that completes, is proposed in [ADR-0112](0112-trir-completion-plan-for-beating-rakudo.md).
