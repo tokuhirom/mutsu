@@ -130,6 +130,9 @@ impl Interpreter {
             .is_some_and(|v| v.truthy())
     }
 
+    /// Cost: O(e) on a list/array RHS, e = its elements (a linear `===` scan that
+    /// stops at the first hit, no Set is built); O(1) expected on a
+    /// Set/Bag/Mix/Hash (one hash probe) or an integer Range.
     fn set_contains(&mut self, container: &Value, needle: &Value) -> bool {
         // ADR-0058: `"x" (elem) @xs.map({...})` tests membership in the MAPPED
         // elements, which `as_list_items` below reads through pure code.
@@ -496,6 +499,7 @@ impl Interpreter {
         }
     }
 
+    /// Cost: see `set_contains` -- O(e) on a list RHS, O(1) on a Set/Bag/Mix/Hash.
     pub(super) fn exec_set_elem_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
@@ -507,6 +511,7 @@ impl Interpreter {
         Ok(())
     }
 
+    /// Cost: see `set_contains` -- O(e) on a list LHS, O(1) on a Set/Bag/Mix/Hash.
     pub(super) fn exec_set_cont_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();

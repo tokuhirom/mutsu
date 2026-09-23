@@ -107,6 +107,7 @@ pub(super) fn dispatch(
             }
             Some(Some(Ok(Value::truth(!target.truthy()))))
         }
+        // Cost: O(1) (inspects the invocant's own lazy flag / range end only).
         "is-lazy" => {
             // For Iterator instances, check the stored is_lazy attribute
             if let ValueView::Instance {

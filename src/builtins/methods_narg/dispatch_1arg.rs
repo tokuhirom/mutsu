@@ -1057,6 +1057,10 @@ pub(crate) fn native_method_1arg(
                 Some(Ok(Value::seq(items[start..].to_vec())))
             }
         },
+        // Cost: O(e + C(e, k) * k), e = elements of the invocant, k = combination size
+        // (every combination is materialized eagerly, so `.combinations(k).head` or
+        // `.elems` pays for the full output). Rakudo: O(k) per combination pulled --
+        // see #NNNN.
         "combinations" => {
             let items = target
                 .as_list_items()
@@ -1639,6 +1643,9 @@ pub(crate) fn native_method_1arg(
                 }
             }
         }
+        // Cost: O(e + k) on a list/array, e = elements of the invocant (copied),
+        // k = elements picked (each an O(1) swap_remove); `.pick(*)` is an O(e)
+        // Fisher-Yates shuffle; O(k) on an integer Range.
         "pick" => {
             if matches!(target.view(), ValueView::Mix(_, _)) {
                 return Some(Err(RuntimeError::new(
@@ -1911,6 +1918,9 @@ pub(crate) fn native_method_1arg(
             }
             _ => None,
         },
+        // Cost: O(e + k) on a list/array, e = elements of the invocant (copied into
+        // the sampling pool even for a small k), k = elements rolled; O(k) on an
+        // integer Range. Rakudo: O(k) -- see #NNNN.
         "roll" => {
             if matches!(target.view(), ValueView::Package(_)) {
                 return None;

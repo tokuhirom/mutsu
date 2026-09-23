@@ -153,6 +153,9 @@ pub(super) fn dispatch(
                 Some(Ok(items.last().cloned().unwrap_or(Value::NIL)))
             }
         }),
+        // Cost: O(e), e = elements of a list/array invocant (the receiver is copied
+        // into a fresh Vec just to index one slot); O(1) on an integer Range.
+        // Rakudo: O(1) -- see #NNNN.
         "pick" => Some(match target.view() {
             ValueView::Mix(_, _) => Some(Err(RuntimeError::new(
                 "Cannot call .pick on a Mix (immutable)",
@@ -213,6 +216,9 @@ pub(super) fn dispatch(
                 }
             }
         }),
+        // Cost: O(e), e = elements of a list/array invocant (the receiver is copied
+        // into a fresh Vec just to index one slot); O(1) on an integer Range.
+        // Rakudo: O(1) -- see #NNNN.
         "roll" => {
             if let ValueView::Mix(items, _) = target.view() {
                 return Some(Some(Ok(

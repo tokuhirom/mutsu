@@ -146,6 +146,9 @@ pub(crate) fn contains_cycle(value: &Value) -> bool {
 /// The walk is cycle-guarded. Without that guard a circular container aborted
 /// the whole process on a stack overflow *here*, in the dispatch probe, before
 /// [`gist_value`] — which does detect the cycle — was ever reached.
+/// Cost: O(t), t = nodes reachable from `value` when no instance is found (the
+/// common case), so every `.gist`/`say` of a large aggregate pays a full walk.
+/// Rakudo: O(1) for the 100-element gist head -- see #NNNN.
 pub(crate) fn collection_contains_instance(value: &Value) -> bool {
     let mut seen = std::collections::HashSet::new();
     if let Some(id) = container_id(value) {
@@ -335,6 +338,9 @@ pub(crate) fn gist_value(value: &Value) -> String {
             // `[...]` held in `@` array context, `(...)` for a bare Seq.
             crate::value::lazy_list_placeholder("gist", ll.in_array_context())
         }
+        // Cost: O(t), t = total rendered size of every element: this renderer (the
+        // `say @a` path) has no 100-element cap, unlike `.gist`. Rakudo: O(1) for the
+        // 100-element head -- see #NNNN.
         ValueView::Array(items, kind) => {
             let ptr = crate::gc::Gc::as_ptr(&items) as usize;
             // The `$id` Rakudo's `gistseen` names the node with is its type.

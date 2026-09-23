@@ -895,6 +895,9 @@ impl Interpreter {
     }
 
     /// Dispatch the "is-lazy" method.
+    /// Cost: O(e) on a list/array, e = elements of the invocant (each element is
+    /// checked for a lazy tail); O(1) on a LazyList or Range. Plain `@a.is-lazy`
+    /// is answered O(1) by the native arm in `dispatch_core_str.rs` first.
     fn dispatch_is_lazy_method(&self, target: &Value) -> Value {
         let value_is_lazy = |v: &Value| match v.view() {
             ValueView::LazyList(list) => list.is_genuinely_lazy(),
@@ -973,6 +976,7 @@ impl Interpreter {
     }
 
     /// Dispatch "values" method.
+    /// Cost: O(e), e = elements (or hash values) of the invocant, copied into a Seq.
     fn dispatch_values_method(&self, target: Value) -> Result<Value, RuntimeError> {
         match target.view() {
             // `Foo::.values` — the stash's symbol values (enum members, nested

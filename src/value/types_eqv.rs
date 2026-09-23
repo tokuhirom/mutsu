@@ -89,6 +89,8 @@ impl Value {
         match (self.view(), other.view()) {
             // Arrays/Lists: must be same container type (Array vs List) and recursively eqv
             // eqv ignores Scalar wrapping — only Array vs List distinction matters
+            // Cost: O(1) on a kind/length mismatch, else O(i) to the first differing
+            // element (recursing into it), O(e) when equal.
             (ValueView::Array(a, a_kind), ValueView::Array(b, b_kind)) => {
                 a_kind.is_real_array() == b_kind.is_real_array()
                     && a.len() == b.len()

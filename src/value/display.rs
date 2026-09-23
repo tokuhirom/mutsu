@@ -585,6 +585,8 @@ impl Value {
                 )
             }
             ValueView::Array(_, crate::value::ArrayKind::Lazy) => "...".to_string(),
+            // Cost: O(t), t = total chars of the joined element strings (one `join`,
+            // no repeated concatenation). Backs `.Str`, `~@a` and `"@a[]"`.
             ValueView::Array(items, ..) => {
                 // Cycle detection for recursive array structures
                 thread_local! {

@@ -243,6 +243,7 @@ fn push_permutations(
     }
 }
 
+/// Cost: O(e! * e), e = elements of `items` (every permutation materialized).
 pub(crate) fn all_permutations(items: &[Value]) -> Vec<Value> {
     if items.is_empty() {
         return vec![Value::array(Vec::new())];
@@ -255,6 +256,8 @@ pub(crate) fn all_permutations(items: &[Value]) -> Vec<Value> {
 }
 
 /// Generate all combinations of `k` items from `items`.
+/// Cost: O(C(e, k) * k), e = elements of `items`: linear in the output size,
+/// all of it materialized up front.
 pub(crate) fn combinations_k(items: &[Value], k: usize) -> Vec<Value> {
     let n = items.len();
     if k == 0 {
@@ -870,6 +873,8 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
             }
             _ => None,
         },
+        // Cost: O(e + v), e = pairs of the invocant, v = values produced (a Positional
+        // value fans out to one pair per element).
         "invert" => match invert_value(target) {
             Some(v) => Some(Ok(v)),
             None => {
@@ -1184,6 +1189,9 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
             }
             _ => None,
         },
+        // Cost: O(e! * e), e = elements, generated eagerly for e <= 20 even when only
+        // a prefix is consumed (`(^10).permutations.head` builds 3.6M arrays); e > 20
+        // returns a count-only lazy list. Rakudo: O(e) per permutation pulled -- see #NNNN.
         "permutations" => {
             let items = if crate::runtime::utils::is_shaped_array(target) {
                 crate::runtime::utils::shaped_array_leaves(target)
@@ -1221,6 +1229,8 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
             }
             Some(Ok(Value::seq(all_permutations(&items))))
         }
+        // Cost: O(2^e * e), e = elements (the whole powerset, eager). Rakudo: O(e) per
+        // combination pulled -- see #NNNN.
         "combinations" => {
             let items = if crate::runtime::utils::is_shaped_array(target) {
                 crate::runtime::utils::shaped_array_leaves(target)
