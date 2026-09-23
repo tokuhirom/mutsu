@@ -675,10 +675,12 @@ impl Interpreter {
             }
 
             // -- string / aggregate queries --
-            // Cost: O(n), n = bytes of $s (copied, then counted). MoarVM: O(1) -- see #9130.
+            // Cost: O(1) amortized: a long `Str` answers from its cached
+            // index (built in O(n) on first use, `grapheme_index`); a short
+            // one is counted in place without copying.
             "chars" => Ok(Value::int(
                 args.first()
-                    .map(|v| v.to_string_value().chars().count() as i64)
+                    .map(|v| crate::builtins::grapheme_index::codepoint_count(v) as i64)
                     .unwrap_or(0),
             )),
             // Cost: O(1).

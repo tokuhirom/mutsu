@@ -72,7 +72,7 @@ impl Interpreter {
     pub(super) fn trir_chars_len(&mut self, src: &Value) -> i64 {
         match self.trir.chars.index_of(src) {
             Some(i) => self.trir.chars.chars_at(i).len() as i64,
-            None => src.to_string_value().chars().count() as i64,
+            None => crate::builtins::grapheme_index::codepoint_count(src) as i64,
         }
     }
 
