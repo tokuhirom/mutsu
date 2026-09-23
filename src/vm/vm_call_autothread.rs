@@ -554,7 +554,7 @@ impl Interpreter {
     /// positionals as raw values, and a slurpy hash (`*%h`, `+%h`, the implicit
     /// `%_`) collects named arguments the same way. Shared by the sub and the
     /// method call paths so both obey one rule.
-    fn autothread_indices_for_params(
+    pub(super) fn autothread_indices_for_params(
         &mut self,
         args: &[Value],
         junction_indices: &[usize],

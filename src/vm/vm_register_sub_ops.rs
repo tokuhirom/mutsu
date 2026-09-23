@@ -285,6 +285,25 @@ impl Interpreter {
         idx: u32,
         compiled_fns: &CompiledFns,
     ) -> Result<(), RuntimeError> {
+        // ADR-0112: a frame-lexical `my sub` registers nothing.
+        if let Some(r) = code
+            .sub_decl_plans
+            .get(idx as usize)
+            .and_then(|plan| plan.frame_lexical)
+        {
+            return self.exec_declare_frame_lexical_routine(code, idx, r, compiled_fns);
+        }
+        self.exec_register_sub_op_in_registry(code, idx, compiled_fns)
+    }
+
+    /// The ordinary sub registration: install the plan's routine into the
+    /// program-global registry.
+    pub(super) fn exec_register_sub_op_in_registry(
+        &mut self,
+        code: &CompiledCode,
+        idx: u32,
+        compiled_fns: &CompiledFns,
+    ) -> Result<(), RuntimeError> {
         if let Some(crate::opcode::CompiledSubDeclPlan {
             name,
             name_chunk,
@@ -306,6 +325,7 @@ impl Interpreter {
             custom_traits,
             fingerprint: site_fp,
             routine_metadata,
+            frame_lexical: _,
         }) = code.sub_decl_plans.get(idx as usize)
         {
             let resolved_name = if let Some(chunk) = name_chunk {
