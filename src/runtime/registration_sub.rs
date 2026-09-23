@@ -950,7 +950,7 @@ impl Interpreter {
             let pkg = self.current_package().to_string();
             let fq = format!("{}::{}", pkg, name);
             let fq_sym = Symbol::intern(&fq);
-            let multi_prefix = format!("{pkg}::{name}/");
+            let multi_prefix = format!("{}/", fq_sym.as_str());
             let shadows_outer_multi = self
                 .fn_keys_for_base(name)
                 .iter()
