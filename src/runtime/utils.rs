@@ -318,7 +318,9 @@ pub(crate) fn translate_nl_in(s: String) -> String {
 /// The standard text-mode decode fixups Raku applies to file content: strip a
 /// leading BOM, then normalize CRLF line endings.
 pub(crate) fn decode_text_content(s: String) -> String {
-    translate_nl_in(strip_utf8_bom(s))
+    // NFC like every other decode (ADR-0118 §2.4): rakudo's strings are NFG,
+    // so a slurped file and a `.decode`d Blob of the same bytes are equal.
+    crate::builtins::nfc(translate_nl_in(strip_utf8_bom(s)))
 }
 
 /// Check if a class name represents a (mutable) Buf-like type (`Buf`, `Buf[uint8]`,

@@ -76,6 +76,32 @@ MoarVM answers), so the result depended on whether the enclosing routine had bee
   the VM's nqp path or TRIR's runtime outside `nqp_native.rs` (opt-out: `native-prim: allow`).
   `t/fixtures/trir-int-ops.raku` pins the shift counts with TRIR on and off against rakudo.
 
+### 2.4 Byte decoding
+
+There were four decoders:
+
+- `nqp::decode`, inline;
+- `builtins::decode_bytes_unnormalized` / `decode_bytes_with_builtin_encoding` (`Blob.decode`);
+- `Interpreter::decode_with_encoding` (IO reads with a named encoding, sockets, `Proc`);
+- `decode_with_encoding_and_replacement` (`.decode(:replacement)`).
+
+The second and third were line-for-line copies of each other, down to the UTF-8 error text, except
+that only the second NFC-normalized its result. `nqp::decode` let bytes above 127 through as
+"ascii" and kept a UTF-8 BOM. So a slurped file, a decoded Blob and a `:replacement` decode of the
+same bytes could disagree.
+
+- The builtin decoder is the one body. `decode_with_encoding` keeps only the lookup of
+  user-registered encoding names and then delegates to it.
+- `decode_with_encoding_and_replacement` without a replacement *is* that decode. With one, it keeps
+  its lenient per-encoding arms and normalizes the result.
+- `nqp::decode` calls it.
+- `slurp` / `lines` / `words`' UTF-8 post-processing (`decode_text_content`) normalizes too.
+
+`t/types/buf-decode-one-decoder-parity.t` pins 11 rows.
+
+Out of scope, and filed separately: the IO *handle* read paths (`.get`, `.readchars`, native
+`.slurp` on a handle) still decode with `String::from_utf8_lossy` directly, 34 sites in all.
+
 ## 3. Consequences
 
 - The three panics and the ten divergences in §1 are fixed.

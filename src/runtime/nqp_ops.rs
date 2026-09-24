@@ -695,29 +695,27 @@ impl Interpreter {
 
             // -- byte-string decode (nqp::decode(buf, 'utf8') -> str) --
             // Cost: O(n), n = bytes of $buf (decoded into a fresh string).
+            // The one builtin decoder `Blob.decode` uses (ADR-0118 §2.4): the
+            // same encoding names, strict ASCII, BOM handling, error text and
+            // NFC normalization. This used to be a private decoder that let
+            // bytes > 127 through as "ascii" and kept a UTF-8 BOM.
             "decode" => {
                 let buf = args.first().cloned().unwrap_or(Value::NIL);
                 let enc = args
                     .get(1)
-                    // An encoding NAME. str-prim: allow
-                    .map(|v| v.to_string_value().to_lowercase())
+                    .map(|v| v.to_string_value())
                     .unwrap_or_else(|| "utf8".to_string());
-                match with_buf_bytes_of(op, &buf, |bytes| match enc.as_str() {
-                    "utf8" | "utf-8" => match std::str::from_utf8(bytes) {
-                        Ok(s) => Ok(Value::str(s.to_owned())),
-                        Err(_) => Err(RuntimeError::new(
-                            "Malformed UTF-8 in nqp::decode".to_string(),
-                        )),
-                    },
-                    "ascii" | "latin-1" | "iso-8859-1" => Ok(Value::str(
-                        bytes.iter().map(|&b| b as char).collect::<String>(),
-                    )),
-                    other => Err(RuntimeError::new(format!(
-                        "nqp::decode: unsupported encoding '{other}'"
-                    ))),
+                match with_buf_bytes_of(op, &buf, |bytes| {
+                    crate::builtins::decode_bytes_with_encoding_label(bytes, &enc).unwrap_or_else(
+                        || {
+                            Err(RuntimeError::new(format!(
+                                "Unknown string encoding: '{enc}'"
+                            )))
+                        },
+                    )
                 }) {
                     Err(e) | Ok(Err(e)) => Err(e),
-                    Ok(Ok(v)) => Ok(v),
+                    Ok(Ok(s)) => Ok(Value::str(s)),
                 }
             }
 
