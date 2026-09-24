@@ -589,8 +589,11 @@ impl Interpreter {
                     },
                     _ => String::new(),
                 };
+                // The same type check `~~` makes (smiley, enum and the `is Mu`
+                // MRO correction included), not the bare type walk.
                 Ok(bool_int(
-                    !type_name.is_empty() && self.type_matches_value(&type_name, &v),
+                    !type_name.is_empty()
+                        && self.type_object_accepts(&v, crate::symbol::Symbol::intern(&type_name)),
                 ))
             }
 
@@ -724,60 +727,35 @@ impl Interpreter {
             // own width) and on an array. MoarVM: O(1).
             "atpos_i" | "atpos_n" => {
                 let target = args.first().cloned().unwrap_or(Value::NIL);
-                let idx = iarg(args, 1);
                 // A Buf/Blob answers from its storage, one element decoded at
                 // the buffer's own width and signedness; everything else (a
                 // plain array, an IterationBuffer, a Uni's codepoints) from the
-                // shared element accessor.
-                let elem = match target.view() {
-                    ValueView::Instance { attributes, .. }
-                        if value_buf::buf_len(&attributes).is_some() =>
-                    {
-                        usize::try_from(idx)
-                            .ok()
-                            .and_then(|i| value_buf::buf_elem_at(&attributes, i))
-                    }
-                    _ => usize::try_from(idx)
-                        .ok()
-                        .and_then(|i| Self::nqp_elem_at(&target, i)),
-                };
-                let elem = elem.unwrap_or(Value::int(0));
-                if op == "atpos_n" {
-                    Ok(Value::num(elem.to_f64()))
-                } else {
-                    Ok(Value::int(crate::runtime::to_int(&elem)))
+                // shared element accessor. Both resolve the index through
+                // `nqp_backing::resolve_index` (negative counts from the end).
+                if op == "atpos_i" {
+                    return Some(
+                        crate::runtime::nqp_backing::atpos_i(&target, iarg(args, 1))
+                            .map(Value::int),
+                    );
+                }
+                match crate::runtime::nqp_backing::elem_at(&target, iarg(args, 1)) {
+                    Ok(e) => Ok(Value::num(e.map_or(0.0, |v| v.to_f64()))),
+                    Err(e) => Err(e),
                 }
             }
             // Cost: O(1) amortized on an array and on a Buf (one element encoded in place);
             // O(i - e) when growing, i = index, e = elements.
             "bindpos_i" | "bindpos_n" => {
                 let target = args.first().cloned().unwrap_or(Value::NIL);
-                let idx = iarg(args, 1).max(0) as usize;
                 let val = args.get(2).cloned().unwrap_or(Value::int(0));
-                match target.view() {
-                    ValueView::Instance { attributes, .. } => {
-                        if value_buf::set_buf_elem(&attributes, idx, &val).is_none() {
-                            return Some(Err(RuntimeError::new(format!(
-                                "nqp::{op}: expected a Buf/Blob or array"
-                            ))));
-                        }
-                        Ok(val)
-                    }
-                    ValueView::Array(items, _) => {
-                        // SAFETY: audited aliased in-place container write (see
-                        // value::aliased_mut) — same pattern as deepmap's
-                        // element writeback; no borrow into the node is live.
-                        let data = unsafe { crate::value::gc_contents_mut(&items) };
-                        if data.items().len() <= idx {
-                            data.items_mut().resize(idx + 1, Value::int(0));
-                        }
-                        data.items_mut()[idx] = val.clone();
-                        Ok(val)
-                    }
-                    _ => Err(RuntimeError::new(format!(
-                        "nqp::{op}: expected a Buf/Blob or array"
-                    ))),
-                }
+                // A native list holds natives: the value is converted, and a
+                // gap reads back as that type's zero.
+                let (val, fill) = if op == "bindpos_n" {
+                    (Value::num(val.to_f64()), Value::num(0.0))
+                } else {
+                    (Value::int(crate::runtime::to_int(&val)), Value::int(0))
+                };
+                crate::runtime::nqp_backing::bind_elem(op, &target, iarg(args, 1), val, fill)
             }
 
             // -- slice / splice (buf) --
@@ -817,7 +795,20 @@ impl Interpreter {
             "splice" => {
                 let target = args.first().cloned().unwrap_or(Value::NIL);
                 let source = args.get(1).cloned().unwrap_or(Value::NIL);
-                let offset = iarg(args, 2).max(0) as usize;
+                // A negative offset counts from the end (MoarVM); one before
+                // the start is an error.
+                let offset = {
+                    let raw = iarg(args, 2);
+                    if raw >= 0 {
+                        raw as usize
+                    } else {
+                        let len = Self::nqp_elems_len_of(&target).unwrap_or(0) as i64;
+                        if len + raw < 0 {
+                            return Some(Err(RuntimeError::new("MVMArray: Illegal splice offset")));
+                        }
+                        (len + raw) as usize
+                    }
+                };
                 let count = iarg(args, 3).max(0) as usize;
                 // An element-store target (a plain list, an IterationBuffer, a
                 // Uni) splices VALUES; only a Buf/Blob splices bytes. nqp code

@@ -484,11 +484,9 @@ impl Interpreter {
         // write -- `items` is a `Gc` handle, the `ValueView` it came from is not
         // read again below, and this lane runs on the executing thread only.
         let data: &mut crate::value::ArrayData = unsafe { crate::value::gc_contents_mut(&items) };
-        data.items_mut()[i] = stored;
-        // The hole set, maintained exactly as `mark_initialized_index` does:
-        // materializing it from `None` is what makes the OTHER gap-marker slots
-        // read as holes, so this lane must not skip that transition.
-        data.mark_initialized(i);
+        // The one element store `ASSIGN-POS` shares, which also maintains the
+        // hole set exactly as `mark_initialized_index` does.
+        data.store_element(i, stored);
         // A single positional index names one scalar slot, so the assignment's
         // rvalue is itemized (`@z = (@a[0] = 1, 2)` has two elements, the first
         // itemized) -- the same rule the slow path's final push applies.
