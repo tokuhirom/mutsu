@@ -1070,7 +1070,7 @@ impl Interpreter {
             {
                 self.env_mut().remove_sym(sym);
             }
-            // A fresh `my $x = ...` declaration (plain `=`, not `:=`) drops the
+            // A fresh `my $x = ...` (or `my $x := ...`) declaration drops the
             // FORWARD sigilless `:=` alias (`alias::x = Y`) a PRIOR same-name
             // binding left, so `$x = v` no longer propagates to `Y`. Without
             // this, `my $a = h; $a := h` inside a loop leaks the NEXT iteration's
@@ -1079,11 +1079,15 @@ impl Interpreter {
             // aliases (`alias::Z = x`, another lexical bound TO `$x`) and
             // `local_bind_pairs` are preserved because a same-scope
             // redeclaration (`my $x = 2; my $y := $x; my $x = 3`) is the SAME
-            // variable in raku, so `$y` must still track `$x`. `:=` (re)binds run
-            // their own alias bookkeeping and are excluded.
-            if !is_bind
-                && !scalar_bind
-                && crate::env::closure_meta_keys_possible()
+            // variable in raku, so `$y` must still track `$x`. A `:=`
+            // declaration is no exception: one whose source is a variable
+            // re-records its own forward alias further down (the `bind_source`
+            // arm), and one bound to a VALUE (`my $r := substr-rw(...)`, a
+            // Proxy, a call result) has no alias at all -- keeping a stale
+            // `alias::r = x` from a caller's `my $r := $x` made the walk after
+            // the store write this routine's Proxy into the caller's `$x`
+            // (#9244).
+            if crate::env::closure_meta_keys_possible()
                 && let Some(sym) = code.alias_sym(idx)
             {
                 self.env_mut().remove_sym(sym);
@@ -1128,8 +1132,11 @@ impl Interpreter {
                     .locals_sym
                     .get(idx)
                     .is_some_and(|sym| code.self_capture_decl_locals.contains(sym));
-            // Replace stale ContainerRef in env with Nil so a new `my $var`
-            // doesn't inherit a binding from an earlier scope. Keep the key
+            // Replace stale ContainerRef (or bound Proxy) in env with Nil so a
+            // new `my $var` doesn't inherit a binding from an earlier scope: a
+            // later `$var = v` lazy-syncs a Proxy from env and runs ITS STORE,
+            // so a caller's `my $r := substr-rw($t, ...)` would receive this
+            // routine's own `$r = v` (#9244). Keep the key
             // so saved frame propagation can still find it. Probed through the
             // pre-interned local Symbol (a by-name `get` would re-intern on every
             // declaration).
@@ -1137,7 +1144,7 @@ impl Interpreter {
                 && let Some(sym) = code.locals_sym.get(idx).copied()
                 && matches!(
                     self.env().get_sym(sym).map(Value::view),
-                    Some(ValueView::ContainerRef(_))
+                    Some(ValueView::ContainerRef(_) | ValueView::Proxy { .. })
                 )
             {
                 // A package `our` scalar's cell is published under the BARE env
@@ -2553,8 +2560,16 @@ impl Interpreter {
                 return Ok(());
             }
         }
-        // If the current value is a Proxy, invoke STORE instead of overwriting
-        if let ValueView::Proxy { storer, .. } = self.locals[idx].view()
+        // If the current value is a Proxy, invoke STORE instead of overwriting.
+        // Only for an assignment: a `:=` (re)bind or a fresh declaration
+        // replaces the slot's binding, so a Proxy left there by an earlier
+        // binding of the same name (a caller's `my $r := substr-rw(...)`) must
+        // not receive the new value (#9244).
+        if !is_bind
+            && !is_rebind
+            && !scalar_bind
+            && !is_vardecl
+            && let ValueView::Proxy { storer, .. } = self.locals[idx].view()
             && !storer.is_nil()
         {
             let proxy_val = self.locals[idx].clone();
