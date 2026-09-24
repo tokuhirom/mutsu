@@ -348,6 +348,23 @@ impl ArrayData {
     }
 }
 
+impl Value {
+    /// A shallow copy of an array value that keeps its kind (`Array` stays an
+    /// `Array`, a `List` a `List`): the one body of `.clone` on an array and
+    /// of `nqp::clone`, which used to hand back a `List` for an `Array`.
+    /// `None` for a non-array.
+    // Cost: O(e), e = elements.
+    pub(crate) fn array_shallow_clone(&self) -> Option<Value> {
+        match self.view() {
+            crate::value::ValueView::Array(items, kind) => Some(Value::array_with_kind(
+                crate::gc::Gc::new(ArrayData::new(items.to_vec())),
+                kind,
+            )),
+            _ => None,
+        }
+    }
+}
+
 /// Field-wise clone, except that the copy carries only the live elements:
 /// [`ArrayData::shift_front`]'s dead prefix is not worth duplicating.
 impl Clone for ArrayData {

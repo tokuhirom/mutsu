@@ -61,14 +61,15 @@ impl Interpreter {
             // Cost: O(1).
             "time" => Ok(Value::int(Self::epoch_nanos())),
 
-            // nqp::eqaddr($a, $b) — object identity as an int 0/1. Same
-            // relation as Raku's `=:=`, which is already identity over the
-            // container-kind values and by-name over type objects.
-            // Cost: O(1) (a user WHICH on an Instance compares memoized strings, O(len)).
-            "eqaddr" => Ok(Value::int(i64::from(crate::runtime::values_identical(
-                args.first().unwrap_or(&Value::NIL),
-                args.get(1).unwrap_or(&Value::NIL),
-            )))),
+            // nqp::eqaddr($a, $b) — object identity as an int 0/1: the same
+            // object, never a `.WHICH` comparison (`values_same_object`).
+            // Cost: O(1).
+            "eqaddr" => Ok(Value::int(i64::from(
+                crate::runtime::utils::values_same_object(
+                    args.first().unwrap_or(&Value::NIL),
+                    args.get(1).unwrap_or(&Value::NIL),
+                ),
+            ))),
 
             // nqp::can($obj, $name) — int 0/1: does this object have a method
             // of that name (the low-level form of `$obj.^can($name)`).
@@ -127,8 +128,13 @@ impl Interpreter {
             // once at the `call_nqp_op` boundary (`nqp_ops.rs`), so it shares
             // this implementation.
             // Cost: O(1).
+            //
+            // Concreteness is NOT Raku's `.defined`: a `Failure` and `Empty`
+            // are concrete objects whose `.defined` happens to answer False,
+            // and `nqp::isconcrete` says 1 for both (measured against rakudo).
+            // So these ask `value_is_concrete`, not `value_is_defined`.
             "defined" | "isconcrete" | "isconcrete_nd" => Ok(Value::int(i64::from(
-                crate::runtime::types::value_is_defined(args.first().unwrap_or(&Value::NIL)),
+                crate::runtime::types::value_is_concrete(args.first().unwrap_or(&Value::NIL)),
             ))),
 
             // nqp::istrue($v) — int 0/1: nqp's own truthiness test. This is
@@ -137,9 +143,16 @@ impl Interpreter {
             // directly (AttrX::Mooish's `composed` method boolifies a
             // `nqp::getattr_i` int this way rather than going through `?`).
             // Cost: O(1) for scalars (truthy() of a lazy list may reify its head).
-            "istrue" => Ok(Value::int(i64::from(
-                args.first().unwrap_or(&Value::NIL).truthy(),
-            ))),
+            //
+            // It is the VM's own boolification (`eval_truthy`, which `?`, `if`
+            // and TRIR's `TruthyObj` use), so a user `Bool` method and a
+            // pending `.grep` are honoured (ADR-0118). It used to be the pure
+            // `Value::truthy`, which answered 1 for an object whose `Bool` is
+            // False.
+            "istrue" => {
+                let v = args.first().cloned().unwrap_or(Value::NIL);
+                Ok(Value::int(i64::from(self.eval_truthy(&v))))
+            }
 
             // nqp::islist($v) — int 0/1: is this a raw nqp-level list (the
             // `list` op above builds one), as opposed to a boxed Raku Array

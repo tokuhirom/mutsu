@@ -3542,11 +3542,9 @@ impl Interpreter {
                 }
                 // Cost: O(e), e = elements of the array.
                 ("clone", _) => {
-                    let cloned = items.to_vec();
-                    return Ok(Value::array_with_kind(
-                        crate::gc::Gc::new(crate::value::ArrayData::new(cloned)),
-                        arr_kind,
-                    ));
+                    if let Some(copy) = target.array_shallow_clone() {
+                        return Ok(copy);
+                    }
                 }
                 _ => {}
             }

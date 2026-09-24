@@ -213,6 +213,27 @@ fn rebuild_with_leaves<'a, I: Iterator<Item = &'a Value>>(value: &Value, iter: &
     }
 }
 
+/// `nqp::eqaddr`: are these the same object? Unlike `===`
+/// ([`values_identical`]), this never consults `.WHICH`: two instances of a
+/// class with a constant user `WHICH` are `===` but not the same object, and
+/// two separately built strings with equal text are not the same object
+/// either (both measured against rakudo). `eqaddr` used to share `===`'s
+/// helper, whose user-`WHICH` memo made its answer depend on whether a `===`
+/// had run on the pair first.
+///
+/// Values mutsu stores unboxed (small integers, nums, rationals) have no
+/// identity of their own and compare by value, as MoarVM's cached small
+/// integers do.
+// Cost: O(1).
+pub(crate) fn values_same_object(left: &Value, right: &Value) -> bool {
+    match (left.view(), right.view()) {
+        (ValueView::Instance { id: a, .. }, ValueView::Instance { id: b, .. }) => a == b,
+        (ValueView::Instance { .. }, _) | (_, ValueView::Instance { .. }) => false,
+        (ValueView::Str(a), ValueView::Str(b)) => std::sync::Arc::ptr_eq(&a, &b),
+        _ => values_identical(left, right),
+    }
+}
+
 pub(crate) fn values_identical(left: &Value, right: &Value) -> bool {
     match (left.view(), right.view()) {
         (ValueView::Package(name), ValueView::Int(0))
