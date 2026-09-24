@@ -7,7 +7,7 @@ use Test;
 # way, and every place a Blob is asked for a string throws the one
 # X::Buf::AsStr. Expected values were measured with rakudo.
 
-plan 29;
+plan 37;
 
 class S { method Str { "b" } }
 my $s = S.new;
@@ -18,6 +18,18 @@ is infix:<leg>($s, "a"), More, '... and so does &infix:<leg>';
 is ($s, "a").sort(&infix:<leg>).map(~*).join(','), 'a,b', '... and a sort by it';
 is (($s,) »leg« ("a",)).head, More, '... as the hyper form already did';
 is (any(1, 3) leg 2).raku, any(Less, More).raku, 'leg autothreads a junction (it answered More)';
+
+# cmp falls back to the operands' .Stringy once no Real/structural candidate
+# applies, so it honours a user Str too (it compared the .gist).
+is ($s cmp "a"), More, 'cmp calls a user Str';
+is ("a" cmp $s), Less, '... on either side';
+is infix:<cmp>($s, "a"), More, '... and so does &infix:<cmp>';
+is ($s, "a").sort.map(~*).join(','), 'a,b', 'the default .sort order does too';
+is sort(($s, "a")).map(~*).join(','), 'a,b', '... as does sort()';
+is ($s, "a").sort(:k).join(','), '1,0', '... and .sort(:k)';
+my @objs = $s, "a";
+is (gather for @objs.sort -> $v { take ~$v }).join(','), 'a,b', '... and a for over @a.sort';
+is (1 cmp $s), Less, 'Real cmp object compares the strings';
 
 # The routine forms of the string comparators and ~.
 ok infix:<eq>($s, "b"), '&infix:<eq> calls a user Str';

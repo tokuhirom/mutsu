@@ -347,7 +347,7 @@ impl Interpreter {
     /// rakudo pick the generic `(Real, Real)` infix candidate over a built-in
     /// numeric one. Deliberately restricted to `Instance` values: the built-in
     /// numeric `Value` variants are handled by their own candidates.
-    fn is_real_role_object(&mut self, value: &Value) -> bool {
+    pub(crate) fn is_real_role_object(&mut self, value: &Value) -> bool {
         matches!(value.view(), ValueView::Instance { .. })
             && !Self::is_buf_value(value)
             && value.match_str_value().is_none()

@@ -201,6 +201,12 @@ pub(crate) trait SortCaller {
     /// Extract every Schwartzian key in ONE batch, or `None` to fall back to a
     /// [`Self::call_callable`] per element. See [`sort_keys_batched`].
     fn map_keys(&mut self, callable: &Value, items: &[Value]) -> Option<Vec<Value>>;
+    /// Whether `item` is an object whose class defines its own `Str` /
+    /// `Stringy`, so the default order must dispatch `cmp` instead of using
+    /// the pure [`compare_values`].
+    fn has_user_stringifier(&mut self, item: &Value) -> bool;
+    /// The default order through the dispatched `infix:<cmp>`.
+    fn dispatched_cmp(&mut self, a: &Value, b: &Value) -> std::cmp::Ordering;
 }
 
 /// Extract all sort keys with a single `.map` over `items`.
@@ -287,6 +293,27 @@ impl SortCaller for InterpCaller<'_> {
     fn map_keys(&mut self, callable: &Value, items: &[Value]) -> Option<Vec<Value>> {
         sort_keys_batched(self.0, callable, items)
     }
+
+    fn has_user_stringifier(&mut self, item: &Value) -> bool {
+        self.0.has_user_stringifier_operand(&item.deref_container())
+    }
+
+    fn dispatched_cmp(&mut self, a: &Value, b: &Value) -> std::cmp::Ordering {
+        dispatched_cmp_ordering(self.0, a, b)
+    }
+}
+
+/// `a cmp b` through [`Interpreter::cmp_value`], for a default-order sort
+/// whose elements need interpreter dispatch (a user `Str`).
+pub(crate) fn dispatched_cmp_ordering(
+    interp: &mut Interpreter,
+    a: &Value,
+    b: &Value,
+) -> std::cmp::Ordering {
+    interp
+        .cmp_value(a.deref_container(), b.deref_container())
+        .map(|r| sort_result_to_ordering(&r))
+        .unwrap_or(std::cmp::Ordering::Equal)
 }
 
 /// Stable merge sort that always calls the comparator with (left, right)
@@ -435,6 +462,13 @@ pub(crate) fn sort_items_generic(
             });
             schwartzian_by_keys(items, &keys);
         }
+        // Default order: the pure `cmp`, unless an element stringifies
+        // through its own `Str`/`Stringy`, which only a dispatched `cmp` sees.
+        None if items.iter().any(|v| caller.has_user_stringifier(v)) => {
+            merge_sort_with_cmp(items, &mut |a: &Value, b: &Value| {
+                caller.dispatched_cmp(a, b)
+            });
+        }
         None => items.sort_by(|a, b| compare_values(a, b).cmp(&0)),
     }
 }
@@ -506,6 +540,9 @@ pub(crate) fn sort_indices_generic(
                 })
             };
             perm.sort_by(|&i, &j| compare_values(&keys[i], &keys[j]).cmp(&0));
+        }
+        None if items.iter().any(|v| caller.has_user_stringifier(v)) => {
+            perm.sort_by(|&i, &j| caller.dispatched_cmp(&items[i], &items[j]));
         }
         None => perm.sort_by(|&i, &j| compare_values(&items[i], &items[j]).cmp(&0)),
     }

@@ -643,6 +643,16 @@ impl Interpreter {
             let ord = cmp_values(&left, &right);
             return Ok(runtime::make_order(ord));
         }
+        // Rakudo's `infix:<cmp>(\a, \b)` falls back to `a.Stringy cmp
+        // b.Stringy` once no Real/structural candidate applies, so an object
+        // with its own `Str`/`Stringy` compares by that string, not its gist
+        // (`S.new cmp "a"` with `method Str { "b" }` is More).
+        if self.has_user_stringifier_operand(&left) || self.has_user_stringifier_operand(&right) {
+            let (left, right) = self.coerce_str_compare_operands(left, right)?;
+            let ord = Self::stringify_compare_operand(&left)?
+                .cmp(&Self::stringify_compare_operand(&right)?);
+            return Ok(runtime::make_order(ord));
+        }
         let fallback_left = left.clone();
         let fallback_right = right.clone();
         let (left, right) = self
@@ -650,6 +660,19 @@ impl Interpreter {
             .unwrap_or((fallback_left, fallback_right));
         let ord = Self::spaceship_ordering(&left, &right);
         Ok(runtime::make_order(ord))
+    }
+
+    /// A concrete, non-`Real` user object whose class defines `Str` or
+    /// `Stringy` -- the operand `cmp` must compare through that method.
+    pub(crate) fn has_user_stringifier_operand(&mut self, v: &Value) -> bool {
+        let ValueView::Instance { class_name, .. } = v.view() else {
+            return false;
+        };
+        if Self::is_buf_value(v) || self.is_real_role_object(v) {
+            return false;
+        }
+        let cn = class_name.resolve();
+        self.has_user_method(&cn, "Stringy") || self.has_user_method(&cn, "Str")
     }
 
     pub(super) fn exec_cmp_op(&mut self) -> Result<(), RuntimeError> {
