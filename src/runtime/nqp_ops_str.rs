@@ -39,9 +39,11 @@ impl Interpreter {
                 iarg(args, 1),
                 (args.len() > 2).then(|| iarg(args, 2)),
             ),
-            // Cost: O(n1 + n2), n1, n2 = chars of the operands. Rakudo: amortized O(1)
-            // (strands) -- see #9141.
-            "concat" => Ok(str_prim::concat(&sarg(args, 0), &sarg(args, 1))),
+            // Cost: O(n1 + n2), n1, n2 = chars of the operands.
+            "concat" => Ok(str_prim::concat(
+                Value::str(sarg(args, 0)),
+                args.get(1).unwrap_or(&Value::NIL),
+            )),
             // nqp::index / rindex return **-1** when the needle is absent,
             // where Raku's `index` returns Nil. nqp code branches on exactly
             // that, so the -1 is the contract, not a placeholder.

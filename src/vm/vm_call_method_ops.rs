@@ -256,7 +256,7 @@ impl Interpreter {
     pub(super) fn try_fast_accessor_read(
         &mut self,
         target: &Value,
-        method: &str,
+        method_sym: crate::symbol::Symbol,
         args: &[Value],
         has_modifier: bool,
         quoted: bool,
@@ -265,6 +265,7 @@ impl Interpreter {
         if !args.is_empty() || has_modifier || quoted {
             return None;
         }
+        let method = method_sym.as_str();
         let ValueView::Instance {
             attributes,
             class_name,
@@ -300,7 +301,7 @@ impl Interpreter {
         // `NativeHelpers::Blob` came away with a junction instead of a body.
         if let Some(registered) = self.cstruct_class_name(&cn)
             && matches!(
-                self.resolve_user_method_or_accessor(&registered, method),
+                self.resolve_user_method_or_accessor_sym(&registered, method_sym),
                 Some(crate::runtime::UserMethodOrAccessor::Accessor)
             )
         {
@@ -357,7 +358,7 @@ impl Interpreter {
         // reports as a public accessor, so reading it by the bare name falls
         // through to the interpreter (which denies the access).
         if !matches!(
-            self.resolve_user_method_or_accessor(&cn, method),
+            self.resolve_user_method_or_accessor_sym(&cn, method_sym),
             Some(crate::runtime::UserMethodOrAccessor::Accessor)
         ) {
             return None;
@@ -1052,7 +1053,7 @@ impl Interpreter {
         // accessor read does not collapse the caller's scoped overlay.
         if let Some(val) = self.try_fast_accessor_read(
             &target,
-            method,
+            method_sym,
             &args,
             modifier_idx.is_some(),
             quoted,
@@ -1329,10 +1330,10 @@ impl Interpreter {
             if let Some(cn) = class_name
                 && match target.view() {
                     ValueView::Package(_) => {
-                        self.grammar_has_user_method(&cn, method)
+                        self.grammar_has_user_method_sym(&cn, method_sym)
                             || self.package_has_applicable_user_method(&target, method, &args)
                     }
-                    _ => self.grammar_has_user_method(&cn, method),
+                    _ => self.grammar_has_user_method_sym(&cn, method_sym),
                 }
             {
                 skip_native = true;

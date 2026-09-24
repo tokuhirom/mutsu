@@ -2235,6 +2235,18 @@ impl Parser {
             '?' => RegexQuantifier::ZeroOrOne,
             _ => return None,
         };
+        // `**N`, frugal `*?`/`+?`, and the `!`/`:` modifiers are two-character
+        // quantifier spellings the tree has no node for. Leave them unconsumed
+        // so the next `parse_atom` declines the whole tree: taking only the
+        // first `*` let an aliased atom's `$<a>=x**2` become `(x*)*` then a
+        // literal `2` (#9198).
+        if self
+            .chars
+            .get(self.pos + 1)
+            .is_some_and(|next| matches!(next, '*' | '+' | '?' | '!' | ':'))
+        {
+            return None;
+        }
         self.pos += 1;
         Some(quantifier)
     }

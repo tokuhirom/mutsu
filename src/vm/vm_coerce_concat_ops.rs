@@ -246,7 +246,7 @@ impl Interpreter {
         self.stack.push(out);
     }
 
-    // Cost: see `concat_values`: O(n1 + n2). Rakudo: amortized O(1) (strands) -- see #9141.
+    // Cost: see `concat_values`. Rakudo: amortized O(1) (strands) -- see #9209.
     pub(crate) fn exec_concat_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
@@ -496,11 +496,12 @@ impl Interpreter {
     /// shared by the Interpreter's `~` op and the interpreter's reduction-operator path
     /// (`apply_reduction_op` delegates here). It uses no Interpreter state, so it is a
     /// plain associated function callable as `crate::runtime::Interpreter::concat_values(...)`.
-    // Cost: O(n1 + n2), n1, n2 = chars of the operands: both are copied, and a
-    // non-ASCII result is re-normalized in full (far slower than the copy).
-    // As the append step of `$x = $x ~ $y`, or of a `~=` the fused
-    // `ConcatAssignLocal` path declines, that is O(len) per append.
-    // Rakudo: amortized O(1) (strands) -- see #9141.
+    // Cost: amortized O(n2), n2 = chars of the right operand, for a plain `Str`
+    // left operand held by nothing else (its buffer is grown in place); O(n1 +
+    // n2) when it is shared (copied, n1 = its chars). NFC is restored from the
+    // right operand and a bounded window at the join, never by renormalizing the
+    // result. Any other left operand: O(n1 + n2) plus a full NFC pass over a
+    // non-ASCII result. Rakudo: amortized O(1) (strands) -- see #9209.
     pub(crate) fn concat_values(left: Value, right: Value) -> Value {
         // Buf ~ Buf → byte concatenation. Rakudo types the result by whether the
         // two operands have the *same* type: `Blob[uint8] ~ Blob[uint8]` stays
@@ -540,12 +541,9 @@ impl Interpreter {
             } else {
                 crate::runtime::utils::coerce_to_str(&right)
             };
-            return crate::builtins::str_prim::concat(&left_str, &right_str);
+            return crate::builtins::str_prim::concat(Value::str(left_str), &Value::str(right_str));
         }
-        crate::builtins::str_prim::concat(
-            &crate::runtime::utils::coerce_to_str(&left),
-            &crate::runtime::utils::coerce_to_str(&right),
-        )
+        crate::builtins::str_prim::concat(left, &right)
     }
 
     pub fn is_buf_value(val: &Value) -> bool {

@@ -279,12 +279,22 @@ impl Interpreter {
     }
 
     pub(crate) fn has_user_method(&mut self, class_name: &str, method_name: &str) -> bool {
+        self.has_user_method_sym(class_name, crate::symbol::Symbol::intern(method_name))
+    }
+
+    /// [`Self::has_user_method`] for a caller that already holds the method
+    /// name interned — the compiled dispatch entries do, and on a `Match`
+    /// receiver the intern alone was a measurable share of the call (#8888).
+    pub(crate) fn has_user_method_sym(
+        &mut self,
+        class_name: &str,
+        name_sym: crate::symbol::Symbol,
+    ) -> bool {
         let mro = self.class_mro(class_name);
         // Symbol-keyed: the MRO is already `Symbol`s, so the per-level probe
         // interns nothing (the `&str` API re-interned owner AND name at every
         // level) and clones no candidate list (see
         // `Registry::user_method_public_presence`).
-        let name_sym = crate::symbol::Symbol::intern(method_name);
         let registry = self.registry();
         for cn in mro.iter() {
             if let Some(any_public) = registry.user_method_public_presence(*cn, name_sym) {
@@ -326,9 +336,20 @@ impl Interpreter {
     // method. Runs on every `CallMethod` to an Instance/Package.
     // Rakudo: O(1) (method cache) -- see #9172.
     pub(crate) fn grammar_has_user_method(&mut self, name: &str, method_name: &str) -> bool {
-        if self.has_user_method(name, method_name) {
+        self.grammar_has_user_method_sym(name, crate::symbol::Symbol::intern(method_name))
+    }
+
+    /// [`Self::grammar_has_user_method`] for a caller that already holds the
+    /// method name interned (see [`Self::has_user_method_sym`]).
+    pub(crate) fn grammar_has_user_method_sym(
+        &mut self,
+        name: &str,
+        method_sym: crate::symbol::Symbol,
+    ) -> bool {
+        if self.has_user_method_sym(name, method_sym) {
             return true;
         }
+        let method_name = method_sym.as_str();
         let role_declares_it = {
             let registry = self.registry();
             !registry.roles.is_empty()
@@ -388,11 +409,24 @@ impl Interpreter {
         class_name: &str,
         method_name: &str,
     ) -> Option<UserMethodOrAccessor> {
+        self.resolve_user_method_or_accessor_sym(
+            class_name,
+            crate::symbol::Symbol::intern(method_name),
+        )
+    }
+
+    /// [`Self::resolve_user_method_or_accessor`] for a caller that already
+    /// holds the method name interned (see [`Self::has_user_method_sym`]).
+    pub(crate) fn resolve_user_method_or_accessor_sym(
+        &mut self,
+        class_name: &str,
+        name_sym: crate::symbol::Symbol,
+    ) -> Option<UserMethodOrAccessor> {
+        let method_name = name_sym.as_str();
         let mro = self.class_mro(class_name);
-        // The method name is interned once for the whole walk, and each level's
-        // own name is already a `Symbol` -- the `&str` probes below re-interned
-        // both on every MRO level of every dispatch.
-        let name_sym = crate::symbol::Symbol::intern(method_name);
+        // The method name is interned once for the whole walk (by the caller),
+        // and each level's own name is already a `Symbol` -- the `&str` probes
+        // below re-interned both on every MRO level of every dispatch.
         for cn in mro.iter() {
             let is_ancestor = cn.as_str() != class_name;
             let (has_local_method, has_role_method, has_attr, has_native) = {

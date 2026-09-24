@@ -16,14 +16,29 @@ fn nfc_value(s: String) -> Value {
     }
 }
 
-/// `left ~ right` for two strings (`infix:<~>`, `nqp::concat`).
+/// `left ~ right` (`infix:<~>`, `nqp::concat`), both stringified.
 ///
-/// Cost: O(n1 + n2), n1, n2 = chars of the operands (a non-ASCII result is
-/// renormalized in full). Rakudo: amortized O(1) (strands) -- see #9141.
-pub(crate) fn concat(left: &str, right: &str) -> Value {
-    let mut s = String::with_capacity(left.len() + right.len());
-    s.push_str(left);
-    s.push_str(right);
+/// A plain `Str` on the left appends through the same primitive as the fused
+/// `ConcatAssignLocal`: the left buffer is grown in place when this value is
+/// its only holder (copied otherwise), and NFC is restored by looking at the
+/// suffix and a bounded window around the join rather than by renormalizing
+/// the whole result (#9141).
+///
+/// Cost: O(n2) amortized when `left` is an unshared `Str`, else O(n1 + n2),
+/// n1, n2 = chars of the operands.
+pub(crate) fn concat(left: Value, right: &Value) -> Value {
+    use crate::value::ValueView;
+    if let ValueView::Str(_) = left.view() {
+        if let ValueView::Str(suffix) = right.view() {
+            let plan = crate::value::StrAppendPlan::for_suffix(suffix.as_str());
+            return left.str_appended_nfc(&plan);
+        }
+        let suffix = crate::runtime::utils::coerce_to_str(right);
+        let plan = crate::value::StrAppendPlan::for_suffix(&suffix);
+        return left.str_appended_nfc(&plan);
+    }
+    let mut s = crate::runtime::utils::coerce_to_str(&left);
+    s.push_str(&crate::runtime::utils::coerce_to_str(right));
     nfc_value(s)
 }
 
@@ -74,7 +89,22 @@ pub(crate) fn repeat(src: &str, n: usize) -> Result<Value, RuntimeError> {
     // a concatenation of valid UTF-8 strings is valid UTF-8. Skipping the
     // validation scan matters at this size (multi-GiB).
     let repeated = unsafe { String::from_utf8_unchecked(buf) };
-    Ok(nfc_value(repeated))
+    // NFC is local: when `src` is itself NFC and starts at a normalization
+    // boundary, no copy can compose or reorder with the one before it, so
+    // the repetition is already NFC. Deciding that reads `src` once
+    // instead of renormalizing the whole (up to multi-GiB) result (#9141).
+    let src_repeats_as_nfc = src.is_ascii()
+        || (src
+            .chars()
+            .next()
+            .is_none_or(crate::value::has_nfc_boundary_before)
+            && unicode_normalization::is_nfc_quick(src.chars())
+                == unicode_normalization::IsNormalized::Yes);
+    Ok(if src_repeats_as_nfc {
+        Value::str(repeated)
+    } else {
+        nfc_value(repeated)
+    })
 }
 
 /// `s` with its graphemes in reverse order (`.flip`, `nqp::flip`).

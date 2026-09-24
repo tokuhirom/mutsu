@@ -115,10 +115,11 @@ impl Compiler {
     /// O(n²) to accumulate n characters. Emitting the read as part of a single
     /// post-RHS instruction is what lets the append own the buffer and grow it.
     ///
-    /// Only the METAOP_ASSIGN spelling (`~=`, which the parser wraps in
-    /// `MetaAssignIdentity::EmptyStr`) is fused, never a literal
-    /// `$s = $s ~ rhs`: the wrapper is what makes an undefined LHS seed `''`
-    /// instead of warning, and the fused op always applies that seed.
+    /// Both the METAOP_ASSIGN spelling (`~=`, which the parser wraps in
+    /// `MetaAssignIdentity::EmptyStr`) and the literal `$s = $s ~ rhs` are
+    /// fused (#9141). The wrapper is what makes an undefined LHS seed `''`
+    /// instead of warning, so the opcode's flag records which of the two the
+    /// general path has to reproduce.
     pub(super) fn try_compile_fused_concat_assign_local(
         &mut self,
         name: &str,
@@ -139,14 +140,17 @@ impl Compiler {
         if !matches!(op, TokenKind::Tilde) {
             return false;
         }
-        let Expr::Unary {
-            op: TokenKind::MetaAssignIdentity(crate::token_kind::MetaAssignIdentity::EmptyStr),
-            expr: left,
-        } = left.as_ref()
-        else {
-            return false;
+        // `$s ~= rhs` arrives with its read wrapped in the METAOP_ASSIGN
+        // identity; the literal `$s = $s ~ rhs` (#9141) without it. Both fuse,
+        // and the flag keeps the general path's undefined-LHS behaviour apart.
+        let (left, seed) = match left.as_ref() {
+            Expr::Unary {
+                op: TokenKind::MetaAssignIdentity(crate::token_kind::MetaAssignIdentity::EmptyStr),
+                expr: left,
+            } => (left.as_ref(), true),
+            other => (other, false),
         };
-        let Expr::Var(left_name) = left.as_ref() else {
+        let Expr::Var(left_name) = left else {
             return false;
         };
         if left_name != name {
@@ -155,7 +159,7 @@ impl Compiler {
         // The RHS compiles exactly as the unfused `Binary` path compiles it (a
         // call-arg compile would itemize / escape-box a scalar operand).
         self.compile_expr(right);
-        self.code.emit(OpCode::ConcatAssignLocal(slot));
+        self.code.emit(OpCode::ConcatAssignLocal(slot, seed));
         true
     }
 

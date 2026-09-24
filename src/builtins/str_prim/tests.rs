@@ -96,7 +96,7 @@ fn find_char_scans_graphemes() {
 
 #[test]
 fn building_renormalizes() {
-    assert_eq!(concat("e", "\u{301}").to_string_value(), "\u{E9}");
+    assert_eq!(concat(s("e"), &s("\u{301}")).to_string_value(), "\u{E9}");
     assert_eq!(flip("abc").to_string_value(), "cba");
     assert_eq!(
         flip(MIXED).to_string_value(),

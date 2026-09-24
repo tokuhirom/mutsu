@@ -486,6 +486,17 @@ impl Interpreter {
                 acc = result;
                 continue;
             }
+            // `cmp` has structural Range/list/Inf handling in the operator
+            // implementation. Once user-defined candidates decline, the
+            // routine form must use that same native candidate instead of
+            // reducing through the generic numeric bridge. This is the path
+            // used by `cmp-ok` and by an explicitly called `&infix:<cmp>`.
+            if op == "cmp" {
+                let lhs = acc.unwrap_varref().deref_container().deitemize_element();
+                let rhs = rhs.unwrap_varref().deref_container().deitemize_element();
+                acc = self.cmp_value(lhs, rhs)?;
+                continue;
+            }
             let mut lhs = acc.clone();
             let mut rhs = rhs.clone();
             // `cmp` is value-oriented, but an argument that came from a
