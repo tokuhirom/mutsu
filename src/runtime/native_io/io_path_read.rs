@@ -1,6 +1,5 @@
 use super::*;
 use crate::value::AttrMap;
-use unicode_segmentation::UnicodeSegmentation;
 
 impl Interpreter {
     /// Filesystem *whole-file content reads* on an `IO::Path`
@@ -213,19 +212,8 @@ impl Interpreter {
             .filter(|a| !matches!(a.view(), ValueView::Pair(k, _) if k == "close"))
             .cloned()
             .collect();
-        Some(
-            match self.dispatch_comb_with_args(Value::str(content.clone()), &comb_args) {
-                Some(res) => res,
-                // No matcher: comb into graphemes (same as `Str.comb` with no
-                // args / Rakudo). The old arm wrongly returned an empty Seq.
-                None => {
-                    let parts: Vec<Value> = content
-                        .graphemes(true)
-                        .map(|g| Value::str(g.to_string()))
-                        .collect();
-                    Ok(Value::seq(parts))
-                }
-            },
-        )
+        // No matcher combs into graphemes inside `dispatch_comb_with_args`
+        // (same as `Str.comb` with no args / Rakudo).
+        self.dispatch_comb_with_args(Value::str(content), &comb_args)
     }
 }

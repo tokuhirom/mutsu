@@ -897,10 +897,8 @@ impl Interpreter {
                 if close {
                     let _ = self.close_handle_value(&target_val)?;
                 }
-                match self.dispatch_comb_with_args(Value::str(text), &comb_args) {
-                    Some(res) => res,
-                    None => Ok(Value::seq(Vec::new())),
-                }
+                self.dispatch_comb_with_args(Value::str(text), &comb_args)
+                    .unwrap_or_else(|| Ok(Value::seq(Vec::new())))
             }
             "Supply" => self.handle_supply(target, &args),
             "native-descriptor" => {
