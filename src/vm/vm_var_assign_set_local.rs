@@ -2966,9 +2966,9 @@ impl Interpreter {
         Ok(())
     }
 
-    // Cost: O(1) in a loop body's steady state; otherwise O(L), L = frame locals (the
-    // `is_body_local` / `has_coherent_slot` by-name scans of `code.locals`), so a
-    // routine declaring L lexicals pays O(L^2) per call. Rakudo: O(1) -- see #9171.
+    // Cost: O(1) in a loop body's steady state; otherwise O(t), t = the chunk's `state`
+    // locals (the `is_state` scan; the slot lookups go through the chunk's name index).
+    // Rakudo: O(1) -- see #9171.
     pub(super) fn exec_set_var_dynamic_op(
         &mut self,
         code: &CompiledCode,
@@ -3083,11 +3083,13 @@ impl Interpreter {
             // past the loop, for the next call). Removing it at loop exit emptied
             // zef's `for @*ARGS -> $arg { state @named; ... LAST { ... } }` arg
             // reordering, which broke every `zef` invocation.
-            let is_state = code
-                .state_locals
-                .iter()
-                .any(|(_, key)| key.contains_str(&format!("::{}@", name)));
-            let is_body_local = !is_state && code.locals.iter().any(|n| n.as_str() == name);
+            // `local_slots_of` answers "does `name` own a slot" from the chunk's
+            // name index instead of scanning every local (#9170).
+            let is_body_local = !code.local_slots_of(name_sym).is_empty()
+                && !code
+                    .state_locals
+                    .iter()
+                    .any(|(_, key)| key.contains_str(&format!("::{}@", name)));
             if is_body_local
                 && let Some(saved) = self.loop_local_saved_env.last_mut()
                 && !saved.contains_key(name)
@@ -3123,11 +3125,10 @@ impl Interpreter {
             // The coherence test only needs an O(1), conservative proof that
             // the slot still holds the same value; the shared identity helper
             // handles heap values by identity and scalars by value.
-            let has_coherent_slot = code.locals.iter().enumerate().any(|(i, n)| {
-                n.as_str() == name
-                    && self.locals.get(i).is_some_and(|slot| {
-                        crate::vm::vm_method_dispatch::cheaply_unchanged(slot, &prev)
-                    })
+            let has_coherent_slot = code.local_slots_of(name_sym).iter().any(|&i| {
+                self.locals.get(i as usize).is_some_and(|slot| {
+                    crate::vm::vm_method_dispatch::cheaply_unchanged(slot, &prev)
+                })
             });
             if has_coherent_slot
                 && let Some(saved) = self.loop_local_saved_env.last_mut()

@@ -148,6 +148,7 @@ mod vm_call_method_compiled_direct;
 mod vm_call_method_compiled_interpret;
 mod vm_call_method_compiled_io;
 pub(crate) use vm_call_method_compiled_io::note_io_handle_user_method_declared;
+pub(crate) mod vm_block_env;
 mod vm_call_method_compiled_mut;
 mod vm_call_method_compiled_mut_tail;
 mod vm_call_method_mut_ops;

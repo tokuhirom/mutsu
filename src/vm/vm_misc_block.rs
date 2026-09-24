@@ -59,9 +59,9 @@ impl Interpreter {
     }
 
     // Cost: O(1) plus the body; a scope-isolating block (string-interpolation `{...}`)
-    // adds O(v + L), v = env entries (cloned view walked and diffed), L = frame locals
-    // (copied and reverted); `scope_routines` adds O(R), R = routine-registry entries.
-    // Rakudo: O(1) -- see #9170.
+    // adds O(w + k + s), w = names it wrote by name (its block tier), k = names it
+    // declares, s = the chunk's special/internal local slots (saved and reverted);
+    // `scope_routines` adds O(R), R = routine-registry entries. Rakudo: O(1) -- see #9170.
     #[allow(clippy::too_many_arguments)]
     pub(super) fn exec_do_block_expr_op(
         &mut self,
@@ -92,8 +92,16 @@ impl Interpreter {
         // `foo`. The compiler sets `scope_routines` only when the body actually
         // declares a routine, so the common case pays nothing.
         let routine_snapshot = scope_routines.then(|| self.snapshot_routine_registry());
+        // A scope-isolating block runs over a block tier (see `vm_block_env`),
+        // so its exit reads back only what it wrote by name, and saves just the
+        // local slots it may have to revert rather than the whole frame (#9170).
         let saved_env = if scope_isolate {
-            Some((self.env().clone(), self.locals.to_vec()))
+            let isolate_set = Self::isolate_decl_names(code, isolate_decls_idx);
+            let revert_slots: Vec<(usize, Value)> = Self::isolate_revert_slots(code, &isolate_set)
+                .into_iter()
+                .filter_map(|idx| self.locals.get(idx).map(|v| (idx, v.clone())))
+                .collect();
+            Some((self.open_block_env_tier(), isolate_set, revert_slots))
         } else {
             None
         };
@@ -143,7 +151,7 @@ impl Interpreter {
             self.restore_routine_registry(routine_snapshot);
         }
         // Restore scope if scope_isolate is true
-        if let Some((saved_env, saved_locals)) = saved_env {
+        if let Some((saved_env, isolate_set, revert_slots)) = saved_env {
             let block_result = self.stack.pop().unwrap_or(Value::NIL);
             // Scope-isolating exit. The block isolates its OWN scalar/array `my`/
             // `state` declarations (reverted to the pre-block value so they don't
@@ -158,61 +166,30 @@ impl Interpreter {
             // key regardless of whether that scalar/array is stored with or
             // without its sigil (e.g. a `state $a` whose env mirror would
             // otherwise be re-carried and pollute the next evaluation's init).
-            let strip_sigil = |n: &str| -> String {
-                n.strip_prefix(['$', '@', '%', '&'])
-                    .unwrap_or(n)
-                    .to_string()
-            };
-            let isolate_set: std::collections::HashSet<String> = if isolate_decls_idx != u32::MAX {
-                if let ValueView::Array(items, ..) =
-                    code.constants[isolate_decls_idx as usize].view()
-                {
-                    items
-                        .iter()
-                        .filter_map(|v| match v.view() {
-                            ValueView::Str(s) => Some(strip_sigil(s.as_ref())),
-                            _ => None,
-                        })
-                        .collect()
-                } else {
-                    std::collections::HashSet::new()
-                }
-            } else {
-                std::collections::HashSet::new()
-            };
-            let is_plain_user_var = |name: &str| -> bool {
-                if name.starts_with("__") {
-                    return false;
-                }
-                let body = name.strip_prefix(['$', '@', '%', '&']).unwrap_or(name);
-                if body.starts_with(['*', '!', '.', '?']) || body == "_" {
-                    return false;
-                }
-                body.chars()
-                    .next()
-                    .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
-            };
-            let current_env = self.env().clone();
+            //
+            // Only the block's own writes are candidates: every other binding
+            // is, by construction, still the entry env's.
+            let closed = self.close_block_env_tier(saved_env);
+            let mut restored_env = closed.base;
             let mut new_vars: Vec<(Symbol, Value)> = Vec::new();
-            for (name, value) in current_env.iter() {
+            for (name, value) in closed.writes.iter() {
                 let nm = name.resolve();
-                if isolate_set.contains(&strip_sigil(&nm)) {
+                if isolate_set.contains(Self::strip_isolate_sigil(&nm)) {
                     continue;
                 }
-                let keep = match saved_env.get_sym(*name) {
+                let keep = match restored_env.get_sym(*name) {
                     None => nm.starts_with('%') && !nm.starts_with("%*"),
-                    Some(saved_val) => is_plain_user_var(&nm) && value != saved_val,
+                    Some(saved_val) => Self::is_plain_isolate_user_var(&nm) && value != saved_val,
                 };
                 if keep {
                     new_vars.push((*name, value.clone()));
                 }
             }
-            let restored_env = saved_env;
-            *self.env_mut() = restored_env;
-            // Re-insert newly declared user variables
+            // Re-insert the kept writes
             for (name, value) in new_vars {
-                self.env_mut().insert_sym(name, value);
+                restored_env.insert_sym(name, value);
             }
+            *self.env_mut() = restored_env;
             // (B) per-store env-write: the env mirror is suppressed, so re-seeding
             // every slot from the restored env would clobber a propagating outer
             // var's LIVE in-block value with its stale decl-time seed — e.g.
@@ -224,16 +201,66 @@ impl Interpreter {
             // they don't leak) and internal/special/dynamic slots; leave every other
             // slot at its live value. This mirrors the env-side keep/revert decision
             // above without depending on the env mirror.
-            for (idx, name) in code.locals.iter().enumerate() {
-                let revert = isolate_set.contains(&strip_sigil(name)) || !is_plain_user_var(name);
-                if revert && let Some(val) = saved_locals.get(idx) {
-                    self.locals[idx] = val.clone();
-                }
+            for (idx, val) in revert_slots {
+                self.locals[idx] = val;
             }
             self.stack.push(block_result);
         }
         *ip = end;
         result
+    }
+
+    /// A scope-isolating block's own declarations, by bare (sigil-stripped)
+    /// name, from the `isolate_decls_idx` constant of `OpCode::DoBlockExpr`.
+    // Cost: O(k), k = names the block declares.
+    fn isolate_decl_names(
+        code: &CompiledCode,
+        isolate_decls_idx: u32,
+    ) -> std::collections::HashSet<String> {
+        if isolate_decls_idx == u32::MAX {
+            return std::collections::HashSet::new();
+        }
+        match code.constants[isolate_decls_idx as usize].view() {
+            ValueView::Array(items, ..) => items
+                .iter()
+                .filter_map(|v| match v.view() {
+                    ValueView::Str(s) => Some(Self::strip_isolate_sigil(s.as_ref()).to_string()),
+                    _ => None,
+                })
+                .collect(),
+            _ => std::collections::HashSet::new(),
+        }
+    }
+
+    fn strip_isolate_sigil(name: &str) -> &str {
+        name.strip_prefix(['$', '@', '%', '&']).unwrap_or(name)
+    }
+
+    fn is_plain_isolate_user_var(name: &str) -> bool {
+        crate::opcode::is_plain_user_var_name(name)
+    }
+
+    /// The local slots a scope-isolating block reverts on exit: its own
+    /// declarations (`isolate_set`) and every slot that is not a plain user
+    /// variable. Found through the chunk's indexes rather than by scanning the
+    /// frame's locals.
+    // Cost: O(k + s), k = names the block declares, s = the chunk's non-plain
+    // (special/internal/dynamic) local slots.
+    fn isolate_revert_slots(
+        code: &CompiledCode,
+        isolate_set: &std::collections::HashSet<String>,
+    ) -> Vec<usize> {
+        let mut slots: Vec<usize> = code
+            .non_plain_local_slots()
+            .iter()
+            .map(|&i| i as usize)
+            .collect();
+        for bare in isolate_set {
+            slots.extend(code.local_slots_of_bare(bare).iter().map(|&i| i as usize));
+        }
+        slots.sort_unstable();
+        slots.dedup();
+        slots
     }
 
     /// `BEGIN <expr>` that stayed inside a routine (see `compile_expr_phaser`).

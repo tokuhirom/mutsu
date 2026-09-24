@@ -227,9 +227,9 @@ impl Interpreter {
     /// the if/else case to Slice 3b). The branch runs once, so reusing the
     /// per-iteration `owned_captures`/box-on-capture machinery is harmless and
     /// keeps closure capture of the branch-local correct.
-    // Cost: O(b + v) per execution plus the body, b = ops in the branch (declaration
-    // scans), v = env entries (`env_had_before` collects every visible key).
-    // Rakudo: O(1) -- see #9170.
+    // Cost: O(b + w + d) per execution plus the body, b = ops in the branch
+    // (declaration scans), w = names the branch wrote by name (its block tier),
+    // d = names it declared. Rakudo: O(1) -- see #9170.
     pub(super) fn exec_block_local_scope_op(
         &mut self,
         code: &CompiledCode,
@@ -281,7 +281,11 @@ impl Interpreter {
         // identical to restoring a snapshotted pre-branch value, at O(declared)
         // instead of an O(locals) clone. This is the lexical-slot endgame's
         // targeted-reset technique (docs/lexical-scope-slot-campaign.md §1.3).
-        let env_had_before: crate::runtime::NameSet = self.env().keys().copied().collect();
+        //
+        // That snapshot is no longer a copy of every visible key (O(v), #9170):
+        // the branch runs over a block tier of its own, so "had before" is asked
+        // of the untouched entry env for just the names the branch declared.
+        let block_tier = self.open_block_env_tier();
         let stack_base = self.stack.len();
         let saved_when_matched = self.when_matched();
         self.push_loop_local_scope(Default::default(), Default::default());
@@ -312,6 +316,34 @@ impl Interpreter {
             other => other,
         };
         let block_declared = self.block_declared_vars.pop().unwrap_or_default();
+        // Fold the branch's writes back into the enclosing env. Everything the
+        // branch wrote by name stays (this scope only takes back fresh `my`s,
+        // below), and a removal of an enclosing binding is a removal there too.
+        let closed = self.close_block_env_tier(block_tier);
+        let env_had_before: crate::runtime::NameSet = block_declared
+            .iter()
+            .copied()
+            // The entry env's own map, as the `keys()` snapshot this replaces
+            // saw it: a name only a base tier binds does not count.
+            .filter(|sym| closed.base.overlay_get_sym(*sym).is_some())
+            .collect();
+        match closed.writes {
+            super::vm_block_env::BlockWrites::Tier(overlay) => {
+                let mut env = closed.base;
+                for (k, v) in overlay.iter() {
+                    env.insert_sym(*k, v.clone());
+                }
+                for k in closed.removed.iter().flatten() {
+                    env.remove_sym(*k);
+                }
+                *self.env_mut() = env;
+            }
+            // The body replaced the env wholesale (or no tier was opened): it is
+            // the result, exactly as before tiers existed.
+            super::vm_block_env::BlockWrites::Whole(current) => {
+                *self.env_mut() = current;
+            }
+        }
         // Capture any active `given`/`with` pointy-topic parameter's final
         // value from its own owned slot, BEFORE any scope-exit restoration
         // below can touch it — `pop_loop_local_scope` right below restores a

@@ -438,10 +438,12 @@ impl Interpreter {
         Ok(())
     }
 
-    // Cost: O(b + v + L + R) per execution plus the body, b = ops in the block (scanned
-    // for declarations/topic binders on every entry), v = env entries (the exit merge
-    // walks the whole env), L = frame locals, R = routine-registry entries (snapshot +
-    // restore). Rakudo: O(1) -- see #9170.
+    // Cost: O(b + w + d + R) per execution plus the body, b = ops in the block (scanned
+    // for declarations/topic binders on every entry), w = names the block wrote by
+    // name (the exit merges only its block tier), d = names it declared (their slots
+    // are reset), R = routine-registry entries (snapshot + restore). Once any
+    // sigilless alias exists in the process the alias sync adds O(L), L = frame
+    // locals. Rakudo: O(1) -- see #9170.
     pub(super) fn exec_block_scope_op(
         &mut self,
         code: &CompiledCode,
@@ -530,7 +532,10 @@ impl Interpreter {
                 _ => false,
             }));
         let routine_snapshot = self.snapshot_routine_registry();
-        let saved_env = self.env().clone();
+        // The block's by-name writes go to a tier of their own, chained over the
+        // enclosing env, so the exit below merges back just those writes instead
+        // of diffing the whole visible env against a saved copy (#9170).
+        let block_tier = self.open_block_env_tier();
         // Under shadow slots (default) the block exit uses a targeted Nil-reset of
         // just the block's own fresh declarations, so no whole-`locals` snapshot
         // is taken (lexical-slot endgame slice 3). The `MUTSU_NO_SHADOW_SLOTS`
@@ -690,17 +695,30 @@ impl Interpreter {
         // so they see the final values of block-scoped variables (which will
         // be removed from env when the block scope is restored below).
         if self.end_phaser_capture_mark() > end_phaser_mark_before {
-            let current = self.env().clone();
+            // The full visible view: under a block tier `self.env()` iterates
+            // only the block's own writes.
+            let current = self.env().flattened();
             self.update_end_phaser_envs(end_phaser_mark_before, &current, &block_declared);
         }
-        let current_env = self.env().clone();
+        let closed = self.close_block_env_tier(block_tier);
         // A `my class` is lexical: its bare binding dies with the block, so it is
         // exempt from the "a Package declared in a block stays visible" rule
         // below. Without this the binding outlived the block and `{ my class B
         // { } }; B.new` resolved instead of reporting an undeclared name.
         let lexical_class_names: Vec<String> = self.lexical_class_scope_names().to_vec();
-        let mut restored_env = saved_env.clone();
-        for (k, v) in current_env {
+        // `restored_env` starts as the entry env and takes the writes that
+        // propagate. Membership in the entry env is asked of it directly (a key
+        // is only ever tested before its own insert), except for the keys that
+        // were NOT there on entry and propagated anyway, which `fresh_keys`
+        // remembers for the `our` refresh below.
+        let mut restored_env = closed.base;
+        let mut fresh_keys: Vec<Symbol> = Vec::new();
+        for (k, v) in closed.writes.iter() {
+            let (k, v) = (*k, v.clone());
+            let in_saved = restored_env.contains_key_sym(k);
+            if !in_saved {
+                fresh_keys.push(k);
+            }
             // `$!` is implicitly declared in EVERY Raku scope, and a `try`/CATCH
             // in a nested block assigns the one the enclosing scope sees too:
             // `{ try die("b") }; say $!` prints `b` in rakudo. mutsu only stores
@@ -736,14 +754,14 @@ impl Interpreter {
             // package identifier (uppercase ASCII start, not internal/
             // special variables like `_` or `__mutsu_*`).
             if matches!(v.view(), ValueView::Package(_))
-                && !saved_env.contains_key_sym(k)
+                && !in_saved
                 && k.with_str(|s| s.chars().next().is_some_and(|c| c.is_ascii_uppercase()))
                 && !k.with_str(|s| lexical_class_names.iter().any(|n| n == s))
             {
                 restored_env.insert_sym(k, v);
                 continue;
             }
-            if saved_env.contains_key_sym(k) {
+            if in_saved {
                 // A block that BINDS its own topic (a `for`/`given`/`when`
                 // body, a pointy `-> $_`) must not write that binding back to
                 // the enclosing scope on exit. A plain nested block binds
@@ -872,15 +890,26 @@ impl Interpreter {
             //     `$*dyn` (present in `saved_env`): restore the saved outer value,
             //     which `restored_env` still holds because propagation was skipped
             //     for these names in the loop above.
-            for (idx, name) in code.locals.iter().enumerate() {
-                let is_block_declared = code
-                    .local_sym(idx)
-                    .is_some_and(|s| block_declared.contains(&s));
+            //
+            // Only the slots of those names are visited — found through the
+            // chunk's name index, not by scanning every local of the frame
+            // (#9170).
+            let topic_sym = crate::symbol::Symbol::intern("_");
+            let reset_syms = block_declared
+                .iter()
+                .copied()
+                .chain((!block_declared.contains(&topic_sym)).then_some(topic_sym));
+            for sym in reset_syms {
                 // Dynamic-var slots are handled like the env-restore loop
                 // above: only a genuine block-local `my $*x` (in
                 // `block_declared`) reverts; a plain write-through propagates.
-                let non_propagating = name == "_" || is_block_declared;
-                if non_propagating && !state_slots.contains(&idx) {
+                let is_block_declared = block_declared.contains(&sym);
+                for &idx in code.local_slots_of(sym) {
+                    let idx = idx as usize;
+                    if state_slots.contains(&idx) {
+                        continue;
+                    }
+                    let name = &code.locals[idx];
                     if is_block_declared {
                         if owned_slots.contains(&idx) {
                             self.locals[idx] = Value::NIL;
@@ -911,7 +940,8 @@ impl Interpreter {
             // scope (i.e., the outer scope also declared `our $x`). For
             // `our` declarations made only inside the block, the lexical
             // alias is block-scoped and must not leak to the outer scope.
-            if !saved_env.contains_key(local_name) {
+            let local_sym = crate::symbol::Symbol::intern(local_name);
+            if !restored_env.contains_key_sym(local_sym) || fresh_keys.contains(&local_sym) {
                 continue;
             }
             if let Some(val) = self.get_our_var(qualified).cloned() {
@@ -926,8 +956,24 @@ impl Interpreter {
         // If a local variable was modified inside the block and has a
         // sigilless alias (e.g. `my $a := $_`), propagate the local's
         // current value to the alias target in env so they stay in sync.
-        for (idx, name) in code.locals.iter().enumerate() {
-            let alias_key = crate::runtime::sigilless_alias_key(name);
+        //
+        // No `__mutsu_sigilless_*` key has ever existed in this process in the
+        // common program, and then there is nothing to sync: skip the per-local
+        // scan outright. TODO: once some alias exists this is still O(L) per
+        // block exit; a per-frame record of the aliased slots would make it
+        // O(aliases) (#9170).
+        let alias_slots = if crate::env::sigilless_meta_keys_possible() {
+            code.locals.len()
+        } else {
+            0
+        };
+        for (idx, name) in code.locals.iter().enumerate().take(alias_slots) {
+            let alias_key = code
+                .alias_sym(idx)
+                .unwrap_or_else(|| crate::runtime::sigilless_alias_key(name));
+            if !crate::symbol::maybe_env_key(alias_key) {
+                continue;
+            }
             if let Some(ValueView::Str(target)) = self
                 .env()
                 .get_sym(alias_key)

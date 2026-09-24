@@ -682,6 +682,17 @@ pub struct Env {
     dyn_base: Option<Arc<SymMap>>,
 }
 
+/// A closed block tier (see [`Env::close_block_tier`]): what the block wrote by
+/// name, and the enclosing env it was chained over.
+pub(crate) struct BlockTier {
+    /// The block's own by-name writes (every key it inserted or promoted).
+    pub(crate) overlay: Arc<Tier>,
+    /// Keys the block removed that the enclosing env still binds.
+    pub(crate) tombstones: Option<rustc_hash::FxHashSet<Symbol>>,
+    /// The enclosing env, exactly as it was handed to [`Env::open_block_tier`].
+    pub(crate) parent: Env,
+}
+
 /// Maximum overlay chain length before [`Env::scoped_child`] flattens the parent.
 /// Typical method/function nesting is a handful of tiers, well under this; only
 /// deep recursion ever hits it, paying one O(env) flatten per this many frames.
@@ -923,6 +934,94 @@ impl Env {
             code_entries: None,
             dyn_base: None,
         }
+    }
+
+    /// Open a *block tier*: an empty overlay chained directly over `parent`, so
+    /// the by-name writes a lexical block makes land in a map of their own
+    /// instead of in (a deep copy of) the enclosing scope. The block's exit then
+    /// reads just those writes back with [`Self::close_block_tier`] — O(writes)
+    /// instead of diffing the whole visible env (#9170).
+    ///
+    /// Unlike [`Self::scoped_child`] this never skips an empty parent tier nor
+    /// flattens a deep one: the exit identifies the tier by its parent `Arc`, so
+    /// the parent has to be exactly the env handed in. A chain already at
+    /// [`MAX_OVERLAY_DEPTH`] is handed back as `Err` instead, and the caller
+    /// falls back to its whole-env path.
+    pub(crate) fn open_block_tier(parent: Env) -> Result<(Self, Arc<Env>), Env> {
+        if parent.depth >= MAX_OVERLAY_DEPTH {
+            return Err(parent);
+        }
+        let file_sym = parent.file_sym;
+        let (parent_depth, parent_chf) = (parent.depth, parent.chain_has_fallback);
+        let parent = Arc::new(parent);
+        let child = Self {
+            inner: empty_overlay(),
+            depth: parent_depth + 1,
+            parent: Some(Arc::clone(&parent)),
+            tombstones: None,
+            file_sym,
+            fallback: None,
+            chain_has_fallback: parent_chf,
+            frame_writes: None,
+            code_entries: None,
+            dyn_base: None,
+        };
+        Ok((child, parent))
+    }
+
+    /// A flat, empty env that shares the process-wide empty map instead of
+    /// allocating one: a placeholder to `mem::replace` a live env with.
+    pub(crate) fn empty_placeholder() -> Self {
+        Self {
+            inner: empty_overlay(),
+            parent: None,
+            tombstones: None,
+            depth: 0,
+            file_sym: None,
+            fallback: None,
+            chain_has_fallback: false,
+            frame_writes: None,
+            code_entries: None,
+            dyn_base: None,
+        }
+    }
+
+    /// Close a tier opened by [`Self::open_block_tier`]: if `self` is still that
+    /// tier (its parent is `parent`, and nothing has flattened it or hung a
+    /// capture fallback on it), split it into the block's own writes and the
+    /// enclosing env. Otherwise the block body replaced the env wholesale, and
+    /// `self` comes back unchanged in `Err` together with the enclosing env, so
+    /// the caller can run its whole-env path against it.
+    pub(crate) fn close_block_tier(
+        mut self,
+        parent: Arc<Env>,
+    ) -> Result<BlockTier, Box<(Env, Env)>> {
+        let ours = self.fallback.is_none()
+            && self.frame_writes.is_none()
+            && self
+                .parent
+                .as_ref()
+                .is_some_and(|p| Arc::ptr_eq(p, &parent));
+        let own_parent = if ours { self.parent.take() } else { None };
+        let Some(own_parent) = own_parent else {
+            let parent = Arc::try_unwrap(parent).unwrap_or_else(|a| (*a).clone());
+            return Err(Box::new((self, parent)));
+        };
+        // Drop both handles on the parent before unwrapping it, so the common
+        // case (nobody else kept the enclosing env alive) gets it back without
+        // a clone, and its own map without a copy-on-write deep copy on the
+        // first merge write.
+        drop(parent);
+        let parent = own_parent;
+        let overlay = std::mem::replace(&mut self.inner, empty_overlay());
+        let tombstones = self.tombstones.take();
+        drop(self);
+        let parent = Arc::try_unwrap(parent).unwrap_or_else(|a| (*a).clone());
+        Ok(BlockTier {
+            overlay,
+            tombstones,
+            parent,
+        })
     }
 
     /// This env's visible `?FILE` as a `Symbol`, or `None` when `?FILE` is
