@@ -1253,6 +1253,7 @@ impl Interpreter {
                 // The text is `$exc.message` (a user `method message` wins over
                 // the stored attribute), never the raw attribute — see
                 // `exception_message_text`.
+                let target = self.stamp_thrown_exception_dynamics(&target);
                 let msg = self.exception_message_or_died_with(&target);
                 let mut err = crate::value::RuntimeError::new(msg);
                 // Classes doing X::Control throw as control exceptions so
@@ -1266,7 +1267,22 @@ impl Interpreter {
                 if cn == "CX::Warn" {
                     err.control = Some(crate::value::Control::Warn);
                 }
-                err.exception = Some(Box::new(target.clone()));
+                let thrown_target = if self.has_user_method(&cn, "message") {
+                    let target = target.clone();
+                    if let ValueView::Instance { attributes, .. } = target.view() {
+                        attributes.insert(
+                            "__mutsu_thrown_message".to_string(),
+                            Value::str(err.message.to_string()),
+                        );
+                    }
+                    target
+                } else {
+                    target.clone()
+                };
+                err.exception = Some(Box::new(Self::stamp_thrown_exception_message(
+                    &thrown_target,
+                    &err.message,
+                )));
                 return Err(err);
             }
         }
@@ -2787,9 +2803,13 @@ impl Interpreter {
                 // a typed exception → its formatted message) rather than the
                 // type repr (`X::AdHoc()`), which `target.to_string_value()`
                 // would yield for an exception built without a `message` attr.
+                let target = self.stamp_thrown_exception_dynamics(&target);
                 let msg = self.exception_message_or_died_with(&target);
                 let mut err = RuntimeError::new(msg);
-                err.exception = Some(Box::new(target.clone()));
+                err.exception = Some(Box::new(Self::stamp_thrown_exception_message(
+                    &target,
+                    &err.message,
+                )));
                 return Err(err);
             }
         }
@@ -3441,6 +3461,10 @@ impl Interpreter {
                         )));
                     }
                     let mut updated = items.to_vec();
+                    let mut initialized = items.initialized.clone();
+                    initialized
+                        .get_or_insert_with(|| (0..updated.len()).collect())
+                        .insert(index);
                     if index < updated.len()
                         && matches!(updated[index].view(), ValueView::Scalar(_))
                     {
@@ -3450,10 +3474,9 @@ impl Interpreter {
                         updated.resize(index + 1, Value::package(crate::symbol::wk::any()));
                     }
                     updated[index] = value.clone();
-                    let replacement = Value::array_with_kind(
-                        crate::gc::Gc::new(crate::value::ArrayData::new(updated)),
-                        arr_kind,
-                    );
+                    let mut data = crate::value::ArrayData::new(updated);
+                    data.initialized = initialized;
+                    let replacement = Value::array_with_kind(crate::gc::Gc::new(data), arr_kind);
                     if let Some(ref shape) = shape {
                         crate::runtime::utils::mark_shaped_array(&replacement, Some(shape));
                     }
@@ -3474,15 +3497,20 @@ impl Interpreter {
                     let Some(index) = index else {
                         return Err(RuntimeError::new("Cannot BIND-POS with a negative index"));
                     };
+                    let old_len = items.len();
                     let mut updated = items.to_vec();
+                    let mut initialized = items.initialized.clone();
                     if index >= updated.len() {
                         updated.resize(index + 1, Value::package(crate::symbol::wk::any()));
+                        initialized.get_or_insert_with(|| (0..old_len).collect());
+                    }
+                    if let Some(initialized) = initialized.as_mut() {
+                        initialized.insert(index);
                     }
                     updated[index] = Value::scalar(value.clone());
-                    let replacement = Value::array_with_kind(
-                        crate::gc::Gc::new(crate::value::ArrayData::new(updated)),
-                        arr_kind,
-                    );
+                    let mut data = crate::value::ArrayData::new(updated);
+                    data.initialized = initialized;
+                    let replacement = Value::array_with_kind(crate::gc::Gc::new(data), arr_kind);
                     if let Some(ref shape) = shape {
                         crate::runtime::utils::mark_shaped_array(&replacement, Some(shape));
                     }

@@ -1755,7 +1755,7 @@ impl Interpreter {
                         .unwrap_or(Value::int(0))
                 }
             }
-            (ValueView::Instance { .. }, ValueView::Int(i)) => {
+            (ValueView::Instance { class_name, .. }, ValueView::Int(i)) => {
                 let fallback = target.clone();
                 let result = self
                     .try_compiled_method_or_interpret(target.clone(), "AT-POS", vec![Value::int(i)])
@@ -1768,7 +1768,13 @@ impl Interpreter {
                     })
                     .unwrap_or(Value::NIL);
                 if result.is_nil() {
-                    self.typed_container_default(&target)
+                    if self.type_matches_value("Positional", &target)
+                        && self.has_user_method_including_role(&class_name.resolve(), "keys")
+                    {
+                        Value::package(crate::symbol::wk::any())
+                    } else {
+                        self.typed_container_default(&target)
+                    }
                 } else {
                     result
                 }
@@ -1780,7 +1786,7 @@ impl Interpreter {
             // 1 already truncated) — mirror the plain-`Array` truncating arms
             // above instead of forwarding the fractional value.
             (
-                ValueView::Instance { .. },
+                ValueView::Instance { class_name, .. },
                 ValueView::Num(_) | ValueView::Rat(..) | ValueView::FatRat(..),
             ) => {
                 let i = crate::runtime::to_int(&index);
@@ -1796,36 +1802,41 @@ impl Interpreter {
                     })
                     .unwrap_or(Value::NIL);
                 if result.is_nil() {
-                    self.typed_container_default(&target)
+                    if self.type_matches_value("Positional", &target)
+                        && self.has_user_method_including_role(&class_name.resolve(), "keys")
+                    {
+                        Value::package(crate::symbol::wk::any())
+                    } else {
+                        self.typed_container_default(&target)
+                    }
                 } else {
                     result
                 }
             }
             // A Range subscript on an instance is a SLICE of `AT-POS` reads, one
             // per index the range names: `$vec[1..2]` is `($vec[1], $vec[2])`.
-            // The index list is fully determined by the range, so — unlike the
-            // Whatever arms below — this needs nothing from the class beyond the
-            // `AT-POS` the single-index arm already calls, and therefore applies
-            // to every `does Positional` class (Math::Vector's
-            // `has @.components handles <AT-POS>`, whose `$v[1..2]` answered Nil
-            // because only the comma-list index arm below knew how to slice).
-            // An unbounded end (`$v[1..*]`) would need `.elems`, so it is left to
-            // the arms below.
+            // A plain integer Range has cheap bounds; a GenericRange such as
+            // `^5` has a Whatever endpoint and must use the normal range
+            // materializer instead of being passed as one opaque object to
+            // `AT-POS`. The latter is what Array::Agnostic's scalar accessor
+            // expects, while a delegated array accessor can handle the Range
+            // itself.
             (ValueView::Instance { .. }, _)
                 if is_positional
-                    && let Some((start, end, _, excl_end)) = range_params(&index)
-                    && !Self::range_end_is_unbounded(end) =>
+                    && index.is_range()
+                    && !crate::runtime::utils::subscript_range_end_unbounded(&index) =>
             {
-                let last = if excl_end { end - 1 } else { end };
-                let mut results = Vec::new();
-                for i in start.max(0)..=last {
+                let indices = if let Some((start, end, _, excl_end)) = range_params(&index) {
+                    let last = if excl_end { end - 1 } else { end };
+                    (start.max(0)..=last).map(Value::int).collect::<Vec<_>>()
+                } else {
+                    crate::runtime::utils::value_to_list(&index)
+                };
+                let mut results = Vec::with_capacity(indices.len());
+                for i in indices {
                     results.push(
-                        self.try_compiled_method_or_interpret(
-                            target.clone(),
-                            "AT-POS",
-                            vec![Value::int(i)],
-                        )
-                        .unwrap_or(Value::NIL),
+                        self.try_compiled_method_or_interpret(target.clone(), "AT-POS", vec![i])
+                            .unwrap_or(Value::NIL),
                     );
                 }
                 Value::array_with_kind(
@@ -1846,8 +1857,17 @@ impl Interpreter {
             // answers `Own.new(...)[*]` with a one-element list holding the object
             // itself unless it supplies more than `AT-POS`/`elems`, so a blanket
             // arm would diverge (verified against raku).
-            (ValueView::Instance { attributes, .. }, ValueView::Whatever)
-                if is_positional && attributes.contains_key("__mutsu_array_storage") =>
+            (
+                ValueView::Instance {
+                    class_name,
+                    attributes,
+                    ..
+                },
+                ValueView::Whatever,
+            ) if is_positional
+                && (attributes.contains_key("__mutsu_array_storage")
+                    || (self.type_matches_value("Positional", &target)
+                        && self.has_user_method_including_role(&class_name.resolve(), "keys"))) =>
             {
                 let elems = self
                     .try_compiled_method_or_interpret(target.clone(), "elems", vec![])
@@ -1868,6 +1888,27 @@ impl Interpreter {
                     crate::gc::Gc::new(crate::value::ArrayData::new(out)),
                     crate::value::ArrayKind::List,
                 )
+            }
+            // A from-the-end index on a richer Positional instance resolves the
+            // WhateverCode against `.elems` before dispatching AT-POS. Keep the
+            // `keys` guard in step with the `[*]` arm above: a minimal class that
+            // only supplies AT-POS/elems is still a scalar-like object under
+            // Raku's subscript protocol.
+            (ValueView::Instance { class_name, .. }, ValueView::Sub(_))
+                if is_positional
+                    && self.type_matches_value("Positional", &target)
+                    && self.has_user_method_including_role(&class_name.resolve(), "keys") =>
+            {
+                let len = self
+                    .try_compiled_method_or_interpret(target.clone(), "elems", vec![])
+                    .map(|value| crate::runtime::to_int(&value).max(0))
+                    .unwrap_or(0);
+                let resolved = self
+                    .eval_whatever_code_index(&index, len)
+                    .unwrap_or(Value::NIL);
+                self.stack.push(target);
+                self.stack.push(resolved);
+                return self.exec_index_op_with_positional(is_positional);
             }
             // Whatever slice on a tied Associative instance (`%h is Foo; %h{*}`):
             // enumerate the class's own keys (via its `keys` method) and read each

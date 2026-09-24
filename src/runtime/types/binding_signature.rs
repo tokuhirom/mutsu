@@ -1889,7 +1889,13 @@ impl Interpreter {
                         } else {
                             format!("@{}", pd.name)
                         };
-                        self.bind_param_value(&key, Value::real_array(items));
+                        // A sigiled `**@` slurpy is an Array in Raku. Keep the
+                        // real Array kind here, while preserving the raw
+                        // binding through the common parameter bookkeeping.
+                        let slurpy_value = Value::real_array(items);
+                        self.bind_param_value(&key, slurpy_value.clone());
+                        self.env.insert(key.clone(), slurpy_value.clone());
+                        self.note_param_bound_aggregate(&key, &slurpy_value);
                         self.bind_param_type_constraint(&key, pd.assignment_type_constraint());
                     }
                 } else if !pd.name.starts_with('@') {

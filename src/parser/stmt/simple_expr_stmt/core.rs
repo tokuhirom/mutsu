@@ -47,28 +47,30 @@ fn lvalue_assign_to_expr(lvalue: Expr, rhs: Expr) -> Expr {
             modifier,
             quoted: _,
         } => {
-            if name == "AT-POS" && args.len() == 1 {
-                Expr::IndexAssign {
-                    target: target.clone(),
-                    index: Box::new(args[0].clone()),
+            if name == "AT-POS"
+                && args.len() == 1
+                && !matches!(target.as_ref(), Expr::Var(name) | Expr::BareWord(name) if name == "self")
+            {
+                return Expr::IndexAssign {
+                    target,
+                    index: Box::new(args.into_iter().next().unwrap_or(Expr::Literal(Value::NIL))),
                     value: Box::new(rhs),
                     is_positional: true,
-                }
-            } else {
-                let target_var_name = match target.as_ref() {
-                    Expr::Var(v) => Some(v.clone()),
-                    Expr::ArrayVar(v) => Some(format!("@{}", v)),
-                    Expr::HashVar(v) => Some(format!("%{}", v)),
-                    Expr::DoStmt(s) => decl_target_var_name(s),
-                    _ => None,
                 };
-                let method_name = if modifier == Some('!') {
-                    format!("!{}", name.resolve())
-                } else {
-                    name.resolve()
-                };
-                method_lvalue_assign_expr(*target, target_var_name, method_name, args, rhs)
             }
+            let target_var_name = match target.as_ref() {
+                Expr::Var(v) => Some(v.clone()),
+                Expr::ArrayVar(v) => Some(format!("@{}", v)),
+                Expr::HashVar(v) => Some(format!("%{}", v)),
+                Expr::DoStmt(s) => decl_target_var_name(s),
+                _ => None,
+            };
+            let method_name = if modifier == Some('!') {
+                format!("!{}", name.resolve())
+            } else {
+                name.resolve()
+            };
+            method_lvalue_assign_expr(*target, target_var_name, method_name, args, rhs)
         }
         // An indirect method-call lvalue (`$o."$name"() = v` — an rw accessor
         // whose name is computed at runtime). Mirror the `MethodCall` arm above but
@@ -908,34 +910,38 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
             quoted: _,
         } = &expr
         {
-            let assigned = if name == "AT-POS" && args.len() == 1 {
-                Expr::IndexAssign {
+            if name == "AT-POS"
+                && args.len() == 1
+                && !matches!(target.as_ref(), Expr::Var(name) | Expr::BareWord(name) if name == "self")
+            {
+                let assigned = Expr::IndexAssign {
                     target: target.clone(),
                     index: Box::new(args[0].clone()),
                     value: Box::new(rhs),
                     is_positional: true,
-                }
-            } else {
-                let target_var_name = match target.as_ref() {
-                    Expr::Var(var_name) => Some(var_name.clone()),
-                    Expr::ArrayVar(var_name) => Some(format!("@{}", var_name)),
-                    Expr::HashVar(var_name) => Some(format!("%{}", var_name)),
-                    Expr::DoStmt(s) => decl_target_var_name(s),
-                    _ => None,
                 };
-                let method_name = if *modifier == Some('!') {
-                    format!("!{}", name.resolve())
-                } else {
-                    name.resolve()
-                };
-                method_lvalue_assign_expr(
-                    (**target).clone(),
-                    target_var_name,
-                    method_name,
-                    args.clone(),
-                    rhs,
-                )
+                let stmt = Stmt::Expr(assigned);
+                return parse_statement_modifier(r, stmt);
+            }
+            let target_var_name = match target.as_ref() {
+                Expr::Var(var_name) => Some(var_name.clone()),
+                Expr::ArrayVar(var_name) => Some(format!("@{}", var_name)),
+                Expr::HashVar(var_name) => Some(format!("%{}", var_name)),
+                Expr::DoStmt(s) => decl_target_var_name(s),
+                _ => None,
             };
+            let method_name = if *modifier == Some('!') {
+                format!("!{}", name.resolve())
+            } else {
+                name.resolve()
+            };
+            let assigned = method_lvalue_assign_expr(
+                (**target).clone(),
+                target_var_name,
+                method_name,
+                args.clone(),
+                rhs,
+            );
             let stmt = Stmt::Expr(assigned);
             return parse_statement_modifier(r, stmt);
         }

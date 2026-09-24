@@ -87,6 +87,11 @@ impl Value {
             };
         }
         match (self.view(), other.view()) {
+            // Whatever and HyperWhatever are tag values rather than ordinary
+            // PartialEq scalars, so `self == other` is intentionally not the
+            // equivalence test for these singleton values.
+            (ValueView::Whatever, ValueView::Whatever)
+            | (ValueView::HyperWhatever, ValueView::HyperWhatever) => true,
             // Arrays/Lists: must be same container type (Array vs List) and recursively eqv
             // eqv ignores Scalar wrapping — only Array vs List distinction matters
             // Cost: O(1) on a kind/length mismatch, else O(i) to the first differing
