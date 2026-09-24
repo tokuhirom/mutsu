@@ -1318,7 +1318,17 @@ impl Interpreter {
                 // caller's mark is restored when this frame exits).
                 // (Text::IO::String's `print` declaring `my Str $str` while
                 // called from `new (Str $str!)`.)
-                if !raw_mode && !is_bind_ctx && !is_bound_container {
+                // A `:=` rebind replaces the binding itself, so the mark a
+                // sigiled name got for being bound to an immutable value
+                // (`my $x := 42`) cannot reject it -- rakudo rebinds (#9238).
+                // Every other readonly kind (a `constant`, a sigilless term, a
+                // signature-bound parameter) still refuses the rebind.
+                let rebind_of_immutable = is_rebind
+                    && matches!(
+                        self.readonly_kind_sym(name_sym),
+                        Some(crate::ast::ReadonlyKind::Immutable)
+                    );
+                if !raw_mode && !is_bind_ctx && !rebind_of_immutable && !is_bound_container {
                     if self.vardecl_context().get() {
                         self.unmark_readonly_sym(name_sym);
                     } else {
