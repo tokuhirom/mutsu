@@ -617,16 +617,23 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 // A shaped array falls through to the slow path (flatten + Nil
                 // → type-default). Non-shaped arrays keep the fast path.
                 ValueView::Array(..) if crate::runtime::utils::is_shaped_array(target) => None,
-                // Cost: O(1) for `.Array`/`.list` on a plain real Array (returns the
-                // invocant); O(e), e = elements, when a List or an itemized array must be
-                // copied into a fresh Array.
-                ValueView::Array(items, kind) => {
+                // Cost: O(1) for `.list` on a plain real Array (returns the invocant);
+                // O(e), e = elements, for `.Array` (always a fresh Array) and for a
+                // `.list` that must strip an itemization.
+                ValueView::Array(items, _) if method == "Array" => {
                     // ADR-0040 slice 2: `.Array` builds a NEW real Array, which
                     // is not itself an element of anything -- so an itemized
                     // receiver's own itemization is dropped
                     // (`@a[0].Array.raku` is `[1, 2]`, not `$[1, 2]`), exactly
                     // as `.list` already drops it below. `wrap` re-itemizes the
-                    // new array's own ELEMENTS.
+                    // new array's own ELEMENTS. It is new even on a plain real
+                    // Array receiver: raku's `@a.Array =:= @a` is False, so
+                    // `@a.Array.push(3)` / `$p.Array[1] = 8` must not reach
+                    // `@a` (#9208). Like raku, the copy is a plain Array (no
+                    // element type, no `is default`).
+                    Some(Ok(wrap(items.to_vec())))
+                }
+                ValueView::Array(items, kind) => {
                     if method == "Array" && (!kind.is_real_array() || kind.is_itemized()) {
                         Some(Ok(wrap(items.to_vec())))
                     } else if method == "list" && kind.is_itemized() {
