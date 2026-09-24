@@ -52,4 +52,4 @@ Two shapes still copy per append — a local captured and mutated by a closure
 ~70x faster than before. They are tracked in
 [#9209](https://github.com/tokuhirom/mutsu/issues/9209).
 
-Pinned by `t/types/string/concat-append-in-place-elements.t`.
+Pinned by `t/collections/concat-append-in-place-elements.t`.
