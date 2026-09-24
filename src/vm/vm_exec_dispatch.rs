@@ -1676,6 +1676,13 @@ impl Interpreter {
                 // SetGlobal): the element type lives in the class registry,
                 // which none of the name-keyed lookups above can see.
                 val = self.apply_attr_container_element_type(&name, val)?;
+                // Record/clear the `:=`-bound decont marker exactly as the
+                // SetLocal path does: an expression-position bind with no local
+                // slot (`(my $p := (1,2))` in the mainline) lands here, and
+                // without the marker `@a = $p` itemized it (#9262).
+                if !is_internal_temp {
+                    self.update_bound_decont_marker(&name, was_scalar_bind || is_bind_ctx, &val);
+                }
                 // SetGlobal is also used for an attribute assignment inside a
                 // nested `given`/`when` body.  The by-name env mirror can then
                 // be shadowed by the topic's same-named attribute (for example
