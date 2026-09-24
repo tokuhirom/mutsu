@@ -1,6 +1,7 @@
 # An integer literal wider than 32 bits is an `Int`, not a native `int`
 # operand, so native-int arithmetic against it promotes instead of wrapping
-# (#9234). `t/vm/codegen/adr0110-trir-wide-int-literal.t` runs this with TRIR on and
+# (#9234). A literal that fits in 32 bits, and a native `int` parameter or
+# variable, IS a native operand, so the same arithmetic wraps (#9270). `t/vm/codegen/adr0110-trir-wide-int-literal.t` runs this with TRIR on and
 # off and requires rakudo's transcript from both. Every routine is called
 # twice, so a first-run-only answer cannot pass.
 my sub plus-max(int $a) { $a + 9223372036854775807 }
@@ -9,6 +10,12 @@ my sub max-plus(int $a) { 9223372036854775807 + $a }
 my sub minus-wide(int $a) { $a - 2147483649 }
 my sub times-wide(int $a) { $a * 4294967296 }
 my sub cmp-wide(int $a) { $a < 4294967296 ?? 'lt' !! 'ge' }
+my sub plus-one(int $a) { $a + 1 }
+my sub plus-param(int $a, int $b) { $a + $b }
+my sub times-three(int $a) { $a * 3 }
+my sub one-plus(int $a) { 1 + $a }
+my sub minus-narrow(int $a) { $a - 2147483647 }
+my sub into-native(int $a) { my int $x = $a + 1; $x }
 
 my $max = 9223372036854775807;
 for ^2 {
@@ -18,4 +25,10 @@ for ^2 {
     say 'minus-wide=', minus-wide(-$max - 1);
     say 'times-wide=', times-wide($max);
     say 'cmp-wide=', cmp-wide(5), ' ', cmp-wide($max);
+    say 'plus-one=', plus-one($max);
+    say 'plus-param=', plus-param(1, $max);
+    say 'times-three=', times-three($max);
+    say 'one-plus=', one-plus($max);
+    say 'minus-narrow=', minus-narrow(-$max - 1);
+    say 'into-native=', into-native($max);
 }

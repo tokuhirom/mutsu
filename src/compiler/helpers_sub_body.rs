@@ -319,6 +319,7 @@ impl Compiler {
         );
         sub_compiler.set_current_package(state_scope);
         sub_compiler.seed_native_rw_params(param_defs);
+        sub_compiler.seed_native_int_param_types(param_defs);
         // Pre-allocate locals for parameters
         for param in params {
             sub_compiler.declare_param(param);
@@ -1241,6 +1242,7 @@ impl Compiler {
         } else {
             sub_compiler.native_rw_params = self.native_rw_params.clone();
         }
+        sub_compiler.seed_native_int_param_types(param_defs);
         // Pre-allocate locals for parameters
         for param in params {
             sub_compiler.declare_param(param);
