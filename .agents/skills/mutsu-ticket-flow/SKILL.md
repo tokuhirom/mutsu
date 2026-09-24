@@ -246,7 +246,7 @@ elsewhere.
 Before publishing an implementation PR, run `cargo fmt --all`, `make lint`, `make test`, and
 `make roast` once each (`make lint` rather than a bare `cargo clippy` — it adds the three
 configurations CI's `lint-configs` job gates on and the default clippy is blind to). Inspect
-`tmp/make-test.log` and `tmp/make-roast.log` with the Grep tool rather than rerunning a suite for
+`tmp/make-test.log` and `tmp/make-roast.log` by searching them rather than rerunning a suite for
 its output. Do not publish an implementation PR until both full suites succeed — each target exits
 non-zero when its suite fails, so check the status and do not rely on skimming the log.
 

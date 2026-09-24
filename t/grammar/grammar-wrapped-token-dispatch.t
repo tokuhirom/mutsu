@@ -6,7 +6,7 @@ use Test;
 # anywhere and then checks that the first wrap installed switches the lookup
 # back on for a grammar that has not parsed yet.
 
-plan 13;
+plan 21;
 
 grammar Plain {
     token TOP  { <word>+ % ' ' }
@@ -81,3 +81,26 @@ Caller.^find_method('ws').wrap(-> $m, |c {
 });
 ok Caller.parse('a b'), 'rules calling a wrapped ws parse';
 is-deeply @callers.unique.List, <inner TOP>, 'wrapper sees the calling rule name';
+
+# `.parse` / `.subparse` enter the start rule directly; a wrap on it must still
+# run (#9190), with the regular parse (full-match check, :actions) inside it.
+grammar Start {
+    token TOP  { <word>+ % ' ' }
+    token word { \w+ }
+}
+my @start;
+Start.^find_method('TOP').wrap(-> |c { @start.push('TOP'); callsame });
+my $sm = Start.parse('ab cd');
+ok $sm, 'parse through a wrapped TOP succeeds';
+is $sm<word>.elems, 2, 'wrapped TOP keeps its captures';
+is-deeply @start, ['TOP'], 'wrapper on TOP ran once';
+nok Start.parse('ab cd!'), 'wrapped TOP still requires a full match';
+class StartActions { method TOP($/) { make 42 } }
+is Start.parse('x y', :actions(StartActions)).made, 42, ':actions run under a wrapped TOP';
+is @start.elems, 3, 'wrapper ran once per parse';
+
+grammar StartRule { token TOP { <word> }; token word { \w+ } }
+my @rule;
+StartRule.^find_method('word').wrap(-> |c { @rule.push('word'); callsame });
+is ~StartRule.subparse('ab cd', :rule<word>), 'ab', 'subparse :rule<word> through a wrapped word';
+is-deeply @rule, ['word'], 'wrapper on a :rule start rule ran';
