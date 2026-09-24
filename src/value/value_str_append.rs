@@ -65,7 +65,9 @@ impl Value {
             // one O(n) copy is paid once, and the appends after it are
             // in place again.
             Some(owned) => {
-                append_nfc(owned.make_flat_mut(), plan);
+                let mut buf = owned.take_flat();
+                append_nfc(&mut buf, plan);
+                *owned = super::StrBody::Flat(buf);
                 Value::Str(arc)
             }
             // Shared: Raku value semantics require a fresh buffer. Sized with

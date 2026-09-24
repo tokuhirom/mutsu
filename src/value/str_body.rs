@@ -165,21 +165,20 @@ impl StrBody {
         })))
     }
 
-    /// The buffer of a body its holder owns exclusively, turning a strand
-    /// list into a flat buffer first (taking the cached flattening when there
-    /// is one) so the caller can grow it in place.
+    /// Move the string out of a body its holder owns exclusively, leaving it
+    /// empty and flat: a flat body gives up its buffer, a strand list its
+    /// cached flattening (or a fresh one). The caller grows the buffer in
+    /// place and stores it back as `StrBody::Flat`.
     ///
     /// Cost: O(1) for a flat body; O(n) for a strand list that has not been
     /// read yet, n = bytes of the string.
-    pub(crate) fn make_flat_mut(&mut self) -> &mut String {
-        if let StrBody::Lazy(l) = self {
-            let flat = l.flat.take().unwrap_or_else(|| l.flatten());
-            *self = StrBody::Flat(flat);
-        }
-        match self {
-            StrBody::Flat(s) => s,
-            StrBody::Lazy(_) => unreachable!("just made flat"),
-        }
+    pub(crate) fn take_flat(&mut self) -> String {
+        let flat = match self {
+            StrBody::Flat(s) => std::mem::take(s),
+            StrBody::Lazy(l) => l.flat.take().unwrap_or_else(|| l.flatten()),
+        };
+        *self = StrBody::Flat(String::new());
+        flat
     }
 }
 
@@ -190,7 +189,8 @@ impl LazyStr {
     fn flatten(&self) -> String {
         let mut out: Vec<u8> = Vec::with_capacity(self.len);
         for strand in &self.strands {
-            let base = strand.base.flat_buf().expect("strand base is flat");
+            // A base is flat by construction, so this deref never flattens.
+            let base: &str = &strand.base;
             if strand.reps == 0 || base.is_empty() {
                 continue;
             }
@@ -357,18 +357,20 @@ mod tests {
     }
 
     #[test]
-    fn make_flat_mut_takes_the_cache() {
+    fn take_flat_takes_the_cache() {
         let mut body = StrBody::repeated(&flat("ab"), 2);
         assert_eq!(body.as_str(), "abab");
-        body.make_flat_mut().push('!');
-        assert!(matches!(body, StrBody::Flat(_)));
-        assert_eq!(body.as_str(), "abab!");
+        let mut s = body.take_flat();
+        s.push('!');
+        assert_eq!(s, "abab!");
+        assert!(matches!(&body, StrBody::Flat(b) if b.is_empty()));
     }
 
     #[test]
-    fn make_flat_mut_flattens_an_unread_list() {
+    fn take_flat_flattens_an_unread_list() {
         let mut body = StrBody::repeated(&flat("é"), 3);
-        body.make_flat_mut().push('.');
-        assert_eq!(body.as_str(), "ééé.");
+        let mut s = body.take_flat();
+        s.push('.');
+        assert_eq!(s, "ééé.");
     }
 }
