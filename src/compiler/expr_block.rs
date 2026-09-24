@@ -666,6 +666,19 @@ impl Compiler {
                                     self.code.emit(OpCode::MarkConstantContext);
                                 }
                                 self.code.emit(OpCode::MarkVarDeclContext);
+                                // An expression-position scalar bind
+                                // (`(my $p := EXPR)`) aliases the value, exactly
+                                // like the statement form: mark it so the store
+                                // does not itemize a Positional (#9262 --
+                                // `@a = $p` flattened as a statement but kept a
+                                // one-element chunk nested inside a closure's
+                                // `(my $p := ...) =:= IterationEnd ?? () !! $p`).
+                                if !name.starts_with('@')
+                                    && !name.starts_with('%')
+                                    && custom_traits.iter().any(|(t, _)| t == "__scalar_bind")
+                                {
+                                    self.code.emit(OpCode::MarkScalarBindContext);
+                                }
                                 self.emit_set_named_var(name);
                                 // Read the value back rather than `Dup`-ing the
                                 // pre-store value: `emit_set_named_var` itemizes
