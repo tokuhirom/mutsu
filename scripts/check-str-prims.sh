@@ -49,7 +49,10 @@ scan() {
         cd "$root"
         find src -name '*.rs' | sort | while read -r f; do
             if printf '%s\n' "$f" | grep -qE "$SCOPE_RE"; then
-                awk -v f="$f" -v re="$PRIM_RE" '
+                # The pattern goes in through the environment, not `-v`: `-v`
+                # processes backslash escapes, and gawk turns `\.` into `.`.
+                PRIM_RE="$PRIM_RE" awk -v f="$f" '
+                    BEGIN { re = ENVIRON["PRIM_RE"] }
                     {
                         line = $0
                         allowed = (line ~ /str-prim: allow/) || (prev ~ /str-prim: allow/)
