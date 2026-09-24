@@ -228,10 +228,13 @@ impl Interpreter {
         // to their existing arms below, unaffected by this guard.
         if LTM_DECLARATIVE_MODE.with(std::cell::Cell::get) {
             match ltm_atom_mode(atom) {
-                LtmAtomMode::Terminate => {
+                LtmAtomMode::Terminate
+                    if !super::regex_ltm_rank::ltm_leading_ws_is_transparent(atom, pos) =>
+                {
                     ltm_record_fate(pos);
                     return None;
                 }
+                LtmAtomMode::Terminate => {}
                 LtmAtomMode::TerminateAfter(inner) => {
                     self.ltm_record_lookahead_fates(inner, chars, pos, pkg);
                     return None;
@@ -325,8 +328,11 @@ impl Interpreter {
                 // key). Replaces the old "longest end wins" rule.
                 let mut best: Option<((usize, usize), usize, RegexCaptures)> = None;
                 let capture_slots = alternation_capture_slots(alternatives);
+                let mut ltm_alternatives = super::regex_helpers::LtmAlternativeScope::new();
                 for alt in alternatives {
+                    ltm_alternatives.before_alternative();
                     let matched = self.regex_match_end_from_caps_in_pkg(alt, chars, pos, pkg);
+                    ltm_alternatives.after_alternative(matched.is_some());
                     if let Some((next, mut inner_caps)) = matched {
                         if !super::regex_helpers::IN_QUANTIFIED_ALTERNATION_MATCH.with(Cell::get) {
                             inner_caps
@@ -1161,7 +1167,11 @@ impl Interpreter {
                 && !self
                     .resolve_token_patterns_static_in_pkg(&method_name, pkg)
                     .is_empty();
-            if !spec.silent && is_plain_ident && !leading_resolves {
+            if !spec.silent
+                && is_plain_ident
+                && !leading_resolves
+                && !self.has_proto_token_in_pkg(&method_name, pkg)
+            {
                 super::super::regex_parse::PENDING_REGEX_ERROR.with(|e| {
                     let msg = format!(
                         "No such method '{}' for invocant of type 'Match'",

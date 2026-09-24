@@ -25,10 +25,10 @@ impl Value {
         Value::BigInt(Arc::new(n))
     }
     pub fn str(s: String) -> Self {
-        Value::Str(Arc::new(s))
+        Value::Str(Arc::new(crate::value::StrBody::Flat(s)))
     }
     pub fn str_from(s: &str) -> Self {
-        Value::Str(Arc::new(s.to_string()))
+        Value::Str(Arc::new(crate::value::StrBody::Flat(s.to_string())))
     }
     pub fn regex(s: String) -> Self {
         Value::Regex(Arc::new(s))
@@ -334,6 +334,13 @@ impl Value {
     /// Create a true Array value (from [...] literals).
     pub fn real_array(items: Vec<Value>) -> Self {
         Value::Array(crate::gc::Gc::new(ArrayData::new(items)), ArrayKind::Array)
+    }
+    /// An nqp VMArray of element kind `kind` (`nqp::list_i` and its twins,
+    /// #9235): an ordinary list that remembers what its growth slots hold.
+    pub(crate) fn nqp_typed_list(items: Vec<Value>, kind: NqpElemKind) -> Self {
+        let mut data = ArrayData::new(items);
+        data.nqp_elem = kind;
+        Value::Array(crate::gc::Gc::new(data), ArrayKind::List)
     }
     /// Fresh empty Array tagged with the "element" container-descriptor name —
     /// what an unsupplied `@`-param binds (rakudo: `@kh.VAR.name` is

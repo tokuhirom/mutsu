@@ -51,6 +51,9 @@ CASES=(
     'append ~= (attribute, #9209)|10000|class C { has $.s = ""; method go($n) { for ^$n { $!s ~= "あ" } } };|C.new.go(NN)|once'
     'append ~= (in given/when)|10000||given 1 { when 1 { my $x = ""; for ^NN { $x ~= "あ" } } }|once'
     'concat reassign $y = $y ~|10000|my $y = "";|$y = $y ~ "あ"|loop'
+    'concat ~ (shared left operand)|10000|my $a = "a" x NN;|my $r = $a ~ "b"|loop'
+    'interpolation "$a-b" (shared part)|10000|my $a = "a" x NN;|my $r = "$a-b"|loop'
+    'repeat x (count grows with N)|10000|my $s = "あ";|my $r = $s x (NN * 100)|loop'
     # --- transform ---------------------------------------------------------
     'trans (multi-char key)|10000|my $s = "abc " x NN;|$s.trans(["ab"] => ["x"])|once'
     'trans ("\n" => "\r\n")|10000|my $s = "abc\n" x NN;|$s.trans("\n" => "\r\n")|once'
@@ -58,6 +61,14 @@ CASES=(
     'trans (char ranges, control)|200000|my $s = "abc " x NN;|$s.trans("a..z" => "A..Z")|once'
     'Str.Str|20000|my $s = "a" x NN;|$s.Str|loop'
     'Str.WHICH|20000|my $s = "a" x NN;|$s.WHICH|loop'
+    # --- prefix of a comb / lines / words Seq (#9251) ----------------------
+    # O(prefix) per call, so a loop of NN calls over an NN-char string is ~2.
+    'comb.head(3)|5000|my $s = "a" x NN;|$s.comb.head(3)|loop'
+    'comb(2).first|5000|my $s = "a" x NN;|$s.comb(2).first|loop'
+    'comb(Str).head(3)|5000|my $s = "ab" x NN;|$s.comb("b").head(3)|loop'
+    'comb[1]|5000|my $s = "a" x NN;|$s.comb[1]|loop'
+    'lines.head(3)|5000|my $s = "a\n" x NN;|$s.lines.head(3)|loop'
+    'words.head(3)|5000|my $s = "a " x NN;|$s.words.head(3)|loop'
     # --- split / match / subst ---------------------------------------------
     's:g/// (one call)|2000|my $c = "a," x NN;|$c ~~ s:g/","/;/|once'
     'subst regex + closure|1000|my $s = "a" x NN;|$s.subst(/a+/, { "b" })|once'

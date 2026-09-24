@@ -59,6 +59,7 @@ impl Interpreter {
                 shadowed_proto_names: HashSet::new(),
                 imported_env_keys: HashSet::new(),
                 imported_routine_aliases: self.imported_routine_aliases.clone(),
+                imported_exported_proto_tags: self.imported_exported_proto_tags.clone(),
                 newline_mode: self.newline_mode,
                 strict_mode: self.strict_mode,
                 fatal_mode: self.fatal_mode,
@@ -108,6 +109,28 @@ impl Interpreter {
     pub(crate) fn remove_imported_routine_alias(&mut self, package: &str, name: &str) {
         self.imported_routine_aliases
             .remove(&Symbol::intern(&format!("{package}::{name}")));
+    }
+
+    pub(crate) fn record_imported_exported_proto(
+        &mut self,
+        package: &str,
+        name: &str,
+        tags: impl IntoIterator<Item = String>,
+    ) {
+        let key = crate::qualified::qualified(Symbol::intern(package), Symbol::intern(name));
+        self.imported_exported_proto_tags
+            .entry(key)
+            .or_default()
+            .extend(tags);
+    }
+
+    pub(crate) fn imported_exported_proto_tags(
+        &self,
+        package: &str,
+        name: &str,
+    ) -> Option<HashSet<String>> {
+        let key = crate::qualified::qualified(Symbol::intern(package), Symbol::intern(name));
+        self.imported_exported_proto_tags.get(&key).cloned()
     }
 
     /// Run `body` (a role's deferred-body `use`/`need` statement) and persist
@@ -198,6 +221,7 @@ impl Interpreter {
                 imported_env_keys,
                 imported_env_aliases,
                 imported_routine_aliases,
+                imported_exported_proto_tags,
                 newline_mode,
                 strict_mode,
                 fatal_mode,
@@ -344,6 +368,7 @@ impl Interpreter {
             self.fatal_mode = fatal_mode;
             self.monkey_typing = monkey_typing;
             self.imported_routine_aliases = imported_routine_aliases;
+            self.imported_exported_proto_tags = imported_exported_proto_tags;
             self.imported_env_aliases = imported_env_aliases;
             // Removing imported functions when a lexical import scope pops must
             // invalidate the name-keyed function-resolution caches: a sub that
@@ -555,11 +580,19 @@ impl Interpreter {
             // returned map is combined with ordinary `is export` declarations
             // (Rakudo's custom EXPORT and default export surfaces coexist),
             // but the use arguments are not export tags (`use JSON::Fast
-            // <immutable !pretty>` is the canonical example). Import the
-            // metadata with the default tag set so those arguments are not
-            // rejected as unknown tags.
+            // <immutable !pretty>` is the canonical example). Preserve an
+            // explicit `:all` tag, though: it requests the module's complete
+            // ordinary export surface in addition to whatever the hook
+            // returns, while positional use arguments must still use the
+            // default tag set so they are not rejected as unknown tags.
             if self.module_export_defs.contains_key(module) {
-                return match self.import_module(module, &[]) {
+                let all_tag = ["ALL".to_string()];
+                let ordinary_tags = if tags.iter().any(|tag| tag.eq_ignore_ascii_case("all")) {
+                    &all_tag[..]
+                } else {
+                    &[]
+                };
+                return match self.import_module(module, ordinary_tags) {
                     Ok(()) => Ok(()),
                     Err(err) if err.message.starts_with("No exports found for module:") => Ok(()),
                     Err(err) => Err(err),
@@ -1033,15 +1066,18 @@ impl Interpreter {
                     .or_default()
                     .extend(package_globals);
             }
+            let all_tag = ["ALL".to_string()];
+            let import_tags = if self.module_export_defs.contains_key(module) {
+                if tags.iter().any(|tag| tag.eq_ignore_ascii_case("all")) {
+                    &all_tag[..]
+                } else {
+                    &[]
+                }
+            } else {
+                tags
+            };
             if import
-                && let Err(err) = self.import_module(
-                    module,
-                    if self.module_export_defs.contains_key(module) {
-                        &[]
-                    } else {
-                        tags
-                    },
-                )
+                && let Err(err) = self.import_module(module, import_tags)
                 && !err.message.starts_with("No exports found for module:")
             {
                 return Err(err);

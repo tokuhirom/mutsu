@@ -2,7 +2,6 @@
 /// flip, so, not, is-lazy, lazy, chomp, chop, comb, fmt, join
 use crate::runtime;
 use crate::value::{RuntimeError, Value, ValueView};
-use unicode_segmentation::UnicodeSegmentation;
 
 use super::{fmt_0arg_item, is_value_lazy};
 
@@ -11,21 +10,18 @@ pub(super) fn dispatch(
     method: &str,
 ) -> Option<Option<Result<Value, RuntimeError>>> {
     match method {
-        // Cost: O(n + k), n = chars of the invocant, k = words (each copied once).
-        "words" => {
-            let s = target.to_string_value();
-            let words: Vec<Value> = s
-                .split_whitespace()
-                .map(|w| Value::str(w.to_string()))
-                .collect();
-            Some(Some(Ok(Value::seq(words))))
-        }
+        // Cost: O(1), a lazy Seq over the invocant (`crate::value::StrIterSpec`).
+        "words" => Some(Some(Ok(crate::value::str_iter_seq(
+            target,
+            crate::value::StrIterMode::Words,
+            None,
+        )))),
         // Cost: O(n), n = chars of the invocant.
         "codes" => {
             let s = target.to_string_value();
             Some(Some(Ok(Value::int(s.chars().count() as i64))))
         }
-        // Cost: O(n + k), n = bytes of the invocant, k = lines (each copied once).
+        // Cost: O(1), a lazy Seq over the invocant (`crate::value::StrIterSpec`).
         "lines" => {
             // Skip for Supply instances -- handled by native Supply.lines
             if let ValueView::Instance { class_name, .. } = target.view()
@@ -36,12 +32,11 @@ pub(super) fn dispatch(
             {
                 return Some(None);
             }
-            let s = target.to_string_value();
-            let lines: Vec<Value> = crate::builtins::split_lines_chomped(&s)
-                .into_iter()
-                .map(Value::str)
-                .collect();
-            Some(Some(Ok(Value::seq(lines))))
+            Some(Some(Ok(crate::value::str_iter_seq(
+                target,
+                crate::value::StrIterMode::Lines { chomp: true },
+                None,
+            ))))
         }
         // `Str.Date` / `Str.DateTime` coerce an ISO-formatted string to a
         // Date / DateTime (documented on Str). Str-only — `Int.Date` etc. are
@@ -264,14 +259,12 @@ pub(super) fn dispatch(
         }
         // Cost: O(n), n = chars of the invocant (one Str per grapheme; eager, so
         // `.comb.head(k)` still pays O(n)).
-        "comb" => {
-            let s = target.to_string_value();
-            let parts: Vec<Value> = s
-                .graphemes(true)
-                .map(|g| Value::str(g.to_string()))
-                .collect();
-            Some(Some(Ok(Value::seq(parts))))
-        }
+        // Cost: O(1), a lazy Seq over the invocant (`crate::value::StrIterSpec`).
+        "comb" => Some(Some(Ok(crate::value::str_iter_seq(
+            target,
+            crate::value::StrIterMode::Graphemes,
+            None,
+        )))),
         "fmt" => {
             // .fmt() with no arguments: use default format and separator
             Some(match target.view() {

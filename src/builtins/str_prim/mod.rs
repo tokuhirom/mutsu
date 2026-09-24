@@ -23,9 +23,11 @@
 
 mod build;
 mod fold;
+mod strands;
 
 pub(crate) use build::{Normal, concat, flip, normalize, repeat};
 pub(crate) use fold::{Fold, eq_at, find};
+pub(crate) use strands::Joiner;
 
 use crate::builtins::grapheme_index::{GraphemeIndex, Units, with_str_index};
 use crate::value::{RuntimeError, Value};

@@ -1048,11 +1048,10 @@ impl Interpreter {
                 }
                 *ip += 1;
             }
-            // Cost: O(v + L) per store, v = entries of the running frame's env overlay (the
-            // reverse-alias propagation at the end scans every env key for a
-            // `__mutsu_sigilless_alias::` entry naming this variable), L = locals of the chunk
-            // (the attr-twigil slot scan); plus O(e) when an `@`/`%` target copies its
-            // container. Rakudo: O(1) -- see #9169.
+            // Cost: O(1) + O(a) per store, a = aliases recorded for this variable (the
+            // reverse-alias propagation probes each candidate from
+            // `sigilless_alias_index`; 0 in a program that never binds one); plus O(e)
+            // when an `@`/`%` target copies its container.
             OpCode::SetGlobalRaw(name_idx) | OpCode::SetGlobal(name_idx) => {
                 let raw_mode = matches!(code.ops[*ip], OpCode::SetGlobalRaw(_));
                 let is_bind_ctx = self.bind_context().get();
@@ -1251,11 +1250,9 @@ impl Interpreter {
                 // the slot metadata is the authoritative way to distinguish it
                 // from a scalar attribute read mirror (`!head`).
                 let is_array_hash_attr_twigil = Self::is_array_hash_attr_twigil(&name)
-                    || code.locals.iter().enumerate().any(|(idx, local)| {
-                        local == &name
-                            && code
-                                .local_attr_key(idx)
-                                .is_some_and(|(_, _, sigil)| matches!(sigil, '@' | '%'))
+                    || code.local_slots_of(name_sym).iter().any(|&idx| {
+                        code.local_attr_key(idx as usize)
+                            .is_some_and(|(_, _, sigil)| matches!(sigil, '@' | '%'))
                     });
                 // Synthetic compiler temporaries (rw index/argument desugaring,
                 // `with`/`without` topic temps `__with_tmp_*`, for-loop element
@@ -2414,22 +2411,26 @@ impl Interpreter {
                 // Reverse alias propagation: find all variables that are
                 // bound TO this variable (i.e. `my $x := $name`) and update
                 // them so the alias stays in sync.
+                //
+                // The candidates come from the process-wide reverse index (a
+                // superset, see `sigilless_alias_index`), each re-checked
+                // against this frame's env overlay -- the same entries the old
+                // whole-overlay scan found, without visiting the rest.
                 {
-                    let prefix = "__mutsu_sigilless_alias::";
-                    let reverse_targets: Vec<String> = self
-                        .env()
-                        .iter()
-                        .filter_map(|(k, v)| {
-                            if let Some(var_name) = k.strip_prefix_str(prefix)
-                                && let ValueView::Str(target) = v.view()
-                                && target.as_str() == name
-                            {
-                                Some(var_name)
-                            } else {
-                                None
-                            }
-                        })
-                        .collect();
+                    let reverse_targets: Vec<String> = crate::sigilless_alias_index::aliases_of(
+                        name_sym,
+                    )
+                    .into_iter()
+                    .filter(|var| {
+                        matches!(
+                            self.env()
+                                .overlay_get_sym(Interpreter::sigilless_alias_key_for_sym(*var))
+                                .map(Value::view),
+                            Some(ValueView::Str(target)) if target.as_str() == name
+                        )
+                    })
+                    .map(|var| var.as_str().to_string())
+                    .collect();
                     for target_var in reverse_targets {
                         // The alias table is process-global (it even reaches the
                         // cross-thread shared store), but an alias only means
@@ -2940,8 +2941,9 @@ impl Interpreter {
             }
 
             // -- String --
-            // Cost: amortized O(n2) when the left Str is held by nothing else, else
-            // O(n1 + n2) (see exec_concat_op). Rakudo: amortized O(1) (strands) -- see #9209.
+            // Cost: amortized O(n2) when the left Str is held by nothing else; O(1)
+            // when the result is built as strands (ADR-0120); O(n1 + n2) for a
+            // result under `STRAND_MIN_BYTES` (see exec_concat_op).
             OpCode::Concat => {
                 self.sync_source_line(code, *ip);
                 self.exec_concat_op()?;
@@ -3203,9 +3205,8 @@ impl Interpreter {
             }
 
             // -- Repetition --
-            // Cost: O(n * c), n = chars of the left operand, c = repeat count
-            // (see exec_string_repeat_op). Rakudo: O(1) for a flat operand --
-            // see #9253.
+            // Cost: O(n), n = chars of the left operand (one repeat strand,
+            // ADR-0120; see exec_string_repeat_op).
             OpCode::StringRepeat => {
                 self.exec_string_repeat_op()?;
                 *ip += 1;
@@ -3523,10 +3524,8 @@ impl Interpreter {
             }
 
             // Cost: O(d) for an instance, d = MRO depth (has_user_method), O(1)
-            // otherwise; with a user `.defined` method, O(L) + its call, L = local
-            // slots of the current frame (the env snapshot before and the
-            // reconcile after walk every slot). Rakudo: O(1) + the call -- see
-            // #9169.
+            // otherwise; with a user `.defined` method, plus its call and the
+            // drain of any by-name caller write it recorded (O(1) when none).
             OpCode::CallDefined => {
                 self.sync_source_line(code, *ip);
                 let val = self.stack.pop().unwrap();
@@ -3553,28 +3552,6 @@ impl Interpreter {
                 let has_user_defined = class_name
                     .as_ref()
                     .is_some_and(|cn| self.has_user_method(&cn.resolve(), "defined"));
-                // A user `.defined` mutates a captured-outer lexical by name in env
-                // via the interpreter slow path (`run_instance_method`), which
-                // records nothing this site can drain. Snapshot the caller frame's
-                // slot-backing env values before the call so only the changed slots
-                // are written through after.
-                let armed = has_user_defined;
-                let pre_env: Vec<Option<Value>> = if armed {
-                    code.locals
-                        .iter()
-                        .map(|n| {
-                            self.env().get(n).cloned().or_else(|| {
-                                n.strip_prefix('$')
-                                    .or_else(|| n.strip_prefix('@'))
-                                    .or_else(|| n.strip_prefix('%'))
-                                    .or_else(|| n.strip_prefix('&'))
-                                    .and_then(|b| self.env().get(b).cloned())
-                            })
-                        })
-                        .collect()
-                } else {
-                    Vec::new()
-                };
                 let defined = if has_user_defined {
                     // Call user method directly, bypassing native method dispatch
                     let cn = class_name.unwrap();
@@ -3597,30 +3574,14 @@ impl Interpreter {
                 };
                 // Stage 3: a user-defined `.defined` (dispatched above for
                 // `andthen`/`notandthen`) runs interpreter code that can mutate a
-                // captured-outer caller lexical by name (`my $calls; method
-                // defined { $calls++ }`). Reconcile the caller's slots so the
-                // write is visible without the reverse `sync_locals_from_env`
-                // pull (only on the user-method path; the native check is pure).
-                if armed {
-                    for (i, name) in code.locals.iter().enumerate() {
-                        if name.starts_with('!')
-                            || matches!(self.locals[i].view(), ValueView::HashEntryRef { .. })
-                        {
-                            continue;
-                        }
-                        let cur = self.env().get(name).cloned().or_else(|| {
-                            name.strip_prefix('$')
-                                .or_else(|| name.strip_prefix('@'))
-                                .or_else(|| name.strip_prefix('%'))
-                                .or_else(|| name.strip_prefix('&'))
-                                .and_then(|b| self.env().get(b).cloned())
-                        });
-                        if let Some(cur) = cur
-                            && pre_env.get(i).map(|p| p.as_ref()) != Some(Some(&cur))
-                        {
-                            self.locals[i] = cur;
-                        }
-                    }
+                // captured-outer caller lexical (`my $calls; method defined {
+                // $calls++ }`). A captured-and-mutated lexical is a shared cell
+                // the slot already observes; a by-name write the method's return
+                // merge recorded for this frame is drained exactly as an ordinary
+                // method call drains it -- O(1) when there is none, where the
+                // old whole-frame snapshot + diff cost O(L) per `andthen` (#9169).
+                if has_user_defined {
+                    self.apply_pending_caller_var_writeback(code);
                 }
                 self.stack.push(defined);
                 *ip += 1;
@@ -3925,9 +3886,8 @@ impl Interpreter {
             }
             // Cost: O(1) for a plain value; O(k) when a lazy list or untouched Seq
             // is drained, k = elements; O(d) for a `user_sink` instance, d = MRO
-            // depth; with a user `sink` method, O(L) + its call, L = local slots
-            // of the current frame (env snapshot + reconcile_locals_from_env).
-            // Rakudo: O(1) + the call -- see #9169.
+            // depth; with a user `sink` method, plus its call and the drain of any
+            // by-name caller write it recorded (O(1) when none).
             OpCode::SinkPop(user_sink, may_explode_failure) => {
                 self.sync_source_line(code, *ip);
                 let user_sink = *user_sink;
@@ -3978,24 +3938,11 @@ impl Interpreter {
                         None
                     };
                     if mixin_sink {
-                        // Same captured-outer writeback dance as the class arm
-                        // below: the doc idiom `($b + 1) does role { method sink
-                        // { $b++ } }` mutates a caller lexical from inside sink.
-                        let pre_env: Vec<Option<Value>> = code
-                            .locals
-                            .iter()
-                            .map(|n| {
-                                self.env().get(n).cloned().or_else(|| {
-                                    n.strip_prefix('$')
-                                        .or_else(|| n.strip_prefix('@'))
-                                        .or_else(|| n.strip_prefix('%'))
-                                        .or_else(|| n.strip_prefix('&'))
-                                        .and_then(|b| self.env().get(b).cloned())
-                                })
-                            })
-                            .collect();
+                        // Same captured-outer writeback as the class arm below:
+                        // the doc idiom `($b + 1) does role { method sink { $b++
+                        // } }` mutates a caller lexical from inside sink.
                         let _ = self.dispatch_mixin_method_call(&val, "sink", Vec::new());
-                        self.reconcile_locals_from_env(code, &pre_env);
+                        self.apply_pending_caller_var_writeback(code);
                         *ip += 1;
                         return Ok(());
                     }
@@ -4004,24 +3951,12 @@ impl Interpreter {
                             ValueView::Instance { attributes, .. } => attributes.to_map(),
                             _ => AttrMap::new(),
                         };
-                        // `sink` can mutate a captured-outer caller lexical by
-                        // name (`my @reg; method sink { @reg.push(...) }`) via
-                        // the slow path, which records nothing this site drains.
-                        // Snapshot slot-backing env before, reconcile after
-                        // (same dance as CallDefined).
-                        let pre_env: Vec<Option<Value>> = code
-                            .locals
-                            .iter()
-                            .map(|n| {
-                                self.env().get(n).cloned().or_else(|| {
-                                    n.strip_prefix('$')
-                                        .or_else(|| n.strip_prefix('@'))
-                                        .or_else(|| n.strip_prefix('%'))
-                                        .or_else(|| n.strip_prefix('&'))
-                                        .and_then(|b| self.env().get(b).cloned())
-                                })
-                            })
-                            .collect();
+                        // `sink` can mutate a captured-outer caller lexical
+                        // (`my @reg; method sink { @reg.push(...) }`): a
+                        // captured-and-mutated lexical is a shared cell the slot
+                        // already observes, and a by-name write the return merge
+                        // recorded for this frame is drained here as an ordinary
+                        // method call drains it (same as CallDefined).
                         let _ = self.vm_run_instance_method(
                             &cn,
                             attrs,
@@ -4029,7 +3964,7 @@ impl Interpreter {
                             Vec::new(),
                             Some(val.clone()),
                         );
-                        self.reconcile_locals_from_env(code, &pre_env);
+                        self.apply_pending_caller_var_writeback(code);
                         *ip += 1;
                         return Ok(());
                     }
@@ -4219,36 +4154,27 @@ impl Interpreter {
             }
 
             // -- I/O --
-            // Cost: O(L + t), L = locals of the executing unit (`sync_env_from_locals_declared`
-            // walks every one per call), t = rendered size (see exec_say_op). Rakudo: O(t) -- see
-            // #9169.
+            // Cost: O(t), t = rendered size (see exec_say_op).
             OpCode::Say(n) => {
                 self.sync_source_line(code, *ip);
-                self.sync_env_from_locals_declared(code);
                 self.exec_say_op(*n)?;
                 *ip += 1;
             }
-            // Cost: O(L + t), L = locals of the executing unit (`sync_env_from_locals_declared`), t
-            // = total `.Str` length (see exec_put_op). Rakudo: O(t) -- see #9169.
+            // Cost: O(t), t = total `.Str` length (see exec_put_op).
             OpCode::Put(n) => {
                 self.sync_source_line(code, *ip);
-                self.sync_env_from_locals_declared(code);
                 self.exec_put_op(*n)?;
                 *ip += 1;
             }
-            // Cost: O(L + t), L = locals of the executing unit (`sync_env_from_locals_declared`), t
-            // = total `.Str` length. Rakudo: O(t) -- see #9169.
+            // Cost: O(t), t = total `.Str` length.
             OpCode::Print(n) => {
                 self.sync_source_line(code, *ip);
-                self.sync_env_from_locals_declared(code);
                 self.exec_print_op(*n)?;
                 *ip += 1;
             }
-            // Cost: O(L + t), L = locals of the executing unit (`sync_env_from_locals_declared`), t
-            // = rendered size (see exec_note_op). Rakudo: O(t) -- see #9169.
+            // Cost: O(t), t = rendered size (see exec_note_op).
             OpCode::Note(n) => {
                 self.sync_source_line(code, *ip);
-                self.sync_env_from_locals_declared(code);
                 self.exec_note_op(*n)?;
                 *ip += 1;
             }
@@ -4835,9 +4761,10 @@ impl Interpreter {
                 *ip += 1;
             }
             // -- String interpolation --
-            // Cost: O(1) for a single plain-Str part (`"$s"`, shared); otherwise O(n),
-            // n = total chars of the parts (each is copied into one fresh String).
-            // Rakudo: O(parts) (strands) -- see #9209.
+            // Cost: O(1) for a single plain-Str part (`"$s"`, shared); O(parts) plus
+            // the chars of the parts that are copied (non-Str parts and Str parts
+            // under 256 bytes) when the result is built as strands (ADR-0120);
+            // O(n), n = total chars, for a result under `STRAND_MIN_BYTES`.
             OpCode::StringConcat(n) => {
                 self.sync_source_line(code, *ip);
                 self.exec_string_concat_op(*n)?;
@@ -5624,8 +5551,8 @@ impl Interpreter {
             }
 
             // -- Reduction --
-            // Cost: O(e) operator applications, e = elements; `[~]` is O(t^2 / m) (see
-            // exec_reduction_op). Rakudo: O(t) for `[~]` -- see #9161.
+            // Cost: O(e) operator applications, e = elements; `[~]` is O(t) amortized,
+            // t = result chars (see exec_reduction_op).
             OpCode::Reduction(spec_idx) => {
                 self.sync_source_line(code, *ip);
                 let spec = code.reduction_spec(*spec_idx);
@@ -6216,7 +6143,7 @@ impl Interpreter {
                 self.exec_make_gather_op(code, *idx, *cc_idx)?;
                 *ip += 1;
             }
-            // Cost: O(k + L + v) on a lazy list, k = elements produced, L = frame locals, v = env entries (sync/merge); O(k) otherwise. Rakudo: O(k) -- see #9169.
+            // Cost: O(k + g) on a lazy list, k = elements produced, g = slots a `gather` body of this chunk names (reconciled after the force); O(k) otherwise.
             OpCode::Eager => {
                 self.sync_source_line(code, *ip);
                 let val = self.stack.pop().unwrap_or(Value::NIL);
@@ -6230,18 +6157,25 @@ impl Interpreter {
                         // saw), and copying it unconditionally reset a loop
                         // counter every iteration (`for ^3 { eager gather {...};
                         // $t += 1 }` left `$t` at 1).
-                        let pre_env: Vec<Option<Value>> = code
-                            .locals
+                        //
+                        // A gather body can only name the slots the compiler
+                        // recorded as its parent-slot dependencies
+                        // (`env_consumer_slots.gather_list`, which are mirrored
+                        // on every store); the frame's other locals are not
+                        // visited (#9169).
+                        let slots = &code.env_consumer_slots.gather_list;
+                        let pre_env: Vec<Option<Value>> = slots
                             .iter()
-                            .map(|name| self.env().get(name).cloned())
+                            .map(|&i| self.env().get(&code.locals[i as usize]).cloned())
                             .collect();
                         let items = self.force_lazy_list_vm(&ll)?;
-                        for (i, name) in code.locals.iter().enumerate() {
+                        for (k, &i) in slots.iter().enumerate() {
+                            let i = i as usize;
                             if i >= self.locals.len() {
                                 break;
                             }
-                            if let Some(v) = self.env().get(name) {
-                                let unchanged = pre_env[i]
+                            if let Some(v) = self.env().get(&code.locals[i]) {
+                                let unchanged = pre_env[k]
                                     .as_ref()
                                     .is_some_and(|pre| crate::runtime::values_identical(pre, v));
                                 if !unchanged {
@@ -6818,31 +6752,5 @@ impl Interpreter {
     pub(crate) fn resolve_frame_let_saves(&mut self, mark: usize, frame_result: &Value) {
         let success = Self::is_let_success(frame_result);
         self.resolve_let_saves_on_success(mark, success);
-    }
-
-    /// Pull back into the compiler-baked local slots any slot-backing env entry
-    /// an internally-dispatched method changed (`pre_env` is the snapshot taken
-    /// before the dispatch). Used by the sink-context arms, which run user code
-    /// with no surrounding call op to drain the captured-outer writeback.
-    fn reconcile_locals_from_env(&mut self, code: &CompiledCode, pre_env: &[Option<Value>]) {
-        for (i, name) in code.locals.iter().enumerate() {
-            if name.starts_with('!')
-                || matches!(self.locals[i].view(), ValueView::HashEntryRef { .. })
-            {
-                continue;
-            }
-            let cur = self.env().get(name).cloned().or_else(|| {
-                name.strip_prefix('$')
-                    .or_else(|| name.strip_prefix('@'))
-                    .or_else(|| name.strip_prefix('%'))
-                    .or_else(|| name.strip_prefix('&'))
-                    .and_then(|b| self.env().get(b).cloned())
-            });
-            if let Some(cur) = cur
-                && pre_env.get(i).map(|p| p.as_ref()) != Some(Some(&cur))
-            {
-                self.locals[i] = cur;
-            }
-        }
     }
 }

@@ -307,10 +307,7 @@ impl Interpreter {
             } = inst.view()
             && class_name == "IO::Handle"
         {
-            let content_value = args
-                .get(1)
-                .cloned()
-                .unwrap_or(Value::str_arc(String::new().into()));
+            let content_value = args.get(1).cloned().unwrap_or(Value::str(String::new()));
             let method_args = std::iter::once(content_value)
                 .chain(args.iter().skip(2).cloned())
                 .collect();
@@ -421,9 +418,9 @@ impl Interpreter {
             let path = arg.to_string_value();
             let resolved = self.resolve_path(&path);
             match fs::remove_file(&resolved) {
-                Ok(()) => names.push(Value::str_arc(path.into())),
+                Ok(()) => names.push(Value::str(path)),
                 Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
-                    names.push(Value::str_arc(path.into()))
+                    names.push(Value::str(path))
                 }
                 Err(_) => {}
             }

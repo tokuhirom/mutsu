@@ -684,6 +684,13 @@ impl Interpreter {
                 .and_then(|exports| exports.get(name))
                 .cloned()
         };
+        let tags = tags.or_else(|| {
+            if self.module_load_stack.is_empty() {
+                None
+            } else {
+                self.imported_exported_proto_tags(&package, name)
+            }
+        });
         if let Some(tags) = tags {
             self.register_exported_sub(package, name.to_string(), tags.into_iter().collect());
         }
@@ -1275,6 +1282,7 @@ impl Interpreter {
             // in `proto_subs` as `GLOBAL::name` and this was invisible.)
             if imported_proto {
                 self.registry_mut().proto_subs_insert(target_single.clone());
+                self.record_imported_exported_proto(target_pkg, &name, symbol_tags.iter().cloned());
             }
 
             // A `token`/`rule`/`regex` marked `is export` lives in

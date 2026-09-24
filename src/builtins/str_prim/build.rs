@@ -5,10 +5,12 @@
 
 use unicode_normalization::UnicodeNormalization;
 
-use crate::value::{RuntimeError, Value};
+use std::sync::Arc;
+
+use crate::value::{RuntimeError, StrBody, Value};
 
 /// A string built by joining pieces, in NFC.
-fn nfc_value(s: String) -> Value {
+pub(super) fn nfc_value(s: String) -> Value {
     if s.is_ascii() {
         Value::str(s)
     } else {
@@ -24,10 +26,19 @@ fn nfc_value(s: String) -> Value {
 /// suffix and a bounded window around the join rather than by renormalizing
 /// the whole result (#9141).
 ///
-/// Cost: O(n2) amortized when `left` is an unshared `Str`, else O(n1 + n2),
-/// n1, n2 = chars of the operands.
+/// A result of at least `STRAND_MIN_BYTES` whose left operand is shared (or
+/// is itself a strand list) is built as a strand list instead (ADR-0120):
+/// neither operand's characters are copied until the result is read.
+///
+/// Cost: O(n2) amortized when `left` is an unshared flat `Str`; O(1) when the
+/// result is built as strands; else O(n1 + n2), n1, n2 = chars of the
+/// operands (a small result, or a join that has to be renormalized).
 pub(crate) fn concat(left: Value, right: &Value) -> Value {
     use crate::value::ValueView;
+    let left = match super::strands::concat(left, right) {
+        Ok(joined) => return joined,
+        Err(left) => left,
+    };
     if let ValueView::Str(_) = left.view() {
         if let ValueView::Str(suffix) = right.view() {
             let plan = crate::value::StrAppendPlan::for_suffix(suffix.as_str());
@@ -42,36 +53,58 @@ pub(crate) fn concat(left: Value, right: &Value) -> Value {
     nfc_value(s)
 }
 
+/// Rakudo's cap on the size of a string, in graphemes.
+/// Compared as `u64`: on a 32-bit target it is `usize::MAX`.
+const MAX_GRAPHEMES: u64 = 4_294_967_295;
+
 /// `src x n` (`infix:<x>`, its reduction and `nqp::x`). The caller has
 /// already clamped or rejected a negative count.
 ///
+/// A result of at least `STRAND_MIN_BYTES` is one repeat strand over `src`'s
+/// payload (ADR-0120): nothing is written out until the result is read.
+/// Rakudo's grapheme cap is checked up front, so an oversized request dies
+/// with a catchable error instead of an allocation failure at first read.
+///
+/// Cost: O(n), n = chars of `src` (the NFC and size checks); O(n * c), c =
+/// repeat count, only for a result that has to be built flat (smaller than
+/// `STRAND_MIN_BYTES`, or a copy that composes with the one before it).
+pub(crate) fn repeat(src: &Value, n: usize) -> Result<Value, RuntimeError> {
+    if n as u64 > MAX_GRAPHEMES {
+        return Err(RuntimeError::new(format!(
+            "Repeat count ({n}) cannot be greater than max allowed number of graphemes {MAX_GRAPHEMES}"
+        )));
+    }
+    let body: Arc<StrBody> = match src.view() {
+        crate::value::ValueView::Str(arc) => Arc::clone(&arc),
+        _ => Arc::new(StrBody::from(crate::runtime::utils::coerce_to_str(src))),
+    };
+    // A grapheme is at least one byte, so only a result over the cap in
+    // bytes can be over it in graphemes; count them only then.
+    if (body.byte_len() as u64).saturating_mul(n as u64) > MAX_GRAPHEMES {
+        let graphemes = super::chars(&Value::str_arc(Arc::clone(&body)));
+        if (graphemes as u64).saturating_mul(n as u64) > MAX_GRAPHEMES {
+            return Err(RuntimeError::new(format!(
+                "Can't repeat string, required number of graphemes ({graphemes} * {n}) greater than max allowed of {MAX_GRAPHEMES}"
+            )));
+        }
+    }
+    if let Some(lazy) = super::strands::repeat(&body, n) {
+        return Ok(lazy);
+    }
+    repeat_flat(&body, n)
+}
+
+/// `src x n`, written out.
+///
 /// Cost: O(n * c), n = chars of `src`, c = repeat count (plus an NFC pass
-/// over a non-ASCII result). Rakudo: O(1) for a flat operand (one repeat
-/// strand) -- see #9253.
-pub(crate) fn repeat(src: &str, n: usize) -> Result<Value, RuntimeError> {
-    // Guard the allocation: `str::repeat` aborts the process via
-    // `handle_alloc_error` on an absurd count (e.g. `"x" x 1e15`), which
-    // `try {}` cannot recover from. Reserve fallibly first so the same
-    // input yields a catchable `X::` instead.
-    //
-    // Best-effort only, and weaker than raku here: `try_reserve` fails only
-    // if the kernel refuses the mapping (request over the ~128 TiB address
-    // space, or a non-overcommitting `vm.overcommit_memory`). Under
-    // `vm.overcommit_memory=1` a 91 TiB reservation succeeds and the fill
-    // loop below then eats the machine. raku instead caps the *request*
-    // deterministically -- "Repeat count (N) cannot be greater than max
-    // allowed number of graphemes 4294967295", plus the same bound on
-    // `graphemes * count` -- which is allocator-independent. mutsu should
-    // adopt that cap; see the note in `Interpreter::autoviv_resize`.
-    // TODO: enforce raku's 4294967295-grapheme cap before reserving.
+/// over a non-ASCII result whose copies compose).
+fn repeat_flat(src: &str, n: usize) -> Result<Value, RuntimeError> {
     let total = src
         .len()
         .checked_mul(n)
         .ok_or_else(|| RuntimeError::new("Cannot repeat string: length overflow"))?;
     // Build by doubling (`extend_from_within` = one memcpy per doubling)
-    // instead of `n` per-copy `push_str` calls: the roast A01-limits test
-    // declares `"a" x 2**32-1` (a 4 GiB string), which must complete in
-    // seconds, not minutes.
+    // instead of `n` per-copy `push_str` calls.
     let mut buf: Vec<u8> = Vec::new();
     buf.try_reserve_exact(total).map_err(|_| {
         RuntimeError::new(format!(
@@ -86,21 +119,12 @@ pub(crate) fn repeat(src: &str, n: usize) -> Result<Value, RuntimeError> {
         }
     }
     // SAFETY: `buf` is `src.as_bytes()` (valid UTF-8) repeated whole times;
-    // a concatenation of valid UTF-8 strings is valid UTF-8. Skipping the
-    // validation scan matters at this size (multi-GiB).
+    // a concatenation of valid UTF-8 strings is valid UTF-8.
     let repeated = unsafe { String::from_utf8_unchecked(buf) };
     // NFC is local: when `src` is itself NFC and starts at a normalization
     // boundary, no copy can compose or reorder with the one before it, so
-    // the repetition is already NFC. Deciding that reads `src` once
-    // instead of renormalizing the whole (up to multi-GiB) result (#9141).
-    let src_repeats_as_nfc = src.is_ascii()
-        || (src
-            .chars()
-            .next()
-            .is_none_or(crate::value::has_nfc_boundary_before)
-            && unicode_normalization::is_nfc_quick(src.chars())
-                == unicode_normalization::IsNormalized::Yes);
-    Ok(if src_repeats_as_nfc {
+    // the repetition is already NFC (#9141).
+    Ok(if super::strands::repeats_as_nfc(src) {
         Value::str(repeated)
     } else {
         nfc_value(repeated)

@@ -135,6 +135,21 @@ pub(super) fn ltm_atom_mode(atom: &RegexAtom) -> LtmAtomMode<'_> {
     }
 }
 
+/// A rule's implicit leading `<.ws>` is zero-width when the subject starts at
+/// a non-whitespace character. It must not erase the rule's useful prefix
+/// during LTM measurement; explicit/interior whitespace still terminates the
+/// prefix at the position where it occurs.
+pub(super) fn ltm_leading_ws_is_transparent(atom: &RegexAtom, pos: usize) -> bool {
+    if pos != 0 {
+        return false;
+    }
+    match atom {
+        RegexAtom::WsRule => true,
+        RegexAtom::Named(name) => named_lookup_is_ws(name),
+        _ => false,
+    }
+}
+
 impl Interpreter {
     /// ADR-0022 §4.1: the longest declarative-prefix match of `pattern` at
     /// `pos`, plus whether the measurement was cut short by a
@@ -455,6 +470,13 @@ impl Interpreter {
         let chars = target.chars();
         let pkg = self.current_package_sym();
         let (plen, stopped) = self.ltm_prefix_len_at(&parsed, chars, 0, pkg);
+        // A stopped measurement is useful only as a keep-alive signal: its
+        // observed prefix cannot rank this candidate against a fully measured
+        // sibling. Let the proto dispatcher place it in the declaration-order
+        // fallback bucket and decide with the real matcher.
+        if stopped {
+            return (None, true);
+        }
         let Some(plen) = plen else {
             return (None, stopped);
         };

@@ -351,6 +351,11 @@ impl Interpreter {
         match (left.view(), right.view()) {
             // Whatever on RHS always matches (ACCEPTS returns True for any value)
             (_, ValueView::Whatever) => true,
+            // A Match on the RHS is an already-decided match result, so it
+            // passes through like a Bool regardless of the topic. This is
+            // used by dispatch-time `where $<capture>` predicates, where the
+            // capture value is itself a Match rather than a regex literal.
+            (_, ValueView::Instance { .. }) if right.is_match_instance() => right.truthy(),
             // `$x ~~ $obj` where $obj's class defines a user `ACCEPTS` method
             // dispatches `$obj.ACCEPTS($x)` — the core smartmatch protocol.
             // Built-in types (IO::Path / Signature / Buf / Date…) carry native
@@ -1100,7 +1105,7 @@ impl Interpreter {
                     // attributes in place; the identity-keeping rebuild is
                     // equivalent — the object is freshly built and unshared.)
                     let mut updates: Vec<(&str, Value)> = Vec::new();
-                    if left.as_str().is_none() {
+                    if !left.is_str_value() {
                         updates.push(("orig", left.clone()));
                     }
                     if let Some(made_val) = self.env.get_sym(crate::symbol::wk::made()).cloned() {
@@ -1670,7 +1675,7 @@ impl Interpreter {
             {
                 matches!(
                     left.view(),
-                    ValueView::Enum { enum_type, .. } if enum_type.resolve() == **type_name
+                    ValueView::Enum { enum_type, .. } if enum_type.resolve() == ***type_name
                 )
             }
             // Mu instances smartmatch only the Mu type object (Mu ~~ Mu.new is True).

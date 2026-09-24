@@ -5,8 +5,9 @@
 # The fixture has one routine per shape: `elems` of a Uni, a list, a hash
 # (handed on to the generic op) and an IterationBuffer; `shift_i` into a
 # native, a sized native that wraps, and an expression; `push_i` of a native
-# and of a boxed value; and the consume-from-the-front loop JSON::Fast's
-# `unjsonify-string` is.
+# and of a boxed value; the consume-from-the-front loop JSON::Fast's
+# `unjsonify-string` is; and the slot-direct forms on a Buf, which the
+# list/Uni shortcut hands on to the general path.
 #
 # Pinned: TRIR on == TRIR off == the transcript (checked against rakudo),
 # and every routine is actually accepted, so the agreement is not vacuous.
@@ -41,9 +42,10 @@ is $on-out, q:to/END/ x 2, 'the transcript carries the expected answers';
     build => abcF 70 4
     rotate => bcda 4
     copy-except => abc 0
+    via-buf => 1 7 10 2,250,251,252,253,254,255,0,1,7
     END
 
-my @routines = <counts drain-sized build rotate copy-except>;
+my @routines = <counts drain-sized build rotate copy-except via-buf>;
 my @accepted = $on-err.lines.map({ m/^ 'trir: ' (\S+) ' accepted'/ ?? ~$0 !! Empty }).grep(* (elem) @routines);
 is-deeply @accepted.sort.List, @routines.sort.List, 'every shape routine is accepted into TRIR'
     or diag $on-err;

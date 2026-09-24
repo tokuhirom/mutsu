@@ -78,6 +78,10 @@ impl Interpreter {
         // once at the opcode boundary so every native/cache probe below shares
         // the same key instead of re-hashing it independently.
         let method_sym = Symbol::intern(&method);
+        let target = match self.take_seq_prefix(&target, &method, &args)? {
+            Some(prefix) => prefix,
+            None => target,
+        };
         let target = self.reify_or_consume_seq_target(target, &method)?;
         if method == "message"
             && args.is_empty()
@@ -807,6 +811,10 @@ impl Interpreter {
         // shares, so no writeback is needed: every alias (this frame's
         // variable, a second alias, a value passed to a sub one call frame
         // away) observes it for free.
+        let target = match self.take_seq_prefix(&target, method, &args)? {
+            Some(prefix) => prefix,
+            None => target,
+        };
         let target = self.reify_or_consume_seq_target(target, method)?;
         if method == "message"
             && args.is_empty()

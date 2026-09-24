@@ -111,10 +111,6 @@ pub(crate) fn split_lines_limited(input: &str, chomp: bool, limit: Option<usize>
     lines
 }
 
-pub(crate) fn split_lines_chomped(input: &str) -> Vec<String> {
-    split_lines_impl(input, true)
-}
-
 pub(crate) fn split_lines_with_chomp(input: &str, chomp: bool) -> Vec<String> {
     split_lines_impl(input, chomp)
 }

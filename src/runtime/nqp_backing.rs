@@ -3,7 +3,7 @@
 
 use super::nqp_ops_list::ITERATION_BUFFER_ITEMS;
 use crate::runtime::{Interpreter, RuntimeError};
-use crate::value::{Value, ValueView};
+use crate::value::{NqpElemKind, Value, ValueView};
 
 /// The array a list-ish nqp value is backed by, as a `Value` that shares the
 /// target's `Gc` node — so an in-place write through it is visible to every
@@ -52,6 +52,38 @@ pub(crate) fn with_nqp_backing_array<R>(v: &Value, f: impl FnOnce(&Value) -> R) 
         ValueView::Array(..) => Some(f(v)),
         ValueView::Uni(uni) => Some(f(&uni.codes)),
         _ => nqp_backing_array(v).map(|array| f(&array)),
+    }
+}
+
+/// The storage of a plain list, or of a `Uni`'s codepoint list, handed to `f`
+/// for an in-place edit. `None` for anything else (an `IterationBuffer`, a
+/// Buf/Blob, a non-list), which the caller sends down the general path.
+///
+/// These two are the only shapes TRIR's per-character list ops meet in
+/// practice (JSON::Fast's `unjsonify-string` shifts every codepoint off one
+/// `Uni` and pushes it onto another), and neither can be a Buf, so this skips
+/// [`push_elem`]'s Buf probe and [`Interpreter::nqp_with_elems_mut`]'s closure
+/// layers. The edit is the same one those make: same node, same
+/// `ArrayData` method.
+// Cost: O(1) plus f.
+#[inline]
+pub(crate) fn with_list_data_mut<R>(
+    v: &Value,
+    f: impl FnOnce(&mut crate::value::ArrayData) -> R,
+) -> Option<R> {
+    match v.view() {
+        // SAFETY: audited aliased in-place container write (see
+        // value::aliased_mut and docs/gc-contents-mut-inventory.md) -- every
+        // caller's `f` is a pure element edit (push/shift) that never
+        // re-enters the interpreter, so no other borrow into the node is
+        // live across it.
+        ValueView::Array(items, _) => Some(f(unsafe { crate::value::gc_contents_mut(&items) })),
+        ValueView::Uni(uni) => match uni.codes.view() {
+            // SAFETY: as above.
+            ValueView::Array(items, _) => Some(f(unsafe { crate::value::gc_contents_mut(&items) })),
+            _ => None,
+        },
+        _ => None,
     }
 }
 
@@ -109,10 +141,36 @@ pub(crate) fn elem_at(target: &Value, idx: i64) -> Result<Option<Value>, Runtime
     Ok(Interpreter::nqp_elem_at(target, i))
 }
 
+/// What a growth slot of a typed nqp list holds (#9235): `nqp::list_i`,
+/// `list_n` and `list_s` are native arrays, so a slot `setelems` or a
+/// past-the-end `bindpos*` opens reads back as that type's zero -- the null
+/// string for `list_s`. `None` for an object list, whose slots are null.
+// Cost: O(1).
+pub(crate) fn typed_list_fill(kind: NqpElemKind) -> Option<Value> {
+    match kind {
+        NqpElemKind::Object => None,
+        NqpElemKind::Int => Some(Value::int(0)),
+        NqpElemKind::Num => Some(Value::num(0.0)),
+        NqpElemKind::Str => Some(Value::str(String::new())),
+    }
+}
+
+/// The element kind of `target` when it is an nqp typed list (see
+/// [`typed_list_fill`]); [`NqpElemKind::Object`] for anything else.
+// Cost: O(1).
+fn nqp_elem_kind(target: &Value) -> NqpElemKind {
+    match target.view() {
+        ValueView::Array(items, _) => items.nqp_elem,
+        _ => NqpElemKind::Object,
+    }
+}
+
 /// Store `val` at `idx` of a list-ish nqp value (see [`resolve_index`]),
-/// growing it with `fill` when `idx` is past the end. A Buf/Blob encodes the
-/// one element in place. The shared body of `nqp::bindpos` and its typed
-/// twins, which differ only in how they convert `val` and what `fill` is.
+/// growing it when `idx` is past the end: with the typed list's zero on an
+/// `nqp::list_i`/`_n`/`_s` (see [`typed_list_fill`]), otherwise with the op's
+/// own `fill`. A Buf/Blob encodes the one element in place. The shared body of
+/// `nqp::bindpos` and its typed twins, which differ only in how they convert
+/// `val` and what `fill` is.
 // Cost: O(1) amortized; O(i - e) when growing, i = index, e = elements.
 pub(crate) fn bind_elem(
     op: &str,
@@ -128,6 +186,7 @@ pub(crate) fn bind_elem(
     {
         return Ok(val);
     }
+    let fill = typed_list_fill(nqp_elem_kind(target)).unwrap_or(fill);
     let stored = val.clone();
     Interpreter::nqp_with_elems_mut(op, target, |elems| {
         if elems.len() <= i {

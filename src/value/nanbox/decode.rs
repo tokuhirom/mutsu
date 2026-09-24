@@ -27,7 +27,7 @@ impl NanBox {
 /// being consumed exactly once.
 unsafe fn decode_kind(kind: Kind, bits: u64) -> ValueRepr {
     match kind {
-        Kind::Str => ValueRepr::Str(unsafe { take_arc::<String>(bits) }),
+        Kind::Str => ValueRepr::Str(unsafe { take_arc::<crate::value::StrBody>(bits) }),
         Kind::Regex => ValueRepr::Regex(unsafe { take_arc::<String>(bits) }),
         Kind::BigInt => ValueRepr::BigInt(unsafe { take_arc::<NumBigInt>(bits) }),
         Kind::IntBoxed => ValueRepr::Int(*unsafe { take_arc::<i64>(bits) }),

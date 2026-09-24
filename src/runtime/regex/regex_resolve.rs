@@ -357,6 +357,37 @@ impl Interpreter {
         self.resolve_unqualified_token_patterns_in_pkg(name, pkg)
     }
 
+    /// Whether `name` is a proto token or proto rule visible from a regex
+    /// compiled in `pkg`.  The regex matcher uses this to distinguish a real
+    /// unknown method from an intentionally candidate-less proto declaration.
+    ///
+    /// The ordinary `has_proto_token` query follows the interpreter's current
+    /// package. Regex matching may be evaluating a subrule while that package
+    /// is temporarily different, so unknown-method diagnostics must use the
+    /// regex's package context instead. A proto with no concrete candidates is
+    /// still a valid failing subrule, not an unknown method.
+    pub(crate) fn has_proto_token_in_pkg(&self, name: &str, pkg: Symbol) -> bool {
+        let name_sym = Symbol::intern(name);
+        if crate::qualified::is_qualified(name_sym) {
+            return self.registry().proto_tokens.contains(name)
+                || self.registry().has_proto("", name);
+        }
+        for scope in self.qualified_name_scopes(pkg) {
+            for owner in self.mro_readonly(&scope) {
+                let token_marker =
+                    crate::runtime::dispatch_key::with_qualified(&owner, name, |key| {
+                        self.registry().proto_tokens.contains(key)
+                    });
+                if token_marker || self.registry().has_proto(&owner, name) {
+                    return true;
+                }
+            }
+        }
+        crate::runtime::dispatch_key::with_qualified("GLOBAL", name, |key| {
+            self.registry().proto_tokens.contains(key)
+        })
+    }
+
     /// The `<Pkg::rule>` half of [`Self::resolve_token_patterns_static_in_pkg`].
     fn collect_qualified_token_patterns(
         &self,

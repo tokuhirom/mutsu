@@ -4154,6 +4154,22 @@ impl Interpreter {
                     // Parse the group as top-level alternation, including `||`.
                     let (alternatives, bracket_is_sequential) =
                         Self::split_top_level_alternation(&group_pattern);
+                    // Raku keeps a leading inline `:i` modifier active for the
+                    // whole bracketed alternation (`[:i'first-'[...]|before|after]`),
+                    // not only for the first branch.  Each branch is parsed as
+                    // a separate pattern below, so carry that leading scope into
+                    // the other branches explicitly.
+                    let bracket_ignore_case = {
+                        let body = group_pattern.trim_start();
+                        body.strip_prefix(":ignorecase")
+                            .or_else(|| body.strip_prefix(":i"))
+                            .is_some_and(|rest| {
+                                rest.is_empty()
+                                    || rest.starts_with(|c: char| {
+                                        !c.is_ascii_alphanumeric() && c != '_'
+                                    })
+                            })
+                    };
                     // A trailing/interior empty branch inside the group (`[a|]`)
                     // is null; a leading empty branch is allowed (`[|a]`).
                     if alternatives.len() > 1
@@ -4162,7 +4178,8 @@ impl Interpreter {
                         PENDING_REGEX_ERROR.with(|e| *e.borrow_mut() = Some(err));
                         return None;
                     }
-                    let needs_scope = ignore_case || sigspace || ratchet || ignore_mark;
+                    let needs_scope =
+                        ignore_case || bracket_ignore_case || sigspace || ratchet || ignore_mark;
                     if alternatives.len() > 1 {
                         let mut alt_patterns = Vec::new();
                         for (alt_idx, alt) in alternatives.iter().enumerate() {
@@ -4175,7 +4192,7 @@ impl Interpreter {
                             }
                             let parsed_alt = if needs_scope {
                                 let mut scoped = String::new();
-                                if ignore_case {
+                                if ignore_case || bracket_ignore_case {
                                     scoped.push_str(":i ");
                                 }
                                 if sigspace {

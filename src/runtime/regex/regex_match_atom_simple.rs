@@ -279,10 +279,13 @@ impl Interpreter {
         };
         if LTM_DECLARATIVE_MODE.with(std::cell::Cell::get) && !wrapped_token {
             match ltm_atom_mode(atom) {
-                LtmAtomMode::Terminate => {
+                LtmAtomMode::Terminate
+                    if !super::regex_ltm_rank::ltm_leading_ws_is_transparent(atom, pos) =>
+                {
                     ltm_record_fate(pos);
                     return None;
                 }
+                LtmAtomMode::Terminate => {}
                 LtmAtomMode::TerminateAfter(inner) => {
                     self.ltm_record_lookahead_fates(inner, chars, pos, pkg);
                     return None;
@@ -331,8 +334,12 @@ impl Interpreter {
                 // desc), ties broken by declaration order (iterating in
                 // written order, replacing only on a strict improvement).
                 let mut best: Option<((usize, usize), usize)> = None;
+                let mut ltm_alternatives = super::regex_helpers::LtmAlternativeScope::new();
                 for alt in alternatives {
-                    if let Some(end) = self.regex_match_end_from_in_pkg(alt, chars, pos, pkg) {
+                    ltm_alternatives.before_alternative();
+                    let matched = self.regex_match_end_from_in_pkg(alt, chars, pos, pkg);
+                    ltm_alternatives.after_alternative(matched.is_some());
+                    if let Some(end) = matched {
                         let rank = self.ltm_branch_rank_key(alt, chars, pos, pkg);
                         let replace = best
                             .as_ref()
@@ -669,6 +676,7 @@ impl Interpreter {
             // artifacts from character class syntax like `<[...]>`).
             if !spec.silent
                 && !spec.lookup_name.is_empty()
+                && !self.has_proto_token_in_pkg(&spec.lookup_name, pkg)
                 && spec
                     .lookup_name
                     .chars()

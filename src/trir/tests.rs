@@ -103,8 +103,8 @@ fn nom_ws_compiles_to_the_typed_scanner_loop() {
             "JumpIfFalseI(6)",
             "IncRefIVoid(0)",
             "Jump(0)",
-            "ConstObj(0)",
-            "PopObj",
+            // The loop's `Nil` value, pushed and dropped, is gone
+            // (`peephole.rs`).
             "ReturnNil",
         ]
     );

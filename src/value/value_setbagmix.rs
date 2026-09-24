@@ -37,9 +37,9 @@ impl BagData {
             return v.clone();
         }
         if let Some(s) = str_key.strip_prefix("Str|") {
-            return Value::Str(Arc::new(s.to_string()));
+            return Value::str(s.to_string());
         }
-        Value::Str(Arc::new(str_key.to_string()))
+        Value::str(str_key.to_string())
     }
 }
 
@@ -99,9 +99,9 @@ impl SetData {
             return v.clone();
         }
         if let Some(s) = str_key.strip_prefix("Str|") {
-            return Value::Str(Arc::new(s.to_string()));
+            return Value::str(s.to_string());
         }
-        Value::Str(Arc::new(str_key.to_string()))
+        Value::str(str_key.to_string())
     }
 }
 
@@ -161,9 +161,9 @@ impl MixData {
             return v.clone();
         }
         if let Some(s) = str_key.strip_prefix("Str|") {
-            return Value::Str(Arc::new(s.to_string()));
+            return Value::str(s.to_string());
         }
-        Value::Str(Arc::new(str_key.to_string()))
+        Value::str(str_key.to_string())
     }
 }
 

@@ -644,7 +644,7 @@ impl Interpreter {
                     .get(&name_key)
                     .or_else(|| self.env.get(&name_key).cloned())
                     .and_then(|v| match v.view() {
-                        ValueView::Str(vk) => Some(vk.as_ref().clone()),
+                        ValueView::Str(vk) => Some(String::clone(&vk)),
                         _ => None,
                     });
                 if let Some(value_key) = value_key

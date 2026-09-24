@@ -3073,6 +3073,10 @@ pub struct Interpreter {
     /// with routine-registry snapshots so a nested lexical declaration cannot
     /// consume an import belonging to its caller.
     pub(crate) imported_routine_aliases: HashSet<Symbol>,
+    /// Export tags inherited by a local multi that extends an imported
+    /// exported proto. Rakudo exports the whole family, including the local
+    /// candidate, under those tags.
+    pub(crate) imported_exported_proto_tags: HashMap<Symbol, HashSet<String>>,
     /// Environment keys installed by imports, paired with the spelling that
     /// should appear in a lexical pseudo-stash. Scalar exports are stored in
     /// `env` without their `$` sigil, so the display spelling cannot be
@@ -3367,14 +3371,15 @@ pub struct Interpreter {
     /// gate would leave exactly that spawn's binding to be seeded — and frozen —
     /// on the lane.
     pub(crate) param_bound_aggregates: ValueMap,
-    /// Set while an *incidental* locals -> env mirror is running: the I/O
-    /// pre-sync (`sync_env_from_locals_declared`, run before Say/Put/Print/Note
-    /// so a `$*OUT` override or a `.gist` sees fresh values) and the regex
-    /// interpolation pre-sync. Both exist purely so a name-based reader in THIS
-    /// interpreter can observe the frame's live slots through `env`.
+    /// Set while an *incidental* locals -> env mirror is running: the regex
+    /// interpolation pre-sync before a `~~`. It exists purely so a name-based
+    /// reader in THIS interpreter can observe the frame's live slots through
+    /// `env`. (The I/O ops' own pre-sync was dropped by #9169: a `$*OUT`
+    /// override or a user `.gist` reads its free variables the way any method
+    /// body does, through the per-store mirror.)
     ///
     /// `set_env_with_main_alias` does double duty: it writes `env` AND publishes
-    /// to the cross-thread shared store. Publishing from these two is wrong,
+    /// to the cross-thread shared store. Publishing from such a mirror is wrong,
     /// because the store is keyed by BARE NAME while the mirror walks *whichever
     /// frame happens to be printing*: a callee's parameter `$url` overwrote the
     /// lane belonging to the caller's own `my $url`, and the caller's next
@@ -4832,7 +4837,8 @@ pub(crate) type RoutineRegistrySnapshot = (
     rustc_hash::FxHashSet<String>,
     rustc_hash::FxHashSet<Symbol>,
     std::sync::Arc<std::collections::HashMap<String, HashSet<Symbol>>>, // user_declared_infix_ops snapshot
-    HashSet<Symbol>, // imported routine aliases snapshot
+    HashSet<Symbol>,                  // imported routine aliases snapshot
+    HashMap<Symbol, HashSet<String>>, // imported exported-proto tags snapshot
 );
 
 /// What a lexical import scope (`{ use Foo; ... }`) restores when it pops: the
@@ -4874,6 +4880,8 @@ pub(crate) struct ImportScopeSnapshot {
     /// registry snapshot alone cannot distinguish an imported alias from a
     /// declaration made in this scope when the names collide.
     pub(crate) imported_routine_aliases: HashSet<Symbol>,
+    /// Export tags inherited by local multis extending imported exported protos.
+    pub(crate) imported_exported_proto_tags: HashMap<Symbol, HashSet<String>>,
     pub(crate) newline_mode: NewlineMode,
     pub(crate) strict_mode: bool,
     pub(crate) fatal_mode: bool,

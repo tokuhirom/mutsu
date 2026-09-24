@@ -4,10 +4,9 @@ use crate::runtime::meta_ns::MetaNs;
 use crate::value::ValueMap;
 
 impl Interpreter {
-    // Cost: O(L + m) + role composition, L = local slots of `code`
-    // (`snapshot_carrier_overwritable_env` runs on every `but`, and the role path
-    // diffs them again), m = keys of an existing mixin map (cloned). Rakudo: O(1)
-    // with the mixin type cache -- see #9169.
+    // Cost: O(m) + role composition, m = keys of an existing mixin map (cloned);
+    // a role path adds the drain of any by-name caller write its
+    // `submethod TWEAK`/`BUILD` recorded (O(1) when none).
     pub(super) fn exec_but_mixin_op(&mut self, code: &CompiledCode) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         // `(role :: { ... })` on the RHS is the individual parametric role, not
@@ -15,10 +14,11 @@ impl Interpreter {
         let right = self.normalize_role_type_object(&right);
         let left = self.stack.pop().unwrap();
         // `$obj but R` runs role R's `submethod TWEAK`/`BUILD` via the interpreter,
-        // which can mutate a captured-outer caller lexical by name (`my $invoked;
-        // role R { submethod TWEAK { $invoked = True } }`). Snapshot the
-        // overwritable slots for the precise diff that reconciles them.
-        let pre_env = self.snapshot_carrier_overwritable_env(code);
+        // which can mutate a captured-outer caller lexical (`my $invoked; role R
+        // { submethod TWEAK { $invoked = True } }`). A captured-and-mutated
+        // lexical is a shared cell the caller's slot observes directly; a by-name
+        // write recorded for this frame is drained after composition (below), as
+        // an ordinary method call drains it.
         // `but` composing a role or another type into a type-object invocant is
         // illegal (no instance); mixing a concrete value (`Method but True`) is
         // allowed, so this only guards the role / type-object-RHS branches.
@@ -47,9 +47,9 @@ impl Interpreter {
                 return Err(self.but_on_type_object_error(tn));
             }
             let composed = composed?;
-            // Reconcile the caller's slots from env so a captured-outer write made
-            // by the role's `submethod TWEAK`/`BUILD` is visible.
-            self.carrier_writeback_changed_aggregates(code, &pre_env);
+            // Drain a captured-outer write made by the role's `submethod
+            // TWEAK`/`BUILD` into the caller's slots.
+            self.apply_pending_caller_var_writeback(code);
             self.stack.push(composed);
             return Ok(());
         }
@@ -71,7 +71,7 @@ impl Interpreter {
             }
             let roles: Vec<Value> = items.iter().cloned().collect();
             let composed = loan_env!(self, eval_does_values_list(left, &roles))?;
-            self.carrier_writeback_changed_aggregates(code, &pre_env);
+            self.apply_pending_caller_var_writeback(code);
             self.stack.push(composed);
             return Ok(());
         }
@@ -456,19 +456,16 @@ impl Interpreter {
         Ok(Value::truth(left.does_check(&role_name)))
     }
 
-    // Cost: O(L) + role composition, L = local slots of `code`
-    // (`sync_env_from_locals`, `snapshot_carrier_overwritable_env` and
-    // `carrier_writeback_changed_aggregates` each walk all of them). Rakudo: O(1)
-    // with the mixin type cache -- see #9169.
+    // Cost: role composition, plus the drain of any by-name caller write a
+    // `submethod BUILD`/`TWEAK` recorded (O(1) when none).
     pub(super) fn exec_does_op(&mut self, code: &CompiledCode) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
-        // Sync Interpreter locals to interpreter env so BUILD submethods can access
-        // and modify closure variables from the enclosing scope.
-        self.sync_env_from_locals(code);
-        // Snapshot for the precise BUILD/TWEAK captured-outer writeback (see
-        // exec_does_var_op).
-        let pre_env = self.snapshot_carrier_overwritable_env(code);
+        // A `submethod BUILD`/`TWEAK` run by the composition reads and writes
+        // its free variables the way any method body does: a captured lexical
+        // is mirrored to env on every store (or shared as a cell), so no
+        // whole-frame locals -> env broadcast is needed first, and a by-name
+        // caller write it records is drained below (see exec_but_mixin_op).
         // `does` on a first-class container (`$obj.attr.VAR does Role`): compose
         // onto the inner value and store the mixin back *through* the cell, so
         // every alias of the container (the attribute slot, a `:=`-bound var)
@@ -497,9 +494,9 @@ impl Interpreter {
                 .class_attribute_trait_objects
                 .insert((owner, attr_name), result.clone());
         }
-        // Sync back: BUILD submethods may have modified closure variables, so the
-        // captured-outer writes reach the caller's slots.
-        self.carrier_writeback_changed_aggregates(code, &pre_env);
+        // BUILD submethods may have modified closure variables: drain the
+        // recorded captured-outer writes into the caller's slots.
+        self.apply_pending_caller_var_writeback(code);
         // Capture Mixin value for trait_mod writeback (same as DoesVar path).
         // `apply_attribute_traits` reads this to invoke a `compose` hook the
         // mixed-in role may define (`will lazy { ... }`'s mechanism), on
@@ -523,8 +520,7 @@ impl Interpreter {
         Ok(())
     }
 
-    // Cost: O(L) + role composition, as `exec_does_op`. Rakudo: O(1) with the
-    // mixin type cache -- see #9169.
+    // Cost: role composition plus the recorded-write drain, as `exec_does_op`.
     pub(super) fn exec_does_var_op(
         &mut self,
         code: &CompiledCode,
@@ -534,13 +530,9 @@ impl Interpreter {
     ) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
-        // Sync Interpreter locals to interpreter env so BUILD submethods can access
-        // and modify closure variables from the enclosing scope.
-        self.sync_env_from_locals(code);
         // A `submethod BUILD`/`TWEAK` run by the mixin can mutate a captured-outer
-        // caller lexical (`my $n=0; role R { submethod TWEAK { $n++ } }; $x does R`).
-        // Snapshot the overwritable slots so the precise diff reconciles them.
-        let pre_env = self.snapshot_carrier_overwritable_env(code);
+        // caller lexical (`my $n=0; role R { submethod TWEAK { $n++ } }; $x does
+        // R`); see exec_does_op for why no whole-frame sync/snapshot is needed.
         let attr_trait = Self::attribute_trait_target(&left);
         let composition_left = attr_trait
             .as_ref()
@@ -559,8 +551,8 @@ impl Interpreter {
                 .class_attribute_trait_objects
                 .insert((owner, attr_name), updated.clone());
         }
-        // Sync back: BUILD submethods may have modified closure variables.
-        self.carrier_writeback_changed_aggregates(code, &pre_env);
+        // BUILD submethods may have modified closure variables.
+        self.apply_pending_caller_var_writeback(code);
         let name = Self::const_str(code, name_idx).to_string();
         // `Apple does R` on an ENUM KEY mutates the key's own binding, which lives
         // in the enum-key namespace, not under the plain `env` key (#7914 — that

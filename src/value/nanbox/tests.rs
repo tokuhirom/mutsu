@@ -106,7 +106,7 @@ fn nums_roundtrip_bit_exactly_and_nan_canonicalizes() {
 
 #[test]
 fn str_pointer_identity_and_refcounts_survive() {
-    let s = Arc::new("shared".to_string());
+    let s = Arc::new(crate::value::StrBody::from("shared".to_string()));
     assert_eq!(Arc::strong_count(&s), 1);
     let b = NanBox::from_repr(ValueRepr::Str(s.clone()));
     assert_eq!(Arc::strong_count(&s), 2, "the word owns one reference");
@@ -368,7 +368,7 @@ fn every_variant_roundtrips_losslessly() {
         ValueRepr::Int(i64::MIN),
         ValueRepr::BigInt(Arc::new(NumBigInt::from(10).pow(30))),
         ValueRepr::Num(2.5),
-        ValueRepr::Str(Arc::new("hello".to_string())),
+        ValueRepr::Str(Arc::new(crate::value::StrBody::from("hello".to_string()))),
         ValueRepr::Bool(true),
         ValueRepr::Bool(false),
         ValueRepr::Range(1, 10),
@@ -706,7 +706,7 @@ fn payload_free_kinds_survive_clone_and_drop_without_payload_op() {
 /// payload-free, or its clone would not bump and its drop would not release.
 #[test]
 fn refcounted_kinds_are_never_payload_free() {
-    let s = Arc::new("shared".to_string());
+    let s = Arc::new(crate::value::StrBody::from("shared".to_string()));
     let word = NanBox::from_repr(ValueRepr::Str(s.clone()));
     match classify(word.0.get()) {
         Classified::Kind(kind) => assert!(kind_owns_payload(kind), "Str must own its payload"),

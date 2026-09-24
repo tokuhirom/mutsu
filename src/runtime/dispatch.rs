@@ -181,7 +181,16 @@ impl Interpreter {
     ) -> Result<Option<Vec<TokenCallCandidate>>, RuntimeError> {
         let defs = match self.resolve_token_defs(name) {
             Some(defs) => defs,
-            None => return Ok(None),
+            None => {
+                // Rakudo allows a grammar's built-in regex character classes
+                // to be selected as a start rule (`G.subparse('A', :rule<xdigit>)`).
+                // They have no user token definition, but the ordinary regex
+                // matcher already knows how to execute them.
+                if super::regex::regex_helpers::is_builtin_character_class(name) {
+                    return Ok(Some(vec![(format!("<{name}>"), None)]));
+                }
+                return Ok(None);
+            }
         };
         let subject = match self.env.get("_").map(Value::view) {
             Some(ValueView::Str(s)) => Some(s.to_string()),

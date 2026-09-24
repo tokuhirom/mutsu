@@ -410,10 +410,9 @@ impl Interpreter {
         Ok(())
     }
 
-    // Cost: O(n * c), n = chars of the left operand, c = repeat count (plus an NFC
-    // pass over the whole result only when a copy can compose with the one before
-    // it -- a leading combining mark, or a non-NFC operand). Rakudo: O(1) for a flat
-    // operand (one repeat strand) -- see #9253.
+    // Cost: O(n), n = chars of the left operand: the result is one repeat strand
+    // (ADR-0120); O(n * c), c = repeat count, only when it has to be built flat
+    // (under `STRAND_MIN_BYTES`, or copies that compose -- see str_prim::repeat).
     pub(super) fn exec_string_repeat_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
@@ -448,8 +447,7 @@ impl Interpreter {
         let caller_code = self.current_code;
         let left = self.coerce_stringy_operand(left)?;
         self.reconcile_caller_after_internal_dispatch(caller_code);
-        let src = crate::runtime::utils::coerce_to_str(&left);
-        let result = crate::builtins::str_prim::repeat(&src, n)?;
+        let result = crate::builtins::str_prim::repeat(&left, n)?;
         self.stack.push(result);
         Ok(())
     }

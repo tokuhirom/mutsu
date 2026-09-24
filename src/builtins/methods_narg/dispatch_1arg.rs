@@ -783,79 +783,50 @@ pub(crate) fn native_method_1arg(
             // builtins::comb); Regex/Sub/bare matchers return None -> interpreter.
             crate::builtins::comb::native_comb_method(target, std::slice::from_ref(arg))
         }
-        // Cost: O(n + k), n = bytes of the invocant, k = lines; `.lines($limit)` is
-        // O(p + k), p = bytes up to the last line returned (the scan stops there).
+        // Cost: O(1) for the Seq forms, a lazy Seq over the invocant
+        // (`crate::value::StrIterSpec`) that `$limit` caps; `:count` is O(n),
+        // n = bytes of the invocant, and builds no line.
         "lines" => {
             if let ValueView::Instance { class_name, .. } = target.view()
                 && class_name == "Supply"
             {
                 return None;
             }
-            let s = target.string_value_cow();
+            use crate::value::{StrIterMode, str_iter_seq};
             if let ValueView::Pair(key, value) = arg.view() {
                 if key == "chomp" {
-                    let lines: Vec<Value> =
-                        crate::builtins::split_lines_with_chomp(&s, value.truthy())
-                            .into_iter()
-                            .map(Value::str)
-                            .collect();
-                    return Some(Ok(Value::seq(lines)));
+                    let mode = StrIterMode::Lines {
+                        chomp: value.truthy(),
+                    };
+                    return Some(Ok(str_iter_seq(target, mode, None)));
                 }
                 // `.lines(:count)` returns the number of lines instead of the list.
                 if key == "count" {
+                    let mode = StrIterMode::Lines { chomp: true };
                     if value.truthy() {
-                        let n = crate::builtins::split_lines_chomped(&s).len();
+                        let n = crate::value::str_iter_count(target, mode, None);
                         return Some(Ok(Value::int(n as i64)));
                     }
-                    let lines: Vec<Value> = crate::builtins::split_lines_chomped(&s)
-                        .into_iter()
-                        .map(Value::str)
-                        .collect();
-                    return Some(Ok(Value::seq(lines)));
+                    return Some(Ok(str_iter_seq(target, mode, None)));
                 }
                 return None;
             }
-
-            let limit = match arg.view() {
-                ValueView::Int(i) => Some(i.max(0) as usize),
-                ValueView::BigInt(bi) => {
-                    use num_traits::ToPrimitive;
-                    Some(bi.to_usize().unwrap_or(usize::MAX))
-                }
-                ValueView::Whatever => None,
-                ValueView::Num(f) if f.is_infinite() && f.is_sign_positive() => None,
-                ValueView::Num(f) if f >= 0.0 => Some(f as usize),
-                ValueView::Rat(n, d) if d == 0 && n > 0 => None,
-                _ => return None,
-            };
-            let lines: Vec<Value> = crate::builtins::split_lines_limited(&s, true, limit)
-                .into_iter()
-                .map(Value::str)
-                .collect();
-            Some(Ok(Value::seq(lines)))
+            let limit = crate::value::str_iter_limit(arg)?;
+            Some(Ok(str_iter_seq(
+                target,
+                StrIterMode::Lines { chomp: true },
+                limit,
+            )))
         }
-        // Cost: O(n + k), n = chars of the invocant, k = words; `.words($limit)` is
-        // O(p + k), p = chars up to the last word returned (the split is lazy).
+        // Cost: O(1), a lazy Seq over the invocant (`crate::value::StrIterSpec`)
+        // that `$limit` caps.
         "words" => {
-            let s = target.string_value_cow();
-            let limit = match arg.view() {
-                ValueView::Int(i) => Some(i.max(0) as usize),
-                ValueView::BigInt(bi) => {
-                    use num_traits::ToPrimitive;
-                    Some(bi.to_usize().unwrap_or(usize::MAX))
-                }
-                ValueView::Whatever => None,
-                ValueView::Num(f) if f.is_infinite() && f.is_sign_positive() => None,
-                ValueView::Num(f) if f >= 0.0 => Some(f as usize),
-                ValueView::Rat(n, d) if d == 0 && n > 0 => None,
-                _ => return None,
-            };
-            let words: Vec<Value> = s
-                .split_whitespace()
-                .take(limit.unwrap_or(usize::MAX))
-                .map(|w| Value::str(w.to_string()))
-                .collect();
-            Some(Ok(Value::seq(words)))
+            let limit = crate::value::str_iter_limit(arg)?;
+            Some(Ok(crate::value::str_iter_seq(
+                target,
+                crate::value::StrIterMode::Words,
+                limit,
+            )))
         }
         // Cost: O(e + t), e = elements of the invocant, t = total chars of the result
         // (each element stringified once, one `join` into a single buffer).

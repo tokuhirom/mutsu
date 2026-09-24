@@ -199,7 +199,7 @@ impl Interpreter {
             // Set positional captures ($0, $1, ...) as well
             for (idx, cap) in caps.iter().enumerate() {
                 self.env_mut()
-                    .insert(idx.to_string(), Value::str_arc(cap.clone().into()));
+                    .insert(idx.to_string(), Value::str(cap.clone()));
             }
             Value::make_match_object_with_captures(
                 0,

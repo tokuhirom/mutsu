@@ -1900,17 +1900,26 @@ impl Interpreter {
     /// produced value (Match / capture list) with no shared interior cell, so it
     /// is always safe to overwrite the slot — mirroring exactly what the reverse
     /// pull does (which copies unconditionally except for `HashEntryRef`/`!attr`).
+    // Cost: O(m + e), m = match-variable slots of `code` (`$/`, `$0`, ...), e =
+    // names in `extra` (one index probe each) -- both from the chunk's slot
+    // index, so the frame's other locals are never visited.
     pub(super) fn writeback_match_locals(
         &mut self,
         code: &CompiledCode,
         extra: &std::collections::HashSet<String>,
     ) {
-        for (i, name) in code.locals.iter().enumerate() {
-            let is_match_name =
-                name == "/" || (!name.is_empty() && name.bytes().all(|b| b.is_ascii_digit()));
-            if !is_match_name && !extra.contains(name) {
+        let mut slots: Vec<u32> = code.match_name_local_slots().to_vec();
+        for name in extra {
+            if let Some(sym) = crate::symbol::Symbol::lookup(name) {
+                slots.extend_from_slice(code.local_slots_of(sym));
+            }
+        }
+        for slot in slots {
+            let i = slot as usize;
+            if i >= self.locals.len() {
                 continue;
             }
+            let name = &code.locals[i];
             // Mirror the reverse pull's invariants: never clobber a live `:=`
             // binding cell or an attribute slot managed via GetLocal/SetLocal.
             if matches!(self.locals[i].view(), ValueView::HashEntryRef { .. })
@@ -2116,85 +2125,82 @@ impl Interpreter {
             .any(|set| set.contains(&sym))
     }
 
-    /// Like [`Self::sync_env_from_locals`], but skips slots whose name was
-    /// never introduced into env — a compile-time-allocated local whose
-    /// declaration has not run yet (e.g. a `state $b` later in the same loop
-    /// body). Prematurely seeding env with such a name makes the declaration,
-    /// when it does run, mistake the seeded entry for a live outer binding and
-    /// record it for the loop-local shadow restore — which then wipes the
-    /// variable at loop exit (advent2012-day15 FIRST/NEXT/LAST state loss).
-    /// Mirrors the identical guard in
-    /// [`Self::sync_regex_interpolation_env_from_locals`].
-    ///
-    /// Used by the I/O ops (Say/Put/Print/Note), whose pre-sync exists so a
-    /// user `$*OUT` override / `.gist` method sees fresh values of *live*
-    /// variables: any name such an override can legitimately reach via env is
-    /// either already present in env (declared, captured, `our`, dynamic) or
-    /// forced there by the reflective-access flag — never slot-only.
-    // Cost: O(L), L = locals of `code` (every slot is probed against env and
-    // republished), paid by every say/put/print/note whatever it prints.
-    // Rakudo: O(1) -- see #9169.
-    pub(super) fn sync_env_from_locals_declared(&mut self, code: &CompiledCode) {
+    // Cost: O(L), L = local slots of `code` (an env probe, and for a live slot an
+    // env write, per slot). The `~~` op calls it only for an RHS whose by-name
+    // reads it cannot bound (see `smartmatch_rhs_sync`).
+    pub(super) fn sync_regex_interpolation_env_from_locals(&mut self, code: &CompiledCode) {
         let saved_suppress = self.suppress_shared_publish;
         self.suppress_shared_publish = true;
-        for (i, name) in code.locals.iter().enumerate() {
-            if code.dup_named_locals.get(i).copied().unwrap_or(false) {
-                continue;
-            }
-            if !self.env().contains_key(name) {
-                continue;
-            }
-            if !self.dynamic_local_slot_is_live(code, i, name) {
-                continue;
-            }
-            self.set_env_with_main_alias(name, self.locals[i].clone());
+        for i in 0..code.locals.len() {
+            self.sync_regex_interpolation_slot(code, i);
         }
         self.suppress_shared_publish = saved_suppress;
     }
 
-    // Cost: O(L), L = local slots of `code` (an env probe, and for a live slot an
-    // env write, per slot). Called on every `~~`. Rakudo: O(1) -- see #9169.
-    pub(super) fn sync_regex_interpolation_env_from_locals(&mut self, code: &CompiledCode) {
+    /// [`Self::sync_regex_interpolation_env_from_locals`] restricted to the
+    /// slots named in `names` (env-key spellings: `x` for `$x`, `@a`, `&f`).
+    // Cost: O(n), n = names (one slot-index probe each).
+    pub(super) fn sync_regex_interpolation_env_for_names(
+        &mut self,
+        code: &CompiledCode,
+        names: &[String],
+    ) {
         let saved_suppress = self.suppress_shared_publish;
         self.suppress_shared_publish = true;
-        for (i, name) in code.locals.iter().enumerate() {
-            if name == "_"
-                || name == "/"
-                || name == "!"
-                || name == "\u{a2}"
-                || name.chars().all(|ch| ch.is_ascii_digit())
-            {
+        for name in names {
+            let Some(sym) = crate::symbol::Symbol::lookup(name) else {
                 continue;
+            };
+            for &slot in code.local_slots_of(sym) {
+                self.sync_regex_interpolation_slot(code, slot as usize);
             }
-            // A shadow-duplicated name cannot be broadcast by name — see
-            // `sync_env_from_locals` above.
-            if code.dup_named_locals.get(i).copied().unwrap_or(false) {
-                continue;
-            }
-            // Only sync locals that already exist in the env.  This prevents
-            // compile-time-allocated but not-yet-declared locals (from later
-            // block scopes) from being prematurely introduced into the env,
-            // which would cause bare-word class name resolution to fail when
-            // a later block declares `my $x` and the class is named `x`.
-            if !self.env().contains_key(name) {
-                continue;
-            }
-            // Never clobber a name that is currently bound as a readonly param
-            // (a `for ... -> $x` / sub param). The compiler allocates one slot
-            // per *name* across the whole unit, so a sibling scope's `my $x`
-            // produces a `code.locals` entry that shares this name but whose
-            // slot is an uninitialised stale value here. The live binding lives
-            // in `env` (params are env-authoritative), so pushing the stale
-            // slot would overwrite the param with Nil. Skip it.
-            if self.is_readonly(name) {
-                continue;
-            }
-            if !self.dynamic_local_slot_is_live(code, i, name) {
-                continue;
-            }
-            self.set_env_with_main_alias(name, self.locals[i].clone());
         }
         self.suppress_shared_publish = saved_suppress;
+    }
+
+    /// Publish local slot `i` into env for a by-name reader in the regex
+    /// engine, unless it is match state or must not be broadcast by name.
+    // Cost: O(1).
+    fn sync_regex_interpolation_slot(&mut self, code: &CompiledCode, i: usize) {
+        let Some(name) = code.locals.get(i) else {
+            return;
+        };
+        if i >= self.locals.len()
+            || name == "_"
+            || name == "/"
+            || name == "!"
+            || name == "\u{a2}"
+            || name.chars().all(|ch| ch.is_ascii_digit())
+        {
+            return;
+        }
+        // A shadow-duplicated name cannot be broadcast by name — see
+        // `sync_env_from_locals` above.
+        if code.dup_named_locals.get(i).copied().unwrap_or(false) {
+            return;
+        }
+        // Only sync locals that already exist in the env.  This prevents
+        // compile-time-allocated but not-yet-declared locals (from later
+        // block scopes) from being prematurely introduced into the env,
+        // which would cause bare-word class name resolution to fail when
+        // a later block declares `my $x` and the class is named `x`.
+        if !self.env().contains_key(name) {
+            return;
+        }
+        // Never clobber a name that is currently bound as a readonly param
+        // (a `for ... -> $x` / sub param). The compiler allocates one slot
+        // per *name* across the whole unit, so a sibling scope's `my $x`
+        // produces a `code.locals` entry that shares this name but whose
+        // slot is an uninitialised stale value here. The live binding lives
+        // in `env` (params are env-authoritative), so pushing the stale
+        // slot would overwrite the param with Nil. Skip it.
+        if self.is_readonly(name) {
+            return;
+        }
+        if !self.dynamic_local_slot_is_live(code, i, name) {
+            return;
+        }
+        self.set_env_with_main_alias(name, self.locals[i].clone());
     }
 
     /// Check if a local name looks like a bare function parameter (no sigil).

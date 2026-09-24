@@ -478,7 +478,7 @@ impl Compiler {
                 && let Some(Expr::Literal(lit)) = args.first()
                 && let crate::value::ValueView::Str(vn) = lit.view()
             {
-                let vn = vn.as_ref().clone();
+                let vn = String::clone(&vn);
                 self.note_atomic_env_sync_target(&vn, true);
             }
         });

@@ -148,7 +148,9 @@ mod tests {
         // unmeasured on the two hottest container types.
         // `ArrayData` then went 208 -> 216 on 2026-09-23 (#9121): the `head`
         // offset that makes a front shift amortized O(1) instead of a memmove
-        // of the whole array.
+        // of the whole array. It stayed at 216 on 2026-09-24 (#9235): the
+        // `nqp_elem` kind of an `nqp::list_i`/`_n`/`_s` took the 8 bytes that
+        // `shape` gave back by becoming a boxed slice instead of a `Vec`.
         assert_eq!(size_of::<crate::value::ArrayData>(), 216);
         // `HashData` then went 208 -> 192 on 2026-09-13 (ADR-0103): its two maps
         // (`map` and `original_keys`) carry their `BuildHasher` inline, and

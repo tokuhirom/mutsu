@@ -143,6 +143,7 @@ impl Interpreter {
             registry.our_scoped_functions.keys().copied().collect(),
             self.user_declared_infix_ops.clone(),
             self.imported_routine_aliases.clone(),
+            self.imported_exported_proto_tags.clone(),
         )
     }
 
@@ -164,6 +165,7 @@ impl Interpreter {
             our_scoped_keys,
             user_infix_ops,
             imported_routine_aliases,
+            imported_exported_proto_tags,
         ) = snapshot;
         // Restore the user-declared infix operator set.  In Raku, operators are
         // lexically scoped per compilation unit; not restoring this caused a
@@ -172,6 +174,7 @@ impl Interpreter {
         // block exited, resetting the test counter to Nil.
         self.user_declared_infix_ops = user_infix_ops;
         self.imported_routine_aliases = imported_routine_aliases;
+        self.imported_exported_proto_tags = imported_exported_proto_tags;
         self.reinstate_module_functions(&mut functions, is_eval);
         // Collect our-scoped functions that were newly added during this block
         // (not present in the snapshot) that need to persist after scope restoration.

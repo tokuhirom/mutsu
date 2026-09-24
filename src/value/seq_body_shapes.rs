@@ -2,7 +2,7 @@
 //! generation-graveyard pattern (docs/adr/0034 phase 5), modeled directly on
 //! [`crate::value::native_cache_shapes`], which exists for the same reason:
 //! the borrow checker offers no protection at a `SyncUnsafeCell` write site
-//! (`SeqBody::pull_and_store` / `SeqBody::pull_io_lines_prefix`), so pin the
+//! (`SeqBody::pull_and_store` / `SeqBody::pull_prefix`), so pin the
 //! shapes under Miri's Stacked Borrows model instead of reasoning about them.
 //!
 //! `SeqBody` reuses the exact graveyard technique `NativeBacking` uses for
@@ -13,7 +13,7 @@
 //! `IoLines`) reifies **at most once** (seed -> reified), so
 //! `first_reference_survives_a_later_reify` below exercises that single
 //! push. The `IO::Handle.lines`/`.words` streaming-subscript path
-//! (`SeqBody::pull_io_lines_prefix`) is the one place a body's graveyard
+//! (`SeqBody::pull_prefix`) is the one place a body's graveyard
 //! grows past one real (non-seed) generation, so
 //! `retired_generations_are_never_overwritten_in_place` drives that path
 //! directly to get two genuinely distinct, non-empty generations alive at
@@ -32,7 +32,7 @@ mod tests {
     }
 
     /// A deferred body over an `IoLines` source, for the streaming-prefix
-    /// path (`SeqBody::pull_io_lines_prefix`). The `handle` `Value` is never
+    /// path (`SeqBody::pull_prefix`). The `handle` `Value` is never
     /// read by the fake `pull_n` closures below (they ignore their `&Value`
     /// argument entirely), so any placeholder works.
     fn deferred_io_lines_body() -> Arc<SeqBody> {
@@ -70,7 +70,7 @@ mod tests {
     }
 
     /// Generation stability under real, non-empty content (docs/adr/0034
-    /// phase 5 (b)): drive `pull_io_lines_prefix` twice (the one path that
+    /// phase 5 (b)): drive `pull_prefix` twice (the one path that
     /// grows a `SeqBody`'s graveyard past a single real generation) to get
     /// two distinct, non-empty generations alive at once, then prove the
     /// retired one still reads its own original content while a fresh
@@ -79,7 +79,7 @@ mod tests {
     #[test]
     fn retired_generations_are_never_overwritten_in_place() {
         let body = deferred_io_lines_body();
-        body.pull_io_lines_prefix(1, |_handle, _words, n| {
+        body.pull_prefix(1, |_handle, _words, n| {
             Ok(((0..n as i64).map(Value::int).collect(), false))
         })
         .unwrap();
@@ -87,7 +87,7 @@ mod tests {
         assert_eq!(gen1.len(), 1);
         let gen1_ptr = gen1 as *const Vec<Value>;
 
-        body.pull_io_lines_prefix(3, |_handle, _words, n| {
+        body.pull_prefix(3, |_handle, _words, n| {
             Ok(((100..100 + n as i64).map(Value::int).collect(), false))
         })
         .unwrap();

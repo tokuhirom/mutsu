@@ -3183,6 +3183,10 @@ pub(crate) struct EnvConsumerSlots {
     pub(crate) block_scope: Vec<bool>,
     pub(crate) block_local_scope: Vec<bool>,
     pub(crate) gather: Vec<bool>,
+    /// The indices of the `true` entries of [`Self::gather`], in slot order:
+    /// the only slots of this chunk a `gather` body can reach by name, so the
+    /// only ones an `eager` force has to reconcile afterwards.
+    pub(crate) gather_list: Vec<u32>,
     pub(crate) whenever: Vec<bool>,
     /// Slots read/written (by name or by local index) inside a `package`/
     /// `module`/`class`-via-`Stmt::Package` body (`OpCode::PackageScope`).
@@ -5699,6 +5703,8 @@ pub(crate) struct LocalSlotIndex {
     by_sym: rustc_hash::FxHashMap<Symbol, Vec<u32>>,
     by_bare: rustc_hash::FxHashMap<String, Vec<u32>>,
     non_plain: Vec<u32>,
+    /// Slots named after a match variable: `/` or a numbered capture (`0`, `1`, ...).
+    match_names: Vec<u32>,
 }
 
 /// A plain user variable name (as opposed to an internal `__mutsu_*` key, a
@@ -5858,7 +5864,7 @@ impl Clone for JitCodeState {
 enum ConstKey {
     Int(i64),
     Num(u64),
-    Str(Arc<String>),
+    Str(Arc<crate::value::StrBody>),
     Bool(bool),
     Rat(i64, i64),
 }
@@ -6479,6 +6485,9 @@ impl CompiledCode {
                 if !is_plain_user_var_name(name) {
                     index.non_plain.push(slot);
                 }
+                if name == "/" || (!name.is_empty() && name.bytes().all(|b| b.is_ascii_digit())) {
+                    index.match_names.push(slot);
+                }
             }
             index
         })
@@ -6510,6 +6519,13 @@ impl CompiledCode {
     // Cost: O(1) amortized (the O(L) index is built on first use).
     pub(crate) fn non_plain_local_slots(&self) -> &[u32] {
         &self.local_slot_index().non_plain
+    }
+
+    /// The local slots named after a match variable -- `$/` (`/`) or a
+    /// numbered capture (`0`, `1`, ...) -- in slot order.
+    // Cost: O(1) amortized (the O(L) index is built on first use).
+    pub(crate) fn match_name_local_slots(&self) -> &[u32] {
+        &self.local_slot_index().match_names
     }
 
     pub(crate) fn alias_sym(&self, idx: usize) -> Option<Symbol> {
@@ -6879,6 +6895,11 @@ impl CompiledCode {
             self.env_consumer_slots.block_local_scope = block_local_scope_slots;
         }
         if has_gather {
+            self.env_consumer_slots.gather_list = gather_slots
+                .iter()
+                .enumerate()
+                .filter_map(|(i, &g)| g.then_some(i as u32))
+                .collect();
             self.env_consumer_slots.gather = gather_slots;
         }
         if has_whenever {

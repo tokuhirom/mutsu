@@ -674,9 +674,7 @@ pub(crate) fn proto_decl_scoped(input: &str, is_our: bool) -> PResult<'_, Stmt> 
     let rest = keyword("proto", input).ok_or_else(|| PError::expected("proto declaration"))?;
     let (rest, _) = ws1(rest)?;
     // proto token | proto rule | proto regex | proto sub | proto method
-    let _is_token = keyword("token", rest).is_some()
-        || keyword("rule", rest).is_some()
-        || keyword("regex", rest).is_some();
+    let _is_token = keyword("token", rest).is_some();
     let is_method = keyword("method", rest).is_some() || keyword("submethod", rest).is_some();
     let rest = if let Some(r) = keyword("token", rest)
         .or_else(|| keyword("rule", rest))
@@ -715,6 +713,14 @@ pub(crate) fn proto_decl_scoped(input: &str, is_our: bool) -> PResult<'_, Stmt> 
             Err(_) => consume_raw_braced_body(rest)?,
         };
         body = parsed_body;
+        if _is_token {
+            return Ok((
+                rest,
+                Stmt::ProtoToken {
+                    name: Symbol::intern(&name),
+                },
+            ));
+        }
         return Ok((
             rest,
             Stmt::ProtoDecl {
@@ -736,6 +742,14 @@ pub(crate) fn proto_decl_scoped(input: &str, is_our: bool) -> PResult<'_, Stmt> 
         ));
     }
     let (rest, _) = opt_char(rest, ';');
+    if _is_token {
+        return Ok((
+            rest,
+            Stmt::ProtoToken {
+                name: Symbol::intern(&name),
+            },
+        ));
+    }
     Ok((
         rest,
         Stmt::ProtoDecl {

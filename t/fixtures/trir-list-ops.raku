@@ -67,10 +67,23 @@ sub rotate(int $n) {
     nqp::strfromcodes($q) ~ ' ' ~ nqp::elems($q)
 }
 
+# The slot-direct forms on a backing that is neither a list nor a Uni: a
+# Buf takes the general path (its elements live behind `value_buf`), which
+# the list/Uni shortcut in front of it must hand on to.
+sub via-buf(\b, int $n) {
+    my int $i = 0;
+    nqp::while(nqp::islt_i($i, $n), nqp::stmts(nqp::push_i(b, nqp::add_i(250, $i)), ($i = nqp::add_i($i, 1))));
+    my int $first = nqp::shift_i(b);
+    my $pushed := nqp::push_i(b, 7);
+    $first ~ ' ' ~ $pushed ~ ' ' ~ nqp::elems(b)
+}
+
 for ^2 {
     say 'counts => ', counts(nqp::strtocodes('héllo', nqp::const::NORMALIZE_NFD, nqp::create(NFD)));
     say 'drain-sized => ', drain-sized();
     say 'build => ', build(3);
     say 'rotate => ', rotate(5);
     say 'copy-except => ', copy-except(nqp::strtocodes('a/b/c', nqp::const::NORMALIZE_NFC, nqp::create(NFC)), 47);
+    my $buf := buf8.new(1, 2);
+    say 'via-buf => ', via-buf($buf, 8), ' ', $buf.list.join(',');
 }

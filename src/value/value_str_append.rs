@@ -12,6 +12,21 @@ use super::{Value, ValueRepr};
 use std::sync::Arc;
 
 impl Value {
+    /// The `Str` payload, moved out (no refcount traffic), or `self` back when
+    /// this is not a `Str`.
+    ///
+    /// Cost: O(1).
+    pub(crate) fn into_str_arc(self) -> Result<Arc<super::StrBody>, Value> {
+        if self.is_str_value() {
+            match self.into_repr() {
+                ValueRepr::Str(arc) => Ok(arc),
+                other => Err(Value::from_repr(other)),
+            }
+        } else {
+            Err(self)
+        }
+    }
+
     /// `self ~ suffix` for a `Str`, growing `self`'s existing buffer when this
     /// `Value` is its only holder.
     ///
@@ -46,8 +61,13 @@ impl Value {
             // Unique: grow the existing allocation in place. `String::push_str`
             // reallocates geometrically, so a whole accumulation is linear —
             // that amortization IS the fix, not the saved copy alone.
+            // A unique strand list is flattened first (ADR-0120 §2.6): the
+            // one O(n) copy is paid once, and the appends after it are
+            // in place again.
             Some(owned) => {
-                append_nfc(owned, plan);
+                let mut buf = owned.take_flat();
+                append_nfc(&mut buf, plan);
+                *owned = super::StrBody::Flat(buf);
                 Value::Str(arc)
             }
             // Shared: Raku value semantics require a fresh buffer. Sized with
@@ -57,7 +77,7 @@ impl Value {
                 let mut copied = String::with_capacity(arc.len() + plan.suffix_len_hint());
                 copied.push_str(&arc);
                 append_nfc(&mut copied, plan);
-                Value::Str(Arc::new(copied))
+                Value::str(copied)
             }
         }
     }

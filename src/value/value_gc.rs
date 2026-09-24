@@ -727,7 +727,7 @@ mod tests {
     fn scalar_values_have_no_gc_children() {
         let mut visitor = CountingVisitor { count: 0 };
         Value::Int(42).visit_gc_children(&mut visitor);
-        Value::Str(Arc::new("hi".to_string())).visit_gc_children(&mut visitor);
+        Value::str("hi".to_string()).visit_gc_children(&mut visitor);
         Value::Nil.visit_gc_children(&mut visitor);
         assert_eq!(visitor.count, 0);
     }

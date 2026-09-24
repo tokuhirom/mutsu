@@ -535,6 +535,8 @@ mod native_backing;
 pub(crate) mod seq_body;
 mod serde_support;
 pub(crate) mod signature;
+mod str_body;
+mod str_iter;
 mod sync_cell;
 pub(crate) mod types;
 pub(crate) mod types_eqv;
@@ -551,12 +553,17 @@ mod value_gc;
 mod value_instance;
 mod value_lazy;
 mod value_lazy_ctors;
+pub(crate) use str_iter::{
+    StrIterMode, StrIterSpec, parse_limit as str_iter_limit, str_iter_count, str_iter_seq,
+};
 mod value_methods_a;
 mod value_methods_b;
 mod value_methods_c;
 mod value_setbagmix;
 mod value_str_append;
 mod value_str_append_nfc;
+pub(crate) use str_body::STRAND_MIN_BYTES;
+pub use str_body::StrBody;
 pub(crate) use value_str_append_nfc::{StrAppendPlan, has_nfc_boundary_before};
 mod view;
 pub(crate) mod waker;
@@ -577,7 +584,7 @@ pub use guards::{ArcRef, GcRef, RefGuard, WeakGcRef};
 pub(in crate::value) use nanbox::NanBox;
 use native_backing::NativeBacking;
 pub(crate) use seq_body::{
-    MapGrepMode, SeqBody, SeqSource, SeqTaken, SeqView, seq_method_consumes,
+    MapGrepMode, PrefixSource, SeqBody, SeqSource, SeqTaken, SeqView, seq_method_consumes,
     seq_method_never_touches,
 };
 
@@ -1819,8 +1826,10 @@ pub struct ArrayData {
     /// Dimensions of a shaped (multidimensional) array (`my @a[2;3]`). `Some`
     /// only on `ArrayKind::Shaped` arrays. Embedded (replacing the former
     /// `Arc::as_ptr`-keyed `ShapedArrayIds` side table) so the shape travels
-    /// with the container through copy-on-write.
-    pub shape: Option<Vec<usize>>,
+    /// with the container through copy-on-write. A boxed slice, not a `Vec`:
+    /// a shape is never grown in place, and the 8 bytes it saves pay for
+    /// `nqp_elem` below (the `ArrayData` size is pinned in `which_id.rs`).
+    pub shape: Option<Box<[usize]>>,
     /// Indices that were explicitly element-assigned (`@a[i] = …`), as opposed
     /// to autovivification gaps. `None` means the array was bulk/literal-
     /// constructed, so every in-range index exists (the historical
@@ -1839,6 +1848,26 @@ pub struct ArrayData {
     /// (Text::CSV's `@kh.VAR.name ne "element"` guard — its rakudo#2483
     /// workaround). `None` keeps the reflector's syntactic-name fallback.
     pub descriptor_name: Option<Box<str>>,
+    /// The element kind an nqp VMArray was created with (#9235): an
+    /// `nqp::list_i` / `list_n` / `list_s` is a native array whose growth
+    /// slots are `0` / `0e0` / the null string, where an untyped `nqp::list`
+    /// grows with null. Every other array is [`NqpElemKind::Object`].
+    pub nqp_elem: NqpElemKind,
+}
+
+/// See [`ArrayData::nqp_elem`]. MoarVM keeps the same distinction as the
+/// array's REPR slot type (`VMArray` of `obj` vs. `int64`/`num64`/`str`).
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub enum NqpElemKind {
+    /// An object array (`nqp::list`) -- and every non-nqp array.
+    #[default]
+    Object,
+    /// `nqp::list_i`.
+    Int,
+    /// `nqp::list_n`.
+    Num,
+    /// `nqp::list_s`.
+    Str,
 }
 
 /// Value stored in an enum variant: an integer, a string, or an arbitrary Value.
@@ -1908,7 +1937,7 @@ pub(in crate::value) enum ValueRepr {
     Int(i64),
     BigInt(Arc<NumBigInt>),
     Num(f64),
-    Str(Arc<String>),
+    Str(Arc<StrBody>),
     Bool(bool),
     Range(i64, i64),
     RangeExcl(i64, i64),
@@ -2269,7 +2298,7 @@ impl Value {
         Value::from_repr(ValueRepr::Num(v))
     }
     #[inline]
-    pub(in crate::value) fn Str(v: Arc<String>) -> Value {
+    pub(in crate::value) fn Str(v: Arc<StrBody>) -> Value {
         Value::from_repr(ValueRepr::Str(v))
     }
     #[inline]

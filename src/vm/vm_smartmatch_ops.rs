@@ -33,11 +33,13 @@ impl Interpreter {
         Some(declared == base)
     }
 
-    // Cost: O(L) + the RHS, L = local slots of the current frame, on every `~~`:
-    // `sync_regex_interpolation_env_from_locals` re-broadcasts every slot to env
-    // (one env probe + write each), `code.locals.iter().any(|n| n == "/")` scans
-    // them again, and a non-pure match runs `writeback_match_locals` over them.
-    // Rakudo: O(1) + the RHS -- see #9169.
+    // Cost: O(m + n + p) + the RHS, m = match-variable slots (`$/`, `$0`, ...)
+    // the match writes back, n = locals a regex in the RHS can name (published
+    // to env for the engine), p = pattern length of those regexes (see
+    // `vm_smartmatch_sync`). A regex embedding code, a destructive
+    // `s///`/`tr///`, or a junction/collection RHS still publishes every local
+    // slot: O(L), L = local slots of the current frame. Rakudo: O(1) + the RHS
+    // -- see #9169.
     #[allow(clippy::too_many_arguments)]
     pub(super) fn exec_smart_match_expr_op(
         &mut self,
@@ -145,7 +147,8 @@ impl Interpreter {
         // was removed in Stage 3 (the interpreter-bridge writes it covered, e.g.
         // EVAL modifying a `$GLOBAL::` variable, are now reconciled by precise
         // write-throughs at their own sites).
-        self.sync_regex_interpolation_env_from_locals(code);
+        let rhs_sync = Self::smartmatch_rhs_sync(code, rhs_start, rhs_end);
+        self.apply_smartmatch_sync(code, &rhs_sync);
         let saved_in_smartmatch_rhs = self.in_smartmatch_rhs;
         self.in_smartmatch_rhs = true;
         self.transliterate_in_smartmatch = false;
@@ -163,6 +166,13 @@ impl Interpreter {
         }
         rhs_run?;
         let right = self.stack.pop().unwrap_or(Value::NIL);
+        // The RHS may have *computed* a regex (`$x ~~ $re`) whose pattern names
+        // this frame's locals; publish those before matching against it. A
+        // whole-frame publish already done before the RHS covers it.
+        if !matches!(rhs_sync, super::vm_smartmatch_sync::RhsSync::Full) {
+            let value_sync = Self::smartmatch_value_sync(&right);
+            self.apply_smartmatch_sync(code, &value_sync);
+        }
         let native_lhs_match = self.direct_native_lhs_match(lhs_var, &right);
         // A destructive `s///`/`tr///` that actually matched against a string
         // literal has no writable container to update, so Raku throws
@@ -370,7 +380,9 @@ impl Interpreter {
         // A plain regex match otherwise only writes `$/`/captures, which are
         // special vars read by name, never a caller local slot, so no pull.
         let wrote_caller_via_code = !self.pending_local_updates.is_empty();
-        let match_var_is_local = code.locals.iter().any(|n| n == "/");
+        let match_var_is_local = !code
+            .local_slots_of(crate::symbol::Symbol::intern("/"))
+            .is_empty();
         let pure = rhs_pure_regex
             && !was_substitution
             && !was_transliterate

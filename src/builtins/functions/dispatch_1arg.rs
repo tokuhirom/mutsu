@@ -254,14 +254,12 @@ pub(crate) fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Val
             let reversed: String = s.graphemes(true).rev().collect::<String>().nfc().collect();
             Some(Ok(Value::str(reversed)))
         }
-        "words" => {
-            let s = arg.to_string_value();
-            let parts: Vec<Value> = s
-                .split_whitespace()
-                .map(|p| Value::str(p.to_string()))
-                .collect();
-            Some(Ok(Value::seq(parts)))
-        }
+        // Cost: O(1), the same lazy Seq as `Str.words`.
+        "words" => Some(Ok(crate::value::str_iter_seq(
+            arg,
+            crate::value::StrIterMode::Words,
+            None,
+        ))),
         // Cost: O(1) amortized for a cached `Str` (index built once in O(n) and
         // cached per payload, see `grapheme_index`); O(n) otherwise.
         "chars" => Some(Ok(Value::int(crate::builtins::str_prim::chars(arg) as i64))),
