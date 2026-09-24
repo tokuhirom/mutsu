@@ -479,7 +479,11 @@ impl Interpreter {
                     let spans = self.regex_find_all_limited(&pattern, &text, max);
                     Some(Ok(make_seq(Self::char_span_strs(&text, &spans))))
                 } else {
-                    None
+                    // No positional matcher (only nameds, e.g. a handle's
+                    // `:close`): graphemes, exactly as `Str.comb` with no args.
+                    // Returning `None` here made every caller invent its own
+                    // answer, and the IO::Handle one answered `().Seq` (#9255).
+                    crate::builtins::comb::comb_pure(&target, None, limit).map(Ok)
                 }
             }
         }
