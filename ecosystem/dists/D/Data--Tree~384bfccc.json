@@ -9,14 +9,14 @@
   "dist": "Data::Tree",
   "files": [],
   "load": {
-    "Data::Tree": "Undeclared routine:"
+    "Data::Tree": "ok"
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-24",
+    "date": "2026-09-25",
     "harness": 2,
-    "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "338f021",
+    "host": "linux-x86_64",
+    "mutsu_commit": "0105023ab",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -27,7 +27,7 @@
     "index": "fez",
     "url": "https://360.zef.pm/D/AT/DATA_TREE/c098b986d4829ed7ff69f491b828ca96d75fcb46.tar.gz"
   },
-  "status": "blocked_load",
+  "status": "no_baseline",
   "totals": {
     "baseline_assertions": 0,
     "baseline_files": 0,
