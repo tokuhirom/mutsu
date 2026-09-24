@@ -76,3 +76,83 @@ pub(crate) fn push_elem(op: &str, target: &Value, val: Value) -> Result<Value, R
     Interpreter::nqp_with_elems_mut(op, target, |elems| elems.push(val.clone()))?;
     Ok(val)
 }
+
+/// MoarVM's VMArray index rule, the one every positional `nqp::` op uses: a
+/// negative index counts from the end, and one that still lands before the
+/// start is an error. An index past the end is returned as is -- a read then
+/// finds nothing, a write grows the list.
+///
+/// `nqp::atpos`, `atpos_i`/`_n`/`_s`, every `bindpos*`, `splice` and TRIR's
+/// `atpos_i` resolve through here; each used to clamp a negative index to 0
+/// (so `nqp::bindpos($l, -1, $v)` overwrote the FIRST element) or read it as
+/// "absent".
+// Cost: O(1).
+pub(crate) fn resolve_index(idx: i64, len: usize) -> Result<usize, RuntimeError> {
+    if idx >= 0 {
+        return Ok(idx as usize);
+    }
+    let from_end = len as i64 + idx;
+    if from_end < 0 {
+        return Err(RuntimeError::new("MVMArray: Index out of bounds"));
+    }
+    Ok(from_end as usize)
+}
+
+/// The element at `idx` of a list-ish nqp value (see [`resolve_index`]).
+/// `Ok(None)` past the end, or when the value has no elements at all.
+// Cost: O(1).
+pub(crate) fn elem_at(target: &Value, idx: i64) -> Result<Option<Value>, RuntimeError> {
+    let Some(len) = Interpreter::nqp_elems_len_of(target) else {
+        return Ok(None);
+    };
+    let i = resolve_index(idx, len)?;
+    Ok(Interpreter::nqp_elem_at(target, i))
+}
+
+/// Store `val` at `idx` of a list-ish nqp value (see [`resolve_index`]),
+/// growing it with `fill` when `idx` is past the end. A Buf/Blob encodes the
+/// one element in place. The shared body of `nqp::bindpos` and its typed
+/// twins, which differ only in how they convert `val` and what `fill` is.
+// Cost: O(1) amortized; O(i - e) when growing, i = index, e = elements.
+pub(crate) fn bind_elem(
+    op: &str,
+    target: &Value,
+    idx: i64,
+    val: Value,
+    fill: Value,
+) -> Result<Value, RuntimeError> {
+    let len = Interpreter::nqp_elems_len_of(target).unwrap_or(0);
+    let i = resolve_index(idx, len)?;
+    if let Some((_, attrs)) = crate::value::value_buf::buf_target(target)
+        && crate::value::value_buf::set_buf_elem(&attrs, i, &val).is_some()
+    {
+        return Ok(val);
+    }
+    let stored = val.clone();
+    Interpreter::nqp_with_elems_mut(op, target, |elems| {
+        if elems.len() <= i {
+            elems.resize(i + 1, fill);
+        }
+        elems[i] = stored;
+    })?;
+    Ok(val)
+}
+
+/// `nqp::atpos_i`'s answer as a native int: the element at `idx` (see
+/// [`resolve_index`]) coerced to an int, 0 past the end. The one body the
+/// op table and TRIR's typed `AtPosI` share.
+// Cost: O(1).
+#[inline]
+pub(crate) fn atpos_i(target: &Value, idx: i64) -> Result<i64, RuntimeError> {
+    // A plain `nqp::list_i` IS an array, and that is what every scanner's
+    // lookup table is: read it directly rather than through the backing
+    // walk, which costs more than the read.
+    if idx >= 0
+        && let ValueView::Array(items, _) = target.view()
+    {
+        return Ok(items.get(idx as usize).map_or(0, |e| {
+            e.as_int().unwrap_or_else(|| crate::runtime::to_int(e))
+        }));
+    }
+    Ok(elem_at(target, idx)?.map_or(0, |e| crate::runtime::to_int(&e)))
+}

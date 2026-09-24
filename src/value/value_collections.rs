@@ -348,6 +348,27 @@ impl ArrayData {
     }
 }
 
+impl ArrayData {
+    /// `@a[$i] = $v`'s store into the array node, the one body the `[]=`
+    /// opcode's fast lane and the `ASSIGN-POS` method share (ADR-0118):
+    /// write `value` at `i`, growing the array with `Any` hole markers when
+    /// `i` is past the end, and record `i` as explicitly assigned so the
+    /// grown gaps -- and only they -- read as holes (`:exists` is False).
+    /// `ASSIGN-POS` used to rebuild the array instead, losing that record,
+    /// so every gap it grew claimed to exist.
+    // Cost: O(1) amortized; O(i - e) when growing, i = index, e = elements.
+    pub(crate) fn store_element(&mut self, i: usize, value: Value) {
+        let len = self.len();
+        // Record the write BEFORE growing, or the new gaps would be
+        // materialized as present.
+        self.mark_initialized(i);
+        if i >= len {
+            self.resize(i + 1, Value::package(crate::symbol::wk::any()));
+        }
+        self.items_mut()[i] = value;
+    }
+}
+
 impl Value {
     /// A shallow copy of an array value that keeps its kind (`Array` stays an
     /// `Array`, a `List` a `List`): the one body of `.clone` on an array and

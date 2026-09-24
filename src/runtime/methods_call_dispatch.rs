@@ -3414,11 +3414,9 @@ impl Interpreter {
                         index.is_some_and(|i| i < items.len() && !items.hole_at(i)),
                     ));
                 }
-                // Cost: O(e + v), e = elements of the array, v = env bindings: copies the
-                // whole array (`to_vec`), rebinds it by scanning env
-                // (`overwrite_array_bindings_by_identity`), and scans env again for a type
-                // constraint. `@a.ASSIGN-POS($i, $v)` in a loop is quadratic.
-                // Rakudo: O(1) -- see #9157.
+                // Cost: O(v) for a defined value, v = env bindings (scanned for the
+                // array's type constraint); the store itself is O(1) amortized, in
+                // place. Rakudo: O(1) -- see #9157.
                 ("ASSIGN-POS", [idx, value]) => {
                     let index = match idx.view() {
                         ValueView::Int(i) if i >= 0 => Some(i as usize),
@@ -3426,7 +3424,11 @@ impl Interpreter {
                         _ => None,
                     };
                     let Some(index) = index else {
-                        return Ok(Value::NIL);
+                        // `@a[-1] = $v` refuses the same way.
+                        return Err(RuntimeError::new(format!(
+                            "Index out of range. Is: {}, should be in 0..^Inf",
+                            idx.to_string_value()
+                        )));
                     };
 
                     if !value.is_nil()
@@ -3460,27 +3462,19 @@ impl Interpreter {
                             index, shape[0]
                         )));
                     }
-                    let mut updated = items.to_vec();
-                    let mut initialized = items.initialized.clone();
-                    initialized
-                        .get_or_insert_with(|| (0..updated.len()).collect())
-                        .insert(index);
-                    if index < updated.len()
-                        && matches!(updated[index].view(), ValueView::Scalar(_))
-                    {
+                    if matches!(
+                        items.get(index).map(Value::view),
+                        Some(ValueView::Scalar(_))
+                    ) {
                         return Err(RuntimeError::assignment_ro(None));
                     }
-                    if index >= updated.len() {
-                        updated.resize(index + 1, Value::package(crate::symbol::wk::any()));
-                    }
-                    updated[index] = value.clone();
-                    let mut data = crate::value::ArrayData::new(updated);
-                    data.initialized = initialized;
-                    let replacement = Value::array_with_kind(crate::gc::Gc::new(data), arr_kind);
-                    if let Some(ref shape) = shape {
-                        crate::runtime::utils::mark_shaped_array(&replacement, Some(shape));
-                    }
-                    self.overwrite_array_bindings_by_identity(&items, replacement);
+                    // In place through the shared node, with the same store the
+                    // `[]=` opcode uses: every holder of the array sees the write
+                    // (container identity), and a grown gap stays a hole.
+                    // SAFETY: audited aliased in-place container write (see
+                    // value::aliased_mut); no borrow into the node is live.
+                    let data = unsafe { crate::value::gc_contents_mut(&items) };
+                    data.store_element(index, Self::itemize_value_for_element_store(value.clone()));
                     return Ok(value.clone());
                 }
                 // Cost: O(e + v), e = elements of the array, v = env bindings (whole-array
@@ -3755,6 +3749,12 @@ impl Interpreter {
             && !matches!(slang.view(), ValueView::Pair(..))
         {
             return self.str_ast_with_slang(&source, slang);
+        }
+        if method == "AT-POS"
+            && !bypass_native_fastpath
+            && let Some(result) = self.builtin_at_pos(&target, &args)
+        {
+            return result;
         }
         let cascade_stripped = crate::builtins::strip_undeclared_nameds(method, &args);
         let cascade_args: &[Value] = cascade_stripped.as_deref().unwrap_or(&args);

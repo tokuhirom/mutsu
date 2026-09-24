@@ -503,6 +503,11 @@ impl Interpreter {
         {
             return None;
         }
+        if method_name == "AT-POS"
+            && let Some(result) = self.builtin_at_pos(target, args)
+        {
+            return Some(result);
+        }
         // `.contains($needle, $pos?, :i/:m?)` — the positioned / case-insensitive
         // forms carry a Pair or a 3rd arg, so they never reach the arity-keyed
         // native_method_*arg dispatch below. Handle them natively (pure Str search,
