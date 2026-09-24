@@ -915,8 +915,10 @@ impl Interpreter {
     }
 
     /// `is repr('VMArray')` / `is repr('VMHash')`: a bare VM storage class.
+    /// Recorded under its short name (the last `::` segment), which is what
+    /// `nqp::create` matches it by.
     pub(crate) fn register_vm_storage_class(&mut self, name: &str, is_hash: bool) {
-        let name = name.to_string();
+        let name = name.rsplit("::").next().unwrap_or(name).to_string();
         if is_hash {
             self.registry_mut().vmhash_classes.insert(name);
         } else {

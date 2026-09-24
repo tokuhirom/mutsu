@@ -1469,6 +1469,13 @@ pub(crate) struct NativeCtorPlan {
     /// interning both names; the answer is pure class shape, so it belongs in
     /// the plan next to `has_build`/`has_tweak`/`has_custom_bless`.
     pub(crate) user_buildall: Option<&'static str>,
+    /// The attribute map a `CREATE` / `nqp::create` of this class starts
+    /// with: every declared attribute under its bare name, holding its
+    /// type-default empty value (see `create_default_attr_slots`). It is pure
+    /// class shape, and `nqp::create` rebuilt it on every call -- an MRO walk
+    /// collecting the attribute defs plus a type-constraint resolution per
+    /// attribute (ADR-0121 D1, #9134).
+    pub(crate) create_slots: Arc<crate::value::AttrMap>,
 }
 
 /// The no-initializer seed of one `$`-sigil attribute, precomputed per class

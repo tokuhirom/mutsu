@@ -231,6 +231,25 @@ impl InstanceAttrs {
         write_attrs(&self.attributes).entry(key).or_insert(value);
     }
 
+    /// Assign `value` at `key` the way [`AttrMap::insert_through`] does (through
+    /// a `:=`-bound `ContainerRef` slot), in place under one write lock. When
+    /// this thread holds a read guard on the cell, the write is queued exactly
+    /// as [`Self::commit_attrs`] queues one, rather than self-deadlocking.
+    ///
+    /// `nqp::bindattr` used to clone the whole map, insert, and commit the clone
+    /// back -- O(attributes) per bind for a one-key write (#9134).
+    // Cost: O(1).
+    pub(crate) fn bind_attr_through<K: AttrKey + Copy>(&self, key: K, value: Value) {
+        let addr = cell_addr(&self.attributes);
+        if HELD_READ_CELLS.with(|c| c.borrow().contains(&addr)) {
+            let mut map = self.to_map();
+            map.insert_through(key, value);
+            self.commit_attrs(map);
+            return;
+        }
+        write_attrs(&self.attributes).insert_through(key, value);
+    }
+
     /// Store `value` at `key`, writing *through* a promoted `ContainerRef` cell
     /// when the slot holds one instead of replacing it.
     ///

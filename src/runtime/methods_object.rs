@@ -482,6 +482,11 @@ impl Interpreter {
                 .map(|s| (*s, Value::NIL))
                 .collect::<crate::value::AttrMap>(),
         );
+        let create_slots = std::sync::Arc::new(if registered {
+            self.create_default_attr_slots(cn_resolved)
+        } else {
+            crate::value::AttrMap::new()
+        });
         let plan = std::sync::Arc::new(super::NativeCtorPlan {
             is_cunion,
             eligible,
@@ -501,6 +506,7 @@ impl Interpreter {
             tweak_steps,
             probe_skeleton,
             user_buildall,
+            create_slots,
         });
         // Don't freeze a plan for a class that is not (yet) registered: e.g. a
         // role punned to a class on first use would otherwise keep a stale

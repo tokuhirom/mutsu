@@ -207,11 +207,14 @@ impl Interpreter {
             // The typed variants coerce first: an nqp `int`/`num`/`str`
             // attribute holds a native value, and code that reads it back with
             // `getattr_i` expects one.
-            // Cost: O(a), a = attributes of $obj (the whole map is cloned by to_map and committed back); O(e) for a
-            // '$!reified'/'$!storage' bind, e = elements copied from the storage. MoarVM: O(1) -- see #9134.
+            // Cost: O(1); O(e) for a '$!reified'/'$!storage' bind, e = elements copied from the storage.
+            // MoarVM: O(1) -- see #9134.
             "bindattr" | "bindattr_i" | "bindattr_n" | "bindattr_s" => {
                 let obj = args.first().cloned().unwrap_or(Value::NIL);
-                let attr = args.get(2).map(|v| v.to_string_value()).unwrap_or_default();
+                let attr = args
+                    .get(2)
+                    .map(|v| v.string_value_cow())
+                    .unwrap_or_default();
                 let raw = args.get(3).cloned().unwrap_or(Value::NIL);
                 let val = match op {
                     "bindattr_i" => Value::int(to_int(&raw)),
@@ -348,8 +351,7 @@ impl Interpreter {
             // it both for a native array (`nqp::create(array[uint32])`) and to
             // hand-build an iterator (`nqp::create(self)` followed by
             // `bindattr`), so it must not go anywhere near `new`.
-            // Cost: O(c) + CREATE/new dispatch, c = registered VMHash/VMArray classes (both sets are scanned with an
-            // rsplit per entry whenever the name is not an exact member). MoarVM: O(1) -- see #9134.
+            // Cost: O(a) + CREATE/new dispatch, a = attributes of the class (the cached slot template is copied).
             "create" => {
                 let ty = args.first().cloned().unwrap_or(Value::NIL);
                 // A native array / Buf / Blob is allocated with its REPR's
@@ -384,14 +386,12 @@ impl Interpreter {
                 // `nqp::bindpos`/`nqp::bindkey` cannot write to. Allocate
                 // mutsu's own array/hash, which IS that store.
                 {
+                    // Both sets are keyed by short name (see
+                    // `register_vm_storage_class`), which is what this matched
+                    // by when it scanned them.
                     let reg = self.registry();
                     let short = name.rsplit("::").next().unwrap_or(name);
-                    let holds = |set: &rustc_hash::FxHashSet<String>| {
-                        set.contains(name)
-                            || set
-                                .iter()
-                                .any(|c| c.rsplit("::").next().unwrap_or(c) == short)
-                    };
+                    let holds = |set: &rustc_hash::FxHashSet<String>| set.contains(short);
                     if holds(&reg.vmhash_classes) {
                         return Some(Ok(Value::hash_with_data(Value::hash_arc(
                             ValueMap::default(),
@@ -443,12 +443,15 @@ impl Interpreter {
             // than a per-class slot table. (A private attribute of the same
             // name in two classes of one hierarchy would therefore collide;
             // that is the same limitation `$!name` access already has.)
-            // Cost: O(a), a = attributes of $obj (nqp_attr_value clones the whole attribute map via to_map);
-            // getattr_s adds O(n), n = chars of the value. MoarVM: O(1) -- see #9134.
+            // Cost: O(1); getattr_s adds O(n), n = chars of the value.
             "getattr" | "getattr_i" | "getattr_n" | "getattr_s" => {
-                let obj = args.first().cloned().unwrap_or(Value::NIL);
-                let name = args.get(2).map(|v| v.to_string_value()).unwrap_or_default();
-                let value = Self::nqp_attr_value(&obj, &name);
+                let nil = Value::NIL;
+                let obj = args.first().unwrap_or(&nil);
+                let name = args
+                    .get(2)
+                    .map(|v| v.string_value_cow())
+                    .unwrap_or_default();
+                let value = Self::nqp_attr_value(obj, &name);
                 Ok(match op {
                     "getattr_i" => Value::int(value.as_ref().map(to_int).unwrap_or(0)),
                     "getattr_n" => Value::num(value.as_ref().map(|v| v.to_f64()).unwrap_or(0.0)),
@@ -549,29 +552,22 @@ impl Interpreter {
             return Ok(());
         }
         if let ValueView::Instance { attributes, .. } = obj.view() {
-            let mut updated = attributes.to_map();
-            updated.insert_through(attr_key, val);
-            attributes.commit_attrs(updated);
+            attributes.bind_attr_through(attr_key, val);
         }
         Ok(())
     }
 
-    /// The attribute-map key for an nqp `'$!name'` operand. nqp always spells
-    /// the twigil; mutsu's instance maps are keyed by the bare name, so try
-    /// both rather than assuming one (an attribute declared `@!items` is
-    /// asked for as `'@!items'` and stored as `items`).
-    fn nqp_attr_keys(name: &str) -> Vec<String> {
-        let bare = name
-            .strip_prefix("$!")
+    /// The bare attribute name of an nqp `'$!name'` operand. nqp always spells
+    /// the twigil; mutsu's instance maps are keyed by the bare name, so a
+    /// lookup tries the bare name first and then the operand as written (an
+    /// attribute declared `@!items` is asked for as `'@!items'` and stored as
+    /// `items`). An operand with no twigil is its own bare name.
+    fn nqp_attr_bare(name: &str) -> &str {
+        name.strip_prefix("$!")
             .or_else(|| name.strip_prefix("@!"))
             .or_else(|| name.strip_prefix("%!"))
             .or_else(|| name.strip_prefix("&!"))
-            .unwrap_or(name);
-        if bare == name {
-            vec![name.to_string()]
-        } else {
-            vec![bare.to_string(), name.to_string()]
-        }
+            .unwrap_or(name)
     }
 
     fn nqp_attr_value(obj: &Value, name: &str) -> Option<Value> {
@@ -588,11 +584,8 @@ impl Interpreter {
         // `$!reified`.  mutsu stores List/Array elements directly in the
         // Array value, so expose that same backing value to nqp code such as
         // Array::Sorted::Util's `insert-also`.
-        if matches!(obj.view(), ValueView::Array(..))
-            && Self::nqp_attr_keys(name)
-                .iter()
-                .any(|key| matches!(key.as_str(), "reified" | "storage"))
-        {
+        let bare = Self::nqp_attr_bare(name);
+        if matches!(obj.view(), ValueView::Array(..)) && matches!(bare, "reified" | "storage") {
             return Some(obj.clone());
         }
         // A `Match`'s NQP-level attribute names are not the keys mutsu stores,
@@ -603,8 +596,7 @@ impl Interpreter {
         // lets the cursor protocol's `nqp::getattr_i($cursor, Match, '$!pos')`
         // read where a hand-driven regex got to (#7883).
         if obj.is_match_instance() {
-            let bare = Self::nqp_attr_keys(name).swap_remove(0);
-            return match bare.as_str() {
+            return match bare {
                 "pos" | "to" => obj.match_to().map(Value::int),
                 "from" => obj.match_from().map(Value::int),
                 "orig" => obj.match_orig(),
@@ -615,9 +607,12 @@ impl Interpreter {
         let ValueView::Instance { attributes, .. } = obj.view() else {
             return None;
         };
-        let attrs = attributes.to_map();
-        Self::nqp_attr_keys(name)
-            .into_iter()
-            .find_map(|k| attrs.get(&k).cloned())
+        // Read under the guard: cloning the whole map to read one key made
+        // every getattr O(attributes) (#9134).
+        let attrs = attributes.as_map();
+        attrs
+            .get(bare)
+            .or_else(|| if bare == name { None } else { attrs.get(name) })
+            .cloned()
     }
 }
