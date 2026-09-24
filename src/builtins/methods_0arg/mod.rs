@@ -2126,9 +2126,12 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             "ast" | "made" => {
                 return Some(Ok(target.match_ast().unwrap_or(Value::NIL)));
             }
-            // Cost: O(n), n = chars of `.orig`: copies the subject and collects all of
-            // its chars to slice a prefix. Rakudo: O(1) -- see #9144.
+            // Cost: O(p), p = chars of the prefix, for a lazy Match (sliced from its
+            // shared subject); O(n), n = chars of `.orig`, for a rebuilt eager one.
             "prematch" => {
+                if let Some(pre) = target.match_side_text(true) {
+                    return Some(Ok(Value::str(pre)));
+                }
                 if let Some(orig_val) = target.match_orig() {
                     let orig = orig_val.to_string_value();
                     let from = target.match_from().unwrap_or(0).max(0) as usize;
@@ -2138,9 +2141,12 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                 }
                 return Some(Ok(Value::str(String::new())));
             }
-            // Cost: O(n), n = chars of `.orig`: copies the subject and collects all of
-            // its chars to slice a suffix. Rakudo: O(1) -- see #9144.
+            // Cost: O(s), s = chars of the suffix, for a lazy Match (sliced from its
+            // shared subject); O(n), n = chars of `.orig`, for a rebuilt eager one.
             "postmatch" => {
+                if let Some(post) = target.match_side_text(false) {
+                    return Some(Ok(Value::str(post)));
+                }
                 if let Some(orig_val) = target.match_orig() {
                     let orig = orig_val.to_string_value();
                     let to = target.match_to().unwrap_or(0).max(0) as usize;

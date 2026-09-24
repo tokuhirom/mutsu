@@ -65,7 +65,12 @@ CASES=(
     'split, two separators|10000|my $s = "a," x NN;|$s.split([",", ";"])|once'
     'comb(regex, :match)|2500|my $s = "a," x NN;|$s.comb(/a/, :match)|once'
     'match :p loop|10000|my $s = "a," x NN; my $p = 0;|while $s.match(/.","/, :p($p)) -> $m { $p = $m.to }|once'
-    'Str ~~ /rx/ (per-call setup)|10000|my $s = "a" x NN;|$s ~~ /b/|loop'
+    # A hit at the front, so the body measures the per-call setup alone: a
+    # failing search (`/b/` on "a" x NN) scans the whole subject per call, which
+    # is quadratic over NN calls in rakudo too (#9144).
+    'Str ~~ /rx/ (per-call setup)|10000|my $s = "a" x NN;|$s ~~ /a/|loop'
+    'contains(regex) (per-call setup)|10000|my $s = "a" x NN;|$s.contains(/a/)|loop'
+    'prematch (long unrelated suffix)|100000|my $m = ("a" ~ "b" x NN) ~~ /a/;|$m.prematch|loop'
     'split (string, control)|200000|my $s = "a," x NN;|$s.split(",")|once'
     'subst :g fast path (control)|200000|my $s = "a," x NN;|$s.subst(/","/, ";", :g)|once'
 )

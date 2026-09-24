@@ -2,13 +2,12 @@ use super::*;
 
 impl Interpreter {
     /// Dispatch .match method
-    // Cost: O(n) plus the engine's cost, n = chars of the invocant (the subject is
-    // copied into one MatchTarget per call, which every returned Match shares).
-    // `:g` is O(n + r) plus per-match engine work, r = matches; `:ov`/`:ex`
-    // collect every end at every start and then sort, O(n + r log r) plus engine
-    // work. Even a single-match call (plain, `:c($pos)`, `:p($pos)`) pays the O(n)
-    // subject copy, so a `while .match(/.../, :p($p))` tokenizer loop over r
-    // matches is O(n*r). Rakudo: O(1) setup per call -- see #9144.
+    // Cost: O(1) setup plus the engine's cost for a `Str` invocant matched
+    // recently (its MatchTarget is cached per payload and shared by every
+    // returned Match); O(n) setup the first time, n = chars of the invocant.
+    // `:g` is O(r) plus per-match engine work, r = matches; `:ov`/`:ex` collect
+    // every end at every start and then sort, O(r log r) plus engine work. A
+    // `while .match(/.../, :p($p))` tokenizer loop is O(n + r) setup in total.
     pub(crate) fn dispatch_match_method(
         &mut self,
         target: Value,
@@ -17,7 +16,7 @@ impl Interpreter {
         if args.is_empty() {
             return Ok(Value::NIL);
         }
-        let text = target.to_string_value();
+        let text = crate::runtime::MatchTarget::primed_subject(&target);
         let mut overlap = false;
         let mut exhaustive = false;
         let mut global = false;

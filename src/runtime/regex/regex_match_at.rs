@@ -4,8 +4,9 @@ use super::regex_helpers::strip_marks_pattern;
 impl Interpreter {
     /// Match regex anchored at a specific character position.
     /// Returns captures only if the match starts exactly at `pos`.
-    // Cost: O(n), n = chars of `text`, to build the MatchTarget, plus one
-    // anchored attempt at `pos`. Rakudo: O(1) setup -- see #9144.
+    // Cost: O(1) setup when `text` is a `Str` payload primed by the entry point
+    // (`MatchTarget::primed_subject`), else O(n), n = chars of `text`, to build
+    // the MatchTarget; plus one anchored attempt at `pos`.
     pub(crate) fn regex_match_with_captures_at(
         &mut self,
         pattern: &str,
