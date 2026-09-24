@@ -1096,7 +1096,7 @@ impl Interpreter {
         // the invocant, so no write-back to `target_name` is needed.
         if let Some(val) = self.try_fast_accessor_read(
             &target,
-            method,
+            method_sym,
             &args,
             modifier.is_some(),
             quoted,
@@ -1519,10 +1519,10 @@ impl Interpreter {
             if let Some(cn) = class_name
                 && match target.view() {
                     ValueView::Package(_) => {
-                        self.grammar_has_user_method(&cn, method)
+                        self.grammar_has_user_method_sym(&cn, method_sym)
                             || self.package_has_applicable_user_method(&target, method, &args)
                     }
-                    _ => self.grammar_has_user_method(&cn, method),
+                    _ => self.grammar_has_user_method_sym(&cn, method_sym),
                 }
             {
                 skip_native = true;
@@ -2951,7 +2951,7 @@ impl Interpreter {
                 // proven-pure compiled method path clears this.
                 self.method_dispatch_pure = false;
                 if !skip_native
-                    && !self.native_lever_a_user_override(&target, method)
+                    && !self.native_lever_a_user_override_sym(&target, method_sym)
                     && let Some(produced) =
                         self.try_quanthash_weight_pair_producer(&target, target_name, method, &args)
                 {
@@ -2975,7 +2975,7 @@ impl Interpreter {
                     // still win: this routing changes how a *native* producer
                     // builds its result, and there is no native producer to
                     // change when the user has replaced the method.
-                    && !self.native_lever_a_user_override(&target, method)
+                    && !self.native_lever_a_user_override_sym(&target, method_sym)
                     && let Some(produced) = self.try_element_container_producer(&target, method, &args)
                 {
                     crate::vm::vm_stats::record_dispatch_entry_outcome(

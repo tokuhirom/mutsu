@@ -17,6 +17,19 @@ impl Interpreter {
             return self.compiled_mut_resolved_dispatch(target_name, target, method_sym, args);
         }
         let method: &str = method_sym.as_str();
+        // Decode the receiver's type-object symbol once. The type-object guards
+        // below (construction, built-in class methods) are all gated on a
+        // `Package` receiver, and eight of them on `.new` as well. Asking
+        // `target.view()` per guard re-decoded the same NaN-box tag up to ten
+        // times per call, and re-compared the method name to "new" at each of
+        // those eight, for receivers none of them can claim (issue #8888).
+        // `ValueView::Package` is produced by `Kind::Package` alone, so this one
+        // decode answers every one of those guards.
+        let package_sym = match target.view() {
+            ValueView::Package(sym) => Some(sym),
+            _ => None,
+        };
+        let new_on_package = if method == "new" { package_sym } else { None };
         // Calling a method on a role TYPE OBJECT puns the role, and punning is
         // a composition: the role's body runs. This fast path dispatched the
         // role's method straight off the role, so the body never ran at all —
@@ -34,15 +47,14 @@ impl Interpreter {
         // Ordered cheapest-first: an ordinary class receiver fails the
         // `classes` probe outright, and `run_pun_role_bodies` is memoized so
         // every later call on the same role is one `HashSet` hit.
-        if let ValueView::Package(name) = target.view() {
+        if let Some(name) = package_sym {
             let pkg = name.as_str();
             if !self.registry().classes.contains_key(pkg) && self.is_role(pkg) {
                 self.run_pun_role_bodies(pkg)?;
             }
         }
         // Native default construction (see `try_compiled_method_or_interpret`).
-        if method == "new"
-            && let ValueView::Package(class_name) = target.view()
+        if let Some(class_name) = new_on_package
             && let Some(result) = loan_env!(self, try_native_default_construct(class_name, &args))
         {
             // Pure construction: fresh instance, no caller-env write (Slice 6.3) —
@@ -54,8 +66,7 @@ impl Interpreter {
             return result;
         }
         // Native built-in construction (mut path twin of the above).
-        if method == "new"
-            && let ValueView::Package(class_name) = target.view()
+        if let Some(class_name) = new_on_package
             // Augmented `multi method new` candidates must reach dispatch_new
             // (see the non-mut twin).
             && !self.has_user_method(&class_name.resolve(), "new")
@@ -66,8 +77,7 @@ impl Interpreter {
             return result;
         }
         // Native QuantHash construction (mut path twin of the above).
-        if method == "new"
-            && let ValueView::Package(class_name) = target.view()
+        if let Some(class_name) = new_on_package
             && !self.user_declared_classes.contains(&class_name.resolve())
             && let Some(result) = self.try_native_quanthash_construct_for_package(class_name, &args)
         {
@@ -75,8 +85,7 @@ impl Interpreter {
             return result;
         }
         // Native aggregate construction (mut path twin of the above).
-        if method == "new"
-            && let ValueView::Package(class_name) = target.view()
+        if let Some(class_name) = new_on_package
             && !self.user_declared_classes.contains(&class_name.resolve())
             && let Some(result) = self.try_native_aggregate_construct_for_package(class_name, &args)
         {
@@ -84,39 +93,35 @@ impl Interpreter {
             return result;
         }
         // Native IO::Path family construction (mut path twin of the above).
-        if method == "new"
-            && let ValueView::Package(class_name) = target.view()
+        if let Some(class_name) = new_on_package
             && let Some(result) = self.try_native_io_path_construct(class_name, &args)
         {
             self.method_dispatch_pure = true;
             return result;
         }
         // Native Failure construction (mut path twin of the above).
-        if method == "new"
-            && let ValueView::Package(class_name) = target.view()
+        if let Some(class_name) = new_on_package
             && class_name == "Failure"
         {
             self.method_dispatch_pure = true;
             return Ok(self.build_native_failure_value(&args));
         }
         // Native Seq construction (mut path twin of the above).
-        if method == "new"
-            && let ValueView::Package(class_name) = target.view()
+        if let Some(class_name) = new_on_package
             && class_name == "Seq"
         {
             self.method_dispatch_pure = true;
             return Ok(self.try_native_seq_construct(&args));
         }
         // Native IO::Socket::INET construction (mut path twin of the above).
-        if method == "new"
-            && let ValueView::Package(class_name) = target.view()
+        if let Some(class_name) = new_on_package
             && class_name == "IO::Socket::INET"
         {
             self.method_dispatch_pure = true;
             return self.dispatch_socket_inet_new(&args);
         }
         // Native built-in class method (mut path twin of the above).
-        if let ValueView::Package(class_name) = target.view()
+        if let Some(class_name) = package_sym
             && let Some(result) = crate::runtime::Interpreter::try_native_builtin_class_method(
                 class_name, method, &args,
             )

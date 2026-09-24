@@ -47,13 +47,25 @@ impl Interpreter {
         // read the target's items directly and would yield nothing — reify
         // or consume it here first, same as every other dispatch entry.
         let target = self.reify_or_consume_seq_target(target, method)?;
+        // Decode the receiver's type-object symbol once. The type-object guards
+        // below (construction, built-in class methods) are all gated on a
+        // `Package` receiver, and eight of them on `.new` as well. Asking
+        // `target.view()` per guard re-decoded the same NaN-box tag up to ten
+        // times per call, and re-compared the method name to "new" at each of
+        // those eight, for receivers none of them can claim (issue #8888).
+        // `ValueView::Package` is produced by `Kind::Package` alone, so this one
+        // decode answers every one of those guards.
+        let package_sym = match target.view() {
+            ValueView::Package(sym) => Some(sym),
+            _ => None,
+        };
+        let new_on_package = if method == "new" { package_sym } else { None };
         // Native default construction: `Foo.new(...)` for a simple user-defined
         // class is pure data assembly (named args + attribute defaults), so the
         // Interpreter builds the instance directly instead of routing through the
         // interpreter's generic constructor dispatch (lever A: shrink method-call
         // interpreter fallback).
-        if method == "new"
-            && let ValueView::Package(class_name) = target.view()
+        if let Some(class_name) = new_on_package
             && let Some(result) = loan_env!(self, try_native_default_construct(class_name, &args))
         {
             // An exception type with a user-defined `message` method needs that
@@ -82,8 +94,7 @@ impl Interpreter {
         // `utf16` (code units), `Uni` (codepoints), `Version`/`Duration`/
         // `StrDistance`/`Stash`/empty-instance handles — pure data builds the Interpreter
         // performs directly instead of routing through `dispatch_new`.
-        if method == "new"
-            && let ValueView::Package(class_name) = target.view()
+        if let Some(class_name) = new_on_package
             // An augmented `multi method new` (MONKEY-TYPING on a builtin class,
             // e.g. DateTime) must reach dispatch_new's candidate merge — skip
             // the pure-native fork when user candidates exist.
@@ -99,8 +110,7 @@ impl Interpreter {
         // type-check / container-metadata tag, no env / registry / user code.
         // Built directly via the single `try_native_quanthash_construct` impl the
         // interpreter's `dispatch_new` also delegates to.
-        if method == "new"
-            && let ValueView::Package(class_name) = target.view()
+        if let Some(class_name) = new_on_package
             && !self.user_declared_classes.contains(&class_name.resolve())
             && let Some(result) = self.try_native_quanthash_construct_for_package(class_name, &args)
         {
@@ -112,8 +122,7 @@ impl Interpreter {
         // container-metadata tag, no env / registry / user code. Built directly via
         // the single `try_native_array_construct` / `try_native_hash_construct`
         // impls the interpreter's `dispatch_new` also delegates to.
-        if method == "new"
-            && let ValueView::Package(class_name) = target.view()
+        if let Some(class_name) = new_on_package
             && !self.user_declared_classes.contains(&class_name.resolve())
             && let Some(result) = self.try_native_aggregate_construct_for_package(class_name, &args)
         {
@@ -126,8 +135,7 @@ impl Interpreter {
         // (registry reads + a one-time SPEC-subclass registration, which the VM
         // owns). Built via the single `build_io_path_instance` impl the
         // interpreter's `dispatch_new` arm also delegates to.
-        if method == "new"
-            && let ValueView::Package(class_name) = target.view()
+        if let Some(class_name) = new_on_package
             && let Some(result) = self.try_native_io_path_construct(class_name, &args)
         {
             self.method_dispatch_pure = true;
@@ -138,8 +146,7 @@ impl Interpreter {
         // from the registry), no FS / process / user code. Built via the single
         // `build_native_failure_value` impl the interpreter's
         // `dispatch_new_and_constructors` arm also delegates to.
-        if method == "new"
-            && let ValueView::Package(class_name) = target.view()
+        if let Some(class_name) = new_on_package
             && class_name == "Failure"
         {
             self.method_dispatch_pure = true;
@@ -151,8 +158,7 @@ impl Interpreter {
         // `try_native_seq_construct` impl the interpreter's `dispatch_new` arm
         // also delegates to. (A user subclass `class S is Seq` resolves to its
         // own class name and is left to the interpreter.)
-        if method == "new"
-            && let ValueView::Package(class_name) = target.view()
+        if let Some(class_name) = new_on_package
             && class_name == "Seq"
         {
             self.method_dispatch_pure = true;
@@ -164,8 +170,7 @@ impl Interpreter {
         // `dispatch_socket_inet_new` impl the interpreter's `dispatch_new` arm
         // also delegates to. (A user subclass resolves to its own class name and
         // is left to the interpreter.)
-        if method == "new"
-            && let ValueView::Package(class_name) = target.view()
+        if let Some(class_name) = new_on_package
             && class_name == "IO::Socket::INET"
         {
             self.method_dispatch_pure = true;
@@ -193,7 +198,7 @@ impl Interpreter {
         // Native built-in *class* method (a pure type-object method other than
         // `.new`, e.g. `Instant.from-posix`) — built directly instead of routing
         // through the interpreter's class-method dispatch.
-        if let ValueView::Package(class_name) = target.view()
+        if let Some(class_name) = package_sym
             && let Some(result) = crate::runtime::Interpreter::try_native_builtin_class_method(
                 class_name, method, &args,
             )
