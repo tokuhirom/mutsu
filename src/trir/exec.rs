@@ -412,9 +412,17 @@ impl Interpreter {
                             self.trir.os.push(v);
                         }
                         None => {
-                            let args: Vec<Value> = self.trir.os.drain(base..).collect();
-                            let v = self.dispatch_nqp_op_by_id(*id, &args)?;
-                            self.trir.os.push(v);
+                            // The argument vector is the bank's own spare,
+                            // taken out for the call and put back empty, so a
+                            // generic op allocates nothing. An op that
+                            // re-enters TRIR finds it taken and uses a fresh
+                            // one.
+                            let mut args = std::mem::take(&mut self.trir.nqp_args);
+                            args.extend(self.trir.os.drain(base..));
+                            let v = self.dispatch_nqp_op_by_id(*id, &args);
+                            args.clear();
+                            self.trir.nqp_args = args;
+                            self.trir.os.push(v?);
                         }
                     }
                 }

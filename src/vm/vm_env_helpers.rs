@@ -1162,20 +1162,24 @@ impl Interpreter {
         // probe above proved it) and only its VALUE is written here, so the
         // table's name filter stays valid. Reaching the inner map through
         // `DerefMut` would drop that filter on every package-scope write-back.
-        if let Some(slot) =
+        let Some(slot) =
             crate::runtime::cow_table_mut(&mut self.package_lexicals).get_value_mut(cur, name)
-        {
-            // A boxed lexical's cell is shared with every reader; mutate it in
-            // place rather than replacing the entry with a plain value (which
-            // would sever the sharing). A plain entry is replaced directly.
-            if let ValueView::ContainerRef(arc) = slot.view() {
-                arc.lock().unwrap().clone_from(val);
-            } else {
-                *slot = val.clone();
-            }
-            return true;
+        else {
+            return false;
+        };
+        // A boxed lexical's cell is shared with every reader; mutate it in
+        // place rather than replacing the entry with a plain value (which
+        // would sever the sharing). A plain entry is replaced directly.
+        if let ValueView::ContainerRef(arc) = slot.view() {
+            arc.lock().unwrap().clone_from(val);
+        } else {
+            *slot = val.clone();
+            // TRIR's free-variable cache may hold the old plain value
+            // (`package_lexicals_cow_mut`). A write through a cell is seen
+            // without this.
+            self.unit_lexical_gen = self.unit_lexical_gen.wrapping_add(1);
         }
-        false
+        true
     }
 
     /// Strip pseudo-package qualifiers (GLOBAL::, OUR::, MY::) from a

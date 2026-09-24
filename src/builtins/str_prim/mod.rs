@@ -262,6 +262,15 @@ pub(crate) fn find_char(
         let len = idx.len();
         let start = (from.max(0) as usize).min(len);
         let end = start.saturating_add(count.max(0) as usize).min(len);
+        // A flat string has one ASCII byte per grapheme, so the window is a
+        // byte range and each byte is its own `unit_char`. Segmenting it
+        // would build a UAX #29 cursor per grapheme to learn exactly that.
+        if idx.is_flat() {
+            return text.as_bytes()[start..end]
+                .iter()
+                .position(|&b| want(b as char))
+                .map_or(end, |i| start + i);
+        }
         let b = idx.byte_at(text, start);
         for (g, (_, unit)) in (start..end).zip(Units::from(text, b)) {
             if want(unit_char(unit)) {

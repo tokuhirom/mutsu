@@ -359,17 +359,23 @@ impl Interpreter {
                 // (`nqp::strtocodes($s, NFC, nqp::create(array[uint32]))`)
                 // had nothing to push onto. Everything else takes `CREATE`,
                 // whose whole point here is to skip the constructor.
-                let name = match ty.view() {
-                    ValueView::Package(sym) => sym.resolve(),
-                    _ => crate::runtime::utils::value_type_name(&ty).to_string(),
+                // Both names are `'static` (the interner's, or a builtin
+                // type's), so this allocates nothing.
+                let name: &'static str = match ty.view() {
+                    ValueView::Package(sym) => sym.as_str(),
+                    _ => crate::runtime::utils::value_type_name(&ty),
                 };
                 // `nqp::create(Uni)` (and the NFC/NFD/NFKC/NFKD forms) must
                 // hand back an EMPTY codepoint store, which nqp code then
                 // fills with `nqp::push_i` / `nqp::strtocodes`. `CREATE` would
                 // answer with a bare type object instead, since a Uni's
                 // content is not a Raku attribute.
-                if matches!(name.as_str(), "Uni" | "NFC" | "NFD" | "NFKC" | "NFKD") {
-                    let form = if name == "Uni" { String::new() } else { name };
+                if matches!(name, "Uni" | "NFC" | "NFD" | "NFKC" | "NFKD") {
+                    let form = if name == "Uni" {
+                        String::new()
+                    } else {
+                        name.to_string()
+                    };
                     return Some(Ok(Value::uni_from_codepoints(form, std::iter::empty())));
                 }
                 // A bare VM storage class (`is repr('VMArray')` /
@@ -379,9 +385,9 @@ impl Interpreter {
                 // mutsu's own array/hash, which IS that store.
                 {
                     let reg = self.registry();
-                    let short = name.rsplit("::").next().unwrap_or(&name);
+                    let short = name.rsplit("::").next().unwrap_or(name);
                     let holds = |set: &rustc_hash::FxHashSet<String>| {
-                        set.contains(&name)
+                        set.contains(name)
                             || set
                                 .iter()
                                 .any(|c| c.rsplit("::").next().unwrap_or(c) == short)
@@ -407,8 +413,8 @@ impl Interpreter {
                 // Array flagged immutable).
                 let method = if name.starts_with("array[")
                     || name == "array"
-                    || matches!(name.as_str(), "Map" | "Hash" | "List" | "Array")
-                    || crate::runtime::utils::is_buf_or_blob_class(&name)
+                    || matches!(name, "Map" | "Hash" | "List" | "Array")
+                    || crate::runtime::utils::is_buf_or_blob_class(name)
                 {
                     "new"
                 } else {

@@ -996,7 +996,7 @@ impl Interpreter {
             return None;
         }
         let container = cur.into_container_ref();
-        crate::runtime::cow_table_mut(&mut self.package_lexicals)
+        self.package_lexicals_cow_mut()
             .get_mut(&pkg)?
             .insert(bare.to_string(), container.clone());
         match container.view() {

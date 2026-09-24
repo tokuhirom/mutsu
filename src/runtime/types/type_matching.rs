@@ -522,6 +522,12 @@ impl Interpreter {
                         || crate::runtime::native_types::is_native_int_type(constraint)
                 }
                 ValueView::Instance { class_name, .. } => class_name.as_str() == constraint,
+                // Every normalization form is a `Uni` (`NFC`, `NFD`, `NFKC`
+                // and `NFKD` all derive from it), and `unjsonify-string`'s
+                // `Uni:D \codes` binds one per escaped JSON string.
+                ValueView::Uni(_) => {
+                    constraint == "Uni" || constraint == crate::runtime::value_type_name(value)
+                }
                 // `LazyList` can present as `Array`, `List`, or `Seq` depending
                 // on context markers (`.List`/`.Array`/`.cache`) and whether it
                 // is a CatHandle puller or a `gather` pipe. `value_type_name` is
