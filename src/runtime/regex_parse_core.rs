@@ -588,6 +588,7 @@ impl Interpreter {
                 frugal: false,
                 separator: None,
                 from_runtime_interpolation: false,
+                subrule_call_capture: false,
             }],
             anchor_start: false,
             anchor_end: false,
@@ -1278,6 +1279,7 @@ impl Interpreter {
                         frugal: false,
                         separator: None,
                         from_runtime_interpolation: false,
+                        subrule_call_capture: false,
                     }],
                     anchor_start: false,
                     anchor_end: false,
@@ -1329,6 +1331,7 @@ impl Interpreter {
                         frugal: false,
                         separator: None,
                         from_runtime_interpolation: false,
+                        subrule_call_capture: false,
                     }],
                     anchor_start: false,
                     anchor_end: false,
@@ -1442,6 +1445,7 @@ impl Interpreter {
                             frugal,
                             separator,
                             from_runtime_interpolation: true,
+                            subrule_call_capture: false,
                         });
                     }
                 }
@@ -1469,6 +1473,7 @@ impl Interpreter {
                                 frugal: false,
                                 separator: None,
                                 from_runtime_interpolation: false,
+                                subrule_call_capture: false,
                             });
                         }
                     } else {
@@ -1498,6 +1503,7 @@ impl Interpreter {
                             frugal: false,
                             separator: None,
                             from_runtime_interpolation: false,
+                            subrule_call_capture: false,
                         });
                     }
                 }
@@ -1526,6 +1532,7 @@ impl Interpreter {
                         frugal: false,
                         separator: None,
                         from_runtime_interpolation: false,
+                        subrule_call_capture: false,
                     });
                     continue;
                 } else if tokens.is_empty() {
@@ -1547,6 +1554,7 @@ impl Interpreter {
                     frugal: false,
                     separator: None,
                     from_runtime_interpolation: false,
+                    subrule_call_capture: false,
                 });
                 continue;
             }
@@ -1593,6 +1601,7 @@ impl Interpreter {
                         frugal: false,
                         separator: None,
                         from_runtime_interpolation: false,
+                        subrule_call_capture: false,
                     });
                     continue;
                 }
@@ -1632,6 +1641,7 @@ impl Interpreter {
                     frugal: false,
                     separator: None,
                     from_runtime_interpolation: false,
+                    subrule_call_capture: false,
                 });
                 continue;
             }
@@ -1677,6 +1687,7 @@ impl Interpreter {
                         frugal: false,
                         separator: None,
                         from_runtime_interpolation: false,
+                        subrule_call_capture: false,
                     });
                     continue;
                 }
@@ -1754,6 +1765,7 @@ impl Interpreter {
                         frugal: false,
                         separator: None,
                         from_runtime_interpolation: false,
+                        subrule_call_capture: false,
                     });
                     continue;
                 }
@@ -1778,6 +1790,7 @@ impl Interpreter {
                         frugal: false,
                         separator: None,
                         from_runtime_interpolation: false,
+                        subrule_call_capture: false,
                     });
                 };
                 if c == '$' {
@@ -1835,6 +1848,7 @@ impl Interpreter {
                         frugal: false,
                         separator: None,
                         from_runtime_interpolation: false,
+                        subrule_call_capture: false,
                     });
                     continue;
                 }
@@ -1951,6 +1965,7 @@ impl Interpreter {
                         frugal: false,
                         separator: None,
                         from_runtime_interpolation: false,
+                        subrule_call_capture: false,
                     });
                     continue;
                 }
@@ -2353,6 +2368,7 @@ impl Interpreter {
                                         frugal: false,
                                         separator: None,
                                         from_runtime_interpolation: false,
+                                        subrule_call_capture: false,
                                     });
                                 }
                                 RegexAtom::Literal(*resolved.last().unwrap())
@@ -2749,6 +2765,7 @@ impl Interpreter {
                                         frugal: false,
                                         separator: None,
                                         from_runtime_interpolation: false,
+                                        subrule_call_capture: false,
                                     }],
                                     anchor_start: false,
                                     anchor_end: false,
@@ -3020,6 +3037,7 @@ impl Interpreter {
                                                     frugal: false,
                                                     separator: None,
                                                     from_runtime_interpolation: false,
+                                                    subrule_call_capture: false,
                                                 })
                                                 .collect();
                                             RegexPattern {
@@ -3172,6 +3190,7 @@ impl Interpreter {
                                             frugal: false,
                                             separator: None,
                                             from_runtime_interpolation: true,
+                                            subrule_call_capture: false,
                                         }],
                                         anchor_start: false,
                                         anchor_end: false,
@@ -3223,6 +3242,7 @@ impl Interpreter {
                                                     frugal: false,
                                                     separator: None,
                                                     from_runtime_interpolation: false,
+                                                    subrule_call_capture: false,
                                                 }],
                                                 anchor_start: false,
                                                 anchor_end: false,
@@ -3287,6 +3307,7 @@ impl Interpreter {
                                                             frugal: false,
                                                             separator: None,
                                                             from_runtime_interpolation: false,
+                                                            subrule_call_capture: false,
                                                         },
                                                         RegexToken {
                                                             atom: RegexAtom::CharClass(CharClass {
@@ -3306,6 +3327,7 @@ impl Interpreter {
                                                             frugal: false,
                                                             separator: None,
                                                             from_runtime_interpolation: false,
+                                                            subrule_call_capture: false,
                                                         },
                                                     ],
                                                     anchor_start: false,
@@ -3334,6 +3356,7 @@ impl Interpreter {
                                                     frugal: false,
                                                     separator: None,
                                                     from_runtime_interpolation: false,
+                                                    subrule_call_capture: false,
                                                 }],
                                                 anchor_start: false,
                                                 anchor_end: false,
@@ -3684,6 +3707,7 @@ impl Interpreter {
                                                     frugal: false,
                                                     separator: None,
                                                     from_runtime_interpolation: false,
+                                                    subrule_call_capture: false,
                                                 },
                                                 RegexToken {
                                                     atom: RegexAtom::CharClass(CharClass {
@@ -3701,6 +3725,7 @@ impl Interpreter {
                                                     frugal: false,
                                                     separator: None,
                                                     from_runtime_interpolation: false,
+                                                    subrule_call_capture: false,
                                                 },
                                             ],
                                             anchor_start: false,
@@ -3730,6 +3755,7 @@ impl Interpreter {
                                                 frugal: false,
                                                 separator: None,
                                                 from_runtime_interpolation: false,
+                                                subrule_call_capture: false,
                                             }],
                                             anchor_start: false,
                                             anchor_end: false,
@@ -3891,6 +3917,7 @@ impl Interpreter {
                                                             frugal: false,
                                                             separator: None,
                                                             from_runtime_interpolation: false,
+                                                            subrule_call_capture: false,
                                                         },
                                                         RegexToken {
                                                             atom: RegexAtom::CharClass(CharClass {
@@ -3910,6 +3937,7 @@ impl Interpreter {
                                                             frugal: false,
                                                             separator: None,
                                                             from_runtime_interpolation: false,
+                                                            subrule_call_capture: false,
                                                         },
                                                     ],
                                                     anchor_start: false,
@@ -4065,6 +4093,7 @@ impl Interpreter {
                                     frugal: false,
                                     separator: None,
                                     from_runtime_interpolation: false,
+                                    subrule_call_capture: false,
                                 }],
                                 anchor_start: false,
                                 anchor_end: false,
@@ -4482,6 +4511,11 @@ impl Interpreter {
             } else {
                 None
             };
+            // The name records a builtin subrule CALL (`<alpha>`, `<after x>`),
+            // bare or under a sigil alias (`$<a>=<alpha>`, where the builtin
+            // name is the secondary capture) -- see `subrule_call_capture`.
+            let subrule_call_capture = secondary_named.is_some()
+                || (!primary_is_user_alias && pending_builtin_named_capture.is_some());
             let primary_named = user_alias.or_else(|| pending_builtin_named_capture.take());
             let hash_capture = pending_hash_capture.take();
             // A USER alias on a *quantified* atom (`$<x>=<[a..z]>*`, `$<x>=\w+`)
@@ -4557,6 +4591,7 @@ impl Interpreter {
                     // `NON_DECLARATIVE_INTERP_MARK`, so they set this flag
                     // instead -- see the atom-building match above).
                     from_runtime_interpolation: in_non_declarative_interp || runtime_value_atom,
+                    subrule_call_capture: false,
                 };
                 tokens.push(RegexToken {
                     atom: RegexAtom::Group(RegexPattern {
@@ -4587,6 +4622,7 @@ impl Interpreter {
                     // literal born from interpolation; the inner token above
                     // carries the real flag.
                     from_runtime_interpolation: false,
+                    subrule_call_capture: false,
                 });
             } else {
                 tokens.push(RegexToken {
@@ -4606,6 +4642,7 @@ impl Interpreter {
                     // `NON_DECLARATIVE_INTERP_MARK`, so they set this flag
                     // instead -- see the atom-building match above).
                     from_runtime_interpolation: in_non_declarative_interp || runtime_value_atom,
+                    subrule_call_capture,
                 });
             }
         }

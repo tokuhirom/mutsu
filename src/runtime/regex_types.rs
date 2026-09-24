@@ -839,6 +839,13 @@ pub(crate) struct RegexToken {
     /// `LTM_DECLARATIVE_MODE` measurement — it does not affect ordinary
     /// matching at all.
     pub(crate) from_runtime_interpolation: bool,
+    /// True when this token's named capture comes from a subrule CALL (a
+    /// builtin subrule such as `<alpha>` or `<after x>`, bare or under a
+    /// sigil alias `$<a>=<alpha>`), not from a user alias on a plain atom
+    /// (`$<x>=<[cd]>`). A call that a `?` skips never ran, so it publishes
+    /// no capture; an aliased plain atom still renders an empty Match
+    /// (#9212).
+    pub(crate) subrule_call_capture: bool,
 }
 
 #[derive(Clone)]

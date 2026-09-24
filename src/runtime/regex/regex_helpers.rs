@@ -757,6 +757,7 @@ fn strip_marks_token(token: &RegexToken) -> RegexToken {
             })
         }),
         from_runtime_interpolation: false,
+        subrule_call_capture: token.subrule_call_capture,
     }
 }
 
@@ -809,6 +810,7 @@ fn wrap_capture_isolated_atom(
             frugal: false,
             separator: None,
             from_runtime_interpolation: false,
+            subrule_call_capture: false,
         }],
         anchor_start: false,
         anchor_end: false,

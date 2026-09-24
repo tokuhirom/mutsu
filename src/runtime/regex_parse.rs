@@ -1259,6 +1259,7 @@ pub(super) fn rewrite_tilde_tokens(
                     frugal: false,
                     separator: None,
                     from_runtime_interpolation: false,
+                    subrule_call_capture: false,
                 };
                 inner_tokens.push(ws_tok.clone());
                 inner_tokens.push(inner_token);
@@ -1289,6 +1290,7 @@ pub(super) fn rewrite_tilde_tokens(
                 frugal: false,
                 separator: None,
                 from_runtime_interpolation: false,
+                subrule_call_capture: false,
             });
             // Skip past the inner token and any trailing ws-like tokens
             i = k + 1;
@@ -1459,6 +1461,7 @@ pub(super) fn regex_single_quote_atom(literal: String, ignore_case: bool) -> Reg
                 frugal: false,
                 separator: None,
                 from_runtime_interpolation: false,
+                subrule_call_capture: false,
             })
             .collect();
         // `'क्ष'` inside a regex is one grapheme, not three codepoint atoms:

@@ -1085,6 +1085,7 @@ impl Interpreter {
                         frugal: false,
                         separator: None,
                         from_runtime_interpolation: false,
+                        subrule_call_capture: false,
                     }],
                     anchor_start: false,
                     anchor_end: false,
@@ -1120,6 +1121,7 @@ impl Interpreter {
                 frugal: false,
                 separator: None,
                 from_runtime_interpolation: false,
+                subrule_call_capture: false,
             }],
             anchor_start: false,
             anchor_end: false,
@@ -1143,6 +1145,7 @@ impl Interpreter {
                         frugal: false,
                         separator: None,
                         from_runtime_interpolation: false,
+                        subrule_call_capture: false,
                     },
                 );
             }
