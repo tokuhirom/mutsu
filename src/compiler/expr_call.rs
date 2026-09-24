@@ -361,6 +361,16 @@ impl Compiler {
         {
             return;
         }
+        // `substr-rw($s, ...)` / `subbuf-rw($b, ...)` outside an assignment
+        // return a Proxy whose FETCH/STORE read and write `$s` BY NAME, from a
+        // routine the free-var analysis never sees -- so keep `$s` env-synced
+        // like any other rw-arg sink, or the STORE of a later `$r = v` on a
+        // bound `$r` reads a stale (undefined) `$s` (#9200).
+        if matches!(name.as_str(), "substr-rw" | "subbuf-rw")
+            && let Some(Expr::Var(var_name)) = args.first()
+        {
+            self.note_atomic_env_sync_target(var_name, false);
+        }
         // `return-rw <expr>` must hand the CALLER a container, not a value:
         // `sub g(\c) is rw { return-rw c<a> }; g(%h) = 1` writes the element of
         // the caller's `%h`. Compile the operand in the same container-producing

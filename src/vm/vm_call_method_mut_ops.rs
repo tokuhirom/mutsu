@@ -678,6 +678,23 @@ impl Interpreter {
             return Ok(());
         }
         crate::alloc_scope_end!(_sc_cmm_args);
+        // `$s.substr-rw(...)` outside an assignment: hand back the same
+        // write-through Proxy the sub form `substr-rw($s, ...)` returns, so a
+        // bound `my $r := $s.substr-rw(1, 1); $r = "Y"` splices into `$s`
+        // (#9200). A user class's own `substr-rw` method is untouched: only a
+        // `Str` receiver held by a plain scalar variable takes this path.
+        // Cost: O(n), n = chars of the receiver (the Proxy's range is resolved
+        // against it once).
+        if method == "substr-rw"
+            && modifier.is_none()
+            && !target_name.is_empty()
+            && !crate::qualified::is_qualified(code.const_sym(target_name_idx))
+            && matches!(target.descalarize().view(), ValueView::Str(_))
+        {
+            let proxy = self.make_substr_rw_proxy(target_name, &args)?;
+            self.stack.push(proxy);
+            return Ok(());
+        }
         let stash_target = if method == "BIND-KEY" && args.len() == 2 {
             match target.view() {
                 ValueView::Instance { class_name, .. }
