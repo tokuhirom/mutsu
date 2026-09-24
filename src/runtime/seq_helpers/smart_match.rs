@@ -206,102 +206,6 @@ impl Interpreter {
         out
     }
 
-    /// `IO::Path/Str ~~ :e/:d/:f/:l/:r/:w/:x/:rw/:rwx/:s/:z` file-test result
-    /// (and negated forms `:!e`, ...), shared by the `Pair`- and
-    /// `ValuePair`-flavour match arms in `smart_match` below.
-    fn io_path_file_test_result(key: &str, val: &Value, path_str: Option<String>) -> bool {
-        let negated = val.as_bool() == Some(false);
-        let Some(p) = path_str else {
-            return negated;
-        };
-        let path = std::path::Path::new(&p);
-        let result = match key {
-            "e" => path.exists(),
-            "d" => path.is_dir(),
-            "f" => path.is_file(),
-            "l" => std::fs::symlink_metadata(&p)
-                .map(|m| m.file_type().is_symlink())
-                .unwrap_or(false),
-            "r" => {
-                #[cfg(unix)]
-                {
-                    use std::os::unix::fs::PermissionsExt;
-                    std::fs::metadata(&p)
-                        .map(|m| m.permissions().mode() & 0o444 != 0)
-                        .unwrap_or(false)
-                }
-                #[cfg(not(unix))]
-                {
-                    path.exists()
-                }
-            }
-            "w" => {
-                #[cfg(unix)]
-                {
-                    use std::os::unix::fs::PermissionsExt;
-                    std::fs::metadata(&p)
-                        .map(|m| m.permissions().mode() & 0o222 != 0)
-                        .unwrap_or(false)
-                }
-                #[cfg(not(unix))]
-                {
-                    path.exists()
-                }
-            }
-            "x" => {
-                #[cfg(unix)]
-                {
-                    use std::os::unix::fs::PermissionsExt;
-                    std::fs::metadata(&p)
-                        .map(|m| m.permissions().mode() & 0o111 != 0)
-                        .unwrap_or(false)
-                }
-                #[cfg(not(unix))]
-                {
-                    false
-                }
-            }
-            "rw" => {
-                #[cfg(unix)]
-                {
-                    use std::os::unix::fs::PermissionsExt;
-                    std::fs::metadata(&p)
-                        .map(|m| {
-                            let mode = m.permissions().mode();
-                            mode & 0o444 != 0 && mode & 0o222 != 0
-                        })
-                        .unwrap_or(false)
-                }
-                #[cfg(not(unix))]
-                {
-                    std::fs::metadata(&p)
-                        .map(|m| !m.permissions().readonly())
-                        .unwrap_or(false)
-                }
-            }
-            "rwx" => {
-                #[cfg(unix)]
-                {
-                    use std::os::unix::fs::PermissionsExt;
-                    std::fs::metadata(&p)
-                        .map(|m| {
-                            let mode = m.permissions().mode();
-                            mode & 0o444 != 0 && mode & 0o222 != 0 && mode & 0o111 != 0
-                        })
-                        .unwrap_or(false)
-                }
-                #[cfg(not(unix))]
-                {
-                    false
-                }
-            }
-            "s" => std::fs::metadata(&p).map(|m| m.len() > 0).unwrap_or(false),
-            "z" => std::fs::metadata(&p).map(|m| m.len() == 0).unwrap_or(false),
-            _ => false,
-        };
-        if negated { !result } else { result }
-    }
-
     pub(crate) fn smart_match(&mut self, left: &Value, right: &Value) -> bool {
         // A regex literal that closed over its defining scope (`RegexCaptured`)
         // needs that scope live while its embedded code runs.
@@ -1323,8 +1227,13 @@ impl Interpreter {
                     "e" | "d" | "f" | "l" | "r" | "w" | "x" | "rw" | "rwx" | "s" | "z"
                 ) =>
             {
-                let path_str = attributes.as_map().get("path").map(|v| v.to_string_value());
-                Self::io_path_file_test_result(key.as_str(), val, path_str)
+                let (path, cwd) = Self::io_path_attrs_for_accepts(&attributes);
+                crate::vm::vm_smart_match::io_path_file_test_result(
+                    key.as_str(),
+                    val.as_bool() == Some(false),
+                    Some(path),
+                    Some(cwd),
+                )
             }
             (
                 ValueView::Instance {
@@ -1341,8 +1250,13 @@ impl Interpreter {
                 )) =>
             {
                 let key = key.to_string_value();
-                let path_str = attributes.as_map().get("path").map(|v| v.to_string_value());
-                Self::io_path_file_test_result(&key, val, path_str)
+                let (path, cwd) = Self::io_path_attrs_for_accepts(&attributes);
+                crate::vm::vm_smart_match::io_path_file_test_result(
+                    &key,
+                    val.as_bool() == Some(false),
+                    Some(path),
+                    Some(cwd),
+                )
             }
             // Hash ~~ Pair: check that key exists in hash and value smartmatches
             // Hash ~~ Pair: look up the pair's key and smartmatch the hash value

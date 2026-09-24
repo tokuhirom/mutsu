@@ -769,7 +769,7 @@ pub(crate) mod raw_invocant;
 mod rw_arg_container;
 pub(crate) mod scope_stack;
 mod uncaught_render;
-pub(crate) use native_io::{path_is_executable, path_is_readable, path_is_writable};
+pub(crate) use native_io::{io_file_test, path_is_readable};
 mod native_io_special;
 pub(crate) mod native_methods;
 mod native_proc_async;

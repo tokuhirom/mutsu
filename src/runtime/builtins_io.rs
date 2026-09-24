@@ -14,10 +14,14 @@ pub(super) fn check_null_in_path(path: &str) -> Result<(), RuntimeError> {
 }
 
 pub(super) fn io_exception_error(class_name: &str, message: String) -> RuntimeError {
+    // The exception object carries the text too, as `io_exception_failure`'s
+    // does: without it `$!.message` on a caught error was empty.
+    let mut attrs = HashMap::new();
+    attrs.insert("message".to_string(), Value::str(message.clone()));
     let mut err = RuntimeError::new(message);
     err.exception = Some(Box::new(Value::make_instance(
         Symbol::intern(class_name),
-        HashMap::new(),
+        attrs,
     )));
     err
 }
