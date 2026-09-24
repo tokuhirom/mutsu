@@ -1100,7 +1100,7 @@ impl Interpreter {
                     // attributes in place; the identity-keeping rebuild is
                     // equivalent — the object is freshly built and unshared.)
                     let mut updates: Vec<(&str, Value)> = Vec::new();
-                    if left.as_str().is_none() {
+                    if !left.is_str_value() {
                         updates.push(("orig", left.clone()));
                     }
                     if let Some(made_val) = self.env.get_sym(crate::symbol::wk::made()).cloned() {
@@ -1670,7 +1670,7 @@ impl Interpreter {
             {
                 matches!(
                     left.view(),
-                    ValueView::Enum { enum_type, .. } if enum_type.resolve() == **type_name
+                    ValueView::Enum { enum_type, .. } if enum_type.resolve() == ***type_name
                 )
             }
             // Mu instances smartmatch only the Mu type object (Mu ~~ Mu.new is True).

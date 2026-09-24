@@ -327,7 +327,7 @@ impl Interpreter {
                 self.trir.nl[frame.nbase as usize + p.slot as usize] = n.to_bits() as i64;
             }
             TrKind::Obj => {
-                if p.type_name == "str" && val.as_str().is_none() {
+                if p.type_name == "str" && !val.is_str_value() {
                     return None;
                 }
                 if let Some(check) = &p.check {

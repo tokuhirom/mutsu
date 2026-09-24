@@ -424,7 +424,7 @@ pub(super) fn dispatch(
             // invocant itself (shared) and renders that text only when it is
             // read -- see `AttrMap::objat_which`.
             // Cost: O(1) for a plain Str.
-            if target.as_str().is_some() {
+            if target.is_str_value() {
                 let mut attrs = std::collections::HashMap::new();
                 attrs.insert(crate::value::OBJAT_STR_PAYLOAD.to_string(), target.clone());
                 return Some(Some(Ok(Value::make_instance(
@@ -776,7 +776,7 @@ pub(super) fn dispatch(
             | ValueView::Routine { is_regex: true, .. } => None,
             // Cost: O(1) for a plain Str invocant (the value is shared, not
             // copied); O(n) otherwise, n = chars of the rendered string.
-            _ if target.as_str().is_some() => Some(Ok(target.clone())),
+            _ if target.is_str_value() => Some(Ok(target.clone())),
             _ => Some(Ok(Value::str(target.to_string_value()))),
         }),
         "Int" => {

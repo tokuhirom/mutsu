@@ -98,7 +98,7 @@ impl Interpreter {
         }
         let key = match index.view() {
             ValueView::Int(i) => i.to_string(),
-            ValueView::Str(s) => s.as_ref().clone(),
+            ValueView::Str(s) => String::clone(&s),
             _ => index.to_string_value(),
         };
         let Some(mut cval) = self.get_env_with_main_alias(container) else {

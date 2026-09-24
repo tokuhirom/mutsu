@@ -11,14 +11,14 @@
 //! O(prefix), and `.lines.elems` allocates nothing.
 //!
 //! [`StrIterSpec`] is that iterator. It is a byte cursor over the shared
-//! `Arc<String>` payload of the invocant, so building one copies nothing. It
+//! `Arc<StrBody>` payload of the invocant, so building one copies nothing. It
 //! needs no interpreter state, which means any layer can drive it: the
 //! `Seq` holding it (`SeqSource::StrIter`) is cut on its first read by
 //! whoever reads it, so every existing consumer keeps seeing an ordinary
 //! eager `Seq`, and only a consuming `.head(n)` / `.first` on an unread one
 //! stops after the prefix.
 
-use crate::value::Value;
+use crate::value::{StrBody, Value};
 use std::sync::Arc;
 use unicode_segmentation::{GraphemeCursor, UnicodeSegmentation};
 
@@ -32,7 +32,7 @@ pub(crate) enum StrIterMode {
     Chunks(usize),
     /// `.comb($needle)` with a non-empty needle: each non-overlapping
     /// occurrence of the needle, left to right.
-    Needle(Arc<String>),
+    Needle(Arc<StrBody>),
     /// `.lines`: each line, with the `\n` / `\r\n` / `\r` separator dropped
     /// when `chomp` is set. A trailing separator does not start an empty
     /// last line.
@@ -45,7 +45,7 @@ pub(crate) enum StrIterMode {
 #[derive(Debug, Clone)]
 pub(crate) struct StrIterSpec {
     /// The invocant's payload, shared with the `Str` value it came from.
-    text: Arc<String>,
+    text: Arc<StrBody>,
     /// Byte offset of the first unread byte (always a char boundary).
     pos: usize,
     mode: StrIterMode,
@@ -55,7 +55,7 @@ pub(crate) struct StrIterSpec {
 
 impl StrIterSpec {
     // Cost: O(1), the payload is shared, not copied.
-    pub(crate) fn new(text: Arc<String>, mode: StrIterMode, limit: Option<usize>) -> Self {
+    pub(crate) fn new(text: Arc<StrBody>, mode: StrIterMode, limit: Option<usize>) -> Self {
         Self {
             text,
             pos: 0,
@@ -215,13 +215,13 @@ impl StrIterSpec {
     }
 }
 
-/// The invocant's payload as a shared `Arc<String>`: a `Str` hands out its
+/// The invocant's payload as a shared `Arc<StrBody>`: a `Str` hands out its
 /// own `Arc` (no copy), anything else is stringified once.
 // Cost: O(1) for a `Str`; O(n) to stringify anything else.
-fn shared_text(target: &Value) -> Arc<String> {
+fn shared_text(target: &Value) -> Arc<StrBody> {
     match target.view() {
         crate::value::ValueView::Str(s) => Arc::clone(&s),
-        _ => Arc::new(target.to_string_value()),
+        _ => Arc::new(target.to_string_value().into()),
     }
 }
 
@@ -271,7 +271,7 @@ mod tests {
     use super::*;
 
     fn all(text: &str, mode: StrIterMode, limit: Option<usize>) -> Vec<String> {
-        let mut it = StrIterSpec::new(Arc::new(text.to_string()), mode, limit);
+        let mut it = StrIterSpec::new(Arc::new(text.to_string().into()), mode, limit);
         let mut out = Vec::new();
         while let Some(v) = it.pull_one() {
             out.push(v.to_string_value());
@@ -306,7 +306,7 @@ mod tests {
 
     #[test]
     fn needle_is_non_overlapping() {
-        let needle = StrIterMode::Needle(Arc::new("aa".to_string()));
+        let needle = StrIterMode::Needle(Arc::new("aa".to_string().into()));
         assert_eq!(all("aaaaa", needle, None), vec!["aa", "aa"]);
     }
 
@@ -332,7 +332,11 @@ mod tests {
 
     #[test]
     fn count_only_does_not_consume() {
-        let mut it = StrIterSpec::new(Arc::new("a b c".to_string()), StrIterMode::Words, None);
+        let mut it = StrIterSpec::new(
+            Arc::new("a b c".to_string().into()),
+            StrIterMode::Words,
+            None,
+        );
         it.pull_one();
         assert_eq!(it.count_only(), 2);
         assert_eq!(it.pull_one().map(|v| v.to_string_value()), Some("b".into()));

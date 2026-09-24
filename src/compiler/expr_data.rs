@@ -542,7 +542,7 @@ impl Compiler {
         {
             let bare: String = match key.chars().next() {
                 Some('$' | '@' | '%' | '&') => key.chars().skip(1).collect(),
-                _ => key.as_ref().clone(),
+                _ => String::clone(&key),
             };
             // Immediate-block `CALLERS::<$x>` is the lexical `OUTERS::` walk, the
             // stash twin of the `$CALLERS::x` routing in `emit_var_read`.
@@ -576,7 +576,7 @@ impl Compiler {
         {
             let bare: String = match key.chars().next() {
                 Some('$' | '@' | '%' | '&') => key.chars().skip(1).collect(),
-                _ => key.as_ref().clone(),
+                _ => String::clone(&key),
             };
             // Immediate-block `CALLER::<$x>` resolves lexically, the stash twin of
             // the `$CALLER::x` routing in `emit_var_read`.
@@ -611,7 +611,7 @@ impl Compiler {
             // name, while `@a`/`%h`/`&f` keep their sigil in the key.
             let bare: String = match key.chars().next() {
                 Some('$') => key.chars().skip(1).collect(),
-                _ => key.as_ref().clone(),
+                _ => String::clone(&key),
             };
             match scope {
                 OuterStash::At(depth) => self.emit_outer_var_access(bare, depth),

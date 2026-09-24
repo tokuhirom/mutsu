@@ -3980,7 +3980,7 @@ impl Interpreter {
         if let Some(result) = native_result {
             if method == "decode" {
                 return result.map(|value| {
-                    if value.as_str().is_some() {
+                    if value.is_str_value() {
                         let decoded = value.as_str().unwrap();
                         Value::str(self.translate_newlines_for_decode(decoded))
                     } else {

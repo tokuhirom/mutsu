@@ -51,6 +51,9 @@ CASES=(
     'append ~= (attribute, #9209)|10000|class C { has $.s = ""; method go($n) { for ^$n { $!s ~= "あ" } } };|C.new.go(NN)|once'
     'append ~= (in given/when)|10000||given 1 { when 1 { my $x = ""; for ^NN { $x ~= "あ" } } }|once'
     'concat reassign $y = $y ~|10000|my $y = "";|$y = $y ~ "あ"|loop'
+    'concat ~ (shared left operand)|10000|my $a = "a" x NN;|my $r = $a ~ "b"|loop'
+    'interpolation "$a-b" (shared part)|10000|my $a = "a" x NN;|my $r = "$a-b"|loop'
+    'repeat x (count grows with N)|10000|my $s = "あ";|my $r = $s x (NN * 100)|loop'
     # --- transform ---------------------------------------------------------
     'trans (multi-char key)|10000|my $s = "abc " x NN;|$s.trans(["ab"] => ["x"])|once'
     'trans ("\n" => "\r\n")|10000|my $s = "abc\n" x NN;|$s.trans("\n" => "\r\n")|once'

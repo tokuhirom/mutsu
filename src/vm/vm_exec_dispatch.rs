@@ -2940,8 +2940,9 @@ impl Interpreter {
             }
 
             // -- String --
-            // Cost: amortized O(n2) when the left Str is held by nothing else, else
-            // O(n1 + n2) (see exec_concat_op). Rakudo: amortized O(1) (strands) -- see #9209.
+            // Cost: amortized O(n2) when the left Str is held by nothing else; O(1)
+            // when the result is built as strands (ADR-0120); O(n1 + n2) for a
+            // result under `STRAND_MIN_BYTES` (see exec_concat_op).
             OpCode::Concat => {
                 self.sync_source_line(code, *ip);
                 self.exec_concat_op()?;
@@ -3203,9 +3204,8 @@ impl Interpreter {
             }
 
             // -- Repetition --
-            // Cost: O(n * c), n = chars of the left operand, c = repeat count
-            // (see exec_string_repeat_op). Rakudo: O(1) for a flat operand --
-            // see #9253.
+            // Cost: O(n), n = chars of the left operand (one repeat strand,
+            // ADR-0120; see exec_string_repeat_op).
             OpCode::StringRepeat => {
                 self.exec_string_repeat_op()?;
                 *ip += 1;
@@ -4835,9 +4835,10 @@ impl Interpreter {
                 *ip += 1;
             }
             // -- String interpolation --
-            // Cost: O(1) for a single plain-Str part (`"$s"`, shared); otherwise O(n),
-            // n = total chars of the parts (each is copied into one fresh String).
-            // Rakudo: O(parts) (strands) -- see #9209.
+            // Cost: O(1) for a single plain-Str part (`"$s"`, shared); O(parts) plus
+            // the chars of the parts that are copied (non-Str parts and Str parts
+            // under 256 bytes) when the result is built as strands (ADR-0120);
+            // O(n), n = total chars, for a result under `STRAND_MIN_BYTES`.
             OpCode::StringConcat(n) => {
                 self.sync_source_line(code, *ip);
                 self.exec_string_concat_op(*n)?;

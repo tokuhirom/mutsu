@@ -25,10 +25,10 @@ impl Value {
         Value::BigInt(Arc::new(n))
     }
     pub fn str(s: String) -> Self {
-        Value::Str(Arc::new(s))
+        Value::Str(Arc::new(crate::value::StrBody::Flat(s)))
     }
     pub fn str_from(s: &str) -> Self {
-        Value::Str(Arc::new(s.to_string()))
+        Value::Str(Arc::new(crate::value::StrBody::Flat(s.to_string())))
     }
     pub fn regex(s: String) -> Self {
         Value::Regex(Arc::new(s))

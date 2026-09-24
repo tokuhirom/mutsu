@@ -255,7 +255,7 @@ impl Interpreter {
         }
         // `~$s` on a plain Str (no user `prefix:<~>` candidate took it above)
         // is the Str itself: share it rather than copy the payload.
-        if val.as_str().is_some() {
+        if val.is_str_value() {
             self.stack.push(val);
             return Ok(());
         }

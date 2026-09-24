@@ -535,6 +535,7 @@ mod native_backing;
 pub(crate) mod seq_body;
 mod serde_support;
 pub(crate) mod signature;
+mod str_body;
 mod str_iter;
 mod sync_cell;
 pub(crate) mod types;
@@ -561,6 +562,8 @@ mod value_methods_c;
 mod value_setbagmix;
 mod value_str_append;
 mod value_str_append_nfc;
+pub(crate) use str_body::STRAND_MIN_BYTES;
+pub use str_body::StrBody;
 pub(crate) use value_str_append_nfc::{StrAppendPlan, has_nfc_boundary_before};
 mod view;
 pub(crate) mod waker;
@@ -1912,7 +1915,7 @@ pub(in crate::value) enum ValueRepr {
     Int(i64),
     BigInt(Arc<NumBigInt>),
     Num(f64),
-    Str(Arc<String>),
+    Str(Arc<StrBody>),
     Bool(bool),
     Range(i64, i64),
     RangeExcl(i64, i64),
@@ -2273,7 +2276,7 @@ impl Value {
         Value::from_repr(ValueRepr::Num(v))
     }
     #[inline]
-    pub(in crate::value) fn Str(v: Arc<String>) -> Value {
+    pub(in crate::value) fn Str(v: Arc<StrBody>) -> Value {
         Value::from_repr(ValueRepr::Str(v))
     }
     #[inline]

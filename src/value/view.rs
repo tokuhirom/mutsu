@@ -26,7 +26,7 @@ pub enum ValueView<'a> {
     Int(i64),
     BigInt(ArcRef<'a, NumBigInt>),
     Num(f64),
-    Str(ArcRef<'a, String>),
+    Str(ArcRef<'a, super::StrBody>),
     Bool(bool),
     Range(i64, i64),
     RangeExcl(i64, i64),
@@ -224,7 +224,7 @@ impl Value {
 
     /// Construct a `Str` from an existing shared string.
     #[inline]
-    pub fn str_arc(s: Arc<String>) -> Self {
+    pub fn str_arc(s: Arc<super::StrBody>) -> Self {
         Value::Str(s)
     }
 
@@ -748,6 +748,13 @@ impl Value {
     #[inline]
     pub(crate) fn is_plain_local_read(&self) -> bool {
         self.0.is_plain_local_read()
+    }
+
+    /// Whether this is a `Str`. A pure tag probe: unlike `as_str().is_some()`
+    /// it never flattens a strand list (ADR-0120).
+    #[inline]
+    pub(crate) fn is_str_value(&self) -> bool {
+        self.0.is_str()
     }
 
     /// Whether this is a `Package` type object. A pure tag probe (see

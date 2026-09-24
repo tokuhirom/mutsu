@@ -25,7 +25,7 @@
 //! behind a live `Weak` — the in-place append path (`str_appended_nfc`) uses
 //! `Arc::get_mut`, which refuses when a `Weak` exists and copies instead.
 
-use crate::value::{Value, ValueView};
+use crate::value::{StrBody, Value, ValueView};
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::{Arc, Weak};
@@ -240,14 +240,14 @@ impl GraphemeIndex {
     }
 }
 
-type Slot = (Weak<String>, Rc<GraphemeIndex>);
+type Slot = (Weak<StrBody>, Rc<GraphemeIndex>);
 
 thread_local! {
     static CACHE: RefCell<Vec<Slot>> = const { RefCell::new(Vec::new()) };
 }
 
 /// The index of an `Arc<String>` payload, from the per-thread cache.
-pub(crate) fn index_of_arc(arc: &Arc<String>) -> Rc<GraphemeIndex> {
+pub(crate) fn index_of_arc(arc: &Arc<StrBody>) -> Rc<GraphemeIndex> {
     if arc.len() < CACHE_MIN_BYTES {
         return Rc::new(GraphemeIndex::build(arc));
     }
@@ -294,15 +294,15 @@ pub(crate) fn with_str_index<R>(v: &Value, f: impl FnOnce(&str, &GraphemeIndex) 
 
 /// `v`'s string form and its grapheme index, owned — for callers that need
 /// both across a call back into the interpreter.
-pub(crate) fn str_and_index(v: &Value) -> (Arc<String>, Rc<GraphemeIndex>) {
+pub(crate) fn str_and_index(v: &Value) -> (Arc<StrBody>, Rc<GraphemeIndex>) {
     if let ValueView::Str(arc) = v.view() {
-        let arc: Arc<String> = Arc::clone(&arc);
+        let arc: Arc<StrBody> = Arc::clone(&arc);
         let idx = index_of_arc(&arc);
         return (arc, idx);
     }
     let s = v.to_string_value();
     let idx = Rc::new(GraphemeIndex::build(&s));
-    (Arc::new(s), idx)
+    (Arc::new(s.into()), idx)
 }
 
 /// Run `f` over `v`'s string form, borrowing a `Str` payload instead of
@@ -422,7 +422,7 @@ mod tests {
 
     #[test]
     fn cache_returns_same_index_while_string_lives() {
-        let arc = Arc::new("あ".repeat(200));
+        let arc = Arc::new(StrBody::from("あ".repeat(200)));
         let a = index_of_arc(&arc);
         let b = index_of_arc(&arc);
         assert!(Rc::ptr_eq(&a, &b));

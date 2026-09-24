@@ -52,7 +52,7 @@ impl StrippedMatchTarget {
 /// subject.
 #[derive(Clone)]
 pub(crate) struct MatchTarget {
-    text: Arc<String>,
+    text: Arc<crate::value::StrBody>,
     chars: Arc<[char]>,
     /// Whole subject is ASCII: char index == byte index, so a span reads as
     /// a byte slice of `text` (a straight memcpy) instead of re-encoding
@@ -94,7 +94,7 @@ const SUBJECT_CACHE_MIN_BYTES: usize = 256;
 /// and the derived forms built for it. The payload is never held strongly,
 /// so a cached subject that is dropped frees its text at once.
 struct CachedSubject {
-    subject: std::sync::Weak<String>,
+    subject: std::sync::Weak<crate::value::StrBody>,
     /// `subject`'s byte pointer and length when it was cached. Compared
     /// against an incoming `&str` only after `subject` upgrades, so they name
     /// a live, immutable buffer (see [`MatchTarget::new`]).
@@ -118,7 +118,7 @@ impl MatchTarget {
     /// [`MatchTarget::of_subject`].
     ///
     /// A hit is an identity test, never a content comparison: the cache holds
-    /// each payload's `Weak<String>`, and a remembered pointer is compared only
+    /// each payload's `Weak<StrBody>`, and a remembered pointer is compared only
     /// after the `Weak` upgrades. A `Str` payload is never mutated behind a
     /// live `Weak` — the in-place append path (`str_appended_nfc`) uses
     /// `Arc::get_mut`, which refuses when a `Weak` exists and copies instead —
@@ -131,7 +131,7 @@ impl MatchTarget {
         if let Some(hit) = Self::cached(text) {
             return hit;
         }
-        Self::build(Arc::new(text.to_string()))
+        Self::build(Arc::new(text.to_string().into()))
     }
 
     /// The target for a `Str` payload, built at most once while the payload
@@ -142,7 +142,7 @@ impl MatchTarget {
     /// loop O(1) setup per call instead of copying the whole subject each time.
     // Cost: O(1) when `subject` is cached; otherwise O(n), n = chars of
     // `subject`, to collect its chars once.
-    pub(crate) fn of_subject(subject: &Arc<String>) -> Self {
+    pub(crate) fn of_subject(subject: &Arc<crate::value::StrBody>) -> Self {
         if subject.len() < SUBJECT_CACHE_MIN_BYTES {
             return Self::build(Arc::clone(subject));
         }
@@ -177,10 +177,10 @@ impl MatchTarget {
     /// what lets repeated matches on one string find the same entry.
     // Cost: O(1) for a cached `Str`; otherwise O(n), n = chars of the
     // subject's string form, to build it once.
-    pub(crate) fn primed_subject(subject: &crate::value::Value) -> Arc<String> {
+    pub(crate) fn primed_subject(subject: &crate::value::Value) -> Arc<crate::value::StrBody> {
         let arc = match subject.view() {
             crate::value::ValueView::Str(arc) => Arc::clone(&arc),
-            _ => Arc::new(subject.to_string_value()),
+            _ => Arc::new(subject.to_string_value().into()),
         };
         Self::of_subject(&arc);
         arc
@@ -214,7 +214,7 @@ impl MatchTarget {
         })
     }
 
-    fn build(text: Arc<String>) -> Self {
+    fn build(text: Arc<crate::value::StrBody>) -> Self {
         crate::vm::vm_stats::record_regex_match_target_built();
         Self {
             chars: text.chars().collect(),
@@ -233,7 +233,7 @@ impl MatchTarget {
         let text: String = chars.iter().collect();
         let ascii = text.is_ascii();
         Self {
-            text: Arc::new(text),
+            text: Arc::new(text.into()),
             chars: chars.into(),
             ascii,
             cursor_class: Arc::new(AtomicU32::new(0)),
@@ -291,7 +291,7 @@ impl MatchTarget {
     }
 
     /// The whole subject as a string (`.orig`).
-    pub(crate) fn text(&self) -> &Arc<String> {
+    pub(crate) fn text(&self) -> &Arc<crate::value::StrBody> {
         &self.text
     }
 
