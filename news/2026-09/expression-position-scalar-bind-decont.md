@@ -20,4 +20,4 @@ Two paths were missing the signal the statement form sends:
   no local slot) consumed the scalar-bind flag but never called
   `update_bound_decont_marker`, so `ItemizeVar` could not see the bind.
 
-Both now mirror `SetLocal`. Pinned by `t/collections/expr-scalar-bind-flattens.t`.
+Both now mirror `SetLocal`. Pinned by `t/vm/binding/bind-expr-position-scalar-flattens.t`.
