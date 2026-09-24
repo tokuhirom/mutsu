@@ -57,6 +57,41 @@ turns out to be a quick fix becomes `todo:ticket`, and a `todo:perf` finding
 that profiling reveals to be a wrong answer rather than a slow one moves out of
 `todo:perf`.
 
+### A `todo:perf` issue states its goal, and closes when the goal is met
+
+"Faster" has no end, so a perf issue without a stated goal can never be closed
+and the queue only grows (user decision, 2026-09-24). Every `todo:perf` issue
+therefore carries a **`## Goal (close condition)`** section — the template
+starts with it — naming **one metric, where it is read, and the threshold**.
+The goal follows from why the issue was filed; there are three shapes:
+
+| Filed because | Goal | Read from | Met when |
+| --- | --- | --- | --- |
+| mutsu is slower than rakudo on a workload | the ratio the filer wants, e.g. "faster than rakudo" or "under 5x rakudo" | the named `bench-history.tsv` row on the `bench-data` branch (same-runner raku ratio), or a named script run against `raku` on the same box | the latest `main` row is at or under the threshold |
+| a change made mutsu slower (a regression) | back to the pre-regression speed | the same bench row, before and after the offending commit (name both hashes) | the latest `main` row is within noise of the baseline — **within 3%** unless the issue names another tolerance |
+| an operation's complexity is worse than it should be (a `Rakudo: O(..)` / `MoarVM: O(..)` suffix, or an order visibly wrong for the algorithm) | the correct order, e.g. `O(1)` per call instead of `O(n)` | the family's `scripts/*-complexity-check.sh` case, or a scaling repro that doubles `n` | the measured growth matches the target order and the `// Cost:` suffix is gone. **A constant-factor speedup does not meet an order goal** — fix the algorithm, not the constant. |
+
+Rules that follow from it:
+
+- **No goal, no work.** An old `todo:perf` issue without the section gets one
+  written — as an edit to the body, derived from what the issue already says —
+  before anyone starts on it. If the issue is too vague to derive a goal from,
+  ask the user rather than inventing an easy one.
+- **Announce the goal when you start.** When you pick up a `todo:perf` issue,
+  tell the user, in one or two lines, the goal you are working toward
+  (metric, source, threshold, and the current value). This is an announcement,
+  not a question: do not wait for a reply before starting.
+- **Close exactly when the goal is met, not before and not later.** The PR whose
+  change meets it says `Closes #NNNN` and quotes the measurement. A PR that only
+  moves toward it says `Refs #NNNN` (see the `perf-tuning` skill §5). An issue
+  whose goal was met by some other change — a regression fixed as a side effect,
+  a bench row that crossed the line — is closed with a comment citing the row or
+  script output that shows it; no PR needed.
+- **The goal is fixed once announced.** Do not loosen it so the issue can close.
+  Tightening it, or deciding the goal was the wrong one, is the user's call; if
+  you meet the stated goal and see a further worthwhile target, close the issue
+  and file a new one for the new goal.
+
 ### Tier — how much it matters
 
 Assigned by a triage pass over the open backlog, not by the filer. Leave it off

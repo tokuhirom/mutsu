@@ -257,9 +257,20 @@ problem usually needs an ADR; the bounded slices under it do not, and landing fo
 waiting for the big one — **when the slices can actually reach the target**. Section 5a is the
 case where they cannot, and it is the more common one once the obvious wins are gone.
 
-**Do not close the issue from the PR that does one slice.** Deciding a perf issue's scope is
-satisfied is the maintainer's call. (Got this wrong on #8673 — closed it via `Closes` in a PR
-that merely removed one of its costs.)
+**The issue's `## Goal (close condition)` decides when it closes** — the rule and its three
+shapes (ratio vs. rakudo, regression back to baseline, correct complexity order) are in
+[docs/issue-workflow.md](../../../docs/issue-workflow.md), "A `todo:perf` issue states its goal".
+In practice:
+
+- **Before starting**, make sure the issue has a goal (write one into the body from what it
+  already says if it lacks one), then **announce it to the user** in a line or two — metric,
+  source, threshold, current value. Announce; do not wait for confirmation.
+- **A slice that does not reach the goal says `Refs #NNNN`, never `Closes`.** (Got this wrong on
+  #8673 — closed it via `Closes` in a PR that merely removed one of its costs.)
+- **The PR that meets the goal says `Closes #NNNN`** and quotes the number that meets it. If the
+  goal is met by something else, close the issue with a comment citing the evidence.
+- **Do not move the goal to fit the result.** Loosening it is never yours; tightening it is the
+  user's call, and a new target after the goal is met is a new issue.
 
 ## 5a. State the required multiple first, or slicing becomes avoidance
 

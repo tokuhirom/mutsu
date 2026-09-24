@@ -14,7 +14,22 @@ benchmark. See docs/issue-workflow.md.
 
 Its implementation agent runs SOLO: parallel perf agents on one box produce
 measurements that drift and never converge.
+
+The Goal section is required: the issue closes when it is met, and not
+before. See "A todo:perf issue states its goal" in docs/issue-workflow.md.
 -->
+
+## Goal (close condition)
+
+<!-- One metric, where it is read, and the threshold. Pick the shape that
+     matches why you are filing:
+     - slower than rakudo: "`<bench>+jit` row in bench-history.tsv at or under
+       Nx rakudo" (or "faster than rakudo");
+     - a regression: "`<bench>` row back within 3% of <baseline commit>",
+       naming the commit that regressed it;
+     - wrong complexity: "<operation> is O(<target>) per call, shown by
+       scripts/<family>-complexity-check.sh" -- a constant-factor win does
+       not meet this. -->
 
 ## Benchmark
 
