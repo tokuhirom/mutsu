@@ -75,6 +75,18 @@ impl TrirCompiler<'_> {
             self.ops.push(TrOp::ConcatBin);
             return Some(TrKind::Obj);
         }
+        // An integer literal is a native `int` operand only while it fits in
+        // 32 bits; a wider one is an `Int` (measured against rakudo:
+        // `-> int $a { $a + 2147483647 }` wraps at the int64 edge, but
+        // `$a + 2147483648` promotes to a big Int). Native `AddI`/`SubI`/`MulI`
+        // would wrap, so such an expression declines to the untyped path,
+        // whose `Int` arithmetic promotes. Comparisons cannot overflow and stay.
+        if matches!(op, TokenKind::Plus | TokenKind::Minus | TokenKind::Star)
+            && (is_wide_int_literal(left) || is_wide_int_literal(right))
+        {
+            self.note_decline(|| format!("an Int literal wider than 32 bits in {op:?}"));
+            return None;
+        }
         // Only arithmetic and comparison on operands the compiler already
         // proved native. A boxed operand declines: `+` on two boxed values is
         // full Raku multi-dispatch (a user `infix:<+>` may override it), and
@@ -139,4 +151,11 @@ impl TrirCompiler<'_> {
         self.ops.extend_from_slice(ops);
         Some(result)
     }
+}
+
+/// An integer literal outside the signed 32-bit range, which Raku types as
+/// `Int` rather than as a native `int` operand.
+fn is_wide_int_literal(e: &Expr) -> bool {
+    matches!(e, Expr::Literal(v)
+        if matches!(v.view(), crate::value::ValueView::Int(i) if i32::try_from(i).is_err()))
 }
