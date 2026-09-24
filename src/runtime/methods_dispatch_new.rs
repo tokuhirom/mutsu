@@ -355,7 +355,7 @@ impl Interpreter {
         let plan = self.native_ctor_plan(class_name);
         crate::alloc_scope_named!(_sc_defaults, "bless:attr-defaults");
         let cn_resolved = class_name.as_str();
-        let mut attributes = AttrMap::with_capacity(plan.class_attrs.len());
+        let mut attributes = AttrMap::with_layout(plan.layout.clone());
         let mut deferred_defaults: Vec<super::attr_build_defaults::DeferredAttrDefault> =
             Vec::new();
         // Resolve every named argument to its declared-attribute index ONCE (a
@@ -978,12 +978,16 @@ impl Interpreter {
     /// `has $.x = EXPR` default expressions. Built once per class, into
     /// `NativeCtorPlan::create_slots`.
     // Cost: O(d * a), d = ancestors of the class, a = its attributes.
-    pub(super) fn create_default_attr_slots(&mut self, class_name: &str) -> AttrMap {
+    pub(super) fn create_default_attr_slots(
+        &mut self,
+        class_name: &str,
+        layout: &std::sync::Arc<crate::value::ClassLayout>,
+    ) -> AttrMap {
         if !self.registry().classes.contains_key(class_name) {
             return AttrMap::new();
         }
         let class_attrs = self.collect_class_attributes(class_name);
-        let mut attributes = AttrMap::with_capacity(class_attrs.len());
+        let mut attributes = AttrMap::with_layout(layout.clone());
         for attr in class_attrs {
             let attr_name = attr.name;
             let type_constraint = self.get_attr_type_constraint(class_name, &attr_name);

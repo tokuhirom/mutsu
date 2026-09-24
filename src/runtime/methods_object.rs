@@ -482,8 +482,9 @@ impl Interpreter {
                 .map(|s| (*s, Value::NIL))
                 .collect::<crate::value::AttrMap>(),
         );
+        let layout = std::sync::Arc::new(crate::value::ClassLayout::new(attr_syms.iter().copied()));
         let create_slots = std::sync::Arc::new(if registered {
-            self.create_default_attr_slots(cn_resolved)
+            self.create_default_attr_slots(cn_resolved, &layout)
         } else {
             crate::value::AttrMap::new()
         });
@@ -507,6 +508,7 @@ impl Interpreter {
             probe_skeleton,
             user_buildall,
             create_slots,
+            layout,
         });
         // Don't freeze a plan for a class that is not (yet) registered: e.g. a
         // role punned to a class on first use would otherwise keep a stale

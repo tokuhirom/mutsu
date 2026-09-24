@@ -250,6 +250,43 @@ impl InstanceAttrs {
         write_attrs(&self.attributes).insert_through(key, value);
     }
 
+    /// Store `value` in declared slot `slot` of an instance laid out by layout
+    /// `layout_id`, the way [`Self::store_through_container`] stores by key --
+    /// the write half of a per-site attribute cache hit (ADR-0121 D3). Returns
+    /// the slot's storage key, or hands `value` back when the instance is not
+    /// (or no longer) in that shape: another layout, an undeclared attribute
+    /// that could outrank the slot, or an absent slot.
+    // Cost: O(1).
+    pub(crate) fn store_slot_through(
+        &self,
+        layout_id: u32,
+        slot: usize,
+        value: Value,
+    ) -> Result<Symbol, Value> {
+        let mut guard = write_attrs(&self.attributes);
+        let Some(key) = guard
+            .layout()
+            .filter(|l| l.id() == layout_id)
+            .map(|l| l.key_at(slot))
+        else {
+            return Err(value);
+        };
+        if guard.has_undeclared() {
+            return Err(value);
+        }
+        match guard.slot_mut(slot) {
+            Some(held) => {
+                if let ValueView::ContainerRef(cell) = held.view() {
+                    *cell.lock().unwrap_or_else(|e| e.into_inner()) = value;
+                } else {
+                    *held = value;
+                }
+                Ok(key)
+            }
+            None => Err(value),
+        }
+    }
+
     /// Store `value` at `key`, writing *through* a promoted `ContainerRef` cell
     /// when the slot holds one instead of replacing it.
     ///

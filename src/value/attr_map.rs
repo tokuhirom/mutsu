@@ -23,7 +23,7 @@ use crate::symbol::Symbol;
 use crate::value::ValueMap;
 use rustc_hash::FxHashMap;
 use std::collections::HashMap;
-use std::collections::hash_map::Entry;
+use std::sync::Arc;
 
 /// Anything usable as an attribute key. `Symbol` is the native (hot) form; the
 /// string forms intern on the fly for cold call sites.
@@ -140,32 +140,211 @@ pub(crate) fn attr_twigil_sigil(name: &str) -> Option<char> {
 /// [`AttrMap::objat_which`]).
 pub(crate) const OBJAT_STR_PAYLOAD: &str = "__str_which";
 
-/// The attribute map of an instance: `Symbol -> Value`, hashed with `FxHash`.
-#[derive(Debug, Clone, Default, PartialEq)]
-pub(crate) struct AttrMap(FxHashMap<Symbol, Value>);
+/// The declared-attribute layout of one composed class (ADR-0121 D2): the
+/// storage key of every attribute its instances carry, in MRO order (parents
+/// first), and the key -> slot index. Built once per class from the
+/// constructor plan and shared by every instance constructed from it.
+///
+/// A layout is immutable. A class whose shape changes after instances exist
+/// (`augment`, a late role composition) gets a NEW layout with a new
+/// [`ClassLayout::id`]; the instances already built keep the old one, which
+/// stays correct for them.
+#[derive(Debug)]
+pub(crate) struct ClassLayout {
+    id: u32,
+    keys: Box<[Symbol]>,
+    index: FxHashMap<Symbol, u32>,
+    /// Bare names some key of this layout qualifies (`Owner\0bare`,
+    /// `Owner\0<sigil>bare`): a private attribute declared in both a parent
+    /// and a child, or a sigil-colliding one. Which key an access to such a
+    /// name picks depends on the running method's owner, so a per-site cache
+    /// keyed by layout alone must not remember it.
+    qualified_bares: rustc_hash::FxHashSet<Symbol>,
+}
+
+impl ClassLayout {
+    /// A layout over `keys`, in order. A key listed twice keeps its first
+    /// slot.
+    pub(crate) fn new(keys: impl IntoIterator<Item = Symbol>) -> Self {
+        static NEXT_ID: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(1);
+        let mut ordered = Vec::new();
+        let mut index = FxHashMap::default();
+        let mut qualified_bares = rustc_hash::FxHashSet::default();
+        for key in keys {
+            if let std::collections::hash_map::Entry::Vacant(e) = index.entry(key) {
+                e.insert(ordered.len() as u32);
+                ordered.push(key);
+                if let Some((_, rest)) = key.as_str().split_once('\0') {
+                    let bare = rest.strip_prefix(['$', '@', '%', '&']).unwrap_or(rest);
+                    qualified_bares.insert(Symbol::intern(bare));
+                }
+            }
+        }
+        Self {
+            id: NEXT_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
+            keys: ordered.into_boxed_slice(),
+            index,
+            qualified_bares,
+        }
+    }
+
+    /// The slot a per-site cache may remember for an access to the attribute
+    /// `bare` that resolved to storage key `key`, or `None` when the choice of
+    /// `key` could differ for another access through the same site on this
+    /// layout.
+    ///
+    /// The key resolution tries, in order, the owner-qualified private keys
+    /// (private access only), `bare`, and the sigil-prefixed key. A cached slot
+    /// is only sound if every candidate ranked above `key` can never be a
+    /// declared slot of this layout: a declared slot that is merely absent now
+    /// could be filled later and would then win. Candidates in the undeclared
+    /// overflow are the caller's to rule out, per access (see
+    /// [`AttrMap::has_undeclared`]).
+    // Cost: O(1).
+    pub(crate) fn site_cacheable_slot(
+        &self,
+        key: Symbol,
+        bare: Symbol,
+        is_private: bool,
+    ) -> Option<usize> {
+        let slot = self.slot_of(key)?;
+        if is_private && self.qualified_bares.contains(&bare) {
+            return None;
+        }
+        if key != bare && self.slot_of(bare).is_some() {
+            return None;
+        }
+        (slot <= u32::MAX as usize).then_some(slot)
+    }
+
+    /// The storage key of declared slot `slot`.
+    #[inline]
+    pub(crate) fn key_at(&self, slot: usize) -> Symbol {
+        self.keys[slot]
+    }
+
+    /// This layout's identity: distinct for every layout ever built, so a
+    /// cache keyed by it can never confuse two class shapes.
+    #[inline]
+    pub(crate) fn id(&self) -> u32 {
+        self.id
+    }
+
+    /// The slot of `key`, if the layout declares it.
+    // Cost: O(1), one hash probe of an interned id.
+    #[inline]
+    pub(crate) fn slot_of(&self, key: Symbol) -> Option<usize> {
+        self.index.get(&key).map(|&i| i as usize)
+    }
+
+    /// Number of declared slots.
+    #[inline]
+    pub(crate) fn len(&self) -> usize {
+        self.keys.len()
+    }
+}
+
+/// The attribute map of an instance: `Symbol -> Value`.
+///
+/// An instance built from a class's constructor plan carries that class's
+/// [`ClassLayout`]: its declared attributes live in `slots` (one per layout
+/// key, `None` while the attribute is absent), and anything else -- an
+/// attribute of a builtin base the registry does not know, an internal
+/// marker -- lives in `extra`. A map with no layout keeps everything in
+/// `extra`, which is exactly the old representation.
+///
+/// Every operation stays key-based, so callers are unaffected by where a key
+/// lives. What changes observably is iteration order: slots in declaration
+/// order first, then `extra`. (The hash order it replaces was arbitrary.)
+#[derive(Debug, Clone, Default)]
+pub(crate) struct AttrMap {
+    layout: Option<Arc<ClassLayout>>,
+    slots: Vec<Option<Value>>,
+    extra: FxHashMap<Symbol, Value>,
+}
+
+impl PartialEq for AttrMap {
+    /// Map equality: the same keys with equal values, wherever they live.
+    fn eq(&self, other: &Self) -> bool {
+        self.len() == other.len() && self.iter().all(|(k, v)| other.get(*k) == Some(v))
+    }
+}
+
+/// A view of one key of an [`AttrMap`], the `hash_map::Entry` subset callers
+/// use: a declared slot, or an entry of the undeclared overflow.
+pub(crate) enum AttrEntry<'a> {
+    Slot(&'a mut Option<Value>),
+    Extra(std::collections::hash_map::Entry<'a, Symbol, Value>),
+}
+
+impl<'a> AttrEntry<'a> {
+    pub(crate) fn or_insert(self, value: Value) -> &'a mut Value {
+        match self {
+            AttrEntry::Slot(slot) => slot.get_or_insert(value),
+            AttrEntry::Extra(e) => e.or_insert(value),
+        }
+    }
+
+    pub(crate) fn or_insert_with(self, f: impl FnOnce() -> Value) -> &'a mut Value {
+        match self {
+            AttrEntry::Slot(slot) => slot.get_or_insert_with(f),
+            AttrEntry::Extra(e) => e.or_insert_with(f),
+        }
+    }
+}
 
 impl AttrMap {
     pub(crate) fn new() -> Self {
         Self::default()
     }
 
-    /// Like [`Self::new`] but pre-sized for `capacity` entries, so a
-    /// construction path that knows its final attribute count up front (e.g.
-    /// `bless`/`CREATE`/the native default ctor, all driven by a per-class
-    /// attribute list of known length) avoids `hashbrown`'s incremental
-    /// `reserve_rehash` growth on every `insert`.
+    /// An empty map over `layout`: every declared slot present but absent.
+    pub(crate) fn with_layout(layout: Arc<ClassLayout>) -> Self {
+        Self {
+            slots: vec![None; layout.len()],
+            layout: Some(layout),
+            extra: FxHashMap::default(),
+        }
+    }
+
+    /// The layout this map's declared attributes are laid out by, if any.
     #[inline]
-    pub(crate) fn with_capacity(capacity: usize) -> Self {
-        Self(FxHashMap::with_capacity_and_hasher(
-            capacity,
-            Default::default(),
-        ))
+    pub(crate) fn layout(&self) -> Option<&Arc<ClassLayout>> {
+        self.layout.as_ref()
+    }
+
+    /// Whether any attribute lives outside the layout's declared slots.
+    #[inline]
+    pub(crate) fn has_undeclared(&self) -> bool {
+        !self.extra.is_empty()
+    }
+
+    /// The value in declared slot `slot`, `None` when absent. A caller that
+    /// resolved `slot` against [`Self::layout`] reads it with no hashing.
+    // Cost: O(1).
+    #[inline]
+    pub(crate) fn slot(&self, slot: usize) -> Option<&Value> {
+        self.slots.get(slot).and_then(Option::as_ref)
+    }
+
+    /// Mutable form of [`Self::slot`].
+    #[inline]
+    pub(crate) fn slot_mut(&mut self, slot: usize) -> Option<&mut Value> {
+        self.slots.get_mut(slot).and_then(Option::as_mut)
+    }
+
+    #[inline]
+    fn slot_index(&self, sym: Symbol) -> Option<usize> {
+        self.layout.as_ref().and_then(|l| l.slot_of(sym))
     }
 
     #[inline]
     pub(crate) fn get<K: AttrKey>(&self, key: K) -> Option<&Value> {
         let sym = key.lookup_symbol()?;
-        self.0.get(&sym)
+        match self.slot_index(sym) {
+            Some(slot) => self.slots[slot].as_ref(),
+            None => self.extra.get(&sym),
+        }
     }
 
     /// The identity text of an `ObjAt` / `ValueObjAt` instance. `Str.WHICH`
@@ -183,62 +362,85 @@ impl AttrMap {
     #[inline]
     pub(crate) fn get_mut<K: AttrKey>(&mut self, key: K) -> Option<&mut Value> {
         let sym = key.lookup_symbol()?;
-        self.0.get_mut(&sym)
-    }
-
-    #[inline]
-    pub(crate) fn contains_key<K: AttrKey>(&self, key: K) -> bool {
-        match key.lookup_symbol() {
-            Some(sym) => self.0.contains_key(&sym),
-            None => false,
+        match self.slot_index(sym) {
+            Some(slot) => self.slots[slot].as_mut(),
+            None => self.extra.get_mut(&sym),
         }
     }
 
     #[inline]
+    pub(crate) fn contains_key<K: AttrKey>(&self, key: K) -> bool {
+        self.get(key).is_some()
+    }
+
+    #[inline]
     pub(crate) fn insert<K: AttrKey>(&mut self, key: K, value: Value) -> Option<Value> {
-        self.0.insert(key.into_symbol(), value)
+        let sym = key.into_symbol();
+        match self.slot_index(sym) {
+            Some(slot) => self.slots[slot].replace(value),
+            None => self.extra.insert(sym, value),
+        }
     }
 
     #[inline]
     pub(crate) fn remove<K: AttrKey>(&mut self, key: K) -> Option<Value> {
         let sym = key.lookup_symbol()?;
-        self.0.remove(&sym)
+        match self.slot_index(sym) {
+            Some(slot) => self.slots[slot].take(),
+            None => self.extra.remove(&sym),
+        }
     }
 
     #[inline]
-    pub(crate) fn entry<K: AttrKey>(&mut self, key: K) -> Entry<'_, Symbol, Value> {
-        self.0.entry(key.into_symbol())
+    pub(crate) fn entry<K: AttrKey>(&mut self, key: K) -> AttrEntry<'_> {
+        let key = key.into_symbol();
+        match self.slot_index(key) {
+            Some(slot) => AttrEntry::Slot(&mut self.slots[slot]),
+            None => AttrEntry::Extra(self.extra.entry(key)),
+        }
+    }
+
+    /// Number of attributes present.
+    // Cost: O(s), s = declared slots.
+    pub(crate) fn len(&self) -> usize {
+        self.slots.iter().filter(|v| v.is_some()).count() + self.extra.len()
     }
 
     #[inline]
     pub(crate) fn is_empty(&self) -> bool {
-        self.0.is_empty()
+        self.extra.is_empty() && self.slots.iter().all(Option::is_none)
     }
 
     pub(crate) fn clear(&mut self) {
-        self.0.clear();
+        self.slots.iter_mut().for_each(|v| *v = None);
+        self.extra.clear();
+    }
+
+    /// The present attributes: declared slots in layout order, then the
+    /// undeclared ones.
+    pub(crate) fn iter(&self) -> impl Iterator<Item = (&Symbol, &Value)> + '_ {
+        let keys: &[Symbol] = self.layout.as_ref().map_or(&[], |l| &l.keys);
+        keys.iter()
+            .zip(self.slots.iter())
+            .filter_map(|(k, v)| v.as_ref().map(|v| (k, v)))
+            .chain(self.extra.iter())
     }
 
     #[inline]
-    pub(crate) fn iter(&self) -> std::collections::hash_map::Iter<'_, Symbol, Value> {
-        self.0.iter()
+    pub(crate) fn keys(&self) -> impl Iterator<Item = &Symbol> + '_ {
+        self.iter().map(|(k, _)| k)
     }
 
     #[inline]
-    pub(crate) fn keys(&self) -> std::collections::hash_map::Keys<'_, Symbol, Value> {
-        self.0.keys()
+    pub(crate) fn values(&self) -> impl Iterator<Item = &Value> + '_ {
+        self.iter().map(|(_, v)| v)
     }
 
-    #[inline]
-    pub(crate) fn values(&self) -> std::collections::hash_map::Values<'_, Symbol, Value> {
-        self.0.values()
-    }
-
-    #[inline]
-    pub(crate) fn values_mut(
-        &mut self,
-    ) -> std::collections::hash_map::ValuesMut<'_, Symbol, Value> {
-        self.0.values_mut()
+    pub(crate) fn values_mut(&mut self) -> impl Iterator<Item = &mut Value> + '_ {
+        self.slots
+            .iter_mut()
+            .filter_map(Option::as_mut)
+            .chain(self.extra.values_mut())
     }
 
     /// Assign into the slot at `key`, writing *through* an existing
@@ -256,7 +458,7 @@ impl AttrMap {
 
     /// The boxed-word before-image of this map; see [`AttrBits`].
     pub(crate) fn bits_image(&self) -> AttrBits {
-        AttrBits(self.0.iter().map(|(k, v)| (*k, v.nanbox_bits())).collect())
+        AttrBits(self.iter().map(|(k, v)| (*k, v.nanbox_bits())).collect())
     }
 }
 
@@ -297,49 +499,67 @@ impl AttrBits {
 
 impl Extend<(Symbol, Value)> for AttrMap {
     fn extend<T: IntoIterator<Item = (Symbol, Value)>>(&mut self, iter: T) {
-        self.0.extend(iter);
+        for (k, v) in iter {
+            self.insert(k, v);
+        }
     }
 }
 
 impl FromIterator<(Symbol, Value)> for AttrMap {
     fn from_iter<T: IntoIterator<Item = (Symbol, Value)>>(iter: T) -> Self {
-        Self(iter.into_iter().collect())
+        Self {
+            extra: iter.into_iter().collect(),
+            ..Self::default()
+        }
     }
 }
 
 impl FromIterator<(String, Value)> for AttrMap {
     fn from_iter<T: IntoIterator<Item = (String, Value)>>(iter: T) -> Self {
-        Self(
-            iter.into_iter()
-                .map(|(k, v)| (Symbol::intern(&k), v))
-                .collect(),
-        )
+        iter.into_iter()
+            .map(|(k, v)| (Symbol::intern(&k), v))
+            .collect()
     }
 }
 
 impl<'a> FromIterator<(&'a str, Value)> for AttrMap {
     fn from_iter<T: IntoIterator<Item = (&'a str, Value)>>(iter: T) -> Self {
-        Self(
-            iter.into_iter()
-                .map(|(k, v)| (Symbol::intern(k), v))
-                .collect(),
-        )
+        iter.into_iter()
+            .map(|(k, v)| (Symbol::intern(k), v))
+            .collect()
     }
 }
 
+/// Keeps a declared slot's `(key, value)` when the slot is present.
+type PresentSlot = fn((Symbol, Option<Value>)) -> Option<(Symbol, Value)>;
+
 impl IntoIterator for AttrMap {
     type Item = (Symbol, Value);
-    type IntoIter = std::collections::hash_map::IntoIter<Symbol, Value>;
+    type IntoIter = std::iter::Chain<
+        std::iter::FilterMap<
+            std::iter::Zip<std::vec::IntoIter<Symbol>, std::vec::IntoIter<Option<Value>>>,
+            PresentSlot,
+        >,
+        std::collections::hash_map::IntoIter<Symbol, Value>,
+    >;
     fn into_iter(self) -> Self::IntoIter {
-        self.0.into_iter()
+        let keys: Vec<Symbol> = self
+            .layout
+            .as_ref()
+            .map_or_else(Vec::new, |l| l.keys.to_vec());
+        let present: PresentSlot = |(k, v)| v.map(|v| (k, v));
+        keys.into_iter()
+            .zip(self.slots)
+            .filter_map(present)
+            .chain(self.extra)
     }
 }
 
 impl<'a> IntoIterator for &'a AttrMap {
     type Item = (&'a Symbol, &'a Value);
-    type IntoIter = std::collections::hash_map::Iter<'a, Symbol, Value>;
+    type IntoIter = Box<dyn Iterator<Item = (&'a Symbol, &'a Value)> + 'a>;
     fn into_iter(self) -> Self::IntoIter {
-        self.0.iter()
+        Box::new(self.iter())
     }
 }
 

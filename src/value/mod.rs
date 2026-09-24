@@ -506,6 +506,7 @@ mod aliased_mut;
 mod array_data_ops;
 /// The instance-attribute map (`Symbol -> Value`); see [`AttrMap`].
 mod attr_map;
+mod attr_site;
 pub(crate) mod container_lock;
 mod display;
 /// Deferred vivification path steps ([`EntryStep`] / [`EntryTerminal`]).
@@ -574,8 +575,9 @@ mod seq_body_shapes;
 pub(crate) use crate::gc::gc_contents_mut;
 pub(crate) use aliased_mut::gc_data_mut;
 pub(crate) use attr_map::{
-    AttrBits, AttrKey, AttrMap, OBJAT_STR_PAYLOAD, attr_twigil_base, attr_twigil_sigil,
+    AttrBits, AttrKey, AttrMap, ClassLayout, OBJAT_STR_PAYLOAD, attr_twigil_base, attr_twigil_sigil,
 };
+pub(crate) use attr_site::AttrSiteCaches;
 pub(crate) use entry_path::EntryRoot;
 pub use entry_path::EntryStep;
 pub(crate) use entry_path::EntryTerminal;

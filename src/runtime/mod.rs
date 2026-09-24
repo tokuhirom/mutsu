@@ -1476,6 +1476,10 @@ pub(crate) struct NativeCtorPlan {
     /// collecting the attribute defs plus a type-constraint resolution per
     /// attribute (ADR-0121 D1, #9134).
     pub(crate) create_slots: Arc<crate::value::AttrMap>,
+    /// The slot layout of this class's instances (ADR-0121 D2): one slot per
+    /// `attr_syms` key, in the same order. Every construction path that works
+    /// from this plan lays its instance out by it.
+    pub(crate) layout: Arc<crate::value::ClassLayout>,
 }
 
 /// The no-initializer seed of one `$`-sigil attribute, precomputed per class
