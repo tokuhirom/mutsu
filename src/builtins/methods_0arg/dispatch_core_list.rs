@@ -104,6 +104,13 @@ pub(super) fn dispatch(
         // Cost: O(e log e) comparisons, e = elements of the invocant (copied, then
         // sorted with `compare_values`).
         "sort" => Some(match target.view() {
+            // An object element may stringify through a user `Str`, which
+            // only the interpreter's dispatched `cmp` can call.
+            ValueView::Array(items, _)
+                if crate::runtime::utils::sort_needs_dispatched_cmp(items.iter()) =>
+            {
+                None
+            }
             ValueView::Array(items, kind) => {
                 let mut sorted = if kind == crate::value::ArrayKind::Shaped
                     && items

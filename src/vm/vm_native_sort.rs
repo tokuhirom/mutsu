@@ -60,6 +60,14 @@ impl SortCaller for VmSortCaller<'_> {
     fn map_keys(&mut self, callable: &Value, items: &[Value]) -> Option<Vec<Value>> {
         crate::runtime::methods_collection_ops::sort::sort_keys_batched(self.0, callable, items)
     }
+
+    fn has_user_stringifier(&mut self, item: &Value) -> bool {
+        self.0.has_user_stringifier_operand(&item.deref_container())
+    }
+
+    fn dispatched_cmp(&mut self, a: &Value, b: &Value) -> std::cmp::Ordering {
+        crate::runtime::methods_collection_ops::sort::dispatched_cmp_ordering(self.0, a, b)
+    }
 }
 
 impl Interpreter {

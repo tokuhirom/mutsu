@@ -337,7 +337,20 @@ impl Interpreter {
                         (c, plain)
                     })
                     .collect();
-                keyed.sort_by(|a, b| crate::runtime::compare_values(&a.1, &b.1).cmp(&0));
+                // An element with its own `Str`/`Stringy` orders through the
+                // dispatched `cmp`, as `.sort` does (see `sort_items_generic`).
+                if keyed
+                    .iter()
+                    .any(|(_, v)| self.has_user_stringifier_operand(v))
+                {
+                    keyed.sort_by(|a, b| {
+                        crate::runtime::methods_collection_ops::sort::dispatched_cmp_ordering(
+                            self, &a.1, &b.1,
+                        )
+                    });
+                } else {
+                    keyed.sort_by(|a, b| crate::runtime::compare_values(&a.1, &b.1).cmp(&0));
+                }
                 Value::seq_element_containers(keyed.into_iter().map(|(c, _)| c).collect())
             }
             _ => return None,

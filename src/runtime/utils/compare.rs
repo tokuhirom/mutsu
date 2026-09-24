@@ -123,6 +123,17 @@ pub(crate) fn to_complex_parts(val: &Value) -> Option<(f64, f64)> {
     }
 }
 
+/// Whether a default-order sort over `items` must leave the pure
+/// [`compare_values`] fast path: an object element may define its own
+/// `Str`/`Stringy`, which only the dispatched `infix:<cmp>` honours (see
+/// `sort_items_generic`). Pure layers decline and let the interpreter decide.
+// Cost: O(e), e = elements (one tag probe each).
+pub(crate) fn sort_needs_dispatched_cmp<'a>(items: impl IntoIterator<Item = &'a Value>) -> bool {
+    items
+        .into_iter()
+        .any(|v| matches!(v.deref_container().view(), ValueView::Instance { .. }))
+}
+
 pub(crate) fn compare_values(a: &Value, b: &Value) -> i32 {
     fn compare_infinite_num_against_nonnumeric_str(num: f64, s: &str) -> Option<i32> {
         if !num.is_infinite() || s.trim().parse::<f64>().is_ok() {

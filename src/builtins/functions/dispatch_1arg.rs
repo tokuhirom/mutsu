@@ -756,6 +756,18 @@ pub(crate) fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Val
             }))
         }
         "sort" => {
+            // An object element may stringify through a user `Str`, which
+            // only the interpreter's dispatched `cmp` can call.
+            if let ValueView::Array(items, ..) = arg.view()
+                && crate::runtime::utils::sort_needs_dispatched_cmp(items.iter())
+            {
+                return None;
+            }
+            if let ValueView::Seq(items) = arg.view()
+                && crate::runtime::utils::sort_needs_dispatched_cmp(items.iter())
+            {
+                return None;
+            }
             if crate::runtime::utils::is_shaped_array(arg) {
                 let mut leaves = crate::runtime::utils::shaped_array_leaves(arg);
                 leaves.sort_by(|a, b| crate::runtime::compare_values(a, b).cmp(&0));
