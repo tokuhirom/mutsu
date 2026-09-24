@@ -14,7 +14,9 @@ same grep-able form:
 method handler, a builtin routine or an `nqp::` op, or changing what an
 existing one costs, requires the `// Cost:` line directly above it (or a
 `/// Cost:` line in its doc comment). If the new bound is worse than the
-reference implementation's, file a `todo:perf` issue and put its real
+reference implementation's, file a `todo:perf` issue — its goal is the
+reference order, so it closes when the measured growth matches and the
+suffix is dropped, not on a constant-factor win — and put its real
 number in the suffix; a literal `#NNNN` is never committed outside this
 document. Families not yet audited are annotated as their code is touched.
 
