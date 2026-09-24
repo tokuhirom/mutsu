@@ -301,6 +301,50 @@ pub(crate) fn inject_implicit_rule_ws(pattern: &str) -> String {
             i += 1;
             continue;
         }
+        // A line comment is regex syntax, not pattern layout.  Preserve its
+        // text and terminating newline while adding rule whitespace: dropping
+        // the newline makes the comment consume every following atom in the
+        // generated pattern (for example `rule ruleset { <!after '@'> # ...
+        // <selectors> ... }`).  Embedded `#` backtick comments end at their
+        // matching delimiter and may be followed by more pattern text.
+        if c == '#' && brace_depth == 0 && angle_depth == 0 {
+            out.push(c);
+            i += 1;
+            if chars.get(i) == Some(&'`') {
+                out.push('`');
+                i += 1;
+                if let Some(&open) = chars.get(i)
+                    && let Some(close) = crate::parser::helpers::matching_bracket(open)
+                {
+                    let mut depth = 1usize;
+                    out.push(open);
+                    i += 1;
+                    while i < chars.len() {
+                        let ch = chars[i];
+                        out.push(ch);
+                        i += 1;
+                        if ch == open {
+                            depth += 1;
+                        } else if ch == close {
+                            depth -= 1;
+                            if depth == 0 {
+                                break;
+                            }
+                        }
+                    }
+                }
+            } else {
+                while i < chars.len() {
+                    let ch = chars[i];
+                    out.push(ch);
+                    i += 1;
+                    if ch == '\n' {
+                        break;
+                    }
+                }
+            }
+            continue;
+        }
         // Track brace depth to skip ws injection inside code blocks { ... }
         if !in_single && !in_double {
             // Track `<...>` region depth so a literal `{`/`}` inside one
@@ -399,6 +443,19 @@ pub(crate) fn inject_implicit_rule_ws(pattern: &str) -> String {
                 }
                 continue;
             }
+        }
+        if !in_single && !in_double && angle_depth > 0 && c.is_whitespace() {
+            // Whitespace inside an angle assertion is regex syntax layout
+            // (`<?before '}'>'`, `<foo $arg>`, ...), not sigspace between
+            // matching atoms. Preserve it verbatim; inserting `<.ws>` here
+            // changes the assertion's lookup text.
+            let mut j = i;
+            while j < chars.len() && chars[j].is_whitespace() {
+                j += 1;
+            }
+            out.extend(chars[i..j].iter());
+            i = j;
+            continue;
         }
         if !in_single && !in_double && c.is_whitespace() {
             let mut j = i;
@@ -608,8 +665,17 @@ pub(crate) fn inject_separator_ws(pattern: &str) -> String {
                     }
                     i += 1;
                 }
-                let sep: String = chars[sep_start..i].iter().collect();
-                out.push_str(&format!("[ <.ws>? {} <.ws>? ]", sep.trim()));
+                let sep_end = i;
+                let optional = chars.get(i) == Some(&'?');
+                if optional {
+                    i += 1;
+                }
+                let sep: String = chars[sep_start..sep_end].iter().collect();
+                if optional {
+                    out.push_str(&format!("[ <.ws>? {}? <.ws>? ]", sep.trim()));
+                } else {
+                    out.push_str(&format!("[ <.ws>? {} <.ws>? ]", sep.trim()));
+                }
             } else {
                 // Non-bracketed separator: % \, or % ","
                 // Collect the separator atom (could be \X, 'str', "str", or a single char)
@@ -657,8 +723,17 @@ pub(crate) fn inject_separator_ws(pattern: &str) -> String {
                     // Single character separator
                     i += 1;
                 }
-                let sep: String = chars[atom_start..i].iter().collect();
-                out.push_str(&format!("[ <.ws>? {} <.ws>? ]", sep.trim()));
+                let sep_end = i;
+                let optional = chars.get(i) == Some(&'?');
+                if optional {
+                    i += 1;
+                }
+                let sep: String = chars[atom_start..sep_end].iter().collect();
+                if optional {
+                    out.push_str(&format!("[ <.ws>? {}? <.ws>? ]", sep.trim()));
+                } else {
+                    out.push_str(&format!("[ <.ws>? {} <.ws>? ]", sep.trim()));
+                }
             }
             continue;
         }

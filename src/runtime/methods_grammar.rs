@@ -604,8 +604,9 @@ impl Interpreter {
         let saved_made = self.env.get("made").cloned();
         self.env.remove("made");
         self.set_current_package(package_name.to_string());
-        let has_start_rule =
-            self.resolve_token_defs(&start_rule).is_some() || self.has_proto_token(&start_rule);
+        let has_start_rule = self.resolve_token_defs(&start_rule).is_some()
+            || self.has_proto_token(&start_rule)
+            || super::regex::regex_helpers::is_builtin_character_class(&start_rule);
         // A start rule with no `rule`/`token`/`regex`/proto definition may
         // still be an ordinary user-defined `method` -- a well-established
         // idiom for running setup code before delegating to a real rule
@@ -983,6 +984,9 @@ impl Interpreter {
             self.env.insert("/".to_string(), match_obj.clone());
 
             // Invoke action methods if :actions was provided
+            if let Some(actions) = actions_obj.as_mut() {
+                self.replay_repeated_reduce_actions(actions, &text)?;
+            }
             let match_obj = if let Some(ref mut actions) = actions_obj {
                 // Action methods run with `self` bound to the actions object.
                 // Restore the caller's `self` afterwards so a nested sub in the
@@ -1193,6 +1197,30 @@ impl Interpreter {
         text: &str,
     ) -> Result<(), RuntimeError> {
         let entries = super::regex::regex_helpers::ReducedSubruleGuard::take_entries();
+        self.replay_reduce_action_entries(entries, actions, covered, text, false)
+    }
+
+    /// Replay reductions from backtracked alternatives before the successful
+    /// match tree's action walk.  Raku runs those actions as soon as each
+    /// branch reduces, so their observable effects (for example CSS parser
+    /// warnings) precede the effects from the branch that ultimately survives.
+    pub(crate) fn replay_repeated_reduce_actions(
+        &mut self,
+        actions: &mut Value,
+        text: &str,
+    ) -> Result<(), RuntimeError> {
+        let entries = super::regex::regex_helpers::ReducedSubruleGuard::take_repeated_entries();
+        self.replay_reduce_action_entries(entries, actions, None, text, true)
+    }
+
+    fn replay_reduce_action_entries(
+        &mut self,
+        entries: Vec<(String, std::sync::Arc<CapNode>)>,
+        actions: &mut Value,
+        covered: Option<(usize, usize)>,
+        text: &str,
+        ignore_action_errors: bool,
+    ) -> Result<(), RuntimeError> {
         if entries.is_empty() {
             return Ok(());
         }
@@ -1227,7 +1255,9 @@ impl Interpreter {
             self.reduce_cap_node_for_rule(&mut caps, Some(&rtarget), None);
             let match_obj = Self::match_object_from_cap_node(&caps, &rtarget);
             let dispatch = Self::get_action_name(&match_obj).unwrap_or_else(|| rule.clone());
-            if let Err(e) = self.invoke_grammar_actions(match_obj, actions, &dispatch) {
+            if let Err(e) = self.invoke_grammar_actions(match_obj, actions, &dispatch)
+                && !ignore_action_errors
+            {
                 result = Err(e);
                 break;
             }

@@ -199,6 +199,21 @@ impl Interpreter {
                             } else {
                                 EscResult::Multi
                             }
+                        } else if chars.peek().is_some_and(|c| c.is_ascii_digit()) {
+                            let mut oct = String::new();
+                            while chars.peek().is_some_and(|c| c.is_ascii_digit()) {
+                                if let Some(c) = chars.next() {
+                                    oct.push(c);
+                                }
+                            }
+                            all_negated_escapes = false;
+                            if let Some(ch) =
+                                u32::from_str_radix(&oct, 8).ok().and_then(char::from_u32)
+                            {
+                                EscResult::Char(ch)
+                            } else {
+                                EscResult::Multi
+                            }
                         } else {
                             EscResult::Char('o')
                         }
@@ -695,6 +710,31 @@ impl Interpreter {
                         Some(esc)
                     }
                 }
+                'o' => {
+                    if chars.peek() == Some(&'[') {
+                        chars.next();
+                        let mut oct = String::new();
+                        while let Some(&c) = chars.peek() {
+                            if c == ']' {
+                                chars.next();
+                                break;
+                            }
+                            oct.push(c);
+                            chars.next();
+                        }
+                        u32::from_str_radix(&oct, 8).ok().and_then(char::from_u32)
+                    } else if chars.peek().is_some_and(|c| c.is_ascii_digit()) {
+                        let mut oct = String::new();
+                        while chars.peek().is_some_and(|c| c.is_ascii_digit()) {
+                            if let Some(c) = chars.next() {
+                                oct.push(c);
+                            }
+                        }
+                        u32::from_str_radix(&oct, 8).ok().and_then(char::from_u32)
+                    } else {
+                        Some(esc)
+                    }
+                }
                 other => Some(other),
             }
         } else {
@@ -959,7 +999,11 @@ impl Interpreter {
                     // Check if the name resolves as a grammar token in the current package
                     let is_grammar_token = !is_known_builtin
                         && !self.current_package().is_empty()
-                        && self.resolve_token_defs(class_name).is_some();
+                        && (self.resolve_token_defs(class_name).is_some()
+                            || self.has_proto_token_in_pkg(
+                                class_name,
+                                crate::symbol::Symbol::intern(&self.current_package()),
+                            ));
                     if !is_known_builtin && !is_grammar_token {
                         // "No such method" is a runtime resolution failure, not a
                         // parse-time syntax error: such patterns are meant to die

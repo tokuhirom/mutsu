@@ -351,6 +351,11 @@ impl Interpreter {
         match (left.view(), right.view()) {
             // Whatever on RHS always matches (ACCEPTS returns True for any value)
             (_, ValueView::Whatever) => true,
+            // A Match on the RHS is an already-decided match result, so it
+            // passes through like a Bool regardless of the topic. This is
+            // used by dispatch-time `where $<capture>` predicates, where the
+            // capture value is itself a Match rather than a regex literal.
+            (_, ValueView::Instance { .. }) if right.is_match_instance() => right.truthy(),
             // `$x ~~ $obj` where $obj's class defines a user `ACCEPTS` method
             // dispatches `$obj.ACCEPTS($x)` — the core smartmatch protocol.
             // Built-in types (IO::Path / Signature / Buf / Date…) carry native
