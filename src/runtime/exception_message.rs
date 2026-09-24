@@ -17,6 +17,77 @@ use super::Interpreter;
 use crate::value::{Value, ValueView};
 
 impl Interpreter {
+    /// Preserve the few dynamic switches used by standard exception message
+    /// methods while an exception crosses an unwinding boundary.  Raku keeps
+    /// those bindings visible to the exception's later `.message` call; mutsu
+    /// otherwise restores the throwing frame before the method is rendered.
+    pub(crate) fn stamp_thrown_exception_dynamics(&mut self, target: &Value) -> Value {
+        let ValueView::Instance {
+            class_name,
+            attributes,
+            ..
+        } = target.view()
+        else {
+            return target.clone();
+        };
+        let mut attrs = attributes.as_map().clone();
+        for name in ["*DEFAULT-CLEAR", "*DEFAULT-UP", "*DEFAULT-DOWN"] {
+            if let Ok(value) = self.get_dynamic_var(name) {
+                attrs.insert(
+                    format!("__mutsu_thrown_dynamic_{}", name.trim_start_matches('*')),
+                    value,
+                );
+            }
+        }
+        Value::make_instance(class_name, attrs)
+    }
+
+    /// Cache the message computed at the throw site.  This is intentionally
+    /// separate from the public `message` attribute: user exception classes
+    /// may define a method with that name, and the cache is an interpreter
+    /// detail used only to avoid re-running it outside its dynamic scope.
+    pub(crate) fn stamp_thrown_exception_message(target: &Value, message: &str) -> Value {
+        let ValueView::Instance {
+            class_name,
+            attributes,
+            ..
+        } = target.view()
+        else {
+            return target.clone();
+        };
+        let mut attrs = attributes.as_map().clone();
+        attrs.insert(
+            "__mutsu_thrown_message".to_string(),
+            Value::str(message.to_string()),
+        );
+        Value::make_instance(class_name, attrs)
+    }
+
+    fn call_message_with_thrown_dynamics(
+        &mut self,
+        target: &Value,
+    ) -> Result<Value, crate::value::RuntimeError> {
+        let mut saved = Vec::new();
+        if let ValueView::Instance { attributes, .. } = target.view() {
+            for name in ["*DEFAULT-CLEAR", "*DEFAULT-UP", "*DEFAULT-DOWN"] {
+                let attr = format!("__mutsu_thrown_dynamic_{}", name.trim_start_matches('*'));
+                if let Some(value) = attributes.as_map().get(&attr) {
+                    saved.push((name.to_string(), self.env().get(name).cloned()));
+                    self.env_mut().insert(name.to_string(), value.clone());
+                }
+            }
+        }
+        let result = self.call_method_with_values(target.clone(), "message", vec![]);
+        for (name, previous) in saved {
+            if let Some(value) = previous {
+                self.env_mut().insert(name, value);
+            } else {
+                self.env_mut().remove(&name);
+            }
+        }
+        result
+    }
+
     /// The message of an exception instance, derived the way raku derives it: a
     /// user-defined `method message` wins over the stored attribute, which is
     /// only the default implementation.
@@ -34,11 +105,21 @@ impl Interpreter {
         else {
             return None;
         };
+        // A user-defined `message` can depend on a dynamic variable that was
+        // active at `.throw` time.  The VM has already evaluated that message
+        // to construct the RuntimeError; retain that value so rendering the
+        // exception after unwinding does not re-evaluate it outside the
+        // dynamic scope.
+        if let Some(msg) = attributes.as_map().get("__mutsu_thrown_message")
+            && !msg.is_nil()
+        {
+            return Some(msg.to_string_value());
+        }
         let cn = class_name.resolve();
         // A user `method message` is the authority: it may compute the text from
         // the exception's other attributes and cache it into `$!message`.
         if self.has_user_method(&cn, "message")
-            && let Ok(v) = self.call_method_with_values(target.clone(), "message", vec![])
+            && let Ok(v) = self.call_message_with_thrown_dynamics(target)
             && !v.is_nil()
             && !matches!(v.view(), ValueView::Package(_))
         {

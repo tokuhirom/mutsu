@@ -562,7 +562,9 @@ impl Interpreter {
         // the plain-Hash fallback below would REPLACE the instance with a
         // fresh Hash. Only fires when the class actually declares the method,
         // so `class MyHash is Hash {}` keeps the container-subclass path.
-        if let Some(target) = self.env().get(&var_name).cloned()
+        if let Some(target) = target_slot
+            .and_then(|slot| self.locals.get(slot as usize).cloned())
+            .or_else(|| self.env().get(&var_name).cloned())
             && let ValueView::Instance { class_name, .. } = target.view()
         {
             let cls = class_name.resolve();
@@ -581,6 +583,10 @@ impl Interpreter {
             if self
                 .resolve_method_with_owner(&cls, at_method, std::slice::from_ref(&idx_arg))
                 .is_some_and(|(_, def)| def.is_rw)
+                && !matches!(
+                    self.stack.last().map(Value::view),
+                    Some(ValueView::Pair(n, _)) if n == "__mutsu_bind_index_value"
+                )
             {
                 let raw_val = self.stack.pop().unwrap_or(Value::NIL);
                 let (val, _) = Self::unwrap_bind_index_value(raw_val);
@@ -644,7 +650,22 @@ impl Interpreter {
             } else {
                 "ASSIGN-KEY"
             };
-            let method = if is_bind && self.has_user_method(&cls, bind_method) {
+            // A role-composed protocol method is visible to ordinary method
+            // dispatch even when it is not recorded as a direct class method.
+            // Probe the resolved candidate here so a role's default
+            // `BIND-POS` (Array::Agnostic's deliberate throwing default is one
+            // example) is not mistaken for an absent protocol and bypassed by
+            // the generic lvalue fallback.
+            let bind_method_available = is_bind
+                && self
+                    .resolve_method_with_owner_invocant(
+                        &cls,
+                        bind_method,
+                        &[idx.clone(), Value::NIL],
+                        &target,
+                    )
+                    .is_some();
+            let method = if bind_method_available {
                 Some(bind_method)
             } else if self.has_user_method(&cls, assign_method) {
                 Some(assign_method)

@@ -1679,16 +1679,39 @@ impl Interpreter {
         if stmts.len() != 1 {
             return Ok(None);
         }
-        let Stmt::Expr(Expr::MethodCall {
-            target: inner_target,
-            name,
-            args: inner_args,
-            ..
-        }) = stmts[0]
-        else {
-            return Ok(None);
+        let (inner_target, inner_method, inner_args) = match stmts[0] {
+            Stmt::Expr(Expr::MethodCall {
+                target: inner_target,
+                name,
+                args: inner_args,
+                ..
+            }) => (inner_target.as_ref(), name.as_str().to_string(), inner_args),
+            // The parser lowers a method-call lvalue to this helper call in
+            // ordinary executable code. Raw accessor methods need to retain
+            // their write-through meaning after that lowering, too: the
+            // generated `ASSIGN-POS` body for
+            // `self.AT-POS($i) = value` is a single
+            // `__mutsu_assign_method_lvalue(...)` call rather than a literal
+            // MethodCall AST node.
+            Stmt::Expr(Expr::Call { name, args })
+                if name.as_str() == "__mutsu_assign_method_lvalue"
+                    && args.len() >= 3
+                    && matches!(args[2], Expr::ArrayLiteral(_)) =>
+            {
+                let Expr::Literal(method_value) = &args[1] else {
+                    return Ok(None);
+                };
+                let ValueView::Str(method_name) = method_value.view() else {
+                    return Ok(None);
+                };
+                let Expr::ArrayLiteral(inner_args) = &args[2] else {
+                    return Ok(None);
+                };
+                (&args[0], method_name.to_string(), inner_args)
+            }
+            _ => return Ok(None),
         };
-        let inner_method = name.as_str();
+        let inner_method = inner_method.as_str();
         // Only recurse through the two positional/associative element accessors.
         if !matches!(inner_method, "AT-KEY" | "AT-POS") {
             return Ok(None);
@@ -1737,8 +1760,7 @@ impl Interpreter {
         };
         let inner_var = Self::expr_lvalue_var_name(inner_target);
         let recur = (|| {
-            let inner_target_val =
-                self.eval_block_value(&[Stmt::Expr((**inner_target).clone())])?;
+            let inner_target_val = self.eval_block_value(&[Stmt::Expr((*inner_target).clone())])?;
             let mut inner_arg_vals = Vec::with_capacity(inner_args.len());
             for e in inner_args {
                 inner_arg_vals.push(self.eval_block_value(&[Stmt::Expr(e.clone())])?);

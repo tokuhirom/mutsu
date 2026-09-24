@@ -507,6 +507,12 @@ impl Interpreter {
             // first parameter. Reuse the callable's normal `.assuming`
             // implementation so a looked-up method can be curried before it
             // is called (`$type.^lookup('method').assuming($obj)(...)`).
+            if method == "message"
+                && args.is_empty()
+                && let Some(msg) = attributes.as_map().get("__mutsu_thrown_message")
+            {
+                return Ok(msg.clone());
+            }
             if method == "assuming"
                 && matches!(
                     class_name.resolve().as_str(),
@@ -1632,6 +1638,11 @@ impl Interpreter {
                             .iter()
                             .any(|p| p == "Exception" || p == "Failure"));
                 if is_exception {
+                    if method == "message"
+                        && let Some(msg) = attributes.as_map().get("__mutsu_thrown_message")
+                    {
+                        return Ok(msg.clone());
+                    }
                     // This arm is only the DEFAULT implementation of
                     // `Exception.message`/`.gist`/`.Str`. A class that defines
                     // the method itself must win, so fall through to the normal

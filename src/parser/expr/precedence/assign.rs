@@ -70,45 +70,45 @@ pub(crate) fn assign_to_target_expr(target: Expr, value: Expr) -> Expr {
             modifier,
             quoted: _,
         } => {
-            if name == "AT-POS" && args.len() == 1 {
-                Expr::IndexAssign {
+            if name == "AT-POS"
+                && args.len() == 1
+                && !matches!(target.as_ref(), Expr::Var(name) | Expr::BareWord(name) if name == "self")
+            {
+                return Expr::IndexAssign {
                     target,
-                    index: Box::new(args.into_iter().next().unwrap()),
+                    index: Box::new(args.into_iter().next().unwrap_or(Expr::Literal(Value::NIL))),
                     value: Box::new(value),
                     is_positional: true,
-                }
-            } else {
-                // Match the expression-context lowering in `paren.rs` (NOT the
-                // statement-level `lvalue_assign_to_expr`, which drops a
-                // `BareWord` target to `None`): a sigilless raw binding (`\h`)
-                // reaches here as a `BareWord`, and the writeback needs its name
-                // so `h.AT-KEY(k) = v` mutates the bound container in place.
-                // The write-back name is a property of what the parentheses
-                // hold: `(my $x = $s).substr-rw(...) = $c` writes back through
-                // `$x`.
-                let target_var_name = match target.peel_parens() {
-                    Expr::Var(v) => Some(v.clone()),
-                    Expr::ArrayVar(v) => Some(format!("@{}", v)),
-                    Expr::HashVar(v) => Some(format!("%{}", v)),
-                    Expr::BareWord(v) => Some(v.clone()),
-                    Expr::DoStmt(s) => {
-                        crate::parser::stmt::simple_expr_stmt::decl_target_var_name(s)
-                    }
-                    _ => None,
                 };
-                let method_name = if modifier == Some('!') {
-                    format!("!{}", name.resolve())
-                } else {
-                    name.resolve()
-                };
-                crate::parser::stmt::assign::method_lvalue_assign_expr(
-                    *target,
-                    target_var_name,
-                    method_name,
-                    args,
-                    value,
-                )
             }
+            // Match the expression-context lowering in `paren.rs` (NOT the
+            // statement-level `lvalue_assign_to_expr`, which drops a
+            // `BareWord` target to `None`): a sigilless raw binding (`\h`)
+            // reaches here as a `BareWord`, and the writeback needs its name
+            // so `h.AT-KEY(k) = v` mutates the bound container in place.
+            // The write-back name is a property of what the parentheses
+            // hold: `(my $x = $s).substr-rw(...) = $c` writes back through
+            // `$x`.
+            let target_var_name = match target.peel_parens() {
+                Expr::Var(v) => Some(v.clone()),
+                Expr::ArrayVar(v) => Some(format!("@{}", v)),
+                Expr::HashVar(v) => Some(format!("%{}", v)),
+                Expr::BareWord(v) => Some(v.clone()),
+                Expr::DoStmt(s) => crate::parser::stmt::simple_expr_stmt::decl_target_var_name(s),
+                _ => None,
+            };
+            let method_name = if modifier == Some('!') {
+                format!("!{}", name.resolve())
+            } else {
+                name.resolve()
+            };
+            crate::parser::stmt::assign::method_lvalue_assign_expr(
+                *target,
+                target_var_name,
+                method_name,
+                args,
+                value,
+            )
         }
         // An indirect method-call lvalue (`$o."$name"() = v`) in expression
         // position, e.g. the middle term of a chained assignment. Mirror the

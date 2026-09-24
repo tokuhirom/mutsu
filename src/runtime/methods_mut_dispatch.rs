@@ -284,6 +284,25 @@ impl Interpreter {
             let has_sigilless_meta =
                 self.env.contains_key_sym(readonly_key) || self.env.contains_key_sym(alias_key);
             if has_sigilless_meta {
+                // A sigilless raw parameter aliases an aggregate caller
+                // directly (`sub f(\x) { x.VAR } ; f(@a)`).  Its local value
+                // is still the Array/List/Hash itself, but the parameter name
+                // has no sigil, so the generic reflection path below would
+                // incorrectly manufacture a Scalar descriptor.  Preserve the
+                // aggregate's own container identity, just as `@a.VAR` does.
+                if !target_var.starts_with(['$', '@', '%', '&'])
+                    && let Some(source) = self.env.get_sym(alias_key).and_then(|value| match value
+                        .view()
+                    {
+                        ValueView::Str(source) => Some(source.to_string()),
+                        _ => None,
+                    })
+                    && ((source.starts_with('@') && matches!(target.view(), ValueView::Array(..)))
+                        || (source.starts_with('%')
+                            && matches!(target.view(), ValueView::Hash(..))))
+                {
+                    return Ok(target);
+                }
                 let readonly = self
                     .env
                     .get_sym(readonly_key)
