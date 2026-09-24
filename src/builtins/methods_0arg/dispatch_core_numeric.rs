@@ -202,11 +202,18 @@ pub(super) fn dispatch(
         }
         "abs" => {
             let result = match target.view() {
-                ValueView::Int(i) => Value::int(i.abs()),
+                ValueView::Int(i) => crate::builtins::int_abs(i),
                 ValueView::BigInt(n) => Value::bigint(n.as_ref().abs()),
                 ValueView::Num(f) => Value::num(f.abs()),
-                ValueView::Rat(n, d) => Value::rat_raw(n.abs(), d),
-                ValueView::FatRat(n, d) => Value::fat_rat_raw(n.abs(), d),
+                // `-$x` for a negative rational; `arith_negate` promotes an
+                // i64::MIN numerator instead of overflowing.
+                ValueView::Rat(n, _) | ValueView::FatRat(n, _) if n < 0 => {
+                    match crate::builtins::arith_negate(target.clone()) {
+                        Ok(v) => v,
+                        Err(e) => return Some(Some(Err(e))),
+                    }
+                }
+                ValueView::Rat(..) | ValueView::FatRat(..) => target.clone(),
                 // A rational whose numerator outgrew `i64` is a `BigRat`, not a
                 // `Rat`; without this arm every numeric method below declines
                 // and the call reports "No such method 'abs'".

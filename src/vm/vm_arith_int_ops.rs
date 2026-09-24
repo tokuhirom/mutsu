@@ -288,41 +288,7 @@ impl Interpreter {
             if let Some(result) = vm.try_user_infix("infix:<div>", &l, &r)? {
                 return Ok(result);
             }
-            let val = match (l.view(), r.view()) {
-                (ValueView::Int(a), ValueView::Int(b)) if b != 0 => {
-                    Value::int(num_integer::Integer::div_floor(&a, &b))
-                }
-                (ValueView::Int(a), ValueView::Int(_)) => {
-                    RuntimeError::divide_by_zero_failure(Some(Value::int(a)), Some("div"))
-                }
-                (ValueView::BigInt(a), ValueView::BigInt(b))
-                    if **b != num_bigint::BigInt::from(0i64) =>
-                {
-                    Value::from_bigint(num_integer::Integer::div_floor(a.as_ref(), b.as_ref()))
-                }
-                (ValueView::BigInt(a), ValueView::Int(b)) if b != 0 => {
-                    let bb = num_bigint::BigInt::from(b);
-                    Value::from_bigint(num_integer::Integer::div_floor(a.as_ref(), &bb))
-                }
-                (ValueView::Int(a), ValueView::BigInt(b))
-                    if **b != num_bigint::BigInt::from(0i64) =>
-                {
-                    let aa = num_bigint::BigInt::from(a);
-                    Value::from_bigint(num_integer::Integer::div_floor(&aa, b.as_ref()))
-                }
-                _ => {
-                    let a = runtime::to_int(&l);
-                    let b = runtime::to_int(&r);
-                    if b == 0 {
-                        return Ok(RuntimeError::divide_by_zero_failure(
-                            Some(Value::int(a)),
-                            Some("div"),
-                        ));
-                    }
-                    Value::int(num_integer::Integer::div_floor(&a, &b))
-                }
-            };
-            Ok(val)
+            Ok(crate::builtins::int_div(&l, &r))
         })?;
         self.stack.push(result);
         Ok(())
@@ -336,37 +302,10 @@ impl Interpreter {
             if let Some(result) = vm.try_user_infix("infix:<mod>", &l, &r)? {
                 return Ok(result);
             }
-            let val = match (l.view(), r.view()) {
-                (ValueView::Int(a), ValueView::Int(b)) if b != 0 => {
-                    Value::int(num_integer::Integer::mod_floor(&a, &b))
-                }
-                (ValueView::Int(a), ValueView::Int(_)) => {
-                    RuntimeError::divide_by_zero_failure(Some(Value::int(a)), Some("%"))
-                }
-                (ValueView::BigInt(a), ValueView::BigInt(b)) if !b.is_zero() => {
-                    Value::from_bigint(num_integer::Integer::mod_floor(a.as_ref(), b.as_ref()))
-                }
-                (ValueView::BigInt(a), ValueView::Int(b)) if b != 0 => {
-                    let bb = num_bigint::BigInt::from(b);
-                    Value::from_bigint(num_integer::Integer::mod_floor(a.as_ref(), &bb))
-                }
-                (ValueView::Int(a), ValueView::BigInt(b)) if !b.is_zero() => {
-                    let aa = num_bigint::BigInt::from(a);
-                    Value::from_bigint(num_integer::Integer::mod_floor(&aa, b.as_ref()))
-                }
-                _ => {
-                    let a = runtime::to_int(&l);
-                    let b = runtime::to_int(&r);
-                    if b == 0 {
-                        return Ok(RuntimeError::divide_by_zero_failure(
-                            Some(Value::int(a)),
-                            Some("%"),
-                        ));
-                    }
-                    Value::int(num_integer::Integer::mod_floor(&a, &b))
-                }
-            };
-            Ok(val)
+            // `mod` is `%` on the operands' numeric values: floored for
+            // integers, exact for rationals (`7.5 mod 2` is 1.5), with the same
+            // `using %` Failure for a zero divisor.
+            crate::builtins::arith_mod(l, r)
         })?;
         self.stack.push(result);
         Ok(())

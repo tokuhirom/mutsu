@@ -212,33 +212,17 @@ pub(super) fn dispatch(
         // is rebuilt around the incremented segment).
         "succ" => Some(match target.view() {
             ValueView::Enum { .. } | ValueView::Instance { .. } => None,
-            ValueView::Int(i) => Some(Ok(Value::int(i + 1))),
-            ValueView::Num(f) => Some(Ok(Value::num(f + 1.0))),
-            ValueView::Complex(r, i) => Some(Ok(Value::complex(r + 1.0, i))),
-            ValueView::Rat(n, d) => Some(Ok(make_rat(n + d, d))),
-            ValueView::FatRat(n, d) => Some(Ok(Value::fat_rat_raw(n + d, d))),
-            ValueView::BigRat(n, d) => Some(Ok(Value::bigrat(n + d, d.clone()))),
-            ValueView::Bool(_) => Some(Ok(Value::TRUE)),
-            ValueView::Str(s) => Some(Ok(Value::str(crate::builtins::str_increment::string_succ(
-                &s,
-            )))),
-            _ => Some(Ok(target.clone())),
+            _ => Some(Ok(
+                crate::builtins::value_succ(target).unwrap_or_else(|| target.clone())
+            )),
         }),
         // Cost: O(1) for a numeric invocant; O(n) for a Str, n = chars (the string
         // is rebuilt around the decremented segment).
         "pred" => Some(match target.view() {
             ValueView::Enum { .. } | ValueView::Instance { .. } => None,
-            ValueView::Int(i) => Some(Ok(Value::int(i - 1))),
-            ValueView::Num(f) => Some(Ok(Value::num(f - 1.0))),
-            ValueView::Complex(r, i) => Some(Ok(Value::complex(r - 1.0, i))),
-            ValueView::Rat(n, d) => Some(Ok(make_rat(n - d, d))),
-            ValueView::FatRat(n, d) => Some(Ok(Value::fat_rat_raw(n - d, d))),
-            ValueView::BigRat(n, d) => Some(Ok(Value::bigrat(n - d, d.clone()))),
-            ValueView::Bool(_) => Some(Ok(Value::FALSE)),
-            ValueView::Str(s) => Some(Ok(Value::str(crate::builtins::str_increment::string_pred(
-                &s,
-            )))),
-            _ => Some(Ok(target.clone())),
+            _ => Some(Ok(
+                crate::builtins::value_pred(target).unwrap_or_else(|| target.clone())
+            )),
         }),
         "log" => Some(match target.view() {
             ValueView::Int(i) => Some(Ok(Value::num((i as f64).ln()))),

@@ -337,9 +337,7 @@ pub(crate) fn arith_mod(left: Value, right: Value) -> Result<Value, RuntimeError
             (ValueView::BigInt(a), ValueView::BigInt(b)) if b.is_zero() => {
                 return Ok(mod_div0(&Value::from_bigint((**a).clone())));
             }
-            (ValueView::Int(a), ValueView::Int(b)) => {
-                Value::int(num_integer::Integer::mod_floor(&a, &b))
-            }
+            (ValueView::Int(a), ValueView::Int(b)) => Value::int(super::int_mod_i64(a, b)),
             (ValueView::BigInt(a), ValueView::Int(b)) => {
                 let bb = num_bigint::BigInt::from(b);
                 Value::from_bigint(num_integer::Integer::mod_floor(a.as_ref(), &bb))

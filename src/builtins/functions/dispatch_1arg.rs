@@ -430,23 +430,19 @@ pub(crate) fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Val
             // Delegate to the .sign method implementation
             crate::builtins::methods_0arg::native_method_0arg(arg, Symbol::intern("sign"))
         }
-        "abs" => Some(Ok(match arg.view() {
-            ValueView::Int(i) => Value::int(i.abs()),
-            ValueView::Num(f) => Value::num(f.abs()),
-            ValueView::Rat(n, d) => Value::rat_raw(n.abs(), d),
-            ValueView::FatRat(n, d) => Value::fat_rat_raw(n.abs(), d),
-            ValueView::Complex(re, im) => Value::num((re * re + im * im).sqrt()),
-            ValueView::Str(s) => {
-                if let Ok(i) = s.parse::<i64>() {
-                    Value::int(i.abs())
-                } else if let Ok(f) = s.parse::<f64>() {
-                    Value::num(f.abs())
-                } else {
-                    Value::int(0)
-                }
+        // `abs($x)` is `$x.abs` -- one implementation (ADR-0118). A Str (or
+        // other Cool) numifies first, as rakudo's `Cool.abs` does.
+        "abs" => {
+            if matches!(arg.view(), ValueView::Instance { .. }) {
+                return None;
             }
-            _ => Value::int(0),
-        })),
+            let n = if matches!(arg.view(), ValueView::Str(_)) {
+                crate::runtime::coerce_to_numeric(arg.clone())
+            } else {
+                arg.clone()
+            };
+            crate::builtins::methods_0arg::native_method_0arg(&n, Symbol::intern("abs"))
+        }
         "sqrt" => Some(Ok(match arg.view() {
             ValueView::Int(i) => Value::num((i as f64).sqrt()),
             ValueView::Num(f) => Value::num(f.sqrt()),

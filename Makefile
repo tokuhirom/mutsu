@@ -1,4 +1,4 @@
-.PHONY: test lint roast check-roast-whitelist check-value-wall check-flaky-list check-t-layout check-magic-keys check-panic-surface check-pipefail check-bench-det check-str-prims
+.PHONY: test lint roast check-roast-whitelist check-value-wall check-flaky-list check-t-layout check-magic-keys check-panic-surface check-pipefail check-bench-det check-prims
 
 # Recipes run under bash with `pipefail`, because the two suite recipes pipe
 # into `tee` and POSIX sh reports only the *last* command's status -- `tee`'s,
@@ -46,7 +46,7 @@ PROVE_JOBS ?= 4
 # the gc-stress / jit-stress CI jobs keep running the whole t/ suite on debug.
 # See docs/adr/0075-make-test-runs-tap-on-release-binary.md, which supersedes
 # ADR-0014.
-test: check-pipefail check-value-wall check-flaky-list check-t-layout check-magic-keys check-panic-surface check-name-scans check-bench-det check-str-prims
+test: check-pipefail check-value-wall check-flaky-list check-t-layout check-magic-keys check-panic-surface check-name-scans check-bench-det check-prims
 	@mkdir -p tmp
 	(cargo build --release && cargo test -- --test-threads=1 && cargo test -p mutsu-lsp && MUTSU_BIN='$(CARGO_TARGET_DIR)/release/mutsu' MUTSU_T_TIMEOUT=60 prove -r -e 'scripts/run-t-test.sh' t/) 2>&1 | tee tmp/make-test.log
 
@@ -105,9 +105,9 @@ check-name-scans:
 # routine the matching Str method uses -- instead of walking, casing,
 # normalizing or searching a string themselves. They used to keep their own
 # codepoint-indexed copies, which drifted from the grapheme-indexed methods.
-check-str-prims:
-	scripts/check-str-prims.sh --self-test
-	scripts/check-str-prims.sh
+check-prims:
+	scripts/check-prims.sh --self-test
+	scripts/check-prims.sh
 
 # The bench series' allocation counts are read out of callgrind's own output
 # (#8959), and that parse fails by UNDERCOUNTING silently: an allocator whose

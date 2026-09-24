@@ -61,7 +61,8 @@ alternately missed the single-slot memo on every call.
    native int. The search, the slicing and the folding are shared.
 5. **No layer keeps a private string memo.** `nqp_char_cache.rs` and `TrCharCache` are deleted;
    the `grapheme_index` payload cache serves every layer.
-6. **Enforced, not requested**: `scripts/check-str-prims.sh` (`make check-str-prims`, a
+6. **Enforced, not requested**: `scripts/check-str-prims.sh` (`make check-str-prims`, since
+   generalized to `scripts/check-prims.sh` / `make check-prims` by ADR-0118; a
    `make test` prerequisite and a CI step) fails the build when an `nqp::` op table, the VM's nqp
    path or TRIR's runtime walks, cases, normalizes, repeats or searches a string by hand, and
    bans the old memo names anywhere in `src/`. A line that is genuinely not a Str primitive
