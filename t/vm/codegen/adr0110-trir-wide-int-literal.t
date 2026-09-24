@@ -1,6 +1,8 @@
 # TRIR types an integer literal as a native `int` operand only while it fits
 # in 32 bits, as rakudo does: `-> int $a { $a + 9223372036854775807 }`
-# promotes to a big Int, where TRIR used to wrap it (#9234).
+# promotes to a big Int, where TRIR used to wrap it (#9234). A narrow literal
+# or a native `int` operand wraps on BOTH paths; the untyped path used to
+# promote (#9270).
 use Test;
 
 plan 4;
@@ -33,4 +35,10 @@ is $on-out, q:to/END/ x 2, 'the transcript is rakudo\'s';
     minus-wide=-9223372039002259457
     times-wide=39614081257132168792477007872
     cmp-wide=lt ge
+    plus-one=-9223372036854775808
+    plus-param=-9223372036854775808
+    times-three=9223372036854775805
+    one-plus=-9223372036854775808
+    minus-narrow=9223372034707292161
+    into-native=-9223372036854775808
     END

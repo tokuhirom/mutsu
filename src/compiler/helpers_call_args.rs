@@ -1362,6 +1362,30 @@ impl Compiler {
     /// Record this routine's native-typed `is rw` parameters, which
     /// [`Compiler::native_rw_param_incdec_operand`] gates on. See the field
     /// doc on `native_rw_params`.
+    /// Record each native-integer parameter's declared type in `local_types`,
+    /// as a `my int $x` declaration records its own, so the arithmetic on it
+    /// takes the same native (wrapping) operation a native variable gets:
+    /// `sub f(int $a) { $a + 1 }` wraps at the int64 edge in rakudo and in
+    /// TRIR, and the untyped path must agree with both (#9270). Only native
+    /// integer types are seeded; a boxed parameter type would feed the
+    /// compile-time literal checks that read the same map.
+    pub(crate) fn seed_native_int_param_types(&mut self, param_defs: &[crate::ast::ParamDef]) {
+        for pd in param_defs {
+            if pd.name.is_empty() || pd.slurpy || pd.double_slurpy {
+                continue;
+            }
+            if let Some(tc) = pd.type_constraint.as_deref() {
+                let base = tc
+                    .strip_suffix(":D")
+                    .or_else(|| tc.strip_suffix(":U"))
+                    .unwrap_or(tc);
+                if crate::runtime::native_types::is_native_int_type(base) {
+                    self.local_types.insert(pd.name.clone(), tc.to_string());
+                }
+            }
+        }
+    }
+
     pub(crate) fn seed_native_rw_params(&mut self, param_defs: &[crate::ast::ParamDef]) {
         self.native_rw_params = param_defs
             .iter()

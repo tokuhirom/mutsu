@@ -1013,8 +1013,8 @@ impl Compiler {
     /// Return the machine signedness for an expression whose value is known to
     /// participate in native integer arithmetic. Narrow native declarations
     /// still use the machine-width arithmetic register; their declared width
-    /// is applied on storage. A plain integer literal is a signed native
-    /// operand, which is the form Rakudo accepts for a signed native variable
+    /// is applied on storage. A plain integer literal within 32 bits is a
+    /// signed native operand, which is the form Rakudo accepts for a signed native variable
     /// (`my int $x = *; $x + 1`). Do not infer this through arbitrary computed
     /// expressions: `2 ** 62` is an ordinary boxed `Int` operand to Rakudo's
     /// native candidate selection.
@@ -1037,8 +1037,12 @@ impl Compiler {
                             .then(|| crate::runtime::native_types::is_signed_native(base))
                     })
                 }),
+            // Only while it fits in 32 bits: a wider integer literal is an
+            // `Int`, so `$a + 2147483648` promotes instead of wrapping (the
+            // rule TRIR follows too, #9234 / #9270).
             Expr::Literal(value) | Expr::LiteralSrc(value, _) => {
-                matches!(value.view(), ValueView::Int(_)).then_some(true)
+                matches!(value.view(), ValueView::Int(i) if i32::try_from(i).is_ok())
+                    .then_some(true)
             }
             _ => None,
         }
