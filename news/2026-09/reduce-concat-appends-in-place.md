@@ -21,5 +21,5 @@ threading, the `.Stringy` coercion of each operand, Blob rules, then
 accumulator into each step, and after #9272 a shared operand joins strands
 instead of copying. Its `Rakudo: O(t)` suffix is dropped.
 
-Pinned by `t/types/string/reduce-concat-fold.t`. The `.unique` / `.repeated`
+Pinned by `t/collections/transform/reduce-concat-fold.t`. The `.unique` / `.repeated`
 half of #9161 is unrelated to strings and is still open.
