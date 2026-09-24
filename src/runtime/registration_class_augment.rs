@@ -1025,13 +1025,15 @@ impl Interpreter {
     }
 
     /// Get the type constraint for a class attribute, searching MRO.
+    // Cost: O(d), d = ancestors of `class_name` (one registry probe per level).
     pub(crate) fn get_attr_type_constraint(
         &self,
         class_name: &str,
         attr_name: &str,
     ) -> Option<String> {
-        for cls in self.mro_readonly(class_name) {
-            if let Some(class_def) = self.registry().classes.get(&cls)
+        for cls in self.mro_syms_readonly(class_name).iter() {
+            let cls = cls.as_str();
+            if let Some(class_def) = self.registry().classes.get(cls)
                 && let Some(tc) = class_def.attribute_types.get(attr_name)
             {
                 let tc = tc.clone();
@@ -1040,7 +1042,7 @@ impl Interpreter {
                 // (raku reports that in every type-check message). Resolve it
                 // here rather than at record time: a `subset` in a class body
                 // is registered when the body runs, after `has` is recorded.
-                return Some(self.resolve_type_name_for_owner(&cls, tc));
+                return Some(self.resolve_type_name_for_owner(cls, tc));
             }
         }
         // A role instantiated directly (`R.new`) has no ClassDef until something

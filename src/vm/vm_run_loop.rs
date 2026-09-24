@@ -39,9 +39,9 @@ impl Interpreter {
         }
         let self_val = self.get_env_self()?;
         let class_name = self_val.with_deref(|v| match v.view() {
-            crate::value::ValueView::Instance { class_name, .. } => Some(class_name.resolve()),
+            crate::value::ValueView::Instance { class_name, .. } => Some(class_name.as_str()),
             crate::value::ValueView::Mixin(inner, _) => match inner.view() {
-                crate::value::ValueView::Instance { class_name, .. } => Some(class_name.resolve()),
+                crate::value::ValueView::Instance { class_name, .. } => Some(class_name.as_str()),
                 _ => None,
             },
             _ => None,
@@ -54,7 +54,7 @@ impl Interpreter {
         } else {
             (attr_name, '$')
         };
-        self.mro_readonly(&class_name).iter().find_map(|cls| {
+        self.mro_syms_readonly(class_name).iter().find_map(|cls| {
             self.registry()
                 .classes
                 .get(cls.as_str())
@@ -1360,12 +1360,14 @@ impl Interpreter {
 
     /// Look up the declared type constraint of an attribute of the current
     /// `self` instance, walking the MRO.
+    // Cost: O(d * a), d = ancestors of self's class, a = attributes declared per
+    // ancestor (the sigil-collision scan).
     pub(crate) fn self_attr_type_constraint(&self, attr_name: &str) -> Option<String> {
         let self_val = self.get_env_self()?;
         let class_name = self_val.with_deref(|v| match v.view() {
-            crate::value::ValueView::Instance { class_name, .. } => Some(class_name.resolve()),
+            crate::value::ValueView::Instance { class_name, .. } => Some(class_name.as_str()),
             crate::value::ValueView::Mixin(inner, _) => match inner.view() {
-                crate::value::ValueView::Instance { class_name, .. } => Some(class_name.resolve()),
+                crate::value::ValueView::Instance { class_name, .. } => Some(class_name.as_str()),
                 _ => None,
             },
             _ => None,
@@ -1378,7 +1380,11 @@ impl Interpreter {
         } else {
             (attr_name, '$')
         };
-        let has_sigil_collision = self.mro_readonly(&class_name).iter().any(|cls| {
+        // One MRO for the whole lookup: an `Arc` of the registry's cached C3
+        // order, where this used to copy it into `String`s up to three times
+        // per attribute store (ADR-0121 D1).
+        let mro = self.mro_syms_readonly(class_name);
+        let has_sigil_collision = mro.iter().any(|cls| {
             self.registry()
                 .classes
                 .get(cls.as_str())
@@ -1390,7 +1396,7 @@ impl Interpreter {
                 })
         });
         let tc = if has_sigil_collision {
-            self.mro_readonly(&class_name).iter().find_map(|cls| {
+            mro.iter().find_map(|cls| {
                 self.registry()
                     .classes
                     .get(cls.as_str())
@@ -1403,13 +1409,13 @@ impl Interpreter {
                     })
             })?
         } else {
-            self.get_attr_type_constraint(&class_name, bare)?
+            self.get_attr_type_constraint(class_name, bare)?
         };
         // A nested class type (`class URI { class Authority {}; has Authority
         // $.authority }`) is declared by its short name but registered fully
         // qualified — resolve it so the reset type object dispatches methods.
         if !self.registry().classes.contains_key(&tc) {
-            for cls in self.mro_readonly(&class_name) {
+            for cls in mro.iter() {
                 let qualified = format!("{}::{}", cls, tc);
                 if self.registry().classes.contains_key(&qualified) {
                     return Some(qualified);

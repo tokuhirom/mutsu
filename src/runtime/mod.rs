@@ -1349,6 +1349,36 @@ pub(crate) fn replay_readonly_undo(
 /// text call `resolve()`.
 pub(crate) type NameSet = rustc_hash::FxHashSet<Symbol>;
 
+/// One entry of `Interpreter::method_class_stack`: the class (or role) that
+/// owns the running method body.
+///
+/// Held as a [`Symbol`] rather than a `String`: every method call pushed an
+/// owned copy of the owner's name (one malloc and free per call), and every
+/// `$!x` read re-derived what it needed from that string -- the qualified
+/// private key was interned per access and "is the owner a role?" was a
+/// registry lookup per access (ADR-0121 D1).
+pub(crate) struct MethodClassFrame {
+    pub(crate) name: Symbol,
+    /// Memoized `is_role(name)`: 0 = not asked yet, 1 = no, 2 = yes. A name's
+    /// role-ness cannot change while a method it owns is running, so the first
+    /// attribute access of the frame answers it for the rest of the frame.
+    is_role: std::cell::Cell<u8>,
+}
+
+impl MethodClassFrame {
+    pub(crate) fn new(name: Symbol, is_role: Option<bool>) -> Self {
+        let memo = match is_role {
+            None => 0,
+            Some(false) => 1,
+            Some(true) => 2,
+        };
+        Self {
+            name,
+            is_role: std::cell::Cell::new(memo),
+        }
+    }
+}
+
 /// Per-class plan for the native default constructor
 /// (`try_native_default_construct`): everything about the class shape that the
 /// constructor consulted on EVERY construction but that only changes when the
@@ -2235,7 +2265,7 @@ pub struct Interpreter {
     current_package_sym: Arc<AtomicU32>,
     routine_stack: routine_stack::RoutineStack,
     callframe_stack: Vec<CallFrameEntry>,
-    method_class_stack: Vec<String>,
+    method_class_stack: Vec<MethodClassFrame>,
     /// The class whose instance is currently being constructed, set only while
     /// evaluating typed-attribute default type objects so a suppressed nested
     /// class name resolves within its owning class (see `resolve_suppressed_type`).

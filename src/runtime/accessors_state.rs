@@ -676,8 +676,20 @@ impl Interpreter {
         self.registry().roles.contains_key(name)
     }
 
-    pub(crate) fn push_method_class(&mut self, class_name: String) {
-        self.method_class_stack.push(class_name);
+    pub(crate) fn push_method_class(&mut self, class_name: &str) {
+        self.push_method_class_sym(crate::symbol::Symbol::intern(class_name), None);
+    }
+
+    /// [`Self::push_method_class`] for a caller that already holds the owner's
+    /// interned name, and possibly its role-ness (`None` leaves it to be asked
+    /// lazily by the first attribute access that needs it).
+    pub(crate) fn push_method_class_sym(
+        &mut self,
+        class_name: crate::symbol::Symbol,
+        is_role: Option<bool>,
+    ) {
+        self.method_class_stack
+            .push(super::MethodClassFrame::new(class_name, is_role));
     }
 
     pub(crate) fn pop_method_class(&mut self) {
@@ -727,7 +739,7 @@ impl Interpreter {
             if f.is_method
                 && let Some(class) = self.method_class_stack.last()
             {
-                return crate::symbol::Symbol::intern(class);
+                return class.name;
             }
             break;
         }
@@ -735,20 +747,50 @@ impl Interpreter {
         if (pkg == crate::symbol::wk::empty_package() || pkg == crate::symbol::wk::global_package())
             && let Some(class) = self.method_class_stack.last()
         {
-            return crate::symbol::Symbol::intern(class);
+            return class.name;
         }
         pkg
     }
 
     pub(crate) fn method_class_stack_top(&self) -> Option<String> {
-        self.method_class_stack.last().cloned()
+        self.method_class_stack.last().map(|f| f.name.resolve())
     }
 
     /// Borrowing form of [`Self::method_class_stack_top`]. The attribute cell-key
     /// resolution consults this on every `$!x` read, where the owned clone was a
     /// per-access heap allocation.
-    pub(crate) fn method_class_stack_top_str(&self) -> Option<&str> {
-        self.method_class_stack.last().map(String::as_str)
+    pub(crate) fn method_class_stack_top_str(&self) -> Option<&'static str> {
+        self.method_class_stack.last().map(|f| f.name.as_str())
+    }
+
+    /// The running method's owner as an interned symbol.
+    pub(crate) fn method_class_stack_top_sym(&self) -> Option<crate::symbol::Symbol> {
+        self.method_class_stack.last().map(|f| f.name)
+    }
+
+    /// Whether the running method's owner is a role, memoized on the frame so
+    /// the per-access attribute paths do not take the registry lock per read.
+    // Cost: O(1) after the frame's first ask; the first ask is one registry probe.
+    pub(crate) fn method_class_top_is_role(&self) -> bool {
+        let Some(frame) = self.method_class_stack.last() else {
+            return false;
+        };
+        match frame.is_role.get() {
+            1 => false,
+            2 => true,
+            _ => {
+                let answer = self.is_role(frame.name.as_str());
+                frame.is_role.set(if answer { 2 } else { 1 });
+                answer
+            }
+        }
+    }
+
+    /// The owners on the method-class stack, innermost first.
+    pub(crate) fn method_class_stack_syms_rev(
+        &self,
+    ) -> impl Iterator<Item = crate::symbol::Symbol> + '_ {
+        self.method_class_stack.iter().rev().map(|f| f.name)
     }
 
     /// Set up a method dispatch frame for nextsame/callsame support.

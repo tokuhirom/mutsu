@@ -151,7 +151,7 @@ impl Interpreter {
         }
         self.method_class_stack
             .last()
-            .cloned()
+            .map(|f| f.name.resolve())
             .or_else(|| Some(self.current_package().to_string()))
     }
 

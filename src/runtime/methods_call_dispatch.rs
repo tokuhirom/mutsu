@@ -1195,7 +1195,7 @@ impl Interpreter {
                 // once flattened into the composing class, resolves the private
                 // call against that class) so the private-method-permission
                 // check (`private_owner_trusts_caller`) allows it.
-                self.push_method_class(cn);
+                self.push_method_class(&cn);
                 let result = self.call_method_with_values(target, "!formatter", vec![]);
                 self.pop_method_class();
                 return result;

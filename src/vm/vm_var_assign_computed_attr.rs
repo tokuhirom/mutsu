@@ -3,10 +3,28 @@ use crate::runtime::meta_ns::MetaNs;
 use std::borrow::Cow;
 use std::cell::RefCell;
 
+/// The qualified private-attribute keys of one `(owner, bare, sigil)`:
+/// `Owner\0<sigil>bare` (only present for a sigil-colliding attribute) and
+/// `Owner\0bare` (a private attribute declared in both a parent and a child).
+#[derive(Clone, Copy)]
+struct QualifiedAttrKeys {
+    with_sigil: crate::symbol::Symbol,
+    plain: crate::symbol::Symbol,
+}
+
 thread_local! {
-    /// Reusable scratch buffer for the qualified private-attribute key
-    /// (`Owner\0attr`). Assembling it here keeps the hot `$!x` read allocation-free.
-    static QUALIFIED_ATTR_KEY: RefCell<String> = const { RefCell::new(String::new()) };
+    /// Memo of [`QualifiedAttrKeys`] per `(owner, bare, sigil)`. The keys are a
+    /// pure function of three interned names, but building them meant
+    /// assembling a string and interning it (a string hash plus a table probe)
+    /// twice on every private `$!x` access (ADR-0121 D1).
+    static QUALIFIED_ATTR_KEYS: RefCell<
+        rustc_hash::FxHashMap<(crate::symbol::Symbol, crate::symbol::Symbol, char), QualifiedAttrKeys>,
+    > = RefCell::new(rustc_hash::FxHashMap::default());
+    /// Memo of the sigil-prefixed storage key (`%bare`) per `(bare, sigil)`,
+    /// for the same reason: it used to be a `format!` plus an intern per miss.
+    static SIGIL_ATTR_KEYS: RefCell<
+        rustc_hash::FxHashMap<(crate::symbol::Symbol, char), crate::symbol::Symbol>,
+    > = RefCell::new(rustc_hash::FxHashMap::default());
 }
 
 impl Interpreter {
@@ -128,37 +146,38 @@ impl Interpreter {
         crate::value::attr_twigil_base(name)
     }
 
-    /// The interned qualified private-attribute key `Owner\0bare`. Assembled in a
-    /// reusable thread-local buffer so the hot `$!x` read does not heap-allocate
-    /// a fresh key string on every access (it used to `format!` one).
-    fn qualified_attr_symbol(owner: &str, bare: &str) -> crate::symbol::Symbol {
-        QUALIFIED_ATTR_KEY.with(|buf| {
-            let mut buf = buf.borrow_mut();
-            buf.clear();
-            buf.push_str(owner);
-            buf.push('\0');
-            buf.push_str(bare);
-            crate::symbol::Symbol::intern(&buf)
+    /// The qualified private-attribute keys of `bare` as declared by `owner`,
+    /// memoized (see [`QualifiedAttrKeys`]).
+    // Cost: O(1) amortized: one hash probe of three interned ids; the first
+    // ask per (owner, bare, sigil) interns two strings of O(len) each.
+    fn qualified_attr_keys(
+        owner: crate::symbol::Symbol,
+        bare: crate::symbol::Symbol,
+        sigil: char,
+    ) -> QualifiedAttrKeys {
+        QUALIFIED_ATTR_KEYS.with(|memo| {
+            *memo
+                .borrow_mut()
+                .entry((owner, bare, sigil))
+                .or_insert_with(|| {
+                    let (owner, bare) = (owner.as_str(), bare.as_str());
+                    QualifiedAttrKeys {
+                        with_sigil: crate::symbol::Symbol::intern(&format!(
+                            "{owner}\0{sigil}{bare}"
+                        )),
+                        plain: crate::symbol::Symbol::intern(&format!("{owner}\0{bare}")),
+                    }
+                })
         })
     }
 
-    /// The qualified key for a sigil-colliding private attribute. The plain
-    /// qualified form remains the key for the usual same-sigil inheritance
-    /// case; this extra form is only emitted when a class has e.g. both
-    /// `$!value` and `%!value`.
-    fn qualified_attr_symbol_with_sigil(
-        owner: &str,
-        bare: &str,
-        sigil: char,
-    ) -> crate::symbol::Symbol {
-        QUALIFIED_ATTR_KEY.with(|buf| {
-            let mut buf = buf.borrow_mut();
-            buf.clear();
-            buf.push_str(owner);
-            buf.push('\0');
-            buf.push(sigil);
-            buf.push_str(bare);
-            crate::symbol::Symbol::intern(&buf)
+    /// The sigil-prefixed storage key of `bare` (`%bare`), memoized.
+    // Cost: O(1) amortized, as `qualified_attr_keys`.
+    fn sigil_attr_key(bare: crate::symbol::Symbol, sigil: char) -> crate::symbol::Symbol {
+        SIGIL_ATTR_KEYS.with(|memo| {
+            *memo.borrow_mut().entry((bare, sigil)).or_insert_with(|| {
+                crate::symbol::Symbol::intern(&format!("{sigil}{}", bare.as_str()))
+            })
         })
     }
 
@@ -166,30 +185,52 @@ impl Interpreter {
     /// is_private)`, preferring the method owner class's qualified private key
     /// when present (Parent/Child same-named `$!priv` disambiguation), matching
     /// the order used when method frames materialize attributes. `None` when the
-    /// attribute does not exist in the cell.
+    /// attribute does not exist in the cell. `owner` is the running method's
+    /// owner (the top of the method-class stack).
+    // Cost: O(1): at most four hash probes of the attribute map.
     fn attr_key_in_map(
-        &self,
+        owner: Option<crate::symbol::Symbol>,
         bare: crate::symbol::Symbol,
         is_private: bool,
         sigil: char,
         map: &crate::value::AttrMap,
     ) -> Option<crate::symbol::Symbol> {
-        if is_private && let Some(owner) = self.method_class_stack_top_str() {
-            let qsig = Self::qualified_attr_symbol_with_sigil(owner, bare.as_str(), sigil);
-            if map.contains_key(qsig) {
-                return Some(qsig);
+        if is_private && let Some(owner) = owner {
+            let keys = Self::qualified_attr_keys(owner, bare, sigil);
+            if map.contains_key(keys.with_sigil) {
+                return Some(keys.with_sigil);
             }
-            let qsym = Self::qualified_attr_symbol(owner, bare.as_str());
-            if map.contains_key(qsym) {
-                return Some(qsym);
+            if map.contains_key(keys.plain) {
+                return Some(keys.plain);
             }
         }
         if map.contains_key(bare) {
             Some(bare)
         } else {
-            let sigil_key = crate::symbol::Symbol::intern(&format!("{sigil}{}", bare.as_str()));
+            let sigil_key = Self::sigil_attr_key(bare, sigil);
             map.contains_key(sigil_key).then_some(sigil_key)
         }
+    }
+
+    /// `self` for an attribute access made by `code`'s frame. A method body's
+    /// invocant is its first local slot (`self`), so reading it from there
+    /// skips the by-name env resolution (`get_env_self`), which walks the
+    /// unit-scope, package and module-lexical redirects before the env probe on
+    /// every access. Any other frame -- a closure or a nested block inside the
+    /// method, a sub, the mainline -- and a slot that does not hold an
+    /// object, resolves it by name as before.
+    // Cost: O(1) for a method body; get_env_self's cost otherwise.
+    pub(super) fn attr_access_self(&self, code: &CompiledCode) -> Option<Value> {
+        if code.locals_sym.first() == Some(&crate::symbol::wk::self_())
+            && let Some(v) = self.locals.first()
+            && matches!(
+                v.view(),
+                ValueView::Instance { .. } | ValueView::Mixin(..) | ValueView::ContainerRef(_)
+            )
+        {
+            return Some(v.clone());
+        }
+        self.get_env_self()
     }
 
     /// The inner instance's shared attribute cell for a `self` value, unwrapping a
@@ -236,8 +277,21 @@ impl Interpreter {
         Option<crate::gc::Gc<crate::value::InstanceAttrs>>,
         Option<crate::gc::Gc<crate::value::InstanceAttrs>>,
     ) {
+        Self::method_attr_cells_for(val, owner, self.is_role(owner))
+    }
+
+    /// [`Self::method_attr_cells`] for a caller that already knows whether
+    /// `owner` is a role (the running method's frame memoizes it).
+    fn method_attr_cells_for(
+        val: &Value,
+        owner: &str,
+        owner_is_role: bool,
+    ) -> (
+        Option<crate::gc::Gc<crate::value::InstanceAttrs>>,
+        Option<crate::gc::Gc<crate::value::InstanceAttrs>>,
+    ) {
         let inner = Self::self_instance_attrs(val);
-        if !self.is_role(owner) {
+        if !owner_is_role {
             return (None, inner);
         }
         let mut current = val.clone();
@@ -271,15 +325,13 @@ impl Interpreter {
         role.or(inner)
     }
 
-    pub(crate) fn method_role_attr_key(
-        &self,
+    /// The role-cell key of `bare` for the role `owner`, found by walking
+    /// `val`'s mixin layers; `None` when no layer composes `owner`.
+    fn role_attr_key_in_mixin(
         val: &Value,
         owner: &str,
         bare: crate::symbol::Symbol,
     ) -> Option<crate::symbol::Symbol> {
-        if !self.is_role(owner) {
-            return None;
-        }
         let mut current = val.clone();
         for _ in 0..8 {
             match current.view() {
@@ -304,7 +356,12 @@ impl Interpreter {
         let twigil = self.canonical_attr_twigil(name)?;
         let (bare, is_private) = Self::attr_twigil_base(&twigil)?;
         let sigil = crate::value::attr_twigil_sigil(&twigil).unwrap_or('$');
-        self.read_attr_cell_by_key(crate::symbol::Symbol::intern(bare), is_private, sigil)
+        self.read_attr_cell_by_key(
+            self.get_env_self(),
+            crate::symbol::Symbol::intern(bare),
+            is_private,
+            sigil,
+        )
     }
 
     /// Slot form of [`Self::read_self_attr_cell`]: the attribute `Symbol` comes
@@ -318,7 +375,9 @@ impl Interpreter {
         idx: usize,
     ) -> Option<Value> {
         match code.local_attr_key(idx) {
-            Some((bare, is_private, sigil)) => self.read_attr_cell_by_key(bare, is_private, sigil),
+            Some((bare, is_private, sigil)) => {
+                self.read_attr_cell_by_key(self.attr_access_self(code), bare, is_private, sigil)
+            }
             None => {
                 if !self.sigilless_attrs_active {
                     return None;
@@ -328,33 +387,65 @@ impl Interpreter {
         }
     }
 
+    /// Resolve the attribute `(bare, is_private, sigil)` against `self_val`'s
+    /// live cells for the running method -- a role method on a Mixin looks in
+    /// the Mixin's role cell first, then everything falls through to the
+    /// wrapped instance cell -- and hand `f` the cell, its map (under the read
+    /// guard) and the key the attribute is stored under. `None` when neither
+    /// cell holds it. The one resolution the read, write and in-place append
+    /// paths share.
+    // Cost: O(m), m = mixin layers of `self_val` (bounded by 8); O(1) for a
+    // plain instance: a few attribute-map probes, no registry access.
+    fn with_self_attr<R>(
+        &self,
+        self_val: &Value,
+        bare: crate::symbol::Symbol,
+        is_private: bool,
+        sigil: char,
+        f: impl FnOnce(
+            &crate::gc::Gc<crate::value::InstanceAttrs>,
+            &crate::value::AttrMap,
+            crate::symbol::Symbol,
+        ) -> R,
+    ) -> Option<R> {
+        let owner = self.method_class_stack_top_sym();
+        let owner_str = owner.map_or("", |o| o.as_str());
+        let (role_cell, inner_cell) =
+            Self::method_attr_cells_for(self_val, owner_str, self.method_class_top_is_role());
+        if let Some(attributes) = role_cell {
+            let map = attributes.as_map();
+            let key = Self::role_attr_key_in_mixin(self_val, owner_str, bare)
+                .filter(|key| map.contains_key(*key))
+                .or_else(|| Self::attr_key_in_map(owner, bare, is_private, sigil, &map));
+            if let Some(key) = key {
+                return Some(f(&attributes, &map, key));
+            }
+        }
+        if let Some(attributes) = inner_cell {
+            let map = attributes.as_map();
+            if let Some(key) = Self::attr_key_in_map(owner, bare, is_private, sigil, &map) {
+                return Some(f(&attributes, &map, key));
+            }
+        }
+        None
+    }
+
     /// The shared tail of both read paths: resolve `(bare, is_private)` against
     /// `self`'s live cell under a single read guard and clone the value out.
     fn read_attr_cell_by_key(
         &self,
+        self_val: Option<Value>,
         bare: crate::symbol::Symbol,
         is_private: bool,
         sigil: char,
     ) -> Option<Value> {
-        if let Some(self_val) = self.get_env_self() {
-            let owner = self.method_class_stack_top_str().unwrap_or("");
-            let (role_cell, inner_cell) = self.method_attr_cells(&self_val, owner);
-            if let Some(attributes) = role_cell {
-                let map = attributes.as_map();
-                let key = self
-                    .method_role_attr_key(&self_val, owner, bare)
-                    .filter(|key| map.contains_key(*key))
-                    .or_else(|| self.attr_key_in_map(bare, is_private, sigil, &map));
-                if let Some(key) = key {
-                    return map.get(key).map(|v| v.deref_container());
-                }
-            }
-            if let Some(attributes) = inner_cell {
-                let map = attributes.as_map();
-                if let Some(key) = self.attr_key_in_map(bare, is_private, sigil, &map) {
-                    return map.get(key).map(|v| v.deref_container());
-                }
-            }
+        if let Some(self_val) = self_val
+            && let Some(found) =
+                self.with_self_attr(&self_val, bare, is_private, sigil, |_, map, key| {
+                    map.get(key).map(|v| v.deref_container())
+                })
+        {
+            return found;
         }
         self.read_class_level_attr_cell(bare, is_private)
     }
@@ -421,9 +512,14 @@ impl Interpreter {
         let (class_sym, attributes) = Self::instance_class_and_attrs(&self_val)?;
         {
             let map = attributes.as_map();
-            if self
-                .attr_key_in_map(crate::symbol::Symbol::intern(bare), true, sigil, &map)
-                .is_some()
+            if Self::attr_key_in_map(
+                self.method_class_stack_top_sym(),
+                crate::symbol::Symbol::intern(bare),
+                true,
+                sigil,
+                &map,
+            )
+            .is_some()
             {
                 return None;
             }
@@ -500,7 +596,13 @@ impl Interpreter {
             return;
         };
         let sigil = crate::value::attr_twigil_sigil(name).unwrap_or('$');
-        self.write_attr_cell_by_key(crate::symbol::Symbol::intern(bare), is_private, sigil, val);
+        self.write_attr_cell_by_key(
+            self.get_env_self(),
+            crate::symbol::Symbol::intern(bare),
+            is_private,
+            sigil,
+            val,
+        );
     }
 
     /// The shared tail of both write paths. Unwraps a `Mixin` self to the inner
@@ -510,38 +612,23 @@ impl Interpreter {
     /// not exist on it.
     fn write_attr_cell_by_key(
         &self,
+        self_val: Option<Value>,
         bare: crate::symbol::Symbol,
         is_private: bool,
         sigil: char,
         val: Value,
     ) {
-        if let Some(self_val) = self.get_env_self() {
-            let owner = self.method_class_stack_top_str().unwrap_or("");
-            let (role_cell, inner_cell) = self.method_attr_cells(&self_val, owner);
-            if let Some(attributes) = role_cell {
-                let key = {
-                    let map = attributes.as_map();
-                    self.method_role_attr_key(&self_val, owner, bare)
-                        .filter(|key| map.contains_key(*key))
-                        .or_else(|| self.attr_key_in_map(bare, is_private, sigil, &map))
-                };
-                if let Some(key) = key {
-                    self.record_build_attr_write(&attributes, key);
-                    attributes.store_through_container(key, val);
-                    return;
-                }
-            }
-            if let Some(attributes) = inner_cell {
-                let key = {
-                    let map = attributes.as_map();
-                    self.attr_key_in_map(bare, is_private, sigil, &map)
-                };
-                if let Some(key) = key {
-                    self.record_build_attr_write(&attributes, key);
-                    attributes.store_through_container(key, val);
-                    return;
-                }
-            }
+        // The key is resolved under the read guard, which is released before
+        // the store takes the write lock.
+        if let Some(self_val) = self_val
+            && let Some((attributes, key)) =
+                self.with_self_attr(&self_val, bare, is_private, sigil, |attributes, _, key| {
+                    (attributes.clone(), key)
+                })
+        {
+            self.record_build_attr_write(&attributes, key);
+            attributes.store_through_container(key, val);
+            return;
         }
         // Class-level attribute fallback: see `read_class_level_attr_cell`'s
         // doc comment for why this is the canonical (not a mirrored) store.
@@ -577,28 +664,11 @@ impl Interpreter {
         let Some(self_val) = self.get_env_self() else {
             return Err(lhs);
         };
-        let owner = self.method_class_stack_top_str().unwrap_or("");
-        let (role_cell, inner_cell) = self.method_attr_cells(&self_val, owner);
-        let mut target = None;
-        if let Some(attributes) = role_cell {
-            let key = {
-                let map = attributes.as_map();
-                self.method_role_attr_key(&self_val, owner, bare)
-                    .filter(|key| map.contains_key(*key))
-                    .or_else(|| self.attr_key_in_map(bare, is_private, sigil, &map))
-            };
-            target = key.map(|key| (attributes, key));
-        }
-        if target.is_none()
-            && let Some(attributes) = inner_cell
-        {
-            let key = {
-                let map = attributes.as_map();
-                self.attr_key_in_map(bare, is_private, sigil, &map)
-            };
-            target = key.map(|key| (attributes, key));
-        }
-        let Some((attributes, key)) = target else {
+        let Some((attributes, key)) =
+            self.with_self_attr(&self_val, bare, is_private, sigil, |attributes, _, key| {
+                (attributes.clone(), key)
+            })
+        else {
             return Err(lhs);
         };
         let mut held = Some(lhs);
@@ -655,7 +725,13 @@ impl Interpreter {
         if Self::is_non_mirrorable_attr_value(&self.locals[idx]) {
             return;
         }
-        self.write_attr_cell_by_key(bare, is_private, sigil, self.locals[idx].clone());
+        self.write_attr_cell_by_key(
+            self.attr_access_self(code),
+            bare,
+            is_private,
+            sigil,
+            self.locals[idx].clone(),
+        );
     }
 
     /// Mirror the finalized value of the variable named `name` into `self`'s

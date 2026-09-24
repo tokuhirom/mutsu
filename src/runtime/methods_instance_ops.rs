@@ -3067,7 +3067,7 @@ impl Interpreter {
                             // resolver that lexical owner context so it uses
                             // the compiled method path without weakening
                             // ordinary source-level privacy checks.
-                            self.push_method_class(owner.to_string());
+                            self.push_method_class(&owner.to_string());
                             let result = self.call_method_with_values(invocant, &method_name, args);
                             self.pop_method_class();
                             return result;

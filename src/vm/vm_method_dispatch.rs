@@ -369,7 +369,11 @@ impl Interpreter {
         // from forward_resolved_delegation shadowing a local parameter `x`).
         let saved_var_bindings = self.take_var_bindings();
 
-        self.push_method_class(owner_class.to_string());
+        // The owner's role-ness is asked here once per call and handed to the
+        // frame, so the body's attribute accesses never ask it again.
+        let owner_is_role = self.is_role(owner_class);
+        let owner_sym = crate::symbol::Symbol::intern(owner_class);
+        self.push_method_class_sym(owner_sym, Some(owner_is_role));
         // A plain (non-multi, non-wrapped) compiled method pushes no
         // `method_dispatch_stack` frame, so callsame/nextsame's exhausted-MRO
         // fallback (`native_any_base_next_candidate` et al.) has nothing to
@@ -388,7 +392,7 @@ impl Interpreter {
         // Detect role context: use the pre-computed role_origin stored on the
         // MethodDef (set during role composition) instead of expensive fingerprint
         // matching on every call.
-        let role_context = if self.is_role(owner_class) {
+        let role_context = if owner_is_role {
             Some(owner_class.to_string())
         } else {
             method_def
@@ -402,7 +406,7 @@ impl Interpreter {
         // (as the fast path already does): a `String` allocation plus a
         // re-intern of two fixed key names on every method call otherwise.
         // `owner_sym` is reused by the routine frame push below.
-        let owner_sym = crate::symbol::Symbol::intern(owner_class);
+        // `owner_sym` was interned for the method-class frame push above.
         self.env_mut()
             .insert_sym(crate::symbol::wk::class_decl(), Value::package(owner_sym));
         if let Some(role_name) = role_context {
@@ -1669,7 +1673,11 @@ impl Interpreter {
             self.set_env(scoped);
         }
         let saved_var_bindings = self.take_var_bindings();
-        self.push_method_class(owner_class.to_string());
+        // The owner's role-ness is asked here once per call and handed to the
+        // frame, so the body's attribute accesses never ask it again.
+        let owner_is_role = self.is_role(owner_class);
+        let owner_sym = crate::symbol::Symbol::intern(owner_class);
+        self.push_method_class_sym(owner_sym, Some(owner_is_role));
         // See the matching comment in `call_compiled_method`.
         if cc.uses_dispatcher {
             self.push_method_samewith_context(
@@ -1710,7 +1718,7 @@ impl Interpreter {
         };
 
         // Compute role context without touching env
-        let role_context: Option<String> = if self.is_role(owner_class) {
+        let role_context: Option<String> = if owner_is_role {
             Some(owner_class.to_string())
         } else {
             method_def
@@ -1864,7 +1872,7 @@ impl Interpreter {
         // Build class value for ?CLASS. Interned once and reused by the routine
         // frame push at the bottom — re-interning a name is a thread-local
         // string-hash round trip, not free.
-        let owner_sym = crate::symbol::Symbol::intern(owner_class);
+        // `owner_sym` was interned for the method-class frame push above.
         let class_val = Value::package(owner_sym);
         let method_callable_id = crate::value::next_instance_id();
         let any_val = Value::package(crate::symbol::wk::any());
