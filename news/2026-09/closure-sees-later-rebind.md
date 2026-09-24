@@ -22,4 +22,4 @@ inside it, so `$g` does not follow a later rebind.
 The existing read and write chokepoints already handle a cell holding a cell
 (the #8759 rw-parameter shape), so reads and writes needed no new code. The
 design is written up as ADR-0097 §14. The regression test is
-`t/vm/binding/closure-sees-later-rebind.t`.
+`t/routines/closure/closure-sees-later-rebind.t`.
