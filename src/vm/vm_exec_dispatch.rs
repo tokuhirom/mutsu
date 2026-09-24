@@ -6210,7 +6210,7 @@ impl Interpreter {
             }
 
             // -- Closures and registration --
-            // Cost: O(f + v), f = free vars, v = env overlay entries (the snapshot is copied on insert). Rakudo: O(1) -- see #9170.
+            // Cost: O(s + f), the closure-capture cost (see capture_closure_env), s = visible env names that are not plain user lexicals, f = free vars. Rakudo: O(1) -- see #9170.
             OpCode::MakeGather(idx, cc_idx) => {
                 self.sync_source_line(code, *ip);
                 self.exec_make_gather_op(code, *idx, *cc_idx)?;
@@ -6264,19 +6264,19 @@ impl Interpreter {
                 self.stack.push(result);
                 *ip += 1;
             }
-            // Cost: O(v + f + L), v = visible env entries (capture-cache miss), f = free vars, L = frame locals (see capture_closure_env). Rakudo: O(f) -- see #9170.
+            // Cost: O(s + f), s = visible env names that are not plain user lexicals (types, specials, `__mutsu_` meta), f = free vars (see capture_closure_env). Rakudo: O(f) -- see #9170.
             OpCode::MakeAnonSub(idx, cc_idx, is_block) => {
                 self.sync_source_line(code, *ip);
                 self.exec_make_anon_sub_op(code, *idx, *cc_idx, *is_block)?;
                 *ip += 1;
             }
-            // Cost: O(v + f + L), v = visible env entries (capture-cache miss), f = free vars, L = frame locals (see capture_closure_env). Rakudo: O(f) -- see #9170.
+            // Cost: O(s + f), s = visible env names that are not plain user lexicals (types, specials, `__mutsu_` meta), f = free vars (see capture_closure_env). Rakudo: O(f) -- see #9170.
             OpCode::MakeAnonSubParams(idx, cc_idx, is_wc) => {
                 self.sync_source_line(code, *ip);
                 self.exec_make_anon_sub_params_op(code, *idx, *cc_idx, *is_wc)?;
                 *ip += 1;
             }
-            // Cost: O(v + f + L), v = visible env entries (capture-cache miss), f = free vars, L = frame locals (see capture_closure_env). Rakudo: O(f) -- see #9170.
+            // Cost: O(s + f), s = visible env names that are not plain user lexicals (types, specials, `__mutsu_` meta), f = free vars (see capture_closure_env). Rakudo: O(f) -- see #9170.
             OpCode::MakeLambda(idx, cc_idx, is_wc) => {
                 self.sync_source_line(code, *ip);
                 self.exec_make_lambda_op(code, *idx, *cc_idx, *is_wc)?;
@@ -6287,7 +6287,7 @@ impl Interpreter {
                 self.exec_index_assign_generic_op(code, *is_positional)?;
                 *ip += 1;
             }
-            // Cost: O(v + f + L), v = visible env entries (capture-cache miss), f = free vars, L = frame locals (see capture_closure_env). Rakudo: O(f) -- see #9170.
+            // Cost: O(s + f), s = visible env names that are not plain user lexicals (types, specials, `__mutsu_` meta), f = free vars (see capture_closure_env). Rakudo: O(f) -- see #9170.
             OpCode::MakeBlockClosure(idx, cc_idx) => {
                 self.sync_source_line(code, *ip);
                 self.exec_make_block_closure_op(code, *idx, *cc_idx)?;

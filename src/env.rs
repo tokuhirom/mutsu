@@ -1724,16 +1724,21 @@ impl Env {
     /// After a bare `use Test` this is the difference between visiting 96 keys
     /// and visiting 47 for the same 31-entry result, on every closure creation
     /// in the importing file (#7565).
-    pub(crate) fn filtered_flat_capture<F: Fn(Symbol, &Value) -> bool>(&self, keep: &F) -> Env {
+    pub(crate) fn filtered_flat_capture<F: Fn(Symbol, &Value) -> bool>(
+        &self,
+        keep: &F,
+        probe: &[Symbol],
+    ) -> Env {
         fn collect<F: Fn(Symbol, &Value) -> bool>(
             env: &Env,
             out: &mut SymMap,
             keep: &F,
+            probe: &[Symbol],
             outermost: bool,
         ) {
             let outermost = match &env.parent {
                 Some(parent) => {
-                    collect(parent, out, keep, outermost);
+                    collect(parent, out, keep, probe, outermost);
                     false
                 }
                 None => outermost,
@@ -1779,6 +1784,20 @@ impl Env {
                             out.remove(&k);
                         }
                     }
+                    // The candidate list leaves out the plain user lexicals
+                    // (`env_tier::capture_walk_skips`); the filter keeps one
+                    // only when it is a free variable, and `probe` names
+                    // those, so look them up instead of walking the tier.
+                    for &k in probe {
+                        let Some(v) = env.inner.get(&k) else {
+                            continue;
+                        };
+                        if keep(k, v) {
+                            out.insert(k, v.clone());
+                        } else if !outermost {
+                            out.remove(&k);
+                        }
+                    }
                 }
             }
         }
@@ -1786,7 +1805,7 @@ impl Env {
         // count: the rejected families are exactly what makes the two diverge
         // (36 against 96 after a bare `use Test`), and over-reserving cost a
         // 2 KiB allocation and its zeroing per closure creation.
-        let mut cap = 0usize;
+        let mut cap = probe.len();
         // As in [`Self::filtered_flat`], the same walk also answers which
         // per-interpreter base tier the chain's tail carries (ADR-0086) and
         // whether any tier holds a tombstone.
@@ -1820,7 +1839,7 @@ impl Env {
         };
         let outermost =
             !self.chain_has_fallback || !self.collect_fallbacks_filtered(&mut out, keep, base_map);
-        collect(self, &mut out, keep, outermost);
+        collect(self, &mut out, keep, probe, outermost);
         // `keep` may have rejected `?FILE`, so re-derive rather than inherit.
         let file_sym = out.get(&file_key()).and_then(file_sym_of);
         // The per-interpreter base tier rides along by reference, exactly as

@@ -168,6 +168,22 @@ pub(crate) fn capture_never_keeps_resolved(key: Symbol, flags: u16) -> bool {
     flags & DROP != 0 || key == crate::symbol::well_known::callable_type()
 }
 
+/// True when a tier walk for a closure capture may skip `key` without
+/// visiting it: either no capture ever keeps it ([`capture_never_keeps`]), or
+/// it is a plain user lexical (or a `__mutsu_type::` shadow of one), which the
+/// capture filter keeps exactly when it is one of the closure's free variables.
+/// The capture probes those by name (`CompiledCode::capture_probe_keys`), so a
+/// wide tier -- a file with thousands of top-level `my`s -- costs every
+/// closure creation O(its system names), not O(its declarations) (#9170).
+#[inline]
+pub(crate) fn capture_walk_skips(key: Symbol) -> bool {
+    if capture_never_keeps(key) {
+        return true;
+    }
+    let subject = key.type_meta_subject().unwrap_or(key);
+    subject.flags() & flags::PLAIN_USER_LEXICAL != 0
+}
+
 /// Smallest tier the candidate memo is built for — see [`Tier::capture_walk`].
 const CANDIDATE_MEMO_MIN_KEYS: usize = 32;
 
@@ -202,9 +218,10 @@ impl Tier {
         })
     }
 
-    /// This tier's keys that a closure capture could keep — everything
-    /// [`capture_never_keeps`] does not reject. Computed on first ask and held
-    /// until the key set changes.
+    /// This tier's keys that a closure capture has to visit — everything
+    /// [`capture_walk_skips`] does not skip. The skipped plain user lexicals
+    /// are probed by name by the capture instead. Computed on first ask and
+    /// held until the key set changes.
     pub(crate) fn capture_candidates(&self) -> &[Symbol] {
         if let Some(idx) = self.capture_candidates.get() {
             debug_assert!(
@@ -217,12 +234,7 @@ impl Tier {
         // `Vec` through its doubling ladder for a wide tier was a measurable
         // share of the build (`realloc` on `benchmarks/bench-ctor.raku`).
         let mut keys = Vec::with_capacity(self.map.len());
-        keys.extend(
-            self.map
-                .keys()
-                .copied()
-                .filter(|k| !capture_never_keeps(*k)),
-        );
+        keys.extend(self.map.keys().copied().filter(|k| !capture_walk_skips(*k)));
         let keys = keys.into_boxed_slice();
         let built_at_len = self.map.len();
         &self
@@ -390,7 +402,7 @@ mod tests {
         let mut want: Vec<Symbol> = tier
             .keys()
             .copied()
-            .filter(|k| !capture_never_keeps(*k))
+            .filter(|k| !capture_walk_skips(*k))
             .collect();
         let mut got: Vec<Symbol> = tier
             .capture_candidates()
@@ -406,24 +418,29 @@ mod tests {
     #[test]
     fn candidate_memo_drops_the_never_captured_families() {
         let mut tier = Tier::default();
-        tier.insert(s("$x"), Value::int(1));
+        tier.insert(s("$X"), Value::int(1));
         tier.insert(s("__mutsu_callable_id::GLOBAL::ok"), Value::int(2));
         tier.insert(s("@!attr"), Value::int(3));
         tier.insert(s("__mutsu_callable_type"), Value::int(4));
+        // Plain user lexicals (and their type shadows) are left to the
+        // capture's by-name probe of its free variables (#9170).
+        tier.insert(s("$lower"), Value::int(5));
+        tier.insert(s("__mutsu_type::$lower"), Value::int(6));
         let got: Vec<Symbol> = tier.capture_candidates().to_vec();
-        assert_eq!(got, vec![s("$x")]);
+        assert_eq!(got, vec![s("$X")]);
+        assert!(candidates_are_exact(&tier));
     }
 
     #[test]
     fn a_value_overwrite_keeps_the_memo_and_a_new_key_rebuilds_it() {
         let mut tier = Tier::default();
-        tier.insert(s("$x"), Value::int(1));
+        tier.insert(s("$X"), Value::int(1));
         let before = tier.capture_candidates().as_ptr();
         // Value-only write: the key set is unchanged, so the memo must survive
         // -- this is the whole point of the index (#7565).
-        tier.insert(s("$x"), Value::int(2));
+        tier.insert(s("$X"), Value::int(2));
         assert_eq!(tier.capture_candidates().as_ptr(), before);
-        tier.insert(s("$y"), Value::int(3));
+        tier.insert(s("$Y"), Value::int(3));
         assert!(candidates_are_exact(&tier));
         assert_eq!(tier.capture_candidates().len(), 2);
     }
@@ -431,20 +448,20 @@ mod tests {
     #[test]
     fn a_clone_carries_the_memo_because_it_has_the_same_keys() {
         let mut tier = Tier::default();
-        tier.insert(s("$x"), Value::int(1));
+        tier.insert(s("$X"), Value::int(1));
         let _ = tier.capture_candidates();
         let copy = tier.clone();
-        assert_eq!(copy.capture_candidates(), &[s("$x")]);
+        assert_eq!(copy.capture_candidates(), &[s("$X")]);
         assert!(candidates_are_exact(&copy));
     }
 
     #[test]
     fn a_removal_leaves_a_superset_the_reader_must_re_probe() {
         let mut tier = Tier::default();
-        tier.insert(s("$x"), Value::int(1));
-        tier.insert(s("$y"), Value::int(2));
+        tier.insert(s("$X"), Value::int(1));
+        tier.insert(s("$Y"), Value::int(2));
         let _ = tier.capture_candidates();
-        tier.remove(&s("$y"));
+        tier.remove(&s("$Y"));
         assert_eq!(tier.capture_candidates().len(), 2);
         assert!(candidates_are_exact(&tier));
     }
@@ -452,15 +469,15 @@ mod tests {
     #[test]
     fn map_mut_drops_the_memo_because_it_can_add_a_key() {
         let mut tier = Tier::default();
-        tier.insert(s("$x"), Value::int(1));
+        tier.insert(s("$X"), Value::int(1));
         let _ = tier.capture_candidates();
-        tier.with_map_mut(|m| m.insert(s("$z"), Value::int(9)));
+        tier.with_map_mut(|m| m.insert(s("$Z"), Value::int(9)));
         assert!(candidates_are_exact(&tier));
         assert_eq!(tier.capture_candidates().len(), 2);
         // The bulk path cannot name what it added, so it latches the whole key
         // set afterwards -- without which `maybe_env_key` would answer `false`
         // for a key that is genuinely in an env.
-        assert!(crate::symbol::maybe_env_key(s("$z")));
+        assert!(crate::symbol::maybe_env_key(s("$Z")));
     }
 
     /// The latch every env lookup's early-out rests on: a key that reached a
