@@ -800,13 +800,12 @@ pub(crate) fn native_method_0arg(
     }
     // Uni types: override .chars, .codes, .comb to work on codepoints
     if let ValueView::Uni(u) = target.view() {
+        // Cost: O(1) (the codepoint array's length; no text is built).
+        if matches!(method, "chars" | "codes" | "Int" | "Numeric" | "elems") {
+            return Some(Ok(Value::int(u.len() as i64)));
+        }
         let text = &u.text();
         match method {
-            // Cost: O(n), n = codepoints of the Uni (counted on every call).
-            // Rakudo: O(1) -- see #9147.
-            "chars" | "codes" => {
-                return Some(Ok(Value::int(text.chars().count() as i64)));
-            }
             "comb" => {
                 let parts: Vec<Value> = text.chars().map(|c| Value::str(c.to_string())).collect();
                 return Some(Ok(Value::seq(parts)));
@@ -815,15 +814,9 @@ pub(crate) fn native_method_0arg(
                 use unicode_normalization::UnicodeNormalization;
                 return Some(Ok(Value::str(text.nfc().collect::<String>())));
             }
-            "Int" | "Numeric" => {
-                return Some(Ok(Value::int(text.chars().count() as i64)));
-            }
             "list" => {
                 let codepoints: Vec<Value> = text.chars().map(|c| Value::int(c as i64)).collect();
                 return Some(Ok(Value::array(codepoints)));
-            }
-            "elems" => {
-                return Some(Ok(Value::int(text.chars().count() as i64)));
             }
             "raku" | "perl" => {
                 return Some(Ok(Value::str(raku_repr::uni_raku_repr(text, &u.form))));

@@ -136,6 +136,10 @@ pub(crate) fn attr_twigil_sigil(name: &str) -> Option<char> {
     attr_twigil_base(name).map(|_| sigil)
 }
 
+/// Attribute under which `Str.WHICH` keeps its invocant (see
+/// [`AttrMap::objat_which`]).
+pub(crate) const OBJAT_STR_PAYLOAD: &str = "__str_which";
+
 /// The attribute map of an instance: `Symbol -> Value`, hashed with `FxHash`.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub(crate) struct AttrMap(FxHashMap<Symbol, Value>);
@@ -162,6 +166,18 @@ impl AttrMap {
     pub(crate) fn get<K: AttrKey>(&self, key: K) -> Option<&Value> {
         let sym = key.lookup_symbol()?;
         self.0.get(&sym)
+    }
+
+    /// The identity text of an `ObjAt` / `ValueObjAt` instance. `Str.WHICH`
+    /// stores its invocant under [`OBJAT_STR_PAYLOAD`] (shared, O(1)) instead of
+    /// a pre-rendered `Str|...` key, so the text is assembled here, only when
+    /// something actually reads it; every other ObjAt carries a `WHICH` Str.
+    // Cost: O(n), n = chars of the identity text.
+    pub(crate) fn objat_which(&self) -> Option<String> {
+        if let Some(payload) = self.get(OBJAT_STR_PAYLOAD) {
+            return Some(format!("Str|{}", payload.string_value_cow()));
+        }
+        self.get("WHICH").map(|v| v.to_string_value())
     }
 
     #[inline]

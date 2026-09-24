@@ -783,15 +783,15 @@ pub(crate) fn native_method_1arg(
             // builtins::comb); Regex/Sub/bare matchers return None -> interpreter.
             crate::builtins::comb::native_comb_method(target, std::slice::from_ref(arg))
         }
-        // Cost: O(n + k), n = bytes of the invocant, k = lines, and O(n) even for
-        // `.lines($limit)` (all lines are split, then truncated). Rakudo: O(prefix) -- see #9147.
+        // Cost: O(n + k), n = bytes of the invocant, k = lines; `.lines($limit)` is
+        // O(p + k), p = bytes up to the last line returned (the scan stops there).
         "lines" => {
             if let ValueView::Instance { class_name, .. } = target.view()
                 && class_name == "Supply"
             {
                 return None;
             }
-            let s = target.to_string_value();
+            let s = target.string_value_cow();
             if let ValueView::Pair(key, value) = arg.view() {
                 if key == "chomp" {
                     let lines: Vec<Value> =
@@ -816,7 +816,6 @@ pub(crate) fn native_method_1arg(
                 return None;
             }
 
-            let mut lines = crate::builtins::split_lines_chomped(&s);
             let limit = match arg.view() {
                 ValueView::Int(i) => Some(i.max(0) as usize),
                 ValueView::BigInt(bi) => {
@@ -829,16 +828,16 @@ pub(crate) fn native_method_1arg(
                 ValueView::Rat(n, d) if d == 0 && n > 0 => None,
                 _ => return None,
             };
-            if let Some(n) = limit {
-                lines.truncate(n);
-            }
-            let lines: Vec<Value> = lines.into_iter().map(Value::str).collect();
+            let lines: Vec<Value> = crate::builtins::split_lines_limited(&s, true, limit)
+                .into_iter()
+                .map(Value::str)
+                .collect();
             Some(Ok(Value::seq(lines)))
         }
-        // Cost: O(n + k), n = chars of the invocant, k = words, and O(n) even for
-        // `.words($limit)` (all words are split, then truncated). Rakudo: O(prefix) -- see #9147.
+        // Cost: O(n + k), n = chars of the invocant, k = words; `.words($limit)` is
+        // O(p + k), p = chars up to the last word returned (the split is lazy).
         "words" => {
-            let s = target.to_string_value();
+            let s = target.string_value_cow();
             let limit = match arg.view() {
                 ValueView::Int(i) => Some(i.max(0) as usize),
                 ValueView::BigInt(bi) => {
@@ -851,13 +850,11 @@ pub(crate) fn native_method_1arg(
                 ValueView::Rat(n, d) if d == 0 && n > 0 => None,
                 _ => return None,
             };
-            let mut words: Vec<Value> = s
+            let words: Vec<Value> = s
                 .split_whitespace()
+                .take(limit.unwrap_or(usize::MAX))
                 .map(|w| Value::str(w.to_string()))
                 .collect();
-            if let Some(n) = limit {
-                words.truncate(n);
-            }
             Some(Ok(Value::seq(words)))
         }
         // Cost: O(e + t), e = elements of the invocant, t = total chars of the result

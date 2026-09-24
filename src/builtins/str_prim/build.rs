@@ -47,7 +47,7 @@ pub(crate) fn concat(left: Value, right: &Value) -> Value {
 ///
 /// Cost: O(n * c), n = chars of `src`, c = repeat count (plus an NFC pass
 /// over a non-ASCII result). Rakudo: O(1) for a flat operand (one repeat
-/// strand) -- see #9147.
+/// strand) -- see #9253.
 pub(crate) fn repeat(src: &str, n: usize) -> Result<Value, RuntimeError> {
     // Guard the allocation: `str::repeat` aborts the process via
     // `handle_alloc_error` on an absurd count (e.g. `"x" x 1e15`), which

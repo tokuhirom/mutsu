@@ -1204,11 +1204,7 @@ pub fn raku_value(v: &Value) -> String {
             attributes,
             ..
         } if class_name == "ObjAt" || class_name == "ValueObjAt" => {
-            let which = attributes
-                .as_map()
-                .get("WHICH")
-                .map(|v| v.to_string_value())
-                .unwrap_or_default();
+            let which = attributes.as_map().objat_which().unwrap_or_default();
             format!("{}.new(\"{}\")", class_name.resolve(), which)
         }
         ValueView::Mixin(inner, mixins) => {

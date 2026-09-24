@@ -68,16 +68,23 @@ impl Interpreter {
         v
     }
 
-    pub(crate) fn stringify_compare_operand(v: &Value) -> Result<String, RuntimeError> {
+    // Cost: O(1) for a plain Str (borrowed); O(n) otherwise, n = chars of the
+    // rendered string.
+    pub(crate) fn stringify_compare_operand(
+        v: &Value,
+    ) -> Result<std::borrow::Cow<'_, str>, RuntimeError> {
+        if let Some(s) = v.as_str() {
+            return Ok(std::borrow::Cow::Borrowed(s));
+        }
         if let Some(class_name) = Self::buf_class_name(v) {
             if class_name == "utf8"
                 && let Some(Ok(decoded)) = crate::builtins::decode_buf_method(v, Some("utf-8"))
             {
-                return Ok(decoded.to_string_value());
+                return Ok(std::borrow::Cow::Owned(decoded.to_string_value()));
             }
             return Err(Self::buf_as_str_error(v, "Stringy"));
         }
-        Ok(v.to_string_value())
+        Ok(std::borrow::Cow::Owned(v.to_string_value()))
     }
 
     pub(crate) fn blob_ordering(
@@ -99,9 +106,8 @@ impl Interpreter {
         Ok(Some(Self::buf_cmp_bytes(left, right)))
     }
 
-    // Cost: O(n1 + n2), n1, n2 = chars of the operands (both are copied by
-    // `to_str_context` before comparing). Rakudo: O(p), p = common prefix, O(1)
-    // when the lengths differ -- see #9147.
+    // Cost: O(p), p = common prefix; O(1) when the lengths differ (a plain Str
+    // operand is borrowed by `str_context_cow`, any other is stringified first).
     pub(super) fn exec_str_eq_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
@@ -112,16 +118,15 @@ impl Interpreter {
                     Self::buf_cmp_bytes(&l, &r) == std::cmp::Ordering::Equal,
                 ))
             } else {
-                Ok(Value::truth(l.to_str_context() == r.to_str_context()))
+                Ok(Value::truth(l.str_context_cow() == r.str_context_cow()))
             }
         })?;
         self.stack.push(result);
         Ok(())
     }
 
-    // Cost: O(n1 + n2), n1, n2 = chars of the operands (both are copied by
-    // `to_str_context` before comparing). Rakudo: O(p), p = common prefix, O(1)
-    // when the lengths differ -- see #9147.
+    // Cost: O(p), p = common prefix; O(1) when the lengths differ (a plain Str
+    // operand is borrowed by `str_context_cow`, any other is stringified first).
     pub(super) fn exec_str_ne_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
@@ -135,7 +140,7 @@ impl Interpreter {
                     Self::buf_cmp_bytes(&l, &r) == std::cmp::Ordering::Equal,
                 ))
             } else {
-                Ok(Value::truth(l.to_str_context() == r.to_str_context()))
+                Ok(Value::truth(l.str_context_cow() == r.str_context_cow()))
             }
         })?;
         self.stack.push(Value::truth(!eq_result.truthy()));
@@ -148,8 +153,8 @@ impl Interpreter {
         lb.cmp(&rb)
     }
 
-    // Cost: O(n1 + n2), n1, n2 = chars of the operands (both are copied by
-    // `to_str_context` before comparing). Rakudo: O(p), p = common prefix -- see #9147.
+    // Cost: O(p), p = common prefix (a plain Str operand is borrowed by
+    // `str_context_cow`, any other is stringified first).
     pub(super) fn exec_str_lt_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
@@ -158,15 +163,15 @@ impl Interpreter {
             if let Some(ord) = Self::blob_ordering(&l, &r)? {
                 Ok(Value::truth(ord == std::cmp::Ordering::Less))
             } else {
-                Ok(Value::truth(l.to_str_context() < r.to_str_context()))
+                Ok(Value::truth(l.str_context_cow() < r.str_context_cow()))
             }
         })?;
         self.stack.push(result);
         Ok(())
     }
 
-    // Cost: O(n1 + n2), n1, n2 = chars of the operands (both are copied by
-    // `to_str_context` before comparing). Rakudo: O(p), p = common prefix -- see #9147.
+    // Cost: O(p), p = common prefix (a plain Str operand is borrowed by
+    // `str_context_cow`, any other is stringified first).
     pub(super) fn exec_str_gt_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
@@ -175,15 +180,15 @@ impl Interpreter {
             if let Some(ord) = Self::blob_ordering(&l, &r)? {
                 Ok(Value::truth(ord == std::cmp::Ordering::Greater))
             } else {
-                Ok(Value::truth(l.to_str_context() > r.to_str_context()))
+                Ok(Value::truth(l.str_context_cow() > r.str_context_cow()))
             }
         })?;
         self.stack.push(result);
         Ok(())
     }
 
-    // Cost: O(n1 + n2), n1, n2 = chars of the operands (both are copied by
-    // `to_str_context` before comparing). Rakudo: O(p), p = common prefix -- see #9147.
+    // Cost: O(p), p = common prefix (a plain Str operand is borrowed by
+    // `str_context_cow`, any other is stringified first).
     pub(super) fn exec_str_le_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
@@ -192,15 +197,15 @@ impl Interpreter {
             if let Some(ord) = Self::blob_ordering(&l, &r)? {
                 Ok(Value::truth(ord != std::cmp::Ordering::Greater))
             } else {
-                Ok(Value::truth(l.to_str_context() <= r.to_str_context()))
+                Ok(Value::truth(l.str_context_cow() <= r.str_context_cow()))
             }
         })?;
         self.stack.push(result);
         Ok(())
     }
 
-    // Cost: O(n1 + n2), n1, n2 = chars of the operands (both are copied by
-    // `to_str_context` before comparing). Rakudo: O(p), p = common prefix -- see #9147.
+    // Cost: O(p), p = common prefix (a plain Str operand is borrowed by
+    // `str_context_cow`, any other is stringified first).
     pub(super) fn exec_str_ge_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
@@ -209,7 +214,7 @@ impl Interpreter {
             if let Some(ord) = Self::blob_ordering(&l, &r)? {
                 Ok(Value::truth(ord != std::cmp::Ordering::Less))
             } else {
-                Ok(Value::truth(l.to_str_context() >= r.to_str_context()))
+                Ok(Value::truth(l.str_context_cow() >= r.str_context_cow()))
             }
         })?;
         self.stack.push(result);
@@ -452,9 +457,8 @@ impl Interpreter {
                 l_elems.len().cmp(&r_elems.len())
             }
             // Str cmp Str lands here.
-            // Cost: O(n1 + n2), n1, n2 = chars of the operands (both copied).
-            // Rakudo: O(p), p = common prefix -- see #9147.
-            _ => left.to_string_value().cmp(&right.to_string_value()),
+            // Cost: O(p), p = common prefix (plain Str operands are borrowed).
+            _ => left.string_value_cow().cmp(&right.string_value_cow()),
         }
     }
 
@@ -690,8 +694,8 @@ impl Interpreter {
         Ok(())
     }
 
-    // Cost: O(n1 + n2), n1, n2 = chars of the operands (both stringified by copy).
-    // Rakudo: O(p), p = common prefix -- see #9147.
+    // Cost: O(p), p = common prefix (plain Str operands are borrowed, any other
+    // is stringified first).
     pub(super) fn exec_leg_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();

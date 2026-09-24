@@ -243,11 +243,7 @@ impl Interpreter {
             }));
         }
         if class_name == Symbol::intern("ObjAt") || class_name == Symbol::intern("ValueObjAt") {
-            let which = attributes
-                .as_map()
-                .get("WHICH")
-                .map(|v| v.to_string_value())
-                .unwrap_or_default();
+            let which = attributes.as_map().objat_which().unwrap_or_default();
             if method == "gist" {
                 return Some(Ok(Value::str(which)));
             }

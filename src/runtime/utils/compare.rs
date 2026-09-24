@@ -251,14 +251,14 @@ pub(crate) fn compare_values(a: &Value, b: &Value) -> i32 {
             if let Some(ord) = compare_infinite_num_against_nonnumeric_str(n, &s) {
                 ord
             } else {
-                a.to_string_value().cmp(&b.to_string_value()) as i32
+                a.string_value_cow().cmp(&b.string_value_cow()) as i32
             }
         }
         (ValueView::Str(s), ValueView::Num(n)) => {
             if let Some(ord) = compare_infinite_num_against_nonnumeric_str(n, &s) {
                 -ord
             } else {
-                a.to_string_value().cmp(&b.to_string_value()) as i32
+                a.string_value_cow().cmp(&b.string_value_cow()) as i32
             }
         }
         // Pair/ValuePair comparison: compare by key first, then by value
@@ -309,7 +309,7 @@ pub(crate) fn compare_values(a: &Value, b: &Value) -> i32 {
                 if matches!(a.view(), ValueView::Mixin(..))
                     || matches!(b.view(), ValueView::Mixin(..))
                 {
-                    return a.to_string_value().cmp(&b.to_string_value()) as i32;
+                    return a.string_value_cow().cmp(&b.string_value_cow()) as i32;
                 }
                 return cmp;
             }
@@ -328,11 +328,11 @@ pub(crate) fn compare_values(a: &Value, b: &Value) -> i32 {
                 if matches!(a.view(), ValueView::Mixin(..))
                     || matches!(b.view(), ValueView::Mixin(..))
                 {
-                    return a.to_string_value().cmp(&b.to_string_value()) as i32;
+                    return a.string_value_cow().cmp(&b.string_value_cow()) as i32;
                 }
                 return cmp;
             }
-            a.to_string_value().cmp(&b.to_string_value()) as i32
+            a.string_value_cow().cmp(&b.string_value_cow()) as i32
         }
     }
 }

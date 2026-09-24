@@ -16,16 +16,6 @@
 use crate::value::{RuntimeError, Value, ValueView};
 use unicode_segmentation::UnicodeSegmentation;
 
-/// Apply a `comb` limit to a result vector: `Some(n)` keeps the first `n`
-/// (and `n <= 0` yields empty); `None` keeps all.
-fn apply_limit(result: Vec<Value>, limit: Option<i64>) -> Vec<Value> {
-    match limit {
-        Some(lim) if lim <= 0 => Vec::new(),
-        Some(lim) => result.into_iter().take(lim as usize).collect(),
-        None => result,
-    }
-}
-
 /// Pure `.comb` split for the `Int` (chunk) and `Str` (fixed needle) matchers.
 ///
 /// Returns `Some(items)` for those matchers (and `Some(empty)` when `limit <= 0`,
@@ -44,26 +34,36 @@ pub(crate) fn comb_pure(
     }
 
     match matcher.map(Value::view) {
-        // Cost: O(n), n = chars of the invocant, even when `$limit` asks for only k
-        // chunks (all graphemes are segmented first). Rakudo: O(k) -- see #9147.
+        // Cost: O(n), n = chars of the invocant; with `$limit` k, O(k * c), c =
+        // chunk size (segmentation stops after the k-th chunk).
         Some(ValueView::Int(n)) => {
             let chunk_size = if n <= 0 { 1usize } else { n as usize };
-            let graphemes: Vec<&str> = text.graphemes(true).collect();
-            let result: Vec<Value> = graphemes
-                .chunks(chunk_size)
-                .map(|chunk| Value::str(chunk.concat()))
-                .collect();
-            Some(apply_limit(result, limit))
+            let max_chunks = limit.map_or(usize::MAX, |lim| lim as usize);
+            let mut result: Vec<Value> = Vec::new();
+            let mut graphemes = text.grapheme_indices(true).peekable();
+            while result.len() < max_chunks {
+                let Some(&(start, _)) = graphemes.peek() else {
+                    break;
+                };
+                let mut end = start;
+                for (i, g) in graphemes.by_ref().take(chunk_size) {
+                    end = i + g.len();
+                }
+                result.push(Value::str(text[start..end].to_string()));
+            }
+            Some(result)
         }
         // Cost: O(n + k), n = bytes of the invocant, k = matches (substring
-        // search resumes after each hit); an empty needle is O(n) graphemes.
+        // search resumes after each hit, and stops at `$limit`); an empty needle
+        // is O(n) graphemes, O(k) with `$limit` k.
         Some(ValueView::Str(needle)) => {
             if needle.is_empty() {
                 let chars: Vec<Value> = text
                     .graphemes(true)
+                    .take(limit.map_or(usize::MAX, |lim| lim as usize))
                     .map(|g| Value::str(g.to_string()))
                     .collect();
-                return Some(apply_limit(chars, limit));
+                return Some(chars);
             }
             let mut result = Vec::new();
             let mut offset = 0usize;
@@ -91,12 +91,12 @@ pub(crate) fn comb_pure(
 /// matcher + optional limit (the `:match` adverb only affects the regex path and
 /// is ignored here, exactly as the interpreter ignores it for `Int`/`Str`).
 /// Returns `None` to defer to the interpreter for `Regex`/`Sub`/bare matchers.
-// Cost: O(n) to copy the invocant, plus `comb_pure`'s cost.
+// Cost: `comb_pure`'s cost (a plain Str invocant is borrowed, not copied).
 pub(crate) fn native_comb_method(
     target: &Value,
     args: &[Value],
 ) -> Option<Result<Value, RuntimeError>> {
-    let text = target.to_string_value();
+    let text = target.string_value_cow();
 
     // Separate positional args from named ones. `.comb` declares only `:match`
     // (regex-only, irrelevant to this pure path) and swallows every other named

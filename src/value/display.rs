@@ -900,8 +900,7 @@ impl Value {
                 ..
             } if class_name == "ObjAt" || class_name == "ValueObjAt" => attributes
                 .as_map()
-                .get("WHICH")
-                .map(|v: &Value| v.to_string_value())
+                .objat_which()
                 .unwrap_or_else(|| format!("{}()", class_name)),
             ValueView::Instance { .. } if self.is_match_instance() => self
                 .match_str_value()
@@ -1294,6 +1293,27 @@ impl Value {
         match self.view() {
             ValueView::Package(_) => String::new(),
             _ => self.to_string_value(),
+        }
+    }
+
+    /// [`Value::to_str_context`] without the copy when the value already is a
+    /// plain `Str`: the payload is borrowed, so a comparison of two strings
+    /// costs what the comparison itself costs (O(1) for `eq` on different
+    /// lengths, O(common prefix) for an ordering) instead of O(n1 + n2).
+    // Cost: O(1) for a plain Str; otherwise as `to_str_context`.
+    pub(crate) fn str_context_cow(&self) -> std::borrow::Cow<'_, str> {
+        match self.as_str() {
+            Some(s) => std::borrow::Cow::Borrowed(s),
+            None => std::borrow::Cow::Owned(self.to_str_context()),
+        }
+    }
+
+    /// [`Value::to_string_value`] without the copy for a plain `Str`.
+    // Cost: O(1) for a plain Str; otherwise as `to_string_value`.
+    pub(crate) fn string_value_cow(&self) -> std::borrow::Cow<'_, str> {
+        match self.as_str() {
+            Some(s) => std::borrow::Cow::Borrowed(s),
+            None => std::borrow::Cow::Owned(self.to_string_value()),
         }
     }
 

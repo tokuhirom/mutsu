@@ -237,8 +237,8 @@ pub(super) fn dispatch(
                 },
             )))))
         }
-        // Cost: O(n), n = chars of the invocant (the payload is copied even when there
-        // is no trailing newline). Rakudo: O(1) when nothing is chomped -- see #9147.
+        // Cost: O(1) when nothing is chomped (see chomp_value); O(n) otherwise, n =
+        // chars of the invocant.
         "chomp" => {
             // IO::Handle.chomp (and any IO::Handle-derived class, e.g.
             // Text::IO::String) is an attribute accessor, not the Str method.
@@ -248,9 +248,7 @@ pub(super) fn dispatch(
             if matches!(target.view(), ValueView::Instance { .. }) {
                 return Some(None);
             }
-            Some(Some(Ok(Value::str(crate::builtins::chomp_one(
-                &target.to_string_value(),
-            )))))
+            Some(Some(Ok(crate::builtins::chomp_value(target))))
         }
         // Cost: O(n), n = chars of the invocant (result copied).
         "chop" => {

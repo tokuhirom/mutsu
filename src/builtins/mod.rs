@@ -63,10 +63,23 @@ use num_bigint::BigInt;
 use num_traits::{One, Signed, Zero};
 
 fn split_lines_impl(input: &str, chomp: bool) -> Vec<String> {
+    split_lines_limited(input, chomp, None)
+}
+
+/// The first `limit` lines of `input` (all of them for `None`). The scan stops
+/// as soon as the limit is reached, so `.lines(3)` reads only the prefix that
+/// holds those lines.
+///
+/// Cost: O(p + k), p = bytes up to the end of the last line returned, k = lines.
+pub(crate) fn split_lines_limited(input: &str, chomp: bool, limit: Option<usize>) -> Vec<String> {
     let bytes = input.as_bytes();
     let mut lines = Vec::new();
     let mut start = 0usize;
     let mut i = 0usize;
+    let limit = limit.unwrap_or(usize::MAX);
+    if limit == 0 {
+        return lines;
+    }
 
     while i < bytes.len() {
         let sep_len = if bytes[i] == b'\n' {
@@ -86,6 +99,9 @@ fn split_lines_impl(input: &str, chomp: bool) -> Vec<String> {
         lines.push(input[start..end].to_string());
         i += sep_len;
         start = i;
+        if lines.len() == limit {
+            return lines;
+        }
     }
 
     if start < input.len() {
@@ -114,6 +130,18 @@ pub(crate) fn chomp_one(s: &str) -> String {
     } else {
         s.to_string()
     }
+}
+
+/// `chomp` of a value: a plain Str with no trailing line break is returned
+/// as-is (shared, not copied); anything else is stringified and chomped.
+// Cost: O(1) when nothing is chomped from a plain Str; O(n) otherwise, n = chars.
+pub(crate) fn chomp_value(v: &Value) -> Value {
+    if let Some(s) = v.as_str()
+        && !s.ends_with(['\n', '\r'])
+    {
+        return v.clone();
+    }
+    Value::str(chomp_one(&v.to_string_value()))
 }
 
 pub(crate) use accepted_nameds::strip_undeclared_nameds;

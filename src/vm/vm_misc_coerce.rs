@@ -253,6 +253,12 @@ impl Interpreter {
                 return Ok(());
             }
         }
+        // `~$s` on a plain Str (no user `prefix:<~>` candidate took it above)
+        // is the Str itself: share it rather than copy the payload.
+        if val.as_str().is_some() {
+            self.stack.push(val);
+            return Ok(());
+        }
         // Grammar-hot fast path: `~$match` on a plain `Match` instance is the
         // dominant Str coercion in grammar-action code (one `~$<key>` per
         // capture). Match is a builtin class whose `.Str` is the stored `str`

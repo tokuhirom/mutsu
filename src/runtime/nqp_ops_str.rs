@@ -80,7 +80,7 @@ impl Interpreter {
                 &sarg(args, 0),
             ))),
             // Cost: O(n * c), n = chars of $s, c = repeat count. Rakudo: O(1) for a flat
-            // operand (one repeat strand) -- see #9147.
+            // operand (one repeat strand) -- see #9253.
             "x" => {
                 let n = iarg(args, 1);
                 if n < 0 {

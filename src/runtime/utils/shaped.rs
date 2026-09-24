@@ -317,8 +317,8 @@ pub(crate) fn values_identical(left: &Value, right: &Value) -> bool {
                 left.eqv(right)
             } else if a_name == b_name && (a_name == "ObjAt" || a_name == "ValueObjAt") {
                 // ObjAt/ValueObjAt instances are === when their WHICH content matches
-                let a_val = a_attrs.as_map().get("WHICH").map(|v| v.to_string_value());
-                let b_val = b_attrs.as_map().get("WHICH").map(|v| v.to_string_value());
+                let a_val = a_attrs.as_map().objat_which();
+                let b_val = b_attrs.as_map().objat_which();
                 a_val == b_val
             } else if a_name == b_name && a_name == "IO::Handle" {
                 // An `IO::Handle` value is a thin wrapper around an entry in the

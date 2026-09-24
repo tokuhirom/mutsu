@@ -267,6 +267,24 @@ impl Value {
                 };
                 raku_a == raku_b
             }
+            // ObjAt / ValueObjAt: equal identity text. `Str.WHICH` keeps its
+            // invocant rather than a rendered `WHICH` key, so the attribute
+            // maps of two equal ObjAts need not match (see
+            // `AttrMap::objat_which`).
+            (
+                ValueView::Instance {
+                    class_name: cn_a,
+                    attributes: a_attrs,
+                    ..
+                },
+                ValueView::Instance {
+                    class_name: cn_b,
+                    attributes: b_attrs,
+                    ..
+                },
+            ) if cn_a == cn_b && (cn_a == "ObjAt" || cn_a == "ValueObjAt") => {
+                a_attrs.as_map().objat_which() == b_attrs.as_map().objat_which()
+            }
             (
                 ValueView::Instance {
                     class_name: cn_a,
