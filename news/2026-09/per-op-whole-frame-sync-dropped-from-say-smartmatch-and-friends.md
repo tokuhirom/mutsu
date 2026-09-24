@@ -59,7 +59,7 @@ before -> after, first column in seconds at N):
 The script gained cases for `eager`, `but`, `does`, `andthen` and a user
 `sink` (the latter measured as `$k.self` in sink context, because `K.new`
 itself still grows with the frame, which is a constructor cost outside this
-issue). `t/vm/per-op-sync-free-coherence.t` pins every by-name reader and
+issue). `t/vm/writeback/per-op-sync-free-coherence.t` pins every by-name reader and
 writer the removed syncs used to cover.
 
 Still open under #9169: `&f` (`GetCodeVar`) hands back a `Sub` that shares

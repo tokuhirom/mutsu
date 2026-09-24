@@ -393,6 +393,18 @@ impl std::fmt::Debug for Tier {
     }
 }
 
+/// Feed a string-valued `__mutsu_sigilless_alias::` entry to
+/// [`crate::sigilless_alias_index`]. The tag test comes first, so an insert
+/// of any non-string value (nearly all of them) costs one branch; a string
+/// value adds one memoized flag load for the key.
+// Cost: O(1) (see `sigilless_alias_index::note_alias_entry` for a new pair).
+#[inline(always)]
+fn note_alias_entry(key: Symbol, value: &Value) {
+    if value.as_str().is_some() && key.flags() & crate::symbol::flags::SIGILLESS_ALIAS_KEY != 0 {
+        crate::sigilless_alias_index::note_alias_entry(key, value);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -538,17 +550,5 @@ mod tests {
         let _ = tier.container_ref_keys();
         let copy = tier.clone();
         assert_eq!(copy.container_ref_keys(), &[s("$boxed")]);
-    }
-}
-
-/// Feed a string-valued `__mutsu_sigilless_alias::` entry to
-/// [`crate::sigilless_alias_index`]. The tag test comes first, so an insert
-/// of any non-string value (nearly all of them) costs one branch; a string
-/// value adds one memoized flag load for the key.
-// Cost: O(1) (see `sigilless_alias_index::note_alias_entry` for a new pair).
-#[inline(always)]
-fn note_alias_entry(key: Symbol, value: &Value) {
-    if value.as_str().is_some() && key.flags() & crate::symbol::flags::SIGILLESS_ALIAS_KEY != 0 {
-        crate::sigilless_alias_index::note_alias_entry(key, value);
     }
 }
