@@ -281,6 +281,14 @@ impl Compiler {
         let arity = args.len() as u32;
         let arg_sources_idx = self.add_arg_sources_constant(args);
         let mname = name.resolve();
+        // `$s.substr-rw(...)` returns a Proxy that reads and writes `$s` by
+        // name; keep it env-synced (see the sub form in `expr_call.rs`, #9200).
+        if mname == "substr-rw"
+            && modifier.is_none()
+            && let Expr::Var(var_name) = target
+        {
+            self.note_atomic_env_sync_target(var_name, false);
+        }
         let esc = Self::method_escapes_closure_args(&mname);
         // `Pair.new($k, $v)` binds its value parameter raw, so the built Pair's
         // value aliases `$v`'s container (write-through, traps.rakudoc; only the
