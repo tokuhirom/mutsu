@@ -996,13 +996,14 @@ impl Interpreter {
                     if best_sym.is_some() {
                         inner_caps.set_sym(best_sym);
                     }
-                    return Self::build_named_candidates_from_inner(
-                        vec![(inner_end, inner_caps)],
-                        pos,
-                        &spec,
-                        None,
-                    )
-                    .pop();
+                    return self
+                        .build_named_candidates_from_inner(
+                            vec![(inner_end, inner_caps)],
+                            pos,
+                            &spec,
+                            None,
+                        )
+                        .pop();
                 }
                 return None;
             }

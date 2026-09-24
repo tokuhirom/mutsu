@@ -1,3 +1,4 @@
+use super::methods_grammar_replay_spans::maximal_span_indices;
 use super::*;
 use crate::symbol::Symbol;
 use crate::value::ValueMap;
@@ -1230,22 +1231,9 @@ impl Interpreter {
                 !covered.is_some_and(|(from, to)| caps.from >= from && caps.to <= to)
             })
             .collect();
-        // Keep only spans not contained in another survivor. Equal spans (e.g.
-        // `token a { <b> }` where both cover the same text) keep the LAST logged
-        // one, which is the outer rule: the matcher recurses, so children are
-        // logged before their parent.
-        let maximal: Vec<&(String, std::sync::Arc<CapNode>)> = outside
-            .iter()
-            .enumerate()
-            .filter(|(i, (_, e))| {
-                !outside.iter().enumerate().any(|(j, (_, f))| {
-                    j != *i
-                        && f.from <= e.from
-                        && e.to <= f.to
-                        && ((f.from, f.to) != (e.from, e.to) || j > *i)
-                })
-            })
-            .map(|(_, entry)| entry)
+        let maximal: Vec<&(String, std::sync::Arc<CapNode>)> = maximal_span_indices(&outside)
+            .into_iter()
+            .map(|i| &outside[i])
             .collect();
         let saved_self = self.env.get("self").cloned();
         let mut result = Ok(());
@@ -1454,7 +1442,7 @@ impl Interpreter {
     /// The class an actions object dispatches its methods on, if it names one.
     /// A stateless `:actions(Actions)` is often passed as the bare type object,
     /// so a `Package` counts just as much as an `Instance`.
-    fn actions_class_name_of(actions: &Value) -> Option<String> {
+    pub(crate) fn actions_class_name_of(actions: &Value) -> Option<String> {
         match actions.view() {
             ValueView::Instance { class_name, .. } => Some(class_name.to_string()),
             ValueView::Package(name) => Some(name.to_string()),
@@ -1476,7 +1464,7 @@ impl Interpreter {
     /// actually declares, preferring the `:sym<...>` spelling (by far the more
     /// common one, and the only one that binds a `<sym>` literal). With no
     /// actions class to ask, the `:sym<...>` spelling is assumed.
-    fn variant_action_method_name(
+    pub(crate) fn variant_action_method_name(
         &mut self,
         actions_class: Option<&str>,
         rule_name: &str,

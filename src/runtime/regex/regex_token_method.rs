@@ -394,7 +394,7 @@ impl Interpreter {
             },
         };
         let sym = inner_caps.sym().cloned();
-        Some(Self::build_named_candidates_from_inner(
+        Some(self.build_named_candidates_from_inner(
             vec![(to_abs, inner_caps)],
             pos,
             spec,
@@ -569,7 +569,7 @@ impl Interpreter {
             },
         };
         let sym = inner_caps.sym().cloned();
-        Some(Self::build_named_candidates_from_inner(
+        Some(self.build_named_candidates_from_inner(
             vec![(to_abs, inner_caps)],
             pos,
             spec,

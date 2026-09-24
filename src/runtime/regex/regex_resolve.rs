@@ -656,11 +656,17 @@ impl Interpreter {
 
         let (lookup_name, arg_exprs) = Self::parse_regex_lookup_target(raw);
         let lookup_sym = crate::symbol::Symbol::intern(&lookup_name);
+        let silent_marker_sym = crate::symbol::Symbol::intern(&format!(
+            "{}{}",
+            crate::runtime::SILENT_ACTION_MARKER_PREFIX,
+            lookup_name
+        ));
         NamedRegexLookupSpec {
             silent,
             token_lookup,
             lookup_name,
             lookup_sym,
+            silent_marker_sym,
             capture_sym: capture_name.as_deref().map(crate::symbol::Symbol::intern),
             capture_name,
             arg_exprs,

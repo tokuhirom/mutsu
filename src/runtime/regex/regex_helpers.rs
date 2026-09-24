@@ -1276,6 +1276,11 @@ pub(crate) struct NamedRegexLookupSpec {
     /// every subrule call at every position
     /// ([#7576](https://github.com/tokuhirom/mutsu/issues/7576)).
     pub(crate) lookup_sym: crate::symbol::Symbol,
+    /// The hidden capture key a silent call (`<.rule>`) files its node under
+    /// (`SILENT_ACTION_MARKER_PREFIX` + [`Self::lookup_name`]), interned with
+    /// the spec so no subrule call has to `format!` and re-intern it
+    /// ([#9286](https://github.com/tokuhirom/mutsu/issues/9286)).
+    pub(crate) silent_marker_sym: crate::symbol::Symbol,
     pub(crate) capture_name: Option<String>,
     /// [`Self::capture_name`] interned, `None` when the atom carries no alias.
     /// Interned with the spec (once per distinct `<subrule>` atom) rather than

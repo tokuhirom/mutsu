@@ -256,11 +256,7 @@ impl Interpreter {
         };
         let spec = name.spec();
         let capture_symbols = if spec.silent {
-            vec![Symbol::intern(&format!(
-                "{}{}",
-                crate::runtime::SILENT_ACTION_MARKER_PREFIX,
-                spec.lookup_name
-            ))]
+            vec![spec.silent_marker_sym]
         } else {
             let mut symbols = Vec::with_capacity(2);
             if let Some(capture_sym) = spec.capture_sym {
@@ -719,7 +715,7 @@ impl Interpreter {
                             // build_named_candidates_from_inner returns items in
                             // the same order as input (HIGHEST FIRST). Caller
                             // expects LOWEST FIRST, so reverse.
-                            let mut result = Self::build_named_candidates_from_inner(
+                            let mut result = self.build_named_candidates_from_inner(
                                 seed, pos, &spec, None, // no sym_key for seed
                             );
                             result.reverse();
@@ -945,8 +941,7 @@ impl Interpreter {
                 // best_raw is HIGHEST FIRST; build_named_candidates_from_inner returns in
                 // the same order (one-to-one), so result is HIGHEST FIRST.
                 // Caller expects LOWEST FIRST, so reverse.
-                let mut result =
-                    Self::build_named_candidates_from_inner(best_raw, pos, &spec, None);
+                let mut result = self.build_named_candidates_from_inner(best_raw, pos, &spec, None);
                 result.reverse();
                 result
             } else {
@@ -1213,6 +1208,7 @@ impl Interpreter {
     /// `pos` is the position of the named atom in `chars`. Each candidate is a
     /// capture DELTA relative to an empty baseline (ADR-0007).
     pub(super) fn build_named_candidates_from_inner(
+        &mut self,
         inner_matches: Vec<(usize, RegexCaptures)>,
         pos: usize,
         spec: &NamedRegexLookupSpec,
@@ -1304,12 +1300,21 @@ impl Interpreter {
                         .nodes
                         .push(orig_subcap);
                 }
-            } else if !inner_caps.named.is_empty() {
-                // Silent subrule (`<.foo>`) that contains nested captures. The
-                // subrule is hidden from `.hash`, but its OWN action method must
-                // still fire (Rakudo dispatches actions at reduce time regardless
-                // of capture), and its nested rules' actions must fire too — with
-                // their `.made` set on the SAME nodes the parent action reads
+            } else if !inner_caps.named.is_empty()
+                || self.silent_subrule_has_action(
+                    spec,
+                    inner_caps
+                        .sym()
+                        .map(String::as_str)
+                        .or(sym_key.map(String::as_str)),
+                )
+            {
+                // Silent subrule (`<.foo>`) that contains nested captures, or
+                // whose OWN action method exists. The subrule is hidden from
+                // `.hash`, but its action method must still fire (Rakudo
+                // dispatches actions at reduce time regardless of capture), and
+                // its nested rules' actions must fire too — with their `.made`
+                // set on the SAME nodes the parent action reads
                 // (`method header-field { ...$/<field-name>.made... }`). Store the
                 // whole subrule match under a HIDDEN MARKER key in `named_subcaps`
                 // (the prefix can never be a real capture name). The Match builder
@@ -1317,6 +1322,8 @@ impl Interpreter {
                 // `.hash`; the grammar action walk recurses into them. This replaces
                 // the older "flatten direct children into the parent" hack, which
                 // lost the rule's own action and over-exposed children in `.hash`.
+                // A childless one needs the node only for its action: a zero-width
+                // `<.end-block>` whose action reports a recovery warning.
                 let cs = inner_caps.capture_start.unwrap_or(pos).clamp(pos, end);
                 let ce = inner_caps.capture_end.unwrap_or(end).clamp(cs, end);
                 let mut subcap = inner_caps;
@@ -1328,48 +1335,24 @@ impl Interpreter {
                 subcap.set_action_name(Some(spec.lookup_name.clone()));
                 // Keep the silent subrule's inline blocks on its own (marker) node
                 // for the reduce-time walk to run once — see the non-silent branch.
-                let marker = format!(
-                    "{}{}",
-                    crate::runtime::SILENT_ACTION_MARKER_PREFIX,
-                    spec.lookup_name
-                );
                 let subcap = std::sync::Arc::new(subcap.into_cap_node());
                 super::regex_helpers::record_reduced_subrule(&spec.lookup_name, &subcap);
                 new_caps
                     .named
-                    .entry(Symbol::intern(&marker))
+                    .entry(spec.silent_marker_sym)
                     .or_default()
                     .nodes
                     .push(subcap);
             } else {
-                // A childless silent subrule can still have an action method.  In
-                // particular, `<.end-block>` is deliberately zero-width when its
-                // closing delimiter is absent, and its action reports the recovery
-                // warning.  Keep every silent subrule on the hidden marker path so
-                // zero-width reductions do not lose their action; action objects
-                // without a corresponding method simply ignore the extra node.
-                let cs = inner_caps.capture_start.unwrap_or(pos).clamp(pos, end);
-                let ce = inner_caps.capture_end.unwrap_or(end).clamp(cs, end);
-                let mut subcap = inner_caps;
-                subcap.from = cs;
-                subcap.to = ce;
-                if subcap.sym().is_none() && sym_key.is_some() {
-                    subcap.set_sym(sym_key.cloned());
-                }
-                subcap.set_action_name(Some(spec.lookup_name.clone()));
-                let marker = format!(
-                    "{}{}",
-                    crate::runtime::SILENT_ACTION_MARKER_PREFIX,
-                    spec.lookup_name
-                );
-                let subcap = std::sync::Arc::new(subcap.into_cap_node());
-                super::regex_helpers::record_reduced_subrule(&spec.lookup_name, &subcap);
-                new_caps
-                    .named
-                    .entry(Symbol::intern(&marker))
-                    .or_default()
-                    .nodes
-                    .push(subcap);
+                // Childless silent subrule with no action to run (`<.ws>`,
+                // `<.CRLF>`, ...): keep the cheap path — just carry its code
+                // blocks up. A marker node here would be built, logged for the
+                // reduce replay and copied through every backtracking path for
+                // nothing; doing it for every `<.ws>` made a 60-row YAMLish parse
+                // cost 2.7x the instructions
+                // ([#9286](https://github.com/tokuhirom/mutsu/issues/9286)).
+                let mut inner_caps = inner_caps;
+                super::regex_helpers::adopt_inline_ast(&mut new_caps, &mut inner_caps);
             }
             out.push((end, new_caps));
         }

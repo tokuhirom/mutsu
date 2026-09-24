@@ -713,6 +713,7 @@ mod methods_format;
 mod methods_grammar;
 mod methods_grammar_action_env;
 mod methods_grammar_method_start;
+mod methods_grammar_replay_spans;
 mod methods_grammar_wrapped_start;
 mod methods_instance_ops;
 mod methods_introspect;
