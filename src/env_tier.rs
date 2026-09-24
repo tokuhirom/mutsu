@@ -168,6 +168,22 @@ pub(crate) fn capture_never_keeps_resolved(key: Symbol, flags: u16) -> bool {
     flags & DROP != 0 || key == crate::symbol::well_known::callable_type()
 }
 
+/// True when a tier walk for a closure capture may skip `key` without
+/// visiting it: either no capture ever keeps it ([`capture_never_keeps`]), or
+/// it is a plain user lexical (or a `__mutsu_type::` shadow of one), which the
+/// capture filter keeps exactly when it is one of the closure's free variables.
+/// The capture probes those by name (`CompiledCode::capture_probe_keys`), so a
+/// wide tier -- a file with thousands of top-level `my`s -- costs every
+/// closure creation O(its system names), not O(its declarations) (#9170).
+#[inline]
+pub(crate) fn capture_walk_skips(key: Symbol) -> bool {
+    if capture_never_keeps(key) {
+        return true;
+    }
+    let subject = key.type_meta_subject().unwrap_or(key);
+    subject.flags() & flags::PLAIN_USER_LEXICAL != 0
+}
+
 /// Smallest tier the candidate memo is built for — see [`Tier::capture_walk`].
 const CANDIDATE_MEMO_MIN_KEYS: usize = 32;
 
@@ -202,9 +218,10 @@ impl Tier {
         })
     }
 
-    /// This tier's keys that a closure capture could keep — everything
-    /// [`capture_never_keeps`] does not reject. Computed on first ask and held
-    /// until the key set changes.
+    /// This tier's keys that a closure capture has to visit — everything
+    /// [`capture_walk_skips`] does not skip. The skipped plain user lexicals
+    /// are probed by name by the capture instead. Computed on first ask and
+    /// held until the key set changes.
     pub(crate) fn capture_candidates(&self) -> &[Symbol] {
         if let Some(idx) = self.capture_candidates.get() {
             debug_assert!(
@@ -217,12 +234,7 @@ impl Tier {
         // `Vec` through its doubling ladder for a wide tier was a measurable
         // share of the build (`realloc` on `benchmarks/bench-ctor.raku`).
         let mut keys = Vec::with_capacity(self.map.len());
-        keys.extend(
-            self.map
-                .keys()
-                .copied()
-                .filter(|k| !capture_never_keeps(*k)),
-        );
+        keys.extend(self.map.keys().copied().filter(|k| !capture_walk_skips(*k)));
         let keys = keys.into_boxed_slice();
         let built_at_len = self.map.len();
         &self
@@ -390,7 +402,7 @@ mod tests {
         let mut want: Vec<Symbol> = tier
             .keys()
             .copied()
-            .filter(|k| !capture_never_keeps(*k))
+            .filter(|k| !capture_walk_skips(*k))
             .collect();
         let mut got: Vec<Symbol> = tier
             .capture_candidates()

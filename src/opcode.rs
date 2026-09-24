@@ -5075,6 +5075,10 @@ pub(crate) struct CompiledCode {
     /// slot's writes instead. With the gate off `alloc_local` get-or-creates by
     /// name, so names are unique and this is all-false (byte-identical).
     pub(crate) dup_named_locals: Vec<bool>,
+    /// Whether any entry of [`dup_named_locals`](Self::dup_named_locals) is
+    /// set, recorded where that table is built so a closure creation can ask
+    /// in O(1) instead of scanning every local of the frame (#9170).
+    pub(crate) has_dup_named_locals: bool,
     /// Slots that MORE THAN ONE declaring scope of this compiled unit `my`-declares.
     ///
     /// The shadow-slot allocator mints a fresh slot only for a *genuine* shadow
@@ -5665,6 +5669,10 @@ pub(crate) struct CompiledCode {
     /// EVERY closure creation — see `capture_free_var_set` / `capture_local_set`.
     pub(crate) free_var_sym_set: std::sync::OnceLock<rustc_hash::FxHashSet<Symbol>>,
     pub(crate) local_sym_set: std::sync::OnceLock<rustc_hash::FxHashSet<Symbol>>,
+    /// Lazily-built list of the env keys a closure capture probes by name
+    /// instead of finding them by walking a tier -- see
+    /// [`Self::capture_probe_keys`].
+    pub(crate) capture_probe_keys: std::sync::OnceLock<Box<[Symbol]>>,
     /// Lazily-built name indexes over [`locals`](Self::locals) (see
     /// [`LocalSlotIndex`]), so a block exit can find the slots of the handful
     /// of names it has to reset without scanning every local of the frame
@@ -6108,6 +6116,7 @@ impl CompiledCode {
             needs_env_sync: Vec::new(),
             env_consumer_slots: EnvConsumerSlots::default(),
             dup_named_locals: Vec::new(),
+            has_dup_named_locals: false,
             multi_scope_slots: std::collections::HashSet::new(),
             is_supply_block_body: false,
             eval_context_target_callable_id: None,
@@ -6154,6 +6163,7 @@ impl CompiledCode {
             rebind_target_slots: Vec::new(),
             free_var_sym_set: std::sync::OnceLock::new(),
             local_sym_set: std::sync::OnceLock::new(),
+            capture_probe_keys: std::sync::OnceLock::new(),
             local_slot_index: std::sync::OnceLock::new(),
             stmt_pool_bodies: std::sync::OnceLock::new(),
             stmt_pool_signatures: std::sync::OnceLock::new(),
@@ -6312,6 +6322,31 @@ impl CompiledCode {
     pub(crate) fn capture_free_var_set(&self) -> &rustc_hash::FxHashSet<Symbol> {
         self.free_var_sym_set
             .get_or_init(|| self.free_var_syms.iter().copied().collect())
+    }
+
+    /// The env keys a closure capture of this chunk looks up by name rather
+    /// than finding by walking a wide tier: every free variable that is a
+    /// plain user lexical, plus its `__mutsu_type::` shadow metadata. A tier's
+    /// capture-candidate memo leaves plain user lexicals out (see
+    /// [`crate::env_tier::capture_walk_skips`]), because the capture filter
+    /// keeps one exactly when it is a free variable -- so probing this list is
+    /// what makes the walk cost O(f) in them instead of O(every declaration in
+    /// the creating scope) (#9170). A superset is harmless: each probed key
+    /// still goes through the filter.
+    pub(crate) fn capture_probe_keys(&self) -> &[Symbol] {
+        self.capture_probe_keys.get_or_init(|| {
+            let mut keys = Vec::new();
+            for &sym in &self.free_var_syms {
+                if sym.flags() & crate::symbol::flags::PLAIN_USER_LEXICAL == 0 {
+                    continue;
+                }
+                keys.push(sym);
+                keys.push(sym.with_str(|name| {
+                    Symbol::intern(&format!("{}{name}", crate::symbol::TYPE_META_PREFIX))
+                }));
+            }
+            keys.into_boxed_slice()
+        })
     }
 
     /// This chunk's own local/parameter names as a `Symbol` set, built once.
@@ -6873,6 +6908,7 @@ impl CompiledCode {
                     }
                 }
             }
+            self.has_dup_named_locals = !dups.is_empty();
             for i in dups {
                 self.dup_named_locals[i] = true;
             }
