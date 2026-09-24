@@ -32,6 +32,7 @@ pub mod repl;
 pub(crate) mod repl_core;
 mod runtime;
 pub(crate) mod scan_cache;
+pub(crate) mod sigilless_alias_index;
 pub mod symbol;
 mod token_kind;
 mod trace;

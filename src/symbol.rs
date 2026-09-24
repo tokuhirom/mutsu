@@ -225,6 +225,10 @@ pub(crate) mod flags {
     /// makes it a single memoized lookup instead of two `as_str()` round trips
     /// plus two `starts_with` scans per key.
     pub(crate) const CODE_ENV_ENTRY: u16 = 1 << 9;
+    /// A `__mutsu_sigilless_alias::<var>` alias entry. The env tier asks this
+    /// about every string-valued insert, to keep
+    /// [`crate::sigilless_alias_index`] a superset of the live alias entries.
+    pub(crate) const SIGILLESS_ALIAS_KEY: u16 = 1 << 10;
     /// This symbol has been used as an env key **somewhere in this process**.
     ///
     /// Unlike every other bit here this is NOT a property of the symbol's
@@ -251,6 +255,10 @@ pub(crate) const NQP_OP_PREFIX: &str = "nqp::";
 /// next to the flag so the two cannot drift.
 pub(crate) const CALLABLE_ID_META_PREFIX: &str = "__mutsu_callable_id::";
 
+/// The `__mutsu_sigilless_alias::` prefix `flags::SIGILLESS_ALIAS_KEY` marks.
+/// Must equal `MetaNs::SigillessAlias`'s prefix (pinned by a unit test there).
+pub(crate) const SIGILLESS_ALIAS_KEY_PREFIX: &str = "__mutsu_sigilless_alias::";
+
 fn compute_flags(s: &str) -> u16 {
     let mut f = flags::COMPUTED;
     if crate::runtime::utils::is_routine_scoped_implicit_var(s) {
@@ -270,6 +278,9 @@ fn compute_flags(s: &str) -> u16 {
     }
     if s.starts_with('&') || s.starts_with(CALLABLE_ID_META_PREFIX) {
         f |= flags::CODE_ENV_ENTRY;
+    }
+    if s.starts_with(SIGILLESS_ALIAS_KEY_PREFIX) {
+        f |= flags::SIGILLESS_ALIAS_KEY;
     }
     if crate::env::is_plain_user_lexical(s) {
         f |= flags::PLAIN_USER_LEXICAL;

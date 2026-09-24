@@ -193,8 +193,9 @@ impl Tier {
     /// latched as an env key, which is what lets [`crate::symbol::maybe_env_key`]
     /// treat a clear bit as a proof of absence.
     pub(crate) fn new(map: SymMap) -> Self {
-        for key in map.keys() {
+        for (key, value) in &map {
             crate::symbol::mark_env_key(*key);
+            note_alias_entry(*key, value);
         }
         Self {
             map,
@@ -308,6 +309,7 @@ impl Tier {
 
     #[inline]
     pub(crate) fn insert(&mut self, key: Symbol, value: Value) -> Option<Value> {
+        note_alias_entry(key, &value);
         let prev = self.map.insert(key, value);
         if prev.is_none() {
             // A key that was already here was latched when it arrived, so the
@@ -363,8 +365,9 @@ impl Tier {
     pub(crate) fn with_map_mut<R>(&mut self, f: impl FnOnce(&mut SymMap) -> R) -> R {
         self.invalidate_key_set();
         let out = f(&mut self.map);
-        for key in self.map.keys() {
+        for (key, value) in &self.map {
             crate::symbol::mark_env_key(*key);
+            note_alias_entry(*key, value);
         }
         out
     }
@@ -535,5 +538,17 @@ mod tests {
         let _ = tier.container_ref_keys();
         let copy = tier.clone();
         assert_eq!(copy.container_ref_keys(), &[s("$boxed")]);
+    }
+}
+
+/// Feed a string-valued `__mutsu_sigilless_alias::` entry to
+/// [`crate::sigilless_alias_index`]. The tag test comes first, so an insert
+/// of any non-string value (nearly all of them) costs one branch; a string
+/// value adds one memoized flag load for the key.
+// Cost: O(1) (see `sigilless_alias_index::note_alias_entry` for a new pair).
+#[inline(always)]
+fn note_alias_entry(key: Symbol, value: &Value) {
+    if value.as_str().is_some() && key.flags() & crate::symbol::flags::SIGILLESS_ALIAS_KEY != 0 {
+        crate::sigilless_alias_index::note_alias_entry(key, value);
     }
 }

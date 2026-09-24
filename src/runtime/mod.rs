@@ -3367,14 +3367,15 @@ pub struct Interpreter {
     /// gate would leave exactly that spawn's binding to be seeded — and frozen —
     /// on the lane.
     pub(crate) param_bound_aggregates: ValueMap,
-    /// Set while an *incidental* locals -> env mirror is running: the I/O
-    /// pre-sync (`sync_env_from_locals_declared`, run before Say/Put/Print/Note
-    /// so a `$*OUT` override or a `.gist` sees fresh values) and the regex
-    /// interpolation pre-sync. Both exist purely so a name-based reader in THIS
-    /// interpreter can observe the frame's live slots through `env`.
+    /// Set while an *incidental* locals -> env mirror is running: the regex
+    /// interpolation pre-sync before a `~~`. It exists purely so a name-based
+    /// reader in THIS interpreter can observe the frame's live slots through
+    /// `env`. (The I/O ops' own pre-sync was dropped by #9169: a `$*OUT`
+    /// override or a user `.gist` reads its free variables the way any method
+    /// body does, through the per-store mirror.)
     ///
     /// `set_env_with_main_alias` does double duty: it writes `env` AND publishes
-    /// to the cross-thread shared store. Publishing from these two is wrong,
+    /// to the cross-thread shared store. Publishing from such a mirror is wrong,
     /// because the store is keyed by BARE NAME while the mirror walks *whichever
     /// frame happens to be printing*: a callee's parameter `$url` overwrote the
     /// lane belonging to the caller's own `my $url`, and the caller's next
