@@ -318,6 +318,7 @@ impl RegexTree {
                 frugal: false,
                 separator: None,
                 from_runtime_interpolation: false,
+                subrule_call_capture: false,
             }
         }
 
@@ -573,9 +574,19 @@ impl RegexTree {
                     // A scalar alias around a non-capturing quantified atom
                     // captures the whole run as one Match. This mirrors the
                     // legacy parser's user-alias wrapper; an aliased
-                    // CapturingGroup intentionally stays per-iteration.
+                    // CapturingGroup intentionally stays per-iteration, and so
+                    // does a capturing lookaround (`$<a>=<after x>?`): it is a
+                    // subrule call, so a `?` that skips it must publish neither
+                    // name, which a wrapper that always runs could not (#9212).
                     if let RegexNode::Quantified { atom, .. } = regex.as_ref()
-                        && !matches!(atom.as_ref(), RegexNode::CapturingGroup(_))
+                        && !matches!(
+                            atom.as_ref(),
+                            RegexNode::CapturingGroup(_)
+                                | RegexNode::NamedLookaround {
+                                    capturing: true,
+                                    ..
+                                }
+                        )
                     {
                         let inner = lower_node(
                             regex,
@@ -614,6 +625,11 @@ impl RegexTree {
                     // `<before …>`) survives alongside the alias.
                     first.secondary_named_capture = first.named_capture.take();
                     first.named_capture = Some(name.clone());
+                    // An aliased subrule call stays a call: a `?` that skips it
+                    // publishes neither name (#9212).
+                    if first.secondary_named_capture.is_some() {
+                        first.subrule_call_capture = true;
+                    }
                     first.force_list_capture = *array
                         && match regex.as_ref() {
                             RegexNode::CapturingGroup(_) => true,
@@ -702,6 +718,7 @@ impl RegexTree {
                         } else {
                             "before".to_string()
                         });
+                        lookaround.subrule_call_capture = true;
                     }
                     Some(vec![lookaround])
                 }

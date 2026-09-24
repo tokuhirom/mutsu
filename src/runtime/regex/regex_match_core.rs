@@ -817,8 +817,13 @@ impl Interpreter {
                 // `Named` atom differs). `store_apply_named_capture` is a
                 // no-op when `token.named_capture` is unset, so this is safe
                 // to call unconditionally for the remaining atom kinds.
+                // A builtin subrule call (`<alpha>?`, `<after x>?`, also under
+                // a `$<a>=` alias) parses as a CharClass/Lookaround atom, so
+                // the atom kind alone cannot tell it from `$<x>=<[cd]>?`; the
+                // parser records it in `subrule_call_capture` (#9212).
                 let named_zero_capture =
-                    !matches!(token.atom, RegexAtom::CaptureGroup(_) | RegexAtom::Named(_));
+                    !matches!(token.atom, RegexAtom::CaptureGroup(_) | RegexAtom::Named(_))
+                        && !token.subrule_call_capture;
                 if token.frugal && !token.ratchet {
                     // Frugal: prefer zero matches — try zero first.
                     if self.walk_zero_or_one_zero_arm(

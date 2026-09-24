@@ -182,6 +182,7 @@ mod tests {
             frugal: false,
             separator: None,
             from_runtime_interpolation: false,
+            subrule_call_capture: false,
         }
     }
 
