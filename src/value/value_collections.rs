@@ -181,6 +181,7 @@ impl ArrayData {
             shape: None,
             initialized: None,
             descriptor_name: None,
+            nqp_elem: NqpElemKind::Object,
         }
     }
 
@@ -402,6 +403,7 @@ impl Clone for ArrayData {
             shape: self.shape.clone(),
             initialized: self.initialized.clone(),
             descriptor_name: self.descriptor_name.clone(),
+            nqp_elem: self.nqp_elem,
         }
     }
 }

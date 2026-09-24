@@ -1839,6 +1839,26 @@ pub struct ArrayData {
     /// (Text::CSV's `@kh.VAR.name ne "element"` guard — its rakudo#2483
     /// workaround). `None` keeps the reflector's syntactic-name fallback.
     pub descriptor_name: Option<Box<str>>,
+    /// The element kind an nqp VMArray was created with (#9235): an
+    /// `nqp::list_i` / `list_n` / `list_s` is a native array whose growth
+    /// slots are `0` / `0e0` / the null string, where an untyped `nqp::list`
+    /// grows with null. Every other array is [`NqpElemKind::Object`].
+    pub nqp_elem: NqpElemKind,
+}
+
+/// See [`ArrayData::nqp_elem`]. MoarVM keeps the same distinction as the
+/// array's REPR slot type (`VMArray` of `obj` vs. `int64`/`num64`/`str`).
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub enum NqpElemKind {
+    /// An object array (`nqp::list`) -- and every non-nqp array.
+    #[default]
+    Object,
+    /// `nqp::list_i`.
+    Int,
+    /// `nqp::list_n`.
+    Num,
+    /// `nqp::list_s`.
+    Str,
 }
 
 /// Value stored in an enum variant: an integer, a string, or an arbitrary Value.
