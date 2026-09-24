@@ -55,6 +55,38 @@ pub(crate) fn with_nqp_backing_array<R>(v: &Value, f: impl FnOnce(&Value) -> R) 
     }
 }
 
+/// The storage of a plain list, or of a `Uni`'s codepoint list, handed to `f`
+/// for an in-place edit. `None` for anything else (an `IterationBuffer`, a
+/// Buf/Blob, a non-list), which the caller sends down the general path.
+///
+/// These two are the only shapes TRIR's per-character list ops meet in
+/// practice (JSON::Fast's `unjsonify-string` shifts every codepoint off one
+/// `Uni` and pushes it onto another), and neither can be a Buf, so this skips
+/// [`push_elem`]'s Buf probe and [`Interpreter::nqp_with_elems_mut`]'s closure
+/// layers. The edit is the same one those make: same node, same
+/// `ArrayData` method.
+// Cost: O(1) plus f.
+#[inline]
+pub(crate) fn with_list_data_mut<R>(
+    v: &Value,
+    f: impl FnOnce(&mut crate::value::ArrayData) -> R,
+) -> Option<R> {
+    match v.view() {
+        // SAFETY: audited aliased in-place container write (see
+        // value::aliased_mut and docs/gc-contents-mut-inventory.md) -- every
+        // caller's `f` is a pure element edit (push/shift) that never
+        // re-enters the interpreter, so no other borrow into the node is
+        // live across it.
+        ValueView::Array(items, _) => Some(f(unsafe { crate::value::gc_contents_mut(&items) })),
+        ValueView::Uni(uni) => match uni.codes.view() {
+            // SAFETY: as above.
+            ValueView::Array(items, _) => Some(f(unsafe { crate::value::gc_contents_mut(&items) })),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
 /// Push a value onto an nqp list / native array in place. Returns the
 /// pushed value itself (not the array) -- nqp's own `push`/`push_i`/
 /// `push_s`/`push_n` all hand back the element just appended, which is what

@@ -3,6 +3,8 @@
 
 use super::TrOp;
 use crate::runtime::Interpreter;
+use crate::runtime::nqp_backing::with_list_data_mut;
+use crate::runtime::to_int;
 use crate::value::{RuntimeError, Value};
 
 impl Interpreter {
@@ -33,25 +35,27 @@ impl Interpreter {
                 self.trir.ns.push(len);
             }
             TrOp::ShiftILocal(n) => {
-                let r = Self::nqp_shift_int(&self.trir.ol[obase + *n as usize])?;
+                let slot = &self.trir.ol[obase + *n as usize];
+                let r = match with_list_data_mut(slot, |data| data.shift_front()) {
+                    Some(elem) => elem.map_or(0, |v| v.as_int().unwrap_or_else(|| to_int(&v))),
+                    None => Self::nqp_shift_int(slot)?,
+                };
                 self.trir.ns.push(r);
             }
             TrOp::PushILocal(n) => {
                 let i = self.ipop();
-                let r = crate::runtime::nqp_ops_text::push_elem(
-                    "push_i",
-                    &self.trir.ol[obase + *n as usize],
-                    Value::int(i),
-                )?;
-                self.trir.os.push(r);
+                let slot = &self.trir.ol[obase + *n as usize];
+                if with_list_data_mut(slot, |data| data.items_mut().push(Value::int(i))).is_none() {
+                    crate::runtime::nqp_ops_text::push_elem("push_i", slot, Value::int(i))?;
+                }
+                self.trir.os.push(Value::int(i));
             }
             TrOp::PushILocalVoid(n) => {
                 let i = self.ipop();
-                crate::runtime::nqp_ops_text::push_elem(
-                    "push_i",
-                    &self.trir.ol[obase + *n as usize],
-                    Value::int(i),
-                )?;
+                let slot = &self.trir.ol[obase + *n as usize];
+                if with_list_data_mut(slot, |data| data.items_mut().push(Value::int(i))).is_none() {
+                    crate::runtime::nqp_ops_text::push_elem("push_i", slot, Value::int(i))?;
+                }
             }
             _ => {
                 return Err(RuntimeError::new(format!(

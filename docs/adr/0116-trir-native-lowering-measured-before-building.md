@@ -227,6 +227,18 @@ Pinned by `t/vm/codegen/adr0110-trir-int-ops.t` (TRIR on = off = rakudo's transc
   further below D3's 50% threshold: with fewer ops there is less dispatch
   left for native lowering to remove. Paired section time on the 4-core
   container: median 0.092 s before, 0.072 s after.
+- **The per-character list ops skip the general element editor**
+  (`news/2026-09/trir-per-char-list-ops-skip-the-general-editor.md`).
+  Re-cut after the peephole pass, the largest concentrated row was
+  `unjsonify-string`'s `shift_i` / `push_i`: ~210 and ~270 instructions per
+  character, 17% of a record, almost all of it layers in front of the edit.
+  `ShiftILocal` / `PushILocal(Void)` now reach a list's or a `Uni`'s storage
+  with one decode per level. Per 100 records: **77.8 M to 71.6 M
+  instructions**. The rest of the re-cut table: the switch loop's own
+  instructions are ~33% of a record (~49 per op, about 40% of it `Vec`
+  push/pop and bounds checks on the operand banks), and the generic
+  `nqp::` ops (`findnotcclass`, `create`, `p6scalarwithvalue`, `bindkey`,
+  `strtocodes`/`strfromcodes`, `index`: ~7.7 K calls) are ~16%.
 
 ## 8. Reproduction
 
