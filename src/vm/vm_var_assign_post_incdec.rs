@@ -66,6 +66,27 @@ impl Interpreter {
         Ok(self.stack.pop().unwrap())
     }
 
+    /// Whether `$cell ~= rhs` may append to the cell's string in place: both
+    /// sides plain `Str`, no user `infix:<~>` / `infix:<~=>` candidate that
+    /// would have to see the operands, and no cell constraint a `Str` result
+    /// could fail (a `subset` would run user code on the result, and a failed
+    /// check must leave the old value in the cell, which an in-place append
+    /// has already consumed).
+    // Cost: O(1).
+    fn concat_in_place_allowed(
+        &self,
+        cell: &crate::gc::Gc<crate::value::ContainerCell>,
+        current: &Value,
+        rhs: &Value,
+    ) -> bool {
+        matches!(current.view(), ValueView::Str(_))
+            && matches!(rhs.view(), ValueView::Str(_))
+            && !self.user_infix_override("infix:<~>")
+            && !self.user_declared_infix_ops.contains_key("infix:<~=>")
+            && crate::value::lookup_cell_constraint(cell)
+                .is_none_or(|c| matches!(c.ty.as_str(), "Any" | "Mu" | "Str" | "Stringy" | "Cool"))
+    }
+
     /// Execute a fused compound assignment to a NAMED (env) scalar: `$x OP= rhs`.
     /// The rhs is already on the stack. Structurally mirrors
     /// `exec_post_increment_op_inner`: a `ContainerRef` cell gets an atomic
@@ -120,6 +141,25 @@ impl Interpreter {
             // (a concrete value), and the base op operates only on `old`/`rhs`, so
             // it never re-enters this cell — no deadlock.
             let mut guard = arc.lock().unwrap();
+            // `$captured ~= "str"`: append in place. Cloning the old value out
+            // of the cell (below) leaves the string held twice, so the
+            // concatenation had to copy all of it on every append -- O(n^2)
+            // for a closure accumulating into a captured variable (#9209).
+            // Moving it out under the same lock makes the buffer unique, and
+            // nothing between the take and the store can fail or run user
+            // code, so the cell is never observed holding the placeholder.
+            if matches!(op, crate::opcode::CompoundBaseOp::Concat)
+                && self.concat_in_place_allowed(&arc, &guard, &rhs)
+                && let ValueView::Str(suffix) = rhs.view()
+            {
+                let plan = crate::value::StrAppendPlan::for_suffix(suffix.as_str());
+                let old = std::mem::replace(&mut *guard, Value::NIL);
+                let new_val = old.str_appended_nfc(&plan);
+                *guard = new_val.clone();
+                drop(guard);
+                self.stack.push(new_val);
+                return Ok(());
+            }
             let old = seed_meta_assign_identity(guard.clone(), identity)?;
             let new_val = self.apply_compound_base_op(op, old, rhs)?;
             // The compound result is still a write through the declared

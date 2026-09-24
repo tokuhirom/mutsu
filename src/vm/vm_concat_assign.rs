@@ -20,10 +20,11 @@ use crate::token_kind::MetaAssignIdentity;
 impl Interpreter {
     /// Execute `$local ~= <rhs>` with the RHS already on the stack.
     // Cost: amortized O(m) on the in-place path, m = chars of the RHS (including a
-    // slot mirrored to env, e.g. one declared inside `given`/`when`); O(n + m) on
-    // the fallback (a slot holding a shared cell -- one captured by a closure --
-    // a Proxy, a still-shared string, or a non-Str side), n = chars already
-    // accumulated. Rakudo: amortized O(m) -- see #9209.
+    // slot mirrored to env, e.g. one declared inside `given`/`when`, and a private
+    // attribute slot whose `self` cell is released alongside it); O(n + m) on the
+    // fallback (a Proxy, a constrained attribute, a string still held elsewhere,
+    // or a non-Str side), n = chars already accumulated. A variable captured by a
+    // closure is appended in place by `AtomicCompoundVar` instead.
     pub(super) fn exec_concat_assign_local_op(
         &mut self,
         code: &CompiledCode,
@@ -52,7 +53,9 @@ impl Interpreter {
         seed: bool,
     ) -> Result<(), RuntimeError> {
         let rhs = self.stack.pop().unwrap_or(Value::NIL);
-        if self.try_concat_assign_local_in_place(code, slot as usize, &rhs)? {
+        if self.try_concat_assign_attr_in_place(code, slot as usize, &rhs)
+            || self.try_concat_assign_local_in_place(code, slot as usize, &rhs)?
+        {
             self.publish_state_local(code, slot);
             return Ok(());
         }
@@ -70,6 +73,68 @@ impl Interpreter {
         self.exec_set_local_op(code, slot)?;
         self.publish_state_local(code, slot);
         Ok(())
+    }
+
+    /// `$!attr ~= <Str>` on an attribute's local slot, appended in place, or
+    /// `false` with nothing touched so the caller runs the general path.
+    ///
+    /// The string is held by the slot AND by `self`'s attribute cell (the
+    /// slot mirrors it), so the general path's append always copied it: O(n)
+    /// per `$!buf ~= ...`, quadratic over a method's accumulation (#9209).
+    /// Here the slot's reference is moved out and the cell's is dropped under
+    /// the attribute map's write lock, so the append owns the buffer.
+    ///
+    /// Taken only when the store the general path would run is the identity
+    /// for a `Str` result: both sides plain `Str`, no user `infix:<~>` /
+    /// `infix:<~=>`, no declared, attribute or `where` constraint on the
+    /// attribute (a check that could fail must see the old value intact), and
+    /// no env mirror of the slot (another holder of the string).
+    fn try_concat_assign_attr_in_place(
+        &mut self,
+        code: &CompiledCode,
+        idx: usize,
+        rhs: &Value,
+    ) -> bool {
+        let Some((bare, is_private, sigil)) = code.local_attr_key(idx) else {
+            return false;
+        };
+        let ValueView::Str(suffix) = rhs.view() else {
+            return false;
+        };
+        if sigil != '$'
+            || !self
+                .locals
+                .get(idx)
+                .is_some_and(|v| matches!(v.view(), ValueView::Str(_)))
+            || code.needs_env_sync.get(idx).copied().unwrap_or(true)
+            || crate::opcode::reflective_name_access_possible()
+            || self.user_infix_override("infix:<~>")
+            || self.user_declared_infix_ops.contains_key("infix:<~=>")
+        {
+            return false;
+        }
+        let name = &code.locals[idx];
+        let name_sym = code.locals_sym.get(idx).copied();
+        if loan_env!(self, var_type_constraint_value_for(name, name_sym)).is_some()
+            || self
+                .scalar_attr_type_constraint(name)
+                .is_some_and(|ty| !matches!(ty.as_str(), "Any" | "Mu" | "Str" | "Stringy" | "Cool"))
+            || self.self_attr_where_constraint(name).is_some()
+        {
+            return false;
+        }
+        let plan = crate::value::StrAppendPlan::for_suffix(suffix.as_str());
+        let lhs = std::mem::replace(&mut self.locals[idx], Value::NIL);
+        match self.append_attr_cell_str_in_place(bare, is_private, sigil, lhs, &plan) {
+            Ok(new_val) => {
+                self.locals[idx] = new_val;
+                true
+            }
+            Err(lhs) => {
+                self.locals[idx] = lhs;
+                false
+            }
+        }
     }
 
     /// Append `rhs` to the string in `slot` by growing its buffer, or answer

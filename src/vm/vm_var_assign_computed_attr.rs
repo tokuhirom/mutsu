@@ -554,6 +554,76 @@ impl Interpreter {
         self.set_class_level_attr(owner, bare.as_str(), val);
     }
 
+    /// `$!x ~= <Str>` appended in place: `lhs` is the value moved out of the
+    /// attribute's local slot, and `self`'s cell for the attribute must hold
+    /// the very same string. Under the attribute map's write lock the cell's
+    /// reference is dropped, so `lhs` is the buffer's only holder and the
+    /// append grows it (amortized O(m)) instead of copying it (#9209); the
+    /// result is stored back into the cell and returned for the slot. Gives
+    /// `lhs` back untouched when the cell holds anything else (a promoted
+    /// `ContainerRef`, a different value) -- the caller then takes the general
+    /// path. Resolves the attribute exactly as [`Self::write_attr_cell_by_key`]
+    /// does.
+    // Cost: amortized O(m), m = chars of the suffix; O(n + m) when the string
+    // is still shared elsewhere (the append copies), n = chars accumulated.
+    pub(super) fn append_attr_cell_str_in_place(
+        &self,
+        bare: crate::symbol::Symbol,
+        is_private: bool,
+        sigil: char,
+        lhs: Value,
+        plan: &crate::value::StrAppendPlan<'_>,
+    ) -> Result<Value, Value> {
+        let Some(self_val) = self.get_env_self() else {
+            return Err(lhs);
+        };
+        let owner = self.method_class_stack_top_str().unwrap_or("");
+        let (role_cell, inner_cell) = self.method_attr_cells(&self_val, owner);
+        let mut target = None;
+        if let Some(attributes) = role_cell {
+            let key = {
+                let map = attributes.as_map();
+                self.method_role_attr_key(&self_val, owner, bare)
+                    .filter(|key| map.contains_key(*key))
+                    .or_else(|| self.attr_key_in_map(bare, is_private, sigil, &map))
+            };
+            target = key.map(|key| (attributes, key));
+        }
+        if target.is_none()
+            && let Some(attributes) = inner_cell
+        {
+            let key = {
+                let map = attributes.as_map();
+                self.attr_key_in_map(bare, is_private, sigil, &map)
+            };
+            target = key.map(|key| (attributes, key));
+        }
+        let Some((attributes, key)) = target else {
+            return Err(lhs);
+        };
+        let mut held = Some(lhs);
+        let appended = attributes
+            .with_attr_mut(key, |slot| {
+                let lhs = held.take()?;
+                if !matches!(slot.view(), ValueView::Str(_)) || !slot.same_binding(&lhs) {
+                    held = Some(lhs);
+                    return None;
+                }
+                *slot = Value::NIL;
+                let new_val = lhs.str_appended_nfc(plan);
+                *slot = new_val.clone();
+                Some(new_val)
+            })
+            .flatten();
+        match appended {
+            Some(new_val) => {
+                self.record_build_attr_write(&attributes, key);
+                Ok(new_val)
+            }
+            None => Err(held.unwrap_or(Value::NIL)),
+        }
+    }
+
     /// Note that `key` was assigned on `attributes` while that instance's BUILD
     /// phase is running, so the post-BUILD default pass knows to leave it alone
     /// (raku applies a `has $.x = <default>` only to attributes BUILD did not
