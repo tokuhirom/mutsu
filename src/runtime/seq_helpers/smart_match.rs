@@ -991,9 +991,9 @@ impl Interpreter {
                 false
             }
             // Single match: plain Regex or RegexWithAdverbs without multi-match flags
-            // Cost: `Str ~~ /rx/`: O(n) setup, n = chars of the topic (the subject is
-            // copied by `regex_match_text` and again into a MatchTarget), plus the search,
-            // even when the match is at the front. Rakudo: O(1) setup -- see #9144.
+            // Cost: `Str ~~ /rx/`: O(1) setup for a `Str` topic already matched
+            // recently (its MatchTarget is cached per payload), O(n) the first time,
+            // n = chars of the topic; plus the search.
             (_, ValueView::Regex(_)) | (_, ValueView::RegexWithAdverbs(_))
                 if matches!(right.view(), ValueView::Regex(_))
                     || matches!(
@@ -1007,7 +1007,16 @@ impl Interpreter {
                 // copied the whole subject on every `~~` purely to have it in
                 // two places; cloning the `Value` instead is a refcount bump
                 // (#8269).
-                let text_val = Value::str(self.regex_match_text(left));
+                //
+                // A plain `Str` topic is matched as its own payload, primed in
+                // the subject cache: the MatchTarget the engine builds for it
+                // is then shared by every `~~` on the same string instead of
+                // copying the subject per call (#9144).
+                let text_val = if matches!(left.view(), ValueView::Str(_)) {
+                    Value::str_arc(crate::runtime::MatchTarget::primed_subject(left))
+                } else {
+                    Value::str(self.regex_match_text(left))
+                };
                 // `Value::str` always constructs a `Str`, so the fallback is
                 // unreachable; spelling it as one rather than as an assertion
                 // keeps this path off the panic surface (#8186).

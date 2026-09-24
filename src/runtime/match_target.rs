@@ -81,13 +81,145 @@ pub(crate) struct MatchTarget {
     stripped: Arc<std::sync::OnceLock<StrippedMatchTarget>>,
 }
 
+/// How many recently matched subjects [`MatchTarget::of_subject`] remembers.
+const SUBJECT_CACHE_SLOTS: usize = 4;
+
+/// Subjects shorter than this are copied on the spot rather than cached: the
+/// copy is cheaper than a probe, and not holding a `Weak` keeps a short
+/// accumulator on the in-place `~=` path (the same trade as
+/// `builtins::grapheme_index`'s `CACHE_MIN_BYTES`).
+const SUBJECT_CACHE_MIN_BYTES: usize = 256;
+
+/// One remembered subject: the `Str` payload it was built from, held weakly,
+/// and the derived forms built for it. The payload is never held strongly,
+/// so a cached subject that is dropped frees its text at once.
+struct CachedSubject {
+    subject: std::sync::Weak<String>,
+    /// `subject`'s byte pointer and length when it was cached. Compared
+    /// against an incoming `&str` only after `subject` upgrades, so they name
+    /// a live, immutable buffer (see [`MatchTarget::new`]).
+    ptr: *const u8,
+    len: usize,
+    chars: Arc<[char]>,
+    ascii: bool,
+    stripped: Arc<std::sync::OnceLock<StrippedMatchTarget>>,
+}
+
+thread_local! {
+    /// The subjects most recently primed by [`MatchTarget::of_subject`],
+    /// most recent first.
+    static SUBJECT_CACHE: std::cell::RefCell<Vec<CachedSubject>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+}
+
 impl MatchTarget {
+    /// The target for `text`, reusing the one already built for the same
+    /// `Str` payload when an entry point primed it with
+    /// [`MatchTarget::of_subject`].
+    ///
+    /// A hit is an identity test, never a content comparison: the cache holds
+    /// each payload's `Weak<String>`, and a remembered pointer is compared only
+    /// after the `Weak` upgrades. A `Str` payload is never mutated behind a
+    /// live `Weak` — the in-place append path (`str_appended_nfc`) uses
+    /// `Arc::get_mut`, which refuses when a `Weak` exists and copies instead —
+    /// so an equal pointer and length name exactly the bytes the target was
+    /// built from. A `&str` that is not a primed payload misses and is copied, as
+    /// before.
+    // Cost: O(1) on a hit (a scan of SUBJECT_CACHE_SLOTS entries); O(n) on a
+    // miss, n = chars of `text`, to copy and collect the subject.
     pub(crate) fn new(text: &str) -> Self {
+        if let Some(hit) = Self::cached(text) {
+            return hit;
+        }
+        Self::build(Arc::new(text.to_string()))
+    }
+
+    /// The target for a `Str` payload, built at most once while the payload
+    /// stays among the last [`SUBJECT_CACHE_SLOTS`] subjects matched on this
+    /// thread. Its `.orig` IS `subject` (a refcount bump, no copy), and every
+    /// later [`MatchTarget::new`] on the same payload's `&str` shares it —
+    /// that is what makes `$s ~~ /rx/` and a `.match(rx, :p($pos))` tokenizer
+    /// loop O(1) setup per call instead of copying the whole subject each time.
+    // Cost: O(1) when `subject` is cached; otherwise O(n), n = chars of
+    // `subject`, to collect its chars once.
+    pub(crate) fn of_subject(subject: &Arc<String>) -> Self {
+        if subject.len() < SUBJECT_CACHE_MIN_BYTES {
+            return Self::build(Arc::clone(subject));
+        }
+        if let Some(hit) = Self::cached(subject.as_str()) {
+            return hit;
+        }
+        let target = Self::build(Arc::clone(subject));
+        SUBJECT_CACHE.with(|cache| {
+            let mut cache = cache.borrow_mut();
+            cache.retain(|entry| entry.subject.strong_count() > 0);
+            if cache.len() >= SUBJECT_CACHE_SLOTS {
+                cache.pop();
+            }
+            cache.insert(
+                0,
+                CachedSubject {
+                    subject: Arc::downgrade(subject),
+                    ptr: subject.as_ptr(),
+                    len: subject.len(),
+                    chars: Arc::clone(&target.chars),
+                    ascii: target.ascii,
+                    stripped: Arc::clone(&target.stripped),
+                },
+            );
+        });
+        target
+    }
+
+    /// The string a regex entry point matches `subject` against, primed in
+    /// the subject cache so the engine's [`MatchTarget::new`] on it shares one
+    /// target. A `Str` hands back its own payload (a refcount bump), which is
+    /// what lets repeated matches on one string find the same entry.
+    // Cost: O(1) for a cached `Str`; otherwise O(n), n = chars of the
+    // subject's string form, to build it once.
+    pub(crate) fn primed_subject(subject: &crate::value::Value) -> Arc<String> {
+        let arc = match subject.view() {
+            crate::value::ValueView::Str(arc) => Arc::clone(&arc),
+            _ => Arc::new(subject.to_string_value()),
+        };
+        Self::of_subject(&arc);
+        arc
+    }
+
+    fn cached(text: &str) -> Option<Self> {
+        if text.len() < SUBJECT_CACHE_MIN_BYTES {
+            return None;
+        }
+        SUBJECT_CACHE.with(|cache| {
+            let cache = cache.borrow();
+            cache.iter().find_map(|entry| {
+                if entry.ptr != text.as_ptr() || entry.len != text.len() {
+                    return None;
+                }
+                let live = entry.subject.upgrade()?;
+                if live.as_ptr() != text.as_ptr() || live.len() != text.len() {
+                    return None;
+                }
+                // The text, chars and mark-stripped view are shared; the
+                // grammar cursor class is per engine run, so a parse stamping
+                // its class cannot relabel a later plain match of this string.
+                Some(Self {
+                    text: live,
+                    chars: Arc::clone(&entry.chars),
+                    ascii: entry.ascii,
+                    cursor_class: Arc::new(AtomicU32::new(0)),
+                    stripped: Arc::clone(&entry.stripped),
+                })
+            })
+        })
+    }
+
+    fn build(text: Arc<String>) -> Self {
         crate::vm::vm_stats::record_regex_match_target_built();
         Self {
-            text: Arc::new(text.to_string()),
             chars: text.chars().collect(),
             ascii: text.is_ascii(),
+            text,
             cursor_class: Arc::new(AtomicU32::new(0)),
             stripped: Arc::new(std::sync::OnceLock::new()),
         }

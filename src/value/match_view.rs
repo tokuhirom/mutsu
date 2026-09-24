@@ -134,6 +134,21 @@ impl Value {
         self.match_attr("orig")
     }
 
+    /// `.prematch` (`before`) or `.postmatch` text sliced straight from a
+    /// lazy Match's shared subject. `None` for an eager `Instance` Match (or a
+    /// non-Match), whose caller falls back to slicing `.orig`.
+    // Cost: O(p), p = chars of the prefix/suffix returned; the subject is
+    // neither copied nor re-collected.
+    pub(crate) fn match_side_text(&self, before: bool) -> Option<String> {
+        let node = self.0.as_match_node()?;
+        let len = node.target.chars().len();
+        Some(if before {
+            node.target.span_str(0, node.cap.from)
+        } else {
+            node.target.span_str(node.cap.to, len)
+        })
+    }
+
     /// The positional-capture list (`.list`), an array `Value`.
     pub(crate) fn match_list(&self) -> Option<Value> {
         self.match_attr("list")

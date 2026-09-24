@@ -58,9 +58,9 @@ impl Interpreter {
                 &format!("0..{}", len),
             ));
         }
-        // Cost (Regex needle): O(n) setup (a MatchTarget over the whole
-        // subject) plus the search, n = chars of the invocant, even for a hit
-        // at the front. Rakudo: O(1) setup -- see #9144.
+        // Cost (Regex needle): O(1) setup for a `Str` invocant matched recently
+        // (its MatchTarget is cached per payload), O(n) the first time, n =
+        // chars of the invocant; plus O(start) to map `$pos`, plus the search.
         // A Regex needle means "does the pattern match anywhere from `start`?"
         // (`"abc".contains(/b/)`), not a literal search for the regex's gist.
         // It matches against the WHOLE subject from `$pos` (`:c($pos)`), not a
@@ -68,7 +68,7 @@ impl Interpreter {
         // `^` stays anchored at the start of the string.
         if let ValueView::Regex(..) = needle.view() {
             let from = idx.byte_at(&text, start as usize);
-            let target = crate::runtime::MatchTarget::new(&text);
+            let target = crate::runtime::MatchTarget::of_subject(&text);
             let min_pos = text[..from].chars().count();
             let found = self
                 .regex_find_first_from_with_all_captures_in_value(&needle, &target, min_pos)

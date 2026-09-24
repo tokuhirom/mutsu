@@ -440,8 +440,7 @@ impl Interpreter {
             }
             // Cost: O(n + k) plus the engine's per-match cost, n = chars of the invocant,
             // k = matches, and O(n) even when `$limit` asks for fewer (all matches are
-            // found first). With `:match` every Match gets its own `MatchTarget` copy of
-            // the subject (`create_match_object`): O(n*k). Rakudo: O(n + k) -- see #9144.
+            // found first). With `:match` every Match shares one `MatchTarget`.
             Some(ValueView::Regex(pat)) => {
                 // Use the capturing path only when the regex contains code
                 // blocks whose side effects must fire (e.g. `{ take $/.Str }`).
@@ -456,11 +455,10 @@ impl Interpreter {
                         }
                     }
                     if return_match {
+                        let mt = crate::runtime::MatchTarget::new(&text);
                         let result: Vec<Value> = matches
                             .iter()
-                            .map(|(start, end, _)| {
-                                self.create_match_object(&text, *start, *end, &pat)
-                            })
+                            .map(|(start, end, _)| Self::create_match_object(&mt, *start, *end))
                             .collect();
                         let result = Self::apply_limit(result, limit);
                         Some(Ok(make_seq(result)))
@@ -479,9 +477,10 @@ impl Interpreter {
                 } else {
                     let matches = self.regex_find_all(&pat, &text);
                     if return_match {
+                        let mt = crate::runtime::MatchTarget::new(&text);
                         let result: Vec<Value> = matches
                             .iter()
-                            .map(|(start, end)| self.create_match_object(&text, *start, *end, &pat))
+                            .map(|(start, end)| Self::create_match_object(&mt, *start, *end))
                             .collect();
                         let result = Self::apply_limit(result, limit);
                         Some(Ok(make_seq(result)))
@@ -536,16 +535,20 @@ impl Interpreter {
         }
     }
 
-    /// Create a Match object from regex match positions.
-    // Cost: O(n), n = chars of `text`: builds a fresh MatchTarget (copies the
-    // string and collects its chars) per Match. Rakudo: O(1) -- see #9144.
-    fn create_match_object(&self, text: &str, start: usize, end: usize, _pat: &str) -> Value {
+    /// Create a Match object from regex match positions, sharing the call's
+    /// subject `target`.
+    // Cost: O(1): the target is shared by refcount, not copied per Match.
+    fn create_match_object(
+        target: &crate::runtime::MatchTarget,
+        start: usize,
+        end: usize,
+    ) -> Value {
         Value::make_match_object_full(
             start as i64,
             end as i64,
             &[],
             &Default::default(),
-            crate::runtime::MatchTarget::new(text),
+            target.clone(),
         )
     }
 

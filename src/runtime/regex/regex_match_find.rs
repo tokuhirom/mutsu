@@ -94,8 +94,9 @@ impl Interpreter {
     /// Unlike `regex_match_with_captures_at` which only matches starting exactly
     /// at `pos`, this tries each position from `from_pos` onwards until a match
     /// is found (like `:c(N)` / `:continue(N)` in Raku).
-    // Cost: O(n), n = chars of `text`, to build the MatchTarget, plus the
-    // search from `from_pos`. Rakudo: O(1) setup -- see #9144.
+    // Cost: O(1) setup when `text` is a `Str` payload primed by the entry point
+    // (`MatchTarget::primed_subject`), else O(n), n = chars of `text`, to build
+    // the MatchTarget; plus the search from `from_pos`.
     pub(crate) fn regex_match_with_captures_from(
         &mut self,
         pattern: &str,
