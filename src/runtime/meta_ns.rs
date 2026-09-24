@@ -315,7 +315,7 @@ impl MetaNs {
     /// with it and the two must not drift.
     pub(crate) const fn prefix(self) -> &'static str {
         match self {
-            MetaNs::SigillessAlias => "__mutsu_sigilless_alias::",
+            MetaNs::SigillessAlias => crate::symbol::SIGILLESS_ALIAS_KEY_PREFIX,
             MetaNs::SigillessReadonly => "__mutsu_sigilless_readonly::",
             MetaNs::Type => crate::symbol::TYPE_META_PREFIX,
             MetaNs::HashKeyType => "__mutsu_hash_key_type::",
