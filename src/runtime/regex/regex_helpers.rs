@@ -110,8 +110,9 @@ thread_local! {
     /// moment its rule matches and never un-dispatches it when the surrounding
     /// pattern later backtracks; mutsu instead walks the finished match tree, so a
     /// parse that FAILS overall used to run no actions at all even though several
-    /// subrules had matched. This log lets the failure path replay them. `Some`
-    /// only while an action-driven parse is live.
+    /// subrules had matched. This log lets both the failure path and successful
+    /// parses with backtracked reductions replay them. `Some` only while an
+    /// action-driven parse is live.
     pub(crate) static REDUCED_SUBRULES: RefCell<Option<ReducedSubruleLog>> = const { RefCell::new(None) };
     /// In-regex `:my`/`:let` lexicals to seed the *next* capture store with.
     ///
@@ -132,6 +133,52 @@ thread_local! {
     /// non-inline atom — a subrule reference above all — which is what keeps a
     /// different regex's backreferences scoped to itself.
     pub(crate) static INLINE_OUTER_CAPS_SEED: RefCell<Option<std::sync::Arc<OuterBackrefCaps>>> = const { RefCell::new(None) };
+}
+
+/// Isolate declarative-prefix termination while an alternation measures its
+/// alternatives one by one. A stopper in one sibling must not make the next
+/// sibling look already stopped, but the enclosing measurement still needs to
+/// observe that at least one path terminated.
+pub(crate) struct LtmAlternativeScope {
+    active: bool,
+    inherited: bool,
+    stopped: bool,
+    continued: bool,
+}
+
+impl LtmAlternativeScope {
+    pub(crate) fn new() -> Self {
+        let active = LTM_DECLARATIVE_MODE.with(Cell::get);
+        let inherited = active && LTM_PREFIX_TERMINATED.with(|flag| flag.replace(false));
+        Self {
+            active,
+            inherited,
+            stopped: false,
+            continued: false,
+        }
+    }
+
+    pub(crate) fn before_alternative(&mut self) {
+        if self.active {
+            LTM_PREFIX_TERMINATED.with(|flag| flag.set(false));
+        }
+    }
+
+    pub(crate) fn after_alternative(&mut self, continued: bool) {
+        self.continued |= continued;
+        if self.active && LTM_PREFIX_TERMINATED.with(|flag| flag.replace(false)) {
+            self.stopped = true;
+        }
+    }
+}
+
+impl Drop for LtmAlternativeScope {
+    fn drop(&mut self) {
+        if self.active {
+            LTM_PREFIX_TERMINATED
+                .with(|flag| flag.set(self.inherited || (self.stopped && !self.continued)));
+        }
+    }
 }
 
 /// Track the furthest cursor position visited by a regex walk.
@@ -434,14 +481,35 @@ const REDUCED_SUBRULE_LOG_CAP: usize = 20_000;
 pub(crate) struct ReducedSubruleLog {
     /// `(rule name to dispatch the action under, that rule's captures)`.
     entries: Vec<(String, std::sync::Arc<CapNode>)>,
-    /// De-dups `(rule, from, to)`: mutsu's matcher enumerates every candidate end
-    /// position of a subrule, so the same reduce is often produced repeatedly.
-    seen: std::collections::HashSet<(String, usize, usize)>,
+    /// De-dups one exact capture node: mutsu's matcher may revisit the same
+    /// candidate while enumerating a subrule's possible ends, but distinct
+    /// nodes at the same span represent distinct reductions on different
+    /// backtracking paths and must remain observable to grammar actions.
+    seen: std::collections::HashSet<(String, usize, usize, usize)>,
 }
 
 impl ReducedSubruleLog {
     pub(crate) fn into_entries(self) -> Vec<(String, std::sync::Arc<CapNode>)> {
         self.entries
+    }
+
+    /// Return reductions that have a later reduction with the same rule and
+    /// span.  The last node is the one retained by the successful match tree;
+    /// earlier nodes are reductions from backtracked alternatives whose action
+    /// effects Raku preserves.
+    pub(crate) fn into_repeated_entries(self) -> Vec<(String, std::sync::Arc<CapNode>)> {
+        let mut last = std::collections::HashMap::<(String, usize, usize), usize>::new();
+        for (index, (rule, caps)) in self.entries.iter().enumerate() {
+            last.insert((rule.clone(), caps.from, caps.to), index);
+        }
+        self.entries
+            .into_iter()
+            .enumerate()
+            .filter_map(|(index, entry)| {
+                let key = (entry.0.clone(), entry.1.from, entry.1.to);
+                (last.get(&key).copied() != Some(index)).then_some(entry)
+            })
+            .collect()
     }
 }
 
@@ -461,7 +529,12 @@ pub(crate) fn record_reduced_subrule(rule: &str, caps: &std::sync::Arc<CapNode>)
         if log.entries.len() >= REDUCED_SUBRULE_LOG_CAP {
             return;
         }
-        if log.seen.insert((rule.to_string(), caps.from, caps.to)) {
+        if log.seen.insert((
+            rule.to_string(),
+            caps.from,
+            caps.to,
+            std::sync::Arc::as_ptr(caps) as usize,
+        )) {
             log.entries.push((rule.to_string(), caps.clone()));
         }
     });
@@ -486,6 +559,17 @@ impl ReducedSubruleGuard {
             let mut slot = slot.borrow_mut();
             match slot.as_mut() {
                 Some(log) => std::mem::take(log).into_entries(),
+                None => Vec::new(),
+            }
+        })
+    }
+
+    /// Take only reductions superseded by a later node at the same rule/span.
+    pub(crate) fn take_repeated_entries() -> Vec<(String, std::sync::Arc<CapNode>)> {
+        REDUCED_SUBRULES.with(|slot| {
+            let mut slot = slot.borrow_mut();
+            match slot.as_mut() {
+                Some(log) => std::mem::take(log).into_repeated_entries(),
                 None => Vec::new(),
             }
         })
@@ -1636,6 +1720,24 @@ pub(super) fn reserve_nil_capture_slots(caps: &mut RegexCaptures, flags: &[bool]
 }
 
 /// Check if a character matches a named builtin character class.
+pub(crate) fn is_builtin_character_class(name: &str) -> bool {
+    matches!(
+        name,
+        "alpha"
+            | "upper"
+            | "lower"
+            | "digit"
+            | "xdigit"
+            | "space"
+            | "alnum"
+            | "blank"
+            | "cntrl"
+            | "punct"
+            | "graph"
+            | "print"
+    )
+}
+
 pub(super) fn matches_named_builtin(name: &str, c: char) -> bool {
     match name {
         // The POSIX-ish rules are MoarVM character classes (ADR-0118 §2.5):

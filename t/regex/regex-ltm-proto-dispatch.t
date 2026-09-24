@@ -1,7 +1,7 @@
 use v6;
 use Test;
 
-plan 35;
+plan 36;
 
 # ADR-0046 Decision 1: proto-token candidates are ranked by the ONE LTM ranking
 # primitive (`ltm_branch_rank_key`) at every call site, i.e. by
@@ -216,6 +216,25 @@ sub nested($g, $subject = 'Foo=Strict') {
     }
     is PlainLtm.parse('ab', :rule<v>, :actions(SymActs.new)).made, 'AB',
         'a hand-written literal DOES earn litlen credit (negative control)';
+}
+
+# A rule's implicit leading sigspace is zero-width here. It must not make the
+# rule-backed proto candidate look empty to LTM and hand the input to the
+# catch-all sibling.
+{
+    class LeadingWsActions {
+        method v:sym<rule>($/)  { make 'RULE' }
+        method v:sym<other>($/) { make 'OTHER' }
+    }
+    grammar LeadingWs {
+        token TOP { <v> }
+        proto token v {*}
+        rule inner { 'abc' }
+        token v:sym<rule> { <inner> }
+        token v:sym<other> { \w+ }
+    }
+    is LeadingWs.parse('abc', :actions(LeadingWsActions.new))<v>.made,
+        'RULE', 'leading rule whitespace does not erase a proto candidate prefix';
 }
 
 # A character class written with set SUBTRACTION cannot be one NFA edge in

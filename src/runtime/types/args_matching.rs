@@ -2,6 +2,41 @@ use super::*;
 use crate::value::ValueView;
 
 impl Interpreter {
+    /// Make a `$/` argument visible to a dispatch-time `where` predicate.
+    ///
+    /// A capture parameter is represented by the ordinary `/` environment
+    /// slot when the candidate is finally called.  The predicate itself runs
+    /// in a carrier block before that call frame exists, and its `$<name>` /
+    /// `$0` reads therefore need the same capture-shaped slots that a real
+    /// regex match installs.  Without this, `multi method m($/ where $<x>)`
+    /// cannot select a candidate from a Match argument.
+    fn install_match_context_for_where(&mut self, param_name: &str, value: &Value) {
+        if param_name != "/" {
+            return;
+        }
+        let Some(positional) = value.match_list() else {
+            return;
+        };
+        let Some(named) = value.match_named() else {
+            return;
+        };
+
+        self.env
+            .insert_sym(crate::symbol::wk::match_var(), value.clone());
+        self.reset_capture_env_vars();
+        if let ValueView::Array(items, _) = positional.view() {
+            for (index, item) in items.iter().enumerate() {
+                self.env
+                    .insert_sym(crate::symbol::wk::capture_index(index), item.clone());
+            }
+        }
+        if let ValueView::Hash(items) = named.view() {
+            for (key, item) in items.iter() {
+                self.env.insert(format!("<{}>", key), item.clone());
+            }
+        }
+    }
+
     /// Record an exception thrown while evaluating a `where` constraint during
     /// candidate matching, and report the constraint as unmatched. Raku
     /// propagates such an exception out of the whole dispatch instead of
@@ -661,6 +696,7 @@ impl Interpreter {
                         return false;
                     };
                     let saved = self.env.clone();
+                    self.install_match_context_for_where(&pd.name, arg);
                     self.env.insert("_".to_string(), arg.clone());
                     // Bind the parameter name so that `where {$param ...}` can
                     // reference it during dispatch matching.
@@ -889,6 +925,7 @@ impl Interpreter {
                         }
                     };
                     let saved = self.env.clone();
+                    self.install_match_context_for_where(&pd.name, &val);
                     // Bind every sibling named parameter supplied in this call so a
                     // `where` constraint on this param can reference the others, e.g.
                     // `:$line!, :$col! where $line == *`. Positional params get this
@@ -970,6 +1007,7 @@ impl Interpreter {
                 }
                 let slurpy_value = Value::hash_bare_values(hash_items);
                 let saved = self.env.clone();
+                self.install_match_context_for_where(&pd.name, &slurpy_value);
                 self.env.insert("_".to_string(), slurpy_value.clone());
                 if !pd.name.is_empty() {
                     self.env.insert(pd.name.clone(), slurpy_value.clone());

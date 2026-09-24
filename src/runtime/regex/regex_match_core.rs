@@ -494,6 +494,7 @@ impl Interpreter {
         // capture key (Raku keeps BOTH captures — `$/.keys` is `(G::list pl)`);
         // else a minimal span carrier, which keeps `.from`/`.to` exact even
         // for a zero-width match (`$<delim>=<[a..z]>*` matching empty).
+        let mut reused_silent_marker = false;
         let subrule_subcap = if group_subcap.is_none()
             && let RegexAtom::Named(atom_name) = &token.atom
         {
@@ -502,17 +503,39 @@ impl Interpreter {
                 .capture_name
                 .clone()
                 .or_else(|| (!spec.silent).then(|| spec.lookup_name.clone()));
-            own_key
-                .and_then(|k| {
-                    store
-                        .caps()
-                        .named
-                        .get(&Symbol::intern(&k))?
-                        .nodes
-                        .last()
-                        .cloned()
-                })
-                .filter(|sc| sc.from == from && sc.to == to)
+            let own = own_key.and_then(|k| {
+                store
+                    .caps()
+                    .named
+                    .get(&Symbol::intern(&k))?
+                    .nodes
+                    .last()
+                    .cloned()
+            });
+            own.or_else(|| {
+                // A visible alias around a silent subrule (`$<x>=<.rule>`)
+                // receives the subrule's capture under the hidden action
+                // marker. Reuse that node so its nested captures and `.made`
+                // value remain available to the alias instead of collapsing
+                // it to a span-only leaf.
+                let marker = format!(
+                    "{}{}",
+                    crate::runtime::SILENT_ACTION_MARKER_PREFIX,
+                    spec.lookup_name
+                );
+                let marker_node = store
+                    .caps()
+                    .named
+                    .get(&Symbol::intern(&marker))?
+                    .nodes
+                    .last()
+                    .cloned();
+                if marker_node.is_some() {
+                    reused_silent_marker = true;
+                }
+                marker_node
+            })
+            .filter(|sc| sc.from == from && sc.to == to)
         } else {
             None
         };
@@ -532,6 +555,25 @@ impl Interpreter {
                 ..Default::default()
             })
         };
+        if reused_silent_marker && let RegexAtom::Named(atom_name) = &token.atom {
+            let marker = format!(
+                "{}{}",
+                crate::runtime::SILENT_ACTION_MARKER_PREFIX,
+                atom_name.spec().lookup_name
+            );
+            let marker_sym = Symbol::intern(&marker);
+            let remove_marker = store
+                .caps_mut()
+                .named
+                .get_mut(&marker_sym)
+                .is_some_and(|slot| {
+                    slot.nodes.pop();
+                    slot.nodes.is_empty()
+                });
+            if remove_marker {
+                store.caps_mut().named.remove(&marker_sym);
+            }
+        }
         // `$<alias>=<.subrule>` is a visible alias around a silent subrule.
         // The silent call itself does not create a named capture, so the alias
         // would otherwise be only a span carrier and the subrule's action would
@@ -539,7 +581,7 @@ impl Interpreter {
         // node, just as the `<alias=.subrule>` spelling does in the matcher.
         if let RegexAtom::Named(atom_name) = &token.atom {
             let spec = atom_name.spec();
-            if spec.silent && !spec.lookup_name.is_empty() {
+            if spec.silent && !spec.lookup_name.is_empty() && sub.action_name.is_none() {
                 std::sync::Arc::make_mut(&mut sub).action_name = Some(spec.lookup_name.clone());
             }
         }
@@ -1082,6 +1124,13 @@ impl Interpreter {
                 continue;
             }
             any_branch_matched = true;
+            // A ratcheted ordered alternative may contain an optional first
+            // branch.  Its zero-width candidate is only a provisional choice:
+            // the continuation still has to be allowed to reach the next
+            // branch when that empty choice leaves the rest of the pattern
+            // unable to match (for example, `[ <expr>? || <any-args> ] ')'`).
+            // A consuming candidate remains committed as usual.
+            let branch_only_zero_width = candidates.iter().all(|(next, _)| *next == pos);
             if token.ratchet {
                 // `:ratchet` commits to this branch's highest-priority match and
                 // forbids backtracking into the alternation — which is also why
@@ -1101,7 +1150,7 @@ impl Interpreter {
                     return true;
                 }
             }
-            if token.ratchet {
+            if token.ratchet && !branch_only_zero_width {
                 break;
             }
         }

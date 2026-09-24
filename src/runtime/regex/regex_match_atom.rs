@@ -10,6 +10,12 @@ use super::regex_ltm_rank::{LtmAtomMode, ltm_atom_mode};
 /// with its PLURAL ends (highest-priority-first).
 type RankedAlternationBranch = ((usize, usize), Vec<(usize, RegexCaptures)>);
 
+#[derive(Clone, Copy)]
+struct SubruleMatchOptions {
+    first_only: bool,
+    ignore_case: bool,
+}
+
 impl Interpreter {
     /// An alternation alternative that is a lone plain `{ … }` code block
     /// (`|| { die "no match" }`). Such a branch matches zero-width and exists
@@ -109,8 +115,11 @@ impl Interpreter {
         pkg: Symbol,
     ) -> Vec<RankedAlternationBranch> {
         let mut out = Vec::new();
+        let mut ltm_alternatives = super::regex_helpers::LtmAlternativeScope::new();
         for alt in alts {
+            ltm_alternatives.before_alternative();
             let raw_ends = self.regex_match_ends_from_caps_in_pkg(alt, chars, pos, pkg);
+            ltm_alternatives.after_alternative(!raw_ends.is_empty());
             if raw_ends.is_empty() {
                 continue;
             }
@@ -318,10 +327,13 @@ impl Interpreter {
                 // A fate ends this path of the measurement: record where, and
                 // fail the path so the walk goes on with the others
                 // (`regex_ltm_fate`).
-                LtmAtomMode::Terminate => {
+                LtmAtomMode::Terminate
+                    if !super::regex_ltm_rank::ltm_leading_ws_is_transparent(atom, pos) =>
+                {
                     ltm_record_fate(pos);
                     return Vec::new();
                 }
+                LtmAtomMode::Terminate => {}
                 LtmAtomMode::TerminateAfter(inner) => {
                     self.ltm_record_lookahead_fates(inner, chars, pos, pkg);
                     return Vec::new();
@@ -786,7 +798,10 @@ impl Interpreter {
                                 chars,
                                 pos,
                                 (*sub_pkg, pkg),
-                                first_only,
+                                SubruleMatchOptions {
+                                    first_only,
+                                    ignore_case,
+                                },
                             );
                             if all_matches.is_empty() {
                                 continue;
@@ -814,7 +829,10 @@ impl Interpreter {
                                 chars,
                                 pos,
                                 (*sub_pkg, pkg),
-                                first_only,
+                                SubruleMatchOptions {
+                                    first_only,
+                                    ignore_case,
+                                },
                             );
                             // all_matches: HIGHEST FIRST.
                             let matches_to_use: Vec<_> = if sym_key.is_some() {
@@ -974,7 +992,26 @@ impl Interpreter {
         pos: usize,
         sub_pkg: Symbol,
         first_only: bool,
+        ignore_case: bool,
     ) -> Vec<(usize, RegexCaptures)> {
+        // An inline `:i<subrule>` scopes the modifier over the subrule body,
+        // not just over the named-call atom.  The parsed body normally carries
+        // its own modifier state, so add the inherited flag at this boundary
+        // before walking it.  Keep the original pattern when no inheritance is
+        // needed; this is the hot path for ordinary named calls.
+        let scoped = if ignore_case && !parsed.ignore_case {
+            Some(RegexPattern {
+                tokens: parsed.tokens.clone(),
+                anchor_start: parsed.anchor_start,
+                anchor_end: parsed.anchor_end,
+                ignore_case: true,
+                ignore_mark: parsed.ignore_mark,
+                derived: Default::default(),
+            })
+        } else {
+            None
+        };
+        let parsed = scoped.as_ref().map_or(parsed, |pattern| pattern);
         if first_only {
             return self
                 .regex_match_end_from_caps_in_pkg(parsed, chars, pos, sub_pkg)
@@ -995,7 +1032,7 @@ impl Interpreter {
         chars: &[char],
         pos: usize,
         packages: (Symbol, Symbol),
-        first_only: bool,
+        options: SubruleMatchOptions,
     ) -> Vec<(usize, RegexCaptures)> {
         let (sub_pkg, frame_pkg) = packages;
         // The frame is only read by a wrapped token recording its caller, and
@@ -1006,7 +1043,14 @@ impl Interpreter {
         // see this frame (as in Rakudo); make the frame cheap enough to push
         // unconditionally instead of gating it on the wrap table.
         if !self.has_any_wrap_chains() {
-            return self.subrule_candidate_ends(parsed, chars, pos, sub_pkg, first_only);
+            return self.subrule_candidate_ends(
+                parsed,
+                chars,
+                pos,
+                sub_pkg,
+                options.first_only,
+                options.ignore_case,
+            );
         }
         self.push_routine_with_location(
             frame_pkg,
@@ -1015,7 +1059,14 @@ impl Interpreter {
             self.executing_source_file_sym(),
             None,
         );
-        let result = self.subrule_candidate_ends(parsed, chars, pos, sub_pkg, first_only);
+        let result = self.subrule_candidate_ends(
+            parsed,
+            chars,
+            pos,
+            sub_pkg,
+            options.first_only,
+            options.ignore_case,
+        );
         self.routine_stack.pop();
         result
     }
@@ -1291,13 +1342,34 @@ impl Interpreter {
                     .nodes
                     .push(subcap);
             } else {
-                // Childless silent subrule (`<.ws>`, `<.CRLF>`, `<.sym>`, ...): no
-                // nested captures and (in practice) no action of interest, so keep
-                // the cheap path — just carry its code blocks up. Routing these
-                // through the marker channel would store a subcap for every `<.ws>`
-                // in a parse for no benefit.
-                let mut inner_caps = inner_caps;
-                super::regex_helpers::adopt_inline_ast(&mut new_caps, &mut inner_caps);
+                // A childless silent subrule can still have an action method.  In
+                // particular, `<.end-block>` is deliberately zero-width when its
+                // closing delimiter is absent, and its action reports the recovery
+                // warning.  Keep every silent subrule on the hidden marker path so
+                // zero-width reductions do not lose their action; action objects
+                // without a corresponding method simply ignore the extra node.
+                let cs = inner_caps.capture_start.unwrap_or(pos).clamp(pos, end);
+                let ce = inner_caps.capture_end.unwrap_or(end).clamp(cs, end);
+                let mut subcap = inner_caps;
+                subcap.from = cs;
+                subcap.to = ce;
+                if subcap.sym().is_none() && sym_key.is_some() {
+                    subcap.set_sym(sym_key.cloned());
+                }
+                subcap.set_action_name(Some(spec.lookup_name.clone()));
+                let marker = format!(
+                    "{}{}",
+                    crate::runtime::SILENT_ACTION_MARKER_PREFIX,
+                    spec.lookup_name
+                );
+                let subcap = std::sync::Arc::new(subcap.into_cap_node());
+                super::regex_helpers::record_reduced_subrule(&spec.lookup_name, &subcap);
+                new_caps
+                    .named
+                    .entry(Symbol::intern(&marker))
+                    .or_default()
+                    .nodes
+                    .push(subcap);
             }
             out.push((end, new_caps));
         }

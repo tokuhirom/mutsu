@@ -11,138 +11,132 @@
   "dist": "CSS::Grammar",
   "files": [
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Cannot resolve caller any-declaration(CSS::Grammar::Actions:D: CSS::Grammar::CSS1:D); none of these signatures matches:",
-        "nok": 61,
-        "ok": 433,
-        "plan": null,
-        "secs": 3.42,
-        "skip": 3,
+        "nok": 0,
+        "ok": 733,
+        "plan": 733,
+        "secs": 4.13,
+        "skip": 5,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/compat.t",
       "raku": {
         "nok": 0,
         "ok": 733,
         "plan": 733,
-        "secs": 9.29,
+        "secs": 7.34,
         "skip": 5,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "X::Method::NotFound: Unknown method value dispatch (fallback disabled): subparse",
         "nok": 0,
-        "ok": 34,
-        "plan": null,
-        "secs": 0.33,
+        "ok": 125,
+        "plan": 125,
+        "secs": 0.51,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/css3-syntax.t",
       "raku": {
         "nok": 0,
         "ok": 125,
         "plan": 125,
-        "secs": 0.64,
+        "secs": 0.39,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Cannot resolve caller any-declaration(CSS::Grammar::Actions:D: CSS::Grammar::CSS3:D); none of these signatures matches:",
         "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 0.26,
+        "ok": 59,
+        "plan": 59,
+        "secs": 0.82,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/error-handling.t",
       "raku": {
         "nok": 0,
         "ok": 59,
         "plan": 59,
-        "secs": 0.8,
+        "secs": 0.61,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "No such method 'at-decl' for invocant of type 'Match'",
-        "nok": 2,
-        "ok": 2,
-        "plan": null,
-        "secs": 0.26,
+        "nok": 0,
+        "ok": 24,
+        "plan": 24,
+        "secs": 0.46,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/parse-stylesheets.t",
       "raku": {
         "nok": 0,
         "ok": 24,
         "plan": 24,
-        "secs": 0.66,
+        "secs": 0.59,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "No such method 'at-decl' for invocant of type 'Match'",
-        "nok": 4,
-        "ok": 0,
-        "plan": null,
-        "secs": 0.37,
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 8.72,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/parse-warnings.t",
       "raku": {
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 1.02,
+        "secs": 0.73,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "partial",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "css3 term: 70deg",
-        "nok": 12,
-        "ok": 97,
+        "nok": 0,
+        "ok": 109,
         "plan": 109,
-        "secs": 0.33,
+        "secs": 0.86,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "pass"
       },
       "path": "t/regex-tokens.t",
       "raku": {
         "nok": 0,
         "ok": 109,
         "plan": 109,
-        "secs": 0.77,
+        "secs": 3.26,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -161,10 +155,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-23",
+    "date": "2026-09-24",
     "harness": 2,
-    "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "910f926",
+    "host": "linux-x86_64",
+    "mutsu_commit": "3689a002f",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -175,13 +169,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/C/SS/CSS_GRAMMAR/5de0dc5873f5e1768dc427bf48cbeef8ce450f8a.tar.gz"
   },
-  "status": "red",
+  "status": "green",
   "totals": {
     "baseline_assertions": 1056,
     "baseline_files": 6,
-    "mutsu_assertions": 566,
-    "parity_files": 0,
-    "regressed_files": 6
+    "mutsu_assertions": 1056,
+    "parity_files": 6,
+    "regressed_files": 0
   },
   "version": "0.4.3"
 }
