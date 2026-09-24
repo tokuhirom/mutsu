@@ -2363,8 +2363,9 @@ impl Interpreter {
                     if self.registry_write_generation() != reg_gen_before {
                         self.invalidate_fn_resolution();
                     }
-                    // substr-rw returns a Proxy that must be preserved (not auto-FETCHed)
-                    let auto_fetch = name != "substr-rw";
+                    // substr-rw / subbuf-rw return a Proxy that must be preserved
+                    // (not auto-FETCHed)
+                    let auto_fetch = name != "substr-rw" && name != "subbuf-rw";
                     let result = result?;
                     loan_env!(self, maybe_fetch_rw_proxy(result, auto_fetch))
                 }

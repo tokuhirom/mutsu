@@ -711,6 +711,19 @@ impl Interpreter {
             self.stack.push(proxy);
             return Ok(());
         }
+        // `$b.subbuf-rw(...)` outside an assignment: a write-through Proxy over
+        // the buffer, the `Buf` counterpart of the `substr-rw` arm above
+        // (#9216). A user class's own `subbuf-rw` is untouched.
+        // Cost: O(1) beyond resolving the window against the buffer's length.
+        if method == "subbuf-rw"
+            && modifier.is_none()
+            && let ValueView::Instance { class_name, .. } = target.descalarize().view()
+            && crate::runtime::utils::is_buf_like_class(&class_name.resolve())
+        {
+            let proxy = self.make_subbuf_rw_proxy(target.descalarize().clone(), &args)?;
+            self.stack.push(proxy);
+            return Ok(());
+        }
         let stash_target = if method == "BIND-KEY" && args.len() == 2 {
             match target.view() {
                 ValueView::Instance { class_name, .. }

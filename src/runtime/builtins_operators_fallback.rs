@@ -473,6 +473,19 @@ impl Interpreter {
             // No variable name available, just return the substring
             return self.call_method_with_values(args[0].clone(), "substr-rw", rest.to_vec());
         }
+        // `subbuf-rw($b, ...)` outside an assignment: the same write-through
+        // Proxy as the method form (#9216).
+        if name == "subbuf-rw"
+            && let Some((target, rest)) = args.split_first()
+        {
+            let buf = target.deref_container();
+            if let ValueView::Instance { class_name, .. } = buf.view()
+                && crate::runtime::utils::is_buf_like_class(&class_name.resolve())
+            {
+                return self.make_subbuf_rw_proxy(buf, rest);
+            }
+            return self.call_method_with_values(buf, "subbuf-rw", rest.to_vec());
+        }
         if name == "unpolar"
             && let Some((target, rest)) = args.split_first()
         {
