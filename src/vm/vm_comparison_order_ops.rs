@@ -554,7 +554,7 @@ impl Interpreter {
     /// calls, so a delegated (`has Range $!r handles <min max ...>`) or
     /// inherited accessor participates the same way a native Range's own
     /// fields do. `Ok(None)` when `v` is not range-like at all.
-    fn range_parts_via_dispatch(
+    pub(crate) fn range_parts_via_dispatch(
         &mut self,
         v: &Value,
     ) -> Result<Option<(Value, Value, bool, bool)>, RuntimeError> {
@@ -608,29 +608,22 @@ impl Interpreter {
         Ok(Some(range_cmp_parts(&l, &r)))
     }
 
-    pub(super) fn exec_cmp_op(&mut self) -> Result<(), RuntimeError> {
-        let right = self.stack.pop().unwrap();
-        let left = self.stack.pop().unwrap();
-        // `cmp` also has user multi candidates. An exported first-class
-        // operator value (for example Version::Semverish's custom family)
-        // must take precedence over the structural/numeric fallback below.
-        if let Some(value) = self.try_user_infix("infix:<cmp>", &left, &right)? {
-            self.stack.push(value);
-            return Ok(());
-        }
+    /// Evaluate the native `cmp` candidate after user-defined infix candidates
+    /// have declined. The routine form (`&infix:<cmp>(...)`) reaches this same
+    /// implementation, just as the numeric comparison family does, so custom
+    /// operator families do not accidentally fall through to the reduction
+    /// bridge.
+    pub(crate) fn cmp_value(&mut self, left: Value, right: Value) -> Result<Value, RuntimeError> {
         if let Some(ord) = Self::blob_ordering(&left, &right)? {
-            self.stack.push(runtime::make_order(ord));
-            return Ok(());
+            return Ok(runtime::make_order(ord));
         }
         // NaN in cmp context: compare as string "NaN"
         if is_nan_value(&left) || is_nan_value(&right) {
             let ord = left.to_string_value().cmp(&right.to_string_value());
-            self.stack.push(runtime::make_order(ord));
-            return Ok(());
+            return Ok(runtime::make_order(ord));
         }
         if let Some(ord) = self.instance_range_cmp(&left, &right)? {
-            self.stack.push(runtime::make_order(ord));
-            return Ok(());
+            return Ok(runtime::make_order(ord));
         }
         // For lists, ranges, and mixed-type comparisons (e.g. Pair cmp Inf),
         // use cmp_values which handles these cases correctly.
@@ -644,14 +637,29 @@ impl Interpreter {
             || is_neg_inf(&right)
         {
             let ord = cmp_values(&left, &right);
-            self.stack.push(runtime::make_order(ord));
-            return Ok(());
+            return Ok(runtime::make_order(ord));
         }
+        let fallback_left = left.clone();
+        let fallback_right = right.clone();
         let (left, right) = self
-            .coerce_numeric_bridge_pair(left.clone(), right.clone())
-            .unwrap_or((left, right));
+            .coerce_numeric_bridge_pair(left, right)
+            .unwrap_or((fallback_left, fallback_right));
         let ord = Self::spaceship_ordering(&left, &right);
-        self.stack.push(runtime::make_order(ord));
+        Ok(runtime::make_order(ord))
+    }
+
+    pub(super) fn exec_cmp_op(&mut self) -> Result<(), RuntimeError> {
+        let right = self.stack.pop().unwrap();
+        let left = self.stack.pop().unwrap();
+        // `cmp` also has user multi candidates. An exported first-class
+        // operator value (for example Version::Semverish's custom family)
+        // must take precedence over the structural/numeric fallback below.
+        let result = if let Some(value) = self.try_user_infix("infix:<cmp>", &left, &right)? {
+            value
+        } else {
+            self.cmp_value(left, right)?
+        };
+        self.stack.push(result);
         Ok(())
     }
 

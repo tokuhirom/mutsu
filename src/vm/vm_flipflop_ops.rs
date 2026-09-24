@@ -390,6 +390,31 @@ impl Interpreter {
                 _ => {}
             }
         }
+        // `cmp` is normally a dedicated opcode, but importing a user-defined
+        // `infix:<cmp>` causes the compiler to retain the generic infix-call
+        // path so that its multi candidates can participate. Once those
+        // candidates decline, use the same native structural implementation
+        // as the dedicated opcode; the generic reduction only knows about
+        // native Range variants and would order an `is Range` instance by its
+        // representation instead of its bounds.
+        if call_args.len() == 2 && name == "cmp" {
+            let left = Self::unwrap_var_ref_value(call_args[0].clone())
+                .deref_container()
+                .deitemize_element();
+            let right = Self::unwrap_var_ref_value(call_args[1].clone())
+                .deref_container()
+                .deitemize_element();
+            return self.cmp_value(left, right);
+        }
+        if call_args.len() == 2
+            && let Some(result) = self.range_instance_arithmetic(
+                name,
+                &Self::unwrap_var_ref_value(call_args[0].clone()),
+                &Self::unwrap_var_ref_value(call_args[1].clone()),
+            )?
+        {
+            return Ok(result);
+        }
         if call_args.len() >= 2 {
             // `apply_reduction_op` is always a NATIVE reduction (`+`, `mod`,
             // junctions, ...) — never a call that could bind an `is rw`
@@ -560,5 +585,63 @@ impl Interpreter {
                 }
             }
         }
+    }
+
+    /// Apply the core Range arithmetic candidate to an `is Range` instance.
+    /// Native Range values already reach the arithmetic builtins directly, but
+    /// a user-defined infix family (Math::Interval's `Rangy` operators are the
+    /// representative case) routes a non-matching mixed operand through this
+    /// generic fallback. Materialize the inherited/delegated bounds first so
+    /// the existing Range arithmetic remains the single implementation.
+    pub(crate) fn range_instance_arithmetic(
+        &mut self,
+        op: &str,
+        left: &Value,
+        right: &Value,
+    ) -> Result<Option<Value>, RuntimeError> {
+        let as_range = |this: &mut Self, value: &Value| {
+            let ValueView::Instance { class_name, .. } = value.view() else {
+                return Ok(None);
+            };
+            if !this
+                .class_mro(&class_name.resolve())
+                .iter()
+                .any(|name| name.as_str() == "Range")
+            {
+                return Ok(None);
+            }
+            let Some((min, max, excludes_min, excludes_max)) =
+                this.range_parts_via_dispatch(value)?
+            else {
+                return Ok(None);
+            };
+            Ok(Some(Value::generic_range(
+                min,
+                max,
+                excludes_min,
+                excludes_max,
+            )))
+        };
+        let left_range = as_range(self, left)?;
+        let right_range = as_range(self, right)?;
+        let result = match op {
+            "+" => left_range
+                .map(|range| crate::builtins::arith_add(range, right.clone()))
+                .or_else(|| {
+                    right_range.map(|range| crate::builtins::arith_add(range, left.clone()))
+                })
+                .transpose()?,
+            "-" => left_range.map(|range| crate::builtins::arith_sub(range, right.clone())),
+            "*" => left_range
+                .map(|range| crate::builtins::arith_mul(range, right.clone()))
+                .or_else(|| {
+                    right_range.map(|range| crate::builtins::arith_mul(range, left.clone()))
+                }),
+            "/" => left_range
+                .map(|range| crate::builtins::arith_div(range, right.clone()))
+                .transpose()?,
+            _ => None,
+        };
+        Ok(result)
     }
 }

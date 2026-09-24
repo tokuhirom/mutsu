@@ -242,6 +242,9 @@ impl Interpreter {
             if let Some(result) = vm.try_user_infix("infix:<+>", &l, &r)? {
                 return Ok(result);
             }
+            if let Some(result) = vm.range_instance_arithmetic("+", &l, &r)? {
+                return Ok(result);
+            }
             if crate::builtins::arith::is_temporal_operand(&l)
                 || crate::builtins::arith::is_temporal_operand(&r)
             {
@@ -283,6 +286,9 @@ impl Interpreter {
         }
         let result = self.eval_binary_with_junctions(left, right, |vm, l, r| {
             if let Some(result) = vm.try_user_infix("infix:<->", &l, &r)? {
+                return Ok(result);
+            }
+            if let Some(result) = vm.range_instance_arithmetic("-", &l, &r)? {
                 return Ok(result);
             }
             if crate::builtins::arith::is_temporal_operand(&l)
@@ -454,6 +460,9 @@ impl Interpreter {
             if let Some(result) = vm.try_user_infix("infix:<*>", &l, &r)? {
                 return Ok(result);
             }
+            if let Some(result) = vm.range_instance_arithmetic("*", &l, &r)? {
+                return Ok(result);
+            }
             let (l, r) = vm.coerce_numeric_bridge_pair_strict(l, r)?;
             Ok(crate::builtins::arith_mul(l, r))
         })?;
@@ -466,6 +475,9 @@ impl Interpreter {
         let left = self.stack.pop().unwrap();
         let result = self.eval_binary_with_junctions(left, right, |vm, l, r| {
             if let Some(result) = vm.try_user_infix("infix:</>", &l, &r)? {
+                return Ok(result);
+            }
+            if let Some(result) = vm.range_instance_arithmetic("/", &l, &r)? {
                 return Ok(result);
             }
             let (l, r) = vm.coerce_numeric_bridge_pair_strict(l, r)?;

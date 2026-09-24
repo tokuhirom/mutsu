@@ -108,6 +108,13 @@ pub(crate) fn canonical_int_range(
 
 /// Divide a Range by a numeric factor. Returns Some(range) if the left is a Range.
 pub(crate) fn range_divide(range_val: &Value, divisor: &Value) -> Option<Value> {
+    // Numeric allomorphs such as `<4>` are represented as a numeric value
+    // mixed with a string facet. Range arithmetic uses the numeric facet for
+    // the divisor, just like the ordinary arithmetic operators do.
+    let divisor = match divisor.view() {
+        ValueView::Mixin(inner, _) => inner.as_ref(),
+        _ => divisor,
+    };
     // Get divisor as rational (num, den) for exact division
     let (div_n, div_d): (i64, i64) = match divisor.view() {
         ValueView::Int(i) if i != 0 => (i, 1),
