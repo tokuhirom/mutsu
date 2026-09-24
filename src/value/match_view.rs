@@ -31,6 +31,14 @@ use super::*;
 /// `__failed_match__`) and is never exposed through `.hash`/`.list`.
 pub(crate) const CURSOR_MATCH_MARKER: &str = "__grammar_cursor__";
 
+/// [`CURSOR_MATCH_MARKER`] interned once, so asking an instance for it is an
+/// integer-keyed probe rather than a string hash per ask (`is_match_instance`
+/// runs on every `nqp::getattr`).
+fn cursor_match_marker() -> crate::symbol::Symbol {
+    static MARKER: std::sync::OnceLock<crate::symbol::Symbol> = std::sync::OnceLock::new();
+    *MARKER.get_or_init(|| crate::symbol::Symbol::intern(CURSOR_MATCH_MARKER))
+}
+
 /// Internal attribute holding the callable that produced this cursor —
 /// rakudo's `$!regexsub`, which is what `CURSOR_MORE` re-invokes to find the
 /// next match (#7931). Written only by the cursor-protocol call path
@@ -53,7 +61,7 @@ impl Value {
             return true;
         }
         matches!(self.view(), ValueView::Instance { class_name, attributes, .. }
-            if class_name == "Match" || attributes.as_map().get(CURSOR_MATCH_MARKER).is_some())
+            if class_name == "Match" || attributes.as_map().contains_key(cursor_match_marker()))
     }
 
     /// Is this value an instance mutsu classifies as an exception purely from

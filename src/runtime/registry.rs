@@ -207,6 +207,10 @@ pub(crate) struct Registry {
     /// `nqp::bindkey` and then install into a List/Map (`JSON::Fast`'s
     /// `IterationMap`), so `nqp::create` has to hand back mutsu's array/hash
     /// rather than an attribute-less instance nothing can index.
+    ///
+    /// Keyed by the class's SHORT name (its last `::` segment): `nqp::create`
+    /// matches a class by short name, and keying the set that way turns that
+    /// match into one probe instead of a scan of every entry.
     pub(crate) vmarray_classes: HashSet<String>,
     pub(crate) vmhash_classes: HashSet<String>,
     /// Classes marked `is hidden` (excluded from `.^mro` etc.).

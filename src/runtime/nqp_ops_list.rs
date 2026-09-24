@@ -410,11 +410,14 @@ impl Interpreter {
             // attribute and return the INVOCANT rather than the value, so a
             // mutating method stays chainable. The standard way nqp code
             // hands back a freshly populated object.
-            // Cost: O(a), a = attributes of $obj (whole map cloned); O(e) for a
-            // $!reified/$!storage bind, e = elements copied. MoarVM: O(1) -- see #9134.
+            // Cost: O(1); O(e) for a $!reified/$!storage bind, e = elements copied.
+            // MoarVM: O(1) -- see #9134.
             "p6bindattrinvres" => {
                 let obj = args.first().cloned().unwrap_or(Value::NIL);
-                let attr = args.get(2).map(|v| v.to_string_value()).unwrap_or_default();
+                let attr = args
+                    .get(2)
+                    .map(|v| v.string_value_cow())
+                    .unwrap_or_default();
                 let val = args.get(3).cloned().unwrap_or(Value::NIL);
                 match Self::nqp_bindattr_value(op, &obj, &attr, val) {
                     Ok(()) => Ok(obj),

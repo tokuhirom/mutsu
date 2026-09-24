@@ -962,7 +962,9 @@ impl Interpreter {
                 // `$!attr = ...` (e.g. in a `self.CREATE!SET-SELF: ...` private
                 // builder, as MIME::Types uses) persist: the attribute write-back
                 // only updates keys that already exist on the instance.
-                let attributes = self.create_default_attr_slots(&class_name.resolve());
+                // The slot template is cached per class on the constructor
+                // plan; only the copy is per call.
+                let attributes = (*self.native_ctor_plan(class_name).create_slots).clone();
                 Some(Ok(Value::make_instance(class_name, attributes)))
             }
             _ => None,
@@ -973,8 +975,10 @@ impl Interpreter {
     /// attribute keyed by its bare name with a type-default empty value (native
     /// numerics → 0, `str` → "", everything else → its nominal type object —
     /// `Any` when untyped). Unlike `bless`, this does not evaluate
-    /// `has $.x = EXPR` default expressions.
-    fn create_default_attr_slots(&mut self, class_name: &str) -> AttrMap {
+    /// `has $.x = EXPR` default expressions. Built once per class, into
+    /// `NativeCtorPlan::create_slots`.
+    // Cost: O(d * a), d = ancestors of the class, a = its attributes.
+    pub(super) fn create_default_attr_slots(&mut self, class_name: &str) -> AttrMap {
         if !self.registry().classes.contains_key(class_name) {
             return AttrMap::new();
         }

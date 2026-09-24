@@ -214,7 +214,12 @@ probe and the lock.
   attribute type-constraint lookup walks the registry's cached `Arc<[Symbol]>` MRO. A read
   went from 4,166 to 3,302 instructions above the empty loop, a write from 10,727 to 7,985.
   See `news/2026-09/attribute-access-resolves-owner-and-self-once-per-frame.md`.
-- **D1, `nqp::getattr` / `bindattr` / `create`:** not started.
+- **D1, `nqp::getattr` / `bindattr` / `create` (landed, partly).** getattr reads under the
+  guard with no map clone, bindattr writes one key in place, and `create` copies a per-class
+  template cached on `NativeCtorPlan`. The VM storage class sets are keyed by short name.
+  Still open from D1: interning a constant name operand at compile time, and sharing the
+  storage node on a `$!reified` / `$!storage` bind. See
+  `news/2026-09/nqp-getattr-bindattr-create-stop-copying-the-object.md`.
 - **D2 - D4:** not started.
 
 ## 6. Reproduction
