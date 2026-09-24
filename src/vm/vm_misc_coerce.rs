@@ -186,6 +186,11 @@ impl Interpreter {
                 name.resolve()
             )));
         }
+        if Self::is_buf_value(&val) {
+            let s = Self::concat_operand_stringy(val)?;
+            self.stack.push(s);
+            return Ok(());
+        }
         // `~Nil` warns ("Use of Nil in string context") and resumes with the
         // empty string, matching Rakudo. This mirrors the `Nil.Str`/`.Stringy`
         // method path; the prefix:<~> operator reaches this coercion opcode

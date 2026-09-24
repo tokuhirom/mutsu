@@ -726,14 +726,15 @@ impl Interpreter {
                 result.push_str(&coerced?.to_string_value());
                 continue;
             }
-            // Buf/Blob instances with element storage: call .Str, which throws
-            // X::Buf::AsStr. Blob *type objects* have no storage (e.g.
-            // `$*DISTRO.signature`) and stringify to "".
+            // Buf/Blob instances with element storage stringify as `~` does
+            // (`concat_operand_stringy`: a utf8 decodes, any other Blob dies
+            // with X::Buf::AsStr naming `Stringy`). Blob *type objects* have
+            // no storage (e.g. `$*DISTRO.signature`) and stringify to "".
             if let ValueView::Instance { attributes, .. } = v.view()
                 && Self::is_buf_value(&v)
                 && crate::value::value_buf::has_buf_elems(&attributes)
             {
-                let str_result = self.try_compiled_method_or_interpret(v, "Str", Vec::new())?;
+                let str_result = Self::concat_operand_stringy(v)?;
                 result.push_str(&str_result.to_string_value());
                 continue;
             }

@@ -15,7 +15,7 @@ impl Interpreter {
     /// coercion). Junctions and plain values pass through unchanged, preserving
     /// autothreading. This is an internal redispatch with no surrounding
     /// CallMethod op, so drain any captured-outer writeback into the caller.
-    fn coerce_str_compare_operands(
+    pub(crate) fn coerce_str_compare_operands(
         &mut self,
         left: Value,
         right: Value,
@@ -44,10 +44,10 @@ impl Interpreter {
         };
         self.reconcile_caller_after_internal_dispatch(caller_code);
         if Self::is_buf_value(&left) && !Self::is_buf_value(&right) {
-            return Err(Self::buf_as_str_error(&left, "Str"));
+            return Err(Self::buf_as_str_error(&left, "Stringy"));
         }
         if Self::is_buf_value(&right) && !Self::is_buf_value(&left) {
-            return Err(Self::buf_as_str_error(&right, "Str"));
+            return Err(Self::buf_as_str_error(&right, "Stringy"));
         }
         Ok((left, right))
     }
@@ -75,7 +75,7 @@ impl Interpreter {
             {
                 return Ok(decoded.to_string_value());
             }
-            return Err(Self::buf_as_str_error(v, "Str"));
+            return Err(Self::buf_as_str_error(v, "Stringy"));
         }
         Ok(v.to_string_value())
     }
@@ -695,10 +695,24 @@ impl Interpreter {
     pub(super) fn exec_leg_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
-        let ord =
-            Self::stringify_compare_operand(&left)?.cmp(&Self::stringify_compare_operand(&right)?);
-        self.stack.push(runtime::make_order(ord));
+        let result = self.str_leg(left, right)?;
+        self.stack.push(result);
         Ok(())
+    }
+
+    /// `infix:<leg>`: the operands' `.Stringy` compared, with the same
+    /// coercion (a user `Str` method, a `utf8` decode, a `Proxy` FETCH) and
+    /// junction autothreading as `eq` / `lt`. Rakudo has no Blob candidate
+    /// for `leg`, so a Blob operand dies (`X::Buf::AsStr`, method `Stringy`)
+    /// even against another Blob. The opcode, `&infix:<leg>` and the metaop
+    /// forms all come here.
+    pub(crate) fn str_leg(&mut self, left: Value, right: Value) -> Result<Value, RuntimeError> {
+        let (left, right) = self.coerce_str_compare_operands(left, right)?;
+        self.eval_binary_with_junctions(left, right, |_, l, r| {
+            Ok(runtime::make_order(
+                Self::stringify_compare_operand(&l)?.cmp(&Self::stringify_compare_operand(&r)?),
+            ))
+        })
     }
 
     // Cost: O(t1 + t2), t = elements of a list-shaped operand counted

@@ -2733,18 +2733,7 @@ impl Interpreter {
         {
             let cn = class_name.resolve();
             if crate::runtime::utils::is_buf_or_blob_class(&cn) {
-                let msg = format!(
-                    "Cannot use a {} as a string, but you called the .{} method on it",
-                    cn, method
-                );
-                let mut ex_attrs = std::collections::HashMap::new();
-                ex_attrs.insert("message".to_string(), Value::str(msg.clone()));
-                ex_attrs.insert("method".to_string(), Value::str(method.to_string()));
-                let exception =
-                    Value::make_instance(crate::symbol::Symbol::intern("X::Buf::AsStr"), ex_attrs);
-                let mut err = RuntimeError::new(msg);
-                err.exception = Some(Box::new(exception));
-                return Err(err);
+                return Err(Self::buf_as_str_error(&target, method));
             }
         }
         // Coerce Instance args for log/exp/atan2
