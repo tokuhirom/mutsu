@@ -78,7 +78,7 @@ pub(crate) fn shaped_array_shape(value: &Value) -> Option<Vec<usize>> {
     if let Some(cached_shape) = &items.shape
         && shape_matches_structure(value, cached_shape)
     {
-        return Some(cached_shape.clone());
+        return Some(cached_shape.to_vec());
     }
     // A flat (1-dim) shaped array's shape is unambiguously `[len]`. Recover it
     // even when the cached `ArrayData.shape` was dropped crossing a store
@@ -124,7 +124,7 @@ pub(crate) fn mark_shaped_array_items(
     // SAFETY: aliased in-place mutation of a shared container; see
     // `gc_contents_mut`. No borrow into the array is live across this write.
     unsafe {
-        crate::value::gc_contents_mut(items).shape = Some(shape.to_vec());
+        crate::value::gc_contents_mut(items).shape = Some(shape.into());
     }
 }
 

@@ -17,5 +17,10 @@ this way), null for everything else -- and `nqp_backing::bind_elem` lets a typed
 list's kind override the op's own fill, so `nqp::bindpos_i` past the end of an
 `nqp::list_i` keeps leaving `0` gaps.
 
+`ArrayData`'s size is pinned (216 bytes, `which_id.rs`), and the new field
+does not grow it: `shape` became an `Option<Box<[usize]>>` instead of an
+`Option<Vec<usize>>` -- a shape is never grown in place -- and the 8 bytes that
+saves hold the kind.
+
 Pinned by `t/vm/nqp-list-setelems-fill.t` (expected values measured with
 rakudo). Closes #9235, a leftover of ADR-0118 section 2.2 (#9225).

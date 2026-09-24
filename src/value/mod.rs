@@ -1819,8 +1819,10 @@ pub struct ArrayData {
     /// Dimensions of a shaped (multidimensional) array (`my @a[2;3]`). `Some`
     /// only on `ArrayKind::Shaped` arrays. Embedded (replacing the former
     /// `Arc::as_ptr`-keyed `ShapedArrayIds` side table) so the shape travels
-    /// with the container through copy-on-write.
-    pub shape: Option<Vec<usize>>,
+    /// with the container through copy-on-write. A boxed slice, not a `Vec`:
+    /// a shape is never grown in place, and the 8 bytes it saves pay for
+    /// `nqp_elem` below (the `ArrayData` size is pinned in `which_id.rs`).
+    pub shape: Option<Box<[usize]>>,
     /// Indices that were explicitly element-assigned (`@a[i] = …`), as opposed
     /// to autovivification gaps. `None` means the array was bulk/literal-
     /// constructed, so every in-range index exists (the historical
