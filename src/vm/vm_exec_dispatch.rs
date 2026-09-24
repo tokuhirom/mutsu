@@ -3122,10 +3122,11 @@ impl Interpreter {
                 self.exec_eqv_op()?;
                 *ip += 1;
             }
-            // Cost: O(L) + the RHS, L = local slots of the current frame
-            // (sync_regex_interpolation_env_from_locals re-broadcasts every slot
-            // to env, a `code.locals` scan looks for `$/`, and a non-pure match
-            // runs writeback_match_locals) (see exec_smart_match_expr_op).
+            // Cost: O(m + n + p) + the RHS, m = match-variable slots written
+            // back, n = locals a regex in the RHS can name, p = their pattern
+            // length; a code-bearing regex, `s///`/`tr///` or a junction /
+            // collection RHS still publishes every local slot: O(L), L = local
+            // slots of the current frame (see exec_smart_match_expr_op).
             // Rakudo: O(1) + the RHS -- see #9169.
             OpCode::SmartMatchExpr {
                 rhs_end,
@@ -3228,10 +3229,8 @@ impl Interpreter {
             }
 
             // -- Mixin / Type check --
-            // Cost: O(L + m) + role composition, L = local slots of the current
-            // frame (snapshot_carrier_overwritable_env runs on every `but`), m =
-            // keys of an existing mixin map (cloned) (see exec_but_mixin_op).
-            // Rakudo: O(1) with the mixin type cache -- see #9169.
+            // Cost: O(m) + role composition, m = keys of an existing mixin map
+            // (cloned) (see exec_but_mixin_op).
             OpCode::ButMixin => {
                 self.exec_but_mixin_op(code)?;
                 *ip += 1;
@@ -3248,16 +3247,14 @@ impl Interpreter {
                 self.exec_isa_op();
                 *ip += 1;
             }
-            // Cost: O(L) + role composition, L = local slots of the current frame
-            // (sync_env_from_locals, a pre-snapshot and a writeback diff over all
-            // of them) (see exec_does_op). Rakudo: O(1) with the mixin type cache
-            // -- see #9169.
+            // Cost: role composition, plus the drain of any by-name caller write
+            // a `submethod BUILD`/`TWEAK` recorded (see exec_does_op).
             OpCode::Does => {
                 self.exec_does_op(code)?;
                 *ip += 1;
             }
-            // Cost: O(L) + role composition, as Does (see exec_does_var_op).
-            // Rakudo: O(1) with the mixin type cache -- see #9169.
+            // Cost: role composition plus the recorded-write drain, as Does
+            // (see exec_does_var_op).
             OpCode::DoesVar(name_idx, slot, is_bareword) => {
                 self.exec_does_var_op(code, *name_idx, *slot, *is_bareword)?;
                 *ip += 1;
@@ -5149,9 +5146,9 @@ impl Interpreter {
                 self.exec_get_capture_var_op(code, *name_idx);
                 *ip += 1;
             }
-            // Cost: O(L + v), L = locals of the unit (`find_local_slot` scan of `&name`), v = env
-            // entries: the Sub it yields shares the env tier, so the next env write copies the
-            // whole tier. Rakudo: O(1) -- see #9169.
+            // Cost: O(s + f) for a registered routine, s = visible env names that are not plain
+            // user lexicals, f = the routine's free vars (its code object's filtered capture,
+            // `routine_code_object_env`); O(1) for a `&`-sigil local.
             OpCode::GetCodeVar(name_idx) => {
                 self.exec_get_code_var_op(code, *name_idx)?;
                 *ip += 1;

@@ -1158,70 +1158,9 @@ impl Interpreter {
             return env;
         }
         let probe = cc.capture_probe_keys();
-        let mut env = self.env().filtered_flat_capture(
-            &|k, _v| {
-                // One memoized flags word answers the string questions this filter
-                // asks per key (see `symbol::flags`), instead of resolving the
-                // symbol and re-scanning its bytes.
-                let mut k = k;
-                let mut flags = k.flags();
-                // `__mutsu_type::<name>` is *shadow metadata*: it says what
-                // `<name>` is constrained to, and nothing can observe it except
-                // through a read or write of `<name>` itself. So it belongs in the
-                // capture on exactly the same terms as its subject, and the rest of
-                // this filter decides it by looking at that subject instead — the
-                // same metadata-key unwrapping `CompiledCode::is_callee_local_sym`
-                // already does for the return merge.
-                //
-                // Kept unconditionally (every one of them is a system name by the
-                // plain-user-lexical test below) it rode along for every typed
-                // lexical anywhere in the creating scope: 11 of the ~35 entries a
-                // closure captured after a bare `use Test`, which scale with the
-                // importer's scope exactly like the `__mutsu_callable_id::` markers
-                // do (#7565).
-                //
-                // Deciding it by its subject rather than by "is it a free
-                // variable" is what keeps a typed *dynamic* (`my Int $*x`) — a
-                // system name that is captured without ever being a free
-                // variable — constrained inside the closure.
-                if flags & crate::symbol::flags::TYPE_META != 0 {
-                    // `None` cannot happen (the flag is a pure string property of
-                    // the prefix), but keeping the key is the pre-#7565 behaviour.
-                    let Some(subject) = k.type_meta_subject() else {
-                        return true;
-                    };
-                    k = subject;
-                    flags = subject.flags();
-                }
-                // The unconditional, key-only rejects — see
-                // `env_tier::capture_never_keeps`, which is the same verdict, asked
-                // once per key SET rather than once per closure creation so that
-                // `filtered_flat_capture` can skip these keys without visiting
-                // them. It stays spelled out here as well, and this is deliberate:
-                // both halves of the filter open by loading the key's flags word,
-                // so a version that tested the memoized half separately paid that
-                // load twice per key (#7565).
-                if crate::env_tier::capture_never_keeps_resolved(k, flags) {
-                    return false;
-                }
-                // A plain user lexical is inherited only as an upvalue, so the
-                // `own_locals` probe cannot change its verdict — and for the
-                // overwhelming majority of closure literals `free` is empty, which
-                // settles it with no probe at all. Split out rather than left to
-                // the fused expression below because this is the *other* half of
-                // what a wide import list puts in the creating scope (every
-                // imported `&name`), and it is reached once per key per closure
-                // creation.
-                if flags & crate::symbol::flags::PLAIN_USER_LEXICAL != 0 {
-                    return !free.is_empty() && free.contains(&k);
-                }
-                // A system name is inherited unless this closure declares it
-                // itself; `own_locals` is empty for every closure with no
-                // parameters or `my` of its own.
-                own_locals.is_empty() || !own_locals.contains(&k) || free.contains(&k)
-            },
-            probe,
-        );
+        let mut env = self
+            .env()
+            .filtered_flat_capture(&|k, _v| capture_keeps(k, free, own_locals), probe);
         let tiers = self
             .capture_cache
             .wants_arm(tier_addrs, cc)
@@ -1283,7 +1222,7 @@ impl Interpreter {
         }
     }
 
-    fn capture_bare_callees(&self, cc: &CompiledCode, env: &mut Env) {
+    pub(super) fn capture_bare_callees(&self, cc: &CompiledCode, env: &mut Env) {
         // Import aliases only need this escape gate for re-entrant source EVAL:
         // ordinary module/package execution retains its lexical registry state
         // through the existing module-scope machinery.
@@ -1763,4 +1702,77 @@ impl Interpreter {
             self.box_decl_local_container_cell(code, idx, false);
         }
     }
+}
+
+/// The key filter of a filtered (non-reflective) capture: whether the entry
+/// under `k` belongs in the captured env of a chunk whose free variables are
+/// `free` and whose own parameters/locals are `own_locals`. It reads only the
+/// key, which is what makes the capture memo (`vm_capture_cache`) sound.
+/// Shared by the closure capture and a named routine's code object
+/// (`Interpreter::routine_code_object_env`).
+#[inline]
+pub(crate) fn capture_keeps(
+    k: crate::symbol::Symbol,
+    free: &rustc_hash::FxHashSet<crate::symbol::Symbol>,
+    own_locals: &rustc_hash::FxHashSet<crate::symbol::Symbol>,
+) -> bool {
+    // One memoized flags word answers the string questions this filter
+    // asks per key (see `symbol::flags`), instead of resolving the
+    // symbol and re-scanning its bytes.
+    let mut k = k;
+    let mut flags = k.flags();
+    // `__mutsu_type::<name>` is *shadow metadata*: it says what
+    // `<name>` is constrained to, and nothing can observe it except
+    // through a read or write of `<name>` itself. So it belongs in the
+    // capture on exactly the same terms as its subject, and the rest of
+    // this filter decides it by looking at that subject instead — the
+    // same metadata-key unwrapping `CompiledCode::is_callee_local_sym`
+    // already does for the return merge.
+    //
+    // Kept unconditionally (every one of them is a system name by the
+    // plain-user-lexical test below) it rode along for every typed
+    // lexical anywhere in the creating scope: 11 of the ~35 entries a
+    // closure captured after a bare `use Test`, which scale with the
+    // importer's scope exactly like the `__mutsu_callable_id::` markers
+    // do (#7565).
+    //
+    // Deciding it by its subject rather than by "is it a free
+    // variable" is what keeps a typed *dynamic* (`my Int $*x`) — a
+    // system name that is captured without ever being a free
+    // variable — constrained inside the closure.
+    if flags & crate::symbol::flags::TYPE_META != 0 {
+        // `None` cannot happen (the flag is a pure string property of
+        // the prefix), but keeping the key is the pre-#7565 behaviour.
+        let Some(subject) = k.type_meta_subject() else {
+            return true;
+        };
+        k = subject;
+        flags = subject.flags();
+    }
+    // The unconditional, key-only rejects — see
+    // `env_tier::capture_never_keeps`, which is the same verdict, asked
+    // once per key SET rather than once per closure creation so that
+    // `filtered_flat_capture` can skip these keys without visiting
+    // them. It stays spelled out here as well, and this is deliberate:
+    // both halves of the filter open by loading the key's flags word,
+    // so a version that tested the memoized half separately paid that
+    // load twice per key (#7565).
+    if crate::env_tier::capture_never_keeps_resolved(k, flags) {
+        return false;
+    }
+    // A plain user lexical is inherited only as an upvalue, so the
+    // `own_locals` probe cannot change its verdict — and for the
+    // overwhelming majority of closure literals `free` is empty, which
+    // settles it with no probe at all. Split out rather than left to
+    // the fused expression below because this is the *other* half of
+    // what a wide import list puts in the creating scope (every
+    // imported `&name`), and it is reached once per key per closure
+    // creation.
+    if flags & crate::symbol::flags::PLAIN_USER_LEXICAL != 0 {
+        return !free.is_empty() && free.contains(&k);
+    }
+    // A system name is inherited unless this closure declares it
+    // itself; `own_locals` is empty for every closure with no
+    // parameters or `my` of its own.
+    own_locals.is_empty() || !own_locals.contains(&k) || free.contains(&k)
 }

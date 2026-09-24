@@ -251,6 +251,7 @@ mod vm_react_subscriptions;
 mod vm_react_supply_helpers;
 mod vm_register_ops;
 mod vm_register_sub_ops;
+mod vm_routine_capture;
 mod vm_run_loop;
 mod vm_rw_arg_callee;
 mod vm_rw_attr_container;
