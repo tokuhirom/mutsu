@@ -9,7 +9,7 @@ use Test;
 # agree, so a private copy drifting away from the shared routine fails here
 # even where no literal expectation happens to cover it.
 
-plan 44;
+plan 50;
 
 # a, e + U+301, x, \r\n, Y, a regional-indicator flag, z: 7 graphemes.
 my $mixed = "ae\x[301]x\r\nY\x[1F1EF]\x[1F1F5]z";
@@ -62,6 +62,16 @@ ok "STRASSE".contains("ß", :i), '.contains(:i) is nqp::indexic';
 is nqp::ordat($mixed, 1), 0xE9, 'nqp::ordat: the NFC first codepoint of a grapheme';
 is nqp::ordat($mixed, 3), 13, 'nqp::ordat: \r\n answers \r';
 is nqp::ordat($mixed, 5), 0x1F1EF, 'nqp::ordat: a flag answers its first indicator';
+
+# -- ord (one- and two-argument forms, #9203) --
+# A combining mark with no NFC composite stays in its base's grapheme.
+my $enc = "a\x[20DD]b";
+is nqp::ord($enc), 97, 'nqp::ord: the first grapheme\'s first codepoint';
+is nqp::ord($enc, 1), 98, 'nqp::ord($s, $i) indexes graphemes';
+is nqp::ord($mixed, 3), nqp::ordat($mixed, 3), 'nqp::ord($s, $i) agrees with nqp::ordat';
+is nqp::ord(""), -1, 'nqp::ord of the empty string is -1';
+is nqp::ord("ab", 5), -1, 'nqp::ord past the end is -1';
+is nqp::ord("ab", -1), -1, 'nqp::ord at a negative position is -1';
 is nqp::iscclass(nqp::const::CCLASS_NEWLINE, $mixed, 3), 1, 'nqp::iscclass reads a grapheme';
 is nqp::findcclass(nqp::const::CCLASS_NEWLINE, $mixed, 0, nqp::chars($mixed)), 3,
     'nqp::findcclass reports a grapheme position';
