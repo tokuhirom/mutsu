@@ -480,7 +480,7 @@ impl Interpreter {
                 }
                 let before_is_word = pos > 0 && is_word_char(chars[pos - 1]);
                 let mut end = pos;
-                while end < chars.len() && chars[end].is_whitespace() {
+                while end < chars.len() && crate::builtins::cclass::is_space(chars[end]) {
                     end += 1;
                 }
                 let after_is_word = end < chars.len() && is_word_char(chars[end]);
@@ -612,7 +612,7 @@ impl Interpreter {
             }
             if spec.lookup_name == "ws" && !spec.token_lookup {
                 let mut next = pos;
-                while next < chars.len() && chars[next].is_whitespace() {
+                while next < chars.len() && crate::builtins::cclass::is_space(chars[next]) {
                     next += 1;
                 }
                 let before_is_word = pos > 0 && is_word_char(chars[pos - 1]);
@@ -693,13 +693,13 @@ impl Interpreter {
                 if c == '\r' && pos + 1 < chars.len() && chars[pos + 1] == '\n' {
                     return Some(pos + 2); // CR/LF
                 }
-                if c == '\n' || c == '\r' || c == '\u{85}' || c == '\u{2028}' {
+                if crate::builtins::cclass::is_newline(c) {
                     return Some(pos + 1);
                 }
                 return None;
             }
             RegexAtom::NotNewline => {
-                if c == '\n' || c == '\r' || c == '\u{85}' || c == '\u{2028}' {
+                if crate::builtins::cclass::is_newline(c) {
                     return None;
                 }
                 return Some(grapheme_end(chars, pos));
