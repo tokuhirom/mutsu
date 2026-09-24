@@ -182,6 +182,23 @@ same bytes could disagree.
 Out of scope, filed as #9226: the IO *handle* read paths (`.get`, `.readchars`, native
 `.slurp` on a handle) still decode with `String::from_utf8_lossy` directly, 34 sites in all.
 
+### 2.6 String operator forms and Blob stringification
+
+- `leg` stringified with the pure renderer instead of the comparators' operand coercion, so a user
+  `Str` was ignored and a junction did not autothread. It now shares `coerce_str_compare_operands`
+  and the junction threading with `eq` / `lt` (`Interpreter::str_leg`).
+- The routine forms `&infix:<eq ne lt gt le ge leg ~ ...>` fell back to the pure reduction table,
+  which only renders an object's `.gist`. They now coerce their operands as the opcode does, so
+  `.sort(&infix:<leg>)` and `cmp-ok` agree with the operator.
+- `X::Buf::AsStr` had five hand-written throw sites and no `.message`. `buf_as_str_error` is now the
+  one constructor, and it sets rakudo's `object` / `method` attributes. The exception-message table
+  renders rakudo's text. `concat_operand_stringy` is the one Blob-to-string rule (only `utf8`
+  decodes), shared by `~`, prefix `~` and interpolation. Before, those three spliced in
+  lossy-decoded bytes or the gist.
+
+`t/types/string/str-operator-forms-parity.t` pins 29 rows. `cmp` with a user-`Str` object is left as it
+is (rakudo compares `.Stringy` there too), because `cmp` has its own structural candidates.
+
 ## 3. Consequences
 
 - The three panics and the ten divergences in §1 are fixed.

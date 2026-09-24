@@ -509,6 +509,17 @@ impl Interpreter {
                 lhs = lhs.unwrap_varref().deref_container().deitemize_element();
                 rhs = rhs.unwrap_varref().deref_container().deitemize_element();
             }
+            // The string operators take the same operand coercion as their
+            // opcode (a user `Str`/`Stringy`, a `utf8` decode, a `Proxy`
+            // FETCH, and the Blob rules), so `&infix:<eq>($obj, "b")` and
+            // `.sort(&infix:<leg>)` agree with `$obj eq "b"` / `$obj leg "a"`.
+            // The pure table below only knows `.gist` for an object.
+            if matches!(op, "eq" | "ne" | "lt" | "gt" | "le" | "ge" | "leg") {
+                (lhs, rhs) = self.coerce_str_compare_operands(lhs, rhs)?;
+            } else if matches!(op, "~" | "~|" | "~^" | "~&") {
+                lhs = self.coerce_stringy_operand(lhs)?;
+                rhs = self.coerce_stringy_operand(rhs)?;
+            }
             if self.infix_uses_numeric_bridge(op) {
                 // Genuinely-numeric ops reject non-numeric strings; the generic
                 // comparators (cmp/before/after/min/max) compare them as strings.

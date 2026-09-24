@@ -257,7 +257,7 @@ impl Interpreter {
         if matches!(left.view(), ValueView::Junction { .. })
             || matches!(right.view(), ValueView::Junction { .. })
         {
-            let result = self.eval_concat_with_junctions(left, right);
+            let result = self.eval_concat_with_junctions(left, right)?;
             self.stack.push(result);
             return Ok(());
         }
@@ -270,7 +270,7 @@ impl Interpreter {
         let left = self.coerce_stringy_operand(left)?;
         let right = self.coerce_stringy_operand(right)?;
         self.reconcile_caller_after_internal_dispatch(caller_code);
-        let result = Self::concat_values(left, right);
+        let result = Self::concat_values(left, right)?;
         self.stack.push(result);
         Ok(())
     }
@@ -389,7 +389,11 @@ impl Interpreter {
         Ok(v)
     }
 
-    fn eval_concat_with_junctions(&mut self, left: Value, right: Value) -> Value {
+    fn eval_concat_with_junctions(
+        &mut self,
+        left: Value,
+        right: Value,
+    ) -> Result<Value, RuntimeError> {
         // Auto-FETCH and decontainerize
         let left = self
             .auto_fetch_proxy(&left)
@@ -424,10 +428,10 @@ impl Interpreter {
             let mut results = Vec::with_capacity(lv.len() * rv.len());
             for l in lv.iter() {
                 for r in rv.iter() {
-                    results.push(self.eval_concat_with_junctions(l.clone(), r.clone()));
+                    results.push(self.eval_concat_with_junctions(l.clone(), r.clone())?);
                 }
             }
-            return Value::junction(lk, results);
+            return Ok(Value::junction(lk, results));
         }
         // Both junctions of mismatched kinds: thread left first, swap kinds
         // if right is tighter.
@@ -437,35 +441,35 @@ impl Interpreter {
             let need_swap = Self::thread_right_first(&lk, &rk);
             if let ValueView::Junction { kind, values } = left.view() {
                 let values = values.clone();
-                let results: Vec<Value> = values
+                let results = values
                     .iter()
                     .cloned()
                     .map(|v| self.eval_concat_with_junctions(v, right.clone()))
-                    .collect();
+                    .collect::<Result<Vec<_>, _>>()?;
                 let mut result = Value::junction(kind, results);
                 if need_swap {
                     result = Self::swap_junction_kinds(result, &rk, &lk);
                 }
-                return result;
+                return Ok(result);
             }
         }
         if let ValueView::Junction { kind, values } = left.view() {
             let values = values.clone();
-            let results: Vec<Value> = values
+            let results = values
                 .iter()
                 .cloned()
                 .map(|v| self.eval_concat_with_junctions(v, right.clone()))
-                .collect();
-            return Value::junction(kind, results);
+                .collect::<Result<Vec<_>, _>>()?;
+            return Ok(Value::junction(kind, results));
         }
         if let ValueView::Junction { kind, values } = right.view() {
             let values = values.clone();
-            let results: Vec<Value> = values
+            let results = values
                 .iter()
                 .cloned()
                 .map(|v| self.eval_concat_with_junctions(left.clone(), v))
-                .collect();
-            return Value::junction(kind, results);
+                .collect::<Result<Vec<_>, _>>()?;
+            return Ok(Value::junction(kind, results));
         }
         Self::concat_values(left, right)
     }
@@ -502,7 +506,7 @@ impl Interpreter {
     // right operand and a bounded window at the join, never by renormalizing the
     // result. Any other left operand: O(n1 + n2) plus a full NFC pass over a
     // non-ASCII result. Rakudo: amortized O(1) (strands) -- see #9209.
-    pub(crate) fn concat_values(left: Value, right: Value) -> Value {
+    pub(crate) fn concat_values(left: Value, right: Value) -> Result<Value, RuntimeError> {
         // Buf ~ Buf → byte concatenation. Rakudo types the result by whether the
         // two operands have the *same* type: `Blob[uint8] ~ Blob[uint8]` stays
         // `Blob[uint8]` and `utf8 ~ utf8` stays `utf8`, but any mismatch widens to
@@ -525,25 +529,36 @@ impl Interpreter {
             };
             let mut bytes = Self::extract_buf_bytes(&left);
             bytes.extend(Self::extract_buf_bytes(&right));
-            return crate::value::value_buf::make_buf_from_bytes(result_class, &bytes);
+            return Ok(crate::value::value_buf::make_buf_from_bytes(
+                result_class,
+                &bytes,
+            ));
         }
-        // Buf ~ non-Buf or non-Buf ~ Buf: decode the Buf and produce a Str
+        // Buf ~ non-Buf or non-Buf ~ Buf: the Blob side is stringified with
+        // `.Stringy`, which only `utf8` has (it decodes); any other Blob dies
+        // with `X::Buf::AsStr` rather than contributing its bytes.
         if Self::is_buf_value(&left) || Self::is_buf_value(&right) {
-            let left_str = if Self::is_buf_value(&left) {
-                let bytes = Self::extract_buf_bytes(&left);
-                String::from_utf8_lossy(&bytes).into_owned()
-            } else {
-                crate::runtime::utils::coerce_to_str(&left)
-            };
-            let right_str = if Self::is_buf_value(&right) {
-                let bytes = Self::extract_buf_bytes(&right);
-                String::from_utf8_lossy(&bytes).into_owned()
-            } else {
-                crate::runtime::utils::coerce_to_str(&right)
-            };
-            return crate::builtins::str_prim::concat(Value::str(left_str), &Value::str(right_str));
+            let left = Self::concat_operand_stringy(left)?;
+            let right = Self::concat_operand_stringy(right)?;
+            return Ok(crate::builtins::str_prim::concat(left, &right));
         }
-        crate::builtins::str_prim::concat(left, &right)
+        Ok(crate::builtins::str_prim::concat(left, &right))
+    }
+
+    /// A value as `.Stringy` sees it when it may be a Blob: the one rule for
+    /// `~` with a Blob on one side, prefix `~` and `"$blob"` interpolation.
+    /// Only `utf8` stringifies (it decodes); any other Blob dies with
+    /// `X::Buf::AsStr` (method `Stringy`).
+    pub(crate) fn concat_operand_stringy(v: Value) -> Result<Value, RuntimeError> {
+        if !Self::is_buf_value(&v) {
+            return Ok(Value::str(crate::runtime::utils::coerce_to_str(&v)));
+        }
+        if Self::buf_class_name(&v).as_deref() == Some("utf8")
+            && let Some(decoded) = crate::builtins::decode_buf_method(&v, Some("utf-8"))
+        {
+            return decoded;
+        }
+        Err(Self::buf_as_str_error(&v, "Stringy"))
     }
 
     pub fn is_buf_value(val: &Value) -> bool {
@@ -565,14 +580,23 @@ impl Interpreter {
         }
     }
 
+    /// The one `X::Buf::AsStr` constructor: every place a Blob is asked for a
+    /// string throws through here, so the exception carries rakudo's
+    /// `object` / `method` attributes and its `.message` comes from the
+    /// exception-message table (a stored `message` attribute would shadow it).
+    /// `method` is the method that wanted a Str: `Stringy` for `~` and the
+    /// string comparators, `Str`, or the Str method called on the Blob.
     pub(crate) fn buf_as_str_error(val: &Value, method: &str) -> RuntimeError {
-        let class_name = Self::buf_class_name(val).unwrap_or_else(|| "Blob".to_string());
-        let mut err = RuntimeError::new(format!(
-            "Cannot use a {class_name} as a Str. You can use .decode to convert to Str."
-        ));
+        let mut probe = crate::value::AttrMap::new();
+        probe.insert("method", Value::str(method.to_string()));
+        probe.insert("object", val.clone());
+        let message =
+            crate::builtins::exception_message::format_exception_message("X::Buf::AsStr", &probe)
+                .unwrap_or_default();
         let mut attrs = std::collections::HashMap::new();
         attrs.insert("method".to_string(), Value::str(method.to_string()));
-        attrs.insert("payload".to_string(), val.clone());
+        attrs.insert("object".to_string(), val.clone());
+        let mut err = RuntimeError::new(message);
         err.exception = Some(Box::new(Value::make_instance(
             crate::symbol::Symbol::intern("X::Buf::AsStr"),
             attrs,

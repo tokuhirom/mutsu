@@ -1404,17 +1404,9 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
         {
             return Some(decoded);
         }
-        let mut err = RuntimeError::new(format!(
-            "Cannot use a {cn} as a Str. You can use .decode to convert to Str.",
-        ));
-        let mut attrs = std::collections::HashMap::new();
-        attrs.insert("method".to_string(), Value::str(method.to_string()));
-        attrs.insert("payload".to_string(), target.clone());
-        err.exception = Some(Box::new(Value::make_instance(
-            Symbol::intern("X::Buf::AsStr"),
-            attrs,
+        return Some(Err(crate::runtime::Interpreter::buf_as_str_error(
+            target, method,
         )));
-        return Some(Err(err));
     }
 
     // Buf/Blob .values and .list return the byte values as integers

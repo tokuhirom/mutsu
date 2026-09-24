@@ -90,6 +90,27 @@ pub fn format_exception_message(class_name: &str, attrs: &AttrMap) -> Option<Str
             let what = attr_str(attrs, "what");
             Some(format!("Cannot {} from an empty {}", action, what))
         }
+        // Rakudo's text, word-wrapped at 72 columns as its
+        // `naive-word-wrapper` does. The thrower names the method that
+        // needed a Str; `Stringy` is what `~` and the comparators call.
+        "X::Buf::AsStr" => {
+            let what = attrs
+                .get("object")
+                .map(crate::value::types::what_type_name)
+                .unwrap_or_else(|| "Any".to_string());
+            let method = attr_str(attrs, "method");
+            let head = match method.as_str() {
+                "Str" => format!("Stringification of a {what} is not done with 'Str'."),
+                "Stringy" => format!(
+                    "Stringification of a {what} is not done with 'Stringy', which the '~' operator uses."
+                ),
+                _ => format!("A {what} is not a Str, so using '{method}' will not work."),
+            };
+            Some(naive_word_wrap(
+                &format!("{head} The 'decode' method should be used to convert a {what} to a Str."),
+                72,
+            ))
+        }
         "X::ControlFlow::Return" => Some("Attempt to return outside of any Routine".to_string()),
         "X::OutOfRange" => {
             let what = attr_str_or(attrs, "what", "Argument");
@@ -250,6 +271,26 @@ fn attr_str(attrs: &AttrMap, key: &str) -> String {
         .get(key)
         .map(|v| v.to_string_value())
         .unwrap_or_default()
+}
+
+/// Rakudo's `Str.naive-word-wrapper`: greedily fill lines of at most `max`
+/// columns, breaking only at spaces.
+fn naive_word_wrap(text: &str, max: usize) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut line_len = 0;
+    for word in text.split(' ').filter(|w| !w.is_empty()) {
+        let wlen = word.chars().count();
+        if line_len > 0 && line_len + 1 + wlen > max {
+            out.push('\n');
+            line_len = 0;
+        } else if line_len > 0 {
+            out.push(' ');
+            line_len += 1;
+        }
+        out.push_str(word);
+        line_len += wlen;
+    }
+    out
 }
 
 /// Extract a string attribute with a custom default.

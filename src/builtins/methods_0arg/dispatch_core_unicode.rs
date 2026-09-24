@@ -43,18 +43,9 @@ pub(super) fn dispatch(
             if let ValueView::Instance { class_name, .. } = target.view()
                 && crate::runtime::utils::is_buf_or_blob_class(&class_name.resolve())
             {
-                let msg = format!(
-                    "Cannot use a {} as a string, but you called the .chars method on it",
-                    class_name
-                );
-                let mut ex_attrs = std::collections::HashMap::new();
-                ex_attrs.insert("message".to_string(), Value::str(msg.clone()));
-                ex_attrs.insert("method".to_string(), Value::str("chars".to_string()));
-                let exception =
-                    Value::make_instance(crate::symbol::Symbol::intern("X::Buf::AsStr"), ex_attrs);
-                let mut err = crate::value::RuntimeError::new(msg);
-                err.exception = Some(Box::new(exception));
-                return Some(Some(Err(err)));
+                return Some(Some(Err(crate::runtime::Interpreter::buf_as_str_error(
+                    target, "chars",
+                ))));
             }
             Some(Some(Ok(Value::int(
                 crate::builtins::str_prim::chars(target) as i64,
