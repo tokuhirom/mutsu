@@ -3263,6 +3263,7 @@ impl Interpreter {
             newline_mode: NewlineMode::Lf,
             import_scope_stack: Vec::new(),
             imported_routine_aliases: HashSet::new(),
+            imported_exported_proto_tags: HashMap::new(),
             imported_env_aliases: HashMap::new(),
             strict_mode: false,
             fatal_mode: false,

@@ -3073,6 +3073,10 @@ pub struct Interpreter {
     /// with routine-registry snapshots so a nested lexical declaration cannot
     /// consume an import belonging to its caller.
     pub(crate) imported_routine_aliases: HashSet<Symbol>,
+    /// Export tags inherited by a local multi that extends an imported
+    /// exported proto. Rakudo exports the whole family, including the local
+    /// candidate, under those tags.
+    pub(crate) imported_exported_proto_tags: HashMap<Symbol, HashSet<String>>,
     /// Environment keys installed by imports, paired with the spelling that
     /// should appear in a lexical pseudo-stash. Scalar exports are stored in
     /// `env` without their `$` sigil, so the display spelling cannot be
@@ -4832,7 +4836,8 @@ pub(crate) type RoutineRegistrySnapshot = (
     rustc_hash::FxHashSet<String>,
     rustc_hash::FxHashSet<Symbol>,
     std::sync::Arc<std::collections::HashMap<String, HashSet<Symbol>>>, // user_declared_infix_ops snapshot
-    HashSet<Symbol>, // imported routine aliases snapshot
+    HashSet<Symbol>,                  // imported routine aliases snapshot
+    HashMap<Symbol, HashSet<String>>, // imported exported-proto tags snapshot
 );
 
 /// What a lexical import scope (`{ use Foo; ... }`) restores when it pops: the
@@ -4874,6 +4879,8 @@ pub(crate) struct ImportScopeSnapshot {
     /// registry snapshot alone cannot distinguish an imported alias from a
     /// declaration made in this scope when the names collide.
     pub(crate) imported_routine_aliases: HashSet<Symbol>,
+    /// Export tags inherited by local multis extending imported exported protos.
+    pub(crate) imported_exported_proto_tags: HashMap<Symbol, HashSet<String>>,
     pub(crate) newline_mode: NewlineMode,
     pub(crate) strict_mode: bool,
     pub(crate) fatal_mode: bool,

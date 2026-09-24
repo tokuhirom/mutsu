@@ -745,6 +745,7 @@ impl Interpreter {
             newline_mode: self.newline_mode,
             import_scope_stack: Vec::new(),
             imported_routine_aliases: self.imported_routine_aliases.clone(),
+            imported_exported_proto_tags: self.imported_exported_proto_tags.clone(),
             imported_env_aliases: self.imported_env_aliases.clone(),
             strict_mode: self.strict_mode,
             fatal_mode: self.fatal_mode,
