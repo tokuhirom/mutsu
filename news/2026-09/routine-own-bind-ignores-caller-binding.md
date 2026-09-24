@@ -28,4 +28,4 @@ channels in `exec_set_local_op_inner` (`src/vm/vm_var_assign_set_local.rs`):
   for every declaration; a `:=` from a variable re-records its own alias later
   in the same store.
 
-Pinned by `t/vm/binding/routine-own-bind-ignores-caller-binding.t` (#9244).
+Pinned by `t/routines/routine-own-bind-ignores-caller-binding.t` (#9244).
