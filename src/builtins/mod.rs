@@ -117,7 +117,8 @@ pub(crate) fn chomp_one(s: &str) -> String {
 
 pub(crate) use accepted_nameds::strip_undeclared_nameds;
 pub(crate) use arith::{
-    arith_add, arith_div, arith_mod, arith_mul, arith_negate, arith_pow, arith_sub,
+    BitOp, arith_add, arith_div, arith_mod, arith_mul, arith_negate, arith_pow, arith_sub, int_abs,
+    int_bitop, int_div, int_shift_left, int_shift_right, value_pred, value_succ,
 };
 pub(crate) use functions::build_junction;
 pub(crate) use functions::join_flat;

@@ -1,6 +1,5 @@
 //! Bitwise (and/or/xor) and shift ops for int, bool, and string operands.
 use super::*;
-use num_traits::ToPrimitive;
 
 impl Interpreter {
     pub(super) fn exec_bit_and_op(&mut self) -> Result<(), RuntimeError> {
@@ -10,18 +9,7 @@ impl Interpreter {
         // contained exception, not be silently coerced to 0.
         Self::throw_if_failure(&left)?;
         Self::throw_if_failure(&right)?;
-        let (l, r) = runtime::coerce_numeric(left, right);
-        let result = match (l.view(), r.view()) {
-            (ValueView::Int(a), ValueView::Int(b)) => Value::int(a & b),
-            (ValueView::BigInt(a), ValueView::BigInt(b)) => Value::from_bigint(&**a & &**b),
-            (ValueView::BigInt(a), ValueView::Int(b)) => {
-                Value::from_bigint(&**a & &num_bigint::BigInt::from(b))
-            }
-            (ValueView::Int(a), ValueView::BigInt(b)) => {
-                Value::from_bigint(&num_bigint::BigInt::from(a) & &**b)
-            }
-            _ => Value::int(0),
-        };
+        let result = crate::builtins::int_bitop(&left, &right, crate::builtins::BitOp::And);
         self.stack.push(result);
         Ok(())
     }
@@ -31,18 +19,7 @@ impl Interpreter {
         let left = self.stack.pop().unwrap();
         Self::throw_if_failure(&left)?;
         Self::throw_if_failure(&right)?;
-        let (l, r) = runtime::coerce_numeric(left, right);
-        let result = match (l.view(), r.view()) {
-            (ValueView::Int(a), ValueView::Int(b)) => Value::int(a | b),
-            (ValueView::BigInt(a), ValueView::BigInt(b)) => Value::from_bigint(&**a | &**b),
-            (ValueView::BigInt(a), ValueView::Int(b)) => {
-                Value::from_bigint(&**a | &num_bigint::BigInt::from(b))
-            }
-            (ValueView::Int(a), ValueView::BigInt(b)) => {
-                Value::from_bigint(&num_bigint::BigInt::from(a) | &**b)
-            }
-            _ => Value::int(0),
-        };
+        let result = crate::builtins::int_bitop(&left, &right, crate::builtins::BitOp::Or);
         self.stack.push(result);
         Ok(())
     }
@@ -52,124 +29,27 @@ impl Interpreter {
         let left = self.stack.pop().unwrap();
         Self::throw_if_failure(&left)?;
         Self::throw_if_failure(&right)?;
-        let (l, r) = runtime::coerce_numeric(left, right);
-        let result = match (l.view(), r.view()) {
-            (ValueView::Int(a), ValueView::Int(b)) => Value::int(a ^ b),
-            (ValueView::BigInt(a), ValueView::BigInt(b)) => Value::from_bigint(&**a ^ &**b),
-            (ValueView::BigInt(a), ValueView::Int(b)) => {
-                Value::from_bigint(&**a ^ &num_bigint::BigInt::from(b))
-            }
-            (ValueView::Int(a), ValueView::BigInt(b)) => {
-                Value::from_bigint(&num_bigint::BigInt::from(a) ^ &**b)
-            }
-            _ => Value::int(0),
-        };
+        let result = crate::builtins::int_bitop(&left, &right, crate::builtins::BitOp::Xor);
         self.stack.push(result);
         Ok(())
     }
 
     pub(super) fn exec_bit_shift_left_op(&mut self) -> Result<(), RuntimeError> {
-        fn shift_left_i64(a: i64, b: i64) -> Value {
-            if b < 0 {
-                let shift = b.unsigned_abs();
-                let shifted = if shift >= i64::BITS as u64 {
-                    if a < 0 { -1 } else { 0 }
-                } else {
-                    a >> (shift as u32)
-                };
-                return Value::int(shifted);
-            }
-            let shift = b as u64;
-            if shift >= i64::BITS as u64 {
-                return Value::from_bigint(num_bigint::BigInt::from(a) << (shift as usize));
-            }
-            // Use BigInt for the shift to avoid i64 overflow (Raku integers are arbitrary precision)
-            Value::from_bigint(num_bigint::BigInt::from(a) << (shift as usize))
-        }
-
-        fn shift_left_bigint(a: num_bigint::BigInt, b: i64) -> Value {
-            if b < 0 {
-                Value::from_bigint(a >> (b.unsigned_abs() as usize))
-            } else {
-                Value::from_bigint(a << (b as usize))
-            }
-        }
-
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
         Self::throw_if_failure(&left)?;
         Self::throw_if_failure(&right)?;
-        let (l, r) = runtime::coerce_numeric(left, right);
-        let result = match (l.view(), r.view()) {
-            (ValueView::Int(a), ValueView::Int(b)) => shift_left_i64(a, b),
-            (_, _) => {
-                let a = l.to_bigint();
-                let b_big = r.to_bigint();
-                let b = b_big.to_i64().unwrap_or_else(|| {
-                    if b_big.sign() == num_bigint::Sign::Minus {
-                        i64::MIN
-                    } else {
-                        i64::MAX
-                    }
-                });
-                shift_left_bigint(a, b)
-            }
-        };
+        let result = crate::builtins::int_shift_left(&left, &right);
         self.stack.push(result);
         Ok(())
     }
 
     pub(super) fn exec_bit_shift_right_op(&mut self) -> Result<(), RuntimeError> {
-        fn shift_right_i64(a: i64, b: i64) -> Value {
-            if b < 0 {
-                let shift = b.unsigned_abs();
-                if shift >= i64::BITS as u64 {
-                    return Value::from_bigint(num_bigint::BigInt::from(a) << (shift as usize));
-                }
-                if let Some(v) = a.checked_shl(shift as u32) {
-                    Value::int(v)
-                } else {
-                    Value::from_bigint(num_bigint::BigInt::from(a) << (shift as usize))
-                }
-            } else {
-                let shift = b as u64;
-                let shifted = if shift >= i64::BITS as u64 {
-                    if a < 0 { -1 } else { 0 }
-                } else {
-                    a >> (shift as u32)
-                };
-                Value::int(shifted)
-            }
-        }
-
-        fn shift_right_bigint(a: num_bigint::BigInt, b: i64) -> Value {
-            if b < 0 {
-                Value::from_bigint(a << (b.unsigned_abs() as usize))
-            } else {
-                Value::from_bigint(a >> (b as usize))
-            }
-        }
-
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
         Self::throw_if_failure(&left)?;
         Self::throw_if_failure(&right)?;
-        let (l, r) = runtime::coerce_numeric(left, right);
-        let result = match (l.view(), r.view()) {
-            (ValueView::Int(a), ValueView::Int(b)) => shift_right_i64(a, b),
-            (_, _) => {
-                let a = l.to_bigint();
-                let b_big = r.to_bigint();
-                let b = b_big.to_i64().unwrap_or_else(|| {
-                    if b_big.sign() == num_bigint::Sign::Minus {
-                        i64::MIN
-                    } else {
-                        i64::MAX
-                    }
-                });
-                shift_right_bigint(a, b)
-            }
-        };
+        let result = crate::builtins::int_shift_right(&left, &right);
         self.stack.push(result);
         Ok(())
     }

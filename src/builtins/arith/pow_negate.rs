@@ -345,14 +345,8 @@ pub(crate) fn arith_pow(left: Value, right: Value) -> Value {
 pub(crate) fn arith_negate(val: Value) -> Result<Value, RuntimeError> {
     match val.view() {
         ValueView::Bool(b) => Ok(Value::int(if b { -1 } else { 0 })),
-        ValueView::Int(i) => {
-            if let Some(neg) = i.checked_neg() {
-                Ok(Value::int(neg))
-            } else {
-                // i64::MIN overflow: promote to Num
-                Ok(Value::num(-(i as f64)))
-            }
-        }
+        // `-i64::MIN` is a BigInt (Raku integers do not overflow).
+        ValueView::Int(i) => Ok(super::int_negate(i)),
         // Negating a BigInt can bring the result back into i64 range (the
         // canonical case: `9223372036854775808` — one past i64::MAX, so it
         // parses as BigInt — negated is exactly i64::MIN, which fits).
@@ -401,7 +395,7 @@ pub(crate) fn arith_negate(val: Value) -> Result<Value, RuntimeError> {
         }
         ValueView::Str(s) => {
             if let Ok(i) = s.trim().parse::<i64>() {
-                Ok(Value::int(-i))
+                Ok(super::int_negate(i))
             } else if let Ok(f) = s.trim().parse::<f64>() {
                 Ok(Value::num(-f))
             } else {

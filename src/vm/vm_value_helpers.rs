@@ -42,136 +42,14 @@ impl Interpreter {
         })
     }
 
-    fn superscript_digit_value(c: char) -> Option<u32> {
-        match c {
-            '\u{2070}' => Some(0), // ⁰
-            '\u{00B9}' => Some(1), // ¹
-            '\u{00B2}' => Some(2), // ²
-            '\u{00B3}' => Some(3), // ³
-            '\u{2074}' => Some(4), // ⁴
-            '\u{2075}' => Some(5), // ⁵
-            '\u{2076}' => Some(6), // ⁶
-            '\u{2077}' => Some(7), // ⁷
-            '\u{2078}' => Some(8), // ⁸
-            '\u{2079}' => Some(9), // ⁹
-            _ => None,
-        }
-    }
-
-    fn superscript_digit_char(d: u32) -> char {
-        match d {
-            0 => '\u{2070}', // ⁰
-            1 => '\u{00B9}', // ¹
-            2 => '\u{00B2}', // ²
-            3 => '\u{00B3}', // ³
-            4 => '\u{2074}', // ⁴
-            5 => '\u{2075}', // ⁵
-            6 => '\u{2076}', // ⁶
-            7 => '\u{2077}', // ⁷
-            8 => '\u{2078}', // ⁸
-            9 => '\u{2079}', // ⁹
-            _ => unreachable!("superscript digit out of range"),
-        }
-    }
-
-    fn superscript_succ(s: &str) -> Option<String> {
-        let mut digits = Vec::new();
-        for ch in s.chars() {
-            digits.push(Self::superscript_digit_value(ch)?);
-        }
-        if digits.is_empty() {
-            return None;
-        }
-        let mut carry = 1u32;
-        for d in digits.iter_mut().rev() {
-            if carry == 0 {
-                break;
-            }
-            let sum = *d + carry;
-            *d = sum % 10;
-            carry = sum / 10;
-        }
-        if carry > 0 {
-            digits.insert(0, carry);
-        }
-        Some(
-            digits
-                .into_iter()
-                .map(Self::superscript_digit_char)
-                .collect(),
-        )
-    }
-
-    fn superscript_pred(s: &str) -> Option<String> {
-        let mut digits = Vec::new();
-        for ch in s.chars() {
-            digits.push(Self::superscript_digit_value(ch)?);
-        }
-        if digits.is_empty() {
-            return None;
-        }
-        let mut borrow = 1u32;
-        for d in digits.iter_mut().rev() {
-            if borrow == 0 {
-                break;
-            }
-            if *d >= borrow {
-                *d -= borrow;
-                borrow = 0;
-            } else {
-                *d = 10 + *d - borrow;
-                borrow = 1;
-            }
-        }
-        if borrow > 0 {
-            return None;
-        }
-        Some(
-            digits
-                .into_iter()
-                .map(Self::superscript_digit_char)
-                .collect(),
-        )
-    }
-
     pub(crate) fn string_succ(s: &str) -> String {
         crate::builtins::str_increment::string_succ(s)
     }
 
-    fn string_pred_checked(s: &str) -> Option<String> {
-        crate::builtins::str_increment::string_pred_checked(s)
-    }
-
+    /// `$x++`'s new value: `.succ` (`builtins::value_succ`, ADR-0118), with
+    /// 1 for a value it does not handle.
     pub(super) fn increment_value(value: &Value) -> Value {
-        match value.view() {
-            ValueView::Int(i) => i
-                .checked_add(1)
-                .map(Value::int)
-                .unwrap_or_else(|| Value::bigint(num_bigint::BigInt::from(i) + 1)),
-            ValueView::BigInt(n) => Value::from_bigint(n.as_ref() + 1),
-            ValueView::Bool(_) => Value::TRUE,
-            ValueView::Rat(n, d) => make_rat(n + d, d),
-            ValueView::FatRat(n, d) => {
-                let r = make_rat(n + d, d);
-                if let ValueView::Rat(nn, dd) = r.view() {
-                    Value::fat_rat_raw(nn, dd)
-                } else {
-                    r
-                }
-            }
-            ValueView::Num(f) => Value::num(f + 1.0),
-            ValueView::Complex(r, i) => Value::complex(r + 1.0, i),
-            ValueView::Str(s) => {
-                if let Some(next) = Self::superscript_succ(&s) {
-                    Value::str(next)
-                } else {
-                    Value::str(Self::string_succ(&s))
-                }
-            }
-            // Mixin (allomorphic types like IntStr): increment the inner value
-            ValueView::Mixin(inner, _) => Self::increment_value(inner),
-            _ => Value::int(1),
-        }
+        crate::builtins::value_succ(value).unwrap_or_else(|| Value::int(1))
     }
 
     pub(crate) fn normalize_incdec_source(value: Value) -> Value {
@@ -241,53 +119,10 @@ impl Interpreter {
         }
     }
 
+    /// `$x--`'s new value: `.pred` (`builtins::value_pred`, ADR-0118), with
+    /// -1 for a value it does not handle.
     pub(crate) fn decrement_value(value: &Value) -> Value {
-        match value.view() {
-            ValueView::Int(i) => i
-                .checked_sub(1)
-                .map(Value::int)
-                .unwrap_or_else(|| Value::bigint(num_bigint::BigInt::from(i) - 1)),
-            ValueView::BigInt(n) => Value::from_bigint(n.as_ref() - 1),
-            ValueView::Bool(_) => Value::FALSE,
-            ValueView::Rat(n, d) => make_rat(n - d, d),
-            ValueView::FatRat(n, d) => {
-                let r = make_rat(n - d, d);
-                if let ValueView::Rat(nn, dd) = r.view() {
-                    Value::fat_rat_raw(nn, dd)
-                } else {
-                    r
-                }
-            }
-            ValueView::Num(f) => Value::num(f - 1.0),
-            ValueView::Complex(r, i) => Value::complex(r - 1.0, i),
-            ValueView::Str(s) => {
-                if let Some(prev) = Self::superscript_pred(&s) {
-                    Value::str(prev)
-                } else if let Some(pred) = Self::string_pred_checked(&s) {
-                    Value::str(pred)
-                } else {
-                    // Decrement underflow: return a Failure value
-                    Self::make_decrement_failure()
-                }
-            }
-            // Mixin (allomorphic types like IntStr): decrement the inner value
-            ValueView::Mixin(inner, _) => Self::decrement_value(inner),
-            _ => Value::int(-1),
-        }
-    }
-
-    /// Create a Failure value for "Decrement out of range".
-    fn make_decrement_failure() -> Value {
-        let mut ex_attrs = std::collections::HashMap::new();
-        ex_attrs.insert(
-            "message".to_string(),
-            Value::str("Decrement out of range".to_string()),
-        );
-        let exception = Value::make_instance(Symbol::intern("X::AdHoc"), ex_attrs);
-        let mut failure_attrs = std::collections::HashMap::new();
-        failure_attrs.insert("exception".to_string(), exception);
-        failure_attrs.insert("handled".to_string(), Value::FALSE);
-        Value::make_instance(Symbol::intern("Failure"), failure_attrs)
+        crate::builtins::value_pred(value).unwrap_or_else(|| Value::int(-1))
     }
 
     pub(super) fn strict_undeclared_error(&self, name: &str) -> RuntimeError {

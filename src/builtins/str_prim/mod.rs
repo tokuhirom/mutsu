@@ -19,7 +19,7 @@
 //! the cached [`GraphemeIndex`]; the `Str` method, the `nqp::` op, the VM
 //! opcode and the TRIR op all call the routine here and differ only in how
 //! they report an edge case (a `Failure` vs. `-1` vs. a native int).
-//! `scripts/check-str-prims.sh` keeps new copies from growing back.
+//! `scripts/check-prims.sh` keeps new copies from growing back.
 
 mod build;
 mod fold;

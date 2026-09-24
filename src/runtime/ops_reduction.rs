@@ -232,61 +232,6 @@ impl Interpreter {
                 _ => 0.0,
             }
         };
-        let to_int = |v: &Value| -> i64 {
-            let mut cur = v;
-            while let ValueView::Mixin(inner, _) = cur.view() {
-                cur = inner;
-            }
-            match cur.view() {
-                ValueView::Int(i) => i,
-                ValueView::BigInt(n) => n
-                    .to_i64()
-                    .unwrap_or_else(|| if n.is_negative() { i64::MIN } else { i64::MAX }),
-                ValueView::Num(f) => f as i64,
-                ValueView::Rat(n, d) => {
-                    if d == 0 {
-                        0
-                    } else {
-                        n / d
-                    }
-                }
-                ValueView::FatRat(n, d) => {
-                    if d == 0 {
-                        0
-                    } else {
-                        n / d
-                    }
-                }
-                // Same gap as `to_num` above: a big-numerator/denominator
-                // rational (`ValueView::BigRat`, used for both big `Rat` and
-                // big `FatRat`) was falling through to the `_ => 0` default.
-                ValueView::BigRat(n, d) => {
-                    if d.is_zero() {
-                        0
-                    } else {
-                        (n / d)
-                            .to_i64()
-                            .unwrap_or_else(|| if n.is_negative() { i64::MIN } else { i64::MAX })
-                    }
-                }
-                ValueView::Str(s) => s.parse::<i64>().unwrap_or(0),
-                ValueView::Bool(b) => {
-                    if b {
-                        1
-                    } else {
-                        0
-                    }
-                }
-                ValueView::Array(items, kind) => {
-                    if kind.is_itemized() {
-                        0
-                    } else {
-                        items.len() as i64
-                    }
-                }
-                _ => 0,
-            }
-        };
         // Handle R (reverse) meta-prefix: swap operands and recurse with inner op
         if let Some(inner_op) = op.strip_prefix('R')
             && !inner_op.is_empty()
@@ -347,16 +292,7 @@ impl Interpreter {
             // user `infix:<×>`/`infix:<÷>` candidate does not match the operands.
             "*" | "\u{00D7}" => Ok(crate::builtins::arith_mul(left.clone(), right.clone())),
             "/" | "\u{00F7}" => crate::builtins::arith_div(left.clone(), right.clone()),
-            "div" => {
-                let divisor = to_int(right);
-                if divisor == 0 {
-                    return Ok(RuntimeError::divide_by_zero_failure(
-                        Some(Value::int(to_int(left))),
-                        Some("div"),
-                    ));
-                }
-                Ok(Value::int(to_int(left).div_euclid(divisor)))
-            }
+            "div" => Ok(crate::builtins::int_div(left, right)),
             "%" | "mod" => crate::builtins::arith_mod(left.clone(), right.clone()),
             "**" => Ok(crate::builtins::arith_pow(left.clone(), right.clone())),
             "~" => Ok(crate::runtime::Interpreter::concat_values(
@@ -471,21 +407,21 @@ impl Interpreter {
                     Ok(right.clone())
                 }
             }
-            "+&" => {
-                let a = left.to_bigint();
-                let b = right.to_bigint();
-                Ok(Value::from_bigint(a & b))
-            }
-            "+|" => {
-                let a = left.to_bigint();
-                let b = right.to_bigint();
-                Ok(Value::from_bigint(a | b))
-            }
-            "+^" => {
-                let a = left.to_bigint();
-                let b = right.to_bigint();
-                Ok(Value::from_bigint(a ^ b))
-            }
+            "+&" => Ok(crate::builtins::int_bitop(
+                left,
+                right,
+                crate::builtins::BitOp::And,
+            )),
+            "+|" => Ok(crate::builtins::int_bitop(
+                left,
+                right,
+                crate::builtins::BitOp::Or,
+            )),
+            "+^" => Ok(crate::builtins::int_bitop(
+                left,
+                right,
+                crate::builtins::BitOp::Xor,
+            )),
             "==" => {
                 if let (Some(a), Some(b)) = (
                     super::to_big_rat_parts(left),
@@ -802,14 +738,8 @@ impl Interpreter {
             "~|" => Self::str_bitwise_op(left, right, |a, b| a | b, true),
             "~^" => Self::str_bitwise_op(left, right, |a, b| a ^ b, true),
             "~&" => Self::str_bitwise_op(left, right, |a, b| a & b, false),
-            "+<" => match (left.view(), right.view()) {
-                (ValueView::Int(a), ValueView::Int(b)) => Ok(Self::shift_left_i64(a, b)),
-                _ => Ok(Self::shift_left_bigint(&left.to_bigint(), to_int(right))),
-            },
-            "+>" => match (left.view(), right.view()) {
-                (ValueView::Int(a), ValueView::Int(b)) => Ok(Self::shift_right_i64(a, b)),
-                _ => Ok(Self::shift_right_bigint(&left.to_bigint(), to_int(right))),
-            },
+            "+<" => Ok(crate::builtins::int_shift_left(left, right)),
+            "+>" => Ok(crate::builtins::int_shift_right(left, right)),
             "x" => {
                 if matches!(right.view(), ValueView::Whatever) {
                     let mut env = crate::env::Env::new();

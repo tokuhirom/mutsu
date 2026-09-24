@@ -2,7 +2,6 @@ use super::*;
 use crate::symbol::Symbol;
 use crate::value::AttrMap;
 use crate::value::ValueMap;
-use num_bigint::BigInt;
 
 impl Interpreter {
     fn apply_hash_assignment_entry(updated: &mut ValueMap, item: Value) -> bool {
@@ -319,49 +318,15 @@ impl Interpreter {
         }
     }
 
+    /// `.=succ`'s new value -- the same routine as `.succ` and `++`
+    /// (`builtins::value_succ`, ADR-0118).
     pub(crate) fn increment_mut_target_value(value: &Value) -> Value {
-        match value.view() {
-            ValueView::Int(i) => i
-                .checked_add(1)
-                .map(Value::int)
-                .unwrap_or_else(|| Value::from_bigint(BigInt::from(i) + 1)),
-            ValueView::BigInt(n) => Value::from_bigint(n.as_ref() + 1),
-            ValueView::Bool(_) => Value::TRUE,
-            ValueView::Rat(n, d) => make_rat(n + d, d),
-            ValueView::FatRat(n, d) => {
-                let r = make_rat(n + d, d);
-                match r.view() {
-                    ValueView::Rat(nn, dd) => Value::fat_rat_raw(nn, dd),
-                    _ => r,
-                }
-            }
-            ValueView::Str(s) => Value::str(Self::string_succ(&s)),
-            _ => Value::int(1),
-        }
+        crate::builtins::value_succ(value).unwrap_or_else(|| Value::int(1))
     }
 
+    /// `.=pred`'s new value -- the same routine as `.pred` and `--`.
     pub(crate) fn decrement_mut_target_value(value: &Value) -> Value {
-        match value.view() {
-            ValueView::Int(i) => i
-                .checked_sub(1)
-                .map(Value::int)
-                .unwrap_or_else(|| Value::from_bigint(BigInt::from(i) - 1)),
-            ValueView::BigInt(n) => Value::from_bigint(n.as_ref() - 1),
-            ValueView::Bool(_) => Value::FALSE,
-            ValueView::Rat(n, d) => make_rat(n - d, d),
-            ValueView::FatRat(n, d) => {
-                let r = make_rat(n - d, d);
-                match r.view() {
-                    ValueView::Rat(nn, dd) => Value::fat_rat_raw(nn, dd),
-                    _ => r,
-                }
-            }
-            ValueView::Str(s) => match Self::string_pred(&s) {
-                Ok(prev) => Value::str(prev),
-                Err(_) => Value::str_arc(s.clone()),
-            },
-            _ => Value::int(-1),
-        }
+        crate::builtins::value_pred(value).unwrap_or_else(|| Value::int(-1))
     }
 
     pub(crate) fn value_to_non_negative_i64(value: &Value) -> Option<i64> {
