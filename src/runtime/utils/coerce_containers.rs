@@ -538,7 +538,7 @@ fn coerce_to_array_inner(value: Value) -> Value {
     fn metadata_shape_for_items(
         items: &crate::gc::Gc<crate::value::ArrayData>,
     ) -> Option<Vec<usize>> {
-        items.shape.clone()
+        items.shape.as_deref().map(<[usize]>::to_vec)
     }
 
     match value.view() {

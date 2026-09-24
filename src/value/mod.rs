@@ -1823,8 +1823,10 @@ pub struct ArrayData {
     /// Dimensions of a shaped (multidimensional) array (`my @a[2;3]`). `Some`
     /// only on `ArrayKind::Shaped` arrays. Embedded (replacing the former
     /// `Arc::as_ptr`-keyed `ShapedArrayIds` side table) so the shape travels
-    /// with the container through copy-on-write.
-    pub shape: Option<Vec<usize>>,
+    /// with the container through copy-on-write. A boxed slice, not a `Vec`:
+    /// a shape is never grown in place, and the 8 bytes it saves pay for
+    /// `nqp_elem` below (the `ArrayData` size is pinned in `which_id.rs`).
+    pub shape: Option<Box<[usize]>>,
     /// Indices that were explicitly element-assigned (`@a[i] = …`), as opposed
     /// to autovivification gaps. `None` means the array was bulk/literal-
     /// constructed, so every in-range index exists (the historical
@@ -1843,6 +1845,26 @@ pub struct ArrayData {
     /// (Text::CSV's `@kh.VAR.name ne "element"` guard — its rakudo#2483
     /// workaround). `None` keeps the reflector's syntactic-name fallback.
     pub descriptor_name: Option<Box<str>>,
+    /// The element kind an nqp VMArray was created with (#9235): an
+    /// `nqp::list_i` / `list_n` / `list_s` is a native array whose growth
+    /// slots are `0` / `0e0` / the null string, where an untyped `nqp::list`
+    /// grows with null. Every other array is [`NqpElemKind::Object`].
+    pub nqp_elem: NqpElemKind,
+}
+
+/// See [`ArrayData::nqp_elem`]. MoarVM keeps the same distinction as the
+/// array's REPR slot type (`VMArray` of `obj` vs. `int64`/`num64`/`str`).
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub enum NqpElemKind {
+    /// An object array (`nqp::list`) -- and every non-nqp array.
+    #[default]
+    Object,
+    /// `nqp::list_i`.
+    Int,
+    /// `nqp::list_n`.
+    Num,
+    /// `nqp::list_s`.
+    Str,
 }
 
 /// Value stored in an enum variant: an integer, a string, or an arbitrary Value.

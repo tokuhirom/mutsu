@@ -495,13 +495,25 @@ impl Interpreter {
                     }
                     return Some(Ok(target.clone()));
                 }
-                // A plain (or native typed) array target: resize its items in
-                // place — CBOR::Simple presizes `array[num32].new` this way.
+                // An array target: resize its items in place. The growth
+                // slots follow the array's own element type (#9235): an
+                // `nqp::list_i`/`_n`/`_s` grows with its native zero, a native
+                // `array[T]` with 0 (CBOR::Simple presizes `array[num32].new`
+                // this way), and an object `nqp::list` with null.
                 if let ValueView::Array(items, _) = target.view() {
+                    let fill = crate::runtime::nqp_backing::typed_list_fill(items.nqp_elem)
+                        .unwrap_or_else(|| {
+                            let native = items.has_native_backing()
+                                || items
+                                    .declared_type
+                                    .as_deref()
+                                    .is_some_and(|t| t.starts_with("array["));
+                            if native { Value::int(0) } else { Value::NIL }
+                        });
                     // SAFETY: audited aliased in-place container write (see
                     // value::aliased_mut); no borrow into the node is live.
                     let data = unsafe { crate::value::gc_contents_mut(&items) };
-                    data.items_mut().resize(n, Value::int(0));
+                    data.items_mut().resize(n, fill);
                     return Some(Ok(target.clone()));
                 }
                 Ok(target)

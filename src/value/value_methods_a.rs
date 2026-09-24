@@ -335,6 +335,13 @@ impl Value {
     pub fn real_array(items: Vec<Value>) -> Self {
         Value::Array(crate::gc::Gc::new(ArrayData::new(items)), ArrayKind::Array)
     }
+    /// An nqp VMArray of element kind `kind` (`nqp::list_i` and its twins,
+    /// #9235): an ordinary list that remembers what its growth slots hold.
+    pub(crate) fn nqp_typed_list(items: Vec<Value>, kind: NqpElemKind) -> Self {
+        let mut data = ArrayData::new(items);
+        data.nqp_elem = kind;
+        Value::Array(crate::gc::Gc::new(data), ArrayKind::List)
+    }
     /// Fresh empty Array tagged with the "element" container-descriptor name —
     /// what an unsupplied `@`-param binds (rakudo: `@kh.VAR.name` is
     /// "element" there, and Text::CSV's `method CSV` gates on it).

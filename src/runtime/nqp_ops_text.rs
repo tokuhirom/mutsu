@@ -266,12 +266,20 @@ impl Interpreter {
                 Ok(Value::int(null as i64))
             }
 
-            // -- native string lists --
+            // -- native typed lists --
             // nqp::list_s(...) -> a VM list of strings; mutsu represents one as
             // an ordinary array, which is what atpos_s/bindpos_s/push_s below
-            // (and the existing atpos_i/bindpos_i) already operate on.
+            // (and atpos_i/bindpos_i) operate on. The array records its element
+            // kind, so growing it fills with that type's zero (#9235).
             // Cost: O(k), k = operands.
-            "list_s" | "list_i" | "list_n" => Ok(Value::array(args.to_vec())),
+            "list_s" | "list_i" | "list_n" => {
+                let kind = match op {
+                    "list_s" => crate::value::NqpElemKind::Str,
+                    "list_i" => crate::value::NqpElemKind::Int,
+                    _ => crate::value::NqpElemKind::Num,
+                };
+                Ok(Value::nqp_typed_list(args.to_vec(), kind))
+            }
             // Cost: O(1) amortized (in-place push); push_s adds O(m), m = chars of the value
             // (copied). MoarVM: O(1) -- see #9134.
             "push_s" | "push_i" | "push_n" => {
