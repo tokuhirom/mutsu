@@ -57,6 +57,25 @@ reduction fold (`ops_reduction.rs`, which the metaop and routine forms share), t
    copies (`shift_{left,right}_{i64,bigint}`, `superscript_{succ,pred}`) by name.
    `t/types/numeric/int-operator-forms-parity.t` pins 43 rakudo-measured values across the forms.
 
+### 2.1 The native `nqp::*_i` / `*_n` ops
+
+The same rule applies one level down. `nqp::add_i` and friends had their own bodies in two
+executors -- the interpreter's op tables (`runtime::nqp_pure::eval`) and TRIR's typed ops
+(`trir/exec.rs`) -- plus a third copy of the op *names* in each of TRIR's lowering table and the
+JIT's inline whitelist. They disagreed: `nqp::bitshiftl_i(1, 64)` was `i64::MIN` in the
+interpreter (count clamped to 0..63) but 1 under TRIR (count masked to six bits, which is what
+MoarVM answers), so the result depended on whether the enclosing routine had been compiled.
+
+- `runtime::nqp_native` holds the scalar body of each op (`add_i` ... `shl_i`, `shr_i`,
+  `div_i`, `mod_i`, `cmp_i`, `cmp_n`), with MoarVM's semantics; `nqp_pure::eval` and every
+  TRIR op call it.
+- TRIR's `nqp_form` and the JIT's `NqpIntOp` are keyed on `NqpPure` (`nqp_pure::by_name` /
+  `pure_op`), not on their own lists of names. TRIR's private `unbox_i` lowering (which read
+  `3.7e0` as 3 where the op answers 0) is dropped; `nqp::unbox_i` reaches the op.
+- `make check-prims` gains a `native` rule: no hand-written `.wrapping_*(` in the nqp tables,
+  the VM's nqp path or TRIR's runtime outside `nqp_native.rs` (opt-out: `native-prim: allow`).
+  `t/fixtures/trir-int-ops.raku` pins the shift counts with TRIR on and off against rakudo.
+
 ## 3. Consequences
 
 - The three panics and the ten divergences in §1 are fixed.

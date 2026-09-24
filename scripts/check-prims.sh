@@ -26,6 +26,11 @@
 #         hand-written floored integer division or modulus. Call
 #         `crate::builtins::{int_div, arith_mod, int_mod_i64}` instead.
 #         Opt-out marker: `int-prim: allow`.
+#   native In the nqp:: op tables, the VM's nqp call path and TRIR's runtime,
+#         a hand-written wrapping int op (`.wrapping_add(` ...). Call
+#         `crate::runtime::nqp_native` instead: TRIR's own copy of
+#         `bitshiftl_i` once answered differently from the op table's.
+#         Opt-out marker: `native-prim: allow`.
 #   names The old private copies, banned by name anywhere in src/, so they
 #         cannot come back under their own names either.
 #
@@ -52,8 +57,13 @@ INT_SCOPE='^src/'
 INT_EXEMPT='^src/builtins/arith/|^src/parser/|^src/compiler/'
 INT_RE='Integer::(div_floor|mod_floor)|[^a-z_](div_floor|mod_floor)\(&'
 
+# -- native (ADR-0118) --
+NATIVE_SCOPE="$STR_SCOPE"
+NATIVE_EXEMPT='^src/runtime/nqp_native\.rs$'
+NATIVE_RE='\.wrapping_(add|sub|mul|neg|abs|shl|shr|rem|div)\('
+
 # -- names --
-NAMES_RE='nqp_char_cache|TrCharCache|cached_chars\(|fn shift_(left|right)_(i64|bigint)|fn superscript_(succ|pred)'
+NAMES_RE='nqp_char_cache|TrCharCache|cached_chars\(|fn shift_(left|right)_(i64|bigint)|fn superscript_(succ|pred)|fn floor_div_i'
 
 # $1 = root, $2 = scope regex, $3 = exempt regex ('' for none), $4 = pattern,
 # $5 = opt-out marker. Prints offending `file:line: text` rows.
@@ -85,6 +95,8 @@ scan() {
     local root=$1
     scan_rule "$root" "$STR_SCOPE" '' "$STR_RE" 'str-prim: allow' | sed 's/^/[str] /'
     scan_rule "$root" "$INT_SCOPE" "$INT_EXEMPT" "$INT_RE" 'int-prim: allow' | sed 's/^/[int] /'
+    scan_rule "$root" "$NATIVE_SCOPE" "$NATIVE_EXEMPT" "$NATIVE_RE" 'native-prim: allow' |
+        sed 's/^/[native] /'
     (cd "$root" && grep -rnE "$NAMES_RE" src --include='*.rs' | grep -vE '^[^:]+:[0-9]+: *(//|\*)' || true) |
         sed 's/^/[names] /'
 }
@@ -122,13 +134,22 @@ EOF
     cat >"$dir/src/builtins/arith/int_ops.rs" <<'EOF'
 let q = num_integer::Integer::div_floor(&a, &b);
 EOF
+    cat >"$dir/src/runtime/nqp_ops.rs" <<'EOF'
+let v = a.wrapping_shl(b as u32);
+// native-prim: allow
+let r = r.wrapping_mul(10);
+EOF
+    cat >"$dir/src/runtime/nqp_native.rs" <<'EOF'
+pub(crate) fn add_i(a: i64, b: i64) -> i64 { a.wrapping_add(b) }
+EOF
     local got
     got=$(scan "$dir" | grep -c '' || true)
     # str: nqp_ops_str.rs lines 1-2 and trir/x.rs line 1 (not trir/compile,
     # which is out of scope); int: vm/ops.rs lines 1-2 (not the marked line 4,
-    # nor the arith home); names: elsewhere.rs line 2 and vm/ops.rs line 5.
-    [ "$got" = "7" ] || {
-        echo "check-prims: self-test expected 7 hits, got $got:" >&2
+    # nor the arith home); native: nqp_ops.rs line 1 (not the marked line 3,
+    # nor nqp_native.rs); names: elsewhere.rs line 2 and vm/ops.rs line 5.
+    [ "$got" = "8" ] || {
+        echo "check-prims: self-test expected 8 hits, got $got:" >&2
         scan "$dir" >&2
         return 1
     }
@@ -156,10 +177,13 @@ if [ -n "$hits" ]; then
       [int] crate::builtins::{int_div, arith_mod, int_mod_i64, int_bitop,
                 int_shift_left, int_shift_right, int_negate, int_abs,
                 value_succ, value_pred}                        (ADR-0118)
+      [native] crate::runtime::nqp_native::{add_i, shl_i, div_i, mod_i, ...}
+                                                               (ADR-0118)
       [names] the old private copies must not come back.
 
   If a line is genuinely not that primitive, mark it with a
-  `// str-prim: allow (<reason>)` / `// int-prim: allow (<reason>)` comment
+  `// str-prim: allow` / `// int-prim: allow` / `// native-prim: allow`
+  comment (with the reason)
   on that line or the line above.
 MSG
     exit 1

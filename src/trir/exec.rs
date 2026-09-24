@@ -15,6 +15,7 @@ use super::frame::TrFrame;
 use super::{TrChunk, TrOp};
 use crate::opcode::CompiledFns;
 use crate::runtime::Interpreter;
+use crate::runtime::nqp_native as nat;
 use crate::value::{RuntimeError, Value};
 
 /// What a TRIR chunk did.
@@ -69,23 +70,23 @@ impl Interpreter {
                 }
                 TrOp::IncI(n) => {
                     let s = nbase + *n as usize;
-                    let v = self.trir.nl[s].wrapping_add(1);
+                    let v = nat::add_i(self.trir.nl[s], 1);
                     self.trir.nl[s] = v;
                     self.trir.ns.push(v);
                 }
                 TrOp::DecI(n) => {
                     let s = nbase + *n as usize;
-                    let v = self.trir.nl[s].wrapping_sub(1);
+                    let v = nat::sub_i(self.trir.nl[s], 1);
                     self.trir.nl[s] = v;
                     self.trir.ns.push(v);
                 }
                 TrOp::IncIVoid(n) => {
                     let s = nbase + *n as usize;
-                    self.trir.nl[s] = self.trir.nl[s].wrapping_add(1);
+                    self.trir.nl[s] = nat::add_i(self.trir.nl[s], 1);
                 }
                 TrOp::DecIVoid(n) => {
                     let s = nbase + *n as usize;
-                    self.trir.nl[s] = self.trir.nl[s].wrapping_sub(1);
+                    self.trir.nl[s] = nat::sub_i(self.trir.nl[s], 1);
                 }
 
                 // ---- `is rw` native parameters, through their reference ----
@@ -101,63 +102,60 @@ impl Interpreter {
                 }
                 TrOp::IncRefI(n) => {
                     let r = self.trir.nl[nbase + *n as usize] as usize;
-                    let v = self.trir.nl[r].wrapping_add(1);
+                    let v = nat::add_i(self.trir.nl[r], 1);
                     self.trir.nl[r] = v;
                     self.trir.ns.push(v);
                 }
                 TrOp::IncRefIVoid(n) => {
                     let r = self.trir.nl[nbase + *n as usize] as usize;
-                    self.trir.nl[r] = self.trir.nl[r].wrapping_add(1);
+                    self.trir.nl[r] = nat::add_i(self.trir.nl[r], 1);
                 }
                 TrOp::DecRefI(n) => {
                     let r = self.trir.nl[nbase + *n as usize] as usize;
-                    let v = self.trir.nl[r].wrapping_sub(1);
+                    let v = nat::sub_i(self.trir.nl[r], 1);
                     self.trir.nl[r] = v;
                     self.trir.ns.push(v);
                 }
                 TrOp::DecRefIVoid(n) => {
                     let r = self.trir.nl[nbase + *n as usize] as usize;
-                    self.trir.nl[r] = self.trir.nl[r].wrapping_sub(1);
+                    self.trir.nl[r] = nat::sub_i(self.trir.nl[r], 1);
                 }
 
-                // ---- arithmetic (wrapping, per native `int` semantics) ----
-                TrOp::AddI => self.bin_i(i64::wrapping_add),
-                TrOp::SubI => self.bin_i(i64::wrapping_sub),
-                TrOp::MulI => self.bin_i(i64::wrapping_mul),
+                // ---- arithmetic: native `int` semantics, the one body each op
+                // has (`runtime::nqp_native`, shared with the `nqp::` tables) ----
+                TrOp::AddI => self.bin_i(nat::add_i),
+                TrOp::SubI => self.bin_i(nat::sub_i),
+                TrOp::MulI => self.bin_i(nat::mul_i),
                 TrOp::DivI => {
                     let r = self.ipop();
                     let l = self.ipop();
-                    if r == 0 {
-                        // The same error `runtime/nqp_ops.rs` raises, rather
-                        // than a bail: a bail re-runs the routine, and by
-                        // this point the body may already have written
-                        // through an `is rw` reference.
-                        return Err(RuntimeError::new("nqp::div_i: division by zero"));
-                    }
-                    self.trir
-                        .ns
-                        .push(crate::runtime::nqp_ops::floor_div_i(l, r));
+                    // A zero divisor raises the same error `runtime/nqp_ops.rs`
+                    // does, rather than a bail: a bail re-runs the routine,
+                    // and by this point the body may already have written
+                    // through an `is rw` reference.
+                    let q = nat::div_i(l, r)
+                        .ok_or_else(|| RuntimeError::new("nqp::div_i: division by zero"))?;
+                    self.trir.ns.push(q);
                 }
                 TrOp::ModI => {
                     let r = self.ipop();
                     let l = self.ipop();
-                    if r == 0 {
-                        return Err(RuntimeError::new("nqp::mod_i: division by zero"));
-                    }
-                    // `nqp::mod_i` follows the dividend's sign like Rust's
-                    // `%`; Raku's own `%` does not, which is why only the
-                    // `nqp::` spelling reaches here (`compile/binary.rs`).
-                    self.trir.ns.push(l.wrapping_rem(r));
+                    // `nqp::mod_i` follows the dividend's sign; Raku's own `%`
+                    // does not, which is why only the `nqp::` spelling reaches
+                    // here (`compile/binary.rs`).
+                    let m = nat::mod_i(l, r)
+                        .ok_or_else(|| RuntimeError::new("nqp::mod_i: division by zero"))?;
+                    self.trir.ns.push(m);
                 }
                 TrOp::NegI => {
                     let v = self.ipop();
-                    self.trir.ns.push(v.wrapping_neg());
+                    self.trir.ns.push(nat::neg_i(v));
                 }
                 TrOp::BitAndI => self.bin_i(|a, b| a & b),
                 TrOp::BitOrI => self.bin_i(|a, b| a | b),
                 TrOp::BitXorI => self.bin_i(|a, b| a ^ b),
-                TrOp::ShlI => self.bin_i(|a, b| a.wrapping_shl(b as u32)),
-                TrOp::ShrI => self.bin_i(|a, b| a.wrapping_shr(b as u32)),
+                TrOp::ShlI => self.bin_i(nat::shl_i),
+                TrOp::ShrI => self.bin_i(nat::shr_i),
                 TrOp::EqI => self.cmp_i(|a, b| a == b),
                 TrOp::NeI => self.cmp_i(|a, b| a != b),
                 TrOp::LtI => self.cmp_i(|a, b| a < b),

@@ -84,6 +84,12 @@ my sub skip-ws(str $text, int $pos is rw) {
 
 my sub divide(int $a, int $b) { nqp::div_i($a, $b) }
 
+# The shift count is taken modulo 64, as MoarVM's machine shift does; the
+# untyped path once clamped it to 0..63 instead (ADR-0118).
+my sub shifts(int $a, int $n) {
+    nqp::add_i(nqp::mul_i(nqp::bitshiftl_i($a, $n), 1000), nqp::bitshiftr_i(nqp::neg_i($a), $n))
+}
+
 for ^2 {
     say "int-ops=", int-ops(1234567, -89), " ", int-ops(-5, 7);
     say "cmp-ops=", cmp-ops(1, 2), " ", cmp-ops(2, 2), " ", cmp-ops(3, 2);
@@ -101,6 +107,7 @@ for ^2 {
     say "skip-ws=", skip-ws("  \n x", $pos), " ", $pos;
     say "divide=", divide(17, 5), " ", divide(-17, 5);
     say "divide-by-zero=", (try divide(1, 0)) // "died";
+    say "shifts=", shifts(1, 64), " ", shifts(3, 65), " ", shifts(8, -1), " ", shifts(1, 3);
 }
 
 # Raku's `%` takes the divisor's sign, `nqp::mod_i` the dividend's, and

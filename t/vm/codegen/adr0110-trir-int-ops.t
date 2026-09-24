@@ -45,6 +45,7 @@ is $on-out, q:to/END/, 'the transcript is rakudo\'s';
     skip-ws=4 4
     divide=3 -4
     divide-by-zero=died
+    shifts=999 5998 -1 7999
     int-ops=-308645 250
     cmp-ops=35 26 44
     wraps=-2 -9223372036854775805
@@ -59,6 +60,7 @@ is $on-out, q:to/END/, 'the transcript is rakudo\'s';
     skip-ws=4 4
     divide=3 -4
     divide-by-zero=died
+    shifts=999 5998 -1 7999
     raku-mod=3 -3 2
     nqp-mod=-2 2 2
     raku-mod=3 -3 2
@@ -67,7 +69,7 @@ is $on-out, q:to/END/, 'the transcript is rakudo\'s';
 
 # `raku-mod` is declined on purpose: TRIR has no op with `%`'s semantics.
 my @routines = <int-ops cmp-ops wraps num-ops num-cmp sized tri short bump
-    bump-twice caller-slot skip-ws divide nqp-mod>;
+    bump-twice caller-slot skip-ws divide shifts nqp-mod>;
 my @accepted = $on-err.lines.map({ m/^ 'trir: ' (\S+) ' accepted'/ ?? ~$0 !! Empty }).grep(* (elem) @routines).unique;
 is-deeply @accepted.sort.List, @routines.sort.List, 'every routine but raku-mod is accepted into TRIR'
     or diag $on-err;

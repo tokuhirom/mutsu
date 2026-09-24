@@ -245,7 +245,10 @@ pub(crate) fn pure_op(id: u16) -> Option<NqpPure> {
     table.get(id as usize).copied().flatten()
 }
 
-fn by_name(name: &str) -> Option<NqpPure> {
+/// The pure op `name` (without the `nqp::` prefix) spells. The one name
+/// table: TRIR's lowering and the JIT's inline whitelist are keyed on
+/// [`NqpPure`], not on their own copies of these names.
+pub(crate) fn by_name(name: &str) -> Option<NqpPure> {
     Some(match name {
         "add_i" => NqpPure::AddI,
         "sub_i" => NqpPure::SubI,
@@ -312,26 +315,27 @@ pub(crate) fn try_eval_native(op: NqpPure, args: &[Value]) -> Option<Value> {
 /// The one implementation of each of these ops, shared with the string-keyed
 /// table in [`crate::runtime::nqp_ops`].
 pub(crate) fn eval(op: NqpPure, args: &[Value]) -> Value {
+    use crate::runtime::nqp_native as n;
     // Cost: every arm O(1) (native int/num arithmetic).
     match op {
-        NqpPure::AddI => Value::int(iarg(args, 0).wrapping_add(iarg(args, 1))),
-        NqpPure::SubI => Value::int(iarg(args, 0).wrapping_sub(iarg(args, 1))),
-        NqpPure::MulI => Value::int(iarg(args, 0).wrapping_mul(iarg(args, 1))),
-        NqpPure::NegI => Value::int(iarg(args, 0).wrapping_neg()),
-        NqpPure::AbsI => Value::int(iarg(args, 0).wrapping_abs()),
+        NqpPure::AddI => Value::int(n::add_i(iarg(args, 0), iarg(args, 1))),
+        NqpPure::SubI => Value::int(n::sub_i(iarg(args, 0), iarg(args, 1))),
+        NqpPure::MulI => Value::int(n::mul_i(iarg(args, 0), iarg(args, 1))),
+        NqpPure::NegI => Value::int(n::neg_i(iarg(args, 0))),
+        NqpPure::AbsI => Value::int(n::abs_i(iarg(args, 0))),
         NqpPure::BitOrI => Value::int(iarg(args, 0) | iarg(args, 1)),
         NqpPure::BitAndI => Value::int(iarg(args, 0) & iarg(args, 1)),
         NqpPure::BitXorI => Value::int(iarg(args, 0) ^ iarg(args, 1)),
         NqpPure::BitNegI => Value::int(!iarg(args, 0)),
-        NqpPure::ShlI => Value::int(iarg(args, 0).wrapping_shl(iarg(args, 1).clamp(0, 63) as u32)),
-        NqpPure::ShrI => Value::int(iarg(args, 0).wrapping_shr(iarg(args, 1).clamp(0, 63) as u32)),
+        NqpPure::ShlI => Value::int(n::shl_i(iarg(args, 0), iarg(args, 1))),
+        NqpPure::ShrI => Value::int(n::shr_i(iarg(args, 0), iarg(args, 1))),
         NqpPure::IsEqI => bool_int(iarg(args, 0) == iarg(args, 1)),
         NqpPure::IsNeI => bool_int(iarg(args, 0) != iarg(args, 1)),
         NqpPure::IsLtI => bool_int(iarg(args, 0) < iarg(args, 1)),
         NqpPure::IsLeI => bool_int(iarg(args, 0) <= iarg(args, 1)),
         NqpPure::IsGtI => bool_int(iarg(args, 0) > iarg(args, 1)),
         NqpPure::IsGeI => bool_int(iarg(args, 0) >= iarg(args, 1)),
-        NqpPure::CmpI => Value::int(cmp_result(iarg(args, 0).cmp(&iarg(args, 1)))),
+        NqpPure::CmpI => Value::int(n::cmp_i(iarg(args, 0), iarg(args, 1))),
         NqpPure::NotI => bool_int(iarg(args, 0) == 0),
         NqpPure::AddN => Value::num(narg(args, 0) + narg(args, 1)),
         NqpPure::SubN => Value::num(narg(args, 0) - narg(args, 1)),
@@ -345,11 +349,7 @@ pub(crate) fn eval(op: NqpPure, args: &[Value]) -> Value {
         NqpPure::IsLeN => bool_int(narg(args, 0) <= narg(args, 1)),
         NqpPure::IsGtN => bool_int(narg(args, 0) > narg(args, 1)),
         NqpPure::IsGeN => bool_int(narg(args, 0) >= narg(args, 1)),
-        NqpPure::CmpN => Value::int(
-            narg(args, 0)
-                .partial_cmp(&narg(args, 1))
-                .map_or(0, cmp_result),
-        ),
+        NqpPure::CmpN => Value::int(n::cmp_n(narg(args, 0), narg(args, 1))),
         NqpPure::IsNanOrInf => bool_int({
             let n = narg(args, 0);
             n.is_nan() || n.is_infinite()
@@ -373,15 +373,6 @@ fn narg(args: &[Value], i: usize) -> f64 {
 #[inline]
 fn bool_int(b: bool) -> Value {
     Value::int(i64::from(b))
-}
-
-#[inline]
-fn cmp_result(ordering: std::cmp::Ordering) -> i64 {
-    match ordering {
-        std::cmp::Ordering::Less => -1,
-        std::cmp::Ordering::Equal => 0,
-        std::cmp::Ordering::Greater => 1,
-    }
 }
 
 #[cfg(test)]

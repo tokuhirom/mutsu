@@ -324,15 +324,9 @@ impl Interpreter {
             // nqp::mod_i is MoarVM's, i.e. TRUNCATED like Rust's `%`
             // (`mod_i(-7, 3)` is -1), not Raku's floored `%`.
             // Cost: O(1).
-            "mod_i" => {
-                let rhs = iarg(args, 1);
-                if rhs == 0 {
-                    return Some(Err(RuntimeError::new(
-                        "nqp::mod_i: division by zero".to_string(),
-                    )));
-                }
-                Ok(Value::int(iarg(args, 0).wrapping_rem(rhs)))
-            }
+            "mod_i" => crate::runtime::nqp_native::mod_i(iarg(args, 0), iarg(args, 1))
+                .map(Value::int)
+                .ok_or_else(|| RuntimeError::new("nqp::mod_i: division by zero")),
 
             // -- boxing / null --
             // nqp::hllbool($int) -> the HLL's Bool.
