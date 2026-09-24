@@ -74,7 +74,9 @@ The goal follows from why the issue was filed; there are three shapes:
 Rules that follow from it:
 
 - **No goal, no work.** An old `todo:perf` issue without the section gets one
-  written — as an edit to the body, derived from what the issue already says —
+  written — as an edit to the body, derived from what the issue already says
+  (or, when the body is too large to rewrite safely through the API, as a
+  comment carrying the same `## Goal (close condition)` heading) —
   before anyone starts on it. If the issue is too vague to derive a goal from,
   ask the user rather than inventing an easy one.
 - **Announce the goal when you start.** When you pick up a `todo:perf` issue,
