@@ -555,11 +555,19 @@ impl Interpreter {
             // returned map is combined with ordinary `is export` declarations
             // (Rakudo's custom EXPORT and default export surfaces coexist),
             // but the use arguments are not export tags (`use JSON::Fast
-            // <immutable !pretty>` is the canonical example). Import the
-            // metadata with the default tag set so those arguments are not
-            // rejected as unknown tags.
+            // <immutable !pretty>` is the canonical example). Preserve an
+            // explicit `:all` tag, though: it requests the module's complete
+            // ordinary export surface in addition to whatever the hook
+            // returns, while positional use arguments must still use the
+            // default tag set so they are not rejected as unknown tags.
             if self.module_export_defs.contains_key(module) {
-                return match self.import_module(module, &[]) {
+                let all_tag = ["ALL".to_string()];
+                let ordinary_tags = if tags.iter().any(|tag| tag.eq_ignore_ascii_case("all")) {
+                    &all_tag[..]
+                } else {
+                    &[]
+                };
+                return match self.import_module(module, ordinary_tags) {
                     Ok(()) => Ok(()),
                     Err(err) if err.message.starts_with("No exports found for module:") => Ok(()),
                     Err(err) => Err(err),
@@ -1033,15 +1041,18 @@ impl Interpreter {
                     .or_default()
                     .extend(package_globals);
             }
+            let all_tag = ["ALL".to_string()];
+            let import_tags = if self.module_export_defs.contains_key(module) {
+                if tags.iter().any(|tag| tag.eq_ignore_ascii_case("all")) {
+                    &all_tag[..]
+                } else {
+                    &[]
+                }
+            } else {
+                tags
+            };
             if import
-                && let Err(err) = self.import_module(
-                    module,
-                    if self.module_export_defs.contains_key(module) {
-                        &[]
-                    } else {
-                        tags
-                    },
-                )
+                && let Err(err) = self.import_module(module, import_tags)
                 && !err.message.starts_with("No exports found for module:")
             {
                 return Err(err);

@@ -912,6 +912,18 @@ impl Interpreter {
             }
         }
 
+        // Code-valued `our constant &alias is export(...)` declarations are
+        // stored in the export-variable table rather than the routine
+        // registry.  They are still ordinary members of the defining module's
+        // stash (`Module::<&alias>`), so expose them alongside exported subs.
+        if let Some(vars) = self.exported_vars.get(package_name.as_str()) {
+            for name in vars.keys() {
+                if let Some(value) = self.exported_var_value(&package_name, name) {
+                    symbols.entry(name.clone()).or_insert(value);
+                }
+            }
+        }
+
         // A named package's `our` symbols also live in the flat `our_vars`
         // store -- that is where an `our` declared in a branch that never RAN
         // is pre-installed (`EndWalker::install_our_symbol`), so a dead-branch
@@ -986,11 +998,50 @@ impl Interpreter {
             // routine references and therefore retain normal import lookup.
             symbols.entry(format!("&{base}")).or_insert_with(|| {
                 if is_lowercase_export_stash {
-                    self.sub_value_from_function_def((**def).clone())
+                    let candidates = self.resolve_all_multi_candidates(base);
+                    if candidates.len() > 1 {
+                        self.sub_value_from_multi_candidates(base, candidates)
+                    } else {
+                        self.sub_value_from_function_def((**def).clone())
+                    }
                 } else {
                     Value::routine_parts(def.package, def.name, false)
                 }
             });
+        }
+
+        // A custom EXPORT hook commonly reads the lowercase stash as a
+        // source of first-class code values (`EXPORT::all::{...}:p`).  The
+        // registry loop above covers exported subs, but code-valued `our
+        // constant &alias is export(...)` declarations live in
+        // `exported_vars` instead.  Include those entries in the process-wide
+        // lowercase view as well; this is the view used while a module's
+        // custom EXPORT hook is running, before its module-qualified stash is
+        // available through a lexical package binding.
+        if is_lowercase_export_stash {
+            for (module, vars) in self.exported_vars.iter() {
+                for name in vars.keys() {
+                    if let Some(value) = self.exported_var_value(module, name) {
+                        let value = if let (true, ValueView::Sub(data)) =
+                            (name.starts_with('&'), value.view())
+                        {
+                            // Code-valued export aliases such as `&distinct =
+                            // &uniq` must point at the same first-class
+                            // dispatcher as their source.  The source entry
+                            // was materialized by the registry loop above;
+                            // reusing it preserves `=:=` identity and the
+                            // complete multi-candidate family.
+                            symbols
+                                .get(&format!("&{}", data.name))
+                                .cloned()
+                                .unwrap_or(value)
+                        } else {
+                            value
+                        };
+                        symbols.entry(name.clone()).or_insert(value);
+                    }
+                }
+            }
         }
 
         // A module that exports anything has an `EXPORT` member in its stash
