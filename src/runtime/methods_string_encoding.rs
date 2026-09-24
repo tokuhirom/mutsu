@@ -157,16 +157,6 @@ impl Interpreter {
     /// Strict ASCII decode: every byte must be <= 0x7F, otherwise Raku throws
     /// `X::Str::Encode`-style "Will not decode invalid ASCII" rather than
     /// silently substituting a replacement character.
-    fn decode_ascii_strict(bytes: &[u8]) -> Result<String, RuntimeError> {
-        if let Some(b) = bytes.iter().find(|b| **b > 0x7F) {
-            return Err(RuntimeError::new(format!(
-                "Will not decode invalid ASCII (code point ({}) > 127 found)",
-                b
-            )));
-        }
-        Ok(bytes.iter().map(|b| *b as char).collect())
-    }
-
     /// Decode UTF-16 code units. Without a `replacement`, an unpaired surrogate
     /// is malformed and throws (matching Rakudo, which strictly rejects invalid
     /// UTF-16); with one, each invalid unit becomes the replacement string.
@@ -187,6 +177,14 @@ impl Interpreter {
         }
     }
 
+    /// Decode `bytes` for an IO read, a socket, a `Proc` or `.decode`: the
+    /// label is first resolved through the user encoding registry, then decoded
+    /// by the one builtin decoder `Blob.decode` and `nqp::decode` use
+    /// (`builtins::decode_bytes_with_encoding_label`, ADR-0118 §2.4), which
+    /// also NFC-normalizes the result as rakudo's NFG strings are. This used
+    /// to be a second copy of that decoder minus the normalization, so a
+    /// slurped file and a decoded Blob of the same bytes differed.
+    // Cost: O(n), n = bytes.
     pub(super) fn decode_with_encoding(
         &self,
         bytes: &[u8],
@@ -197,100 +195,18 @@ impl Interpreter {
             .map(|e| e.name.as_str())
             .unwrap_or(encoding_name)
             .to_lowercase();
-
-        match encoding.as_str() {
-            "utf8-c8" => Ok(super::utf8_c8::decode_utf8_c8(bytes)),
-            "ascii" => Self::decode_ascii_strict(bytes),
-            "iso-8859-1" => Ok(bytes.iter().map(|b| *b as char).collect()),
-            "utf-16" | "utf16" => {
-                let (data, be) = if bytes.len() >= 2 && bytes[0] == 0xFE && bytes[1] == 0xFF {
-                    (&bytes[2..], true)
-                } else if bytes.len() >= 2 && bytes[0] == 0xFF && bytes[1] == 0xFE {
-                    (&bytes[2..], false)
-                } else {
-                    (bytes, false)
-                };
-                if !data.len().is_multiple_of(2) {
-                    return Err(RuntimeError::new(
-                        "Malformed UTF-16 stream: odd byte length (terminated mid-code-unit)",
-                    ));
-                }
-                let units: Vec<u16> = data
-                    .chunks_exact(2)
-                    .map(|c| {
-                        if be {
-                            u16::from_be_bytes([c[0], c[1]])
-                        } else {
-                            u16::from_le_bytes([c[0], c[1]])
-                        }
-                    })
-                    .collect();
-                Self::decode_utf16_units(&units, None)
-            }
-            "utf-16le" | "utf16le" => {
-                if !bytes.len().is_multiple_of(2) {
-                    return Err(RuntimeError::new(
-                        "Malformed UTF-16 stream: odd byte length (terminated mid-code-unit)",
-                    ));
-                }
-                let units: Vec<u16> = bytes
-                    .chunks_exact(2)
-                    .map(|c| u16::from_le_bytes([c[0], c[1]]))
-                    .collect();
-                Self::decode_utf16_units(&units, None)
-            }
-            "utf-16be" | "utf16be" => {
-                if !bytes.len().is_multiple_of(2) {
-                    return Err(RuntimeError::new(
-                        "Malformed UTF-16BE stream: odd byte length (terminated mid-code-unit)",
-                    ));
-                }
-                let units: Vec<u16> = bytes
-                    .chunks_exact(2)
-                    .map(|c| u16::from_be_bytes([c[0], c[1]]))
-                    .collect();
-                Self::decode_utf16_units(&units, None)
-            }
-            "utf-8" | "utf8" => match std::str::from_utf8(bytes) {
-                Ok(s) => Ok(s.strip_prefix('\u{FEFF}').unwrap_or(s).to_string()),
-                Err(e) => {
-                    let vup = e.valid_up_to();
-                    if e.error_len().is_none() {
-                        Err(RuntimeError::new(
-                            "Malformed termination of UTF-8 string".to_string(),
-                        ))
-                    } else {
-                        let pfx = std::str::from_utf8(&bytes[..vup]).unwrap_or("");
-                        let (mut line, mut col) = (1usize, 1usize);
-                        for ch in pfx.chars() {
-                            if ch == '\n' {
-                                line += 1;
-                                col = 1;
-                            } else {
-                                col += 1;
-                            }
-                        }
-                        let s = if vup > 0 { vup - 1 } else { 0 };
-                        let end = (vup + 2).min(bytes.len());
-                        let near: Vec<String> =
-                            bytes[s..end].iter().map(|b| format!("{:02x}", b)).collect();
-                        Err(RuntimeError::new(format!(
-                            "Malformed UTF-8 near bytes {} at line {} col {}",
-                            near.join(" "),
-                            line,
-                            col
-                        )))
-                    }
-                }
-            },
-            _ => {
-                if let Some(enc) = Self::lookup_encoding_rs_codec(&encoding) {
-                    let (decoded, _used_encoding, _had_errors) = enc.decode(bytes);
-                    return Ok(decoded.into_owned());
-                }
-                Ok(String::from_utf8_lossy(bytes).into_owned())
-            }
+        if let Some(decoded) = crate::builtins::decode_bytes_with_encoding_label(bytes, &encoding) {
+            return decoded;
         }
+        // A label the builtin table does not know: an encoding_rs codec, else
+        // lossy UTF-8 (an IO handle opened with an unrecognised name).
+        if let Some(enc) = Self::lookup_encoding_rs_codec(&encoding) {
+            let (decoded, _used_encoding, _had_errors) = enc.decode(bytes);
+            return Ok(crate::builtins::nfc(decoded.into_owned()));
+        }
+        Ok(crate::builtins::nfc(
+            String::from_utf8_lossy(bytes).into_owned(),
+        ))
     }
 
     /// Decode bytes with an optional replacement string for unmappable/invalid
@@ -303,6 +219,23 @@ impl Interpreter {
         encoding_name: &str,
         replacement: Option<&str>,
     ) -> Result<String, RuntimeError> {
+        // Without a replacement this IS the strict decode.
+        let Some(repl) = replacement else {
+            return self.decode_with_encoding(bytes, encoding_name);
+        };
+        self.decode_with_replacement(bytes, encoding_name, repl)
+            .map(crate::builtins::nfc)
+    }
+
+    /// The lenient half of [`Self::decode_with_encoding_and_replacement`]:
+    /// every invalid sequence becomes `replacement`. Normalized by the caller.
+    fn decode_with_replacement(
+        &self,
+        bytes: &[u8],
+        encoding_name: &str,
+        repl: &str,
+    ) -> Result<String, RuntimeError> {
+        let replacement = Some(repl);
         let encoding = self
             .find_encoding(encoding_name)
             .map(|e| e.name.as_str())
@@ -311,19 +244,16 @@ impl Interpreter {
 
         match encoding.as_str() {
             "utf8-c8" => Ok(super::utf8_c8::decode_utf8_c8(bytes)),
-            "ascii" => match replacement {
-                Some(repl) => Ok(bytes
-                    .iter()
-                    .map(|b| {
-                        if *b <= 0x7F {
-                            (*b as char).to_string()
-                        } else {
-                            repl.to_string()
-                        }
-                    })
-                    .collect()),
-                None => Self::decode_ascii_strict(bytes),
-            },
+            "ascii" => Ok(bytes
+                .iter()
+                .map(|b| {
+                    if *b <= 0x7F {
+                        (*b as char).to_string()
+                    } else {
+                        repl.to_string()
+                    }
+                })
+                .collect()),
             "iso-8859-1" => Ok(bytes.iter().map(|b| *b as char).collect()),
             "utf-16" | "utf16" => {
                 let (data, be) = if bytes.len() >= 2 && bytes[0] == 0xFE && bytes[1] == 0xFF {
@@ -376,38 +306,7 @@ impl Interpreter {
             }
             "utf-8" | "utf8" => match std::str::from_utf8(bytes) {
                 Ok(s) => Ok(s.strip_prefix('\u{FEFF}').unwrap_or(s).to_string()),
-                Err(e) => {
-                    if let Some(repl) = replacement {
-                        return Ok(Self::decode_utf8_with_replacement(bytes, repl));
-                    }
-                    let vup = e.valid_up_to();
-                    if e.error_len().is_none() {
-                        Err(RuntimeError::new(
-                            "Malformed termination of UTF-8 string".to_string(),
-                        ))
-                    } else {
-                        let pfx = std::str::from_utf8(&bytes[..vup]).unwrap_or("");
-                        let (mut line, mut col) = (1usize, 1usize);
-                        for ch in pfx.chars() {
-                            if ch == '\n' {
-                                line += 1;
-                                col = 1;
-                            } else {
-                                col += 1;
-                            }
-                        }
-                        let s = if vup > 0 { vup - 1 } else { 0 };
-                        let end = (vup + 2).min(bytes.len());
-                        let near: Vec<String> =
-                            bytes[s..end].iter().map(|b| format!("{:02x}", b)).collect();
-                        Err(RuntimeError::new(format!(
-                            "Malformed UTF-8 near bytes {} at line {} col {}",
-                            near.join(" "),
-                            line,
-                            col
-                        )))
-                    }
-                }
+                Err(_) => Ok(Self::decode_utf8_with_replacement(bytes, repl)),
             },
             _ => {
                 if let Some(enc) = Self::lookup_encoding_rs_codec(&encoding) {
