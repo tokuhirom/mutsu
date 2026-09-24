@@ -123,10 +123,10 @@ fn rewrite(ops: Vec<TrOp>, rule: Rule) -> Vec<TrOp> {
         return out;
     }
     for op in &mut out {
-        if let Some(t) = op.target_mut() {
-            if let Some(&m) = map.get(*t as usize) {
-                *t = m;
-            }
+        if let Some(t) = op.target_mut()
+            && let Some(&m) = map.get(*t as usize)
+        {
+            *t = m;
         }
     }
     out
