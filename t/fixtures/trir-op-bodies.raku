@@ -1,6 +1,6 @@
 use nqp;
 
-# Fixture for t/vm/codegen/adr0116-trir-package-outer.t: the op-body shapes
+# Fixture for t/vm/codegen/adr0116-trir-op-bodies.t: the op-body shapes
 # ADR-0116 D2.4 made cheaper, each called more than once (a TRIR cache bug
 # gives a right first answer and a wrong later one).
 

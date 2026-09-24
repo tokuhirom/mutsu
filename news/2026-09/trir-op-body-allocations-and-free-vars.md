@@ -55,7 +55,7 @@ instructions and 43,756 allocations per 100 records**. The switch loop was
 
 ## Pinned by
 
-- `t/vm/codegen/adr0116-trir-package-outer.t` checks a package-lexical free
+- `t/vm/codegen/adr0116-trir-op-bodies.t` checks a package-lexical free
   variable read before and after another routine assigns it, `Uni:D` / `NFD:D`
   binds of every form, and `findcclass` / `findnotcclass` windows on flat and
   non-flat strings. TRIR on, TRIR off and rakudo agree, and all four routines

@@ -15,7 +15,7 @@ use Test;
 
 plan 5;
 
-my $fixture = $?FILE.IO.parent(3).add('fixtures/trir-package-outer.raku').Str;
+my $fixture = $?FILE.IO.parent(3).add('fixtures/trir-op-bodies.raku').Str;
 
 sub transcript(%extra-env) {
     my %env = %*ENV;
