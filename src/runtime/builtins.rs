@@ -112,6 +112,7 @@ pub(crate) const BUILTIN_FUNCTION_NAMES: &[&str] = &[
     "roots",
     "substr",
     "substr-rw",
+    "subbuf-rw",
     "words",
     "comb",
     "rand",
