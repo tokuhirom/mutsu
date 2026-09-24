@@ -263,7 +263,7 @@ impl Interpreter {
     /// same treatment as a directly resolved multi: the hook may return
     /// `&infix:<op>`, and that value must retain the private multi candidates
     /// declared by the exporting compilation unit after its load scope ends.
-    fn sub_value_from_multi_candidates(
+    pub(crate) fn sub_value_from_multi_candidates(
         &self,
         name: &str,
         candidates: Vec<std::sync::Arc<crate::runtime::FunctionDef>>,
