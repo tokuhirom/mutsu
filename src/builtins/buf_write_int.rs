@@ -77,7 +77,7 @@ fn to_u128_value(value: &Value) -> u128 {
 /// leaves six elements, not three — so mutsu matches it rather than inventing a
 /// tidier rule.
 pub(crate) fn write_byte_offset(
-    bytes: &mut Vec<u8>,
+    bytes: &mut impl GrowBytes,
     method: &str,
     offset: i64,
     size: usize,
@@ -96,15 +96,34 @@ pub(crate) fn write_byte_offset(
     if bytes.len() < end {
         let elems = (offset as usize).checked_add(size).ok_or_else(too_large)?;
         let grown = elems.checked_mul(width).ok_or_else(too_large)?;
-        bytes.resize(grown, 0u8);
+        bytes.grow_to(grown);
     }
     Ok(off)
+}
+
+/// Byte storage a write can grow: a plain `Vec<u8>` being assembled, or a
+/// live buffer node's [`BufBytes`](crate::value::BufBytes) edited in place.
+pub(crate) trait GrowBytes: std::ops::DerefMut<Target = [u8]> {
+    /// Resize to `len` bytes, zero-filling any new ones.
+    fn grow_to(&mut self, len: usize);
+}
+
+impl GrowBytes for Vec<u8> {
+    fn grow_to(&mut self, len: usize) {
+        self.resize(len, 0);
+    }
+}
+
+impl GrowBytes for crate::value::BufBytes {
+    fn grow_to(&mut self, len: usize) {
+        self.resize(len, 0);
+    }
 }
 
 /// Apply a write-int/uint write to a buffer's raw storage bytes (resizing if
 /// needed). `width` is the buffer's element width — see [`write_byte_offset`].
 pub(crate) fn apply_write_int(
-    bytes: &mut Vec<u8>,
+    bytes: &mut impl GrowBytes,
     method: &str,
     offset: i64,
     value: &Value,

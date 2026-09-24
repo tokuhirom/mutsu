@@ -171,7 +171,7 @@ fn value_to_ser(v: &Value) -> Result<SerValue, String> {
         // does, serialize the variable's value.
         ValueView::VarRef { value, .. } => value_to_ser(value),
         ValueView::RakuAst(_) => Err("cannot serialize a RakuAST node".to_string()),
-        ValueView::BufStorage(b) => Ok(SerValue::BufStorage(b.bytes.clone(), b.width, b.kind)),
+        ValueView::BufStorage(b) => Ok(SerValue::BufStorage(b.bytes.to_vec(), b.width, b.kind)),
         ValueView::Int(n) => Ok(SerValue::Int(n)),
         ValueView::BigInt(n) => Ok(SerValue::BigInt((**n).clone())),
         ValueView::Num(n) => Ok(SerValue::Num(n)),
