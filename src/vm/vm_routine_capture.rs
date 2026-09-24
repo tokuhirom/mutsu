@@ -43,7 +43,43 @@ impl Interpreter {
             &|k, _v| super::vm_register_ops::capture_keeps(k, free, own_locals),
             cc.capture_probe_keys(),
         );
-        self.capture_bare_callees(cc, &mut env);
+        self.carry_bare_callee_bindings(cc, &mut env);
         env
+    }
+
+    /// Under a re-entrant `EVAL`, copy the live `&name` binding and
+    /// registration marker of every routine `cc` calls by bare name into
+    /// `env` -- entries the whole-env capture used to carry and the key filter
+    /// drops. Those are what keep an import alias callable once the EVAL's
+    /// import scope is popped (the reason `capture_bare_callees` exists for
+    /// closures).
+    ///
+    /// Unlike `capture_bare_callees` this never *builds* a code object for a
+    /// callee: that would capture the callee's own callees in turn, and a
+    /// mutually recursive pair (`rmtree` <-> `empty-directory` in
+    /// File::Directory::Tree) never bottoms out.
+    // Cost: O(r + c), r = ops of `cc` (`bare_callee_names`), c = its callees;
+    // only inside an `EVAL`.
+    fn carry_bare_callee_bindings(&self, cc: &CompiledCode, env: &mut Env) {
+        if self.env().get_sym(crate::symbol::wk::in_eval()).is_none() {
+            return;
+        }
+        for name in cc.bare_callee_names() {
+            let code_sym = name.with_str(|name| Symbol::intern(&format!("&{name}")));
+            if !env.contains_key_sym(code_sym)
+                && let Some(value) = self.env().get_sym(code_sym)
+            {
+                env.insert_sym(code_sym, value.clone());
+            }
+            let resolved_name = name.resolve();
+            if let Some(def) = self.resolve_function(&resolved_name) {
+                let id_key = Self::callable_id_key_for_syms(def.package, def.name);
+                if !env.contains_key_sym(id_key)
+                    && let Some(value) = self.env().get_sym(id_key)
+                {
+                    env.insert_sym(id_key, value.clone());
+                }
+            }
+        }
     }
 }

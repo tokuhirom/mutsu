@@ -1,11 +1,12 @@
 use Test;
+use lib 't/lib';
 
 # `&f` builds a code object for a registered routine. Its captured env is
 # filtered like a closure capture (free variables plus system names) rather
 # than sharing the whole live env (#9169). These pin what the routine must
 # still see when it is called through that code object.
 
-plan 14;
+plan 15;
 
 my $x = 1;
 sub f { $x }
@@ -66,3 +67,9 @@ is outerf(), 'w2', 'a later write to the captured lexical is visible';
     for ^100 { my &q = &f; $s += q() }
     is $s, 200, '&f read in a loop inside a frame with many lexicals';
 }
+
+# A code object pulled out of an EVAL whose routine calls a mutually recursive
+# pair by bare name: building it must not recurse through the callees
+# (File::Temp's `&tempdir` under File::Directory::Tree overflowed the stack).
+my (&run-walk, $) := 'use MutualRecursionCalleeFixture; &run-walk, 1'.EVAL;
+is run-walk(4), 'done', 'an EVAL-returned &f with mutually recursive callees';

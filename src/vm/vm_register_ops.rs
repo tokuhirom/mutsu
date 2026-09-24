@@ -1222,7 +1222,7 @@ impl Interpreter {
         }
     }
 
-    pub(super) fn capture_bare_callees(&self, cc: &CompiledCode, env: &mut Env) {
+    fn capture_bare_callees(&self, cc: &CompiledCode, env: &mut Env) {
         // Import aliases only need this escape gate for re-entrant source EVAL:
         // ordinary module/package execution retains its lexical registry state
         // through the existing module-scope machinery.

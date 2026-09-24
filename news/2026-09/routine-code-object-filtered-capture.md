@@ -23,6 +23,15 @@ shared by both captures. Two cases keep the whole env as before:
 - a def with no compiled body, because its AST carrier merges the entire
   captured env into the call.
 
+Inside a re-entrant `EVAL`, the live `&callee` binding and the registration
+marker of each routine the body calls by bare name are copied into the capture
+as well. The whole env used to carry them, and they keep an import alias
+callable once the EVAL's import scope is popped. They are copied, never
+rebuilt: building a code object per callee recursed forever on a mutually
+recursive exported pair. File::Temp's `&tempdir` hit that pair,
+File::Directory::Tree's `rmtree` <-> `empty-directory`, and the battery gate
+caught it.
+
 After the change the same case measures 0.064 s / 0.066 s (ratio 1.03). The
 other `#9169` cases stay flat.
 
