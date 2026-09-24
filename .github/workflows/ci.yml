@@ -641,6 +641,24 @@ jobs:
       # The cost is small: the suites take ~75s, this job has already built the
       # release binary for roast, and a documentation-only PR skips the whole
       # job anyway (see the `changes` job).
+      #
+      # The fetched upstream checkouts are cached by pinned commit
+      # (`BATTERY_SRC_CACHE`), so an upstream host being unreachable does not
+      # fail every PR: git.sr.ht was unreachable from the runners for long
+      # stretches on 2026-09-24 (#9275). The commits are pinned in
+      # batteries.lock, so a cached checkout is byte-for-byte what a fetch
+      # would give -- the gate runs the same tests either way. A PR reads the
+      # cache `main` saved; a lock change misses the exact key, restores the
+      # previous one through `restore-keys`, fetches only the new commits, and
+      # saves under the new key.
+      - name: Restore the battery source cache
+        id: battery-src-cache
+        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        with:
+          path: tmp/battery-src-cache
+          key: battery-src-${{ hashFiles('batteries.lock') }}
+          restore-keys: battery-src-
+
       - name: Bundled-library test suites
         # libssl for the OpenSSL / IO::Socket::SSL batteries' NativeCall at
         # runtime. The runner image already has it (toolset-2404's
@@ -654,6 +672,17 @@ jobs:
           scripts/battery-testsuite.sh
         env:
           MUTSU_BIN: target/release/mutsu
+          BATTERY_SRC_CACHE: tmp/battery-src-cache
+
+      # Saved even when the gate itself fails (a regression is not a reason to
+      # throw away checkouts that were fetched fine), but not on an exact hit,
+      # which has nothing new to store.
+      - name: Save the battery source cache
+        if: always() && steps.battery-src-cache.outputs.cache-hit != 'true' && hashFiles('tmp/battery-src-cache/**') != ''
+        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        with:
+          path: tmp/battery-src-cache
+          key: battery-src-${{ hashFiles('batteries.lock') }}
 
   # REQUIRED STATUS CHECK. This job exists for its NAME: branch protection
   # requires `test`, and a required check that is never created leaves the PR
