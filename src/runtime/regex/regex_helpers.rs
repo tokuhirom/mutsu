@@ -1,4 +1,5 @@
 use super::super::*;
+use crate::builtins::cclass;
 use crate::value::ValueMap;
 use rustc_hash::FxHashMap as HashMap;
 use std::cell::{Cell, RefCell};
@@ -1178,7 +1179,7 @@ pub(crate) struct NamedRegexLookupSpec {
 /// Check if a character is a "word" character for word boundary purposes.
 /// In Raku, word characters are alphanumeric or underscore.
 pub(super) fn is_word_char(c: char) -> bool {
-    c.is_alphanumeric() || c == '_'
+    crate::builtins::cclass::is_word(c)
 }
 
 /// Check if a CharClass contains only exact character items (Char and Range).
@@ -1637,20 +1638,22 @@ pub(super) fn reserve_nil_capture_slots(caps: &mut RegexCaptures, flags: &[bool]
 /// Check if a character matches a named builtin character class.
 pub(super) fn matches_named_builtin(name: &str, c: char) -> bool {
     match name {
-        "alpha" => c.is_alphabetic() || c == '_',
-        "upper" => check_unicode_property("Uppercase_Letter", c),
-        "lower" => check_unicode_property("Lowercase_Letter", c),
-        "digit" => c.is_ascii_digit(),
-        "xdigit" => c.is_ascii_hexdigit(),
-        "space" | "ws" => c.is_whitespace(),
+        // The POSIX-ish rules are MoarVM character classes (ADR-0118 §2.5):
+        // `<alpha>` / `<alnum>` add `_` to CCLASS_ALPHABETIC / ALPHANUMERIC.
+        "alpha" => c == '_' || cclass::is_cclass(cclass::ALPHABETIC, c),
+        "upper" => cclass::is_cclass(cclass::UPPERCASE, c),
+        "lower" => cclass::is_cclass(cclass::LOWERCASE, c),
+        "digit" => cclass::is_digit(c),
+        "xdigit" => cclass::is_cclass(cclass::HEXADECIMAL, c),
+        "space" | "ws" => cclass::is_space(c),
         // In a character-class context `<ident>` denotes one identifier-start
         // character.  The sequence form (`<ident>` outside a class) is lowered
         // separately by the regex parser to alpha followed by alnum*.
-        "ident" => c.is_alphabetic() || c == '_',
-        "alnum" => c.is_alphabetic() || c == '_' || c.is_ascii_digit(),
-        "blank" => c == '\t' || c == ' ' || c == '\u{A0}',
-        "cntrl" => c.is_control(),
-        "punct" => check_unicode_property("Punctuation", c),
+        "ident" => c == '_' || cclass::is_cclass(cclass::ALPHABETIC, c),
+        "alnum" => c == '_' || cclass::is_cclass(cclass::ALPHANUMERIC, c),
+        "blank" => cclass::is_cclass(cclass::BLANK, c),
+        "cntrl" => cclass::is_cclass(cclass::CONTROL, c),
+        "punct" => cclass::is_cclass(cclass::PUNCTUATION, c),
         "graph" => {
             // Raku's POSIX `graph` is Letters ∪ decimal digits (Nd) ∪ Punctuation.
             // It EXCLUDES the Symbol categories (Sm/Sc/Sk/So — `^ $ ~ + = < > | °`),
