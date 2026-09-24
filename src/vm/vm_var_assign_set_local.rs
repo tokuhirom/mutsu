@@ -728,7 +728,26 @@ impl Interpreter {
                     && !n[1..].starts_with(['!', '.'])
                     && !crate::runtime::utils::has_anon_marker(n)
             });
+        // A rebind of a lexical a closure captured through a binding cell
+        // (#9237): note the cell before the store replaces the slot, so the new
+        // binding can be seated back inside it. See `binding_cell_of`.
+        let binding_cell = if !code.rebound_slots.is_empty()
+            && self.rebind_context().get()
+            && !self.vardecl_context().get()
+            && code.rebound_slots.contains(&idx)
+        {
+            self.locals
+                .get(idx as usize)
+                .and_then(Self::binding_cell_of)
+        } else {
+            None
+        };
         let r = self.exec_set_local_op_inner(code, idx);
+        if r.is_ok()
+            && let Some(cell) = binding_cell
+        {
+            self.reseat_binding_cell(code, idx as usize, cell);
+        }
         // The store that ends a declaration's in-flight window: from here the
         // slot holds the new binding, so a spawn may unmask the name again (see
         // `thread_decl_in_flight`). Only ever non-empty in threaded programs.
@@ -785,6 +804,50 @@ impl Interpreter {
             }
         }
         r
+    }
+
+    /// Finish a rebind (`$a := X`) of a slot that held the binding cell `cell`
+    /// (see `binding_cell_of`): the store just put the new binding in the
+    /// slot, so move it INTO the cell and put the cell back. Every closure
+    /// that captured the cell then reads the new binding, while a name bound
+    /// to the old container (`my $f := $a`) keeps it (#9207).
+    fn reseat_binding_cell(
+        &mut self,
+        code: &CompiledCode,
+        idx: usize,
+        cell: crate::gc::Gc<crate::value::ContainerCell>,
+    ) {
+        let Some(new) = self.locals.get(idx).cloned() else {
+            return;
+        };
+        if matches!(new.view(), ValueView::ContainerRef(c) if crate::gc::Gc::ptr_eq(&c, &cell)) {
+            return;
+        }
+        let container = if new.is_container_ref() {
+            Self::innermost_container(new)
+        } else {
+            new.into_container_ref()
+        };
+        *cell
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = container;
+        let binding = Value::container_ref(cell);
+        self.locals[idx] = binding.clone();
+        let name = code.locals[idx].clone();
+        self.env_mut().insert(name, binding);
+    }
+
+    /// Peel binding cells off `v` (see `binding_cell_of`), returning the
+    /// container at the end of the chain.
+    pub(super) fn innermost_container(mut v: Value) -> Value {
+        while let Some(cell) = Self::binding_cell_of(&v) {
+            let inner = cell
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .clone();
+            v = inner;
+        }
+        v
     }
 
     pub(crate) fn exec_set_local_op_inner(
@@ -2264,7 +2327,10 @@ impl Interpreter {
                 // the typed-bind propagation at the end of the slow path, which
                 // the early return below skips).
                 if name.starts_with('@') || name.starts_with('%') {
-                    let inner = cell.lock().unwrap().clone();
+                    let inner = cell
+                        .lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner)
+                        .clone();
                     if let Some(info) = self.container_type_metadata(&inner)
                         && !info.value_type.is_empty()
                     {
@@ -2388,6 +2454,22 @@ impl Interpreter {
                     // the mainline capture store before minting a
                     // disconnected cell.
                     .or_else(|| self.mainline_lexical_cell(&resolved_source));
+                // A source that holds a binding cell (`binding_cell_of`, #9237)
+                // is bound through to its container: the new name aliases the
+                // container, not the source's binding, so a later rebind of the
+                // source leaves it alone. The source's own slot and env entry
+                // keep the binding cell -- they already reach this container.
+                let source_cell = source_cell.map(|arc| {
+                    match Self::innermost_container(Value::container_ref(arc.clone())).view() {
+                        ValueView::ContainerRef(inner) => inner.clone(),
+                        _ => arc,
+                    }
+                });
+                let source_keeps_binding_cell = code
+                    .locals
+                    .iter()
+                    .rposition(|n| n == &resolved_source)
+                    .is_some_and(|s| Self::binding_cell_of(&self.locals[s]).is_some());
                 let container = match (val.view(), source_cell) {
                     (ValueView::ContainerRef(arc), _) => Value::container_ref(arc.clone()),
                     (_, Some(arc)) => Value::container_ref(arc),
@@ -2419,7 +2501,10 @@ impl Interpreter {
                 };
                 self.locals[idx] = container.clone();
                 // Update source in locals if present
-                if let Some(source_idx) = code.locals.iter().rposition(|n| n == &resolved_source) {
+                if !source_keeps_binding_cell
+                    && let Some(source_idx) =
+                        code.locals.iter().rposition(|n| n == &resolved_source)
+                {
                     self.locals[source_idx] = container.clone();
                     self.flush_local_to_env(code, source_idx);
                 }
@@ -2445,7 +2530,9 @@ impl Interpreter {
                 //   guard writes to say "this is a FRESH binding, do not
                 //   inherit the outer cell". That marker means the opposite of
                 //   what the splice reads it as.
-                if !self.unit_scope_lexical_bind(&resolved_source, &container) {
+                if !source_keeps_binding_cell
+                    && !self.unit_scope_lexical_bind(&resolved_source, &container)
+                {
                     // Update source in env
                     self.env_mut()
                         .insert(resolved_source.clone(), container.clone());
@@ -2472,6 +2559,8 @@ impl Interpreter {
                         })
                     && let Some(alias_idx) =
                         code.locals.iter().rposition(|n| n == alias_target.as_str())
+                    // A binding cell already reaches the container (#9237).
+                    && Self::binding_cell_of(&self.locals[alias_idx]).is_none()
                 {
                     self.locals[alias_idx] = container.clone();
                     self.flush_local_to_env(code, alias_idx);

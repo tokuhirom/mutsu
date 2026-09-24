@@ -2332,6 +2332,7 @@ impl Compiler {
                 if matches!(op, AssignOp::Bind) {
                     let source_slot = self.local_map.get(effective_name).copied();
                     self.code.note_rebind_target(source_slot);
+                    self.code.note_rebound_slot(source_slot);
                 }
                 self.emit_set_named_var(effective_name);
             }

@@ -5666,6 +5666,16 @@ pub(crate) struct CompiledCode {
     /// change; see `opcode::local_may_be_celled_tests` for how a consumer
     /// derives the per-slot answer from these raw slots.
     pub(crate) rebind_target_slots: Vec<u32>,
+    /// Raw slots that a *statement- or expression-level* `:=` REBINDS after
+    /// their declaration (`$a := 2`, `if $a := f() {}`), recorded by
+    /// [`Self::note_rebound_slot`]. Unlike [`Self::rebind_target_slots`] it
+    /// holds no declaration binds and no plain-assignment tags: it answers
+    /// exactly "can this lexical's *binding* change after a closure captured
+    /// it". `box_captured_lexicals` reads it to give such a capture a binding
+    /// cell (a cell whose content is the variable's container), so a later
+    /// rebind swaps what every capturing closure sees without dragging along
+    /// a second name `:=`-bound to the old container (#9237, #9207).
+    pub(crate) rebound_slots: Vec<u32>,
     /// Lazily-built `Symbol` sets over [`free_var_syms`](Self::free_var_syms)
     /// and [`locals_sym`](Self::locals_sym), for `capture_closure_env`'s
     /// membership tests. Both are pure functions of the chunk, but the capture
@@ -6167,6 +6177,7 @@ impl CompiledCode {
             local_attr_keys: std::sync::OnceLock::new(),
             local_read_plain: std::sync::OnceLock::new(),
             rebind_target_slots: Vec::new(),
+            rebound_slots: Vec::new(),
             free_var_sym_set: std::sync::OnceLock::new(),
             local_sym_set: std::sync::OnceLock::new(),
             capture_probe_keys: std::sync::OnceLock::new(),
@@ -6238,6 +6249,17 @@ impl CompiledCode {
     pub(crate) fn note_rebind_target(&mut self, slot: Option<u32>) {
         if let Some(slot) = slot {
             self.rebind_target_slots.push(slot);
+        }
+    }
+
+    /// Record `slot` (when present) as rebound after its declaration — see
+    /// [`Self::rebound_slots`]. Deduplicated: the consumer probes it once per
+    /// boxed capture.
+    pub(crate) fn note_rebound_slot(&mut self, slot: Option<u32>) {
+        if let Some(slot) = slot
+            && !self.rebound_slots.contains(&slot)
+        {
+            self.rebound_slots.push(slot);
         }
     }
 
