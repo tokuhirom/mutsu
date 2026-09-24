@@ -51,14 +51,19 @@ branch before its fix went in:
 `scripts/str-complexity-check.sh` now reports ratio ~2 (O(1) per call) for
 `Str.Str`, `Str.WHICH`, `eq (different lengths)` and `chomp (nothing to chomp)`.
 
-## Still open on #9147
+## Split out of #9147
 
 - `x` builds its result eagerly (O(n * c)); Rakudo returns one repeat strand in
-  O(1). The full-result NFC pass the issue also named was already gone (#9141).
-- A named argument / containerized Pair copies its Str key (`MakeNamedArg`,
-  `ContainerizePair`): `Value::Pair` stores the key as an owned `String`.
-- `.comb.head(3)` needs a lazy `.comb` Seq.
+  O(1) -- [#9253](https://github.com/tokuhirom/mutsu/issues/9253). The
+  full-result NFC pass the issue also named was already gone (#9141).
+- A named argument / hash entry copies its Str key, because `Value::Pair` and
+  hash storage key on an owned `String` --
+  [#9252](https://github.com/tokuhirom/mutsu/issues/9252).
+- `.comb.head(3)` needs a lazy `.comb` Seq --
+  [#9251](https://github.com/tokuhirom/mutsu/issues/9251).
 - `comb(Regex, $limit)` still collects the subject's chars (O(n)) before the
-  limited search starts.
+  limited search, but Rakudo is O(n) there too (0.28 s -> 0.56 s for 20 calls
+  at 1M -> 2M chars, where mutsu takes 0.02 s -> 0.05 s), so it already meets
+  Rakudo's bound.
 
 Pinned by `t/types/string/str-per-call-bounds.t`.

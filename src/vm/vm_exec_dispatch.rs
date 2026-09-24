@@ -3205,7 +3205,7 @@ impl Interpreter {
             // -- Repetition --
             // Cost: O(n * c), n = chars of the left operand, c = repeat count
             // (see exec_string_repeat_op). Rakudo: O(1) for a flat operand --
-            // see #9147.
+            // see #9253.
             OpCode::StringRepeat => {
                 self.exec_string_repeat_op()?;
                 *ip += 1;
@@ -3275,13 +3275,13 @@ impl Interpreter {
                 *ip += 1;
             }
             // Cost: O(m), m = chars of a Str key (copied into the Pair); the
-            // value is boxed as for MakePair. Rakudo: O(1) -- see #9147.
+            // value is boxed as for MakePair. Rakudo: O(1) -- see #9252.
             OpCode::MakeNamedArg => {
                 self.exec_make_named_arg_op(code);
                 *ip += 1;
             }
             // Cost: O(m), m = chars of the key (the `String` key is copied).
-            // Rakudo: O(1) -- see #9147.
+            // Rakudo: O(1) -- see #9252.
             OpCode::ContainerizePair => {
                 let val = self.stack.pop().unwrap();
                 let containerized = match val.view() {
