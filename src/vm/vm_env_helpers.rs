@@ -2620,9 +2620,17 @@ impl Interpreter {
     // once per chunk, O(L)); a `position` scan here made every bare call in a
     // frame with L locals cost O(L) (#9170).
     pub(super) fn find_local_slot(&self, code: &CompiledCode, name: &str) -> Option<usize> {
-        code.local_slots_of(crate::symbol::Symbol::intern(name))
-            .first()
-            .map(|&slot| slot as usize)
+        // `lookup`, not `intern`: every local name is already interned (the
+        // index is keyed by it), so a name that was never interned is not a
+        // local, and a hot by-name probe must not pay an intern per call. A
+        // hand-built chunk with no pre-interned `locals_sym` interns its names
+        // only when the index is built, so it takes the interning path.
+        let sym = match crate::symbol::Symbol::lookup(name) {
+            Some(sym) => sym,
+            None if code.locals_sym.len() == code.locals.len() => return None,
+            None => crate::symbol::Symbol::intern(name),
+        };
+        code.local_slots_of(sym).first().map(|&slot| slot as usize)
     }
 
     pub(crate) fn update_local_if_exists(&mut self, code: &CompiledCode, name: &str, val: &Value) {
