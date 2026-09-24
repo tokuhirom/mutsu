@@ -674,11 +674,14 @@ jobs:
           MUTSU_BIN: target/release/mutsu
           BATTERY_SRC_CACHE: tmp/battery-src-cache
 
-      # Saved even when the gate itself fails (a regression is not a reason to
-      # throw away checkouts that were fetched fine), but not on an exact hit,
-      # which has nothing new to store.
+      # Saved even when the gate itself fails (a regression, or one upstream
+      # host being down, is not a reason to throw away the checkouts that were
+      # fetched fine), but not on an exact hit, which has nothing new to store.
+      # No `hashFiles` guard on the directory: the runner fails to hash the
+      # fetched checkouts and aborts the step. When the directory is missing,
+      # `actions/cache/save` only warns.
       - name: Save the battery source cache
-        if: always() && steps.battery-src-cache.outputs.cache-hit != 'true' && hashFiles('tmp/battery-src-cache/**') != ''
+        if: always() && steps.battery-src-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
         with:
           path: tmp/battery-src-cache
