@@ -288,12 +288,12 @@ impl Interpreter {
                 }
                 TrOp::AtPosILocal(n) => {
                     let idx = self.ipop();
-                    let v = Self::trir_atpos_i(&self.trir.ol[obase + *n as usize], idx);
+                    let v = Self::trir_atpos_i(&self.trir.ol[obase + *n as usize], idx)?;
                     self.trir.ns.push(v);
                 }
                 TrOp::AtPosIOuter(n) => {
                     let idx = self.ipop();
-                    let v = Self::trir_atpos_i(&self.trir.outers[cbase + *n as usize], idx);
+                    let v = Self::trir_atpos_i(&self.trir.outers[cbase + *n as usize], idx)?;
                     self.trir.ns.push(v);
                 }
                 TrOp::CharsLocal(n) => {
@@ -310,7 +310,7 @@ impl Interpreter {
                 TrOp::AtPosI => {
                     let idx = self.ipop();
                     let v = self.opop();
-                    let e = Self::trir_atpos_i(&v, idx);
+                    let e = Self::trir_atpos_i(&v, idx)?;
                     self.trir.ns.push(e);
                 }
                 TrOp::ConcatN(n) => {

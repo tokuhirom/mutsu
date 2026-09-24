@@ -76,6 +76,27 @@ MoarVM answers), so the result depended on whether the enclosing routine had bee
   the VM's nqp path or TRIR's runtime outside `nqp_native.rs` (opt-out: `native-prim: allow`).
   `t/fixtures/trir-int-ops.raku` pins the shift counts with TRIR on and off against rakudo.
 
+### 2.2 Positional access
+
+The list family had the same shape. The positional `nqp::` ops each resolved their index on their
+own (`nqp_ops.rs`, `nqp_ops_text.rs`, `nqp_ops_list.rs`, `nqp_ops_builtin.rs`, TRIR's
+`trir_atpos_i`), and all of them clamped a negative index to 0 or read it as absent, so
+`nqp::bindpos($l, -1, $v)` overwrote the *first* element. The Raku-level methods had drifted from
+their subscripts: `@a.AT-POS(-1)` was `Nil` where `@a[-1]` is an `X::OutOfRange`, `my Int @i;
+@i.AT-POS(5)` was `Any` where `@i[5]` is `Int`, `"abc".AT-POS(1)` indexed a character, and
+`ASSIGN-POS` rebuilt the array, so every gap it grew claimed to `:exists`.
+
+- `runtime::nqp_backing` holds `resolve_index` (MoarVM's VMArray rule: negative counts from the
+  end, before the start dies), `elem_at`, `bind_elem` and `atpos_i`. Every `atpos*`, `bindpos*`,
+  `splice` and TRIR's `AtPosI` go through them. `bindpos_i`/`_n` now convert the value they
+  store, as `bindpos_s` and `push_*` already did.
+- `.AT-POS($i)` on an Array/List or Str is `Interpreter::builtin_at_pos`, which runs the CORE
+  `postcircumfix:<[ ]>` (`core_subscript`) itself.
+- `ASSIGN-POS` and the `[]=` opcode's fast lane share `ArrayData::store_element`. The store is in
+  place through the shared node, and a grown gap is a hole.
+- `t/vm/nqp-list-index-parity.t` pins 27 rakudo-measured rows. There is no pattern rule for this
+  family: `.max(0) as usize` has too many legitimate uses (byte offsets) to ban.
+
 ### 2.3 Object-level `nqp::` ops
 
 Five object ops had their own copy of a question the VM already answers:
@@ -92,6 +113,27 @@ Five object ops had their own copy of a question the VM already answers:
 alone: MoarVM's `nqp::clone` copies attribute *slots*, so an `is rw` attribute's Scalar container
 is shared with the original. mutsu does not store attributes as containers and cannot express that
 sharing.
+
+### 2.5 Character classes
+
+In Rakudo, the regex classes are MoarVM's `CCLASS_*` table, the same one `nqp::iscclass` reads:
+`\d` is `CCLASS_NUMERIC`, `\w` is `CCLASS_WORD`, `\s` is `CCLASS_WHITESPACE`, and `\n` (also
+inside `<[...]>`) and `\N` are `CCLASS_NEWLINE`. `<alpha>` and `<alnum>` are `CCLASS_ALPHABETIC`
+and `CCLASS_ALPHANUMERIC` plus `_`, and `<upper>`, `<lower>`, `<xdigit>`, `<blank>`, `<cntrl>` and
+`<punct>` are their classes. Probing every class over U+0000..U+3000 and three astral blocks
+confirms this exactly. mutsu's regex engine used Rust's `char` predicates instead. `\d` was ASCII
+only (290 digits missed), and `\w` / `<alpha>` / `<alnum>` used `char::is_alphanumeric`, which
+admits `No`, `Nl` and combining marks (about 1150 extra codepoints). `\n` also missed VT, FF and
+U+2029.
+
+- The table moves from `nqp_ops_text.rs` to `builtins::cclass`, with named constants and the
+  `is_word` / `is_digit` / `is_space` / `is_newline` predicates (each with an ASCII fast path).
+- The regex engine's class items, named rules, word-boundary tests, `<ws>` and prefilter first
+  sets call them. `\d` no longer counts as an ASCII-only class for the first-set prefilter.
+
+`t/regex/regex-cclass-parity.t` checks each class against `nqp::iscclass` over a codepoint sample,
+plus 15 rakudo-measured rows. The remaining differences in the probe come from the Unicode data
+version (U+088F, U+0C5C, U+0CDC and U+0295 are newer than mutsu's tables).
 
 ### 2.7 Directory listing and file tests
 

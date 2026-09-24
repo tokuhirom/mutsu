@@ -11,13 +11,13 @@
 //! `getuniprop_int` result against a bare `6` and means "Mn" by it — so a
 //! self-consistent numbering of our own would run such code silently wrong
 //! rather than loudly unsupported. The General_Category value codes below were
-//! read off rakudo by walking codepoints 0..0x2FFFF, and the `CCLASS_*`
-//! membership rules by probing `nqp::iscclass` per class (see
-//! `t/nqp/nqp-cclass-uniprop.t`, which pins both against the same values).
+//! read off rakudo by walking codepoints 0..0x2FFFF (see
+//! `t/nqp/nqp-cclass-uniprop.t`). The `CCLASS_*` table itself lives in
+//! `builtins::cclass`, shared with the regex engine.
 
 pub(crate) use super::nqp_backing::push_elem;
 use super::*;
-use crate::builtins::unicode_gc::GeneralCategory;
+use crate::builtins::cclass::is_cclass;
 
 /// MoarVM's General_Category property value codes, in its enumeration order.
 /// The index into this table *is* the value `nqp::getuniprop_int` returns.
@@ -38,105 +38,6 @@ fn iarg(args: &[Value], i: usize) -> i64 {
 
 fn sarg(args: &[Value], i: usize) -> String {
     args.get(i).map(|v| v.to_string_value()).unwrap_or_default()
-}
-
-/// Is `ch` a member of the MoarVM character class `cclass` (a `CCLASS_*` bit)?
-///
-/// Every rule is derived from the General Category, which is what MoarVM's own
-/// classes are defined over — note that `CCLASS_ALPHABETIC` is `L*`, NOT the
-/// Unicode `Alphabetic` property (rakudo answers 0 for U+2160 ROMAN NUMERAL
-/// ONE, which is `Nl` and `Alphabetic=Yes`), and `CCLASS_UPPERCASE` is `Lu`
-/// rather than `Uppercase`, for the same reason.
-fn is_cclass(cclass: i64, ch: char) -> bool {
-    const ANY: i64 = 65535;
-    if cclass == ANY {
-        return true;
-    }
-    cclass & cclass_bits(ch) != 0
-}
-
-/// Every `CCLASS_*` bit `ch` belongs to, as one integer.
-///
-/// This is called once per character scanned by `nqp::findcclass` /
-/// `findnotcclass` -- the inner loop of a hand-rolled NQP scanner such as
-/// `JSON::Fast`'s `parse-string` -- so it answers all thirteen classes from a
-/// single table load rather than re-deriving each one from string
-/// comparisons against the category name.
-fn cclass_bits(ch: char) -> i64 {
-    use crate::builtins::unicode_gc::general_category;
-
-    let mut bits = CCLASS_BY_GC[general_category(ch) as usize];
-    let cp = ch as u32;
-    // The members that are not a function of the General_Category: specific
-    // codepoints, and the ASCII-only hexadecimal class.
-    if ch.is_ascii_hexdigit() {
-        bits |= 16; // CCLASS_HEXADECIMAL
-    }
-    if matches!(cp, 0x0A | 0x0B | 0x0C | 0x0D | 0x85) {
-        bits |= 32 | 4096; // WHITESPACE, NEWLINE
-    }
-    if cp == 0x09 {
-        bits |= 32 | 256; // WHITESPACE, BLANK
-    }
-    if cp == 0x5F {
-        bits |= 8192; // CCLASS_WORD
-    }
-    bits
-}
-
-/// The `CCLASS_*` bits implied by a General_Category, indexed by its
-/// discriminant. Derived from the rules documented at the top of this file;
-/// `t/nqp/nqp-cclass-uniprop.t` pins the result against rakudo.
-const CCLASS_BY_GC: [i64; GeneralCategory::ALL.len()] = {
-    let mut table = [0i64; GeneralCategory::ALL.len()];
-    let mut i = 0;
-    while i < table.len() {
-        table[i] = cclass_bits_for_gc(GeneralCategory::ALL[i]);
-        i += 1;
-    }
-    table
-};
-
-const fn cclass_bits_for_gc(gc: GeneralCategory) -> i64 {
-    let alphabetic = gc.in_mask(GeneralCategory::LETTER);
-    let numeric = matches!(gc, GeneralCategory::Nd);
-    let separator = gc.in_mask(GeneralCategory::SEPARATOR);
-    let control = matches!(gc, GeneralCategory::Cc);
-    let mut bits = 0i64;
-    if matches!(gc, GeneralCategory::Lu) {
-        bits |= 1; // CCLASS_UPPERCASE
-    }
-    if matches!(gc, GeneralCategory::Ll) {
-        bits |= 2; // CCLASS_LOWERCASE
-    }
-    if alphabetic {
-        bits |= 4; // CCLASS_ALPHABETIC
-    }
-    if numeric {
-        bits |= 8; // CCLASS_NUMERIC
-    }
-    if separator {
-        bits |= 32; // CCLASS_WHITESPACE
-    }
-    if !control {
-        bits |= 64; // CCLASS_PRINTING
-    }
-    if matches!(gc, GeneralCategory::Zs) {
-        bits |= 256; // CCLASS_BLANK
-    }
-    if control {
-        bits |= 512; // CCLASS_CONTROL
-    }
-    if gc.in_mask(GeneralCategory::PUNCTUATION) {
-        bits |= 1024; // CCLASS_PUNCTUATION
-    }
-    if alphabetic || numeric {
-        bits |= 2048 | 8192; // CCLASS_ALPHANUMERIC, CCLASS_WORD
-    }
-    if matches!(gc, GeneralCategory::Zl | GeneralCategory::Zp) {
-        bits |= 4096; // CCLASS_NEWLINE
-    }
-    bits
 }
 
 impl Interpreter {
@@ -386,62 +287,25 @@ impl Interpreter {
             // Cost: O(m), m = chars of the element (copied). MoarVM: O(1) -- see #9134.
             "atpos_s" => {
                 let target = args.first().cloned().unwrap_or(Value::NIL);
-                let idx = iarg(args, 1);
-                let elem = match target.view() {
-                    ValueView::Array(items, _) => usize::try_from(idx)
-                        .ok()
-                        .and_then(|i| items.get(i).cloned()),
-                    ValueView::Instance { attributes, .. } => {
-                        usize::try_from(idx).ok().and_then(|i| {
-                            crate::value::value_buf::with_buf_elems(&attributes, |e| {
-                                e.get(i).cloned()
-                            })
-                            .flatten()
-                        })
-                    }
-                    _ => None,
-                };
-                Ok(Value::str(
-                    elem.map(|v| v.to_string_value()).unwrap_or_default(),
-                ))
+                match crate::runtime::nqp_backing::elem_at(&target, iarg(args, 1)) {
+                    Ok(e) => Ok(Value::str(
+                        e.map(|v| v.to_string_value()).unwrap_or_default(),
+                    )),
+                    Err(e) => Err(e),
+                }
             }
             // Cost: O(m) + O(g), m = chars of the value (copied), g = slots grown past the end.
             // MoarVM: O(1) amortized -- see #9134.
             "bindpos_s" => {
                 let target = args.first().cloned().unwrap_or(Value::NIL);
-                let idx = iarg(args, 1).max(0) as usize;
                 let val = Value::str(sarg(args, 2));
-                match target.view() {
-                    ValueView::Array(items, _) => {
-                        // SAFETY: audited aliased in-place container write (see
-                        // value::aliased_mut); no borrow into the node is live.
-                        let data = unsafe { crate::value::gc_contents_mut(&items) };
-                        if data.items().len() <= idx {
-                            data.items_mut().resize(idx + 1, Value::str(String::new()));
-                        }
-                        data.items_mut()[idx] = val.clone();
-                        Ok(val)
-                    }
-                    ValueView::Instance { attributes, .. } => {
-                        let stored = val.clone();
-                        let done =
-                            crate::value::value_buf::with_buf_elems_mut(&attributes, |elems| {
-                                if elems.len() <= idx {
-                                    elems.resize(idx + 1, Value::str(String::new()));
-                                }
-                                elems[idx] = stored;
-                            });
-                        if done.is_none() {
-                            return Some(Err(RuntimeError::new(
-                                "nqp::bindpos_s: expected a Buf/Blob or array".to_string(),
-                            )));
-                        }
-                        Ok(val)
-                    }
-                    _ => Err(RuntimeError::new(
-                        "nqp::bindpos_s: expected a Buf/Blob or array".to_string(),
-                    )),
-                }
+                crate::runtime::nqp_backing::bind_elem(
+                    op,
+                    &target,
+                    iarg(args, 1),
+                    val,
+                    Value::str(String::new()),
+                )
             }
 
             _ => return self.call_nqp_op_str(op, args),

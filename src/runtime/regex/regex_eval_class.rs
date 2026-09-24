@@ -1,6 +1,7 @@
 use super::super::*;
 use super::regex_helpers::{CaseFoldIter, matches_named_builtin};
 use super::regex_prefilter::regex_scan_positions;
+use crate::builtins::cclass;
 
 impl Interpreter {
     pub(super) fn regex_match_class_ignorecase(
@@ -76,37 +77,37 @@ pub(super) fn class_matches(class: &CharClass, c: char) -> bool {
                     }
                 }
                 ClassItem::Digit => {
-                    if c.is_ascii_digit() {
+                    if cclass::is_digit(c) {
                         matched = true;
                         break;
                     }
                 }
                 ClassItem::NegDigit => {
-                    if !c.is_ascii_digit() {
+                    if !cclass::is_digit(c) {
                         matched = true;
                         break;
                     }
                 }
                 ClassItem::Word => {
-                    if c.is_alphanumeric() || c == '_' {
+                    if cclass::is_word(c) {
                         matched = true;
                         break;
                     }
                 }
                 ClassItem::NegWord => {
-                    if !(c.is_alphanumeric() || c == '_') {
+                    if !cclass::is_word(c) {
                         matched = true;
                         break;
                     }
                 }
                 ClassItem::Space => {
-                    if c.is_whitespace() {
+                    if cclass::is_space(c) {
                         matched = true;
                         break;
                     }
                 }
                 ClassItem::NegSpace => {
-                    if !c.is_whitespace() {
+                    if !cclass::is_space(c) {
                         matched = true;
                         break;
                     }
@@ -160,7 +161,7 @@ pub(super) fn class_matches(class: &CharClass, c: char) -> bool {
                     }
                 }
                 ClassItem::NotNewline => {
-                    if c != '\n' && c != '\r' {
+                    if !cclass::is_newline(c) {
                         matched = true;
                         break;
                     }

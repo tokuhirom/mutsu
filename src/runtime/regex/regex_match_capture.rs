@@ -1010,7 +1010,7 @@ impl Interpreter {
             }
             if spec.lookup_name == "ws" && !spec.token_lookup {
                 let mut end = pos;
-                while end < chars.len() && chars[end].is_whitespace() {
+                while end < chars.len() && crate::builtins::cclass::is_space(chars[end]) {
                     end += 1;
                 }
                 let before_is_word = pos > 0 && is_word_char(chars[pos - 1]);
