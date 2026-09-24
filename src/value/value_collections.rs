@@ -348,6 +348,28 @@ impl ArrayData {
     }
 }
 
+impl ArrayData {
+    /// `@a[$i] = $v`'s store into the array node, the one body the `[]=`
+    /// opcode's fast lane and the `ASSIGN-POS` method share (ADR-0118):
+    /// write `value` at `i`, growing the array with `Any` hole markers when
+    /// `i` is past the end, and record `i` as explicitly assigned so the
+    /// grown gaps -- and only they -- read as holes (`:exists` is False).
+    /// `ASSIGN-POS` used to rebuild the array instead, losing that record,
+    /// so every gap it grew claimed to exist.
+    // Cost: O(1) amortized; O(i - e) when growing, i = index, e = elements.
+    pub(crate) fn store_element(&mut self, i: usize, value: Value) {
+        let len = self.len();
+        // Materialize the hole set from its all-present `None` BEFORE growing,
+        // or the new gaps would be recorded as present.
+        let initialized = self.initialized.get_or_insert_with(|| (0..len).collect());
+        initialized.insert(i);
+        if i >= len {
+            self.resize(i + 1, Value::package(crate::symbol::wk::any()));
+        }
+        self.items_mut()[i] = value;
+    }
+}
+
 /// Field-wise clone, except that the copy carries only the live elements:
 /// [`ArrayData::shift_front`]'s dead prefix is not worth duplicating.
 impl Clone for ArrayData {

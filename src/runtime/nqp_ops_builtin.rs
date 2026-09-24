@@ -101,21 +101,12 @@ impl Interpreter {
                 let list = args.first().cloned().unwrap_or(Value::NIL);
                 let idx = args
                     .get(1)
-                    .and_then(|v| match v.view() {
-                        ValueView::Int(i) => Some(i as usize),
-                        _ => v.to_string_value().parse::<usize>().ok(),
+                    .map(|v| match v.view() {
+                        ValueView::Int(i) => i,
+                        _ => crate::runtime::to_int(v),
                     })
                     .unwrap_or(0);
-                Ok(
-                    crate::runtime::nqp_ops_list::with_nqp_backing_array(&list, |backing| {
-                        match backing.view() {
-                            ValueView::Array(items, _) => items.get(idx).cloned(),
-                            _ => None,
-                        }
-                    })
-                    .flatten()
-                    .unwrap_or(Value::NIL),
-                )
+                crate::runtime::nqp_backing::elem_at(&list, idx).map(|e| e.unwrap_or(Value::NIL))
             }
             // nqp::ordat($str, $pos): the codepoint of the grapheme at `$pos`
             // (its first codepoint in NFC; `str_prim::char_at`), -1 past the
