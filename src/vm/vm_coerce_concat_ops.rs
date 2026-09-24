@@ -250,6 +250,21 @@ impl Interpreter {
     pub(crate) fn exec_concat_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
+        let result = self.infix_concat(left, right)?;
+        self.stack.push(result);
+        Ok(())
+    }
+
+    /// Infix `~` on two owned operands: junction threading, the `.Stringy`
+    /// coercion of each operand, then `concat_values`. The one implementation
+    /// behind the `~` opcode and the builtin `.reduce(&[~])` fold. Taking the
+    /// operands by value is what lets an unshared left `Str` grow in place.
+    // Cost: see `concat_values`.
+    pub(crate) fn infix_concat(
+        &mut self,
+        left: Value,
+        right: Value,
+    ) -> Result<Value, RuntimeError> {
         // Thread over junctions — concat uses left-first threading
         // (unlike arithmetic/comparison which uses right-first for tighter
         // junctions). When both operands are junctions and the right is
@@ -257,9 +272,7 @@ impl Interpreter {
         if matches!(left.view(), ValueView::Junction { .. })
             || matches!(right.view(), ValueView::Junction { .. })
         {
-            let result = self.eval_concat_with_junctions(left, right)?;
-            self.stack.push(result);
-            return Ok(());
+            return self.eval_concat_with_junctions(left, right);
         }
         // Infix `~` stringifies an operand via `.Stringy` (falling back to `.Str`),
         // so an operand whose class defines a user `Stringy`/`Str` must dispatch it
@@ -270,9 +283,7 @@ impl Interpreter {
         let left = self.coerce_stringy_operand(left)?;
         let right = self.coerce_stringy_operand(right)?;
         self.reconcile_caller_after_internal_dispatch(caller_code);
-        let result = Self::concat_values(left, right)?;
-        self.stack.push(result);
-        Ok(())
+        Self::concat_values(left, right)
     }
 
     /// Coerce an operand whose class defines a user `Stringy`/`Str` to its

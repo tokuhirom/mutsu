@@ -175,9 +175,8 @@ impl Interpreter {
     }
 
     /// Cost: O(e) callable calls, e = elements, plus whatever each step costs on
-    /// its growing accumulator: `.reduce(&[~])` copies the accumulator on every
-    /// concatenation, so it is O(e * t) = O(t^2 / m) in the result's chars t
-    /// (m = average element length). Rakudo: O(t) (rope concatenation) -- see #9161.
+    /// its growing accumulator; the builtin `.reduce(&[~])` appends in place,
+    /// O(t) amortized in the result's chars t.
     pub(crate) fn reduce_items(
         &mut self,
         callable: Value,
@@ -317,9 +316,32 @@ impl Interpreter {
                 Ok(Value::truth(result))
             }
             OpAssoc::Left => {
+                // The builtin `&[~]` (no user `infix:<~>` candidate in scope)
+                // folds through the `~` operator itself with the accumulator
+                // moved in, so an unshared accumulated `Str` grows in place.
+                // Passing it through the routine-call path held a second
+                // reference to it and copied the whole string on every step,
+                // making `.reduce(&[~])` quadratic (#9161).
+                let builtin_concat = step == 1
+                    && matches!(callable.view(), ValueView::Routine { name, .. }
+                        if name.resolve() == "infix:<~>")
+                    && !self.user_infix_override("infix:<~>");
                 let mut acc = items[0].clone();
                 let mut idx = 1usize;
                 let mut out = Ok(());
+                if builtin_concat {
+                    for item in &items[1..] {
+                        let left = std::mem::replace(&mut acc, Value::NIL);
+                        match self.infix_concat(left, item.clone()) {
+                            Ok(v) => acc = v,
+                            Err(e) => {
+                                out = Err(e);
+                                break;
+                            }
+                        }
+                    }
+                    idx = items.len();
+                }
                 while idx + step <= items.len() {
                     let mut call_args = vec![acc.clone()];
                     call_args.extend(items[idx..idx + step].iter().cloned());

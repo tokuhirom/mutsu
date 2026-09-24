@@ -5625,8 +5625,8 @@ impl Interpreter {
             }
 
             // -- Reduction --
-            // Cost: O(e) operator applications, e = elements; `[~]` is O(t^2 / m) (see
-            // exec_reduction_op). Rakudo: O(t) for `[~]` -- see #9161.
+            // Cost: O(e) operator applications, e = elements; `[~]` is O(t) amortized,
+            // t = result chars (see exec_reduction_op).
             OpCode::Reduction(spec_idx) => {
                 self.sync_source_line(code, *ip);
                 let spec = code.reduction_spec(*spec_idx);
