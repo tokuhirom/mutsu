@@ -944,6 +944,7 @@ impl Interpreter {
                 .or_else(|| old_gc.declared_type.clone());
             new_data.default = new_data.default.or_else(|| old_gc.default.clone());
             new_data.shape = new_data.shape.or_else(|| old_gc.shape.clone());
+            new_data.initialized = new_data.initialized.or_else(|| old_gc.initialized.clone());
         }
         let mut seen = Vec::new();
         for item in new_data.items_mut().iter_mut() {

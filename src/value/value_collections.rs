@@ -359,14 +359,30 @@ impl ArrayData {
     // Cost: O(1) amortized; O(i - e) when growing, i = index, e = elements.
     pub(crate) fn store_element(&mut self, i: usize, value: Value) {
         let len = self.len();
-        // Materialize the hole set from its all-present `None` BEFORE growing,
-        // or the new gaps would be recorded as present.
-        let initialized = self.initialized.get_or_insert_with(|| (0..len).collect());
-        initialized.insert(i);
+        // Record the write BEFORE growing, or the new gaps would be
+        // materialized as present.
+        self.mark_initialized(i);
         if i >= len {
             self.resize(i + 1, Value::package(crate::symbol::wk::any()));
         }
         self.items_mut()[i] = value;
+    }
+}
+
+impl Value {
+    /// A shallow copy of an array value that keeps its kind (`Array` stays an
+    /// `Array`, a `List` a `List`): the one body of `.clone` on an array and
+    /// of `nqp::clone`, which used to hand back a `List` for an `Array`.
+    /// `None` for a non-array.
+    // Cost: O(e), e = elements.
+    pub(crate) fn array_shallow_clone(&self) -> Option<Value> {
+        match self.view() {
+            crate::value::ValueView::Array(items, kind) => Some(Value::array_with_kind(
+                crate::gc::Gc::new(ArrayData::new(items.to_vec())),
+                kind,
+            )),
+            _ => None,
+        }
     }
 }
 

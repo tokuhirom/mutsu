@@ -79,6 +79,14 @@ impl Interpreter {
         // the same key instead of re-hashing it independently.
         let method_sym = Symbol::intern(&method);
         let target = self.reify_or_consume_seq_target(target, &method)?;
+        if method == "message"
+            && args.is_empty()
+            && let ValueView::Instance { attributes, .. } = target.view()
+            && let Some(msg) = attributes.as_map().get("__mutsu_thrown_message")
+        {
+            self.stack.push(msg.clone());
+            return Ok(());
+        }
         // Handle .* and .+ modifiers
         match modifier {
             Some("+") => {
@@ -435,6 +443,14 @@ impl Interpreter {
         // named mutator dispatch applies (`@a."$name"($p)` stores the FETCHed
         // value too).
         let args = self.fetch_proxy_mutator_args(&method, args)?;
+        if method == "message"
+            && args.is_empty()
+            && let ValueView::Instance { attributes, .. } = target.view()
+            && let Some(msg) = attributes.as_map().get("__mutsu_thrown_message")
+        {
+            self.stack.push(msg.clone());
+            return Ok(());
+        }
         // Handle .* and .+ modifiers
         match modifier {
             Some("+") => {
@@ -779,6 +795,14 @@ impl Interpreter {
         // variable, a second alias, a value passed to a sub one call frame
         // away) observes it for free.
         let target = self.reify_or_consume_seq_target(target, method)?;
+        if method == "message"
+            && args.is_empty()
+            && let ValueView::Instance { attributes, .. } = target.view()
+            && let Some(msg) = attributes.as_map().get("__mutsu_thrown_message")
+        {
+            self.stack.push(msg.clone());
+            return Ok(());
+        }
         // ADR-0070 at the mutable OPCODE entry. The push/append/unshift/prepend
         // branches below (and the `call_method_mut_with_values` arms they lead
         // to) read `args` positionally, so an adverb none of them declares was
@@ -2453,15 +2477,20 @@ impl Interpreter {
                             cell
                         }
                     };
+                    let old_len = items.len();
                     let mut updated = items.to_vec();
+                    let mut initialized = items.initialized.clone();
                     if i >= updated.len() {
                         updated.resize(i + 1, Value::package(crate::symbol::wk::any()));
+                        initialized.get_or_insert_with(|| (0..old_len).collect());
+                    }
+                    if let Some(initialized) = initialized.as_mut() {
+                        initialized.insert(i);
                     }
                     updated[i] = Value::container_ref(cell);
-                    let new_array = Value::array_with_kind(
-                        crate::gc::Gc::new(crate::value::ArrayData::new(updated)),
-                        arr_kind,
-                    );
+                    let mut data = crate::value::ArrayData::new(updated);
+                    data.initialized = initialized;
+                    let new_array = Value::array_with_kind(crate::gc::Gc::new(data), arr_kind);
                     self.env_mut().insert(target_name.to_string(), new_array);
                     if let Some((source_name, cell_val)) = bind_source_install {
                         self.set_env_with_main_alias(&source_name, cell_val.clone());

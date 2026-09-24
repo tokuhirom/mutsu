@@ -128,6 +128,21 @@ pub(crate) fn split_object_hash_constraint(constraint: &str) -> (&str, Option<&s
 
 /// Check if a value is "defined" in the Raku sense.
 /// Type objects (Package) are undefined; concrete values and instances are defined.
+/// `nqp::isconcrete` / `nqp::defined`: is this an object rather than a type
+/// object or the VM null? The same answer as [`value_is_defined`] except
+/// where Raku's `.defined` deliberately lies about a concrete object: a
+/// `Failure` and `Empty` are concrete (rakudo's `nqp::isconcrete` is 1 for
+/// both) even though `.defined` is False for them.
+// Cost: O(1) (a mixin wrapper recurses once per layer).
+pub(crate) fn value_is_concrete(value: &Value) -> bool {
+    match value.view() {
+        ValueView::Slip(items) if items.is_empty() => true,
+        ValueView::Instance { class_name, .. } if class_name == "Failure" => true,
+        ValueView::Mixin(inner, _) => value_is_concrete(inner),
+        _ => value_is_defined(value),
+    }
+}
+
 pub(crate) fn value_is_defined(value: &Value) -> bool {
     match value.view() {
         ValueView::Nil | ValueView::Package(_) | ValueView::ParametricRole { .. } => false,

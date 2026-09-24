@@ -589,8 +589,11 @@ impl Interpreter {
                     },
                     _ => String::new(),
                 };
+                // The same type check `~~` makes (smiley, enum and the `is Mu`
+                // MRO correction included), not the bare type walk.
                 Ok(bool_int(
-                    !type_name.is_empty() && self.type_matches_value(&type_name, &v),
+                    !type_name.is_empty()
+                        && self.type_object_accepts(&v, crate::symbol::Symbol::intern(&type_name)),
                 ))
             }
 

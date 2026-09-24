@@ -39,27 +39,31 @@ impl ArrayData {
     // `my int @a` measures O(1): scripts/array-complexity-check.sh).
     // Rakudo: O(1) amortized -- see #9156.
     pub(crate) fn shift_front(&mut self) -> Option<Value> {
-        if self.native.is_some() {
+        let value = if self.native.is_some() {
             let items = self.items_mut();
-            return if items.is_empty() {
+            if items.is_empty() {
                 None
             } else {
                 Some(items.remove(0))
-            };
+            }
+        } else if self.head >= self.items.len() {
+            None
+        } else {
+            let value = std::mem::replace(&mut self.items[self.head], Value::NIL);
+            self.head += 1;
+            let live = self.items.len() - self.head;
+            if live == 0 {
+                self.items.clear();
+                self.head = 0;
+            } else if self.head > live {
+                self.compact_head();
+            }
+            Some(value)
+        };
+        if value.is_some() {
+            self.shift_initialized_after_front();
         }
-        if self.head >= self.items.len() {
-            return None;
-        }
-        let value = std::mem::replace(&mut self.items[self.head], Value::NIL);
-        self.head += 1;
-        let live = self.items.len() - self.head;
-        if live == 0 {
-            self.items.clear();
-            self.head = 0;
-        } else if self.head > live {
-            self.compact_head();
-        }
-        Some(value)
+        value
     }
 
     // `Vec` mutators, forwarded through [`ArrayData::items_mut`]: `Deref`
@@ -123,6 +127,28 @@ impl ArrayData {
         }
         self.head -= 1;
         self.items[self.head] = value;
+        self.note_front_inserted(1);
+    }
+
+    /// Shift the embedded explicit-assignment bitmap along with a front
+    /// removal.  The bitmap uses live-array indices, while the optimized
+    /// storage keeps a dead prefix behind `head`.
+    fn shift_initialized_after_front(&mut self) {
+        if let Some(initialized) = self.initialized.as_mut() {
+            let old = std::mem::take(initialized);
+            *initialized = old.into_iter().filter_map(|i| i.checked_sub(1)).collect();
+        }
+    }
+
+    /// Record an explicit front insertion in the hole bitmap.  A `None`
+    /// bitmap means every existing slot is present, and remains sufficient
+    /// after inserting another present slot.
+    pub(crate) fn note_front_inserted(&mut self, count: usize) {
+        if let Some(initialized) = self.initialized.as_mut() {
+            let old = std::mem::take(initialized);
+            *initialized = old.into_iter().map(|i| i + count).collect();
+            initialized.extend(0..count);
+        }
     }
 
     pub(crate) fn remove(&mut self, index: usize) -> Value {

@@ -342,10 +342,13 @@ pub(crate) fn parenthesized_assign_expr(input: &str) -> PResult<'_, Expr> {
             modifier,
             quoted: _,
         } => {
-            if name == "AT-POS" && args.len() == 1 {
+            if name == "AT-POS"
+                && args.len() == 1
+                && !matches!(target.as_ref(), Expr::Var(name) | Expr::BareWord(name) if name == "self")
+            {
                 Expr::IndexAssign {
                     target,
-                    index: Box::new(args[0].clone()),
+                    index: Box::new(args.into_iter().next().unwrap_or(Expr::Literal(Value::NIL))),
                     value: Box::new(rhs),
                     is_positional: true,
                 }
@@ -353,7 +356,6 @@ pub(crate) fn parenthesized_assign_expr(input: &str) -> PResult<'_, Expr> {
                 let target_var_name = match target.as_ref() {
                     Expr::Var(name) => Some(name.clone()),
                     Expr::ArrayVar(name) => Some(format!("@{}", name)),
-                    Expr::HashVar(name) => Some(format!("%{}", name)),
                     Expr::BareWord(name) => Some(name.clone()),
                     Expr::DoStmt(s) => {
                         crate::parser::stmt::simple_expr_stmt::decl_target_var_name(s)

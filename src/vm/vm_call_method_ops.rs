@@ -762,6 +762,14 @@ impl Interpreter {
         // `LazyIoLines` special case). Introspection must not consume the
         // underlying handle: asking for its type is side-effect free.
         let target = self.reify_or_consume_seq_target(target, method)?;
+        if method == "message"
+            && args.is_empty()
+            && let ValueView::Instance { attributes, .. } = target.view()
+            && let Some(msg) = attributes.as_map().get("__mutsu_thrown_message")
+        {
+            self.stack.push(msg.clone());
+            return Ok(());
+        }
         if method == "raku"
             && crate::builtins::methods_0arg::raku_repr::raku_scalar_itemized(&target)
             && let Some(rendered) = self.raku_repr_with_dispatch(&target)

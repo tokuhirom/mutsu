@@ -97,6 +97,23 @@ their subscripts: `@a.AT-POS(-1)` was `Nil` where `@a[-1]` is an `X::OutOfRange`
 - `t/vm/nqp-list-index-parity.t` pins 27 rakudo-measured rows. There is no pattern rule for this
   family: `.max(0) as usize` has too many legitimate uses (byte offsets) to ban.
 
+### 2.3 Object-level `nqp::` ops
+
+Five object ops had their own copy of a question the VM already answers:
+
+| op | answered with | should be |
+|---|---|---|
+| `nqp::istrue` | `Value::truthy()` (ignores a user `Bool`, a pending `.grep`) | `eval_truthy` (`?`, `if`, TRIR `TruthyObj`) |
+| `nqp::istype` | `type_matches_value` (no smiley, enum, or `is Mu` MRO correction) | `type_object_accepts` (`~~`'s type-object arm, now a function) |
+| `nqp::isconcrete` / `defined` | `value_is_defined` (a `Failure` and `Empty` read 0) | `value_is_concrete` |
+| `nqp::eqaddr` | `values_identical`, i.e. `===` (user `WHICH`, memoized only after a `===`) | `values_same_object` |
+| `nqp::clone` | the same instance back; an `Array` as a `List` | the native `Mu.clone`; `Value::array_shallow_clone`, shared with `.clone` |
+
+`t/vm/nqp-object-ops-parity.t` pins 21 rakudo-measured rows. One difference is known and left
+alone: MoarVM's `nqp::clone` copies attribute *slots*, so an `is rw` attribute's Scalar container
+is shared with the original. mutsu does not store attributes as containers and cannot express that
+sharing.
+
 ## 3. Consequences
 
 - The three panics and the ten divergences in §1 are fixed.

@@ -313,6 +313,112 @@ impl Interpreter {
         self.smart_match_inner(left, right)
     }
 
+    /// `$x ~~ SomeType` for a type object on the right: the type check
+    /// smartmatch, `nqp::istype` and the other type-membership queries share
+    /// (ADR-0118). On top of the plain `type_matches_value` walk it applies
+    /// the type smiley (`:D`/`:U`), the `Enumeration` role and enum type
+    /// objects, and the MRO correction that keeps a `class M is Mu` from
+    /// matching `Any`. `nqp::istype` used to call `type_matches_value`
+    /// directly and skip all three (`nqp::istype(M, Any)` was 1).
+    // Cost: O(d), d = MRO length of the checked type.
+    pub(crate) fn type_object_accepts(
+        &mut self,
+        left: &Value,
+        type_name: crate::symbol::Symbol,
+    ) -> bool {
+        // Handle type smileys (:U, :D, :_)
+        let type_name_resolved = type_name.resolve();
+        let (base_type, smiley) = super::super::types::strip_type_smiley(&type_name_resolved);
+
+        // Every enum type object and every enum value does the
+        // `Enumeration` role (`E ~~ Enumeration`, `E.pick ~~ Enumeration`).
+        // A non-enum LHS falls through to the ordinary role check
+        // instead of failing here: an ordinary class may compose the
+        // role too (`ENUMERATION_ROLE_PRELUDE`, `class DNA does
+        // Enumeration`), and returning `False` outright made
+        // `$instance ~~ Enumeration` wrong for one that had.
+        let is_enum = match left.view() {
+            ValueView::Enum { .. } => true,
+            ValueView::Package(n) => self.registry().enum_types.contains_key(&*n.resolve()),
+            _ => false,
+        };
+        if base_type == "Enumeration" && is_enum {
+            // An enum value is defined (:D); a bare enum type object is
+            // undefined (:U).
+            return match smiley {
+                Some(":U") => matches!(left.view(), ValueView::Package(_)),
+                Some(":D") => matches!(left.view(), ValueView::Enum { .. }),
+                _ => true,
+            };
+        }
+
+        // Enum type object smartmatch against enum values -- and
+        // against the enum's OWN type object, which is a type-object
+        // match like any other (`Direction ~~ Direction` is True,
+        // exactly as `Int ~~ Int` is: a type object always matches
+        // its own type). Missing the second case used to make every
+        // `$x ~~ Direction` matcher fail whenever `$x` held the type
+        // object itself rather than an enum value -- e.g.
+        // `$exception.type` on `X::Enum::NoValue`, whose `.type`
+        // attribute is the enum's type object, not one of its values
+        // (`roast/S12-enums/misc.t`'s `throws-like ..., type =>
+        // Direction` under `MUTSU_REAL_TEST=1`).
+        if self.registry().enum_types.contains_key(base_type) {
+            let enum_match = matches!(
+                left.view(),
+                ValueView::Enum { enum_type, .. } if enum_type == base_type
+            );
+            let own_type_object = matches!(
+                left.view(),
+                ValueView::Package(lhs_name) if lhs_name == base_type
+            );
+            return match smiley {
+                Some(":U") => own_type_object,
+                Some(":D") => enum_match,
+                _ => enum_match || own_type_object,
+            };
+        }
+
+        // A Package on the LHS is a type object - check type hierarchy
+        // LHS ~~ RHS checks: is LHS a subtype of RHS?
+        if let ValueView::Package(lhs_name) = left.view() {
+            let lhs_resolved = lhs_name.resolve();
+            let mut type_ok = self.type_matches_value(base_type, left);
+            // type_matches treats "Any" as a universal match, but a
+            // user-defined class that explicitly inherits from Mu only
+            // (e.g., `class Foo is Mu {}`) should NOT match Any.
+            // Check the actual MRO to correct this.
+            if type_ok && base_type == "Any" && self.registry().classes.contains_key(&*lhs_resolved)
+            {
+                let mro = self.class_mro(&lhs_resolved);
+                if !mro.iter().any(|c| c == "Any") {
+                    type_ok = false;
+                }
+            }
+            if !type_ok {
+                return false;
+            }
+            // Check definedness constraint
+            return match smiley {
+                Some(":U") => true,  // Package is undefined
+                Some(":D") => false, // Package is not defined
+                _ => true,
+            };
+        }
+        // For Hash ~~ Hash[V,K] smartmatch, only typed hashes match.
+        // In Raku, an untyped hash does NOT match Hash[Int] even if all
+        // values happen to be Int. This differs from parameter binding
+        // where Associative[Int] checks element types.
+        if matches!(left.view(), ValueView::Hash(_))
+            && let Some((hash_base, _)) = Self::parse_generic_constraint(&type_name_resolved)
+            && (hash_base == "Hash" || hash_base == "Associative")
+            && self.container_type_metadata(left).is_none()
+        {
+            return false;
+        }
+        self.type_matches_value(&type_name_resolved, left)
+    }
+
     fn smart_match_inner(&mut self, left: &Value, right: &Value) -> bool {
         // A first-class element container on the LHS (`ContainerRef`, e.g. a
         // `.grep(...).head` rw alias / `:=`-bound slot) is transparent to
@@ -1634,103 +1740,7 @@ impl Interpreter {
                 }
             }
             // When RHS is a type/Package, check type membership
-            (_, ValueView::Package(type_name)) => {
-                // Handle type smileys (:U, :D, :_)
-                let type_name_resolved = type_name.resolve();
-                let (base_type, smiley) =
-                    super::super::types::strip_type_smiley(&type_name_resolved);
-
-                // Every enum type object and every enum value does the
-                // `Enumeration` role (`E ~~ Enumeration`, `E.pick ~~ Enumeration`).
-                // A non-enum LHS falls through to the ordinary role check
-                // instead of failing here: an ordinary class may compose the
-                // role too (`ENUMERATION_ROLE_PRELUDE`, `class DNA does
-                // Enumeration`), and returning `False` outright made
-                // `$instance ~~ Enumeration` wrong for one that had.
-                let is_enum = match left.view() {
-                    ValueView::Enum { .. } => true,
-                    ValueView::Package(n) => self.registry().enum_types.contains_key(&*n.resolve()),
-                    _ => false,
-                };
-                if base_type == "Enumeration" && is_enum {
-                    // An enum value is defined (:D); a bare enum type object is
-                    // undefined (:U).
-                    return match smiley {
-                        Some(":U") => matches!(left.view(), ValueView::Package(_)),
-                        Some(":D") => matches!(left.view(), ValueView::Enum { .. }),
-                        _ => true,
-                    };
-                }
-
-                // Enum type object smartmatch against enum values -- and
-                // against the enum's OWN type object, which is a type-object
-                // match like any other (`Direction ~~ Direction` is True,
-                // exactly as `Int ~~ Int` is: a type object always matches
-                // its own type). Missing the second case used to make every
-                // `$x ~~ Direction` matcher fail whenever `$x` held the type
-                // object itself rather than an enum value -- e.g.
-                // `$exception.type` on `X::Enum::NoValue`, whose `.type`
-                // attribute is the enum's type object, not one of its values
-                // (`roast/S12-enums/misc.t`'s `throws-like ..., type =>
-                // Direction` under `MUTSU_REAL_TEST=1`).
-                if self.registry().enum_types.contains_key(base_type) {
-                    let enum_match = matches!(
-                        left.view(),
-                        ValueView::Enum { enum_type, .. } if enum_type == base_type
-                    );
-                    let own_type_object = matches!(
-                        left.view(),
-                        ValueView::Package(lhs_name) if lhs_name == base_type
-                    );
-                    return match smiley {
-                        Some(":U") => own_type_object,
-                        Some(":D") => enum_match,
-                        _ => enum_match || own_type_object,
-                    };
-                }
-
-                // A Package on the LHS is a type object - check type hierarchy
-                // LHS ~~ RHS checks: is LHS a subtype of RHS?
-                if let ValueView::Package(lhs_name) = left.view() {
-                    let lhs_resolved = lhs_name.resolve();
-                    let mut type_ok = self.type_matches_value(base_type, left);
-                    // type_matches treats "Any" as a universal match, but a
-                    // user-defined class that explicitly inherits from Mu only
-                    // (e.g., `class Foo is Mu {}`) should NOT match Any.
-                    // Check the actual MRO to correct this.
-                    if type_ok
-                        && base_type == "Any"
-                        && self.registry().classes.contains_key(&*lhs_resolved)
-                    {
-                        let mro = self.class_mro(&lhs_resolved);
-                        if !mro.iter().any(|c| c == "Any") {
-                            type_ok = false;
-                        }
-                    }
-                    if !type_ok {
-                        return false;
-                    }
-                    // Check definedness constraint
-                    return match smiley {
-                        Some(":U") => true,  // Package is undefined
-                        Some(":D") => false, // Package is not defined
-                        _ => true,
-                    };
-                }
-                // For Hash ~~ Hash[V,K] smartmatch, only typed hashes match.
-                // In Raku, an untyped hash does NOT match Hash[Int] even if all
-                // values happen to be Int. This differs from parameter binding
-                // where Associative[Int] checks element types.
-                if matches!(left.view(), ValueView::Hash(_))
-                    && let Some((hash_base, _)) =
-                        Self::parse_generic_constraint(&type_name_resolved)
-                    && (hash_base == "Hash" || hash_base == "Associative")
-                    && self.container_type_metadata(left).is_none()
-                {
-                    return false;
-                }
-                self.type_matches_value(&type_name_resolved, left)
-            }
+            (_, ValueView::Package(type_name)) => self.type_object_accepts(left, type_name),
             // Backward-compatibility: enum type objects may still arrive as Str values.
             (_, ValueView::Str(type_name))
                 if self.registry().enum_types.contains_key(type_name.as_str()) =>

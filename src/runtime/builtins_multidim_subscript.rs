@@ -233,6 +233,45 @@ impl Interpreter {
                 target_is_coerced_list = true;
                 target_is_coerced_scalar = true;
                 Value::real_array(vec![t.with_hash_itemized(false)])
+            } else if subscript_is_positional == Some(true)
+                && let ValueView::Instance { class_name, .. } = t.view()
+                && self.type_matches_value("Positional", &t)
+                && self.has_user_method_including_role(&class_name.resolve(), "keys")
+            {
+                // Rich Positional instances (including roles whose methods are
+                // kept in the role registry) need the same value/key/exists
+                // machinery as a plain list for slice adverbs. Snapshot their
+                // ordered AT-POS values; the adverb implementation below can
+                // then preserve nested slice shape and missing-value rules.
+                target_is_coerced_list = true;
+                let len = self
+                    .try_compiled_method_or_interpret(t.clone(), "elems", vec![])
+                    .map(|value| crate::runtime::to_int(&value).max(0))
+                    .unwrap_or(0);
+                let mut items = Vec::with_capacity(len as usize);
+                let mut initialized = std::collections::HashSet::new();
+                for i in 0..len {
+                    let value = self
+                        .try_compiled_method_or_interpret(t.clone(), "AT-POS", vec![Value::int(i)])
+                        .unwrap_or(Value::NIL);
+                    let exists = self
+                        .try_compiled_method_or_interpret(
+                            t.clone(),
+                            "EXISTS-POS",
+                            vec![Value::int(i)],
+                        )
+                        .map(|value| value.truthy())
+                        .unwrap_or(
+                            !matches!(value.view(), ValueView::Package(name) if name == "Any"),
+                        );
+                    if exists {
+                        initialized.insert(i as usize);
+                    }
+                    items.push(value);
+                }
+                let mut data = crate::value::ArrayData::new(items);
+                data.initialized = Some(initialized);
+                Value::array_with_kind(crate::gc::Gc::new(data), crate::value::ArrayKind::List)
             } else {
                 t
             }

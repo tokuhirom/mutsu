@@ -401,7 +401,9 @@ impl Interpreter {
                 let front = matches!(method, "unshift" | "prepend");
                 target.with_array_inplace(|data, _| {
                     if front {
+                        let count = vals.len();
                         data.items_mut().splice(0..0, vals);
+                        data.note_front_inserted(count);
                     } else {
                         data.items_mut().extend(vals);
                     }
