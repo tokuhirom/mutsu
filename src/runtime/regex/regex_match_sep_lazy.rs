@@ -129,8 +129,13 @@ impl Interpreter {
         // continuation has rejected the ones before them.
         let stopped = {
             let w = &mut walk;
+            let capture_start = store.caps().positional.len();
+            let mut atom_store = CapStore::new(store.caps().clone());
+            atom_store.merge_delta(w.assemble(None));
+            let _capture_scope =
+                super::regex_helpers::InlineCaptureScope::enter(capture_start, w.atom_stride);
             let mut first = |interp: &mut Interpreter,
-                             store: &mut CapStore,
+                             _atom_store: &mut CapStore,
                              end: usize,
                              caps: RegexCaptures| {
                 super::regex_helpers::record_regex_farthest_position(end);
@@ -143,7 +148,7 @@ impl Interpreter {
                 &token.atom,
                 chars,
                 start,
-                store,
+                &mut atom_store,
                 pkg,
                 pattern.ignore_case,
                 false,
@@ -195,9 +200,16 @@ impl Interpreter {
                 super::regex_helpers::record_regex_farthest_position(sep_end);
                 let stopped = {
                     let w = &mut *walk;
+                    let capture_start = store.caps().positional.len();
+                    let mut atom_store = CapStore::new(store.caps().clone());
+                    atom_store.merge_delta(w.assemble(None));
+                    let _capture_scope = super::regex_helpers::InlineCaptureScope::enter(
+                        capture_start,
+                        w.atom_stride,
+                    );
                     let scaps = &scaps;
                     let mut next = |interp: &mut Interpreter,
-                                    store: &mut CapStore,
+                                    _atom_store: &mut CapStore,
                                     atom_end: usize,
                                     acaps: RegexCaptures| {
                         super::regex_helpers::record_regex_farthest_position(atom_end);
@@ -216,7 +228,7 @@ impl Interpreter {
                         &token.atom,
                         chars,
                         sep_end,
-                        store,
+                        &mut atom_store,
                         pkg,
                         pattern.ignore_case,
                         false,

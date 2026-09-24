@@ -131,6 +131,10 @@ thread_local! {
     /// non-inline atom — a subrule reference above all — which is what keeps a
     /// different regex's backreferences scoped to itself.
     pub(crate) static INLINE_OUTER_CAPS_SEED: RefCell<Option<std::sync::Arc<OuterBackrefCaps>>> = const { RefCell::new(None) };
+    /// While a separated quantifier matches one atom, inline sub-patterns
+    /// need to fold that atom's captures into the quantifier's already-built
+    /// positional slots for `$ /` and code assertions.
+    pub(crate) static INLINE_CAPTURE_SCOPE: Cell<Option<(usize, usize)>> = const { Cell::new(None) };
 }
 
 /// Track the furthest cursor position visited by a regex walk.
@@ -247,10 +251,34 @@ impl Drop for OuterCapsSeed {
 /// The enclosing-level captures a freshly built capture store should read
 /// backreferences through (see [`INLINE_OUTER_CAPS_SEED`]).
 pub(crate) fn take_inline_outer_caps_seed() -> Option<std::sync::Arc<OuterBackrefCaps>> {
-    if !any_regex_backref_lowered() {
+    let scope = INLINE_CAPTURE_SCOPE.with(Cell::get);
+    if !any_regex_backref_lowered() && scope.is_none() {
         return None;
     }
     INLINE_OUTER_CAPS_SEED.with(|s| s.borrow().clone())
+}
+
+/// Arms the capture-fold context used while matching one separated-quantifier
+/// atom, restoring the previous context when the atom candidate is done.
+pub(crate) struct InlineCaptureScope {
+    previous: Option<(usize, usize)>,
+}
+
+impl InlineCaptureScope {
+    pub(crate) fn enter(start: usize, stride: usize) -> Self {
+        let previous = INLINE_CAPTURE_SCOPE.with(|scope| scope.replace(Some((start, stride))));
+        Self { previous }
+    }
+}
+
+impl Drop for InlineCaptureScope {
+    fn drop(&mut self) {
+        INLINE_CAPTURE_SCOPE.with(|scope| scope.set(self.previous));
+    }
+}
+
+pub(crate) fn inline_capture_scope() -> Option<(usize, usize)> {
+    INLINE_CAPTURE_SCOPE.with(Cell::get)
 }
 
 /// Does this atom's sub-pattern contain a backreference anywhere inside it?

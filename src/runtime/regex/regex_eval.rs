@@ -275,6 +275,7 @@ impl Interpreter {
             };
             (stmts, code_cache_id)
         };
+        let visible_caps = caps.inline_capture_view();
         // The bindings to install for the body, and to restore afterwards.
         let mut env: Vec<(String, Value)> = Vec::new();
         // In-regex `:my`/`:let` lexicals (and anything a preceding inline `{ }`
@@ -293,7 +294,7 @@ impl Interpreter {
         // objects, exactly as `$/[0]` is once the match finishes — raku's
         // `/ (\d) { say $0 } \d+ /` prints `｢1｣`, not the bare `1` a `Str`
         // binding produced here.
-        for (i, slot) in caps.positional.iter().enumerate() {
+        for (i, slot) in visible_caps.positional.iter().enumerate() {
             env.push((i.to_string(), Value::pos_slot_value(slot, &live_target)));
         }
         // Build `$/` as a proper Match object so `$/.Str`/`$/.lc`/`~$/` yield the
@@ -302,10 +303,10 @@ impl Interpreter {
         // grammar's dup check does `%*PLAYED{$/.lc}++`). `$/[n]` still indexes the
         // positional captures on the Match object.
         let cursor = Value::make_match_object_full(
-            caps.match_from as i64,
-            (caps.match_from + matched_so_far.chars().count()) as i64,
-            &caps.positional,
-            &caps.named,
+            visible_caps.match_from as i64,
+            (visible_caps.match_from + matched_so_far.chars().count()) as i64,
+            &visible_caps.positional,
+            &visible_caps.named,
             live_target.clone(),
         );
         // What an EARLIER `{ make … }` of this same rule already produced. raku
@@ -334,11 +335,11 @@ impl Interpreter {
         // `$/`/`$0` env below is not clobbered by the action dispatch.
         let made_named: ValueMap = if code.contains(".made") {
             if let Some(actions0) = self.current_grammar_actions.clone() {
-                self.run_named_capture_actions(caps, actions0)
+                self.run_named_capture_actions(&visible_caps, actions0)
             } else {
                 // No actions: `.made` must still resolve (to Nil) on a Match,
                 // not die with method-not-found on a plain Str capture.
-                self.named_capture_match_objects(caps)
+                self.named_capture_match_objects(&visible_caps)
             }
         } else {
             ValueMap::default()
@@ -346,7 +347,7 @@ impl Interpreter {
 
         // Set named captures (texts derive from spans through the engine-scope
         // subject; silent marker keys stay hidden).
-        for (k, slot) in &caps.named {
+        for (k, slot) in &visible_caps.named {
             if k.starts_with(crate::runtime::SILENT_ACTION_MARKER_PREFIX) {
                 continue;
             }
@@ -571,16 +572,17 @@ impl Interpreter {
         chars: &[char],
         pos: usize,
     ) -> Vec<(String, Value)> {
-        let from = caps.match_from.min(chars.len());
+        let visible_caps = caps.inline_capture_view();
+        let from = visible_caps.match_from.min(chars.len());
         let to = pos.min(chars.len()).max(from);
         let matched_so_far: String = chars[from..to].iter().collect();
         let live_target = super::regex_helpers::current_match_target()
             .unwrap_or_else(|| MatchTarget::new(&matched_so_far));
         let mut env: Vec<(String, Value)> = Vec::new();
-        for (i, slot) in caps.positional.iter().enumerate() {
+        for (i, slot) in visible_caps.positional.iter().enumerate() {
             env.push((i.to_string(), Value::pos_slot_value(slot, &live_target)));
         }
-        for (k, slot) in &caps.named {
+        for (k, slot) in &visible_caps.named {
             if k.starts_with(crate::runtime::SILENT_ACTION_MARKER_PREFIX) {
                 continue;
             }
@@ -593,10 +595,10 @@ impl Interpreter {
             ));
         }
         let cursor = Value::make_match_object_full(
-            caps.match_from as i64,
-            (caps.match_from + matched_so_far.chars().count()) as i64,
-            &caps.positional,
-            &caps.named,
+            visible_caps.match_from as i64,
+            (visible_caps.match_from + matched_so_far.chars().count()) as i64,
+            &visible_caps.positional,
+            &visible_caps.named,
             live_target.clone(),
         );
         env.push(("\u{00A2}".to_string(), cursor.clone()));
