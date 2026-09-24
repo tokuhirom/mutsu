@@ -334,7 +334,7 @@ impl Interpreter {
     /// container": a `$` can hold an `Instance` doing `Associative`, a `Buf`, a
     /// `Proxy`, a `Mixin` or a user container subclass, and every one of those
     /// has its own store path that must keep working.
-    fn scalar_subscript_protocol_error(
+    pub(crate) fn scalar_subscript_protocol_error(
         &self,
         target: &Value,
         is_positional: bool,
