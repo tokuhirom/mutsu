@@ -38,6 +38,7 @@ mod regex_prefilter_memo;
 pub(crate) mod regex_prefilter_scan;
 mod regex_prefilter_subrule;
 mod regex_resolve;
+mod regex_silent_action;
 mod regex_subrule_lazy;
 mod regex_token_method;
 mod regex_token_resolve;

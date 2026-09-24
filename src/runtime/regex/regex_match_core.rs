@@ -518,15 +518,10 @@ impl Interpreter {
                 // marker. Reuse that node so its nested captures and `.made`
                 // value remain available to the alias instead of collapsing
                 // it to a span-only leaf.
-                let marker = format!(
-                    "{}{}",
-                    crate::runtime::SILENT_ACTION_MARKER_PREFIX,
-                    spec.lookup_name
-                );
                 let marker_node = store
                     .caps()
                     .named
-                    .get(&Symbol::intern(&marker))?
+                    .get(&spec.silent_marker_sym)?
                     .nodes
                     .last()
                     .cloned();
@@ -556,12 +551,7 @@ impl Interpreter {
             })
         };
         if reused_silent_marker && let RegexAtom::Named(atom_name) = &token.atom {
-            let marker = format!(
-                "{}{}",
-                crate::runtime::SILENT_ACTION_MARKER_PREFIX,
-                atom_name.spec().lookup_name
-            );
-            let marker_sym = Symbol::intern(&marker);
+            let marker_sym = atom_name.spec().silent_marker_sym;
             let remove_marker = store
                 .caps_mut()
                 .named

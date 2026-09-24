@@ -137,12 +137,8 @@ impl Interpreter {
                     return false;
                 }
                 seen_ends.push(end);
-                let wrapped = Interpreter::build_named_candidates_from_inner(
-                    vec![(end, inner)],
-                    pos,
-                    spec,
-                    None,
-                );
+                let wrapped =
+                    interp.build_named_candidates_from_inner(vec![(end, inner)], pos, spec, None);
                 let Some((end, delta)) = wrapped.into_iter().next() else {
                     return false;
                 };
