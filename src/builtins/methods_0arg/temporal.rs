@@ -288,6 +288,24 @@ pub fn make_datetime(
     Value::make_instance(Symbol::intern("DateTime"), attrs)
 }
 
+/// Attach an optional formatter to an existing DateTime instance.
+pub fn with_datetime_formatter(datetime: Value, formatter: Option<Value>) -> Value {
+    let Some(formatter) = formatter else {
+        return datetime;
+    };
+    let ValueView::Instance {
+        class_name,
+        attributes,
+        id,
+    } = datetime.view()
+    else {
+        return datetime;
+    };
+    let mut updated = attributes.to_map();
+    updated.insert("formatter".to_string(), formatter);
+    Value::write_back_sharing(&attributes, class_name, updated, id)
+}
+
 /// Format a Date as YYYY-MM-DD, with ISO 8601 sign prefix for negative/large years.
 pub fn format_date(year: i64, month: i64, day: i64) -> String {
     if year < 0 {
