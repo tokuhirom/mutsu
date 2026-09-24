@@ -169,11 +169,11 @@ impl Interpreter {
                 each(&mut body.iter())
             }
             ValueView::Slip(items) => each(&mut items.iter()),
-            ValueView::Hash(map) if left_is_hash => each(&mut map.iter().map(|(_, v)| v)),
+            ValueView::Hash(map) if left_is_hash => each(&mut map.values()),
             ValueView::Pair(_, v) => Self::value_sync_at(v, left_is_hash, depth + 1),
             ValueView::ValuePair(_, v) => Self::value_sync_at(v, left_is_hash, depth + 1),
             ValueView::Capture { positional, named } => {
-                each(&mut positional.iter().chain(named.iter().map(|(_, v)| v)))
+                each(&mut positional.iter().chain(named.values()))
             }
             ValueView::Mixin(inner, _) => Self::value_sync_at(inner, left_is_hash, depth + 1),
             ValueView::Scalar(inner) => Self::value_sync_at(inner, left_is_hash, depth + 1),
