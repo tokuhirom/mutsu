@@ -1,7 +1,7 @@
 //! String, list and narrowing helpers behind TRIR's typed ops.
 
 use crate::runtime::Interpreter;
-use crate::value::{RuntimeError, Value, ValueView};
+use crate::value::{RuntimeError, Value};
 
 impl Interpreter {
     #[inline]
@@ -89,21 +89,9 @@ impl Interpreter {
         }) as i64
     }
 
-    pub(super) fn trir_atpos_i(v: &Value, idx: i64) -> i64 {
-        let Ok(i) = usize::try_from(idx) else {
-            return 0;
-        };
-        // A plain `nqp::list_i` IS an array, and that is what every scanner's
-        // lookup table is. Reading it directly skips `nqp_backing_array`'s
-        // walk through the Buf/IterationBuffer/Uni shapes, which cost more
-        // than the read.
-        if let ValueView::Array(items, _) = v.view() {
-            return items.get(i).and_then(|e| e.as_int()).unwrap_or(0);
-        }
-        match Self::nqp_elem_at(v, i) {
-            Some(e) => e.as_int().unwrap_or_else(|| crate::runtime::to_int(&e)),
-            None => 0,
-        }
+    /// `nqp::atpos_i`'s answer: the op's own body (`nqp_backing::atpos_i`).
+    pub(super) fn trir_atpos_i(v: &Value, idx: i64) -> Result<i64, RuntimeError> {
+        crate::runtime::nqp_backing::atpos_i(v, idx)
     }
 }
 
