@@ -9,23 +9,22 @@
   "dist": "Hash::Util",
   "files": [
     {
-      "cmp": "partial",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "is &all_ref_keys externally accessible?",
-        "nok": 14,
-        "ok": 42,
+        "nok": 0,
+        "ok": 56,
         "plan": 56,
-        "secs": 0.39,
+        "secs": 0.23,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "pass"
       },
       "path": "t/01-basic.t",
       "raku": {
         "nok": 0,
         "ok": 56,
         "plan": 56,
-        "secs": 3.21,
+        "secs": 3.19,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -34,11 +33,11 @@
     {
       "cmp": "partial",
       "mutsu": {
-        "first_failure": "is &all_ref_keys imported?",
-        "nok": 42,
-        "ok": 28,
+        "first_failure": "is &all_ref_keys same as &all_keys",
+        "nok": 14,
+        "ok": 56,
         "plan": 70,
-        "secs": 0.75,
+        "secs": 0.32,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -48,7 +47,7 @@
         "nok": 0,
         "ok": 70,
         "plan": 70,
-        "secs": 0.85,
+        "secs": 0.68,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -58,10 +57,10 @@
       "cmp": "partial",
       "mutsu": {
         "first_failure": "does lock_hash return %hash",
-        "nok": 5,
-        "ok": 4,
+        "nok": 8,
+        "ok": 11,
         "plan": 19,
-        "secs": 0.37,
+        "secs": 0.38,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -71,30 +70,30 @@
         "nok": 0,
         "ok": 19,
         "plan": 19,
-        "secs": 0.86,
+        "secs": 0.69,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "partial",
       "mutsu": {
-        "first_failure": "memory allocation of 956301328 bytes failed",
-        "nok": 0,
-        "ok": 0,
+        "first_failure": "does lock_hash_recurse return %hash",
+        "nok": 5,
+        "ok": 4,
         "plan": 22,
-        "secs": 229.1,
+        "secs": 0.41,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "fail"
       },
       "path": "t/lock_hash_recurse.t",
       "raku": {
         "nok": 0,
         "ok": 22,
         "plan": 22,
-        "secs": 0.66,
+        "secs": 0.6,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -107,7 +106,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 34,
-        "secs": 0.14,
+        "secs": 0.25,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -117,7 +116,7 @@
         "nok": 0,
         "ok": 34,
         "plan": 34,
-        "secs": 0.41,
+        "secs": 0.77,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -126,11 +125,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "Type check failed in binding to parameter '$the-hash'; expected LockedHash:D but got Hash",
+        "first_failure": "Unknown function: AT-KEY",
         "nok": 0,
         "ok": 0,
         "plan": 17,
-        "secs": 0.11,
+        "secs": 0.25,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -140,7 +139,7 @@
         "nok": 0,
         "ok": 17,
         "plan": 17,
-        "secs": 0.37,
+        "secs": 0.9,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -152,10 +151,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-23",
+    "date": "2026-09-24",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "910f926",
+    "mutsu_commit": "338f021",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -166,13 +165,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/H/AS/HASH_UTIL/3ceaaea8c434ca7bf051f6b492478c2ff7bad883.tar.gz"
   },
-  "status": "red",
+  "status": "partial",
   "totals": {
     "baseline_assertions": 218,
     "baseline_files": 6,
-    "mutsu_assertions": 74,
-    "parity_files": 0,
-    "regressed_files": 6
+    "mutsu_assertions": 127,
+    "parity_files": 1,
+    "regressed_files": 5
   },
   "version": "0.0.5"
 }

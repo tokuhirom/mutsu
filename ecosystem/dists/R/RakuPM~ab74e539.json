@@ -6,7 +6,6 @@
     "resolved": [
       "File::Directory::Tree",
       "File::Temp",
-      "HTTP::Tiny",
       "HTTP::Tinyish",
       "JSON::Fast",
       "URI"
@@ -22,10 +21,10 @@
     "RakuPM::Cleaner": "ok",
     "RakuPM::CliCheck": "ok",
     "RakuPM::CliSpec": "ok",
-    "RakuPM::Client": "expected statement: expected expected statement: expected expression statement or expected statement: expected expression statement or expected statement: expected expected statement: expected right-h [at RakuPM/Client/Reporter.rakumod:265]",
+    "RakuPM::Client": "expected statement: expected expected statement: expected expression statement or expected statement: expected expression statement or expected statement: expected expected statement: expected right-h [at RakuPM/Client/Query.rakumod:273]",
     "RakuPM::Client::Flusher": "ok",
     "RakuPM::Client::Git": "ok",
-    "RakuPM::Client::Reporter": "expected statement: expected expected statement: expected expression statement or expected statement: expected expression statement or expected statement: expected expected statement: expected right-h [at RakuPM/Client/Reporter.rakumod:265]",
+    "RakuPM::Client::Query": "expected statement: expected expected statement: expected expression statement or expected statement: expected expression statement or expected statement: expected expected statement: expected right-h [at RakuPM/Client/Query.rakumod:273]",
     "RakuPM::Client::SelfManager": "ok",
     "RakuPM::Client::Tester": "ok",
     "RakuPM::Distribution": "ok",
@@ -33,7 +32,6 @@
     "RakuPM::Fs": "ok",
     "RakuPM::HTTP": "ok",
     "RakuPM::HTTP::Backend": "ok",
-    "RakuPM::HTTP::HTTPTiny": "ok",
     "RakuPM::HTTP::Tinyish": "ok",
     "RakuPM::Help": "ok",
     "RakuPM::InstallOptions": "ok",
@@ -61,10 +59,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-23",
+    "date": "2026-09-24",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "910f926",
+    "mutsu_commit": "338f021",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -73,7 +71,7 @@
   "schema": 1,
   "source": {
     "index": "fez",
-    "url": "https://360.zef.pm/R/AK/RAKUPM/7fa871654af8f611e39a7e04ed339c08057c6456.tar.gz"
+    "url": "https://360.zef.pm/R/AK/RAKUPM/fbffc3d8d43940af95038874ad5f3b9974e25ee7.tar.gz"
   },
   "status": "blocked_load",
   "totals": {
@@ -83,5 +81,5 @@
     "parity_files": 0,
     "regressed_files": 0
   },
-  "version": "0.79.0"
+  "version": "1.0.3"
 }

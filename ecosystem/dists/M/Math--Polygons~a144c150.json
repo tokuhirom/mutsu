@@ -28,7 +28,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.17,
+        "secs": 0.25,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -38,30 +38,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 1.98,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "Cannot dispatch to method Writer::serialize on XML because it is not inherited or done by SVG",
-        "nok": 0,
-        "ok": 0,
-        "plan": 1,
-        "secs": 0.17,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/02-tree.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 1,
-        "plan": 1,
-        "secs": 2.03,
+        "secs": 2.5,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -79,12 +56,35 @@
         "todo": 0,
         "verdict": "die"
       },
+      "path": "t/02-tree.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 2.23,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Cannot dispatch to method Writer::serialize on XML because it is not inherited or done by SVG",
+        "nok": 0,
+        "ok": 0,
+        "plan": 1,
+        "secs": 0.22,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
       "path": "t/03-squarerect.rakutest",
       "raku": {
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 1.84,
+        "secs": 2.48,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -96,7 +96,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 0.17,
+        "secs": 0.19,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -106,7 +106,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 2.13,
+        "secs": 2.77,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -118,7 +118,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.23,
+        "secs": 0.33,
         "skip": 1,
         "todo": 0,
         "verdict": "pass"
@@ -128,7 +128,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.76,
+        "secs": 0.82,
         "skip": 1,
         "todo": 0,
         "verdict": "pass"
@@ -140,10 +140,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-23",
+    "date": "2026-09-24",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "910f926",
+    "mutsu_commit": "338f021",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",

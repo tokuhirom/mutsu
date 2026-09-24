@@ -40,7 +40,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 9.44,
+        "secs": 6.76,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -54,7 +54,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 17.55,
+        "secs": 11.74,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -68,7 +68,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 18.94,
+        "secs": 12.18,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -82,7 +82,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 11.08,
+        "secs": 6.92,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -96,7 +96,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 111.31,
+        "secs": 67.56,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -110,7 +110,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 17.49,
+        "secs": 7.61,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -124,7 +124,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 14.81,
+        "secs": 9.47,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -138,7 +138,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 15.33,
+        "secs": 8.7,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -152,7 +152,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 17.43,
+        "secs": 9.88,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -166,7 +166,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 15.32,
+        "secs": 9.91,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -192,10 +192,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-23",
+    "date": "2026-09-24",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "910f926",
+    "mutsu_commit": "338f021",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",

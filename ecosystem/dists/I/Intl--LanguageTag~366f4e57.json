@@ -14,63 +14,7 @@
       "cmp": "no_baseline",
       "path": "t/00-sanity.rakutest",
       "raku": {
-        "first_failure": "Circular module loading detected trying to precompile /home/runner/.cache/mutsu-ecosystem/run/ecosweep-13uybeiy/dist/dist/lib/X/Intl/LanguageTag.rakumod",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 1.54,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      }
-    },
-    {
-      "cmp": "no_baseline",
-      "path": "t/01-creation.rakutest",
-      "raku": {
-        "first_failure": "Circular module loading detected trying to precompile /home/runner/.cache/mutsu-ecosystem/run/ecosweep-13uybeiy/dist/dist/lib/X/Intl/LanguageTag.rakumod",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 1.51,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      }
-    },
-    {
-      "cmp": "no_baseline",
-      "path": "t/02-filter.rakutest",
-      "raku": {
-        "first_failure": "Circular module loading detected trying to precompile /home/runner/.cache/mutsu-ecosystem/run/ecosweep-13uybeiy/dist/dist/lib/X/Intl/LanguageTag.rakumod",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 1.06,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      }
-    },
-    {
-      "cmp": "no_baseline",
-      "path": "t/03-fallback.rakutest",
-      "raku": {
-        "first_failure": "Circular module loading detected trying to precompile /home/runner/.cache/mutsu-ecosystem/run/ecosweep-13uybeiy/dist/dist/lib/X/Intl/LanguageTag.rakumod",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 1.85,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      }
-    },
-    {
-      "cmp": "no_baseline",
-      "path": "t/10-t-extension.rakutest",
-      "raku": {
-        "first_failure": "Circular module loading detected trying to precompile /home/runner/.cache/mutsu-ecosystem/run/ecosweep-13uybeiy/dist/dist/lib/X/Intl/LanguageTag.rakumod",
+        "first_failure": "Circular module loading detected trying to precompile /home/runner/.cache/mutsu-ecosystem/run/ecosweep-w0afnaa8/dist/dist/lib/X/Intl/LanguageTag.rakumod",
         "nok": 0,
         "ok": 0,
         "plan": null,
@@ -82,13 +26,69 @@
     },
     {
       "cmp": "no_baseline",
-      "path": "t/20-u-extension.rakutest",
+      "path": "t/01-creation.rakutest",
       "raku": {
-        "first_failure": "Circular module loading detected trying to precompile /home/runner/.cache/mutsu-ecosystem/run/ecosweep-13uybeiy/dist/dist/lib/X/Intl/LanguageTag.rakumod",
+        "first_failure": "Circular module loading detected trying to precompile /home/runner/.cache/mutsu-ecosystem/run/ecosweep-w0afnaa8/dist/dist/lib/X/Intl/LanguageTag.rakumod",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 1.55,
+        "secs": 1.62,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/02-filter.rakutest",
+      "raku": {
+        "first_failure": "Circular module loading detected trying to precompile /home/runner/.cache/mutsu-ecosystem/run/ecosweep-w0afnaa8/dist/dist/lib/X/Intl/LanguageTag.rakumod",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.05,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/03-fallback.rakutest",
+      "raku": {
+        "first_failure": "Circular module loading detected trying to precompile /home/runner/.cache/mutsu-ecosystem/run/ecosweep-w0afnaa8/dist/dist/lib/X/Intl/LanguageTag.rakumod",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.89,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/10-t-extension.rakutest",
+      "raku": {
+        "first_failure": "Circular module loading detected trying to precompile /home/runner/.cache/mutsu-ecosystem/run/ecosweep-w0afnaa8/dist/dist/lib/X/Intl/LanguageTag.rakumod",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.44,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/20-u-extension.rakutest",
+      "raku": {
+        "first_failure": "Circular module loading detected trying to precompile /home/runner/.cache/mutsu-ecosystem/run/ecosweep-w0afnaa8/dist/dist/lib/X/Intl/LanguageTag.rakumod",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.46,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -101,10 +101,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-23",
+    "date": "2026-09-24",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "910f926",
+    "mutsu_commit": "338f021",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",

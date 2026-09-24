@@ -12,23 +12,22 @@
   "dist": "CSS::Module::CSS3::Selectors",
   "files": [
     {
-      "cmp": "partial",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "css3x-selectors selector parse: li:not(.pingback) .comment-content p:first-child:first-line",
-        "nok": 2,
-        "ok": 90,
+        "nok": 0,
+        "ok": 92,
         "plan": 92,
-        "secs": 0.67,
+        "secs": 1.49,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "pass"
       },
       "path": "t/00basic.t",
       "raku": {
         "nok": 0,
         "ok": 92,
         "plan": 92,
-        "secs": 9.65,
+        "secs": 17.11,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -41,10 +40,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-23",
+    "date": "2026-09-24",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "910f926",
+    "mutsu_commit": "338f021",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -55,13 +54,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/C/SS/CSS_MODULE_CSS3_SELECTORS/7167453e1346af70f5194176044416f55906978f.tar.gz"
   },
-  "status": "red",
+  "status": "green",
   "totals": {
     "baseline_assertions": 92,
     "baseline_files": 1,
-    "mutsu_assertions": 90,
-    "parity_files": 0,
-    "regressed_files": 1
+    "mutsu_assertions": 92,
+    "parity_files": 1,
+    "regressed_files": 0
   },
   "version": "0.0.6"
 }

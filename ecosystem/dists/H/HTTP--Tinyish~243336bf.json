@@ -17,7 +17,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.19,
+        "secs": 0.14,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -27,7 +27,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 6.73,
+        "secs": 5.38,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -42,10 +42,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-23",
+    "date": "2026-09-24",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "910f926",
+    "mutsu_commit": "338f021",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -54,7 +54,7 @@
   "schema": 1,
   "source": {
     "index": "fez",
-    "url": "https://360.zef.pm/H/TT/HTTP_TINYISH/b52b7efdeacab3321f437d6af71a063b83a61486.tar.gz"
+    "url": "https://360.zef.pm/H/TT/HTTP_TINYISH/52b1e733f4ce6fd37f36ea2181cb3b9fadf2f6bb.tar.gz"
   },
   "status": "green",
   "totals": {
@@ -64,5 +64,5 @@
     "parity_files": 1,
     "regressed_files": 0
   },
-  "version": "0.4.1"
+  "version": "0.4.2"
 }

@@ -28,7 +28,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 1.45,
+        "secs": 1.44,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -41,7 +41,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 6,
-        "secs": 0.34,
+        "secs": 0.47,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -51,7 +51,7 @@
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 13.52,
+        "secs": 13.44,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -64,7 +64,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 6,
-        "secs": 0.34,
+        "secs": 0.43,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -74,7 +74,7 @@
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 2.91,
+        "secs": 2.96,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -97,7 +97,7 @@
         "nok": 0,
         "ok": 7,
         "plan": 7,
-        "secs": 1.1,
+        "secs": 1.49,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -110,7 +110,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 7,
-        "secs": 0.37,
+        "secs": 0.33,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -120,7 +120,7 @@
         "nok": 0,
         "ok": 7,
         "plan": 7,
-        "secs": 1.13,
+        "secs": 1.06,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -133,7 +133,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 2,
-        "secs": 0.36,
+        "secs": 0.32,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -143,7 +143,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 1.39,
+        "secs": 1.45,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -156,7 +156,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 2,
-        "secs": 0.31,
+        "secs": 0.32,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -166,7 +166,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 1.51,
+        "secs": 1.34,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -189,7 +189,7 @@
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 1.89,
+        "secs": 1.91,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -202,7 +202,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.08,
+        "secs": 0.1,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -212,7 +212,7 @@
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 1.9,
+        "secs": 2.04,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -225,7 +225,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 11,
-        "secs": 0.28,
+        "secs": 0.32,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -235,7 +235,7 @@
         "nok": 0,
         "ok": 11,
         "plan": 11,
-        "secs": 1.33,
+        "secs": 1.4,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -248,7 +248,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 11,
-        "secs": 0.39,
+        "secs": 0.4,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -258,7 +258,30 @@
         "nok": 0,
         "ok": 11,
         "plan": 11,
-        "secs": 1.33,
+        "secs": 1.38,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "No such method 'get_attribute_for_usage' for invocant of type 'Perl6::Metamodel::ClassHOW'",
+        "nok": 0,
+        "ok": 0,
+        "plan": 1,
+        "secs": 0.3,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/015-triggers.custom.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 1.42,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -276,35 +299,12 @@
         "todo": 0,
         "verdict": "die"
       },
-      "path": "t/015-triggers.custom.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 1,
-        "plan": 1,
-        "secs": 1.4,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "No such method 'get_attribute_for_usage' for invocant of type 'Perl6::Metamodel::ClassHOW'",
-        "nok": 0,
-        "ok": 0,
-        "plan": 1,
-        "secs": 0.35,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
       "path": "t/015-triggers.rakutest",
       "raku": {
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 1.54,
+        "secs": 1.31,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -317,7 +317,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 15,
-        "secs": 0.39,
+        "secs": 0.3,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -327,7 +327,7 @@
         "nok": 0,
         "ok": 15,
         "plan": 15,
-        "secs": 1.54,
+        "secs": 1.41,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -340,7 +340,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 15,
-        "secs": 0.32,
+        "secs": 0.42,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -363,7 +363,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 5,
-        "secs": 0.73,
+        "secs": 0.56,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -373,7 +373,7 @@
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 2.63,
+        "secs": 2.54,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -386,7 +386,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 5,
-        "secs": 0.64,
+        "secs": 0.47,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -396,7 +396,7 @@
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 2.45,
+        "secs": 2.36,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -409,7 +409,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 7,
-        "secs": 0.38,
+        "secs": 0.33,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -419,7 +419,7 @@
         "nok": 0,
         "ok": 7,
         "plan": 7,
-        "secs": 2.66,
+        "secs": 2.71,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -432,7 +432,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 7,
-        "secs": 0.37,
+        "secs": 0.29,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -442,7 +442,7 @@
         "nok": 0,
         "ok": 7,
         "plan": 7,
-        "secs": 2.81,
+        "secs": 2.75,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -455,7 +455,7 @@
         "nok": 2,
         "ok": 0,
         "plan": 4,
-        "secs": 0.44,
+        "secs": 0.4,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -465,7 +465,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 1.74,
+        "secs": 1.45,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -488,7 +488,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 1.39,
+        "secs": 1.58,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -501,7 +501,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 8,
-        "secs": 0.31,
+        "secs": 0.29,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -511,53 +511,7 @@
         "nok": 0,
         "ok": 8,
         "plan": 8,
-        "secs": 1.23,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "No such method 'get_attribute_for_usage' for invocant of type 'Perl6::Metamodel::ClassHOW'",
-        "nok": 0,
-        "ok": 0,
-        "plan": 8,
-        "secs": 0.37,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/050-multi-filter.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 8,
-        "plan": 8,
-        "secs": 1.28,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "No such method 'get_attribute_for_usage' for invocant of type 'Perl6::Metamodel::ClassHOW'",
-        "nok": 0,
-        "ok": 0,
-        "plan": 8,
-        "secs": 0.46,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/060-composer.custom.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 8,
-        "plan": 8,
-        "secs": 1.41,
+        "secs": 1.34,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -575,12 +529,81 @@
         "todo": 0,
         "verdict": "die"
       },
-      "path": "t/060-composer.rakutest",
+      "path": "t/050-multi-filter.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 8,
+        "plan": 8,
+        "secs": 1.21,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "No such method 'get_attribute_for_usage' for invocant of type 'Perl6::Metamodel::ClassHOW'",
+        "nok": 0,
+        "ok": 0,
+        "plan": 8,
+        "secs": 0.3,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/060-composer.custom.rakutest",
       "raku": {
         "nok": 0,
         "ok": 8,
         "plan": 8,
         "secs": 1.4,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "No such method 'get_attribute_for_usage' for invocant of type 'Perl6::Metamodel::ClassHOW'",
+        "nok": 0,
+        "ok": 0,
+        "plan": 8,
+        "secs": 0.29,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/060-composer.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 8,
+        "plan": 8,
+        "secs": 1.44,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "No such method 'get_attribute_for_usage' for invocant of type 'Perl6::Metamodel::ClassHOW'",
+        "nok": 0,
+        "ok": 0,
+        "plan": 3,
+        "secs": 0.31,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/070-typecheck-coerce.custom.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 1.79,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -598,35 +621,12 @@
         "todo": 0,
         "verdict": "die"
       },
-      "path": "t/070-typecheck-coerce.custom.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 3,
-        "plan": 3,
-        "secs": 1.67,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "No such method 'get_attribute_for_usage' for invocant of type 'Perl6::Metamodel::ClassHOW'",
-        "nok": 0,
-        "ok": 0,
-        "plan": 3,
-        "secs": 0.34,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
       "path": "t/070-typecheck-coerce.rakutest",
       "raku": {
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 1.6,
+        "secs": 1.55,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -639,7 +639,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 2,
-        "secs": 0.36,
+        "secs": 0.32,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -649,7 +649,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 1.5,
+        "secs": 1.76,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -662,7 +662,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 2,
-        "secs": 0.45,
+        "secs": 0.28,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -672,7 +672,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 1.56,
+        "secs": 1.62,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -685,7 +685,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 2,
-        "secs": 0.38,
+        "secs": 0.3,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -695,7 +695,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 22.14,
+        "secs": 21.23,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -708,7 +708,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 2,
-        "secs": 0.33,
+        "secs": 0.3,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -718,7 +718,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 22.35,
+        "secs": 21.09,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -731,7 +731,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.13,
+        "secs": 0.08,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -741,7 +741,7 @@
         "nok": 0,
         "ok": 16,
         "plan": 16,
-        "secs": 1.34,
+        "secs": 1.49,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -754,7 +754,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.15,
+        "secs": 0.1,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -764,7 +764,7 @@
         "nok": 0,
         "ok": 16,
         "plan": 16,
-        "secs": 1.42,
+        "secs": 1.51,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -777,7 +777,7 @@
         "nok": 1,
         "ok": 0,
         "plan": 1,
-        "secs": 0.36,
+        "secs": 0.33,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -787,7 +787,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 1.0,
+        "secs": 1.23,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -800,7 +800,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 9,
-        "secs": 0.28,
+        "secs": 0.31,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -810,7 +810,7 @@
         "nok": 0,
         "ok": 9,
         "plan": 9,
-        "secs": 1.02,
+        "secs": 1.19,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -828,10 +828,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-23",
+    "date": "2026-09-24",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "910f926",
+    "mutsu_commit": "338f021",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",

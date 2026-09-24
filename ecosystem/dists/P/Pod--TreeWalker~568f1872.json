@@ -3,20 +3,7 @@
   "deps": {
     "bundled_would_supply": [],
     "mode": "flat-closure",
-    "resolved": [
-      "Array::Agnostic",
-      "Code::Coverable",
-      "Code::Coverage",
-      "ForwardIterables",
-      "Identity::Utils",
-      "List::Agnostic",
-      "META::constants",
-      "META::verauthapi",
-      "MoarVM::Bytecode",
-      "String::Utils",
-      "Test::Coverage",
-      "paths"
-    ],
+    "resolved": [],
     "unresolved": []
   },
   "dist": "Pod::TreeWalker",
@@ -28,7 +15,7 @@
         "nok": 1,
         "ok": 8,
         "plan": 9,
-        "secs": 0.37,
+        "secs": 0.18,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -38,7 +25,7 @@
         "nok": 0,
         "ok": 9,
         "plan": 9,
-        "secs": 5.88,
+        "secs": 3.43,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -51,7 +38,7 @@
         "nok": 1,
         "ok": 0,
         "plan": 1,
-        "secs": 0.22,
+        "secs": 0.18,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -61,7 +48,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 1.07,
+        "secs": 0.56,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -73,7 +60,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.2,
+        "secs": 0.13,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -83,7 +70,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 1.2,
+        "secs": 0.6,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -96,7 +83,7 @@
         "nok": 1,
         "ok": 5,
         "plan": 6,
-        "secs": 0.5,
+        "secs": 0.21,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -106,7 +93,7 @@
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 1.83,
+        "secs": 1.06,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -118,7 +105,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.22,
+        "secs": 0.14,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -128,7 +115,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 1.3,
+        "secs": 0.64,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -141,10 +128,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-23",
+    "date": "2026-09-24",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "910f926",
+    "mutsu_commit": "338f021",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -153,7 +140,7 @@
   "schema": 1,
   "source": {
     "index": "fez",
-    "url": "https://360.zef.pm/P/OD/POD_TREEWALKER/32c216da28e177e61eed61946253a28514e5410a.tar.gz"
+    "url": "https://360.zef.pm/P/OD/POD_TREEWALKER/89361d1fa72fd271d96bd5856caf6cfa8456784c.tar.gz"
   },
   "status": "partial",
   "totals": {
@@ -163,5 +150,5 @@
     "parity_files": 2,
     "regressed_files": 3
   },
-  "version": "0.0.6"
+  "version": "0.0.7"
 }
