@@ -2805,7 +2805,24 @@ impl Interpreter {
             && !code.needs_env_sync.get(idx).copied().unwrap_or(true)
             && !crate::opcode::reflective_name_access_possible()
             && Self::term_symbol_from_name(name).is_none();
-        if (is_bind || is_constant) && name.starts_with('@') {
+        // A rebind (`$a := EXPR`) replaces the name's binding, so the env entry
+        // must stop naming the container it was bound to before. When that
+        // entry is a shared `ContainerRef` cell (left by an earlier
+        // `my $f := $a`, which put `$a` and `$f` in one cell), every by-name
+        // env write would otherwise store the NEW value *through* that old
+        // cell, re-binding `$f` along with `$a` (#9207). Replace the entry
+        // outright instead of writing through it.
+        let rebind_detaches_env_cell = is_rebind
+            && !is_bind
+            && !val.is_container_ref()
+            && !name.starts_with('&')
+            && matches!(
+                self.env().get(name).map(Value::view),
+                Some(ValueView::ContainerRef(_))
+            );
+        if rebind_detaches_env_cell {
+            self.env_mut().insert(name.to_string(), val.clone());
+        } else if (is_bind || is_constant) && name.starts_with('@') {
             // For `:=` bind and `constant @x`, bypass set_shared_var's
             // List->Array normalization so the container type is preserved.
             self.env_mut().insert(name.to_string(), val.clone());
