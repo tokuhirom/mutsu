@@ -194,6 +194,29 @@ pub(crate) fn decode_bytes_with_encoding_label(
     Some(decode_bytes_with_builtin_encoding(bytes, &normalized))
 }
 
+/// ADR-0118 §2.4's one decoder, applied to an IO handle's text read in its
+/// default UTF-8 mode (`.get`, `.lines`, `.slurp`, `.readchars` to EOF, ...):
+/// strict (invalid UTF-8 dies, as rakudo's decoder does, instead of turning
+/// into U+FFFD) and NFC-normalized. The caller hands it a whole record or the
+/// rest of the stream, so it always ends on a code point boundary (#9226).
+// Cost: O(n), n = bytes.
+pub(crate) fn decode_utf8_handle_text(bytes: &[u8]) -> Result<String, RuntimeError> {
+    decode_bytes_with_builtin_encoding(bytes, "utf-8")
+}
+
+/// One code point's bytes read off a UTF-8 handle (`read_utf8_char`): strict
+/// like [`decode_utf8_handle_text`], but neither NFC-normalized nor BOM-stripped
+/// -- a per-code-point reader seeks back by the decoded length, and
+/// normalization belongs to the assembled grapheme, which its caller
+/// normalizes.
+// Cost: O(n), n = bytes (at most 4).
+pub(crate) fn decode_utf8_code_point(bytes: &[u8]) -> Result<String, RuntimeError> {
+    match std::str::from_utf8(bytes) {
+        Ok(s) => Ok(s.to_string()),
+        Err(_) => decode_bytes_unnormalized(bytes, "utf-8"),
+    }
+}
+
 /// True when the label names a single-byte encoding, i.e. one where every byte
 /// is a complete character. A streaming decoder can hand back its whole buffer
 /// for these instead of holding an incomplete-sequence tail as it must for UTF-8.

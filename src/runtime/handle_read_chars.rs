@@ -35,7 +35,7 @@ impl Interpreter {
             bytes.extend_from_slice(&rest[..total]);
         }
 
-        Ok(Some(String::from_utf8_lossy(&bytes).to_string()))
+        crate::builtins::decode_utf8_code_point(&bytes).map(Some)
     }
 
     /// Read one character from a `utf8-c8` (UTF-8 Clean-8) stream. Valid UTF-8
@@ -190,7 +190,7 @@ impl Interpreter {
                             };
                             out.push_str(&ch);
                         }
-                        Ok(out)
+                        Ok(crate::builtins::nfc(out))
                     } else {
                         let mut bytes = Vec::new();
                         stdin
@@ -198,7 +198,7 @@ impl Interpreter {
                             .map_err(|err| RuntimeError::new(format!("Failed to read: {}", err)))?;
                         // Reading to the end consumed the whole stream.
                         state.stream_hit_eof = true;
-                        Ok(String::from_utf8_lossy(&bytes).to_string())
+                        crate::builtins::decode_utf8_handle_text(&bytes)
                     }
                 }
                 IoHandleTarget::ArgFiles => Ok(String::new()),
@@ -278,7 +278,11 @@ impl Interpreter {
                             };
                             out.push_str(&ch);
                         }
-                        Ok(out)
+                        Ok(if is_c8 {
+                            out
+                        } else {
+                            crate::builtins::nfc(out)
+                        })
                     } else if encoding == "utf8-c8" {
                         let mut bytes = Vec::new();
                         file.read_to_end(&mut bytes)
@@ -288,7 +292,7 @@ impl Interpreter {
                         let mut bytes = Vec::new();
                         file.read_to_end(&mut bytes)
                             .map_err(|err| RuntimeError::new(format!("Failed to read: {}", err)))?;
-                        Ok(String::from_utf8_lossy(&bytes).to_string())
+                        crate::builtins::decode_utf8_handle_text(&bytes)
                     }
                 }
                 IoHandleTarget::Socket => {
@@ -307,12 +311,12 @@ impl Interpreter {
                             };
                             out.push_str(&ch);
                         }
-                        Ok(out)
+                        Ok(crate::builtins::nfc(out))
                     } else {
                         let mut bytes = Vec::new();
                         sock.read_to_end(&mut bytes)
                             .map_err(|err| RuntimeError::new(format!("Failed to read: {}", err)))?;
-                        Ok(String::from_utf8_lossy(&bytes).to_string())
+                        crate::builtins::decode_utf8_handle_text(&bytes)
                     }
                 }
             }
@@ -377,7 +381,9 @@ impl Interpreter {
             }
             // `\r\n` is a single grapheme cluster, so the requested cluster count
             // is preserved when the text-mode decode normalizes it to "\n".
-            Ok(Some(crate::runtime::utils::translate_nl_in(out)))
+            Ok(Some(crate::runtime::utils::translate_nl_in(
+                crate::builtins::nfc(out),
+            )))
         })
     }
 }

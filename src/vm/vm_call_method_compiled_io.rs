@@ -217,7 +217,7 @@ impl Interpreter {
             }
             bytes.extend(nb);
         }
-        Ok(Some(String::from_utf8_lossy(&bytes).into_owned()))
+        crate::builtins::decode_utf8_code_point(&bytes).map(Some)
     }
 
     /// Dispatch high-level `IO::Handle` methods on a USER SUBCLASS that overrides
@@ -407,13 +407,13 @@ impl Interpreter {
                         Ok(b) => b,
                         Err(e) => return Some(Err(e)),
                     };
-                    return Some(Ok(Value::str(String::from_utf8_lossy(&bytes).into_owned())));
+                    return Some(crate::builtins::decode_utf8_handle_text(&bytes).map(Value::str));
                 }
                 "get" => {
                     let seps = Self::user_io_line_separators(target);
                     return Some(match self.read_user_io_line(target, &seps) {
                         Ok(Some(line)) => {
-                            Ok(Value::str(String::from_utf8_lossy(&line).into_owned()))
+                            crate::builtins::decode_utf8_handle_text(&line).map(Value::str)
                         }
                         Ok(None) => Ok(Value::NIL),
                         Err(e) => Err(e),
@@ -421,7 +421,7 @@ impl Interpreter {
                 }
                 "getc" => {
                     return Some(match self.read_user_io_char(target) {
-                        Ok(Some(c)) => Ok(Value::str(c)),
+                        Ok(Some(c)) => Ok(Value::str(crate::builtins::nfc(c))),
                         Ok(None) => Ok(Value::NIL),
                         Err(e) => Err(e),
                     });
@@ -448,16 +448,18 @@ impl Interpreter {
                             Err(e) => return Some(Err(e)),
                         }
                     }
-                    return Some(Ok(Value::str(s)));
+                    return Some(Ok(Value::str(crate::builtins::nfc(s))));
                 }
                 "lines" => {
                     let seps = Self::user_io_line_separators(target);
                     let mut out = Vec::new();
                     loop {
                         match self.read_user_io_line(target, &seps) {
-                            Ok(Some(line)) => {
-                                out.push(Value::str(String::from_utf8_lossy(&line).into_owned()))
-                            }
+                            Ok(Some(line)) => match crate::builtins::decode_utf8_handle_text(&line)
+                            {
+                                Ok(text) => out.push(Value::str(text)),
+                                Err(e) => return Some(Err(e)),
+                            },
                             Ok(None) => break,
                             Err(e) => return Some(Err(e)),
                         }
@@ -472,7 +474,10 @@ impl Interpreter {
                         Ok(b) => b,
                         Err(e) => return Some(Err(e)),
                     };
-                    let text = Value::str(String::from_utf8_lossy(&bytes).into_owned());
+                    let text = match crate::builtins::decode_utf8_handle_text(&bytes) {
+                        Ok(text) => Value::str(text),
+                        Err(e) => return Some(Err(e)),
+                    };
                     return Some(self.call_method_with_values(text, method, args.to_vec()));
                 }
                 _ => {}

@@ -48,7 +48,7 @@ impl Interpreter {
     ) -> Result<Option<String>, RuntimeError> {
         match Self::read_record_bytes(reader, separators, chomp)? {
             Some(buffer) => {
-                let s = String::from_utf8_lossy(&buffer).to_string();
+                let s = crate::builtins::decode_utf8_handle_text(&buffer)?;
                 // Raku text-mode reads normalize the CR-LF grapheme to a single
                 // "\n" (universal newline / NFG), even when CR-LF is not itself
                 // the line separator (e.g. reading "6\r\n" with `nl-in => "♥"`
