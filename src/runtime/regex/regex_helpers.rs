@@ -1338,9 +1338,19 @@ pub(crate) fn grapheme_end(chars: &[char], pos: usize) -> usize {
     }
     let mut end = pos + 1;
     let mut saw_linker = false;
+    let mut saw_spacing_mark = false;
     while end < chars.len() && is_combining_mark(chars[end]) {
         saw_linker |= is_conjunct_linker(chars[end]);
+        saw_spacing_mark |= is_spacing_mark(chars[end]);
         end += 1;
+    }
+    // A spacing mark (`Mc`) extends its cluster only when UAX #29 lists it as
+    // `SpacingMark`; about thirty (U+102B, U+1038, U+1062..U+1064, ...) are
+    // excluded and start a cluster of their own, so `"x\x[102B]".chars` is 2
+    // and `/x>>/` matches it. Let the real segmentation decide, as `.chars`
+    // does, rather than swallowing every `M*` codepoint.
+    if saw_spacing_mark {
+        return uax29_grapheme_end(chars, pos);
     }
     if saw_linker && end < chars.len() {
         // An Indic virama does not end its cluster: UAX #29's GB9c joins the
@@ -1351,6 +1361,12 @@ pub(crate) fn grapheme_end(chars: &[char], pos: usize) -> usize {
         return uax29_grapheme_end(chars, pos);
     }
     end
+}
+
+/// True for a General_Category `Mc` codepoint.
+fn is_spacing_mark(c: char) -> bool {
+    crate::builtins::unicode_gc::general_category(c)
+        == crate::builtins::unicode_gc::GeneralCategory::Mc
 }
 
 /// True for an Indic virama / conjunct linker — canonical combining class 9.
