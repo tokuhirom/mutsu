@@ -99,7 +99,7 @@ same bytes could disagree.
 
 `t/types/buf-decode-one-decoder-parity.t` pins 11 rows.
 
-Out of scope, and filed separately: the IO *handle* read paths (`.get`, `.readchars`, native
+Out of scope, filed as #9226: the IO *handle* read paths (`.get`, `.readchars`, native
 `.slurp` on a handle) still decode with `String::from_utf8_lossy` directly, 34 sites in all.
 
 ## 3. Consequences

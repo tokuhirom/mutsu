@@ -23,4 +23,4 @@ normalizes the result. `nqp::decode` calls the builtin decoder too. `slurp`, `li
 now NFC-normalize in their shared UTF-8 post-processing.
 
 `t/types/buf-decode-one-decoder-parity.t` pins 11 rows. The IO *handle* read paths still decode
-with `String::from_utf8_lossy` directly and are tracked separately.
+with `String::from_utf8_lossy` directly and are tracked in #9226.
