@@ -1380,6 +1380,88 @@ impl Interpreter {
             ));
         }
 
+        // CompUnit::Loader.load-source-file(path) -- load a source file in the
+        // current interpreter, preserving the caller's dynamic environment.
+        // Test::Script uses this to run a helper script while redirecting
+        // $*OUT/$*ERR and then reads the resulting globalish package.
+        if method == "load-source-file"
+            && matches!(target.view(), ValueView::Package(name) if name.resolve() == "CompUnit::Loader")
+        {
+            let path = args
+                .first()
+                .and_then(|value| match value.view() {
+                    ValueView::Instance {
+                        class_name,
+                        attributes,
+                        ..
+                    } if class_name.resolve() == "IO::Path"
+                        || class_name.resolve().starts_with("IO::Path::") =>
+                    {
+                        let attributes = attributes.as_map();
+                        let path = attributes
+                            .get("path")
+                            .map(Value::to_string_value)
+                            .unwrap_or_default();
+                        Some(self.resolve_io_path_buf(&attributes, &path))
+                    }
+                    _ => None,
+                })
+                .ok_or_else(|| {
+                    RuntimeError::new(
+                        "CompUnit::Loader.load-source-file expects an IO::Path argument",
+                    )
+                })?;
+            let code = std::fs::read_to_string(&path).map_err(|err| {
+                RuntimeError::new(format!(
+                    "Failed to load source file '{}': {}",
+                    path.display(),
+                    err
+                ))
+            })?;
+            let saved_source_file =
+                crate::parser::set_parser_source_file(Some(path.to_string_lossy().to_string()));
+            let saved_package = self.current_package_sym();
+            self.set_current_package_with_sym(
+                "GLOBAL".to_string(),
+                crate::symbol::Symbol::intern("GLOBAL"),
+            );
+            let result = (|| {
+                let (stmts, _) = crate::parser::parse_program(&code).map_err(|err| {
+                    RuntimeError::new(format!(
+                        "Parse error in source file {}: {}",
+                        path.display(),
+                        err.message
+                    ))
+                })?;
+                self.check_undeclared_routines_mainline(&stmts)?;
+                let registry_snapshot = self.snapshot_routine_registry();
+                self.preregister_top_level_subs(&stmts)?;
+                let run_result = self.run_block(&stmts);
+                if let Err(err) = run_result {
+                    self.restore_routine_registry_eval(registry_snapshot);
+                    return Err(err);
+                }
+                let dispatch_result = self.dispatch_main(&crate::opcode::CompiledFns::default());
+                self.restore_routine_registry_eval(registry_snapshot);
+                dispatch_result
+            })();
+            self.set_current_package_with_sym(saved_package.as_str().to_owned(), saved_package);
+            crate::parser::set_parser_source_file(saved_source_file);
+            result?;
+
+            let mut unit_hash = ValueMap::default();
+            unit_hash.insert(
+                "$?PACKAGE".to_string(),
+                Value::package(crate::symbol::Symbol::intern("GLOBAL")),
+            );
+            let mut handle_attrs = ValueMap::default();
+            handle_attrs.insert("unit".to_string(), Value::hash(unit_hash));
+            return Ok(Value::make_instance(
+                crate::symbol::Symbol::intern("CompUnit::Handle"),
+                handle_attrs,
+            ));
+        }
+
         // Junction auto-threading
         if Self::should_autothread_method(method)
             && let ValueView::Junction { kind, values } = target.view()

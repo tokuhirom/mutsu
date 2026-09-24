@@ -645,43 +645,6 @@ impl Interpreter {
         None
     }
 
-    /// Mutable counterpart of [`Self::lookup_in_package_chain`] — same walk,
-    /// `&mut V` result. Used by the write chokepoints (ADR-0039 slice 1's
-    /// `env_root_descended_mut`) that need to mutate the entry a container
-    /// lexical resolves to in place rather than merely read it.
-    pub(crate) fn lookup_in_package_chain_mut<'a, V>(
-        table: &'a mut crate::runtime::PackageKeyed<V>,
-        owner: &str,
-        name: &str,
-    ) -> Option<&'a mut V> {
-        if !table.contains_name(name) {
-            return None;
-        }
-        // Which tier owns the entry is decided with immutable probes over
-        // subslices of `owner` (which borrows nothing from `table`), so the
-        // walk needs no per-tier `String`. The single mutable borrow is the
-        // `get_value_mut` below — deliberately NOT `get_mut`, which would go
-        // through `DerefMut` and drop the name cache on a path that only ever
-        // overwrites an existing entry's value. This is the container-write
-        // chokepoint (`unit_lexical_slot_mut`), so it runs on every element
-        // assignment; invalidating there would make the read side rebuild the
-        // cache on the very next free-variable read.
-        let mut pkg: &str = owner;
-        let target = loop {
-            if table
-                .get(pkg)
-                .is_some_and(|entries| entries.contains_key(name))
-            {
-                break Some(pkg);
-            }
-            match crate::runtime::utils::rsplit_once_double_colon(pkg) {
-                Some((parent, _)) => pkg = parent,
-                None => break None,
-            }
-        };
-        table.get_value_mut(target?, name)
-    }
-
     /// [`Self::module_scope_lexical`] anchored at an explicit owner package
     /// instead of the running frame: the file-scope name a module declared,
     /// looked up from `owner`'s `::` chain. Used where the reader knows which
@@ -1023,14 +986,19 @@ impl Interpreter {
             return name.to_string();
         }
         // The declaring class's shell is not necessarily published yet while
-        // its body is registering methods.  Still recognize its own short
-        // name (including a core name such as `Label`) as a self-reference.
+        // its body is registering methods. Still recognize its own short name
+        // (including a core name such as `Label`) as a self-reference. A
+        // package can have the same leaf name as a nested type, though:
+        // `unit module Test::Script` may declare `subset Script`, whose
+        // identity is `Test::Script::Script`. Prefer that nested declaration
+        // over mistaking the module package itself for the type.
         // A compound declared name such as `class Grault::Supply` is the
         // exception: its `Grault` prefix is not a lexical scope, so bare
         // `Supply` inside the body still means the core type rather than the
         // class itself.
         let is_compound_declared = self.compound_name_segment_is_not_a_scope(owner);
         if !is_compound_declared
+            && self.has_type_direct(owner)
             && (owner.rsplit_once("::").map(|(_, last)| last == name) == Some(true)
                 || owner == name)
         {
