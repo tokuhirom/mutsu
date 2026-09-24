@@ -19,18 +19,40 @@ use crate::token_kind::MetaAssignIdentity;
 
 impl Interpreter {
     /// Execute `$local ~= <rhs>` with the RHS already on the stack.
-    // Cost: amortized O(m) on the in-place path, m = chars of the RHS; O(n + m) on
-    // the fallback (a slot mirrored to env -- e.g. one captured by a closure or
-    // declared inside `given`/`when` -- a container, or a non-Str side), n =
-    // chars already accumulated, with a full NFC pass when the result is not
-    // ASCII. Rakudo: amortized O(m) -- see #9141.
+    // Cost: amortized O(m) on the in-place path, m = chars of the RHS (including a
+    // slot mirrored to env, e.g. one declared inside `given`/`when`); O(n + m) on
+    // the fallback (a slot holding a shared cell -- one captured by a closure --
+    // a Proxy, a still-shared string, or a non-Str side), n = chars already
+    // accumulated. Rakudo: amortized O(m) -- see #9209.
     pub(super) fn exec_concat_assign_local_op(
         &mut self,
         code: &CompiledCode,
         slot: u32,
     ) -> Result<(), RuntimeError> {
+        self.exec_concat_local_op(code, slot, true)
+    }
+
+    /// Execute `$local = $local ~ <rhs>` with the RHS already on the stack
+    /// (#9141). Identical to [`Self::exec_concat_assign_local_op`] except that
+    /// the general path does not seed an undefined LHS with `''`: a literal
+    /// `~` warns on it, as the unfused sequence did.
+    // Cost: as exec_concat_assign_local_op.
+    pub(super) fn exec_concat_reassign_local_op(
+        &mut self,
+        code: &CompiledCode,
+        slot: u32,
+    ) -> Result<(), RuntimeError> {
+        self.exec_concat_local_op(code, slot, false)
+    }
+
+    fn exec_concat_local_op(
+        &mut self,
+        code: &CompiledCode,
+        slot: u32,
+        seed: bool,
+    ) -> Result<(), RuntimeError> {
         let rhs = self.stack.pop().unwrap_or(Value::NIL);
-        if self.try_concat_assign_local_in_place(code, slot as usize, &rhs) {
+        if self.try_concat_assign_local_in_place(code, slot as usize, &rhs)? {
             self.publish_state_local(code, slot);
             return Ok(());
         }
@@ -40,7 +62,9 @@ impl Interpreter {
         // needing the identity seed, a `.Stringy` operand, a junction) behaves
         // as it always did.
         self.exec_get_local_op(code, slot)?;
-        self.exec_meta_assign_identity_op(MetaAssignIdentity::EmptyStr)?;
+        if seed {
+            self.exec_meta_assign_identity_op(MetaAssignIdentity::EmptyStr)?;
+        }
         self.stack.push(rhs);
         self.exec_concat_op()?;
         self.exec_set_local_op(code, slot)?;
@@ -65,9 +89,13 @@ impl Interpreter {
     ///   a CJK ideograph, a composed `é`); when it can — `"e" ~= "\x[301]"`
     ///   must yield a single `é` — only a bounded window around the join is
     ///   renormalized.
-    /// - **No env mirror.** A slot that syncs to env is held twice, so the
-    ///   append would copy anyway — and, worse, writing only the slot would
-    ///   leave the mirror stale.
+    /// - **An env mirror is released too, and written back by the real
+    ///   store.** A slot that syncs to env (one captured by a closure, or
+    ///   declared inside `given`/`when`) holds its string twice, so the append
+    ///   would copy; the mirror must hold the very same allocation as the slot
+    ///   (anything else is a divergence this path does not reason about), is
+    ///   cleared alongside the slot for the append, and the result then goes
+    ///   through `exec_set_local_op`, which updates both halves (#9141).
     /// - **The ordinary scalar store's own metadata gates**, asked through the
     ///   one predicate that owns that list
     ///   (`set_local_scalar_fast_metadata_clear`), because writing the slot
@@ -77,42 +105,55 @@ impl Interpreter {
         code: &CompiledCode,
         idx: usize,
         rhs: &Value,
-    ) -> bool {
+    ) -> Result<bool, RuntimeError> {
         let ValueView::Str(suffix) = rhs.view() else {
-            return false;
+            return Ok(false);
         };
         let Some(current) = self.locals.get(idx) else {
-            return false;
+            return Ok(false);
         };
         if !matches!(current.view(), ValueView::Str(_)) || !current.is_plain_scalar_store_slot() {
-            return false;
+            return Ok(false);
         }
-        if code.needs_env_sync.get(idx).copied().unwrap_or(true)
-            || crate::opcode::reflective_name_access_possible()
-        {
-            return false;
+        if crate::opcode::reflective_name_access_possible() {
+            return Ok(false);
         }
+        let mirrored = code.needs_env_sync.get(idx).copied().unwrap_or(true);
         if !self.set_local_scalar_fast_metadata_clear(code, idx) {
-            return false;
+            return Ok(false);
         }
         // The one probe that is not a latch: a shared cell or Proxy parked in
         // env under this name, which an ordinary store would write *through*.
         let name = &code.locals[idx];
         let name_sym = code.locals_sym.get(idx).copied();
-        if self
-            .env()
-            .get_for(name, name_sym)
-            .is_some_and(|v| v.is_container_ref() || v.is_proxy_value())
-        {
-            return false;
+        let env_entry = self.env().get_for(name, name_sym);
+        if env_entry.is_some_and(|v| v.is_container_ref() || v.is_proxy_value()) {
+            return Ok(false);
         }
+        let mirror_sym = if mirrored {
+            match (name_sym, env_entry) {
+                (Some(sym), Some(v)) if v.same_binding(current) => Some(sym),
+                _ => return Ok(false),
+            }
+        } else {
+            None
+        };
         // -- committed --
         // Moving the value out is what makes the buffer unique; cloning it
         // here would defeat the whole opcode. `Value::NIL` is never observable
-        // in the slot: nothing runs between the take and the store.
+        // in the slot (or its mirror): nothing runs between the take and the
+        // store.
         let plan = crate::value::StrAppendPlan::for_suffix(suffix.as_str());
         let lhs = std::mem::replace(&mut self.locals[idx], Value::NIL);
-        self.locals[idx] = lhs.str_appended_nfc(&plan);
-        true
+        let Some(sym) = mirror_sym else {
+            self.locals[idx] = lhs.str_appended_nfc(&plan);
+            return Ok(true);
+        };
+        if let Some(entry) = self.env_mut().get_mut_sym(sym) {
+            *entry = Value::NIL;
+        }
+        self.stack.push(lhs.str_appended_nfc(&plan));
+        self.exec_set_local_op(code, idx as u32)?;
+        Ok(true)
     }
 }

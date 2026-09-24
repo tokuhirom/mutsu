@@ -473,7 +473,8 @@ impl Interpreter {
     }
 
     // Cost: O(n * c), n = chars of the left operand, c = repeat count (plus an NFC
-    // pass over the whole result when it is not ASCII). Rakudo: O(1) for a flat
+    // pass over the whole result only when a copy can compose with the one before
+    // it -- a leading combining mark, or a non-NFC operand). Rakudo: O(1) for a flat
     // operand (one repeat strand) -- see #9147.
     pub(super) fn exec_string_repeat_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
@@ -550,7 +551,18 @@ impl Interpreter {
         // a concatenation of valid UTF-8 strings is valid UTF-8. Skipping the
         // validation scan matters at this size (multi-GiB).
         let repeated = unsafe { String::from_utf8_unchecked(buf) };
-        let result = if repeated.is_ascii() {
+        // NFC is local: when `src` is itself NFC and starts at a normalization
+        // boundary, no copy can compose or reorder with the one before it, so
+        // the repetition is already NFC. Deciding that reads `src` once
+        // instead of renormalizing the whole (up to multi-GiB) result (#9141).
+        let src_repeats_as_nfc = src.is_ascii()
+            || (src
+                .chars()
+                .next()
+                .is_none_or(crate::value::has_nfc_boundary_before)
+                && unicode_normalization::is_nfc_quick(src.chars())
+                    == unicode_normalization::IsNormalized::Yes);
+        let result = if src_repeats_as_nfc {
             Value::str(repeated)
         } else {
             Value::str(repeated.nfc().collect::<String>())

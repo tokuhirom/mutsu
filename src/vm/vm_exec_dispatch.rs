@@ -2940,7 +2940,8 @@ impl Interpreter {
             }
 
             // -- String --
-            // Cost: O(n1 + n2) (see exec_concat_op). Rakudo: amortized O(1) (strands) -- see #9141.
+            // Cost: amortized O(n2) when the left Str is held by nothing else, else
+            // O(n1 + n2) (see exec_concat_op). Rakudo: amortized O(1) (strands) -- see #9209.
             OpCode::Concat => {
                 self.sync_source_line(code, *ip);
                 self.exec_concat_op()?;
@@ -4843,7 +4844,7 @@ impl Interpreter {
             }
             // -- String interpolation --
             // Cost: O(n), n = total chars of the parts (each is copied into one fresh String).
-            // Rakudo: O(parts) (strands) -- see #9141.
+            // Rakudo: O(parts) (strands) -- see #9209.
             OpCode::StringConcat(n) => {
                 self.sync_source_line(code, *ip);
                 self.exec_string_concat_op(*n)?;
@@ -5064,25 +5065,38 @@ impl Interpreter {
                 *ip += 1;
             }
             // Cost: O(1) for a single index/key; O(k) for a slice (see
-            // exec_index_assign_expr_named_op).
+            // exec_index_assign_expr_named_op). With `concat_append`, plus the
+            // append: amortized O(m) in place, m = chars of the RHS, or O(n + m)
+            // when the element's string is shared or a gate declines, n = chars
+            // already in the element (see exec_index_concat_append_op).
             OpCode::IndexAssignExprNamed {
                 name_idx,
                 is_positional,
                 index_first,
                 target_slot,
+                concat_append,
             } => {
-                if *index_first && self.stack.len() >= 2 {
-                    let top = self.stack.len() - 1;
-                    self.stack.swap(top, top - 1);
+                let appended_in_place = *concat_append
+                    && self.exec_index_concat_append_op(
+                        code,
+                        *name_idx,
+                        *is_positional,
+                        *target_slot,
+                    )?;
+                if !appended_in_place {
+                    if *index_first && self.stack.len() >= 2 {
+                        let top = self.stack.len() - 1;
+                        self.stack.swap(top, top - 1);
+                    }
+                    let pre = self.attr_elem_env_snapshot(code, *name_idx);
+                    self.exec_index_assign_expr_named_op(
+                        code,
+                        *name_idx,
+                        *is_positional,
+                        *target_slot,
+                    )?;
+                    self.mirror_attr_elem_env_to_cell(code, *name_idx, pre);
                 }
-                let pre = self.attr_elem_env_snapshot(code, *name_idx);
-                self.exec_index_assign_expr_named_op(
-                    code,
-                    *name_idx,
-                    *is_positional,
-                    *target_slot,
-                )?;
-                self.mirror_attr_elem_env_to_cell(code, *name_idx, pre);
                 *ip += 1;
             }
             // Cost: O(1) for a single index/key.
@@ -6398,13 +6412,17 @@ impl Interpreter {
                     })?;
                 *ip += 1;
             }
-            // Cost: amortized O(m) in place, O(n + m) on the copying fallback (see exec_concat_assign_local_op). Rakudo: amortized O(m) -- see #9141.
-            OpCode::ConcatAssignLocal(slot) => {
+            // Cost: amortized O(m) in place, O(n + m) on the copying fallback (see exec_concat_assign_local_op). Rakudo: amortized O(m) -- see #9209.
+            OpCode::ConcatAssignLocal(slot, seed) => {
                 // The line sync the `Concat` arm performs: a `.Stringy`
                 // dispatch or a failed coercion on the general path reports
                 // from this statement.
                 self.sync_source_line(code, *ip);
-                self.exec_concat_assign_local_op(code, *slot)?;
+                if *seed {
+                    self.exec_concat_assign_local_op(code, *slot)?;
+                } else {
+                    self.exec_concat_reassign_local_op(code, *slot)?;
+                }
                 *ip += 1;
             }
             // Cost: O(1).

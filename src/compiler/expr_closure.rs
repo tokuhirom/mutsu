@@ -938,6 +938,24 @@ impl Compiler {
             }
             let share_value = Self::element_share_bind_value(&name, index, value);
             self.compile_expr(index);
+            // `%h{$k} ~= rhs`: leave the element and the RHS unconcatenated so
+            // the store can append in place (#9141).
+            if share_value.is_none()
+                && let Some((seeded, rhs)) =
+                    Self::index_concat_append_parts(target, index, value, outer_positional)
+            {
+                self.compile_expr(seeded);
+                self.compile_expr(rhs);
+                let name_idx = self.code.add_constant(Value::str(name));
+                self.code.emit(OpCode::IndexAssignExprNamed {
+                    name_idx,
+                    is_positional: outer_positional,
+                    index_first: true,
+                    target_slot,
+                    concat_append: true,
+                });
+                return;
+            }
             match &share_value {
                 Some(bind_value) => self.compile_bind_index_value(bind_value),
                 None => self.compile_bind_index_value(value),
@@ -951,6 +969,7 @@ impl Compiler {
                 is_positional: outer_positional,
                 index_first: true,
                 target_slot,
+                concat_append: false,
             });
         } else if let Some((name, chain)) = Self::index_assign_deep_nested_target(target) {
             // Deep nested index assignment (3+ levels): @a[i][j][k]... = val
@@ -1040,6 +1059,7 @@ impl Compiler {
                 is_positional: outer_positional,
                 index_first: false,
                 target_slot,
+                concat_append: false,
             });
         } else if let Expr::ArrayLiteral(elements) = target {
             // List construction container assignment:
