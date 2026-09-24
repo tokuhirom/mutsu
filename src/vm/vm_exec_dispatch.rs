@@ -5186,7 +5186,8 @@ impl Interpreter {
                 self.exec_topic_dot_assign_op(code, *name_idx)?;
                 *ip += 1;
             }
-            // Cost: O(1) (locked read-modify-write).
+            // Cost: O(1) (locked read-modify-write) plus the base op's cost; `~=` of a
+            // Str appends in place, amortized O(m), m = chars of the RHS.
             OpCode::AtomicCompoundVar {
                 name_idx,
                 op,
@@ -6357,7 +6358,7 @@ impl Interpreter {
                     })?;
                 *ip += 1;
             }
-            // Cost: amortized O(m) in place, O(n + m) on the copying fallback (see exec_concat_assign_local_op). Rakudo: amortized O(m) -- see #9209.
+            // Cost: amortized O(m) in place, O(n + m) on the copying fallback (see exec_concat_assign_local_op).
             OpCode::ConcatAssignLocal(slot, seed) => {
                 // The line sync the `Concat` arm performs: a `.Stringy`
                 // dispatch or a failed coercion on the general path reports

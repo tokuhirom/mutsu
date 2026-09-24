@@ -125,13 +125,22 @@ impl Compiler {
         name: &str,
         expr: &Expr,
     ) -> bool {
-        let Some(&slot) = self.local_map.get(name) else {
-            return false;
-        };
+        // A private scalar attribute (`$!buf`, slot `!buf`) fuses too, inside a
+        // method (where `self` is a direct local and `compile_expr_var` reads
+        // the attribute through a lazily allocated slot): its in-place path
+        // moves the string out of both the slot and `self`'s attribute cell
+        // (#9209), and its general path is the unfused sequence.
+        let private_attr = name.len() > 1
+            && name.starts_with('!')
+            && !name.contains("::")
+            && self.local_map.contains_key("self");
         // A sigilless alias is not a container: its store suppresses
         // itemization through `MarkParamRawBindContext`, which this op does
         // not emit.
-        if self.sigilless_locals.contains(name) || !Self::is_plain_compound_target(name) {
+        if self.sigilless_locals.contains(name)
+            || !(Self::is_plain_compound_target(name) || private_attr)
+            || !(self.local_map.contains_key(name) || private_attr)
+        {
             return false;
         }
         let Expr::Binary { left, op, right } = expr else {
@@ -156,6 +165,7 @@ impl Compiler {
         if left_name != name {
             return false;
         }
+        let slot = self.alloc_local(name);
         // The RHS compiles exactly as the unfused `Binary` path compiles it (a
         // call-arg compile would itemize / escape-box a scalar operand).
         self.compile_expr(right);
