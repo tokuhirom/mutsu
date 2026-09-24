@@ -133,12 +133,13 @@ the "do NOT dismiss them as pre-existing" rule in `CLAUDE.md` applies in full.
 | File | Shape | Why |
 |---|---|---|
 | `roast/6.c/S32-io/file-tests.t` | `Failed: 4` — tests 6-8, 10 | runs as `uid 0` |
-| `roast/S16-filehandles/filetest.t` | `Failed: 25` — tests 57-64, 69-72, 77-80, and 101/103/105/107/109/111/117/121/125 | runs as `uid 0` |
+| `roast/S16-filehandles/filetest.t` | `Failed: 34` — tests 57-64, 69-72, 77-80, 101-112, 117-118, 121-122, 125-126 | runs as `uid 0` |
 | `roast/S16-io/eof.t` | exit 255, "planned 5 ran 1", `Failed to open '/proc/1/environ': Permission denied` | runs as `uid 0`, restricted `/proc` |
 | `roast/S32-io/IO-Socket-Async.t` | exit 124, "planned 40 ran 17" | sandboxed network |
 
 The first two are the same cause: both `chmod` a file and then assert `.r` / `.w` / `.x` is `False`,
-and **root bypasses the permission bits**, so every such assertion is `True`. Check with `id -u` —
+and **root bypasses the permission bits**, so every such assertion is `True`. (Since `d268bd55`, ADR-0118 §2.7, the `~~ :rw` / `~~ :rwx` smartmatch forms share
+the `.rw` / `.rwx` body, so their even-numbered twins fail for the same reason instead of passing.) Check with `id -u` —
 `0` means these cannot pass, no matter how correct the interpreter is. They pass in CI, which runs as
 an ordinary user.
 

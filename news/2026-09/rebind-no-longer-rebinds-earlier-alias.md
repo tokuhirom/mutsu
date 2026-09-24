@@ -16,6 +16,6 @@ for an assignment — and so replaced `$f`'s contents too. The plain-value case
 
 `exec_set_local_op_inner` now treats a rebind whose env entry is a shared cell
 as replacing that entry outright rather than writing through it. Pinned by
-`t/vm/binding/rebind-does-not-rebind-earlier-alias.t` (mainline, inside a sub,
+`t/vm/binding/bind-rebind-leaves-earlier-alias.t` (mainline, inside a sub,
 a plain-value rebind, a closure over the alias, and the write-through that a
 `my $f := $a` over a real Scalar container must still keep).
