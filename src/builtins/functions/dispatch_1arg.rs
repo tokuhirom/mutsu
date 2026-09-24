@@ -227,11 +227,9 @@ pub(crate) fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Val
         "wordcase" => Some(Ok(Value::str(crate::value::wordcase_str(
             &arg.to_string_value(),
         )))),
-        // Cost: O(n), n = chars of the argument (copied even when nothing is chomped).
-        // Rakudo: O(1) when nothing is chomped -- see #9147.
-        "chomp" => Some(Ok(Value::str(crate::builtins::chomp_one(
-            &arg.to_string_value(),
-        )))),
+        // Cost: O(1) when nothing is chomped (see chomp_value); O(n) otherwise, n =
+        // chars of the argument.
+        "chomp" => Some(Ok(crate::builtins::chomp_value(arg))),
         // Cost: O(n), n = chars of the argument (result copied).
         "chop" => {
             // Type objects (Package) should throw

@@ -420,6 +420,18 @@ pub(super) fn dispatch(
             _ => true,
         })))),
         "WHICH" => {
+            // A plain Str's identity is `Str|<text>`. The ValueObjAt keeps the
+            // invocant itself (shared) and renders that text only when it is
+            // read -- see `AttrMap::objat_which`.
+            // Cost: O(1) for a plain Str.
+            if target.as_str().is_some() {
+                let mut attrs = std::collections::HashMap::new();
+                attrs.insert(crate::value::OBJAT_STR_PAYLOAD.to_string(), target.clone());
+                return Some(Some(Ok(Value::make_instance(
+                    Symbol::intern("ValueObjAt"),
+                    attrs,
+                ))));
+            }
             // Determine if this is a value type (ValueObjAt) or reference type (ObjAt)
             let is_value_type = has_value_identity(target);
             let which_str = match target.view() {
@@ -438,8 +450,8 @@ pub(super) fn dispatch(
                 ValueView::Int(n) => format!("Int|{}", n),
                 ValueView::BigInt(n) => format!("Int|{}", *n),
                 ValueView::Num(n) => format!("Num|{}", n),
-                // Cost: O(n), n = chars of the invocant (formats a fresh key). Rakudo: O(1)
-                // -- see #9147.
+                // A Str subclass/mixin that reaches here (the plain Str took the
+                // shared-payload branch above). Cost: O(n), n = chars.
                 ValueView::Str(s) => format!("Str|{}", *s),
                 ValueView::Bool(b) => format!("Bool|{}", if b { 1 } else { 0 }),
                 ValueView::Rat(n, d) => format!("Rat|{}/{}", n, d),
@@ -682,10 +694,7 @@ pub(super) fn dispatch(
             // objects => distinct) without pinnable addresses.
             let which_str = match dispatch(target, "WHICH") {
                 Some(Some(Ok(objat))) => match objat.view() {
-                    ValueView::Instance { attributes, .. } => attributes
-                        .as_map()
-                        .get("WHICH")
-                        .map(|v| v.to_string_value()),
+                    ValueView::Instance { attributes, .. } => attributes.as_map().objat_which(),
                     _ => None,
                 },
                 _ => None,
@@ -765,8 +774,9 @@ pub(super) fn dispatch(
             ValueView::Regex(_)
             | ValueView::RegexWithAdverbs(..)
             | ValueView::Routine { is_regex: true, .. } => None,
-            // Cost: O(n) for a Str invocant, n = chars (the payload is copied, not
-            // shared). Rakudo: O(1) -- see #9147.
+            // Cost: O(1) for a plain Str invocant (the value is shared, not
+            // copied); O(n) otherwise, n = chars of the rendered string.
+            _ if target.as_str().is_some() => Some(Ok(target.clone())),
             _ => Some(Ok(Value::str(target.to_string_value()))),
         }),
         "Int" => {

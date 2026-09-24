@@ -665,6 +665,14 @@ impl Interpreter {
 
     pub(crate) fn exec_string_concat_op(&mut self, n: u32) -> Result<(), RuntimeError> {
         let n = n as usize;
+        // `"$s"` with a plain Str is the Str itself: share it (O(1), as in
+        // Rakudo) instead of copying it into a fresh buffer.
+        if n == 1
+            && let Some(top) = self.stack.last()
+            && top.as_str().is_some()
+        {
+            return Ok(());
+        }
         let start = self.stack.len() - n;
         let values: Vec<Value> = self.stack.drain(start..).collect();
         // Slice F: a user `.Str`/`.Stringy` method run during interpolation can

@@ -390,7 +390,7 @@ impl Interpreter {
         target: Value,
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
-        let text = target.to_string_value();
+        let text = target.string_value_cow();
 
         // Separate positional args from named ones. `.comb` declares only
         // `:match`; every other named is swallowed by the implicit `*%_` that
@@ -439,64 +439,35 @@ impl Interpreter {
                 Some(Ok(make_seq(items)))
             }
             // Cost: O(n + k) plus the engine's per-match cost, n = chars of the invocant,
-            // k = matches, and O(n) even when `$limit` asks for fewer (all matches are
-            // found first). With `:match` every Match shares one `MatchTarget`.
+            // k = matches; with `$limit` the search stops at the k-th match. With
+            // `:match` every Match shares one `MatchTarget`.
             Some(ValueView::Regex(pat)) => {
+                let max = limit.map_or(usize::MAX, |lim| lim as usize);
                 // Use the capturing path only when the regex contains code
                 // blocks whose side effects must fire (e.g. `{ take $/.Str }`).
                 // For regular regexes, use the faster non-capturing path.
-                let has_code = self.has_code_block_in_prefix(&pat);
-                if has_code {
-                    let mut matches = self.regex_find_all_with_caps(&pat, &text);
+                let spans: Vec<(usize, usize)> = if self.has_code_block_in_prefix(&pat) {
+                    let mut matches = self.regex_find_all_with_caps_limited(&pat, &text, max);
                     for (_, _, caps) in &mut matches {
                         if caps.named.values().any(|slot| !slot.nodes.is_empty()) {
                             let ct = caps.target_or_new(&text);
                             self.reduce_regex_captures_made(caps, Some(&ct));
                         }
                     }
-                    if return_match {
-                        let mt = crate::runtime::MatchTarget::new(&text);
-                        let result: Vec<Value> = matches
-                            .iter()
-                            .map(|(start, end, _)| Self::create_match_object(&mt, *start, *end))
-                            .collect();
-                        let result = Self::apply_limit(result, limit);
-                        Some(Ok(make_seq(result)))
-                    } else {
-                        let chars: Vec<char> = text.chars().collect();
-                        let result: Vec<Value> = matches
-                            .iter()
-                            .map(|(start, end, _)| {
-                                let s: String = chars[*start..*end].iter().collect();
-                                Value::str(s)
-                            })
-                            .collect();
-                        let result = Self::apply_limit(result, limit);
-                        Some(Ok(make_seq(result)))
-                    }
+                    matches.into_iter().map(|(s, e, _)| (s, e)).collect()
                 } else {
-                    let matches = self.regex_find_all(&pat, &text);
-                    if return_match {
-                        let mt = crate::runtime::MatchTarget::new(&text);
-                        let result: Vec<Value> = matches
-                            .iter()
-                            .map(|(start, end)| Self::create_match_object(&mt, *start, *end))
-                            .collect();
-                        let result = Self::apply_limit(result, limit);
-                        Some(Ok(make_seq(result)))
-                    } else {
-                        let chars: Vec<char> = text.chars().collect();
-                        let result: Vec<Value> = matches
-                            .iter()
-                            .map(|(start, end)| {
-                                let s: String = chars[*start..*end].iter().collect();
-                                Value::str(s)
-                            })
-                            .collect();
-                        let result = Self::apply_limit(result, limit);
-                        Some(Ok(make_seq(result)))
-                    }
-                }
+                    self.regex_find_all_limited(&pat, &text, max)
+                };
+                let result: Vec<Value> = if return_match {
+                    let mt = crate::runtime::MatchTarget::new(&text);
+                    spans
+                        .iter()
+                        .map(|(start, end)| Self::create_match_object(&mt, *start, *end))
+                        .collect()
+                } else {
+                    Self::char_span_strs(&text, &spans)
+                };
+                Some(Ok(make_seq(result)))
             }
             Some(ValueView::Sub(_) | ValueView::WeakSub(_)) => Some(Err(RuntimeError::new(
                 "none of these signatures match: comb does not accept a Code argument",
@@ -504,17 +475,9 @@ impl Interpreter {
             _ => {
                 if let Some(m) = matcher {
                     let pattern = m.to_string_value();
-                    let matches = self.regex_find_all(&pattern, &text);
-                    let chars: Vec<char> = text.chars().collect();
-                    let result: Vec<Value> = matches
-                        .iter()
-                        .map(|(start, end)| {
-                            let s: String = chars[*start..*end].iter().collect();
-                            Value::str(s)
-                        })
-                        .collect();
-                    let result = Self::apply_limit(result, limit);
-                    Some(Ok(make_seq(result)))
+                    let max = limit.map_or(usize::MAX, |lim| lim as usize);
+                    let spans = self.regex_find_all_limited(&pattern, &text, max);
+                    Some(Ok(make_seq(Self::char_span_strs(&text, &spans))))
                 } else {
                     None
                 }
@@ -522,17 +485,30 @@ impl Interpreter {
         }
     }
 
-    /// Apply a limit to a result vector.
-    fn apply_limit(result: Vec<Value>, limit: Option<i64>) -> Vec<Value> {
-        if let Some(lim) = limit {
-            if lim <= 0 {
-                Vec::new()
-            } else {
-                result.into_iter().take(lim as usize).collect()
+    /// The substrings of `text` at the ascending, non-overlapping char-index
+    /// `spans` a regex search returned.
+    // Cost: O(p + t), p = chars up to the end of the last span (one forward
+    // walk), t = total chars of the result.
+    fn char_span_strs(text: &str, spans: &[(usize, usize)]) -> Vec<Value> {
+        let mut out = Vec::with_capacity(spans.len());
+        // `(char index, byte offset)` of the walk's current position; `spans`
+        // are ascending, so each lookup resumes where the last one stopped.
+        let mut cur = (0usize, 0usize);
+        let mut byte_at = |target: usize| -> usize {
+            while cur.0 < target {
+                match text[cur.1..].chars().next() {
+                    Some(c) => cur = (cur.0 + 1, cur.1 + c.len_utf8()),
+                    None => break,
+                }
             }
-        } else {
-            result
+            cur.1
+        };
+        for &(start, end) in spans {
+            let b_start = byte_at(start);
+            let b_end = byte_at(end);
+            out.push(Value::str(text[b_start..b_end].to_string()));
         }
+        out
     }
 
     /// Create a Match object from regex match positions, sharing the call's

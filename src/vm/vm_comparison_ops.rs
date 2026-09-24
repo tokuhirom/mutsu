@@ -157,7 +157,7 @@ fn deref_allomorph_numeric(v: Value) -> Value {
 pub(super) fn cmp_values(left: &Value, right: &Value) -> std::cmp::Ordering {
     // Handle NaN
     if is_nan_value(left) || is_nan_value(right) {
-        return left.to_string_value().cmp(&right.to_string_value());
+        return left.string_value_cow().cmp(&right.string_value_cow());
     }
 
     // Unwrap Mixin

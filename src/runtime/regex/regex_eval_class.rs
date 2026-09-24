@@ -192,10 +192,13 @@ pub(super) fn class_matches(class: &CharClass, c: char) -> bool {
 impl Interpreter {
     /// Find all non-overlapping regex matches using the capturing path,
     /// returning (start, end) pairs and captures (including code blocks).
-    pub(crate) fn regex_find_all_with_caps(
+    /// The search (and any code block's side effects) stops after `limit`
+    /// matches.
+    pub(crate) fn regex_find_all_with_caps_limited(
         &mut self,
         pattern: &str,
         text: &str,
+        limit: usize,
     ) -> Vec<(usize, usize, RegexCaptures)> {
         let parsed = match self.parse_regex(pattern) {
             Some(p) => p,
@@ -207,7 +210,7 @@ impl Interpreter {
         let chars = target.chars();
         let mut results = Vec::new();
         let mut pos = 0;
-        while pos <= chars.len() {
+        while pos <= chars.len() && results.len() < limit {
             let mut found = None;
             if parsed.anchor_start {
                 if pos == 0
@@ -248,6 +251,16 @@ impl Interpreter {
 
     /// Find all non-overlapping regex matches, returning (start, end) char-index pairs.
     pub(crate) fn regex_find_all(&mut self, pattern: &str, text: &str) -> Vec<(usize, usize)> {
+        self.regex_find_all_limited(pattern, text, usize::MAX)
+    }
+
+    /// [`Interpreter::regex_find_all`] stopping after `limit` matches.
+    pub(crate) fn regex_find_all_limited(
+        &mut self,
+        pattern: &str,
+        text: &str,
+        limit: usize,
+    ) -> Vec<(usize, usize)> {
         let parsed = match self.parse_regex(pattern) {
             Some(p) => p,
             None => return Vec::new(),
@@ -256,7 +269,7 @@ impl Interpreter {
         let chars: Vec<char> = text.chars().collect();
         let mut results = Vec::new();
         let mut pos = 0;
-        while pos <= chars.len() {
+        while pos <= chars.len() && results.len() < limit {
             let search_start = if parsed.anchor_start { 0 } else { pos };
             let mut found = None;
             if parsed.anchor_start {

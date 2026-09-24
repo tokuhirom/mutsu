@@ -3026,37 +3026,34 @@ impl Interpreter {
             }
 
             // -- String comparison --
-            // Cost: O(n1 + n2) (see exec_str_eq_op). Rakudo: O(p), p = common prefix, O(1)
-            // when the lengths differ -- see #9147.
+            // Cost: O(p), p = common prefix; O(1) when the lengths differ (see
+            // exec_str_eq_op).
             OpCode::StrEq => {
                 self.exec_str_eq_op()?;
                 *ip += 1;
             }
-            // Cost: O(n1 + n2) (see exec_str_ne_op). Rakudo: O(p), p = common prefix, O(1)
-            // when the lengths differ -- see #9147.
+            // Cost: O(p), p = common prefix; O(1) when the lengths differ (see
+            // exec_str_ne_op).
             OpCode::StrNe => {
                 self.exec_str_ne_op()?;
                 *ip += 1;
             }
-            // Cost: O(n1 + n2) (see exec_str_lt_op). Rakudo: O(p), p = common prefix -- see #9147.
+            // Cost: O(p), p = common prefix (see exec_str_lt_op).
             OpCode::StrLt => {
                 self.exec_str_lt_op()?;
                 *ip += 1;
             }
-            // Cost: O(n1 + n2), n = chars of each operand (both copied) (see
-            // exec_str_gt_op). Rakudo: O(p), p = common prefix -- see #9147.
+            // Cost: O(p), p = common prefix (see exec_str_gt_op).
             OpCode::StrGt => {
                 self.exec_str_gt_op()?;
                 *ip += 1;
             }
-            // Cost: O(n1 + n2), n = chars of each operand (both copied) (see
-            // exec_str_le_op). Rakudo: O(p), p = common prefix -- see #9147.
+            // Cost: O(p), p = common prefix (see exec_str_le_op).
             OpCode::StrLe => {
                 self.exec_str_le_op()?;
                 *ip += 1;
             }
-            // Cost: O(n1 + n2), n = chars of each operand (both copied) (see
-            // exec_str_ge_op). Rakudo: O(p), p = common prefix -- see #9147.
+            // Cost: O(p), p = common prefix (see exec_str_ge_op).
             OpCode::StrGe => {
                 self.exec_str_ge_op()?;
                 *ip += 1;
@@ -3069,18 +3066,16 @@ impl Interpreter {
                 self.exec_spaceship_op()?;
                 *ip += 1;
             }
-            // Cost: O(1) numeric; O(min(e1, e2)) for list operands; O(n1 + n2) for
-            // Str operands, n = chars (both copied in spaceship_ordering).
-            // Rakudo: O(p), p = common prefix, for Str -- see #9147.
+            // Cost: O(1) numeric; O(min(e1, e2)) for list operands; O(p) for Str
+            // operands, p = common prefix (borrowed in spaceship_ordering).
             OpCode::Before | OpCode::After => {
                 let is_before = matches!(code.ops[*ip], OpCode::Before);
                 self.exec_before_after_op(is_before)?;
                 *ip += 1;
             }
             // Cost: O(1) numeric; O(min(e1, e2)) for list operands (a Range
-            // compared with a list is expanded, O(r)); O(n1 + n2) for Str
-            // operands, n = chars (both copied in spaceship_ordering). Rakudo:
-            // O(p), p = common prefix, for Str -- see #9147.
+            // compared with a list is expanded, O(r)); O(p) for Str operands,
+            // p = common prefix (borrowed in spaceship_ordering).
             OpCode::Cmp => {
                 self.exec_cmp_op()?;
                 *ip += 1;
@@ -3097,8 +3092,7 @@ impl Interpreter {
                 self.exec_unicmp_op()?;
                 *ip += 1;
             }
-            // Cost: O(n1 + n2), n = chars of each operand (both copied) (see
-            // exec_leg_op). Rakudo: O(p), p = common prefix -- see #9147.
+            // Cost: O(p), p = common prefix (see exec_leg_op).
             OpCode::Leg => {
                 self.exec_leg_op()?;
                 *ip += 1;
@@ -3195,16 +3189,14 @@ impl Interpreter {
                 self.exec_lcm_op()?;
                 *ip += 1;
             }
-            // Cost: O(1) numeric; O(n1 + n2) for Str operands, n = chars (both
-            // copied in spaceship_ordering). Rakudo: O(p), p = common prefix --
-            // see #9147.
+            // Cost: O(1) numeric; O(p) for Str operands, p = common prefix
+            // (borrowed in spaceship_ordering).
             OpCode::InfixMin => {
                 self.exec_infix_min_op()?;
                 *ip += 1;
             }
-            // Cost: O(1) numeric; O(n1 + n2) for Str operands, n = chars (both
-            // copied in spaceship_ordering). Rakudo: O(p), p = common prefix --
-            // see #9147.
+            // Cost: O(1) numeric; O(p) for Str operands, p = common prefix
+            // (borrowed in spaceship_ordering).
             OpCode::InfixMax => {
                 self.exec_infix_max_op()?;
                 *ip += 1;
@@ -4843,7 +4835,8 @@ impl Interpreter {
                 *ip += 1;
             }
             // -- String interpolation --
-            // Cost: O(n), n = total chars of the parts (each is copied into one fresh String).
+            // Cost: O(1) for a single plain-Str part (`"$s"`, shared); otherwise O(n),
+            // n = total chars of the parts (each is copied into one fresh String).
             // Rakudo: O(parts) (strands) -- see #9209.
             OpCode::StringConcat(n) => {
                 self.sync_source_line(code, *ip);
@@ -5172,7 +5165,8 @@ impl Interpreter {
                 self.exec_num_coerce_op()?;
                 *ip += 1;
             }
-            // Cost: O(t), t = chars of the result (a list is stringified element by element).
+            // Cost: O(1) on a plain Str (shared); otherwise O(t), t = chars of the
+            // result (a list is stringified element by element).
             OpCode::StrCoerce => {
                 self.sync_source_line(code, *ip);
                 self.exec_str_coerce_op()?;
