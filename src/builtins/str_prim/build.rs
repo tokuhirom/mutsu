@@ -54,7 +54,8 @@ pub(crate) fn concat(left: Value, right: &Value) -> Value {
 }
 
 /// Rakudo's cap on the size of a string, in graphemes.
-const MAX_GRAPHEMES: usize = 4_294_967_295;
+/// Compared as `u64`: on a 32-bit target it is `usize::MAX`.
+const MAX_GRAPHEMES: u64 = 4_294_967_295;
 
 /// `src x n` (`infix:<x>`, its reduction and `nqp::x`). The caller has
 /// already clamped or rejected a negative count.
@@ -68,7 +69,7 @@ const MAX_GRAPHEMES: usize = 4_294_967_295;
 /// repeat count, only for a result that has to be built flat (smaller than
 /// `STRAND_MIN_BYTES`, or a copy that composes with the one before it).
 pub(crate) fn repeat(src: &Value, n: usize) -> Result<Value, RuntimeError> {
-    if n > MAX_GRAPHEMES {
+    if n as u64 > MAX_GRAPHEMES {
         return Err(RuntimeError::new(format!(
             "Repeat count ({n}) cannot be greater than max allowed number of graphemes {MAX_GRAPHEMES}"
         )));
@@ -79,9 +80,9 @@ pub(crate) fn repeat(src: &Value, n: usize) -> Result<Value, RuntimeError> {
     };
     // A grapheme is at least one byte, so only a result over the cap in
     // bytes can be over it in graphemes; count them only then.
-    if body.byte_len().saturating_mul(n) > MAX_GRAPHEMES {
+    if (body.byte_len() as u64).saturating_mul(n as u64) > MAX_GRAPHEMES {
         let graphemes = super::chars(&Value::str_arc(Arc::clone(&body)));
-        if graphemes.saturating_mul(n) > MAX_GRAPHEMES {
+        if (graphemes as u64).saturating_mul(n as u64) > MAX_GRAPHEMES {
             return Err(RuntimeError::new(format!(
                 "Can't repeat string, required number of graphemes ({graphemes} * {n}) greater than max allowed of {MAX_GRAPHEMES}"
             )));
