@@ -12,7 +12,12 @@ impl Interpreter {
     /// straight out of boxed slot `n`, so they pay no `Value` clone and drop.
     // Cost: O(1) amortized, plus the generic `nqp::elems` for a non-list operand.
     #[inline]
-    pub(super) fn trir_list_op(&mut self, op: &TrOp, obase: usize) -> Result<(), RuntimeError> {
+    pub(super) fn trir_list_op(
+        &mut self,
+        op: &TrOp,
+        nbase: usize,
+        obase: usize,
+    ) -> Result<(), RuntimeError> {
         match op {
             TrOp::ElemsO => {
                 let v = self.opop();
@@ -35,33 +40,62 @@ impl Interpreter {
                 self.trir.ns.push(len);
             }
             TrOp::ShiftILocal(n) => {
-                let slot = &self.trir.ol[obase + *n as usize];
-                let r = match with_list_data_mut(slot, |data| data.shift_front()) {
-                    Some(elem) => elem.map_or(0, |v| v.as_int().unwrap_or_else(|| to_int(&v))),
-                    None => Self::nqp_shift_int(slot)?,
-                };
+                let r = self.trir_shift_int_local(obase + *n as usize)?;
                 self.trir.ns.push(r);
             }
             TrOp::PushILocal(n) => {
                 let i = self.ipop();
-                let slot = &self.trir.ol[obase + *n as usize];
-                if with_list_data_mut(slot, |data| data.items_mut().push(Value::int(i))).is_none() {
-                    crate::runtime::nqp_ops_text::push_elem("push_i", slot, Value::int(i))?;
-                }
+                self.trir_push_int_local(obase + *n as usize, i)?;
                 self.trir.os.push(Value::int(i));
             }
             TrOp::PushILocalVoid(n) => {
                 let i = self.ipop();
-                let slot = &self.trir.ol[obase + *n as usize];
-                if with_list_data_mut(slot, |data| data.items_mut().push(Value::int(i))).is_none() {
-                    crate::runtime::nqp_ops_text::push_elem("push_i", slot, Value::int(i))?;
-                }
+                self.trir_push_int_local(obase + *n as usize, i)?;
+            }
+            TrOp::ShiftIStoreLocal {
+                list,
+                slot,
+                bits,
+                signed,
+            } => {
+                let v = self.trir_shift_int_local(obase + *list as usize)?;
+                self.trir.nl[nbase + *slot as usize] =
+                    super::exec_str::wrap_sized(v, *bits, *signed);
+            }
+            TrOp::PushISlotLocalVoid { list, slot } => {
+                let i = self.trir.nl[nbase + *slot as usize];
+                self.trir_push_int_local(obase + *list as usize, i)?;
             }
             _ => {
                 return Err(RuntimeError::new(format!(
                     "internal: trir_list_op handed {op:?}, which is not a list op"
                 )));
             }
+        }
+        Ok(())
+    }
+
+    /// `nqp::shift_i` off the list in absolute boxed slot `abs`, in place: a
+    /// plain list or a `Uni` directly, anything else through the general op.
+    // Cost: O(1) amortized.
+    #[inline]
+    pub(super) fn trir_shift_int_local(&mut self, abs: usize) -> Result<i64, RuntimeError> {
+        let slot = &self.trir.ol[abs];
+        match with_list_data_mut(slot, |data| data.shift_front()) {
+            Some(elem) => Ok(elem.map_or(0, |v| v.as_int().unwrap_or_else(|| to_int(&v)))),
+            None => Self::nqp_shift_int(slot),
+        }
+    }
+
+    /// `nqp::push_i` of `i` onto the list in absolute boxed slot `abs`, in
+    /// place: a plain list or a `Uni` directly, anything else (a Buf, an
+    /// `IterationBuffer`) through the general op.
+    // Cost: O(1) amortized.
+    #[inline]
+    pub(super) fn trir_push_int_local(&mut self, abs: usize, i: i64) -> Result<(), RuntimeError> {
+        let slot = &self.trir.ol[abs];
+        if with_list_data_mut(slot, |data| data.items_mut().push(Value::int(i))).is_none() {
+            crate::runtime::nqp_ops_text::push_elem("push_i", slot, Value::int(i))?;
         }
         Ok(())
     }

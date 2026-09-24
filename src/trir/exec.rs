@@ -423,7 +423,15 @@ impl Interpreter {
                 | TrOp::ElemsLocal(_)
                 | TrOp::ShiftILocal(_)
                 | TrOp::PushILocal(_)
-                | TrOp::PushILocalVoid(_) => self.trir_list_op(&ops[ip], obase)?,
+                | TrOp::PushILocalVoid(_)
+                | TrOp::ShiftIStoreLocal { .. }
+                | TrOp::PushISlotLocalVoid { .. } => self.trir_list_op(&ops[ip], nbase, obase)?,
+                TrOp::JumpIfNonEmptyLocal { slot, target } => {
+                    if self.trir_local_elems(obase + *slot as usize)? != 0 {
+                        ip = *target as usize;
+                        continue;
+                    }
+                }
                 TrOp::JumpIfEmptyLocal { slot, target } => {
                     if self.trir_local_elems(obase + *slot as usize)? == 0 {
                         ip = *target as usize;

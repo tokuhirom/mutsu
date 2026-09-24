@@ -313,6 +313,29 @@ pub(crate) enum TrOp {
     },
     /// `PushILocal(n)` whose result is discarded: `PushILocal(n); PopObj`.
     PushILocalVoid(u16),
+    /// Jump to `target` when the list in boxed slot `slot` is NOT empty: a
+    /// loop's back edge rotated onto its header's test. `Jump(h)` where
+    /// `h` is `JumpIfEmptyLocal { slot, target: e }` becomes
+    /// `JumpIfNonEmptyLocal { slot, target: h + 1 }; Jump(e)`.
+    JumpIfNonEmptyLocal {
+        slot: u16,
+        target: u32,
+    },
+    /// Shift an int off the list in boxed slot `list`, wrap it to `bits`
+    /// (64 = no wrap) and store it in native slot `slot`; touches no bank.
+    /// `ShiftILocal(list); [WrapI { bits, signed };] StoreI(slot)`.
+    ShiftIStoreLocal {
+        list: u16,
+        slot: u16,
+        bits: u8,
+        signed: bool,
+    },
+    /// Push native slot `slot` onto the list in boxed slot `list`; touches
+    /// no bank. `LoadI(slot); PushILocalVoid(list)`.
+    PushISlotLocalVoid {
+        list: u16,
+        slot: u16,
+    },
 
     // ---- calls ----
     /// Call another TRIR routine, resolved at compile time. `site` indexes
@@ -359,7 +382,8 @@ impl TrOp {
             | TrOp::JumpCmp { target: t, .. }
             | TrOp::JumpCmpC { target: t, .. }
             | TrOp::JumpCmpLC { target: t, .. }
-            | TrOp::JumpIfEmptyLocal { target: t, .. } => Some(t),
+            | TrOp::JumpIfEmptyLocal { target: t, .. }
+            | TrOp::JumpIfNonEmptyLocal { target: t, .. } => Some(t),
             _ => None,
         }
     }
@@ -375,7 +399,8 @@ impl TrOp {
             | TrOp::JumpCmp { target: t, .. }
             | TrOp::JumpCmpC { target: t, .. }
             | TrOp::JumpCmpLC { target: t, .. }
-            | TrOp::JumpIfEmptyLocal { target: t, .. } => Some(*t),
+            | TrOp::JumpIfEmptyLocal { target: t, .. }
+            | TrOp::JumpIfNonEmptyLocal { target: t, .. } => Some(*t),
             _ => None,
         }
     }

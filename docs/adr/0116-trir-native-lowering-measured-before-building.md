@@ -239,6 +239,15 @@ Pinned by `t/vm/codegen/adr0110-trir-int-ops.t` (TRIR on = off = rakudo's transc
   push/pop and bounds checks on the operand banks), and the generic
   `nqp::` ops (`findnotcclass`, `create`, `p6scalarwithvalue`, `bindkey`,
   `strtocodes`/`strfromcodes`, `index`: ~7.7 K calls) are ~16%.
+- **The copy loop fused and rotated**
+  (`news/2026-09/trir-copy-loop-fused-and-rotated.md`). Slot-to-slot
+  `ShiftIStoreLocal` / `PushISlotLocalVoid` and a back edge rotated onto the
+  header's emptiness test take `unjsonify-string`'s per-character loop from 10
+  ops to 6. Per 100 records: **72.4 M to 70.8 M instructions (-2.3%)**. That
+  is ~15 instructions saved per removed op, so dispatch and bank traffic are
+  cheap. The switch loop's ~50 instructions per op average is the inlined
+  bodies of heavy ops, which is more evidence against D3's native lowering
+  paying for itself.
 
 ## 8. Reproduction
 

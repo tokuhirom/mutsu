@@ -68,6 +68,21 @@ sub drain(str $s) {
     nqp::join('', $r)
 }
 
+# The fused shift-and-store with a sized native in between: each element
+# wraps to 8 bits on the way into the slot, and the loop's back edge is the
+# rotated emptiness test.
+sub drain-u8(int $n) {
+    my $codes := nqp::list_i();
+    my int $i = 0;
+    nqp::while(nqp::islt_i($i, $n), nqp::stmts(nqp::push_i($codes, nqp::add_i(250, $i)), ($i = $i + 1)));
+    my $out := nqp::list_i();
+    nqp::while(nqp::elems($codes),
+        nqp::stmts((my uint8 $o = nqp::shift_i($codes)), nqp::push_i($out, $o)));
+    my $r := nqp::list_s();
+    nqp::while(nqp::elems($out), nqp::push_s($r, nqp::shift_i($out)));
+    nqp::join(',', $r)
+}
+
 say cmp-slot($_) for -4, -3, 0, 5, 6, 7, 8;
 say cmp-computed($_, 10 - $_) for 0, 3, 7;
 say cmp-computed(9, 2);
@@ -75,3 +90,4 @@ say chains($_) for 0, 1, 2, 5, 9, 10, 11;
 say sink-arms($_) for 0, 1, 2, 3;
 say drain("a-b\tc\nd--e");
 say drain("");
+say drain-u8($_) for 0, 9;
