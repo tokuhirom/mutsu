@@ -213,6 +213,20 @@ Pinned by `t/vm/codegen/adr0110-trir-int-ops.t` (TRIR on = off = rakudo's transc
   instructions and 43,756 to 17,657 allocations**. The switch loop is now
   **42.9%** of a record, still under D3's 50% threshold. Section time went from
   0.098 s to 0.080-0.085 s (rakudo: 0.044-0.046 s on the same box).
+- **Fewer ops: a peephole pass and sink-position `nqp::if`**
+  (`news/2026-09/trir-peephole-compare-and-branch.md`). This is not one of
+  D2's five items. After D2.4, the op *count* was the next cost: the
+  per-character loop of `unjsonify-string` took 22 ops, most of them
+  slot-versus-constant compare-and-branch sequences and values pushed only to
+  be dropped at an `if` join. Arms of a sink-position `nqp::if` are now
+  compiled for effect. A peephole pass on each finished chunk fuses
+  compare-and-branch (`JumpCmp` / `JumpCmpC` / `JumpCmpLC`), threads jumps
+  and `&&` / `||` keep jumps, and removes dead push/pop pairs. Per 100
+  records: **921 K to 529 K ops executed, and 91.3 M to 77.9 M
+  instructions**. The switch loop fell from 42.9% to **33%** of a record,
+  further below D3's 50% threshold: with fewer ops there is less dispatch
+  left for native lowering to remove. Paired section time on the 4-core
+  container: median 0.092 s before, 0.072 s after.
 
 ## 8. Reproduction
 

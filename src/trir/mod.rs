@@ -50,6 +50,7 @@ pub(crate) mod gen_link;
 mod link;
 mod op;
 pub(crate) mod outers;
+pub(crate) mod peephole;
 mod routine_frame;
 pub(crate) mod stats;
 
@@ -81,7 +82,7 @@ impl TrKind {
     }
 }
 
-pub(crate) use op::TrOp;
+pub(crate) use op::{TrCmp, TrOp};
 
 /// How one argument of a call inside a TRIR body is supplied.
 ///

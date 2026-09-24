@@ -92,6 +92,41 @@ impl TrirCompiler<'_> {
         Some(unified)
     }
 
+    /// `nqp::if`/`nqp::unless` whose value is discarded: both arms are
+    /// compiled for effect, so neither leaves a value for the join to drop,
+    /// and the arms need no common kind.
+    pub(super) fn compile_nqp_if_sink(&mut self, if_form: bool, args: &[Expr]) -> Option<()> {
+        let ck = self.compile_expr(&args[0])?;
+        self.truthy(ck)?;
+        let branch_at = self.ops.len();
+        self.ops.push(if if_form {
+            TrOp::JumpIfFalseI(0)
+        } else {
+            TrOp::JumpIfTrueI(0)
+        });
+        self.compile_expr_sink(&args[1])?;
+        let skip_to = match args.get(2) {
+            Some(else_expr) => {
+                let jump_end_at = self.ops.len();
+                self.ops.push(TrOp::Jump(0));
+                let else_at = self.ops.len() as u32;
+                self.compile_expr_sink(else_expr)?;
+                let end = self.ops.len() as u32;
+                match &mut self.ops[jump_end_at] {
+                    TrOp::Jump(t) => *t = end,
+                    _ => return None,
+                }
+                else_at
+            }
+            None => self.ops.len() as u32,
+        };
+        match &mut self.ops[branch_at] {
+            TrOp::JumpIfFalseI(t) | TrOp::JumpIfTrueI(t) => *t = skip_to,
+            _ => return None,
+        }
+        Some(())
+    }
+
     /// The `nqp::` VALUE ops TRIR lowers to typed instructions.
     pub(super) fn compile_nqp_value_op(&mut self, name: &str, args: &[Expr]) -> Option<TrKind> {
         let op = name.strip_prefix("nqp::")?;
