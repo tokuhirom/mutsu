@@ -100,17 +100,13 @@ impl Interpreter {
                 &format!("0..{}", len),
             ));
         }
-        let substr =
-            crate::builtins::grapheme_index::substr_eq_window(&text, &idx, start as usize, &needle)
-                .unwrap_or("");
-        let eq = match (ignore_case, ignore_mark) {
-            (false, false) => substr == needle,
-            (true, false) => substr.to_lowercase() == needle.to_lowercase(),
-            (false, true) => self.strip_marks(substr) == self.strip_marks(&needle),
-            (true, true) => {
-                self.strip_marks(substr).to_lowercase() == self.strip_marks(&needle).to_lowercase()
-            }
-        };
+        let eq = crate::builtins::str_prim::eq_at(
+            &text,
+            &idx,
+            start as usize,
+            &needle,
+            crate::builtins::str_prim::Fold::new(ignore_case, ignore_mark),
+        );
         Ok(Value::truth(eq))
     }
 

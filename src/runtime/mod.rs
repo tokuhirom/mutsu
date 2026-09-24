@@ -608,8 +608,6 @@ mod constraint_meta;
 mod container_element_proxy;
 mod ctor_phase_plan;
 mod nqp_backing;
-mod nqp_char_cache;
-mod nqp_normalize;
 pub(crate) mod nqp_op_ids;
 pub(crate) mod nqp_ops;
 mod nqp_ops_builtin;

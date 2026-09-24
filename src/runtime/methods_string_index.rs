@@ -1,5 +1,5 @@
 use super::*;
-use crate::builtins::string_pos::{grapheme_len, grapheme_offset};
+use crate::builtins::string_pos::grapheme_len;
 use crate::symbol::Symbol;
 
 impl Interpreter {
@@ -69,20 +69,10 @@ impl Interpreter {
         if start > len {
             return Ok(Value::NIL);
         }
-        let hay_at = idx.byte_at(&text, start as usize);
-        let hay = &text[hay_at..];
+        let fold = crate::builtins::str_prim::Fold::new(ignore_case, ignore_mark);
         let mut best: Option<usize> = None;
         for needle in &needles {
-            let pos = if ignore_case && ignore_mark {
-                self.index_ignorecase_ignoremark(hay, needle)
-            } else if ignore_case {
-                self.index_ignorecase(hay, needle)
-            } else if ignore_mark {
-                self.index_ignoremark(hay, needle)
-            } else {
-                crate::builtins::grapheme_index::find_graphemes(&text, &idx, hay_at, needle)
-                    .map(|b| idx.grapheme_at(&text, b) - start as usize)
-            };
+            let pos = crate::builtins::str_prim::index(&text, &idx, start as usize, needle, fold);
             if let Some(char_pos) = pos {
                 best = Some(match best {
                     Some(prev) => prev.min(char_pos),
@@ -91,7 +81,7 @@ impl Interpreter {
             }
         }
         match best {
-            Some(char_pos) => Ok(Value::int(char_pos as i64 + start)),
+            Some(char_pos) => Ok(Value::int(char_pos as i64)),
             None => Ok(Value::NIL),
         }
     }
@@ -159,22 +149,11 @@ impl Interpreter {
             let mut pos = start as usize;
             // Each search resumes at `pos`'s byte offset, so one call is
             // O(n + hits) rather than re-concatenating the suffix per hit.
+            let fold = crate::builtins::str_prim::Fold::new(ignore_case, ignore_mark);
             while pos <= idx.len() {
-                let hay_at = idx.byte_at(&text, pos);
-                let hay = &text[hay_at..];
-                let found = if ignore_case && ignore_mark {
-                    self.index_ignorecase_ignoremark(hay, &needle)
-                } else if ignore_case {
-                    self.index_ignorecase(hay, &needle)
-                } else if ignore_mark {
-                    self.index_ignoremark(hay, &needle)
-                } else {
-                    crate::builtins::grapheme_index::find_graphemes(&text, &idx, hay_at, &needle)
-                        .map(|b| idx.grapheme_at(&text, b) - pos)
-                };
+                let found = crate::builtins::str_prim::index(&text, &idx, pos, &needle, fold);
                 match found {
-                    Some(char_pos) => {
-                        let absolute_pos = pos + char_pos;
+                    Some(absolute_pos) => {
                         results.push(Value::int(absolute_pos as i64));
                         if overlap {
                             pos = absolute_pos + 1;
@@ -291,16 +270,12 @@ impl Interpreter {
             // Search backwards for a match that starts and ends on grapheme
             // boundaries, starting no later than `max_pos` (#9140: this used
             // to segment the whole string and compare unit windows).
-            let pos = if needle.is_empty() {
-                Some(max_pos.unwrap_or(idx.len()))
-            } else {
-                let max_start = match max_pos {
-                    Some(p) => idx.byte_at(&text, p),
-                    None => text.len(),
-                };
-                crate::builtins::grapheme_index::rfind_graphemes(&text, &idx, max_start, needle)
-                    .map(|b| idx.grapheme_at(&text, b))
-            };
+            let pos = crate::builtins::str_prim::rindex(
+                &text,
+                &idx,
+                max_pos.unwrap_or(idx.len()),
+                needle,
+            );
             if let Some(char_pos) = pos {
                 best = Some(match best {
                     Some(prev) => prev.max(char_pos),
@@ -312,37 +287,6 @@ impl Interpreter {
             Some(char_pos) => Ok(Value::int(char_pos as i64)),
             None => Ok(Value::NIL),
         }
-    }
-
-    pub(super) fn index_ignorecase(&self, hay: &str, needle: &str) -> Option<usize> {
-        let hay_lower = hay.to_lowercase();
-        let needle_lower = needle.to_lowercase();
-        hay_lower
-            .find(&needle_lower)
-            .map(|byte_pos| grapheme_offset(&hay_lower, byte_pos))
-    }
-
-    pub(super) fn index_ignoremark(&self, hay: &str, needle: &str) -> Option<usize> {
-        let hay_stripped = self.strip_marks(hay);
-        let needle_stripped = self.strip_marks(needle);
-        hay_stripped
-            .find(&needle_stripped)
-            .map(|byte_pos| grapheme_offset(&hay_stripped, byte_pos))
-    }
-
-    pub(super) fn index_ignorecase_ignoremark(&self, hay: &str, needle: &str) -> Option<usize> {
-        let hay_stripped = self.strip_marks(hay).to_lowercase();
-        let needle_stripped = self.strip_marks(needle).to_lowercase();
-        hay_stripped
-            .find(&needle_stripped)
-            .map(|byte_pos| grapheme_offset(&hay_stripped, byte_pos))
-    }
-
-    pub(super) fn strip_marks(&self, s: &str) -> String {
-        use unicode_normalization::UnicodeNormalization;
-        s.nfd()
-            .filter(|c| !unicode_normalization::char::is_combining_mark(*c))
-            .collect()
     }
 
     /// Convert a RuntimeError to a Failure value (for operations that should soft-fail).

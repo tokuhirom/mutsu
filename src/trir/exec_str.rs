@@ -56,56 +56,37 @@ impl Interpreter {
     /// Element `idx` of a list, exactly as `runtime/nqp_ops.rs`'s own
     /// `atpos_i` reads it: 0 both past the end and for a target with no
     /// elements at all.
-    /// `nqp::ordat`'s answer, with the same non-string coercion
-    /// `nqp_char_cache::cached_chars` performs.
+    /// `nqp::ordat`'s answer: the same routine the untyped op runs
+    /// (`builtins::str_prim`, ADR-0117).
     pub(super) fn trir_ord_at(&mut self, src: &Value, pos: i64) -> i64 {
-        match self.trir.chars.index_of(src) {
-            Some(i) => ord_at(self.trir.chars.chars_at(i), pos),
-            None => {
-                let s = src.to_string_value();
-                ord_at(&s.chars().collect::<Vec<char>>(), pos)
-            }
-        }
+        crate::builtins::str_prim::nqp_ordat(src, pos)
     }
 
-    /// `nqp::chars`'s answer, with the same coercion.
+    /// `nqp::chars`'s answer, in graphemes.
     pub(super) fn trir_chars_len(&mut self, src: &Value) -> i64 {
-        match self.trir.chars.index_of(src) {
-            Some(i) => self.trir.chars.chars_at(i).len() as i64,
-            None => crate::builtins::grapheme_index::codepoint_count(src) as i64,
-        }
+        crate::builtins::str_prim::chars(src) as i64
     }
 
-    /// `nqp::substr($src, $from, $want)`'s answer, with the same clamping as
-    /// `runtime/nqp_ops_str.rs`'s own `substr` and the same per-frame
-    /// codepoint memo `trir_ord_at`/`trir_chars_len` use.
-    pub(super) fn trir_substr(&mut self, src: &Value, from: i64, want: i64) -> Value {
-        match self.trir.chars.index_of(src) {
-            Some(i) => Value::str(substr_of(self.trir.chars.chars_at(i), from, want)),
-            None => {
-                let s = src.to_string_value();
-                let chars: Vec<char> = s.chars().collect();
-                Value::str(substr_of(&chars, from, want))
-            }
-        }
+    /// `nqp::substr($src, $from, $want)`'s answer.
+    pub(super) fn trir_substr(
+        &mut self,
+        src: &Value,
+        from: i64,
+        want: i64,
+    ) -> Result<Value, RuntimeError> {
+        crate::builtins::str_prim::nqp_substr(src, from, Some(want))
     }
 
-    /// `nqp::eqat($haystack, $needle, $pos)`'s answer, with the same
-    /// haystack memo `trir_substr`/`trir_ord_at` use. The needle is not
-    /// memoized — it is a fresh expression at almost every call site (a
-    /// string literal or a short computed slice), so `runtime/
-    /// nqp_ops_text.rs`'s own `eqat` does not cache it either.
+    /// `nqp::eqat($haystack, $needle, $pos)`'s answer.
     pub(super) fn trir_eqat(&mut self, haystack: &Value, needle: &Value, pos: i64) -> i64 {
-        let needle_chars: Vec<char> = needle.to_string_value().chars().collect();
-        let matches = match self.trir.chars.index_of(haystack) {
-            Some(i) => eqat_of(self.trir.chars.chars_at(i), &needle_chars, pos),
-            None => {
-                let s = haystack.to_string_value();
-                let chars: Vec<char> = s.chars().collect();
-                eqat_of(&chars, &needle_chars, pos)
-            }
-        };
-        matches as i64
+        crate::builtins::grapheme_index::with_str(needle, |needle| {
+            crate::builtins::str_prim::nqp_eqat(
+                haystack,
+                needle,
+                pos,
+                crate::builtins::str_prim::Fold::Exact,
+            )
+        }) as i64
     }
 
     pub(super) fn trir_atpos_i(v: &Value, idx: i64) -> i64 {
@@ -124,42 +105,6 @@ impl Interpreter {
             None => 0,
         }
     }
-}
-
-/// `nqp::ordat`'s answer for a codepoint index: the codepoint, or -1 past the
-/// end (`runtime/nqp_ops_builtin.rs`'s own `unwrap_or(-1)`).
-#[inline]
-fn ord_at(chars: &[char], pos: i64) -> i64 {
-    usize::try_from(pos)
-        .ok()
-        .and_then(|p| chars.get(p))
-        .map(|&c| c as i64)
-        .unwrap_or(-1)
-}
-
-/// `nqp::substr($s, $from, $want)`'s clamping, exactly as
-/// `runtime/nqp_ops_str.rs`'s own `substr` computes it: a negative or
-/// past-the-end `$from` clamps rather than dying, and a `$want` that runs
-/// past the end truncates.
-#[inline]
-fn substr_of(chars: &[char], from: i64, want: i64) -> String {
-    let total = chars.len();
-    let from = (from.max(0) as usize).min(total);
-    let want = if want < 0 { 0 } else { want as usize };
-    let end = from.saturating_add(want).min(total);
-    chars[from..end].iter().collect()
-}
-
-/// `nqp::eqat($haystack, $needle, $pos)`'s answer: whether `needle` occurs at
-/// exactly codepoint offset `pos`, exactly as `runtime/nqp_ops_text.rs`'s own
-/// `eqat` computes it.
-#[inline]
-fn eqat_of(chars: &[char], needle: &[char], pos: i64) -> bool {
-    usize::try_from(pos)
-        .ok()
-        .and_then(|p| chars.get(p..p.saturating_add(needle.len())))
-        .map(|window| window == needle)
-        .unwrap_or(false)
 }
 
 /// The low `bits` bits of `v`, sign-extended when `signed`: a store into a

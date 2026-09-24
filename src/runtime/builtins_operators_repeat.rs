@@ -244,11 +244,10 @@ impl Interpreter {
                     let caller_code = self.current_code;
                     acc = self.coerce_stringy_operand(acc)?;
                     self.reconcile_caller_after_internal_dispatch(caller_code);
-                    let repeated = crate::runtime::utils::coerce_to_str(&acc).repeat(n);
-                    // NFC-normalize after repetition: combining marks from the end
-                    // of one copy may interact with the start of the next copy
-                    use unicode_normalization::UnicodeNormalization;
-                    acc = Value::str(repeated.nfc().collect::<String>());
+                    acc = crate::builtins::str_prim::repeat(
+                        &crate::runtime::utils::coerce_to_str(&acc),
+                        n,
+                    )?;
                 }
                 "xx" => {
                     // See exec_list_repeat_op for the eager/lazy rationale.

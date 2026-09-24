@@ -1,7 +1,6 @@
 //! Coercion, slip, boolean, string concatenation, and Buf-value ops.
 use super::*;
 use std::sync::Arc;
-use unicode_normalization::UnicodeNormalization;
 
 impl Interpreter {
     pub(super) fn exec_decont_op(&mut self) {
@@ -542,38 +541,9 @@ impl Interpreter {
             } else {
                 crate::runtime::utils::coerce_to_str(&right)
             };
-            let concatenated = format!("{}{}", left_str, right_str);
-            if concatenated.is_ascii() {
-                return Value::str(concatenated);
-            }
-            let normalized: String = concatenated.nfc().collect();
-            return Value::str(normalized);
+            return crate::builtins::str_prim::concat(Value::str(left_str), &Value::str(right_str));
         }
-        // A plain `Str` on the left appends through the same primitive as the
-        // fused `ConcatAssignLocal`: the left buffer is grown in place when
-        // this value is its only holder (copied otherwise), and NFC is
-        // restored by looking at the suffix and a bounded window around the
-        // join rather than by renormalizing the whole result (#9141).
-        if let ValueView::Str(_) = left.view() {
-            if let ValueView::Str(suffix) = right.view() {
-                let plan = crate::value::StrAppendPlan::for_suffix(suffix.as_str());
-                return left.str_appended_nfc(&plan);
-            }
-            let suffix = crate::runtime::utils::coerce_to_str(&right);
-            let plan = crate::value::StrAppendPlan::for_suffix(&suffix);
-            return left.str_appended_nfc(&plan);
-        }
-        let concatenated = format!(
-            "{}{}",
-            crate::runtime::utils::coerce_to_str(&left),
-            crate::runtime::utils::coerce_to_str(&right)
-        );
-        if concatenated.is_ascii() {
-            Value::str(concatenated)
-        } else {
-            let normalized: String = concatenated.nfc().collect();
-            Value::str(normalized)
-        }
+        crate::builtins::str_prim::concat(left, &right)
     }
 
     pub fn is_buf_value(val: &Value) -> bool {

@@ -106,7 +106,8 @@ impl Interpreter {
                 let parts: Vec<Value> = if target.is_empty() {
                     Vec::new()
                 } else if sep.is_empty() {
-                    target.chars().map(|c| Value::str(c.to_string())).collect()
+                    // One element per grapheme, as MoarVM splits.
+                    crate::builtins::str_prim::graphemes(&Value::str(target))
                 } else {
                     target
                         .split(&sep)

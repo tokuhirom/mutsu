@@ -2,7 +2,6 @@
 //! and function composition ops.
 use super::*;
 use std::sync::Arc;
-use unicode_normalization::UnicodeNormalization;
 
 impl Interpreter {
     /// `"x" x Int` / `1 xx Int` warn that the repeat count is an uninitialized
@@ -511,62 +510,7 @@ impl Interpreter {
         let left = self.coerce_stringy_operand(left)?;
         self.reconcile_caller_after_internal_dispatch(caller_code);
         let src = crate::runtime::utils::coerce_to_str(&left);
-        // Guard the allocation: `str::repeat` aborts the process via
-        // `handle_alloc_error` on an absurd count (e.g. `"x" x 1e15`), which
-        // `try {}` cannot recover from. Reserve fallibly first so the same
-        // input yields a catchable `X::` instead.
-        //
-        // Best-effort only, and weaker than raku here: `try_reserve` fails only
-        // if the kernel refuses the mapping (request over the ~128 TiB address
-        // space, or a non-overcommitting `vm.overcommit_memory`). Under
-        // `vm.overcommit_memory=1` a 91 TiB reservation succeeds and the fill
-        // loop below then eats the machine. raku instead caps the *request*
-        // deterministically -- "Repeat count (N) cannot be greater than max
-        // allowed number of graphemes 4294967295", plus the same bound on
-        // `graphemes * count` -- which is allocator-independent. mutsu should
-        // adopt that cap; see the note in `Interpreter::autoviv_resize`.
-        // TODO: enforce raku's 4294967295-grapheme cap before reserving.
-        let total = src
-            .len()
-            .checked_mul(n)
-            .ok_or_else(|| RuntimeError::new("Cannot repeat string: length overflow"))?;
-        // Build by doubling (`extend_from_within` = one memcpy per doubling)
-        // instead of `n` per-copy `push_str` calls: the roast A01-limits test
-        // declares `"a" x 2**32-1` (a 4 GiB string), which must complete in
-        // seconds, not minutes.
-        let mut buf: Vec<u8> = Vec::new();
-        buf.try_reserve_exact(total).map_err(|_| {
-            RuntimeError::new(format!(
-                "Cannot repeat string to {total} bytes: memory allocation failed"
-            ))
-        })?;
-        if total > 0 {
-            buf.extend_from_slice(src.as_bytes());
-            while buf.len() < total {
-                let take = (total - buf.len()).min(buf.len());
-                buf.extend_from_within(..take);
-            }
-        }
-        // SAFETY: `buf` is `src.as_bytes()` (valid UTF-8) repeated whole times;
-        // a concatenation of valid UTF-8 strings is valid UTF-8. Skipping the
-        // validation scan matters at this size (multi-GiB).
-        let repeated = unsafe { String::from_utf8_unchecked(buf) };
-        // NFC is local: when `src` is itself NFC and starts at a normalization
-        // boundary, no copy can compose or reorder with the one before it, so
-        // the repetition is already NFC. Deciding that reads `src` once
-        // instead of renormalizing the whole (up to multi-GiB) result (#9141).
-        let src_repeats_as_nfc = src.is_ascii()
-            || (src
-                .chars()
-                .next()
-                .is_none_or(crate::value::has_nfc_boundary_before)
-                && unicode_normalization::is_nfc_quick(src.chars())
-                    == unicode_normalization::IsNormalized::Yes);
-        let result = if src_repeats_as_nfc {
-            Value::str(repeated)
-        } else {
-            Value::str(repeated.nfc().collect::<String>())
-        };
+        let result = crate::builtins::str_prim::repeat(&src, n)?;
         self.stack.push(result);
         Ok(())
     }

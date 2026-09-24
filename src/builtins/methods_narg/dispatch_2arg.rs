@@ -82,13 +82,17 @@ pub(crate) fn native_method_2arg(
         }
         let needle = arg1.to_string_value();
         return crate::builtins::grapheme_index::with_str_index(target, |text, idx| {
-            let window = crate::builtins::grapheme_index::substr_eq_window(
+            if pos as usize > idx.len() {
+                return None;
+            }
+            let eq = crate::builtins::str_prim::eq_at(
                 text,
                 idx,
                 pos as usize,
                 &needle,
-            )?;
-            Some(Ok(Value::truth(window == needle)))
+                crate::builtins::str_prim::Fold::Exact,
+            );
+            Some(Ok(Value::truth(eq)))
         });
     }
 

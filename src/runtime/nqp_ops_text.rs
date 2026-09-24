@@ -16,7 +16,6 @@
 //! `t/nqp/nqp-cclass-uniprop.t`, which pins both against the same values).
 
 pub(crate) use super::nqp_backing::push_elem;
-use super::nqp_normalize::{Normalization, normalize};
 use super::*;
 use crate::builtins::unicode_gc::GeneralCategory;
 
@@ -140,19 +139,6 @@ const fn cclass_bits_for_gc(gc: GeneralCategory) -> i64 {
     bits
 }
 
-/// `(chars, offset)` for a cclass scan: nqp indexes strings by codepoint, so
-/// every one of these ops works on a `Vec<char>` rather than on bytes. The
-/// `args[1]` string is memoized across consecutive calls (see
-/// `nqp_char_cache`) -- a hand-rolled NQP scanner calls `findcclass`/
-/// `findnotcclass`/`iscclass` once per character over the SAME string.
-fn scan_bounds(args: &[Value]) -> (std::rc::Rc<Vec<char>>, usize, usize) {
-    let chars = super::nqp_char_cache::cached_chars(args, 1);
-    let offset = iarg(args, 2).max(0) as usize;
-    let count = iarg(args, 3).max(0) as usize;
-    let end = offset.saturating_add(count).min(chars.len());
-    (chars, offset.min(end), end)
-}
-
 impl Interpreter {
     /// Try a text / Unicode / native-list `nqp::` op. `None` means "not an op
     /// this table knows"; the caller then raises the unsupported-op error.
@@ -163,16 +149,20 @@ impl Interpreter {
     ) -> Option<Result<Value, RuntimeError>> {
         Some(match op {
             // -- character classes --
-            // nqp::iscclass($cclass, $str, $offset) -> 0/1 for ONE character.
-            // Cost: O(1) amortized on a nqp_char_cache hit; O(n) on a miss, n = chars of $str.
-            // MoarVM: O(1) -- see #9129.
+            // nqp::iscclass($cclass, $str, $offset) -> 0/1 for ONE grapheme,
+            // judged by its first codepoint (`str_prim::char_at`, the same
+            // codepoint `nqp::ordat` reports).
+            // Cost: O(1) amortized for a flat string, O(STRIDE) otherwise.
             "iscclass" => {
-                let chars = super::nqp_char_cache::cached_chars(args, 1);
-                let idx = iarg(args, 2).max(0) as usize;
-                let yes = chars
-                    .get(idx)
-                    .map(|&c| is_cclass(iarg(args, 0), c))
-                    .unwrap_or(false);
+                let cclass = iarg(args, 0);
+                let nil = Value::NIL;
+                let src = args.get(1).unwrap_or(&nil);
+                let yes = usize::try_from(iarg(args, 2)).is_ok_and(|g| {
+                    crate::builtins::grapheme_index::with_str_index(src, |text, idx| {
+                        crate::builtins::str_prim::char_at(text, idx, g)
+                            .is_some_and(|c| is_cclass(cclass, c))
+                    })
+                });
                 Ok(Value::int(yes as i64))
             }
             // nqp::findcclass / findnotcclass($cclass, $str, $offset, $count)
@@ -181,17 +171,16 @@ impl Interpreter {
             // -1 is what lets `findnotcclass(...) == chars($s)` mean "the
             // whole string is of this class", which is how String::Utils's
             // `is-CCLASS` is written.
-            // Cost: O(d) + O(n) on a nqp_char_cache miss, d = chars scanned, n = chars of $str.
-            // MoarVM: O(d) -- see #9129.
+            // Cost: O(d), d = graphemes scanned.
             "findcclass" | "findnotcclass" => {
                 let want = op == "findcclass";
                 let cclass = iarg(args, 0);
-                let (chars, start, end) = scan_bounds(args);
-                let found = chars[start..end]
-                    .iter()
-                    .position(|&c| is_cclass(cclass, c) == want)
-                    .map(|i| start + i)
-                    .unwrap_or(end);
+                let found = crate::builtins::str_prim::find_char(
+                    args.get(1).unwrap_or(&Value::NIL),
+                    iarg(args, 2),
+                    iarg(args, 3),
+                    |c| is_cclass(cclass, c) == want,
+                );
                 Ok(Value::int(found as i64))
             }
 
@@ -252,20 +241,18 @@ impl Interpreter {
                 let text = sarg(args, 0);
                 let mode = iarg(args, 1);
                 let target = args.get(2).cloned().unwrap_or(Value::NIL);
-                let normalized = match mode {
-                    0 => std::borrow::Cow::Borrowed(text.as_str()),
-                    1 => normalize(&text, Normalization::Nfc),
-                    2 => normalize(&text, Normalization::Nfd),
-                    3 => normalize(&text, Normalization::Nfkc),
-                    4 => normalize(&text, Normalization::Nfkd),
-                    other => {
+                let normalized = match crate::builtins::str_prim::Normal::from_nqp_mode(mode) {
+                    Some(form) => crate::builtins::str_prim::normalize(&text, form),
+                    None if mode == 0 => std::borrow::Cow::Borrowed(text.as_str()),
+                    None => {
                         return Some(Err(RuntimeError::new(format!(
-                            "nqp::strtocodes: unknown normalization mode {other}"
+                            "nqp::strtocodes: unknown normalization mode {mode}"
                         ))));
                     }
                 };
                 let refilled = Self::nqp_with_elems_mut(op, &target, |elems| {
                     elems.clear();
+                    // Codepoints ARE the result here. str-prim: allow
                     elems.extend(normalized.chars().map(|ch| Value::int(ch as i64)));
                 });
                 match refilled {
@@ -303,48 +290,34 @@ impl Interpreter {
                 // sequence it was handed. Without this, `JSON::Fast`'s escaper
                 // — which round-trips every string through `.NFD` and back —
                 // emitted decomposed text for any composed input.
-                Ok(Value::str(match normalize(&out, Normalization::Nfc) {
-                    std::borrow::Cow::Borrowed(_) => out,
-                    std::borrow::Cow::Owned(nfc) => nfc,
-                }))
+                Ok(Value::str(
+                    match crate::builtins::str_prim::normalize(
+                        &out,
+                        crate::builtins::str_prim::Normal::Nfc,
+                    ) {
+                        std::borrow::Cow::Borrowed(_) => out,
+                        std::borrow::Cow::Owned(nfc) => nfc,
+                    },
+                ))
             }
 
             // -- string primitives --
-            // nqp::eqatic($haystack, $needle, $pos) -> 1 when the needle
-            // occurs at exactly codepoint offset `$pos`, ignoring case.
-            // Cost: O(m) on a nqp_char_cache hit (haystack); O(n + m) on a miss,
-            // n = chars of $haystack, m = chars of $needle. MoarVM: O(m) -- see #9129.
-            "eqatic" => {
-                let haystack = super::nqp_char_cache::cached_chars(args, 0);
-                let needle: Vec<char> = sarg(args, 1).chars().collect();
-                let pos = iarg(args, 2);
-                let yes = usize::try_from(pos)
-                    .ok()
-                    .and_then(|p| haystack.get(p..p.saturating_add(needle.len())))
-                    .map(|window| {
-                        window
-                            .iter()
-                            .zip(&needle)
-                            .all(|(left, right)| left.to_lowercase().eq(right.to_lowercase()))
-                    })
-                    .unwrap_or(false);
-                Ok(Value::int(yes as i64))
-            }
-            // nqp::eqat($haystack, $needle, $pos) -> 1 when $needle occurs at
-            // exactly codepoint offset $pos. The haystack is memoized (see
-            // `nqp_char_cache`): JSON::Fast's string-token scan calls this
-            // repeatedly against the SAME full document text.
-            // Cost: O(m) on a nqp_char_cache hit (haystack); O(n + m) on a miss,
-            // n = chars of $haystack, m = chars of $needle. MoarVM: O(m) -- see #9129.
-            "eqat" => {
-                let haystack = super::nqp_char_cache::cached_chars(args, 0);
-                let needle: Vec<char> = sarg(args, 1).chars().collect();
-                let pos = iarg(args, 2);
-                let yes = usize::try_from(pos)
-                    .ok()
-                    .and_then(|p| haystack.get(p..p.saturating_add(needle.len())))
-                    .map(|window| window == needle.as_slice())
-                    .unwrap_or(false);
+            // nqp::eqat / nqp::eqatic($haystack, $needle, $pos) -> 1 when the
+            // needle occurs at exactly grapheme `$pos` (case-folded for
+            // `eqatic`). The same routine as `.starts-with` / `.substr-eq`.
+            // Cost: O(m) amortized, m = chars of $needle.
+            "eqat" | "eqatic" => {
+                let fold = if op == "eqatic" {
+                    crate::builtins::str_prim::Fold::Case
+                } else {
+                    crate::builtins::str_prim::Fold::Exact
+                };
+                let yes = crate::builtins::str_prim::nqp_eqat(
+                    args.first().unwrap_or(&Value::NIL),
+                    &sarg(args, 1),
+                    iarg(args, 2),
+                    fold,
+                );
                 Ok(Value::int(yes as i64))
             }
 

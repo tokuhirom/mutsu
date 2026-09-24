@@ -48,9 +48,6 @@ pub(crate) struct GraphemeIndex {
     flat: bool,
     /// Number of graphemes.
     len: usize,
-    /// Number of codepoints (`nqp::chars`, whose string ops are
-    /// codepoint-indexed). Equal to `len` for a flat string.
-    codepoints: usize,
     /// `marks[k]` is the byte offset of grapheme `k * STRIDE` (non-flat only).
     marks: Vec<usize>,
 }
@@ -138,7 +135,6 @@ impl GraphemeIndex {
             return GraphemeIndex {
                 flat: true,
                 len: s.len(),
-                codepoints: s.len(),
                 marks: Vec::new(),
             };
         }
@@ -153,7 +149,6 @@ impl GraphemeIndex {
         GraphemeIndex {
             flat: false,
             len,
-            codepoints: s.chars().count(),
             marks,
         }
     }
@@ -164,10 +159,11 @@ impl GraphemeIndex {
         self.len
     }
 
-    /// Number of codepoints.
+    /// True when every grapheme is one byte (ASCII with no `\r\n`), so
+    /// grapheme offsets are byte offsets.
     #[inline]
-    pub(crate) fn codepoints(&self) -> usize {
-        self.codepoints
+    pub(crate) fn is_flat(&self) -> bool {
+        self.flat
     }
 
     /// Byte offset at which grapheme `g` starts; `s.len()` for `g >= len`.
@@ -296,20 +292,6 @@ pub(crate) fn with_str_index<R>(v: &Value, f: impl FnOnce(&str, &GraphemeIndex) 
     f(&s, &idx)
 }
 
-/// Number of codepoints in `v`'s string form. A `Str` payload is borrowed,
-/// and a long one answers from its cached index, so a loop that re-asks the
-/// same string (`nqp::while(nqp::islt_i($i, nqp::chars($s)), ...)`) pays the
-/// count once rather than once per iteration (#9130).
-pub(crate) fn codepoint_count(v: &Value) -> usize {
-    if let ValueView::Str(arc) = v.view() {
-        if arc.len() < CACHE_MIN_BYTES {
-            return arc.chars().count();
-        }
-        return index_of_arc(&arc).codepoints();
-    }
-    v.to_string_value().chars().count()
-}
-
 /// `v`'s string form and its grapheme index, owned — for callers that need
 /// both across a call back into the interpreter.
 pub(crate) fn str_and_index(v: &Value) -> (Arc<String>, Rc<GraphemeIndex>) {
@@ -383,29 +365,6 @@ pub(crate) fn rfind_graphemes(
     }
 }
 
-/// The graphemes of `text` that `substr-eq($needle, $start)` compares against
-/// `needle`: as many as `needle` has, starting at grapheme `start`. `None`
-/// when `start` is past the end.
-pub(crate) fn substr_eq_window<'a>(
-    text: &'a str,
-    idx: &GraphemeIndex,
-    start: usize,
-    needle: &str,
-) -> Option<&'a str> {
-    if start > idx.len() {
-        return None;
-    }
-    let count = crate::builtins::string_pos::grapheme_len(needle);
-    let (b0, b1) = idx.byte_range(text, start, count);
-    Some(&text[b0..b1])
-}
-
-/// The suffix of `text` from grapheme `start` on (`contains`/`index` with a
-/// position). `None` when `start` is past the end.
-pub(crate) fn suffix_from<'a>(text: &'a str, idx: &GraphemeIndex, start: usize) -> Option<&'a str> {
-    (start <= idx.len()).then(|| &text[idx.byte_at(text, start)..])
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -415,7 +374,6 @@ mod tests {
         let idx = GraphemeIndex::build(s);
         let units = grapheme_units(s);
         assert_eq!(idx.len(), units.len(), "len of {s:?}");
-        assert_eq!(idx.codepoints(), s.chars().count(), "codepoints of {s:?}");
         let mut off = 0;
         for (g, u) in units.iter().enumerate() {
             assert_eq!(idx.byte_at(s, g), off, "byte_at({g}) of {s:?}");

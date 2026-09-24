@@ -17,7 +17,7 @@
 //!   TRIR body can reach a safepoint, so anything reachable only from a TRIR
 //!   frame has to be a root.
 
-use crate::value::{Value, ValueView};
+use crate::value::Value;
 
 /// All live TRIR frames' slots, plus the two operand stacks.
 ///
@@ -37,14 +37,6 @@ pub(crate) struct TrStacks {
     pub(crate) os: Vec<Value>,
     /// Each live frame's resolved free variables, oldest frame first.
     pub(crate) outers: Vec<Value>,
-    /// Codepoint memo for the operand-direct string reads, keyed by the
-    /// string's own allocation identity and shared by every frame.
-    ///
-    /// It deliberately outlives a frame: a scanner calls its `nom-ws` tens of
-    /// thousands of times over one document, and collecting that document's
-    /// characters afresh per call was the largest single per-call cost
-    /// measured in Stage 1 (345 instructions plus a malloc/free pair).
-    pub(crate) chars: TrCharCache,
     /// `CallGen` sites linked to the TRIR routine they reach (ADR-0112 Step
     /// 1, `gen_link.rs`).
     pub(crate) gen_links: super::gen_link::GenLinks,
@@ -96,72 +88,5 @@ impl TrStacks {
             .iter()
             .chain(self.os.iter())
             .chain(self.outers.iter())
-            .chain(self.chars.sources())
-    }
-}
-
-/// A small, identity-keyed memo of one string's codepoints.
-///
-/// Probed by the string's own `Arc` address, so a different string can never
-/// read another's entry and a store into the slot needs no invalidation. Four
-/// entries: a JSON parse walks one document, its keys and its values, and
-/// past that the probe is a miss either way.
-#[derive(Debug, Default)]
-pub(crate) struct TrCharCache {
-    entries: Vec<CharMemo>,
-    /// Round-robin replacement cursor.
-    next: usize,
-}
-
-#[derive(Debug)]
-struct CharMemo {
-    src: Value,
-    chars: Vec<char>,
-}
-
-/// How many strings the memo remembers at once.
-const CHAR_CACHE_SLOTS: usize = 4;
-
-impl TrCharCache {
-    /// The index at which `v`'s codepoints are memoized, filling the memo if
-    /// needed. `None` when `v` is not a string at all.
-    pub(crate) fn index_of(&mut self, v: &Value) -> Option<usize> {
-        for (i, e) in self.entries.iter().enumerate() {
-            if same_string(&e.src, v) {
-                return Some(i);
-            }
-        }
-        let chars: Vec<char> = v.as_str()?.chars().collect();
-        let memo = CharMemo {
-            src: v.clone(),
-            chars,
-        };
-        if self.entries.len() < CHAR_CACHE_SLOTS {
-            self.entries.push(memo);
-            return Some(self.entries.len() - 1);
-        }
-        let i = self.next;
-        self.next = (self.next + 1) % CHAR_CACHE_SLOTS;
-        self.entries[i] = memo;
-        Some(i)
-    }
-
-    /// The codepoints at a previously answered index.
-    #[inline]
-    pub(crate) fn chars_at(&self, i: usize) -> &[char] {
-        &self.entries[i].chars
-    }
-
-    /// The strings the memo is keeping alive, for GC roots.
-    fn sources(&self) -> impl Iterator<Item = &Value> {
-        self.entries.iter().map(|e| &e.src)
-    }
-}
-
-/// Whether two values are the SAME string allocation.
-fn same_string(a: &Value, b: &Value) -> bool {
-    match (a.view(), b.view()) {
-        (ValueView::Str(x), ValueView::Str(y)) => std::sync::Arc::ptr_eq(&x, &y),
-        _ => false,
     }
 }

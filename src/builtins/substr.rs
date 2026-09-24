@@ -46,7 +46,7 @@ pub(crate) fn native_substr_slice(
         if start > idx.len() {
             return None; // out-of-range: the interpreter returns a Failure
         }
-        let (b0, b1) = idx.byte_range(text, start, len.unwrap_or(usize::MAX));
-        Some(Ok(Value::str(text[b0..b1].to_string())))
+        let slice = crate::builtins::str_prim::slice(text, idx, start, len.unwrap_or(usize::MAX));
+        Some(Ok(Value::str(slice.to_string())))
     })
 }

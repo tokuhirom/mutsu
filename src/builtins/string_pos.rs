@@ -69,19 +69,6 @@ pub(crate) fn grapheme_units(s: &str) -> Vec<&str> {
     units
 }
 
-/// Convert a **byte** offset (what `str::find` returns) into the grapheme
-/// offset Raku reports. `byte_pos` must lie on a grapheme boundary, which it
-/// does for the result of a substring search.
-///
-/// Cost: O(n) for flat ASCII (the `is_flat_ascii` check scans all of `s`),
-/// otherwise O(byte_pos) plus a `Vec` of the prefix's graphemes.
-pub(crate) fn grapheme_offset(s: &str, byte_pos: usize) -> usize {
-    if is_flat_ascii(s) {
-        return byte_pos;
-    }
-    crate::builtins::grapheme_index::Units::from(&s[..byte_pos], 0).count()
-}
-
 /// The byte offset at which `s`'s **final** grapheme starts, or `s.len()` when
 /// `s` is empty.
 ///
@@ -146,7 +133,6 @@ mod tests {
     fn crlf_is_one_grapheme_everywhere() {
         let s = "AAA\r\n--bnd";
         assert_eq!(grapheme_len(s), 9);
-        assert_eq!(grapheme_offset(s, s.find("--bnd").unwrap()), 4);
         assert_eq!(grapheme_units(s)[3], "\r\n");
     }
 
@@ -154,7 +140,6 @@ mod tests {
     fn flat_ascii_takes_the_fast_path() {
         let s = "hello world";
         assert_eq!(grapheme_len(s), 11);
-        assert_eq!(grapheme_offset(s, 6), 6);
         assert_eq!(grapheme_units(s).len(), 11);
     }
 
@@ -189,6 +174,5 @@ mod tests {
         // "e" + COMBINING ACUTE ACCENT is one grapheme, two codepoints.
         let s = "a\u{65}\u{301}b";
         assert_eq!(grapheme_len(s), 3);
-        assert_eq!(grapheme_offset(s, s.find('b').unwrap()), 2);
     }
 }
