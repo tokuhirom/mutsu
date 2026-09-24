@@ -167,7 +167,7 @@ impl IoHandleState {
         file.read_to_end(&mut bytes)
             .map_err(|err| RuntimeError::new(format!("Failed to read: {}", err)))?;
         Ok(crate::runtime::utils::translate_nl_in(
-            String::from_utf8_lossy(&bytes).to_string(),
+            crate::builtins::decode_utf8_handle_text(&bytes)?,
         ))
     }
 
@@ -231,13 +231,13 @@ impl IoHandleState {
                     };
                     out.push_str(&ch);
                 }
-                out
+                crate::builtins::nfc(out)
             }
             None => {
                 let mut bytes = Vec::new();
                 file.read_to_end(&mut bytes)
                     .map_err(|err| RuntimeError::new(format!("Failed to read: {}", err)))?;
-                String::from_utf8_lossy(&bytes).to_string()
+                crate::builtins::decode_utf8_handle_text(&bytes)?
             }
         };
         // A text-mode read decodes CRLF to a single "\n"; a binary handle keeps
@@ -301,7 +301,7 @@ impl IoHandleState {
         Ok(if is_bin {
             out
         } else {
-            crate::runtime::utils::translate_nl_in(out)
+            crate::runtime::utils::translate_nl_in(crate::builtins::nfc(out))
         })
     }
 

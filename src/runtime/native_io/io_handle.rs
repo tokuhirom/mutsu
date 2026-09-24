@@ -864,7 +864,7 @@ impl Interpreter {
                     all_bytes.extend(chunk);
                 }
                 let text = crate::runtime::utils::translate_nl_in(
-                    String::from_utf8_lossy(&all_bytes).to_string(),
+                    crate::builtins::decode_utf8_handle_text(&all_bytes)?,
                 );
                 if close {
                     let _ = self.close_handle_value(&target_val)?;
@@ -892,7 +892,7 @@ impl Interpreter {
                     all_bytes.extend(chunk);
                 }
                 let text = crate::runtime::utils::translate_nl_in(
-                    String::from_utf8_lossy(&all_bytes).to_string(),
+                    crate::builtins::decode_utf8_handle_text(&all_bytes)?,
                 );
                 if close {
                     let _ = self.close_handle_value(&target_val)?;
