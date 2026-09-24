@@ -2105,9 +2105,14 @@ impl Interpreter {
         // When rebinding a variable (`$x := expr`), remove any existing
         // bind pairs where this slot was the source. Rebinding replaces the
         // binding, so previously derived readonly state must stop tracking it
-        // too; the new source's readonly state is installed below.
+        // too; the new source's readonly state is installed below, and a bind
+        // to an immutable value already installed its own above.
         if is_rebind {
-            if !self.no_readonly_vars() {
+            // ...except the marking THIS rebind just made above: `$v := 42`
+            // binds `$v` to an immutable value, so a later `$v = 5` must die
+            // ("Cannot assign to an immutable value"). Clearing it here undid
+            // the bind's own decision and let the assignment through (#9277).
+            if !self.no_readonly_vars() && !bind_marks_immutable {
                 self.unmark_readonly(name);
             }
             if crate::env::sigilless_readonly_keys_possible() {
