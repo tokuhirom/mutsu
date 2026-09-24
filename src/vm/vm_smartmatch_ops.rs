@@ -33,13 +33,14 @@ impl Interpreter {
         Some(declared == base)
     }
 
-    // Cost: O(m + n + p) + the RHS, m = match-variable slots (`$/`, `$0`, ...)
-    // the match writes back, n = locals a regex in the RHS can name (published
-    // to env for the engine), p = pattern length of those regexes (see
-    // `vm_smartmatch_sync`). A regex embedding code, a destructive
-    // `s///`/`tr///`, or a junction/collection RHS still publishes every local
-    // slot: O(L), L = local slots of the current frame. Rakudo: O(1) + the RHS
-    // -- see #9169.
+    // Cost: O(m + n + p + k) + the RHS, m = match-variable slots (`$/`, `$0`,
+    // ...) the match writes back, n = locals the RHS's regexes, substitutions
+    // and their embedded code can name (published to env for the engine), p =
+    // their source length, k = elements of a container RHS value searched for
+    // regexes (see `vm_smartmatch_sync`). Embedded code doing an indirect
+    // lookup (`EVAL`, `::($n)`, `MY::`) or a lazy/`Proxy` RHS still publishes
+    // every local slot: O(L), L = local slots of the current frame.
+    // Rakudo: O(1) + the RHS -- see #9293.
     #[allow(clippy::too_many_arguments)]
     pub(super) fn exec_smart_match_expr_op(
         &mut self,
@@ -170,7 +171,7 @@ impl Interpreter {
         // this frame's locals; publish those before matching against it. A
         // whole-frame publish already done before the RHS covers it.
         if !matches!(rhs_sync, super::vm_smartmatch_sync::RhsSync::Full) {
-            let value_sync = Self::smartmatch_value_sync(&right);
+            let value_sync = Self::smartmatch_value_sync(&left, &right);
             self.apply_smartmatch_sync(code, &value_sync);
         }
         let native_lhs_match = self.direct_native_lhs_match(lhs_var, &right);
