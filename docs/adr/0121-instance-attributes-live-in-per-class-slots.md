@@ -208,7 +208,14 @@ probe and the lock.
 
 ## 5. Implementation status
 
-Not started. D1 is the first slice.
+- **D1, `$!x` / `$.x` in a method (landed).** The method-class stack holds the owner as a
+  `Symbol` with its role-ness memoized on the frame; the qualified private keys are memoized
+  per `(owner, bare, sigil)`; `self` is read from the method body's invocant slot; the
+  attribute type-constraint lookup walks the registry's cached `Arc<[Symbol]>` MRO. A read
+  went from 4,166 to 3,302 instructions above the empty loop, a write from 10,727 to 7,985.
+  See `news/2026-09/attribute-access-resolves-owner-and-self-once-per-frame.md`.
+- **D1, `nqp::getattr` / `bindattr` / `create`:** not started.
+- **D2 - D4:** not started.
 
 ## 6. Reproduction
 

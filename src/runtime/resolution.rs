@@ -417,6 +417,24 @@ impl Interpreter {
         result
     }
 
+    /// [`Self::mro_readonly`] as interned names. A registered class hands back
+    /// its cached C3 MRO itself (an `Arc` clone), where `mro_readonly` copied
+    /// every name into a fresh `String` -- one allocation per ancestor, on paths
+    /// like the per-store attribute type-constraint lookup.
+    // Cost: O(1) for a registered class with a computed MRO; O(d) otherwise,
+    // d = ancestors (the `mro_readonly` walk, interned).
+    pub(crate) fn mro_syms_readonly(&self, class_name: &str) -> std::sync::Arc<[Symbol]> {
+        if let Some(class_def) = self.registry().classes.get(class_name)
+            && !class_def.mro.is_empty()
+        {
+            return class_def.mro.clone();
+        }
+        self.mro_readonly(class_name)
+            .iter()
+            .map(|name| Symbol::intern(name))
+            .collect()
+    }
+
     pub(crate) fn resolve_token_defs(
         &self,
         name: &str,

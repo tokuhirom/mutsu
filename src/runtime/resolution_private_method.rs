@@ -313,7 +313,7 @@ impl Interpreter {
     pub(crate) fn can_fast_dispatch_private_method_vm(&self, owner_class: &str) -> bool {
         self.method_class_stack
             .last()
-            .is_some_and(|caller| caller == owner_class)
+            .is_some_and(|caller| caller.name == owner_class)
     }
 
     /// Resolve the MRO for `class_name`. Tries the read-only resolution first

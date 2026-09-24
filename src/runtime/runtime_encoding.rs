@@ -590,7 +590,7 @@ impl Interpreter {
             }
         }
         // Check method class stack
-        for class_name in self.method_class_stack.iter().rev() {
+        for class_name in self.method_class_stack_syms_rev() {
             let qualified = format!("{}::{}", class_name, name);
             if let Some(key) = self.resolve_lexical_type_key(&qualified) {
                 return Some(key);

@@ -1026,7 +1026,7 @@ impl Interpreter {
             let map = attrs.as_map();
             match self.method_class_stack.last() {
                 Some(owner) => {
-                    let qualified = format!("{}\0{}", owner, bare);
+                    let qualified = format!("{}\0{}", owner.name, bare);
                     if map.contains_key(&qualified) {
                         qualified
                     } else {
