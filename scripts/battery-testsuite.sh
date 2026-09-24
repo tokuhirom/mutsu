@@ -17,6 +17,8 @@
 #   BATTERIES_WHITELIST   baseline path (default: batteries-whitelist.txt)
 #   BATTERIES_EXCLUDE     exclusion list (default: batteries-exclude.txt)
 #   BATTERIES_JOBS        batteries to fetch+run concurrently (default: 4)
+#   BATTERY_FETCH_ATTEMPTS  tries per upstream fetch before a battery counts as
+#                         unfetchable, with a 5s/10s/... backoff (default: 4)
 #
 # The path overrides exist so the gate itself can be exercised against a
 # scratch manifest/baseline (e.g. to verify that a regression really does fail)
@@ -73,10 +75,23 @@ fetch_commit() {
   git -C "$dir" init -q
   git -C "$dir" remote add origin "$url"
   # GitHub allows fetching an arbitrary reachable sha directly.
-  if ! git -C "$dir" fetch -q --depth 1 origin "$commit" 2>/dev/null; then
-    echo "error: could not fetch $commit from $url" >&2
-    return 1
-  fi
+  #
+  # Retried with a short backoff: an upstream host's brief outage (git.sr.ht
+  # answered 502 for a few minutes on 2026-09-24, failing `test-suites` on
+  # every open PR, #9275) must not fail the gate. A battery that stays
+  # unfetchable after the last attempt still fails it.
+  local attempt max_attempts="${BATTERY_FETCH_ATTEMPTS:-4}"
+  for ((attempt = 1; ; attempt++)); do
+    if git -C "$dir" fetch -q --depth 1 origin "$commit" 2>/dev/null; then
+      break
+    fi
+    if ((attempt >= max_attempts)); then
+      echo "error: could not fetch $commit from $url" >&2
+      return 1
+    fi
+    echo "warning: fetch of $commit from $url failed (attempt $attempt/$max_attempts), retrying" >&2
+    sleep $((attempt * 5))
+  done
   git -C "$dir" checkout -q FETCH_HEAD
 }
 
