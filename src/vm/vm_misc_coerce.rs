@@ -73,6 +73,13 @@ impl Interpreter {
                 "Cannot resolve caller Numeric(Sub:D: ); none of these signatures matches:\n    (Mu:U \\v: *%_)",
             ));
         }
+        let is_range_instance = if let ValueView::Instance { class_name, .. } = val.view() {
+            self.class_mro(&class_name.resolve())
+                .iter()
+                .any(|name| name.as_str() == "Range")
+        } else {
+            false
+        };
         // Punned roles are represented as Mixins, so prefix `+` must also
         // dispatch a role-provided Numeric method before falling back to the
         // generic value coercion (which cannot see the mixin's method table).
@@ -88,6 +95,11 @@ impl Interpreter {
             let result = self.try_compiled_method_or_interpret(val.clone(), "Numeric", vec![]);
             self.reconcile_caller_after_internal_dispatch(caller_code);
             if let Ok(result) = result {
+                self.stack.push(result);
+                return Ok(());
+            }
+            if is_range_instance {
+                let result = self.call_method_with_values(val, "Numeric", vec![])?;
                 self.stack.push(result);
                 return Ok(());
             }
