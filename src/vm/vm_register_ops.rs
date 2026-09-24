@@ -1416,6 +1416,39 @@ impl Interpreter {
     /// that don't yet deref one (immutability, type-object dispatch, `.kv` rw
     /// writeback). Arrays / hashes / subs / type objects are reference-shared
     /// already and untouched.
+    /// The binding cell `v` is, when it is one: a `ContainerRef` whose content
+    /// is itself a `ContainerRef` (the variable's real container).
+    ///
+    /// Rakudo's closure reads the lexical *pad slot*, so it sees a later
+    /// `$a := X`, while a second name bound earlier (`my $f := $a`) holds the
+    /// old container and does not follow (#9207). mutsu's closure captures a
+    /// cell, not the slot, so a captured lexical that is rebound after the
+    /// capture gets one more level of indirection: the frame slot, its env
+    /// entry and every capturing closure share the binding cell `B`, whose
+    /// content is the container `C`. Reads collapse the chain
+    /// (`Value::with_deref`), a plain write goes through to `C`
+    /// (`Value::store_through_cell`), a `:=` bind of another name to `$a`
+    /// takes `C`, and a rebind of `$a` replaces `B`'s content
+    /// (`Self::reseat_binding_cell`). The same shape is what an rw-parameter
+    /// rebind already leaves behind (#8759), so it needs no new reader.
+    pub(crate) fn binding_cell_of(v: &Value) -> Option<crate::gc::Gc<crate::value::ContainerCell>> {
+        match v.view() {
+            ValueView::ContainerRef(arc) if arc.lock().unwrap().is_container_ref() => {
+                Some(arc.clone())
+            }
+            _ => None,
+        }
+    }
+
+    /// Wrap the container `container` (a `ContainerRef`) in a fresh binding
+    /// cell — see [`Self::binding_cell_of`].
+    pub(crate) fn wrap_in_binding_cell(container: Value) -> Value {
+        debug_assert!(container.is_container_ref());
+        Value::container_ref(crate::gc::Gc::new(crate::value::ContainerCell::new(
+            container,
+        )))
+    }
+
     pub(super) fn box_captured_lexicals(
         &mut self,
         code: &CompiledCode,
@@ -1573,9 +1606,17 @@ impl Interpreter {
             let Some(idx) = baked_idx else {
                 continue;
             };
+            // A lexical this frame REBINDS after the capture (`$a := 2`) needs
+            // a binding cell: see `Self::wrap_in_binding_cell`.
+            let rebound = code.rebound_slots.contains(&(idx as u32));
             // Already a shared cell -> a sibling closure (or earlier capture)
             // boxed it; reuse the same Arc.
             if self.locals[idx].is_container_ref() {
+                if rebound && Self::binding_cell_of(&self.locals[idx]).is_none() {
+                    let binding = Self::wrap_in_binding_cell(self.locals[idx].clone());
+                    self.locals[idx] = binding.clone();
+                    self.env_mut().insert(s.clone(), binding);
+                }
                 continue;
             }
             // The name-keyed legacy atomic lane owns this binding's value right
@@ -1630,6 +1671,11 @@ impl Interpreter {
             }
             let container = cur.clone().into_container_ref();
             self.register_container_cell_constraint_for_name(&container, &s);
+            let container = if rebound {
+                Self::wrap_in_binding_cell(container)
+            } else {
+                container
+            };
             self.locals[idx] = container.clone();
             self.env_mut().insert(s.clone(), container.clone());
             // Track C: if a thread is already running (shared_vars active) and a

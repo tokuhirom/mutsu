@@ -766,3 +766,40 @@ are the exception: they are slice-1-shaped, verified low-risk by the
 scoped implementation slice — smaller than originally estimated (5 call
 sites each, not the ~20 a substring-match miscount suggested) once the
 local-slot-vs-package-scope split above is confirmed.
+
+## 14. A closure's view of a rebind: the binding cell (#9237, 2026-09-24)
+
+[#9237](https://github.com/tokuhirom/mutsu/issues/9237) is the §11 caveat
+("closures that capture and rebind an outer lexical are a second, distinct
+source of celling") showing up as a wrong answer. Rakudo's closure reads the
+lexical *pad slot*, so it sees `$a := X` made after it was created. mutsu's
+closure captured the variable's *container cell*. A rebind can only replace the
+frame slot, and writing through the shared cell would re-bind a second name
+bound earlier with `my $f := $a` (#9207).
+
+The fix adds one level of indirection, only where it is needed:
+
+- **Compile time.** `CompiledCode::rebound_slots` records the slots that a
+  statement- or expression-level `:=` rebinds after their declaration. It is
+  narrower than `rebind_target_slots`, which also holds declaration binds and
+  plain-assignment `TagContainerRef` targets.
+- **Capture.** When `box_captured_lexicals` boxes a captured scalar whose slot
+  is in `rebound_slots`, it gives the slot a **binding cell** `B` whose content
+  is the container `C` (`Interpreter::binding_cell_of` / `wrap_in_binding_cell`).
+  The frame slot, its env entry and every capturing closure share `B`.
+- **Reads and writes** need no new code. `Value::with_deref` / `into_deref`
+  already collapse a cell-holding-cell chain, and `Value::store_through_cell`
+  already writes a plain value through to the innermost cell. #8759 left the
+  same shape behind for rw-parameter rebinds.
+- **Rebind.** `exec_set_local_op` notes `B` before the store. After the store it
+  moves the new binding into `B` and puts `B` back in the slot
+  (`reseat_binding_cell`).
+- **Binding another name to it.** `my $g := $a` binds `$g` to the innermost
+  container `C`, not to `B`. The source's own slot keeps `B`, so a later rebind
+  of `$a` leaves `$g` alone.
+
+What this does not cover: a rebind made *inside* the closure (`{ $a := 5 }`)
+still changes only the closure's own view, and so do captures that bypass
+`box_captured_lexicals` (the non-escaping, value-frozen `owned_captures`).
+Neither shape was reported. If one turns up, the same binding cell is the place
+to extend.
