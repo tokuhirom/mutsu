@@ -346,23 +346,8 @@ impl Interpreter {
             // Cost: O(1) amortized; O(i - e) when growing, i = index, e = elements.
             "bindpos" => {
                 let target = args.first().cloned().unwrap_or(Value::NIL);
-                let idx = iarg(args, 1).max(0) as usize;
                 let val = args.get(2).cloned().unwrap_or(Value::NIL);
-                if let Some((_, attrs)) = value_buf::buf_target(&target)
-                    && value_buf::set_buf_elem(&attrs, idx, &val).is_some()
-                {
-                    return Some(Ok(val));
-                }
-                let stored = val.clone();
-                match Self::nqp_with_elems_mut(op, &target, |elems| {
-                    if elems.len() <= idx {
-                        elems.resize(idx + 1, Value::NIL);
-                    }
-                    elems[idx] = stored;
-                }) {
-                    Ok(()) => Ok(val),
-                    Err(e) => Err(e),
-                }
+                crate::runtime::nqp_backing::bind_elem(op, &target, iarg(args, 1), val, Value::NIL)
             }
             // nqp::chr($codepoint): the one-character string for a codepoint.
             // Lower level than Raku's `chr` (no `Cool` coercion), but it

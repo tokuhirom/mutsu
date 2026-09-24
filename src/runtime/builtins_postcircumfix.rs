@@ -56,6 +56,31 @@ impl Interpreter {
         }
     }
 
+    /// `$x.AT-POS($i)` on a builtin positional (an Array/List or a Str): the
+    /// CORE `postcircumfix:<[ ]>` itself, so the method and the subscript
+    /// cannot disagree (ADR-0118). They used to: `@a.AT-POS(-1)` was `Nil`
+    /// where `@a[-1]` is an `X::OutOfRange` Failure, `my Int @i; @i.AT-POS(5)`
+    /// was `Any` where `@i[5]` is `Int`, and `"abc".AT-POS(1)` indexed a
+    /// character where the one-element-list rule makes it out of range.
+    /// `None` for any other receiver (a user class's own `AT-POS`, a Range,
+    /// a multi-dimensional call, ...).
+    // Cost: that of the `Index` opcode for one index.
+    pub(crate) fn builtin_at_pos(
+        &mut self,
+        target: &Value,
+        args: &[Value],
+    ) -> Option<Result<Value, RuntimeError>> {
+        let [idx] = args else {
+            return None;
+        };
+        if !matches!(target.view(), ValueView::Array(..) | ValueView::Str(_))
+            || matches!(idx.view(), ValueView::Pair(..))
+        {
+            return None;
+        }
+        Some(self.core_subscript(target.clone(), idx.clone(), true))
+    }
+
     /// Run the native subscript opcode for one (target, index) pair.
     fn core_subscript(
         &mut self,

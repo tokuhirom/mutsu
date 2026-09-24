@@ -142,8 +142,19 @@ impl Interpreter {
                 let v = crate::runtime::types::unwrap_varref_value(
                     args.first().cloned().unwrap_or(Value::NIL),
                 );
+                // An object is copied by the native `Mu.clone` (never a user
+                // `clone` method: nqp::clone is below the method layer), an
+                // array by the same copy `.clone` makes (ADR-0118). This used
+                // to hand back the SAME instance, sharing its attributes.
+                if matches!(v.view(), ValueView::Instance { .. })
+                    && let Some(r) = self.native_instance_clone_value(&v, &[])
+                {
+                    return Some(r);
+                }
+                if let Some(copy) = v.array_shallow_clone() {
+                    return Some(Ok(copy));
+                }
                 Ok(match v.view() {
-                    ValueView::Array(items, _) => Value::array(items.to_vec()),
                     ValueView::Hash(map) => {
                         let copied: Vec<(String, Value)> =
                             map.iter().map(|(k, v)| (k.clone(), v.clone())).collect();

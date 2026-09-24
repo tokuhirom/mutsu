@@ -76,6 +76,44 @@ MoarVM answers), so the result depended on whether the enclosing routine had bee
   the VM's nqp path or TRIR's runtime outside `nqp_native.rs` (opt-out: `native-prim: allow`).
   `t/fixtures/trir-int-ops.raku` pins the shift counts with TRIR on and off against rakudo.
 
+### 2.2 Positional access
+
+The list family had the same shape. The positional `nqp::` ops each resolved their index on their
+own (`nqp_ops.rs`, `nqp_ops_text.rs`, `nqp_ops_list.rs`, `nqp_ops_builtin.rs`, TRIR's
+`trir_atpos_i`), and all of them clamped a negative index to 0 or read it as absent, so
+`nqp::bindpos($l, -1, $v)` overwrote the *first* element. The Raku-level methods had drifted from
+their subscripts: `@a.AT-POS(-1)` was `Nil` where `@a[-1]` is an `X::OutOfRange`, `my Int @i;
+@i.AT-POS(5)` was `Any` where `@i[5]` is `Int`, `"abc".AT-POS(1)` indexed a character, and
+`ASSIGN-POS` rebuilt the array, so every gap it grew claimed to `:exists`.
+
+- `runtime::nqp_backing` holds `resolve_index` (MoarVM's VMArray rule: negative counts from the
+  end, before the start dies), `elem_at`, `bind_elem` and `atpos_i`. Every `atpos*`, `bindpos*`,
+  `splice` and TRIR's `AtPosI` go through them. `bindpos_i`/`_n` now convert the value they
+  store, as `bindpos_s` and `push_*` already did.
+- `.AT-POS($i)` on an Array/List or Str is `Interpreter::builtin_at_pos`, which runs the CORE
+  `postcircumfix:<[ ]>` (`core_subscript`) itself.
+- `ASSIGN-POS` and the `[]=` opcode's fast lane share `ArrayData::store_element`. The store is in
+  place through the shared node, and a grown gap is a hole.
+- `t/vm/nqp-list-index-parity.t` pins 27 rakudo-measured rows. There is no pattern rule for this
+  family: `.max(0) as usize` has too many legitimate uses (byte offsets) to ban.
+
+### 2.3 Object-level `nqp::` ops
+
+Five object ops had their own copy of a question the VM already answers:
+
+| op | answered with | should be |
+|---|---|---|
+| `nqp::istrue` | `Value::truthy()` (ignores a user `Bool`, a pending `.grep`) | `eval_truthy` (`?`, `if`, TRIR `TruthyObj`) |
+| `nqp::istype` | `type_matches_value` (no smiley, enum, or `is Mu` MRO correction) | `type_object_accepts` (`~~`'s type-object arm, now a function) |
+| `nqp::isconcrete` / `defined` | `value_is_defined` (a `Failure` and `Empty` read 0) | `value_is_concrete` |
+| `nqp::eqaddr` | `values_identical`, i.e. `===` (user `WHICH`, memoized only after a `===`) | `values_same_object` |
+| `nqp::clone` | the same instance back; an `Array` as a `List` | the native `Mu.clone`; `Value::array_shallow_clone`, shared with `.clone` |
+
+`t/vm/nqp-object-ops-parity.t` pins 21 rakudo-measured rows. One difference is known and left
+alone: MoarVM's `nqp::clone` copies attribute *slots*, so an `is rw` attribute's Scalar container
+is shared with the original. mutsu does not store attributes as containers and cannot express that
+sharing.
+
 ### 2.5 Character classes
 
 In Rakudo, the regex classes are MoarVM's `CCLASS_*` table, the same one `nqp::iscclass` reads:

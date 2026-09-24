@@ -287,62 +287,25 @@ impl Interpreter {
             // Cost: O(m), m = chars of the element (copied). MoarVM: O(1) -- see #9134.
             "atpos_s" => {
                 let target = args.first().cloned().unwrap_or(Value::NIL);
-                let idx = iarg(args, 1);
-                let elem = match target.view() {
-                    ValueView::Array(items, _) => usize::try_from(idx)
-                        .ok()
-                        .and_then(|i| items.get(i).cloned()),
-                    ValueView::Instance { attributes, .. } => {
-                        usize::try_from(idx).ok().and_then(|i| {
-                            crate::value::value_buf::with_buf_elems(&attributes, |e| {
-                                e.get(i).cloned()
-                            })
-                            .flatten()
-                        })
-                    }
-                    _ => None,
-                };
-                Ok(Value::str(
-                    elem.map(|v| v.to_string_value()).unwrap_or_default(),
-                ))
+                match crate::runtime::nqp_backing::elem_at(&target, iarg(args, 1)) {
+                    Ok(e) => Ok(Value::str(
+                        e.map(|v| v.to_string_value()).unwrap_or_default(),
+                    )),
+                    Err(e) => Err(e),
+                }
             }
             // Cost: O(m) + O(g), m = chars of the value (copied), g = slots grown past the end.
             // MoarVM: O(1) amortized -- see #9134.
             "bindpos_s" => {
                 let target = args.first().cloned().unwrap_or(Value::NIL);
-                let idx = iarg(args, 1).max(0) as usize;
                 let val = Value::str(sarg(args, 2));
-                match target.view() {
-                    ValueView::Array(items, _) => {
-                        // SAFETY: audited aliased in-place container write (see
-                        // value::aliased_mut); no borrow into the node is live.
-                        let data = unsafe { crate::value::gc_contents_mut(&items) };
-                        if data.items().len() <= idx {
-                            data.items_mut().resize(idx + 1, Value::str(String::new()));
-                        }
-                        data.items_mut()[idx] = val.clone();
-                        Ok(val)
-                    }
-                    ValueView::Instance { attributes, .. } => {
-                        let stored = val.clone();
-                        let done =
-                            crate::value::value_buf::with_buf_elems_mut(&attributes, |elems| {
-                                if elems.len() <= idx {
-                                    elems.resize(idx + 1, Value::str(String::new()));
-                                }
-                                elems[idx] = stored;
-                            });
-                        if done.is_none() {
-                            return Some(Err(RuntimeError::new(
-                                "nqp::bindpos_s: expected a Buf/Blob or array".to_string(),
-                            )));
-                        }
-                        Ok(val)
-                    }
-                    _ => Err(RuntimeError::new(
-                        "nqp::bindpos_s: expected a Buf/Blob or array".to_string(),
-                    )),
-                }
+                crate::runtime::nqp_backing::bind_elem(
+                    op,
+                    &target,
+                    iarg(args, 1),
+                    val,
+                    Value::str(String::new()),
+                )
             }
 
             _ => return self.call_nqp_op_str(op, args),
