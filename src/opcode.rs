@@ -5665,6 +5665,11 @@ pub(crate) struct CompiledCode {
     /// EVERY closure creation — see `capture_free_var_set` / `capture_local_set`.
     pub(crate) free_var_sym_set: std::sync::OnceLock<rustc_hash::FxHashSet<Symbol>>,
     pub(crate) local_sym_set: std::sync::OnceLock<rustc_hash::FxHashSet<Symbol>>,
+    /// Lazily-built name indexes over [`locals`](Self::locals) (see
+    /// [`LocalSlotIndex`]), so a block exit can find the slots of the handful
+    /// of names it has to reset without scanning every local of the frame
+    /// (#9170).
+    pub(crate) local_slot_index: std::sync::OnceLock<LocalSlotIndex>,
     /// Lazily-built shared body per `stmt_pool` slot (see `closure_body_arc`).
     /// A `SubData`'s body used to be deep-cloned out of the pool on every
     /// closure creation; the `Arc` is built once per slot instead.
@@ -5678,6 +5683,30 @@ pub(crate) struct CompiledCode {
     /// Per-chunk JIT hotness counter and compiled-entry cache (ADR-0004 J1).
     #[cfg(feature = "jit")]
     pub(crate) jit: JitCodeState,
+}
+
+/// Name indexes over a chunk's local slots; see [`CompiledCode::local_slot_index`].
+#[derive(Clone, Default, Debug)]
+pub(crate) struct LocalSlotIndex {
+    by_sym: rustc_hash::FxHashMap<Symbol, Vec<u32>>,
+    by_bare: rustc_hash::FxHashMap<String, Vec<u32>>,
+    non_plain: Vec<u32>,
+}
+
+/// A plain user variable name (as opposed to an internal `__mutsu_*` key, a
+/// special like `$_`/`$!`/`$/`, or a twigil'd dynamic/attribute): the only kind
+/// whose in-block mutation a scope-isolating block (`"{ ... }"`) lets through.
+pub(crate) fn is_plain_user_var_name(name: &str) -> bool {
+    if name.starts_with("__") {
+        return false;
+    }
+    let body = name.strip_prefix(['$', '@', '%', '&']).unwrap_or(name);
+    if body.starts_with(['*', '!', '.', '?']) || body == "_" {
+        return false;
+    }
+    body.chars()
+        .next()
+        .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
 }
 
 /// Number of ways in the direct-mapped call-dispatch cache (ADR-0066). A power
@@ -6125,6 +6154,7 @@ impl CompiledCode {
             rebind_target_slots: Vec::new(),
             free_var_sym_set: std::sync::OnceLock::new(),
             local_sym_set: std::sync::OnceLock::new(),
+            local_slot_index: std::sync::OnceLock::new(),
             stmt_pool_bodies: std::sync::OnceLock::new(),
             stmt_pool_signatures: std::sync::OnceLock::new(),
             #[cfg(feature = "jit")]
@@ -6397,6 +6427,56 @@ impl CompiledCode {
     /// Served from the pre-interned table; a hand-built chunk that never ran
     /// `compute_locals_sym` falls back to interning it on the spot, so the probe
     /// is never silently skipped.
+    fn local_slot_index(&self) -> &LocalSlotIndex {
+        self.local_slot_index.get_or_init(|| {
+            let mut index = LocalSlotIndex::default();
+            for (idx, name) in self.locals.iter().enumerate() {
+                let slot = idx as u32;
+                if let Some(sym) = self.local_sym(idx) {
+                    index.by_sym.entry(sym).or_default().push(slot);
+                }
+                let bare = name.strip_prefix(['$', '@', '%', '&']).unwrap_or(name);
+                index
+                    .by_bare
+                    .entry(bare.to_string())
+                    .or_default()
+                    .push(slot);
+                if !is_plain_user_var_name(name) {
+                    index.non_plain.push(slot);
+                }
+            }
+            index
+        })
+    }
+
+    /// Every local slot named `sym`, in slot order (a name can own several
+    /// slots: shadow slots for block-scoped redeclarations).
+    // Cost: O(1) amortized (one hash probe; the O(L) index is built on first use).
+    pub(crate) fn local_slots_of(&self, sym: Symbol) -> &[u32] {
+        self.local_slot_index()
+            .by_sym
+            .get(&sym)
+            .map(Vec::as_slice)
+            .unwrap_or(&[])
+    }
+
+    /// Every local slot whose name, with one leading sigil stripped, is `bare`.
+    // Cost: O(1) amortized (one hash probe; the O(L) index is built on first use).
+    pub(crate) fn local_slots_of_bare(&self, bare: &str) -> &[u32] {
+        self.local_slot_index()
+            .by_bare
+            .get(bare)
+            .map(Vec::as_slice)
+            .unwrap_or(&[])
+    }
+
+    /// The local slots whose name is not a plain user variable (see
+    /// [`is_plain_user_var_name`]).
+    // Cost: O(1) amortized (the O(L) index is built on first use).
+    pub(crate) fn non_plain_local_slots(&self) -> &[u32] {
+        &self.local_slot_index().non_plain
+    }
+
     pub(crate) fn alias_sym(&self, idx: usize) -> Option<Symbol> {
         match self.binding_descs.get(idx).and_then(|d| d.alias_sym) {
             Some(sym) => Some(sym),

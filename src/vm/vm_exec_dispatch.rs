@@ -6111,7 +6111,7 @@ impl Interpreter {
                 self.exec_import_scope_op(code, *body_end, ip, compiled_fns)?;
             }
 
-            // Cost: O(b + v + L + R) plus the body, b = ops in the block, v = env entries, L = frame locals, R = registry (see exec_block_scope_op). Rakudo: O(1) -- see #9170.
+            // Cost: O(b + w + d + R) plus the body, b = ops in the block, w = names it wrote by name, d = names it declared, R = registry (see exec_block_scope_op). Rakudo: O(1) -- see #9170.
             OpCode::BlockScope {
                 pre_end,
                 enter_end,
@@ -6139,7 +6139,7 @@ impl Interpreter {
                     compiled_fns,
                 )?;
             }
-            // Cost: O(b + v) plus the body, b = ops in the branch, v = env entries (key-set snapshot). Rakudo: O(1) -- see #9170.
+            // Cost: O(b + w + d) plus the body, b = ops in the branch, w = names it wrote by name, d = names it declared (see exec_block_local_scope_op). Rakudo: O(1) -- see #9170.
             OpCode::BlockLocalScope {
                 body_end,
                 succeed_boundary,
@@ -6179,7 +6179,7 @@ impl Interpreter {
                 // to find the next LEAVE phaser boundary on error.
                 *ip += 1;
             }
-            // Cost: O(1) plus the body; scope-isolating (`"{...}"`) adds O(v + L), `scope_routines` O(R) (see exec_do_block_expr_op). Rakudo: O(1) -- see #9170.
+            // Cost: O(1) plus the body; scope-isolating (`"{...}"`) adds O(w + k + s), w = names written, k = names declared, s = special local slots; `scope_routines` O(R) (see exec_do_block_expr_op). Rakudo: O(1) -- see #9170.
             OpCode::DoBlockExpr {
                 body_end,
                 label,
@@ -6472,7 +6472,7 @@ impl Interpreter {
                 self.exec_declare_our_scalar_op(code, *slot, *qualified_idx);
                 *ip += 1;
             }
-            // Cost: O(1) in a loop's steady state, else O(L), L = frame locals (by-name scans): O(L^2) per routine call. Rakudo: O(1) -- see #9171.
+            // Cost: O(1) in a loop's steady state, else O(t), t = the chunk's `state` locals (see exec_set_var_dynamic_op). Rakudo: O(1) -- see #9171.
             OpCode::SetVarDynamic { name_idx, dynamic } => {
                 self.exec_set_var_dynamic_op(code, *name_idx, *dynamic);
                 *ip += 1;
