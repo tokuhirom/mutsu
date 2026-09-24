@@ -45,7 +45,7 @@ bound what they read:
 
 Those moved to [#9293] with a fix direction. #9169 closes with this change.
 
-Pin: `t/vm/writeback/smartmatch-code-bearing-sync.t`, which reassigns an
+Pin: `t/regex/match/smartmatch-code-bearing-sync.t`, which reassigns an
 outer lexical before each match so that a stale env entry would give a wrong
 answer.
 
