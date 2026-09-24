@@ -197,10 +197,23 @@ pub(super) fn dispatch_temporal_method(
                         method, year, month, day, &sep,
                     ))))
                 }
-                "clone" => Some(
-                    datetime_clone(year, month, day, hour, minute, second, timezone, args)
+                "clone" => {
+                    let existing_formatter = attributes.as_map().get("formatter").cloned();
+                    Some(
+                        datetime_clone(
+                            year,
+                            month,
+                            day,
+                            hour,
+                            minute,
+                            second,
+                            timezone,
+                            existing_formatter,
+                            args,
+                        )
                         .map(|v| rebless_datetime_result(v, class_name, &attributes)),
-                ),
+                    )
+                }
                 "truncated-to" => Some(
                     datetime_truncated_to(year, month, day, hour, minute, second, timezone, args)
                         .map(|v| rebless_datetime_result(v, class_name, &attributes)),
@@ -494,8 +507,10 @@ fn datetime_clone(
     mut minute: i64,
     mut second: f64,
     mut timezone: i64,
+    existing_formatter: Option<Value>,
     args: &[Value],
 ) -> Result<Value, RuntimeError> {
+    let mut formatter = existing_formatter;
     for arg in args {
         if let ValueView::Pair(key, value) = arg.view() {
             match key.as_str() {
@@ -506,14 +521,15 @@ fn datetime_clone(
                 "minute" => minute = value.to_f64() as i64,
                 "second" => second = value.to_f64(),
                 "timezone" => timezone = value.to_f64() as i64,
-                "formatter" => {} // TODO: support formatter
+                "formatter" => formatter = Some(value.clone()),
                 _ => {}
             }
         }
     }
     temporal::validate_datetime(year, month, day, hour, minute, second, timezone)?;
-    Ok(temporal::make_datetime(
-        year, month, day, hour, minute, second, timezone,
+    Ok(temporal::with_datetime_formatter(
+        temporal::make_datetime(year, month, day, hour, minute, second, timezone),
+        formatter,
     ))
 }
 

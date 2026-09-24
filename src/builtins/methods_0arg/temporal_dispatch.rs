@@ -208,9 +208,23 @@ pub fn datetime_method_0arg(
             minute,
             second.floor() as i64
         )))),
-        "Str" | "gist" => Some(Ok(Value::str(format_datetime(
-            year, month, day, hour, minute, second, timezone,
-        )))),
+        "Str" | "gist" => {
+            // A formatter is evaluated by the interpreter-aware dispatch path,
+            // which has the invocant needed by a user Callable. A rendered
+            // value is already available when the constructor or clone path
+            // evaluated it earlier.
+            if let Some(ValueView::Str(rendered)) =
+                attributes.get("__formatter_rendered").map(Value::view)
+            {
+                return Some(Ok(Value::str(rendered.to_string())));
+            }
+            if attributes.contains_key("formatter") {
+                return None;
+            }
+            Some(Ok(Value::str(format_datetime(
+                year, month, day, hour, minute, second, timezone,
+            ))))
+        }
         "Date" => Some(Ok(make_date(year, month, day))),
         "posix" => {
             let posix = datetime_to_posix(year, month, day, hour, minute, second, timezone);

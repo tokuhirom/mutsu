@@ -1,6 +1,6 @@
 use Test;
 
-plan 7;
+plan 10;
 
 {
     sub dt(*%args) { DateTime.new(|{ year => 1984, %args }) }
@@ -19,6 +19,15 @@ plan 7;
 {
     my $dt = DateTime.new('2009-12-31T22:33:44', formatter => -> $dt { ($dt.hour % 12) ~ 'ish' });
     is ~$dt, '10ish', 'DateTime.new(Str) honors formatter';
+}
+
+{
+    # LocalTime 0.0.3 relies on DateTime.clone preserving its formatter.
+    my $dt = DateTime.new(:2022year, formatter => -> $dt { "formatted {$dt.year}" });
+    is $dt.clone.Str, 'formatted 2022', 'DateTime.clone preserves its formatter';
+    is $dt.clone(:year(2023)).Str, 'formatted 2023', 'DateTime.clone applies overrides with its formatter';
+    is $dt.clone(:formatter(-> $dt { "alternate {$dt.year}" })).Str,
+        'alternate 2022', 'DateTime.clone accepts a formatter override';
 }
 
 {
