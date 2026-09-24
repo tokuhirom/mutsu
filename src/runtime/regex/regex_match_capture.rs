@@ -46,7 +46,8 @@ impl Interpreter {
         super::regex_helpers::OuterCapsSeed,
     ) {
         use super::regex_helpers::{
-            InlineVarsSeed, OuterCapsSeed, any_regex_backref_lowered, inline_regex_vars_active,
+            InlineVarsSeed, OuterCapsSeed, any_regex_backref_lowered, inline_capture_scope,
+            inline_regex_vars_active,
         };
         // Nothing published and nothing to publish: whichever branch the cold
         // path would take, it arms `InlineVarsSeed::arm(None)` with the slot
@@ -55,6 +56,7 @@ impl Interpreter {
         if !any_regex_backref_lowered()
             && !inline_regex_vars_active()
             && current_caps.regex_vars_shared().is_none()
+            && inline_capture_scope().is_none()
         {
             return (InlineVarsSeed::inert(), OuterCapsSeed::inert());
         }
@@ -115,21 +117,25 @@ impl Interpreter {
         current_caps: &RegexCaptures,
     ) -> super::regex_helpers::OuterCapsSeed {
         use super::regex_helpers::{
-            OuterCapsSeed, any_regex_backref_lowered, atom_contains_backref,
+            OuterCapsSeed, any_regex_backref_lowered, atom_contains_backref, inline_capture_scope,
         };
-        if !any_regex_backref_lowered() {
+        let capture_scope = inline_capture_scope();
+        let needs_backref_scope = any_regex_backref_lowered() && atom_contains_backref(atom);
+        let needs_capture_scope = capture_scope.is_some() && Self::atom_shares_backref_scope(atom);
+        if !needs_backref_scope && !needs_capture_scope {
             return OuterCapsSeed::inert();
         }
         if !Self::atom_shares_backref_scope(atom) {
             return OuterCapsSeed::arm(None);
         }
-        if !atom_contains_backref(atom) {
+        if !atom_contains_backref(atom) && capture_scope.is_none() {
             return OuterCapsSeed::inert();
         }
         OuterCapsSeed::arm(Some(std::sync::Arc::new(OuterBackrefCaps {
             named: current_caps.named.clone(),
             positional: current_caps.positional.clone(),
             parent: current_caps.outer_backref().cloned(),
+            merge_positional: capture_scope,
         })))
     }
 
@@ -520,8 +526,10 @@ impl Interpreter {
                     // The text matched up to this assertion — becomes `$/.Str`
                     // inside the `<?{ … }>` so `$/.lc` / `~$/` see the matched-so-far
                     // text (e.g. the card grammar's `%*PLAYED{$/.lc}++` dup check).
-                    let matched_so_far: String =
-                        chars[current_caps.match_from..pos].iter().collect();
+                    let matched_so_far: String = chars
+                        [current_caps.inline_match_from().min(chars.len())..pos]
+                        .iter()
+                        .collect();
                     // Runs on THIS interpreter, with real side effects, right here
                     // (ADR-0009 part B). It is therefore NOT recorded as a code block
                     // for `execute_regex_code_blocks` to replay on the winning path —
@@ -545,7 +553,10 @@ impl Interpreter {
                         return None;
                     }
                 }
-                let matched_so_far: String = chars[current_caps.match_from..pos].iter().collect();
+                let matched_so_far: String = chars
+                    [current_caps.inline_match_from().min(chars.len())..pos]
+                    .iter()
+                    .collect();
                 // raku runs EVERY plain `{ … }` block inline, left-to-right,
                 // during matching: a write to an in-regex `:my` lexical is
                 // visible to the atoms that follow it (YAMLish's `root-block`

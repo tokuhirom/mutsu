@@ -196,9 +196,26 @@ pub(crate) struct OuterBackrefCaps {
     pub(crate) named: NamedCaptureMap,
     pub(crate) positional: Vec<PosSlot>,
     pub(crate) parent: Option<Arc<OuterBackrefCaps>>,
+    /// When a separated quantifier is matching its next atom, the atom's
+    /// captures belong in the quantifier's folded positional slots rather
+    /// than after them. The range is absolute in the visible positional list.
+    pub(crate) merge_positional: Option<(usize, usize)>,
 }
 
 impl OuterBackrefCaps {
+    /// Append captures from the outermost scope through this level in source
+    /// order. This is the `$ /` view for inline code; backreference lookup
+    /// below intentionally keeps its innermost-slot semantics instead.
+    pub(crate) fn append_captures(&self, out: &mut RegexCaptures) {
+        if let Some(parent) = self.parent.as_ref() {
+            parent.append_captures(out);
+        }
+        for (key, slot) in &self.named {
+            out.named.entry(*key).or_default().merge(slot.clone());
+        }
+        out.positional.extend(self.positional.iter().cloned());
+    }
+
     /// The most recent entry recorded for `name` at this level or any enclosing
     /// one (innermost wins, matching the accumulate-then-read order the flat
     /// non-grouped case has).
@@ -301,6 +318,54 @@ impl CapNode {
 }
 
 impl RegexCaptures {
+    /// Build the capture state visible to inline regex code. An inline walk
+    /// has its own local accumulator, but code in a same-scope group sees the
+    /// captures already taken by the enclosing regex as well.
+    pub(crate) fn inline_capture_view(&self) -> RegexCaptures {
+        let Some(outer) = self.outer_backref() else {
+            return self.clone();
+        };
+
+        let mut visible = RegexCaptures {
+            // Capture lookup crosses the inline-walk boundary, but the
+            // in-progress `$/` span remains that walk's own span.  Code such
+            // as XML's `{ make ~$/ }` must see the current attribute value,
+            // not the whole enclosing element.
+            match_from: self.match_from,
+            ..Default::default()
+        };
+        outer.append_captures(&mut visible);
+
+        if let Some((start, stride)) = outer.merge_positional {
+            let merge_count = stride.min(self.positional.len());
+            for (offset, slot) in self.positional.iter().take(merge_count).enumerate() {
+                let Some(target) = visible.positional.get_mut(start + offset) else {
+                    break;
+                };
+                let entry = (slot.from, slot.to, slot.subcap.clone());
+                let list = target.quantified.get_or_insert_with(Vec::new);
+                list.push(entry);
+                target.from = slot.from;
+                target.to = slot.to;
+                target.subcap = slot.subcap.clone();
+                target.nil = false;
+            }
+            visible
+                .positional
+                .extend(self.positional.iter().skip(merge_count).cloned());
+        } else {
+            visible.positional.extend(self.positional.iter().cloned());
+        }
+        for (key, slot) in &self.named {
+            visible.named.entry(*key).or_default().merge(slot.clone());
+        }
+        visible
+    }
+
+    pub(crate) fn inline_match_from(&self) -> usize {
+        self.match_from
+    }
+
     /// The subject this capture tree was published with (set by the engine
     /// entry point), else one built fresh from `text` (ADR-0016 P3).
     pub(crate) fn target_or_new(&self, text: &str) -> crate::runtime::MatchTarget {
