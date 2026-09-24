@@ -6,7 +6,11 @@ use nqp;
 
 # A free variable that is a `package P { my ... }` lexical -- JSON::Fast's
 # `$ws` shape. TRIR now caches the binding it reads from the package's
-# lexical store, so a later assignment has to be seen by the next call.
+# lexical store instead of resolving it by name on every call, so a later
+# assignment has to be seen by the next call. (An assignment writes through
+# the entry's cell; replacing the entry bumps the cache's generation. A
+# `:=` re-bind from inside a sub, the other way to replace it, dies on the
+# untyped path too, #9238.)
 package P {
     my $tbl = nqp::list_i(10, 20, 30);
     our sub probe(int $i) { nqp::atpos_i(nqp::decont($tbl), $i) }
