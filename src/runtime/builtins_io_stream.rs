@@ -189,41 +189,21 @@ impl Interpreter {
         if let Some(first) = positional.first()
             && Self::handle_id_from_value(first).is_none()
         {
-            let text = first.to_string_value();
             let mut limit: Option<usize> = None;
             for arg in &positional[1..] {
-                match arg.view() {
-                    ValueView::Int(i) => {
-                        limit = Some(i.max(0) as usize);
-                    }
-                    ValueView::BigInt(bi) => {
-                        use num_traits::ToPrimitive;
-                        limit = Some(bi.to_usize().unwrap_or(usize::MAX));
-                    }
-                    ValueView::Num(f) if f.is_infinite() && f.is_sign_positive() => {
-                        limit = None;
-                    }
-                    ValueView::Num(f) if f >= 0.0 => {
-                        limit = Some(f as usize);
-                    }
-                    ValueView::Rat(n, d) if d == 0 && n > 0 => {
-                        limit = None;
-                    }
-                    _ => {}
+                if let Some(parsed) = crate::value::str_iter_limit(arg) {
+                    limit = parsed;
                 }
             }
-            let mut lines = crate::builtins::split_lines_with_chomp(&text, chomp);
-            if let Some(n) = limit {
-                lines.truncate(n);
-            }
+            let mode = crate::value::StrIterMode::Lines { chomp };
             // `lines(:count)` returns the number of lines instead of the list.
             if count_only {
-                return Ok(Value::int(lines.len() as i64));
+                let n = crate::value::str_iter_count(first, mode, limit);
+                return Ok(Value::int(n as i64));
             }
-            let values: Vec<Value> = lines.into_iter().map(Value::str).collect();
-            // `lines` returns a Seq (so `.^name` is Seq), matching Rakudo and
-            // the `Str.lines` method form.
-            return Ok(Value::seq(values));
+            // `lines` returns the same Seq as the `Str.lines` method form (so
+            // `.^name` is Seq and `.head(3)` reads only a prefix).
+            return Ok(crate::value::str_iter_seq(first, mode, limit));
         }
 
         let handle = args

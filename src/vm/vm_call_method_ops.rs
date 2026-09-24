@@ -761,6 +761,10 @@ impl Interpreter {
         // `IO::Handle.lines`/`.words` source (formerly the separate
         // `LazyIoLines` special case). Introspection must not consume the
         // underlying handle: asking for its type is side-effect free.
+        let target = match self.take_seq_prefix(&target, method, &args)? {
+            Some(prefix) => prefix,
+            None => target,
+        };
         let target = self.reify_or_consume_seq_target(target, method)?;
         if method == "message"
             && args.is_empty()

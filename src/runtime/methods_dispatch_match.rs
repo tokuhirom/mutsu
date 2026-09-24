@@ -434,9 +434,9 @@ impl Interpreter {
             // engine cases below stay here because they need the interpreter.
             Some(ValueView::Int(_) | ValueView::Str(_)) => {
                 let m = matcher.expect("matcher is Some in this arm");
-                let items = crate::builtins::comb::comb_pure(&text, Some(m), limit)
+                let seq = crate::builtins::comb::comb_pure(&target, Some(m), limit)
                     .expect("comb_pure always handles Int/Str matchers");
-                Some(Ok(make_seq(items)))
+                Some(Ok(seq))
             }
             // Cost: O(n + k) plus the engine's per-match cost, n = chars of the invocant,
             // k = matches; with `$limit` the search stops at the k-th match. With

@@ -535,6 +535,7 @@ mod native_backing;
 pub(crate) mod seq_body;
 mod serde_support;
 pub(crate) mod signature;
+mod str_iter;
 mod sync_cell;
 pub(crate) mod types;
 pub(crate) mod types_eqv;
@@ -551,6 +552,9 @@ mod value_gc;
 mod value_instance;
 mod value_lazy;
 mod value_lazy_ctors;
+pub(crate) use str_iter::{
+    StrIterMode, StrIterSpec, parse_limit as str_iter_limit, str_iter_count, str_iter_seq,
+};
 mod value_methods_a;
 mod value_methods_b;
 mod value_methods_c;
@@ -577,7 +581,7 @@ pub use guards::{ArcRef, GcRef, RefGuard, WeakGcRef};
 pub(in crate::value) use nanbox::NanBox;
 use native_backing::NativeBacking;
 pub(crate) use seq_body::{
-    MapGrepMode, SeqBody, SeqSource, SeqTaken, SeqView, seq_method_consumes,
+    MapGrepMode, PrefixSource, SeqBody, SeqSource, SeqTaken, SeqView, seq_method_consumes,
     seq_method_never_touches,
 };
 

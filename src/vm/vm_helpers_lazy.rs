@@ -20,6 +20,13 @@ impl Interpreter {
             SeqSource::Reified => Ok(Vec::new()),
             SeqSource::Taken => Err(crate::value::seq_consumed_error()),
             SeqSource::Iterator(iterator) => self.pull_iterator_to_vec(iterator.clone()),
+            // Cost: O(n), n = bytes of the string. `SeqBody` cuts this source
+            // itself (it needs no interpreter); kept so the match stays total.
+            SeqSource::StrIter(spec) => {
+                let mut items = Vec::new();
+                spec.clone().push_up_to(&mut items, usize::MAX);
+                Ok(items)
+            }
             SeqSource::IoLines { handle, words, kv } => {
                 self.pull_io_lines_to_vec(handle.clone(), *words, *kv)
             }
@@ -320,7 +327,7 @@ impl Interpreter {
 
     /// Pull up to `count` additional words/lines from `handle`, reporting
     /// whether EOF was actually reached (see
-    /// [`crate::value::SeqBody::pull_io_lines_prefix`]) — the bounded
+    /// [`crate::value::SeqBody::pull_prefix`]) — the bounded
     /// counterpart of `pull_io_lines_to_vec`'s full drain, used by an indexed
     /// read on a not-yet-reified `IO::Handle.lines`/`.words` Seq
     /// (`vm_var_index_ops.rs`) so a partial slice (`words($fh, :close)[1,
@@ -352,19 +359,22 @@ impl Interpreter {
 
     /// Indexed-read special case (ADR-0034, `vm_var_index_ops.rs`): reify
     /// only enough of `body` to serve a subscript up to `needed` — a full
-    /// [`Self::reify_seq_body`] for every source EXCEPT a not-yet-exhausted
-    /// `IoLines` one, which reads just the missing prefix so `:close`'s
-    /// close-on-exhaust only fires when the read genuinely reaches EOF.
+    /// [`Self::reify_seq_body`] for every source EXCEPT one that can be
+    /// pulled a prefix at a time: a not-yet-exhausted `IoLines` read, which
+    /// reads just the missing prefix so `:close`'s close-on-exhaust only
+    /// fires when the read genuinely reaches EOF, or a `Str.comb` / `.lines`
+    /// / `.words` cursor, which cuts just the missing prefix.
+    // Cost: O(needed) pulls for a prefix source; a full reify otherwise.
     pub(crate) fn reify_seq_body_prefix(
         &mut self,
         body: &Arc<SeqBody>,
         needed: usize,
     ) -> Result<(), RuntimeError> {
-        if !body.is_io_lines_source() {
+        if !body.has_prefix_source() {
             self.reify_seq_body(body)?;
             return Ok(());
         }
-        body.pull_io_lines_prefix(needed, |handle, words, count| {
+        body.pull_prefix(needed, |handle, words, count| {
             self.pull_io_lines_prefix_to_vec(handle, words, count)
         })?;
         // A partial pull that DID hit EOF (exhausted) already left `body` in
@@ -1030,6 +1040,45 @@ impl Interpreter {
     /// elements need to be produced (so an infinite gather is pulled lazily via
     /// [`Self::force_lazy_list_vm_n`] instead of forced to completion).
     /// Returns `None` for forms that need the whole list (e.g. `.head(*-3)`).
+    /// `.head(n)` / `.head` / `.first` (no matcher) on a Seq nobody has read
+    /// yet whose source can be pulled one element at a time — a `Str.comb` /
+    /// `.lines` / `.words` cursor, or an `IO::Handle.lines` / `.words` read
+    /// ([`SeqBody::take_prefix_source`]): pull only the `n` elements the
+    /// call needs and hand back a Seq of just those, which the ordinary
+    /// dispatch then answers from. The original Seq is consumed, as Rakudo's
+    /// `.head` consumes it. `Ok(None)` when the call is anything else, and
+    /// the caller reifies or consumes the target as usual.
+    // Cost: O(n) pulls (for a `Str` cursor, the bytes up to the n-th element).
+    pub(crate) fn take_seq_prefix(
+        &mut self,
+        target: &Value,
+        method: &str,
+        args: &[Value],
+    ) -> Result<Option<Value>, RuntimeError> {
+        let n = match method {
+            "first" if args.is_empty() => 1,
+            _ => match Self::gather_head_bound(method, args) {
+                Some(n) => n,
+                None => return Ok(None),
+            },
+        };
+        let ValueView::Seq(body) = target.view() else {
+            return Ok(None);
+        };
+        let items = match body.take_prefix_source() {
+            Some(crate::value::PrefixSource::Str(mut spec)) => {
+                let mut items = Vec::new();
+                spec.push_up_to(&mut items, n);
+                items
+            }
+            Some(crate::value::PrefixSource::IoLines { handle, words }) => {
+                self.pull_io_lines_prefix_to_vec(&handle, words, n)?.0
+            }
+            None => return Ok(None),
+        };
+        Ok(Some(Value::seq(items)))
+    }
+
     pub(super) fn gather_head_bound(method: &str, args: &[Value]) -> Option<usize> {
         if method != "head" {
             return None;

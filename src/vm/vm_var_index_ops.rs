@@ -915,12 +915,18 @@ impl Interpreter {
         // other shape (a plain `Seq.new($iterator)`, or a subscript this
         // helper can't bound) falls back to reifying the whole source, same
         // as any other consumer.
+        // A `Str.comb` / `.lines` / `.words` Seq takes the same bounded path:
+        // `$str.comb[0]` cuts one grapheme, not the whole string.
+        let mut prefix_pulled = false;
         if let ValueView::Seq(body) = target.view()
             && body.needs_touch()
         {
             let body = std::sync::Arc::clone(&body);
             match Self::seq_subscript_needed_count(&index) {
-                Some(needed) => self.reify_seq_body_prefix(&body, needed)?,
+                Some(needed) => {
+                    self.reify_seq_body_prefix(&body, needed)?;
+                    prefix_pulled = true;
+                }
                 None => {
                     self.reify_seq_body(&body)?;
                 }
@@ -944,8 +950,16 @@ impl Interpreter {
             }
             items.mark_cache_requested();
             if !items.has_element_containers() {
+                // After a bounded prefix pull, read just the pulled prefix:
+                // going through `Deref` would cut the rest of a `Str` cursor
+                // (`SeqBody::settle_pure_source`), undoing the bound.
+                let elems = if prefix_pulled {
+                    items.live_generation().to_vec()
+                } else {
+                    items.to_vec()
+                };
                 target = Value::array_with_kind(
-                    crate::value::Value::array_arc(items.to_vec()),
+                    crate::value::Value::array_arc(elems),
                     crate::value::ArrayKind::List,
                 );
             }
