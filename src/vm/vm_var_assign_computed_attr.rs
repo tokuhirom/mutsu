@@ -358,6 +358,7 @@ impl Interpreter {
         let sigil = crate::value::attr_twigil_sigil(&twigil).unwrap_or('$');
         self.read_attr_cell_by_key(
             self.get_env_self(),
+            None,
             crate::symbol::Symbol::intern(bare),
             is_private,
             sigil,
@@ -376,7 +377,13 @@ impl Interpreter {
     ) -> Option<Value> {
         match code.local_attr_key(idx) {
             Some((bare, is_private, sigil)) => {
-                self.read_attr_cell_by_key(self.attr_access_self(code), bare, is_private, sigil)
+                let self_val = self.attr_access_self(code);
+                if let Some(sv) = &self_val
+                    && let Some(v) = self.read_attr_site_cached(code, idx, sv)
+                {
+                    return Some(v);
+                }
+                self.read_attr_cell_by_key(self_val, Some((code, idx)), bare, is_private, sigil)
             }
             None => {
                 if !self.sigilless_attrs_active {
@@ -399,6 +406,7 @@ impl Interpreter {
     fn with_self_attr<R>(
         &self,
         self_val: &Value,
+        site: Option<(&CompiledCode, usize)>,
         bare: crate::symbol::Symbol,
         is_private: bool,
         sigil: char,
@@ -424,6 +432,9 @@ impl Interpreter {
         if let Some(attributes) = inner_cell {
             let map = attributes.as_map();
             if let Some(key) = Self::attr_key_in_map(owner, bare, is_private, sigil, &map) {
+                if let Some((code, idx)) = site {
+                    Self::fill_attr_site(code, idx, &map, key, bare, is_private);
+                }
                 return Some(f(&attributes, &map, key));
             }
         }
@@ -435,13 +446,14 @@ impl Interpreter {
     fn read_attr_cell_by_key(
         &self,
         self_val: Option<Value>,
+        site: Option<(&CompiledCode, usize)>,
         bare: crate::symbol::Symbol,
         is_private: bool,
         sigil: char,
     ) -> Option<Value> {
         if let Some(self_val) = self_val
             && let Some(found) =
-                self.with_self_attr(&self_val, bare, is_private, sigil, |_, map, key| {
+                self.with_self_attr(&self_val, site, bare, is_private, sigil, |_, map, key| {
                     map.get(key).map(|v| v.deref_container())
                 })
         {
@@ -598,6 +610,7 @@ impl Interpreter {
         let sigil = crate::value::attr_twigil_sigil(name).unwrap_or('$');
         self.write_attr_cell_by_key(
             self.get_env_self(),
+            None,
             crate::symbol::Symbol::intern(bare),
             is_private,
             sigil,
@@ -613,6 +626,7 @@ impl Interpreter {
     fn write_attr_cell_by_key(
         &self,
         self_val: Option<Value>,
+        site: Option<(&CompiledCode, usize)>,
         bare: crate::symbol::Symbol,
         is_private: bool,
         sigil: char,
@@ -621,10 +635,14 @@ impl Interpreter {
         // The key is resolved under the read guard, which is released before
         // the store takes the write lock.
         if let Some(self_val) = self_val
-            && let Some((attributes, key)) =
-                self.with_self_attr(&self_val, bare, is_private, sigil, |attributes, _, key| {
-                    (attributes.clone(), key)
-                })
+            && let Some((attributes, key)) = self.with_self_attr(
+                &self_val,
+                site,
+                bare,
+                is_private,
+                sigil,
+                |attributes, _, key| (attributes.clone(), key),
+            )
         {
             self.record_build_attr_write(&attributes, key);
             attributes.store_through_container(key, val);
@@ -664,11 +682,14 @@ impl Interpreter {
         let Some(self_val) = self.get_env_self() else {
             return Err(lhs);
         };
-        let Some((attributes, key)) =
-            self.with_self_attr(&self_val, bare, is_private, sigil, |attributes, _, key| {
-                (attributes.clone(), key)
-            })
-        else {
+        let Some((attributes, key)) = self.with_self_attr(
+            &self_val,
+            None,
+            bare,
+            is_private,
+            sigil,
+            |attributes, _, key| (attributes.clone(), key),
+        ) else {
             return Err(lhs);
         };
         let mut held = Some(lhs);
@@ -725,13 +746,17 @@ impl Interpreter {
         if Self::is_non_mirrorable_attr_value(&self.locals[idx]) {
             return;
         }
-        self.write_attr_cell_by_key(
-            self.attr_access_self(code),
-            bare,
-            is_private,
-            sigil,
-            self.locals[idx].clone(),
-        );
+        let self_val = self.attr_access_self(code);
+        let val = match &self_val {
+            Some(sv) => {
+                match self.write_attr_site_cached(code, idx, sv, self.locals[idx].clone()) {
+                    Ok(()) => return,
+                    Err(val) => val,
+                }
+            }
+            None => self.locals[idx].clone(),
+        };
+        self.write_attr_cell_by_key(self_val, Some((code, idx)), bare, is_private, sigil, val);
     }
 
     /// Mirror the finalized value of the variable named `name` into `self`'s

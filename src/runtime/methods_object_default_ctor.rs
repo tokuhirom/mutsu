@@ -51,7 +51,7 @@ impl Interpreter {
             Default::default()
         };
 
-        let mut attrs = AttrMap::with_capacity(class_attrs.len());
+        let mut attrs = AttrMap::with_layout(plan.layout.clone());
         for arg in args {
             if let ValueView::Pair(key, val) = arg.view()
                 && !build_owned_attrs.contains(key.as_str())

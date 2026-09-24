@@ -220,7 +220,18 @@ probe and the lock.
   Still open from D1: interning a constant name operand at compile time, and sharing the
   storage node on a `$!reified` / `$!storage` bind. See
   `news/2026-09/nqp-getattr-bindattr-create-stop-copying-the-object.md`.
-- **D2 - D4:** not started.
+- **D2 (landed).** `ClassLayout` is built per class from `NativeCtorPlan`, and `AttrMap`
+  keeps declared attributes in slots with an `extra` overflow, behind the unchanged key
+  API. Absent slots are `None` rather than a `Value` sentinel.
+- **D3, `$!x` / `$.x` in a method (landed).** Each local slot has one
+  `layout_id << 32 | slot` cache word (`CompiledCode::attr_sites`). An owner-dependent key,
+  or a winner that a later fill of a declared slot could displace, is never cached. A hit
+  requires the same layout, an empty `extra`, a present slot, and a non-role owner. A read
+  is now 2,976 instructions above the empty loop, and a write 7,466. See
+  `news/2026-09/attributes-live-in-per-class-slots-with-site-caches.md`.
+- **D3, the rest:** not started. That covers the generated accessor, constant
+  `getattr` / `bindattr` sites, and `Array` / `Hash` `$!descriptor`.
+- **D4:** not started.
 
 ## 6. Reproduction
 

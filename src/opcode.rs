@@ -5636,6 +5636,10 @@ pub(crate) struct CompiledCode {
     /// once per chunk keeps the twigil string parse *and* `Symbol::intern` off
     /// the per-access `$!x` / `$.x` read-write path (ADR-0006 §2.4).
     pub(crate) local_attr_keys: std::sync::OnceLock<LocalAttrKeys>,
+    /// ADR-0121 D3: one inline cache per local slot, remembering which slot of
+    /// which class layout the slot's attribute access (`$!x` / `$.x`) last
+    /// resolved to. Only attribute slots ever fill theirs.
+    pub(crate) attr_sites: crate::value::AttrSiteCaches,
     /// Lazily-built "this slot's read has no name-shaped guard work" bit per
     /// local slot (see [`CompiledCode::local_read_plain`]). The static half of
     /// both the interpreter's `GetLocal` fast path (#8332) and the JIT's Tier B
@@ -6175,6 +6179,7 @@ impl CompiledCode {
             env_only_decls: Vec::new(),
             const_syms: Vec::new(),
             local_attr_keys: std::sync::OnceLock::new(),
+            attr_sites: Default::default(),
             local_read_plain: std::sync::OnceLock::new(),
             rebind_target_slots: Vec::new(),
             rebound_slots: Vec::new(),
