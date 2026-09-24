@@ -14,6 +14,6 @@ mod path_spec;
 mod resolve;
 
 pub(crate) use helpers::{
-    IoPathExtensionPartsSpec, io_exception, io_exception_failure, io_path_missing_failure,
-    numeric_limit_arg, path_is_executable, path_is_readable, path_is_writable,
+    IoPathExtensionPartsSpec, io_exception, io_exception_failure, io_file_test,
+    io_path_missing_failure, numeric_limit_arg, path_is_readable, path_is_writable,
 };

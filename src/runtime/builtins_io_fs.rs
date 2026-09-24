@@ -36,6 +36,27 @@ impl Interpreter {
                 }
             }
         }
+        self.dir_listing(
+            requested_opt,
+            requested_cwd_opt,
+            test_opt,
+            Symbol::intern("IO::Path"),
+        )
+    }
+
+    /// The one body of `dir` and `IO::Path.dir` (rakudo's `sub dir` is
+    /// `$path.IO.dir(|c)`): list `requested` (default `$*CWD`) as a `Seq` of
+    /// `class` paths, filtered by `test` (default: everything except `.` and
+    /// `..`). A directory that cannot be read throws `X::IO::Dir` with rakudo's
+    /// message.
+    // Cost: O(n), n = directory entries (plus the `test` smartmatch per entry).
+    pub(crate) fn dir_listing(
+        &mut self,
+        requested_opt: Option<String>,
+        requested_cwd_opt: Option<String>,
+        test_opt: Option<Value>,
+        class: Symbol,
+    ) -> Result<Value, RuntimeError> {
         let dir_from_cwd = requested_opt.is_none();
         let requested = requested_opt.unwrap_or_else(|| {
             self.get_dynamic_string("$*CWD")
@@ -81,19 +102,41 @@ impl Interpreter {
                     );
                 }
             }
-            entries.push(Value::make_instance(Symbol::intern("IO::Path"), attrs));
+            entries.push(Value::make_instance(class, attrs));
         };
 
         if test_opt.is_some() {
             push_entry(".");
             push_entry("..");
         }
-        for entry in fs::read_dir(&path_buf).map_err(|err| {
-            RuntimeError::new(format!("Failed to read dir '{}': {}", requested, err))
-        })? {
-            let entry = entry.map_err(|err| {
-                RuntimeError::new(format!("Failed to read dir entry '{}': {}", requested, err))
-            })?;
+        let dir_failure = |err: std::io::Error| {
+            // MoarVM's wording: the absolute path, then libuv's lower-case
+            // reason without the OS error number.
+            let reason = err.to_string();
+            let reason = reason.split(" (os error").next().unwrap_or(&reason);
+            let mut chars = reason.chars();
+            let reason = match chars.next() {
+                Some(c) => c.to_lowercase().chain(chars).collect::<String>(),
+                None => String::new(),
+            };
+            io_exception_error(
+                "X::IO::Dir",
+                format!(
+                    "Failed to get the directory contents of '{}': Failed to open dir: {}",
+                    Self::stringify_path(&path_buf),
+                    reason
+                ),
+            )
+        };
+        let read = match fs::read_dir(&path_buf) {
+            Ok(read) => read,
+            Err(err) => return Err(dir_failure(err)),
+        };
+        for entry in read {
+            let entry = match entry {
+                Ok(entry) => entry,
+                Err(err) => return Err(dir_failure(err)),
+            };
             let basename = entry.file_name().to_string_lossy().to_string();
             push_entry(&basename);
         }
