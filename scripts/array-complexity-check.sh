@@ -50,6 +50,7 @@ CASES=(
     # --- traversal / transform ----------------------------------------------
     'map(...).head(3) (10 calls)|200000|1|my @a = ^NN;|for ^10 { @a.map(* + 1).head(3).List }'
     '[~] @a|20000|2|my @a = ^NN;|my $s = [~] @a'
+    '.reduce(&[~])|20000|2|my @a = ^NN;|my $s = @a.reduce(&[~])'
     'unique of Rats|4000|2|my @a = (^NN).map({ $_ / 7 });|@a.unique'
     'unique of Ints (control)|200000|2|my @a = ^NN;|@a.unique'
     'tail(3) (100 calls)|200000|1|my @a = ^NN;|for ^100 { @a.tail(3) }'

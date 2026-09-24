@@ -15,10 +15,10 @@ impl Interpreter {
 
     /// Cost: O(e) operator applications, e = elements of the operand (copied into
     /// a Vec first; a deferred `.map` operand is mapped whole), so `[+]`, `[*]`,
-    /// `[max]`, `[,]` are O(e). A left fold of `~` copies its accumulator on every
-    /// step, so `[~] @a` is O(e * t) = O(t^2 / m) in the result's chars t (m =
-    /// average element length), and `[\~]` pays the same. Rakudo: O(t) for `[~]`
-    /// (strand concatenation) -- see #9161.
+    /// `[max]`, `[,]` are O(e). The left fold of `~` moves its accumulator into
+    /// each step, so the unshared accumulated `Str` grows in place and `[~] @a` is
+    /// O(t) amortized in the result's chars t; `[\~]` keeps every prefix alive,
+    /// so its steps join strands instead (ADR-0120), O(1) amortized per step.
     pub(super) fn exec_reduction_op(
         &mut self,
         spec: crate::compiled_operator::ReductionSpec,
