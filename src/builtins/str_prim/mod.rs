@@ -295,4 +295,5 @@ pub(crate) fn graphemes(v: &Value) -> Vec<Value> {
 }
 
 #[cfg(test)]
+#[path = "tests.rs"]
 mod tests;
