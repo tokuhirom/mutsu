@@ -1,6 +1,6 @@
 use Test;
 
-plan 6;
+plan 7;
 
 # samewith in multi subs
 {
@@ -33,6 +33,16 @@ plan 6;
         { $n ?? $n * samewith($n - 1) !! 1 }()
     }
     is bar(4), 24, 'samewith from nested closure';
+}
+
+# An anonymous `sub` is a routine in its own right, even when it is invoked
+# through a callable value rather than a registry name. Its samewith therefore
+# recursively re-invokes that callable with the new arguments.
+{
+    my &sum = sub (Int:D $n) {
+        $n <= 0 ?? 0 !! $n + samewith($n - 1)
+    };
+    is &sum(4), 10, 'samewith from an anonymous sub';
 }
 
 # { ... }() as last statement returns its value

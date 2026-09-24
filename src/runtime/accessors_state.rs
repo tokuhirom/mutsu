@@ -1683,7 +1683,20 @@ impl Interpreter {
         self.samewith_context_stack.push(super::SamewithContext {
             name: name.to_string(),
             invocant,
+            callable: None,
             args,
+        });
+    }
+
+    /// Push a samewith context for an anonymous routine invoked through its
+    /// callable value. Such a routine has no name in the function registry,
+    /// so the redispatch must retain the callable itself.
+    pub(crate) fn push_samewith_callable_context(&mut self, callable: Value) {
+        self.samewith_context_stack.push(super::SamewithContext {
+            name: String::new(),
+            invocant: None,
+            callable: Some(callable),
+            args: None,
         });
     }
 

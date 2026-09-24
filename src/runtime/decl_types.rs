@@ -400,6 +400,10 @@ pub(crate) struct SamewithContext {
     pub(crate) name: String,
     /// The invocant for a method dispatch; `None` for a plain sub.
     pub(crate) invocant: Option<Value>,
+    /// A directly-invoked anonymous routine. Unlike a named multi sub or
+    /// method, it has no registry name to restart through, so `samewith`
+    /// re-invokes this callable value.
+    pub(crate) callable: Option<Value>,
     /// The original call args, when this push site has them to carry
     /// (`push_method_samewith_context`); `None` otherwise — e.g. a plain sub
     /// samewith context, or a captured `gather`-body re-push, never carried

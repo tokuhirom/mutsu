@@ -167,6 +167,9 @@ impl Interpreter {
         // the duration of its force (see `push_captured_samewith_context`), so
         // this stack is correct there too.
         if let Some(ctx) = self.samewith_context_stack.last().cloned() {
+            if let Some(callable) = ctx.callable {
+                return self.call_sub_value(callable, args.to_vec(), false);
+            }
             if let Some(inv) = ctx.invocant {
                 // Method dispatch: re-call the method on the same invocant
                 return self.call_method_with_values(inv, &ctx.name, args.to_vec());
