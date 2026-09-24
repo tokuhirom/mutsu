@@ -200,6 +200,19 @@ Pinned by `t/vm/codegen/adr0110-trir-int-ops.t` (TRIR on = off = rakudo's transc
   the normalizer. Section time on the 4-core container went from
   0.165-0.176 s to 0.116-0.121 s. D2.4 (allocation) and D2.5 (the untyped
   residue) are next, after re-measuring §3.3's table.
+- **§3.3 re-measured, and D2.4 landed** (`news/2026-09/trir-op-body-allocations-and-free-vars.md`).
+  The re-measurement decodes a pre-generated file, so building the document no
+  longer counts in the 1-vs-101 difference. The table in §3.3 included it,
+  which is where most of its "untyped residue" row came from. On the
+  decode alone, `call_compiled_closure_in_unit` runs once, for `from-json`
+  itself, so D2.5 has no construct left to admit. What D2.4 removed, per 100
+  records: the per-call argument vectors, `nom-ws` re-resolving its package
+  lexical `$ws` on every call (such bindings are now cached under
+  `unit_lexical_gen`), `Uni:D` going through the general type checker, and
+  `findnotcclass` segmenting ASCII text. That took **107.3 M to 91.5 M
+  instructions and 43,756 to 17,657 allocations**. The switch loop is now
+  **42.9%** of a record, still under D3's 50% threshold. Section time went from
+  0.098 s to 0.080-0.085 s (rakudo: 0.044-0.046 s on the same box).
 
 ## 8. Reproduction
 
