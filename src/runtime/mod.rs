@@ -1985,6 +1985,18 @@ impl Interpreter {
         self.unit_lexical_gen = self.unit_lexical_gen.wrapping_add(1);
         cow_table_mut(&mut self.unit_lexicals)
     }
+
+    /// The mutation funnel for `package_lexicals`. It bumps the same
+    /// [`Interpreter::unit_lexical_gen`], because TRIR's free-variable cache
+    /// also holds bindings read out of this table (a `package P { my $x }`
+    /// lexical, which is often a plain value rather than a cell). Writing
+    /// through a cell already in the table needs no bump, as for
+    /// `unit_lexicals`.
+    #[inline]
+    pub(crate) fn package_lexicals_cow_mut(&mut self) -> &mut PackageLexicals {
+        self.unit_lexical_gen = self.unit_lexical_gen.wrapping_add(1);
+        cow_table_mut(&mut self.package_lexicals)
+    }
 }
 
 /// The interpreter.
@@ -3178,8 +3190,9 @@ pub struct Interpreter {
     /// snapshot keeping a module's bare names reachable once the loading frame is
     /// gone; this store is authoritative and consulted BEFORE `env`.
     pub(crate) unit_lexicals: std::sync::Arc<PackageLexicals>,
-    /// Bumped by [`Interpreter::unit_lexicals_cow_mut`], the single funnel
-    /// through which `unit_lexicals` is mutated. TRIR's per-routine
+    /// Bumped by [`Interpreter::unit_lexicals_cow_mut`] and
+    /// [`Interpreter::package_lexicals_cow_mut`], the funnels through which
+    /// `unit_lexicals` and `package_lexicals` are mutated. TRIR's per-routine
     /// free-variable cache (`trir_outer_cache`) is keyed on it, so a bucket
     /// or binding added anywhere invalidates every cached resolution.
     /// Writing *through* a cell already in the table does not bump it, and
@@ -3807,13 +3820,15 @@ pub struct Interpreter {
     /// ADR-0110 §3.1: each TRIR chunk's free variables, resolved once and
     /// kept as the `unit_lexicals` CELLS they live in — so a write from
     /// anywhere is seen without re-resolving. Keyed by the chunk's address
-    /// and validated against [`Interpreter::unit_lexical_gen`]; resolving
+    /// and validated against [`Interpreter::unit_lexical_gen`] and the
+    /// package the bindings were resolved under; resolving
     /// them per call cost three string-keyed hash lookups plus two
     /// thread-local interner hits, which is more than `nom-ws`'s whole body.
     /// Keyed by [`crate::trir::TrChunk::id`] — a monotonic counter, not the
     /// chunk's address, which the allocator may reuse after an `EVAL`'s
     /// compiled routines are dropped.
-    pub(crate) trir_outer_cache: rustc_hash::FxHashMap<u64, (u64, Vec<Value>)>,
+    pub(crate) trir_outer_cache:
+        rustc_hash::FxHashMap<u64, (u64, crate::symbol::Symbol, Vec<Value>)>,
     /// Current frame's captured upvalue array, indexed by the running
     /// `CompiledCode::upvalue_syms` order. Read by `GetUpvalue(i)`. Set from
     /// `SubData::upvalues` on closure entry and saved/restored across call frames

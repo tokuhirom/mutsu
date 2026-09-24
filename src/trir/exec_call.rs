@@ -52,19 +52,26 @@ impl Interpreter {
         // guard-page abort.
         self.guard_native_stack()?;
 
-        // The arguments were pushed left to right, so take the VALUE ones off
-        // each bank back to front.
-        let mut natives: Vec<i64> = vec![0; call.args.len()];
-        let mut objs: Vec<Value> = vec![Value::NIL; call.args.len()];
-        for (i, arg) in call.args.iter().enumerate().rev() {
+        // The VALUE arguments were pushed left to right, so they are the top
+        // `n_nat` entries of the native bank and the top `n_obj` of the boxed
+        // one, in argument order. They are read in place and dropped once the
+        // callee frame holds them, rather than popped into two vectors
+        // allocated per call.
+        let mut n_nat = 0usize;
+        let mut n_obj = 0usize;
+        for arg in &call.args {
             match arg {
-                TrArg::Value(TrKind::Int | TrKind::Num) => natives[i] = self.ipop(),
-                TrArg::Value(TrKind::Obj) => objs[i] = self.opop(),
+                TrArg::Value(TrKind::Int | TrKind::Num) => n_nat += 1,
+                TrArg::Value(TrKind::Obj) => n_obj += 1,
                 TrArg::Native(_) | TrArg::Obj(_) | TrArg::Ref(_) => {}
             }
         }
+        let ns_base = self.trir.ns.len().saturating_sub(n_nat);
+        let os_base = self.trir.os.len().saturating_sub(n_obj);
+        let mut next_nat = ns_base;
+        let mut next_obj = os_base;
 
-        let callee_frame = self.trir.push_frame(callee.n_native, callee.n_obj);
+        let mut callee_frame = self.trir.push_frame(callee.n_native, callee.n_obj);
         let nbase = frame.nbase as usize;
         let obase = frame.obase as usize;
         let cnb = callee_frame.nbase as usize;
@@ -93,13 +100,22 @@ impl Interpreter {
                     self.trir.ol[cob + slot] = self.trir.ol[obase + *s as usize].clone();
                 }
                 (TrArg::Value(TrKind::Int | TrKind::Num), _) => {
-                    self.trir.nl[cnb + slot] = natives[i];
+                    self.trir.nl[cnb + slot] = self.trir.ns.get(next_nat).copied().unwrap_or(0);
+                    next_nat += 1;
                 }
                 (TrArg::Value(TrKind::Obj), _) => {
-                    self.trir.ol[cob + slot] = std::mem::replace(&mut objs[i], Value::NIL);
+                    if let Some(v) = self.trir.os.get_mut(next_obj) {
+                        self.trir.ol[cob + slot] = std::mem::replace(v, Value::NIL);
+                    }
+                    next_obj += 1;
                 }
             }
         }
+        // The consumed values sit below the callee frame's operand marks.
+        self.trir.ns.truncate(ns_base);
+        self.trir.os.truncate(os_base);
+        callee_frame.ns_mark = ns_base as u32;
+        callee_frame.os_mark = os_base as u32;
         // The callee's own package, for its body only — see
         // `trir_body_package`. A resolved call may cross packages, and the
         // callee's free variables and `CallGen` sites resolve by name.
@@ -138,7 +154,6 @@ impl Interpreter {
             super::gen_link::GenOutcome::Bail => return Ok(None),
             super::gen_link::GenOutcome::NotLinked => {}
         }
-        let call = call.clone();
         let nbase = frame.nbase as usize;
         let obase = frame.obase as usize;
         // Only a by-variable argument can be handed over as a container, so a
@@ -206,13 +221,17 @@ impl Interpreter {
         // mask must be published rather than inherited from the caller.
         let saved = std::mem::replace(&mut self.literal_native_args, 0);
         let armed = self.trir_gen_arm(call.name);
-        let result = self.call_function(&name, args.clone());
+        // Only an `is rw` parameter was handed a container, so only then do
+        // the arguments need keeping for the read-back below.
+        let kept = (rw_mask != 0).then(|| args.clone());
+        let result = self.call_function(&name, args);
         self.trir_gen_settle(chunk, site, armed);
         self.literal_native_args = saved;
         let result = result?;
         // Read the containers back, so an `is rw` parameter's write lands in
         // this frame's slot.
-        for (i, arg) in call.args.iter().enumerate() {
+        let args = kept.unwrap_or_default();
+        for (i, arg) in call.args.iter().enumerate().take(args.len()) {
             let ValueView::ContainerRef(cell) = args[i].view() else {
                 continue;
             };

@@ -136,7 +136,8 @@ impl Interpreter {
             for (bare, _) in &body_lexicals {
                 marks.insert(bare.clone());
             }
-            let store = crate::runtime::cow_table_mut(&mut self.package_lexicals)
+            let store = self
+                .package_lexicals_cow_mut()
                 .entry(name.to_string())
                 .or_default();
             // Only the names this body genuinely `my`-declared are unbound below.

@@ -71,7 +71,8 @@ impl Interpreter {
         for (bare, _) in &new_lexicals {
             marks.insert(bare.clone());
         }
-        let store = crate::runtime::cow_table_mut(&mut self.package_lexicals)
+        let store = self
+            .package_lexicals_cow_mut()
             .entry(owner.to_string())
             .or_default();
         for (bare, v) in new_lexicals {

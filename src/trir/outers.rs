@@ -36,10 +36,15 @@ impl Interpreter {
         }
         let key = chunk.id;
         let cache_gen = self.unit_lexical_gen;
+        // A package lexical is found by the CURRENT package, which is the
+        // routine's own only when it has one (`trir_body_package`); a
+        // binding resolved under one package is not another's.
+        let pkg = self.current_package_sym();
         // One probe on the hot path. The frame stacks borrow nothing from the
         // cache, so the entry can stay borrowed while the values are pushed.
-        if let Some((g, bindings)) = self.trir_outer_cache.get(&key)
+        if let Some((g, p, bindings)) = self.trir_outer_cache.get(&key)
             && *g == cache_gen
+            && *p == pkg
         {
             for v in bindings {
                 let v = super::entry::deref_cell(v);
@@ -48,11 +53,11 @@ impl Interpreter {
             return true;
         }
         let mut bindings = Vec::with_capacity(chunk.outers.len());
-        let mut all_celled = true;
+        let mut all_stable = true;
         for o in &chunk.outers {
             match self.trir_outer_binding(chunk.name, o.name.as_str()) {
-                Some(v) => {
-                    all_celled &= v.is_container_ref();
+                Some((v, stable)) => {
+                    all_stable &= stable;
                     bindings.push(v);
                 }
                 None => return false,
@@ -62,13 +67,16 @@ impl Interpreter {
             let v = super::entry::deref_cell(v);
             self.trir.outers.push(v);
         }
-        // Only a shared CELL may be cached: caching a plain environment value
+        // Only a binding `unit_lexical_gen` covers may be cached: a shared
+        // CELL, or a value read out of `package_lexicals`, whose every
+        // replacement bumps the generation. Caching a plain environment value
         // would freeze it. (The capture pass gives a mainline `my` a cell as
         // soon as a named sub reads it, so this is the uncommon shape.)
         // A routine-nested sub's aliases are per activation of its declaring
         // routine (mutsu#9111): a cell from one call is not the next call's.
-        if all_celled && !self.lexsub_free_aliases.contains_key(&chunk.name) {
-            self.trir_outer_cache.insert(key, (cache_gen, bindings));
+        if all_stable && !self.lexsub_free_aliases.contains_key(&chunk.name) {
+            self.trir_outer_cache
+                .insert(key, (cache_gen, pkg, bindings));
         }
         true
     }
@@ -85,8 +93,9 @@ impl Interpreter {
         }
         let base = frame.outer_base as usize;
         let key = chunk.id;
-        if let Some((g, bindings)) = self.trir_outer_cache.get(&key)
+        if let Some((g, p, bindings)) = self.trir_outer_cache.get(&key)
             && *g == self.unit_lexical_gen
+            && *p == self.current_package_sym()
         {
             for (i, v) in bindings.iter().enumerate() {
                 let v = super::entry::deref_cell(v);
@@ -99,7 +108,7 @@ impl Interpreter {
         let mut fresh = Vec::with_capacity(chunk.outers.len());
         for o in &chunk.outers {
             match self.trir_outer_binding(chunk.name, o.name.as_str()) {
-                Some(v) => fresh.push(v),
+                Some((v, _)) => fresh.push(v),
                 None => return false,
             }
         }
@@ -119,15 +128,22 @@ impl Interpreter {
     /// is active, and TRIR pushes no routine frame, so it would answer for
     /// the caller. Asking by the callee's name is what the frame would have
     /// said, without the frame.
-    fn trir_outer_binding(&self, callee: Symbol, name: &str) -> Option<Value> {
+    ///
+    /// The flag says whether the binding may be cached under
+    /// `unit_lexical_gen` (see `trir_seed_outers`).
+    fn trir_outer_binding(&self, callee: Symbol, name: &str) -> Option<(Value, bool)> {
+        let celled = |v: Value| {
+            let stable = v.is_container_ref();
+            (v, stable)
+        };
         // mutsu#9111: a routine-nested sub's per-activation binding.
         if let Some(v) = self.lexsub_alias_binding_for(callee, name) {
-            return Some(v);
+            return Some(celled(v));
         }
         if let Some(bucket) = self.mainline_lexical_subs.get(callee.as_str())
             && let Some(v) = self.unit_lexicals.get(bucket).and_then(|m| m.get(name))
         {
-            return Some(v.clone());
+            return Some(celled(v.clone()));
         }
         // A module routine's free `my` lives in a package-keyed store, not in
         // the environment: the compunit's own unit lexicals, the loaded
@@ -142,15 +158,18 @@ impl Interpreter {
         if !crate::qualified::is_global_package(pkg) {
             if let Some(v) = Self::lookup_in_package_chain(&self.unit_lexicals, pkg.as_str(), name)
             {
-                return Some(v.clone());
+                return Some(celled(v.clone()));
             }
             if let Some(v) = self.module_scope_lexical_for_owner(pkg.as_str(), name) {
-                return Some(v.clone());
+                return Some(celled(v.clone()));
             }
             // A `my` inside a `module P { ... }` / `package P { ... }` block,
-            // which is where JSON::Fast declares `$ws`.
+            // which is where JSON::Fast declares `$ws`. `nom-ws` reads it on
+            // every call, and it is `:=`-bound to a list rather than held in
+            // a cell, so it is cacheable only because every replacement of a
+            // `package_lexicals` entry bumps `unit_lexical_gen`.
             if let Some(v) = self.package_scope_lexical(name) {
-                return Some(v);
+                return Some((v, true));
             }
         }
         // A free variable the capture pass did not put in a bucket is an
@@ -158,6 +177,6 @@ impl Interpreter {
         // mainline frame is still live). It may well be a plain value rather
         // than a cell, which is why the caller refuses to cache one that is
         // not celled.
-        self.env().get(name).cloned()
+        self.env().get(name).cloned().map(celled)
     }
 }

@@ -95,6 +95,36 @@ fn find_char_scans_graphemes() {
 }
 
 #[test]
+fn find_char_on_a_flat_string_scans_bytes() {
+    // Long enough (>= 256 bytes) that the index comes from the cache too.
+    let long = format!("{}#{}", "a".repeat(300), "b".repeat(10));
+    for text in ["abc_12 x-y", long.as_str()] {
+        let v = s(text);
+        let n = text.len() as i64;
+        let first = |from: i64, count: i64, c: char| {
+            let expected = text
+                .char_indices()
+                .skip(from.clamp(0, n) as usize)
+                .take(count.max(0) as usize)
+                .find(|&(_, ch)| ch == c)
+                .map_or(
+                    (from.clamp(0, n) + count.max(0)).min(n) as usize,
+                    |(i, _)| i,
+                );
+            assert_eq!(find_char(&v, from, count, |ch| ch == c), expected);
+        };
+        for c in [' ', '#', 'y', 'b', '?'] {
+            for (from, count) in [(0, n), (2, 3), (-4, 5), (n - 1, 9), (n + 3, 2), (1, -1)] {
+                first(from, count, c);
+            }
+        }
+    }
+    // `\r\n` is one grapheme, so the string is not flat and the grapheme
+    // walk still answers.
+    assert_eq!(find_char(&s("ab\r\ncd e"), 0, 9, |c| c == ' '), 5);
+}
+
+#[test]
 fn building_renormalizes() {
     assert_eq!(concat(s("e"), &s("\u{301}")).to_string_value(), "\u{E9}");
     assert_eq!(flip("abc").to_string_value(), "cba");

@@ -37,6 +37,9 @@ pub(crate) struct TrStacks {
     pub(crate) os: Vec<Value>,
     /// Each live frame's resolved free variables, oldest frame first.
     pub(crate) outers: Vec<Value>,
+    /// A spare, empty argument vector for the generic `nqp::` op
+    /// (`TrOp::NqpOpGen`). Never holds a value outside that one call.
+    pub(crate) nqp_args: Vec<Value>,
     /// `CallGen` sites linked to the TRIR routine they reach (ADR-0112 Step
     /// 1, `gen_link.rs`).
     pub(crate) gen_links: super::gen_link::GenLinks,
