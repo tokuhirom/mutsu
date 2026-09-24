@@ -113,21 +113,13 @@ pub(super) fn class_matches(class: &CharClass, c: char) -> bool {
                     }
                 }
                 ClassItem::HorizSpace => {
-                    if matches!(
-                        c,
-                        ' ' | '\t' | '\u{00A0}' | '\u{1680}' | '\u{2000}'
-                            ..='\u{200A}' | '\u{202F}' | '\u{205F}' | '\u{3000}'
-                    ) {
+                    if cclass::is_horiz_space(c) {
                         matched = true;
                         break;
                     }
                 }
                 ClassItem::NegHorizSpace => {
-                    if !matches!(
-                        c,
-                        ' ' | '\t' | '\u{00A0}' | '\u{1680}' | '\u{2000}'
-                            ..='\u{200A}' | '\u{202F}' | '\u{205F}' | '\u{3000}'
-                    ) {
+                    if !cclass::is_horiz_space(c) {
                         matched = true;
                         break;
                     }

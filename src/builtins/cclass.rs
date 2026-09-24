@@ -79,6 +79,19 @@ pub(crate) fn is_space(ch: char) -> bool {
     is_cclass(WHITESPACE, ch)
 }
 
+/// `\h`: horizontal whitespace -- U+0009, the `Zs` spaces and U+180E
+/// MONGOLIAN VOWEL SEPARATOR (a `Cf` that MoarVM still lists here, measured
+/// against rakudo). `\h`, `\H` and `<[\h]>` all read this one definition.
+// Cost: O(1).
+#[inline]
+pub(crate) fn is_horiz_space(ch: char) -> bool {
+    matches!(
+        ch,
+        ' ' | '\t' | '\u{00A0}' | '\u{1680}' | '\u{180E}' | '\u{2000}'
+            ..='\u{200A}' | '\u{202F}' | '\u{205F}' | '\u{3000}'
+    )
+}
+
 /// `\n` (one codepoint of it): `CCLASS_NEWLINE` (U+000A..U+000D, U+0085,
 /// U+2028, U+2029). The two-codepoint `\r\n` is the regex engine's to handle.
 // Cost: O(1).
