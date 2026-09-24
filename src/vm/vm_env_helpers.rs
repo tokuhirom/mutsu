@@ -712,6 +712,80 @@ impl Interpreter {
         Some(key.as_str())
     }
 
+    /// Look up a unit lexical through the running routine's package chain.
+    ///
+    /// A package chain is also used for classes nested in the same compilation
+    /// unit, but it must not cross into a parent package's separate unit. For
+    /// example, `Test::Probe` must not see the private `$output` lexical owned
+    /// by the separately loaded `Test` unit. `owner` is the package registered
+    /// for the routine's defining unit; when present, the walk stops there.
+    fn lookup_unit_lexical_chain<'a>(
+        table: &'a crate::runtime::PackageLexicals,
+        candidate: &str,
+        name: &str,
+        owner: Option<crate::symbol::Symbol>,
+    ) -> Option<&'a Value> {
+        if !table.contains_name(name) {
+            return None;
+        }
+        let owner_is_ancestor = owner.is_some_and(|owner| {
+            candidate == owner.as_str()
+                || crate::qualified::package_ancestors(crate::symbol::Symbol::intern(candidate))
+                    .any(|package| package == owner)
+        });
+        let mut package = candidate;
+        loop {
+            if let Some(found) = table.get(package).and_then(|entries| entries.get(name)) {
+                return Some(found);
+            }
+            if owner.is_some_and(|owner| package == owner.as_str())
+                || owner.is_some() && !owner_is_ancestor
+            {
+                return None;
+            }
+            match crate::runtime::utils::rsplit_once_double_colon(package) {
+                Some((parent, _)) => package = parent,
+                None => return None,
+            }
+        }
+    }
+
+    /// Mutable counterpart to [`Self::lookup_unit_lexical_chain`].
+    fn lookup_unit_lexical_chain_mut<'a>(
+        table: &'a mut crate::runtime::PackageLexicals,
+        candidate: &str,
+        name: &str,
+        owner: Option<crate::symbol::Symbol>,
+    ) -> Option<&'a mut Value> {
+        if !table.contains_name(name) {
+            return None;
+        }
+        let owner_is_ancestor = owner.is_some_and(|owner| {
+            candidate == owner.as_str()
+                || crate::qualified::package_ancestors(crate::symbol::Symbol::intern(candidate))
+                    .any(|package| package == owner)
+        });
+        let mut package = candidate;
+        let target = loop {
+            if table
+                .get(package)
+                .is_some_and(|entries| entries.contains_key(name))
+            {
+                break Some(package);
+            }
+            if owner.is_some_and(|owner| package == owner.as_str())
+                || owner.is_some() && !owner_is_ancestor
+            {
+                break None;
+            }
+            match crate::runtime::utils::rsplit_once_double_colon(package) {
+                Some((parent, _)) => package = parent,
+                None => break None,
+            }
+        }?;
+        table.get_value_mut(target, name)
+    }
+
     /// The store entry `name` names from the frame that is running, or `None`.
     ///
     /// A free reference reaches here in one of two shapes, exactly as it does for
@@ -736,6 +810,10 @@ impl Interpreter {
         if let Some(found) = self.lexsub_alias_slot(name) {
             return Some(found);
         }
+        let lexical_owner = self.routine_stack().last().and_then(|frame| {
+            self.lexical_package_for_frame(frame.def_file)
+                .or(frame.lexical_package)
+        });
         if self.unit_lexicals.is_empty() || name.is_empty() {
             return None;
         }
@@ -768,7 +846,7 @@ impl Interpreter {
             if pkg != cur || crate::qualified::is_global_package(cur_sym) {
                 return None;
             }
-            return Self::lookup_in_package_chain(&self.unit_lexicals, cur, bare);
+            return Self::lookup_unit_lexical_chain(&self.unit_lexicals, cur, bare, lexical_owner);
         }
         let frame = self.routine_stack().last();
         let candidates = [
@@ -786,7 +864,8 @@ impl Interpreter {
             {
                 continue;
             }
-            if let Some(found) = Self::lookup_in_package_chain(&self.unit_lexicals, candidate, name)
+            if let Some(found) =
+                Self::lookup_unit_lexical_chain(&self.unit_lexicals, candidate, name, lexical_owner)
             {
                 return Some(found);
             }
@@ -809,6 +888,10 @@ impl Interpreter {
         if self.unit_lexicals.is_empty() || name.is_empty() {
             return None;
         }
+        let lexical_owner = self.routine_stack().last().and_then(|frame| {
+            self.lexical_package_for_frame(frame.def_file)
+                .or(frame.lexical_package)
+        });
         // Resolve WHICH unit-lexicals bucket (and, for the `::`-qualified
         // case, which bare name) holds `name`, using only immutable
         // accessors first — mirroring `unit_lexical_slot`'s own candidate
@@ -852,7 +935,12 @@ impl Interpreter {
                 return None;
             }
             let bare = bare.to_string();
-            return Self::lookup_in_package_chain_mut(self.unit_lexicals_cow_mut(), cur, &bare);
+            return Self::lookup_unit_lexical_chain_mut(
+                self.unit_lexicals_cow_mut(),
+                cur,
+                &bare,
+                lexical_owner,
+            );
         }
         // Same candidate order as `unit_lexical_slot`: the frame's lexical
         // package, the method-class-stack top, the frame's own package, then
@@ -881,11 +969,14 @@ impl Interpreter {
             {
                 continue;
             }
-            if Self::lookup_in_package_chain(&self.unit_lexicals, &candidate, name).is_some() {
-                return Self::lookup_in_package_chain_mut(
+            if Self::lookup_unit_lexical_chain(&self.unit_lexicals, &candidate, name, lexical_owner)
+                .is_some()
+            {
+                return Self::lookup_unit_lexical_chain_mut(
                     self.unit_lexicals_cow_mut(),
                     &candidate,
                     name,
+                    lexical_owner,
                 );
             }
         }
