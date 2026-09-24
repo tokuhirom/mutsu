@@ -268,8 +268,8 @@ pub(super) fn class_first_set(class: &CharClass, ignore_case: bool) -> FirstSet 
 /// lets its first-set be exact rather than "ASCII plus everything else".
 ///
 /// Deliberately a short whitelist of the items whose non-ASCII behaviour is
-/// obvious from the item itself: an explicit character or range below U+0080,
-/// and `\d` (which the evaluator defines as `is_ascii_digit`). A negated class
+/// obvious from the item itself: an explicit character or range below U+0080.
+/// (`\d` is not one: it is `CCLASS_NUMERIC`, every script's `Nd`.) A negated class
 /// matches almost every non-ASCII character by construction; under `:i` a
 /// non-ASCII character can fold onto an ASCII member; and a `Grapheme` entry is
 /// compared in NFC against a normalized subject cluster, so its leading
@@ -282,7 +282,6 @@ pub(super) fn class_is_ascii_only(class: &CharClass, ignore_case: bool) -> bool 
     class.items.iter().all(|item| match item {
         ClassItem::Char(c) => c.is_ascii(),
         ClassItem::Range(a, b) => a.is_ascii() && b.is_ascii(),
-        ClassItem::Digit => true,
         _ => false,
     })
 }
@@ -315,7 +314,9 @@ pub(super) fn unicode_prop_first_set(name: &str, negated: bool, args: Option<&st
 /// `\n` as the engine's `Newline` atom defines it.
 pub(super) fn newline_first_set() -> FirstSet {
     let mut set = FirstSet::empty();
-    for c in ['\n', '\r', '\u{85}', '\u{2028}'] {
+    for c in [
+        '\n', '\u{0B}', '\u{0C}', '\r', '\u{85}', '\u{2028}', '\u{2029}',
+    ] {
         set.insert(c);
     }
     set
@@ -325,7 +326,7 @@ pub(super) fn whitespace_first_set() -> FirstSet {
     let mut set = FirstSet::ascii_none_rest_all();
     for cp in 0u8..128 {
         let c = cp as char;
-        if c.is_whitespace() {
+        if crate::builtins::cclass::is_space(c) {
             set.insert(c);
         }
     }

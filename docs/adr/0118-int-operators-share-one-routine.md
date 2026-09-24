@@ -76,6 +76,27 @@ MoarVM answers), so the result depended on whether the enclosing routine had bee
   the VM's nqp path or TRIR's runtime outside `nqp_native.rs` (opt-out: `native-prim: allow`).
   `t/fixtures/trir-int-ops.raku` pins the shift counts with TRIR on and off against rakudo.
 
+### 2.5 Character classes
+
+In Rakudo, the regex classes are MoarVM's `CCLASS_*` table, the same one `nqp::iscclass` reads:
+`\d` is `CCLASS_NUMERIC`, `\w` is `CCLASS_WORD`, `\s` is `CCLASS_WHITESPACE`, and `\n` (also
+inside `<[...]>`) and `\N` are `CCLASS_NEWLINE`. `<alpha>` and `<alnum>` are `CCLASS_ALPHABETIC`
+and `CCLASS_ALPHANUMERIC` plus `_`, and `<upper>`, `<lower>`, `<xdigit>`, `<blank>`, `<cntrl>` and
+`<punct>` are their classes. Probing every class over U+0000..U+3000 and three astral blocks
+confirms this exactly. mutsu's regex engine used Rust's `char` predicates instead. `\d` was ASCII
+only (290 digits missed), and `\w` / `<alpha>` / `<alnum>` used `char::is_alphanumeric`, which
+admits `No`, `Nl` and combining marks (about 1150 extra codepoints). `\n` also missed VT, FF and
+U+2029.
+
+- The table moves from `nqp_ops_text.rs` to `builtins::cclass`, with named constants and the
+  `is_word` / `is_digit` / `is_space` / `is_newline` predicates (each with an ASCII fast path).
+- The regex engine's class items, named rules, word-boundary tests, `<ws>` and prefilter first
+  sets call them. `\d` no longer counts as an ASCII-only class for the first-set prefilter.
+
+`t/regex/regex-cclass-parity.t` checks each class against `nqp::iscclass` over a codepoint sample,
+plus 15 rakudo-measured rows. The remaining differences in the probe come from the Unicode data
+version (U+088F, U+0C5C, U+0CDC and U+0295 are newer than mutsu's tables).
+
 ## 3. Consequences
 
 - The three panics and the ten divergences in §1 are fixed.

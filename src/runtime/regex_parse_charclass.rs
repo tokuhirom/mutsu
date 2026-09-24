@@ -235,6 +235,13 @@ impl Interpreter {
                             // `\n` also matches `\r\n` in Raku, so Rakudo keeps
                             // it out of the plain enumeration.
                             if esc == 'n' {
+                                // `\n` in a class is CCLASS_NEWLINE, as it is
+                                // outside one (ADR-0118 §2.5).
+                                for nl in
+                                    ['\u{0B}', '\u{0C}', '\r', '\u{85}', '\u{2028}', '\u{2029}']
+                                {
+                                    items.push(ClassItem::Char(nl));
+                                }
                                 tally.separate();
                             } else {
                                 tally.plain();
