@@ -14,21 +14,35 @@ impl Interpreter {
         value
     }
 
-    /// Whether `current` is the very (mutable) `Array`/`Hash` the receiver
-    /// `target` holds -- what `.self` hands back. An immutable `List` is not.
+    /// A method receiver with no accessor to call back as a setter: not an
+    /// instance (attribute accessors write back), not a role mixin, not a
+    /// `Pair` (`.value`/`.key` have their own in-place arm) and not a package
+    /// (path accessors are resolved from their root argument).
     // Cost: O(1).
-    fn is_same_mutable_container(target: &Value, current: &Value) -> bool {
+    fn is_plain_method_receiver(target: &Value) -> bool {
         let target = Self::deref_lvalue_value(target.clone());
-        match (target.view(), current.view()) {
-            (ValueView::Array(a, kind), ValueView::Array(b, _)) => {
-                matches!(
-                    kind,
-                    crate::value::ArrayKind::Array
-                        | crate::value::ArrayKind::ItemArray
-                        | crate::value::ArrayKind::Shaped
-                ) && crate::gc::Gc::ptr_eq(&a, &b)
-            }
-            (ValueView::Hash(a), ValueView::Hash(b)) => crate::gc::Gc::ptr_eq(&a, &b),
+        !matches!(
+            target.view(),
+            ValueView::Instance { .. }
+                | ValueView::Mixin(..)
+                | ValueView::Pair(..)
+                | ValueView::ValuePair(..)
+                | ValueView::Package(_)
+        )
+    }
+
+    /// A container an element store can land in directly: a real `Array`
+    /// (not an immutable `List`) or a plain Str-keyed `Hash`.
+    // Cost: O(1).
+    fn is_mutable_store_container(current: &Value) -> bool {
+        match current.view() {
+            ValueView::Array(_, kind) => matches!(
+                kind,
+                crate::value::ArrayKind::Array
+                    | crate::value::ArrayKind::ItemArray
+                    | crate::value::ArrayKind::Shaped
+            ),
+            ValueView::Hash(h) => h.key_type.is_none(),
             _ => false,
         }
     }
@@ -534,13 +548,17 @@ impl Interpreter {
             }
         }
 
-        // `$p.self[i] = v` / `$h.self<k> = v` on a plain (non-instance)
-        // receiver: `.self` hands back the receiver's own container, so the
-        // element store belongs in it, in place -- there is no accessor to
-        // call back as a setter (#9197). An immutable `List` falls through to
-        // the setter, which refuses it as raku does.
-        if method == "self" && dims.len() < 2 && Self::is_same_mutable_container(&target, &current)
-        {
+        // `X.method[i] = v` / `X.method<k> = v` on a plain (non-instance)
+        // receiver: there is no accessor to call back as a setter, so the
+        // element store belongs in whatever mutable container the method
+        // handed back, in place -- raku's `(X.method)[i] = v`. When that is
+        // the receiver's own container (`.self` #9197, `.list`, `%h.Hash`)
+        // the receiver sees the store; when it is a fresh copy (`.Array`,
+        // `.clone`) the store lands in the discarded temporary and the
+        // receiver is unchanged (#9208). An immutable `List` (and any
+        // non-container return) falls through and is refused, as raku does.
+        let plain_receiver = Self::is_plain_method_receiver(&target);
+        if plain_receiver && dims.len() < 2 && Self::is_mutable_store_container(&current) {
             match current.view() {
                 ValueView::Hash(h) if h.key_type.is_none() => {
                     let key = index.to_string_value();
@@ -561,10 +579,10 @@ impl Interpreter {
                 _ => {}
             }
         }
-        // `.self` on an immutable `List` hands back the List itself; a store
-        // into one of its bare elements is refused naming the List, before the
-        // copy-and-rebind below could leak the write into the variable.
-        if method == "self"
+        // A plain receiver's method handing back an immutable `List`
+        // (`.self` on a List, `$p.List`) is refused naming the List, before
+        // the copy-and-rebind below could leak the write into the variable.
+        if plain_receiver
             && let ValueView::Array(items, kind) = current.view()
             && matches!(
                 kind,
