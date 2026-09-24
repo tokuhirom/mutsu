@@ -170,22 +170,48 @@ impl TrirCompiler<'_> {
     fn try_typed_list_op(&mut self, op: &str, args: &[Expr]) -> Option<Option<TrKind>> {
         let r = match (op, args.len()) {
             ("elems", 1) => (|| {
+                let at = self.ops.len();
                 let got = self.compile_nqp_operand(&args[0])?;
                 self.coerce(got, TrKind::Obj)?;
-                self.ops.push(TrOp::ElemsO);
+                let op = match self.take_sole_load_obj(at) {
+                    Some(n) => TrOp::ElemsLocal(n),
+                    None => TrOp::ElemsO,
+                };
+                self.ops.push(op);
                 Some(TrKind::Int)
             })(),
             ("shift_i", 1) => (|| {
+                let at = self.ops.len();
                 let got = self.compile_nqp_operand(&args[0])?;
                 self.coerce(got, TrKind::Obj)?;
-                self.ops.push(TrOp::ShiftIO);
+                let op = match self.take_sole_load_obj(at) {
+                    Some(n) => TrOp::ShiftILocal(n),
+                    None => TrOp::ShiftIO,
+                };
+                self.ops.push(op);
                 Some(TrKind::Int)
             })(),
             ("push_i", 2) => (|| {
+                let at = self.ops.len();
                 let got = self.compile_nqp_operand(&args[0])?;
                 self.coerce(got, TrKind::Obj)?;
+                let target = match self.ops[at..] {
+                    [TrOp::LoadObj(n)] => Some(n),
+                    _ => None,
+                };
+                let val_at = self.ops.len();
                 let val = self.compile_nqp_operand(&args[1])?;
-                if val == TrKind::Int {
+                // The slot is read when the push runs, after the value is
+                // computed rather than before it; that is the same answer
+                // only when computing the value cannot write the slot.
+                let target =
+                    target.filter(|&n| val == TrKind::Int && self.ops_keep_slot(val_at, n));
+                if let Some(n) = target {
+                    // `ops_keep_slot` also proved the value's ops hold no
+                    // jump, so nothing refers to their indices.
+                    self.ops.remove(at);
+                    self.ops.push(TrOp::PushILocal(n));
+                } else if val == TrKind::Int {
                     self.ops.push(TrOp::PushIO);
                 } else {
                     // Only a native int is the typed shape; anything else
@@ -200,6 +226,37 @@ impl TrirCompiler<'_> {
         };
         self.nqp_sourced = r.is_some();
         Some(r)
+    }
+
+    /// When the ops emitted since `at` are exactly one `LoadObj(n)`, remove
+    /// it and answer `n`, so the caller can emit the operand-direct form of
+    /// its op (ADR-0116 D2.1). One op means no jump can target inside it.
+    fn take_sole_load_obj(&mut self, at: usize) -> Option<u16> {
+        match self.ops[at..] {
+            [TrOp::LoadObj(n)] => {
+                self.ops.truncate(at);
+                Some(n)
+            }
+            _ => None,
+        }
+    }
+
+    /// Whether the ops emitted since `at` are straight-line code that can
+    /// neither store into boxed slot `n` nor run code that might: no
+    /// `StoreObj(n)`, no call and no jump.
+    fn ops_keep_slot(&self, at: usize, n: u16) -> bool {
+        self.ops[at..].iter().all(|op| match op {
+            TrOp::StoreObj(m) => *m != n,
+            TrOp::CallTr(_)
+            | TrOp::CallGen(_)
+            | TrOp::MethodGen(_)
+            | TrOp::Jump(_)
+            | TrOp::JumpIfFalseI(_)
+            | TrOp::JumpIfTrueI(_)
+            | TrOp::JumpIfFalseKeepI(_)
+            | TrOp::JumpIfTrueKeepI(_) => false,
+            _ => true,
+        })
     }
 
     /// Compile one operand of an `nqp::` op. A sigilless parameter is

@@ -56,9 +56,21 @@ sub copy-except(Uni:D \codes, int $skip) {
     nqp::strfromcodes($out) ~ ' ' ~ nqp::elems(codes)
 }
 
+# The operand-direct forms on a routine-local slot (not a parameter),
+# consumed and refilled in the same loop.
+sub rotate(int $n) {
+    my $q := nqp::create(Uni);
+    my int $i = 0;
+    nqp::while(nqp::islt_i($i, 4), nqp::stmts(nqp::push_i($q, nqp::add_i(97, $i)), ($i = nqp::add_i($i, 1))));
+    $i = 0;
+    nqp::while(nqp::islt_i($i, $n), nqp::stmts(nqp::push_i($q, nqp::shift_i($q)), ($i = nqp::add_i($i, 1))));
+    nqp::strfromcodes($q) ~ ' ' ~ nqp::elems($q)
+}
+
 for ^2 {
     say 'counts => ', counts(nqp::strtocodes('héllo', nqp::const::NORMALIZE_NFD, nqp::create(NFD)));
     say 'drain-sized => ', drain-sized();
     say 'build => ', build(3);
+    say 'rotate => ', rotate(5);
     say 'copy-except => ', copy-except(nqp::strtocodes('a/b/c', nqp::const::NORMALIZE_NFC, nqp::create(NFC)), 47);
 }

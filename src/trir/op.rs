@@ -228,6 +228,13 @@ pub(crate) enum TrOp {
     /// `nqp::push_i(boxed, native)`, through the dispatch table's own body.
     /// Leaves the pushed value boxed, as `NqpOpGen` does.
     PushIO,
+    /// `ElemsO` of boxed slot `n`, read in place (ADR-0116 D2.1): the
+    /// `LoadObj(n)` + `ElemsO` pair without the clone and its drop.
+    ElemsLocal(u16),
+    /// `ShiftIO` of boxed slot `n`, in place.
+    ShiftILocal(u16),
+    /// `PushIO` onto boxed slot `n`: pops only the int.
+    PushILocal(u16),
 
     // ---- calls ----
     /// Call another TRIR routine, resolved at compile time. `site` indexes

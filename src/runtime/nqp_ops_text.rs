@@ -15,6 +15,8 @@
 //! membership rules by probing `nqp::iscclass` per class (see
 //! `t/nqp/nqp-cclass-uniprop.t`, which pins both against the same values).
 
+pub(crate) use super::nqp_backing::push_elem;
+use super::nqp_normalize::{Normalization, normalize};
 use super::*;
 use crate::builtins::unicode_gc::GeneralCategory;
 
@@ -151,28 +153,6 @@ fn scan_bounds(args: &[Value]) -> (std::rc::Rc<Vec<char>>, usize, usize) {
     (chars, offset.min(end), end)
 }
 
-/// Push a value onto an nqp list / native array in place. Returns the
-/// pushed value itself (not the array) -- nqp's own `push`/`push_i`/
-/// `push_s`/`push_n` all hand back the element just appended, which is what
-/// lets idioms like `has-word`'s
-/// `nqp::add_i(nqp::push_i(@positions,$pos),$move)` chain off it directly.
-pub(crate) fn push_elem(op: &str, target: &Value, val: Value) -> Result<Value, RuntimeError> {
-    // A Buf encodes just the new element onto its storage (#7680, #9132);
-    // the generic element editor below would decode and re-encode it whole.
-    if let Some((class_name, attrs)) = crate::value::value_buf::buf_target(target) {
-        let end = crate::value::value_buf::BufEnd::Back;
-        crate::value::value_buf::extend_buf_elems(
-            &attrs,
-            class_name,
-            std::slice::from_ref(&val),
-            end,
-        );
-        return Ok(val);
-    }
-    Interpreter::nqp_with_elems_mut(op, target, |elems| elems.push(val.clone()))?;
-    Ok(val)
-}
-
 impl Interpreter {
     /// Try a text / Unicode / native-list `nqp::` op. `None` means "not an op
     /// this table knows"; the caller then raises the unsupported-op error.
@@ -273,7 +253,7 @@ impl Interpreter {
                 let mode = iarg(args, 1);
                 let target = args.get(2).cloned().unwrap_or(Value::NIL);
                 let normalized = match mode {
-                    0 => text,
+                    0 => std::borrow::Cow::Borrowed(text.as_str()),
                     1 => normalize(&text, Normalization::Nfc),
                     2 => normalize(&text, Normalization::Nfd),
                     3 => normalize(&text, Normalization::Nfkc),
@@ -323,7 +303,10 @@ impl Interpreter {
                 // sequence it was handed. Without this, `JSON::Fast`'s escaper
                 // — which round-trips every string through `.NFD` and back —
                 // emitted decomposed text for any composed input.
-                Ok(Value::str(normalize(&out, Normalization::Nfc)))
+                Ok(Value::str(match normalize(&out, Normalization::Nfc) {
+                    std::borrow::Cow::Borrowed(_) => out,
+                    std::borrow::Cow::Owned(nfc) => nfc,
+                }))
             }
 
             // -- string primitives --
@@ -496,22 +479,5 @@ impl Interpreter {
 
             _ => return self.call_nqp_op_str(op, args),
         })
-    }
-}
-
-enum Normalization {
-    Nfc,
-    Nfd,
-    Nfkc,
-    Nfkd,
-}
-
-fn normalize(text: &str, form: Normalization) -> String {
-    use unicode_normalization::UnicodeNormalization;
-    match form {
-        Normalization::Nfc => text.nfc().collect(),
-        Normalization::Nfd => text.nfd().collect(),
-        Normalization::Nfkc => text.nfkc().collect(),
-        Normalization::Nfkd => text.nfkd().collect(),
     }
 }
