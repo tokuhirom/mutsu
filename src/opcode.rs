@@ -5858,7 +5858,7 @@ impl Clone for JitCodeState {
 enum ConstKey {
     Int(i64),
     Num(u64),
-    Str(Arc<String>),
+    Str(Arc<crate::value::StrBody>),
     Bool(bool),
     Rat(i64, i64),
 }

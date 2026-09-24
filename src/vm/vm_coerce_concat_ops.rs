@@ -246,7 +246,7 @@ impl Interpreter {
         self.stack.push(out);
     }
 
-    // Cost: see `concat_values`. Rakudo: amortized O(1) (strands) -- see #9209.
+    // Cost: see `concat_values`.
     pub(crate) fn exec_concat_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
@@ -501,11 +501,10 @@ impl Interpreter {
     /// (`apply_reduction_op` delegates here). It uses no Interpreter state, so it is a
     /// plain associated function callable as `crate::runtime::Interpreter::concat_values(...)`.
     // Cost: amortized O(n2), n2 = chars of the right operand, for a plain `Str`
-    // left operand held by nothing else (its buffer is grown in place); O(n1 +
-    // n2) when it is shared (copied, n1 = its chars). NFC is restored from the
-    // right operand and a bounded window at the join, never by renormalizing the
-    // result. Any other left operand: O(n1 + n2) plus a full NFC pass over a
-    // non-ASCII result. Rakudo: amortized O(1) (strands) -- see #9209.
+    // left operand held by nothing else (its buffer is grown in place); O(1) when
+    // the result is built as strands (ADR-0120: a result of at least
+    // `STRAND_MIN_BYTES` whose join cannot compose); O(n1 + n2) otherwise (a
+    // small result, or a join that is renormalized over a bounded window).
     pub(crate) fn concat_values(left: Value, right: Value) -> Result<Value, RuntimeError> {
         // Buf ~ Buf → byte concatenation. Rakudo types the result by whether the
         // two operands have the *same* type: `Blob[uint8] ~ Blob[uint8]` stays

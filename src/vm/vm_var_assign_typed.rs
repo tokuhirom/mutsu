@@ -1,6 +1,5 @@
 use super::*;
 use crate::value::ValueMap;
-use unicode_normalization::UnicodeNormalization;
 
 impl Interpreter {
     /// Container identity (§3.1): compute the value to write THROUGH a shared
@@ -672,7 +671,7 @@ impl Interpreter {
         // Rakudo) instead of copying it into a fresh buffer.
         if n == 1
             && let Some(top) = self.stack.last()
-            && top.as_str().is_some()
+            && top.is_str_value()
         {
             return Ok(());
         }
@@ -684,7 +683,7 @@ impl Interpreter {
         // capture the caller frame's code and reconcile after the loop (see
         // coerce_numeric_bridge_value / exec_say_op).
         let caller_code = self.current_code;
-        let mut result = String::new();
+        let mut result = crate::builtins::str_prim::Joiner::new();
         for v in values {
             // Interpolation is a READ, so a `Proxy` FETCHes here exactly as it
             // does for `~` (`coerce_stringy_operand`) and `say`. Top-level
@@ -811,15 +810,10 @@ impl Interpreter {
             // first, the same way `.Str` / prefix `~` do
             // (`runtime/list_element_stringify.rs`).
             let v = self.resolve_list_element_stringifiers(&v)?;
-            result.push_str(&crate::runtime::utils::coerce_to_str(&v));
+            result.push_value(&v);
         }
         self.reconcile_caller_after_internal_dispatch(caller_code);
-        if result.is_ascii() {
-            self.stack.push(Value::str(result));
-        } else {
-            let normalized: String = result.nfc().collect();
-            self.stack.push(Value::str(normalized));
-        }
+        self.stack.push(result.finish());
         Ok(())
     }
 

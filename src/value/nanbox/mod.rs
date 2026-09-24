@@ -405,7 +405,8 @@ unsafe fn weak_op<T: Trace + 'static>(bits: u64, op: PayloadOp) {
 unsafe fn payload_op(kind: Kind, bits: u64, op: PayloadOp) {
     unsafe {
         match kind {
-            Kind::Str | Kind::Regex => arc_op::<String>(bits, op),
+            Kind::Str => arc_op::<crate::value::StrBody>(bits, op),
+            Kind::Regex => arc_op::<String>(bits, op),
             Kind::BigInt => arc_op::<NumBigInt>(bits, op),
             Kind::IntBoxed => arc_op::<i64>(bits, op),
             Kind::Seq | Kind::HyperSeq | Kind::RaceSeq => arc_op::<crate::value::SeqBody>(bits, op),

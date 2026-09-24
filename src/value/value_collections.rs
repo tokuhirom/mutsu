@@ -116,7 +116,7 @@ impl HashData {
         {
             return v.clone();
         }
-        Value::Str(Arc::new(str_key.to_string()))
+        Value::str(str_key.to_string())
     }
 
     /// Build a `Pair` for a hash entry `(str_key, value)`, honoring object-hash

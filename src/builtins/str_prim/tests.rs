@@ -132,7 +132,7 @@ fn building_renormalizes() {
         flip(MIXED).to_string_value(),
         "z\u{1F1EF}\u{1F1F5}Y\r\nx\u{E9}a"
     );
-    assert_eq!(repeat("ab", 3).unwrap().to_string_value(), "ababab");
-    assert_eq!(chars(&repeat("\u{301}", 2).unwrap()), 1);
+    assert_eq!(repeat(&s("ab"), 3).unwrap().to_string_value(), "ababab");
+    assert_eq!(chars(&repeat(&s("\u{301}"), 2).unwrap()), 1);
     assert_eq!(graphemes(&s(MIXED)).len(), 7);
 }

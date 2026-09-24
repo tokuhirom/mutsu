@@ -1172,7 +1172,7 @@ impl Interpreter {
             && (seeds.iter().any(|v| matches!(v.view(), ValueView::Str(s) if s.starts_with('0')))
                 || ep.starts_with('0'))
         {
-            let seed_strs: Vec<std::sync::Arc<String>> = seeds
+            let seed_strs: Vec<std::sync::Arc<crate::value::StrBody>> = seeds
                 .iter()
                 .filter_map(|v| match v.view() {
                     ValueView::Str(s) => Some(s.clone()),

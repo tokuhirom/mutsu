@@ -401,7 +401,7 @@ fn ser_to_value(sv: SerValue) -> Value {
         )),
         SerValue::BigInt(n) => Value::BigInt(Arc::new(n)),
         SerValue::Num(n) => Value::Num(n),
-        SerValue::Str(s) => Value::Str(Arc::new(s)),
+        SerValue::Str(s) => Value::str(s),
         SerValue::Bool(b) => Value::Bool(b),
         SerValue::Range(a, b) => Value::Range(a, b),
         SerValue::RangeExcl(a, b) => Value::RangeExcl(a, b),

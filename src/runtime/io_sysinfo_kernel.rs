@@ -78,7 +78,7 @@ impl Interpreter {
             "signature".to_string(),
             Value::make_instance(Symbol::intern("Blob"), HashMap::new()),
         );
-        attrs.insert("desc".to_string(), Value::str_arc(String::new().into()));
+        attrs.insert("desc".to_string(), Value::str(String::new()));
         attrs.insert("release".to_string(), Value::str(release));
         attrs.insert("hardware".to_string(), Value::str(hardware));
         attrs.insert("arch".to_string(), Value::str(arch_str));

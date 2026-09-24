@@ -22,7 +22,7 @@ impl Compiler {
             Expr::BareWord(name) if name.len() == 1 => Some(format!("\\{name}")),
             Expr::BareWord(name) => Some(name.clone()),
             Expr::Literal(v) => match v.view() {
-                ValueView::Str(s) => Some(s.as_ref().clone()),
+                ValueView::Str(s) => Some(String::clone(&s)),
                 _ => None,
             },
             _ => None,
@@ -48,7 +48,7 @@ impl Compiler {
                 let ValueView::Str(raw) = lit.view() else {
                     return None;
                 };
-                let mut name = raw.as_ref().clone();
+                let mut name = String::clone(&raw);
                 if let Some(first) = name.chars().next()
                     && matches!(first, '$' | '@' | '%' | '&')
                 {

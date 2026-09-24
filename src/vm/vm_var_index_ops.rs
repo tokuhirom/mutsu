@@ -1004,7 +1004,7 @@ impl Interpreter {
             } else {
                 // Stringify: space-separated
                 let parts: Vec<String> = items.iter().map(|v| v.to_str_context()).collect();
-                Value::str_arc(std::sync::Arc::new(parts.join(" ")))
+                Value::str(parts.join(" "))
             }
         } else {
             index
@@ -3004,7 +3004,7 @@ impl Interpreter {
                 }
             }
             (ValueView::ValuePair(key, value), ValueView::Str(idx)) => {
-                if key.to_string_value() == **idx {
+                if key.to_string_value() == ***idx {
                     value.clone()
                 } else {
                     Value::NIL

@@ -140,8 +140,10 @@ impl NanBox {
     pub(in crate::value) fn as_str(&self) -> Option<&str> {
         let bits = self.0.get();
         match classify(bits) {
-            // SAFETY: Str words carry an Arc<String>.
-            Classified::Kind(Kind::Str) => Some(unsafe { peek_arc::<String>(bits) }),
+            // SAFETY: Str words carry an Arc<StrBody>.
+            Classified::Kind(Kind::Str) => {
+                Some(unsafe { peek_arc::<crate::value::StrBody>(bits) }.as_str())
+            }
             _ => None,
         }
     }
@@ -415,6 +417,13 @@ impl NanBox {
     #[inline]
     pub(in crate::value) fn is_package(&self) -> bool {
         matches!(classify(self.0.get()), Classified::Kind(Kind::Package))
+    }
+
+    /// Whether this word is a `Str` — a pure tag probe (never flattens a
+    /// strand list, unlike [`Self::as_str`]).
+    #[inline]
+    pub(in crate::value) fn is_str(&self) -> bool {
+        matches!(classify(self.0.get()), Classified::Kind(Kind::Str))
     }
 
     /// Whether this word is a `Mixin` — a pure tag probe.

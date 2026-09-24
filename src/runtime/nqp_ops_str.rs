@@ -15,6 +15,16 @@ fn sarg(args: &[Value], i: usize) -> String {
     args.get(i).map(|v| v.to_string_value()).unwrap_or_default()
 }
 
+/// A string operand as a `Str` value: a `Str` argument is shared (its
+/// payload may be referenced as a strand, ADR-0120), anything else is
+/// stringified.
+fn str_operand(args: &[Value], i: usize) -> Value {
+    match args.get(i) {
+        Some(v) if v.is_str_value() => v.clone(),
+        _ => Value::str(sarg(args, i)),
+    }
+}
+
 fn iarg(args: &[Value], i: usize) -> i64 {
     args.get(i).map(crate::runtime::to_int).unwrap_or(0)
 }
@@ -39,9 +49,9 @@ impl Interpreter {
                 iarg(args, 1),
                 (args.len() > 2).then(|| iarg(args, 2)),
             ),
-            // Cost: O(n1 + n2), n1, n2 = chars of the operands.
+            // Cost: see str_prim::concat (O(1) as strands, O(n1 + n2) flat).
             "concat" => Ok(str_prim::concat(
-                Value::str(sarg(args, 0)),
+                str_operand(args, 0),
                 args.get(1).unwrap_or(&Value::NIL),
             )),
             // nqp::index / rindex return **-1** when the needle is absent,
@@ -79,8 +89,8 @@ impl Interpreter {
             "lc" => Ok(Value::str(crate::builtins::unicode::grapheme_lowercase(
                 &sarg(args, 0),
             ))),
-            // Cost: O(n * c), n = chars of $s, c = repeat count. Rakudo: O(1) for a flat
-            // operand (one repeat strand) -- see #9253.
+            // Cost: O(n), n = chars of $s (one repeat strand, ADR-0120; see
+            // str_prim::repeat).
             "x" => {
                 let n = iarg(args, 1);
                 if n < 0 {
@@ -88,7 +98,7 @@ impl Interpreter {
                         "Repeat count ({n}) cannot be negative"
                     ))));
                 }
-                str_prim::repeat(&sarg(args, 0), n as usize)
+                str_prim::repeat(&str_operand(args, 0), n as usize)
             }
 
             // -- hash primitives --
