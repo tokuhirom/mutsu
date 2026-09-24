@@ -1,7 +1,7 @@
 # ADR-0121: Instance attributes live in per-class slots, and each access site resolves its slot once
 
-- **Status**: Proposed (2026-09-24)
-- **Deciders**: tokuhirom (pending), Claude
+- **Status**: Accepted (user approval 2026-09-24; D1, D2 and the `$!x` part of D3 implemented, see §5)
+- **Deciders**: tokuhirom, Claude
 - **Context**: [#9291](https://github.com/tokuhirom/mutsu/issues/9291) (the measurements),
   [#9134](https://github.com/tokuhirom/mutsu/issues/9134) group 1 and `create` (the `nqp::`
   per-call deficits), [#8673](https://github.com/tokuhirom/mutsu/issues/8673) (JSON::Fast, where
