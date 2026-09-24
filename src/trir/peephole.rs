@@ -32,6 +32,15 @@
 //!   which touches no bank at all. `ElemsLocal(n); JumpIfFalseI(t)` is
 //!   [`TrOp::JumpIfEmptyLocal`].
 //! - **Discarded push.** `PushILocal(n); PopObj` is [`TrOp::PushILocalVoid`].
+//! - **Slot-to-slot list ops.** `ShiftILocal(l); [WrapI;] StoreI(s)` is
+//!   [`TrOp::ShiftIStoreLocal`] and `LoadI(s); PushILocalVoid(l)` is
+//!   [`TrOp::PushISlotLocalVoid`]; neither touches a bank. They are the
+//!   per-character body of `unjsonify-string`.
+//! - **Loop rotation.** A backward `Jump(h)` onto a loop header
+//!   `JumpIfEmptyLocal { slot, target: e }` becomes
+//!   `JumpIfNonEmptyLocal { slot, target: h + 1 }; Jump(e)`: each further
+//!   iteration runs one test instead of a jump and a test. This one rule
+//!   grows the chunk, so it runs once, after the others reach their fixpoint.
 
 use super::{TrCmp, TrOp};
 
@@ -45,9 +54,15 @@ pub(crate) fn optimize(mut ops: Vec<TrOp>) -> Vec<TrOp> {
         ops = rewrite(ops, thread_keep_jump);
         ops = rewrite(ops, fuse);
         if ops.len() == before {
-            return ops;
+            break;
         }
     }
+    // Once, after the fixpoint: rotation only adds ops, and nothing it
+    // produces is a window the rules above fuse (its `Jump` is forward, so
+    // threading it is all that is left to do).
+    let mut ops = rewrite(ops, rotate_loop);
+    thread_jumps(&mut ops);
+    ops
 }
 
 /// Every index some jump lands on.
@@ -172,6 +187,31 @@ fn thread_keep_jump(ops: &[TrOp], i: usize) -> Option<(usize, Vec<TrOp>)> {
     Some((2, vec![op]))
 }
 
+/// A loop's back edge onto its header's emptiness test, rotated: see the
+/// module docs. Only a BACKWARD `Jump` is rotated, so the forward `Jump(e)`
+/// it leaves behind is never rotated in turn.
+fn rotate_loop(ops: &[TrOp], i: usize) -> Option<(usize, Vec<TrOp>)> {
+    let TrOp::Jump(h) = ops[i] else {
+        return None;
+    };
+    if h as usize >= i {
+        return None;
+    }
+    let TrOp::JumpIfEmptyLocal { slot, target } = ops[h as usize] else {
+        return None;
+    };
+    Some((
+        1,
+        vec![
+            TrOp::JumpIfNonEmptyLocal {
+                slot,
+                target: h + 1,
+            },
+            TrOp::Jump(target),
+        ],
+    ))
+}
+
 /// The conditional jump at `i`, as `(on, target)`: jump when the popped
 /// value's truth equals `on`.
 fn cond_jump(op: Option<&TrOp>) -> Option<(bool, u32)> {
@@ -196,6 +236,37 @@ fn fuse(ops: &[TrOp], i: usize) -> Option<(usize, Vec<TrOp>)> {
         }
         TrOp::PushILocal(n) if matches!(at(1), Some(TrOp::PopObj)) => {
             Some((2, vec![TrOp::PushILocalVoid(*n)]))
+        }
+        // ---- slot-to-slot list ops ----
+        TrOp::ShiftILocal(list) => {
+            let (len, bits, signed) = match at(1)? {
+                TrOp::WrapI { bits, signed } => (3, *bits, *signed),
+                _ => (2, 64, false),
+            };
+            let TrOp::StoreI(slot) = at(len - 1)? else {
+                return None;
+            };
+            Some((
+                len,
+                vec![TrOp::ShiftIStoreLocal {
+                    list: *list,
+                    slot: *slot,
+                    bits,
+                    signed,
+                }],
+            ))
+        }
+        TrOp::LoadI(slot) if matches!(at(1), Some(TrOp::PushILocalVoid(_))) => {
+            let Some(TrOp::PushILocalVoid(list)) = at(1) else {
+                return None;
+            };
+            Some((
+                2,
+                vec![TrOp::PushISlotLocalVoid {
+                    list: *list,
+                    slot: *slot,
+                }],
+            ))
         }
         // ---- compare-and-branch ----
         TrOp::LoadI(slot) => {
@@ -333,6 +404,74 @@ mod tests {
         ));
         assert!(matches!(out[2], TrOp::IncIVoid(1)));
         assert!(matches!(out[3], TrOp::ReturnNil));
+    }
+
+    #[test]
+    fn copy_loop_is_fused_and_rotated() {
+        // `while elems(codes) { my uint32 $o = shift_i(codes); push_i($out, $o) }`
+        let ops = vec![
+            TrOp::JumpIfEmptyLocal { slot: 0, target: 7 }, // 0
+            TrOp::ShiftILocal(0),                          // 1
+            TrOp::WrapI {
+                bits: 32,
+                signed: false,
+            }, // 2
+            TrOp::StoreI(1),                               // 3
+            TrOp::LoadI(1),                                // 4
+            TrOp::PushILocalVoid(1),                       // 5
+            TrOp::Jump(0),                                 // 6
+            TrOp::ReturnNil,                               // 7
+        ];
+        let out = optimize(ops);
+        let got: Vec<String> = out.iter().map(|op| format!("{op:?}")).collect();
+        let want: Vec<String> = [
+            TrOp::JumpIfEmptyLocal { slot: 0, target: 5 },
+            TrOp::ShiftIStoreLocal {
+                list: 0,
+                slot: 1,
+                bits: 32,
+                signed: false,
+            },
+            TrOp::PushISlotLocalVoid { list: 1, slot: 1 },
+            // The back edge tests the header's condition itself and
+            // re-enters the body past the header.
+            TrOp::JumpIfNonEmptyLocal { slot: 0, target: 1 },
+            TrOp::Jump(5),
+            TrOp::ReturnNil,
+        ]
+        .iter()
+        .map(|op| format!("{op:?}"))
+        .collect();
+        assert_eq!(got, want);
+    }
+
+    #[test]
+    fn unwrapped_shift_store_and_forward_jumps_are_not_rotated() {
+        let ops = vec![
+            TrOp::Jump(3),                                 // 0: forward
+            TrOp::ShiftILocal(2),                          // 1
+            TrOp::StoreI(0),                               // 2
+            TrOp::JumpIfEmptyLocal { slot: 2, target: 5 }, // 3
+            TrOp::Jump(1),                                 // 4: back edge, header not a test
+            TrOp::ReturnNil,                               // 5
+        ];
+        let out = optimize(ops);
+        assert!(matches!(out[0], TrOp::Jump(2)));
+        assert!(matches!(
+            out[1],
+            TrOp::ShiftIStoreLocal {
+                list: 2,
+                slot: 0,
+                bits: 64,
+                ..
+            }
+        ));
+        assert!(matches!(
+            out[2],
+            TrOp::JumpIfEmptyLocal { slot: 2, target: 4 }
+        ));
+        assert!(matches!(out[3], TrOp::Jump(1)));
+        assert_eq!(out.len(), 5);
     }
 
     #[test]
