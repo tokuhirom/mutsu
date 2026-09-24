@@ -608,6 +608,7 @@ mod constraint_meta;
 mod container_element_proxy;
 mod ctor_phase_plan;
 mod nqp_backing;
+pub(crate) mod nqp_native;
 pub(crate) mod nqp_op_ids;
 pub(crate) mod nqp_ops;
 mod nqp_ops_builtin;

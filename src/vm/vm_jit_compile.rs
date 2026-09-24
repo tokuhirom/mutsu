@@ -629,7 +629,7 @@ fn build(
                     && let Some(pending_line) = tb.lay.pending_line_tag
                     && let OpCode::NqpOp { id, arity: 2 } = op
                     && let Some(nqp_op) =
-                        NqpIntOp::from_name(crate::runtime::nqp_op_ids::nqp_op_name(*id))
+                        crate::runtime::nqp_pure::pure_op(*id).and_then(NqpIntOp::from_pure)
                 {
                     tb.emit_nqp_int_binop(
                         &mut b,

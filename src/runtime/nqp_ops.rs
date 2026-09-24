@@ -151,9 +151,12 @@ fn nqp_radix(args: &[Value]) -> Result<Value, RuntimeError> {
     }
     let mut result = 0i64;
     for &digit in &digits[..result_digits] {
+        // Digit accumulation into a native int, wrapping as MoarVM's does.
+        // native-prim: allow
         result = result.wrapping_mul(radix as i64).wrapping_add(digit);
     }
     if negative {
+        // native-prim: allow
         result = result.wrapping_neg();
     }
 
@@ -281,15 +284,9 @@ impl Interpreter {
             "div_i" => {
                 let lhs = iarg(args, 0);
                 let rhs = iarg(args, 1);
-                if rhs == 0 {
-                    Err(RuntimeError::new("nqp::div_i: division by zero"))
-                } else {
-                    // The native-int overflow case traps in MoarVM.  Keep the
-                    // operation defined in mutsu instead of allowing Rust's
-                    // checked arithmetic to panic in debug builds, matching
-                    // the wrapping convention of the other *_i operations.
-                    Ok(Value::int(floor_div_i(lhs, rhs)))
-                }
+                crate::runtime::nqp_native::div_i(lhs, rhs)
+                    .map(Value::int)
+                    .ok_or_else(|| RuntimeError::new("nqp::div_i: division by zero"))
             }
             // Cost: O(1).
             "neg_i" => Ok(pure(NqpPure::NegI, args)),
@@ -1039,23 +1036,5 @@ impl Interpreter {
             // module (file-size limit); an op neither knows still errors.
             _ => return self.call_nqp_op_process(op, args),
         })
-    }
-}
-
-/// `nqp::div_i`'s quotient for a non-zero `rhs`: FLOOR division, unlike
-/// Rust's `/` for operands of opposite signs. The native-int overflow case
-/// (`i64::MIN div -1`) traps in MoarVM; mutsu keeps it defined, wrapping like
-/// the other `*_i` ops, rather than letting Rust's arithmetic panic. Shared
-/// with TRIR's `DivI`, so the two tiers cannot disagree.
-// Cost: O(1).
-pub(crate) fn floor_div_i(lhs: i64, rhs: i64) -> i64 {
-    if lhs == i64::MIN && rhs == -1 {
-        return i64::MIN;
-    }
-    let quotient = lhs / rhs;
-    if lhs % rhs != 0 && (lhs < 0) != (rhs < 0) {
-        quotient - 1
-    } else {
-        quotient
     }
 }

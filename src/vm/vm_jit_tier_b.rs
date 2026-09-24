@@ -65,28 +65,29 @@ pub(super) enum NqpIntArith {
 }
 
 impl NqpIntOp {
-    /// The op this nqp name means, for the names Tier B inlines.
+    /// The inline form of a pure `nqp::` op, for the ones Tier B inlines.
     ///
-    /// Deliberately a small whitelist rather than a family rule: every entry
-    /// has been read against its arm in `runtime/nqp_ops.rs` and is the
-    /// identity on two small-Int operands. `div_i`/`mod_i` are absent because
-    /// they are *floor* division with a zero check, `bitshift*_i` because they
-    /// clamp their shift count, and the `_I` (bigint) family because it is not
-    /// native at all.
-    pub(super) fn from_name(name: &str) -> Option<NqpIntOp> {
-        Some(match name {
-            "add_i" => NqpIntOp::Arith(NqpIntArith::Add),
-            "sub_i" => NqpIntOp::Arith(NqpIntArith::Sub),
-            "mul_i" => NqpIntOp::Arith(NqpIntArith::Mul),
-            "bitand_i" => NqpIntOp::Arith(NqpIntArith::BitAnd),
-            "bitor_i" => NqpIntOp::Arith(NqpIntArith::BitOr),
-            "bitxor_i" => NqpIntOp::Arith(NqpIntArith::BitXor),
-            "iseq_i" => NqpIntOp::Cmp(IntCC::Equal),
-            "isne_i" => NqpIntOp::Cmp(IntCC::NotEqual),
-            "islt_i" => NqpIntOp::Cmp(IntCC::SignedLessThan),
-            "isle_i" => NqpIntOp::Cmp(IntCC::SignedLessThanOrEqual),
-            "isgt_i" => NqpIntOp::Cmp(IntCC::SignedGreaterThan),
-            "isge_i" => NqpIntOp::Cmp(IntCC::SignedGreaterThanOrEqual),
+    /// Keyed on the interpreter's [`crate::runtime::nqp_pure::NqpPure`], not
+    /// on a second copy of the op names. Deliberately a small whitelist: each
+    /// entry is the identity of its `runtime::nqp_native` body on two
+    /// small-Int (48-bit) operands, so the inline path and the shim cannot
+    /// disagree. `div_i`/`mod_i` are not pure (a zero divisor raises), and the
+    /// shifts are left to the shim rather than re-derived in CLIF.
+    pub(super) fn from_pure(op: crate::runtime::nqp_pure::NqpPure) -> Option<NqpIntOp> {
+        use crate::runtime::nqp_pure::NqpPure as P;
+        Some(match op {
+            P::AddI => NqpIntOp::Arith(NqpIntArith::Add),
+            P::SubI => NqpIntOp::Arith(NqpIntArith::Sub),
+            P::MulI => NqpIntOp::Arith(NqpIntArith::Mul),
+            P::BitAndI => NqpIntOp::Arith(NqpIntArith::BitAnd),
+            P::BitOrI => NqpIntOp::Arith(NqpIntArith::BitOr),
+            P::BitXorI => NqpIntOp::Arith(NqpIntArith::BitXor),
+            P::IsEqI => NqpIntOp::Cmp(IntCC::Equal),
+            P::IsNeI => NqpIntOp::Cmp(IntCC::NotEqual),
+            P::IsLtI => NqpIntOp::Cmp(IntCC::SignedLessThan),
+            P::IsLeI => NqpIntOp::Cmp(IntCC::SignedLessThanOrEqual),
+            P::IsGtI => NqpIntOp::Cmp(IntCC::SignedGreaterThan),
+            P::IsGeI => NqpIntOp::Cmp(IntCC::SignedGreaterThanOrEqual),
             _ => return None,
         })
     }

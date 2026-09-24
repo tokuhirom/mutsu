@@ -287,8 +287,8 @@ impl TrirCompiler<'_> {
                 slot,
                 kind: TrKind::Obj,
             }) => {
-                // The per-frame character memo assumes the slot's value does
-                // not change under it.
+                // The operand-direct form reads the slot at the op, so the
+                // slot must still hold the value the operand expression named.
                 if self.obj_slot_written(slot) {
                     return None;
                 }
@@ -308,50 +308,71 @@ impl TrirCompiler<'_> {
 /// The typed lowering of one `nqp::` value op: operand kinds, result kind,
 /// and the instructions to emit. Ops absent from this table decline.
 fn nqp_form(op: &str) -> Option<NqpForm> {
-    use TrKind::{Int, Num, Obj};
+    use TrKind::{Int, Obj};
     const I2: &[TrKind] = &[TrKind::Int, TrKind::Int];
     const I1: &[TrKind] = &[TrKind::Int];
-    const N2: &[TrKind] = &[TrKind::Num, TrKind::Num];
     const O1: &[TrKind] = &[TrKind::Obj];
     const OI: &[TrKind] = &[TrKind::Obj, TrKind::Int];
     const OII: &[TrKind] = &[TrKind::Obj, TrKind::Int, TrKind::Int];
     const OOI: &[TrKind] = &[TrKind::Obj, TrKind::Obj, TrKind::Int];
+    if let Some(p) = crate::runtime::nqp_pure::by_name(op) {
+        return pure_form(p);
+    }
     Some(match op {
-        "add_i" => (I2, Int, &[TrOp::AddI]),
-        "sub_i" => (I2, Int, &[TrOp::SubI]),
-        "mul_i" => (I2, Int, &[TrOp::MulI]),
+        // Not pure (they can raise on a zero divisor), so not `NqpPure`s.
         "div_i" => (I2, Int, &[TrOp::DivI]),
         "mod_i" => (I2, Int, &[TrOp::ModI]),
-        "neg_i" => (I1, Int, &[TrOp::NegI]),
-        "bitand_i" => (I2, Int, &[TrOp::BitAndI]),
-        "bitor_i" => (I2, Int, &[TrOp::BitOrI]),
-        "bitxor_i" => (I2, Int, &[TrOp::BitXorI]),
-        "bitshiftl_i" => (I2, Int, &[TrOp::ShlI]),
-        "bitshiftr_i" => (I2, Int, &[TrOp::ShrI]),
-        "iseq_i" => (I2, Int, &[TrOp::EqI]),
-        "isne_i" => (I2, Int, &[TrOp::NeI]),
-        "islt_i" => (I2, Int, &[TrOp::LtI]),
-        "isle_i" => (I2, Int, &[TrOp::LeI]),
-        "isgt_i" => (I2, Int, &[TrOp::GtI]),
-        "isge_i" => (I2, Int, &[TrOp::GeI]),
-        "not_i" => (I1, Int, &[TrOp::NotI]),
-        "add_n" => (N2, Num, &[TrOp::AddN]),
-        "sub_n" => (N2, Num, &[TrOp::SubN]),
-        "mul_n" => (N2, Num, &[TrOp::MulN]),
-        "div_n" => (N2, Num, &[TrOp::DivN]),
-        "iseq_n" => (N2, Int, &[TrOp::EqN]),
-        "islt_n" => (N2, Int, &[TrOp::LtN]),
-        "isle_n" => (N2, Int, &[TrOp::LeN]),
-        "isgt_n" => (N2, Int, &[TrOp::GtN]),
-        "isge_n" => (N2, Int, &[TrOp::GeN]),
         "box_i" => (I1, Obj, &[TrOp::BoxI]),
-        "unbox_i" => (O1, Int, &[TrOp::UnboxI]),
         "chars" => (O1, Int, &[TrOp::CharsS]),
         "ordat" => (OI, Int, &[TrOp::OrdAt]),
         "atpos_i" => (OI, Int, &[TrOp::AtPosI]),
         "substr" => (OII, Obj, &[TrOp::SubstrS]),
         "eqat" => (OOI, Int, &[TrOp::EqAtS]),
         _ => return None,
+    })
+}
+
+/// The typed lowering of a pure op, keyed on the interpreter's own
+/// [`crate::runtime::nqp_pure::NqpPure`] rather than a second copy of its
+/// names. Every `TrOp` here runs the body in `runtime::nqp_native` (or, for
+/// a comparison, the plain comparison `nqp_pure::eval` does), so the two
+/// tiers answer alike. A pure op TRIR has no typed form for declines to the
+/// boxed `NqpOpGen` path, which calls `nqp_pure::eval` itself.
+fn pure_form(p: crate::runtime::nqp_pure::NqpPure) -> Option<NqpForm> {
+    use crate::runtime::nqp_pure::NqpPure as P;
+    use TrKind::{Int, Num};
+    const I2: &[TrKind] = &[TrKind::Int, TrKind::Int];
+    const I1: &[TrKind] = &[TrKind::Int];
+    const N2: &[TrKind] = &[TrKind::Num, TrKind::Num];
+    Some(match p {
+        P::AddI => (I2, Int, &[TrOp::AddI]),
+        P::SubI => (I2, Int, &[TrOp::SubI]),
+        P::MulI => (I2, Int, &[TrOp::MulI]),
+        P::NegI => (I1, Int, &[TrOp::NegI]),
+        P::BitAndI => (I2, Int, &[TrOp::BitAndI]),
+        P::BitOrI => (I2, Int, &[TrOp::BitOrI]),
+        P::BitXorI => (I2, Int, &[TrOp::BitXorI]),
+        P::ShlI => (I2, Int, &[TrOp::ShlI]),
+        P::ShrI => (I2, Int, &[TrOp::ShrI]),
+        P::IsEqI => (I2, Int, &[TrOp::EqI]),
+        P::IsNeI => (I2, Int, &[TrOp::NeI]),
+        P::IsLtI => (I2, Int, &[TrOp::LtI]),
+        P::IsLeI => (I2, Int, &[TrOp::LeI]),
+        P::IsGtI => (I2, Int, &[TrOp::GtI]),
+        P::IsGeI => (I2, Int, &[TrOp::GeI]),
+        P::NotI => (I1, Int, &[TrOp::NotI]),
+        P::AddN => (N2, Num, &[TrOp::AddN]),
+        P::SubN => (N2, Num, &[TrOp::SubN]),
+        P::MulN => (N2, Num, &[TrOp::MulN]),
+        P::DivN => (N2, Num, &[TrOp::DivN]),
+        P::IsEqN => (N2, Int, &[TrOp::EqN]),
+        P::IsLtN => (N2, Int, &[TrOp::LtN]),
+        P::IsLeN => (N2, Int, &[TrOp::LeN]),
+        P::IsGtN => (N2, Int, &[TrOp::GtN]),
+        P::IsGeN => (N2, Int, &[TrOp::GeN]),
+        P::AbsI | P::BitNegI | P::CmpI | P::NegN | P::AbsN | P::IsNeN | P::CmpN | P::IsNanOrInf => {
+            return None;
+        }
     })
 }
 
