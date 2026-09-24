@@ -32,7 +32,7 @@ already made independent of the frame size. The only `#9169` suffix left is the
 residual whole-frame publish of `~~` for a code-bearing regex, `s///`/`tr///`
 or a junction/collection RHS.
 
-Pin: `t/routines/routine-code-object-capture.t`. It covers mainline and
+Pin: `t/routines/call/routine-code-object-capture.t`. It covers mainline and
 routine free variables, dynamics, lexical subs called by name, a thread, state
 shared between `&f` and by-name calls, recursion, and late writes to a captured
 lexical.
