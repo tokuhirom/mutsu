@@ -135,6 +135,27 @@ U+2029.
 plus 15 rakudo-measured rows. The remaining differences in the probe come from the Unicode data
 version (U+088F, U+0C5C, U+0CDC and U+0295 are newer than mutsu's tables).
 
+### 2.7 Directory listing and file tests
+
+Rakudo's `sub dir` is `$path.IO.dir(|c)`, and `$path ~~ :r` is `$path.r`. mutsu had two copies
+of the listing and three of the file tests:
+
+- The `IO::Path.dir` method returned a `List` where the sub returned a `Seq`. Both died with an
+  `X::AdHoc` where rakudo throws `X::IO::Dir`.
+- The two smartmatch copies (VM and interpreter) tested mode bits instead of `access(2)`, and
+  tested `rw`/`rwx`/`s`/`z`/`l` against the path string without resolving it against the
+  IO::Path's `CWD`.
+
+The fix:
+
+- `Interpreter::dir_listing` is the one listing body, and it throws rakudo's `X::IO::Dir`.
+- `native_io::io_file_test` is the one file-test body. `None` means the path is missing: the
+  methods turn that into their Failure, and the smartmatch into False.
+- `io_exception_error` now stores its message on the exception object, so a caught IO error's
+  `.message` is no longer empty.
+
+`t/io/dir-and-file-test-one-body.t` pins 17 rows.
+
 ### 2.4 Byte decoding
 
 There were four decoders:

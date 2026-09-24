@@ -64,6 +64,40 @@ fn path_access(path: &Path, mode: libc::c_int) -> bool {
     unsafe { libc::access(cpath.as_ptr(), mode) == 0 }
 }
 
+/// The one body of the IO::Path file tests -- the `.e`/`.f`/`.d`/`.l`/`.r`/
+/// `.w`/`.x`/`.rw`/`.rwx`/`.s`/`.z` methods and `$path ~~ :r` (rakudo's Pair
+/// smartmatch is the method call). `None` when the path does not exist and
+/// the test needs a `stat` (the methods turn that into a
+/// `X::IO::DoesNotExist` Failure, the smartmatch into False). `.s` answers
+/// "is non-empty" here; the method reports the size itself.
+///
+/// Permission tests ask `access(2)` for the calling user, as MoarVM does,
+/// not the mode bits: a mode-000 file is readable by root.
+// Cost: O(1) system calls (at most three `access`).
+pub(crate) fn io_file_test(path: &Path, test: &str) -> Option<bool> {
+    if test == "e" {
+        return Some(path.exists());
+    }
+    if test == "l" {
+        return fs::symlink_metadata(path)
+            .ok()
+            .map(|m| m.file_type().is_symlink());
+    }
+    let meta = fs::metadata(path).ok()?;
+    Some(match test {
+        "f" => meta.is_file(),
+        "d" => meta.is_dir(),
+        "r" => path_is_readable(path),
+        "w" => path_is_writable(path),
+        "x" => path_is_executable(path),
+        "rw" => path_is_readable(path) && path_is_writable(path),
+        "rwx" => path_is_readable(path) && path_is_writable(path) && path_is_executable(path),
+        "s" => meta.len() > 0,
+        "z" => meta.len() == 0,
+        _ => false,
+    })
+}
+
 #[cfg(unix)]
 pub(crate) fn path_is_readable(path: &Path) -> bool {
     path_access(path, libc::R_OK)

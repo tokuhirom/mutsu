@@ -85,7 +85,7 @@ fn is_numericish_matcher(v: &Value) -> bool {
 /// `IO::Path ~~ :e/:d/:f/:l/:r/:w/:x/:rw/:rwx/:s/:z` file-test result (and
 /// negated forms `:!e`, ...), shared by the `Pair`- and `ValuePair`-flavour
 /// match arms in `pure_smart_match` below.
-fn io_path_file_test_result(
+pub(crate) fn io_path_file_test_result(
     key: &str,
     negated: bool,
     path_str: Option<String>,
@@ -100,55 +100,10 @@ fn io_path_file_test_result(
             .unwrap_or_else(|_| ".".to_string())
     });
     let absolute = io_path_cleanup_absolute(&p, &cwd);
-    let path = std::path::Path::new(&absolute);
-    let result = match key {
-        "e" => path.exists(),
-        "d" => path.is_dir(),
-        "f" => path.is_file(),
-        "r" => crate::runtime::path_is_readable(path),
-        "w" => crate::runtime::path_is_writable(path),
-        "x" => crate::runtime::path_is_executable(path),
-        "rw" => {
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::PermissionsExt;
-                std::fs::metadata(&p)
-                    .map(|m| {
-                        let mode = m.permissions().mode();
-                        mode & 0o444 != 0 && mode & 0o222 != 0
-                    })
-                    .unwrap_or(false)
-            }
-            #[cfg(not(unix))]
-            {
-                std::fs::metadata(&p)
-                    .map(|m| !m.permissions().readonly())
-                    .unwrap_or(false)
-            }
-        }
-        "rwx" => {
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::PermissionsExt;
-                std::fs::metadata(&p)
-                    .map(|m| {
-                        let mode = m.permissions().mode();
-                        mode & 0o444 != 0 && mode & 0o222 != 0 && mode & 0o111 != 0
-                    })
-                    .unwrap_or(false)
-            }
-            #[cfg(not(unix))]
-            {
-                false
-            }
-        }
-        "l" => std::fs::symlink_metadata(&p)
-            .map(|m| m.file_type().is_symlink())
-            .unwrap_or(false),
-        "s" => std::fs::metadata(&p).map(|m| m.len() > 0).unwrap_or(false),
-        "z" => std::fs::metadata(&p).map(|m| m.len() == 0).unwrap_or(false),
-        _ => false,
-    };
+    // The method's own test; a missing path answers False, like the
+    // method's Failure does in boolean context.
+    let result =
+        crate::runtime::io_file_test(std::path::Path::new(&absolute), key).unwrap_or(false);
     if negated { !result } else { result }
 }
 
