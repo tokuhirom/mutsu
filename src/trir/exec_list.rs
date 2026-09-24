@@ -29,14 +29,7 @@ impl Interpreter {
                 self.trir.os.push(r);
             }
             TrOp::ElemsLocal(n) => {
-                let slot = &self.trir.ol[obase + *n as usize];
-                let len = match Self::nqp_elems_len_of(slot) {
-                    Some(len) => len as i64,
-                    None => {
-                        let v = slot.clone();
-                        self.nqp_elems_count(&v)?
-                    }
-                };
+                let len = self.trir_local_elems(obase + *n as usize)?;
                 self.trir.ns.push(len);
             }
             TrOp::ShiftILocal(n) => {
@@ -52,6 +45,14 @@ impl Interpreter {
                 )?;
                 self.trir.os.push(r);
             }
+            TrOp::PushILocalVoid(n) => {
+                let i = self.ipop();
+                crate::runtime::nqp_ops_text::push_elem(
+                    "push_i",
+                    &self.trir.ol[obase + *n as usize],
+                    Value::int(i),
+                )?;
+            }
             _ => {
                 return Err(RuntimeError::new(format!(
                     "internal: trir_list_op handed {op:?}, which is not a list op"
@@ -59,6 +60,20 @@ impl Interpreter {
             }
         }
         Ok(())
+    }
+
+    /// `nqp::elems` of the list in absolute boxed slot `abs`, read in place.
+    // Cost: O(1) for a list, plus the generic `nqp::elems` for anything else.
+    #[inline]
+    pub(super) fn trir_local_elems(&mut self, abs: usize) -> Result<i64, RuntimeError> {
+        let slot = &self.trir.ol[abs];
+        match Self::nqp_elems_len_of(slot) {
+            Some(len) => Ok(len as i64),
+            None => {
+                let v = slot.clone();
+                self.nqp_elems_count(&v)
+            }
+        }
     }
 
     /// Pop the native operand stack.

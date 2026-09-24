@@ -173,6 +173,23 @@ impl TrirCompiler<'_> {
             self.compile_unary(op, expr, true)?;
             return Some(());
         }
+        // A control form in sink position leaves nothing, rather than a
+        // value on each arm that the join then drops: the arms are sunk too.
+        if let Expr::Call { name, args } = e {
+            let name = name.resolve();
+            match name.as_str() {
+                "nqp::if" | "nqp::unless" if args.len() == 2 || args.len() == 3 => {
+                    return self.compile_nqp_if_sink(name == "nqp::if", args);
+                }
+                "nqp::stmts" => {
+                    for a in args.iter() {
+                        self.compile_expr_sink(a)?;
+                    }
+                    return Some(());
+                }
+                _ => {}
+            }
+        }
         let kind = self.compile_expr(e)?;
         self.drop_top(kind);
         Some(())

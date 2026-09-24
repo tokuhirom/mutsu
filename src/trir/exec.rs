@@ -213,6 +213,35 @@ impl Interpreter {
                         continue;
                     }
                 }
+                // ---- fused compare-and-branch (`peephole.rs`) ----
+                TrOp::JumpCmp { cmp, on, target } => {
+                    let r = self.ipop();
+                    let l = self.ipop();
+                    if cmp.eval(l, r) == *on {
+                        ip = *target as usize;
+                        continue;
+                    }
+                }
+                TrOp::JumpCmpC { cmp, on, c, target } => {
+                    let l = self.ipop();
+                    if cmp.eval(l, *c as i64) == *on {
+                        ip = *target as usize;
+                        continue;
+                    }
+                }
+                TrOp::JumpCmpLC {
+                    cmp,
+                    on,
+                    slot,
+                    c,
+                    target,
+                } => {
+                    let l = self.trir.nl[nbase + *slot as usize];
+                    if cmp.eval(l, *c as i64) == *on {
+                        ip = *target as usize;
+                        continue;
+                    }
+                }
 
                 // ---- boxed bank ----
                 TrOp::ConstObj(i) => {
@@ -393,7 +422,14 @@ impl Interpreter {
                 | TrOp::PushIO
                 | TrOp::ElemsLocal(_)
                 | TrOp::ShiftILocal(_)
-                | TrOp::PushILocal(_) => self.trir_list_op(&ops[ip], obase)?,
+                | TrOp::PushILocal(_)
+                | TrOp::PushILocalVoid(_) => self.trir_list_op(&ops[ip], obase)?,
+                TrOp::JumpIfEmptyLocal { slot, target } => {
+                    if self.trir_local_elems(obase + *slot as usize)? == 0 {
+                        ip = *target as usize;
+                        continue;
+                    }
+                }
                 TrOp::NqpOpGen { id, arity } => {
                     let n = *arity as usize;
                     let base = self.trir.os.len().saturating_sub(n);

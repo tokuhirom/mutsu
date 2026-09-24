@@ -191,7 +191,7 @@ impl<'a> TrirCompiler<'a> {
         }
         Some(TrChunk {
             id: super::next_chunk_id(),
-            ops: c.ops,
+            ops: super::peephole::optimize(c.ops),
             constants: c.constants,
             n_native: c.n_native,
             n_obj: c.n_obj,

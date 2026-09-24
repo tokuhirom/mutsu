@@ -1,5 +1,45 @@
 //! [`TrOp`]: the TRIR instruction set.
 
+/// The integer comparison of a fused compare-and-branch op: the same test
+/// as the stand-alone `EqI` .. `GeI`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum TrCmp {
+    Eq,
+    Ne,
+    Lt,
+    Le,
+    Gt,
+    Ge,
+}
+
+impl TrCmp {
+    /// The comparison a stand-alone int compare op makes, if `op` is one.
+    pub(crate) fn of(op: &TrOp) -> Option<TrCmp> {
+        Some(match op {
+            TrOp::EqI => TrCmp::Eq,
+            TrOp::NeI => TrCmp::Ne,
+            TrOp::LtI => TrCmp::Lt,
+            TrOp::LeI => TrCmp::Le,
+            TrOp::GtI => TrCmp::Gt,
+            TrOp::GeI => TrCmp::Ge,
+            _ => return None,
+        })
+    }
+
+    // Cost: O(1).
+    #[inline(always)]
+    pub(crate) fn eval(self, l: i64, r: i64) -> bool {
+        match self {
+            TrCmp::Eq => l == r,
+            TrCmp::Ne => l != r,
+            TrCmp::Lt => l < r,
+            TrCmp::Le => l <= r,
+            TrCmp::Gt => l > r,
+            TrCmp::Ge => l >= r,
+        }
+    }
+}
+
 /// One TRIR instruction.
 ///
 /// Operand order is the order the compiler pushed them, per bank: an op
@@ -236,6 +276,44 @@ pub(crate) enum TrOp {
     /// `PushIO` onto boxed slot `n`: pops only the int.
     PushILocal(u16),
 
+    // ---- fused compare-and-branch forms (`peephole.rs`) ----
+    //
+    // Never emitted by the compiler itself: the peephole pass folds the
+    // generic sequence into one of these after the chunk is complete, so
+    // every compile rule keeps reasoning about the plain stack forms.
+    /// Pop `r`, then `l`; jump to `target` when `cmp(l, r)` equals `on`.
+    /// `<cmp>; JumpIf{True,False}I(target)`.
+    JumpCmp {
+        cmp: TrCmp,
+        on: bool,
+        target: u32,
+    },
+    /// Pop `l`; jump to `target` when `cmp(l, c)` equals `on`.
+    /// `ConstI(c); <cmp>; JumpIf..I(target)`.
+    JumpCmpC {
+        cmp: TrCmp,
+        on: bool,
+        c: i32,
+        target: u32,
+    },
+    /// Jump to `target` when `cmp(<native slot>, c)` equals `on`; touches no
+    /// bank. `LoadI(slot); ConstI(c); <cmp>; JumpIf..I(target)`.
+    JumpCmpLC {
+        cmp: TrCmp,
+        on: bool,
+        slot: u16,
+        c: i32,
+        target: u32,
+    },
+    /// Jump to `target` when the list in boxed slot `slot` is empty.
+    /// `ElemsLocal(slot); JumpIfFalseI(target)`.
+    JumpIfEmptyLocal {
+        slot: u16,
+        target: u32,
+    },
+    /// `PushILocal(n)` whose result is discarded: `PushILocal(n); PopObj`.
+    PushILocalVoid(u16),
+
     // ---- calls ----
     /// Call another TRIR routine, resolved at compile time. `site` indexes
     /// [`TrChunk::calls`](super::TrChunk::calls).
@@ -264,4 +342,41 @@ pub(crate) enum TrOp {
     ReturnObj,
     /// Return `Nil`.
     ReturnNil,
+}
+
+impl TrOp {
+    /// The jump target this op carries, if it is a jump of any form.
+    ///
+    /// The one list of jump-bearing ops: a pass that moves or removes ops
+    /// rewrites targets through this, so a new jump form cannot be missed.
+    pub(crate) fn target_mut(&mut self) -> Option<&mut u32> {
+        match self {
+            TrOp::Jump(t)
+            | TrOp::JumpIfFalseI(t)
+            | TrOp::JumpIfTrueI(t)
+            | TrOp::JumpIfFalseKeepI(t)
+            | TrOp::JumpIfTrueKeepI(t)
+            | TrOp::JumpCmp { target: t, .. }
+            | TrOp::JumpCmpC { target: t, .. }
+            | TrOp::JumpCmpLC { target: t, .. }
+            | TrOp::JumpIfEmptyLocal { target: t, .. } => Some(t),
+            _ => None,
+        }
+    }
+
+    /// Read-only [`TrOp::target_mut`].
+    pub(crate) fn target(&self) -> Option<u32> {
+        match self {
+            TrOp::Jump(t)
+            | TrOp::JumpIfFalseI(t)
+            | TrOp::JumpIfTrueI(t)
+            | TrOp::JumpIfFalseKeepI(t)
+            | TrOp::JumpIfTrueKeepI(t)
+            | TrOp::JumpCmp { target: t, .. }
+            | TrOp::JumpCmpC { target: t, .. }
+            | TrOp::JumpCmpLC { target: t, .. }
+            | TrOp::JumpIfEmptyLocal { target: t, .. } => Some(*t),
+            _ => None,
+        }
+    }
 }
