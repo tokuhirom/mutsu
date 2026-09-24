@@ -31,13 +31,21 @@ compose under NFC, so no result changes.
 Results under 1 KiB stay flat: a copy that small is cheaper than the later
 flatten.
 
-Measured on a release build (20 iterations each, second run; baseline is the
-same tree before the change):
+Measured locally on a release build in a 4-core container (20 iterations per
+cell, second run of each binary, taken minutes apart; "before" is the parent
+commit):
 
-| case | n = 1M | 2M | 4M |
-|---|---:|---:|---:|
-| `my $r = "あ" x $n`, before | 0.0080 s | 0.0153 s | 0.0365 s |
-| after | see PR | | |
+| case | | n = 1M | 2M | 4M |
+|---|---|---:|---:|---:|
+| `my $r = "あ" x $n` | before | 0.0080 s | 0.0153 s | 0.0365 s |
+| | after | 0.0001 s | 0.0000 s | 0.0000 s |
+| `my $r = $a ~ "b"` (`$a` = n chars, still live) | before | 0.0011 s | 0.0030 s | 0.0064 s |
+| | after | 0.0000 s | 0.0000 s | 0.0000 s |
+| `my $r = "$a-$b"` | before | 0.0029 s | 0.0076 s | 0.0176 s |
+| | after | 0.0000 s | 0.0000 s | 0.0000 s |
+
+The "after" rows stay flat as n doubles, which is the #9253 close condition.
+The flatten is paid by whichever read comes first, once.
 
 `scripts/str-complexity-check.sh` gained three cases (shared-left `~`,
 interpolation with a shared part, `x` with a growing count), and
