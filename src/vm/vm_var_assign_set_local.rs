@@ -828,7 +828,9 @@ impl Interpreter {
         } else {
             new.into_container_ref()
         };
-        *cell.lock().unwrap() = container;
+        *cell
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = container;
         let binding = Value::container_ref(cell);
         self.locals[idx] = binding.clone();
         let name = code.locals[idx].clone();
@@ -839,7 +841,10 @@ impl Interpreter {
     /// container at the end of the chain.
     pub(super) fn innermost_container(mut v: Value) -> Value {
         while let Some(cell) = Self::binding_cell_of(&v) {
-            let inner = cell.lock().unwrap().clone();
+            let inner = cell
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .clone();
             v = inner;
         }
         v
@@ -2315,7 +2320,10 @@ impl Interpreter {
                 // the typed-bind propagation at the end of the slow path, which
                 // the early return below skips).
                 if name.starts_with('@') || name.starts_with('%') {
-                    let inner = cell.lock().unwrap().clone();
+                    let inner = cell
+                        .lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner)
+                        .clone();
                     if let Some(info) = self.container_type_metadata(&inner)
                         && !info.value_type.is_empty()
                     {

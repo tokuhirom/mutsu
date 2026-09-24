@@ -1433,7 +1433,12 @@ impl Interpreter {
     /// rebind already leaves behind (#8759), so it needs no new reader.
     pub(crate) fn binding_cell_of(v: &Value) -> Option<crate::gc::Gc<crate::value::ContainerCell>> {
         match v.view() {
-            ValueView::ContainerRef(arc) if arc.lock().unwrap().is_container_ref() => {
+            ValueView::ContainerRef(arc)
+                if arc
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .is_container_ref() =>
+            {
                 Some(arc.clone())
             }
             _ => None,
