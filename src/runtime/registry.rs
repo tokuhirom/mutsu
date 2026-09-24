@@ -1051,9 +1051,10 @@ impl Registry {
     /// compiler merged, i.e. whose chains are identical, so it cannot answer
     /// the wrong MRO.
     fn interned_builtin_mro(mro: &'static [&'static str]) -> std::sync::Arc<[Symbol]> {
+        /// `(slice address, slice length)` -> the interned chain.
+        type MroMemo = HashMap<(usize, usize), std::sync::Arc<[Symbol]>>;
         thread_local! {
-            static CACHE: std::cell::RefCell<HashMap<(usize, usize), std::sync::Arc<[Symbol]>>> =
-                std::cell::RefCell::new(HashMap::default());
+            static CACHE: std::cell::RefCell<MroMemo> = std::cell::RefCell::new(HashMap::default());
         }
         CACHE.with(|cache| {
             cache
