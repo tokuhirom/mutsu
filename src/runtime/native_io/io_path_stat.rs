@@ -247,44 +247,12 @@ impl Interpreter {
     fn io_path_stat_result(path_buf: &Path, p: &str, method: &str) -> Result<Value, RuntimeError> {
         match method {
             "e" => Ok(Value::truth(path_buf.exists())),
-            "f" => match fs::metadata(path_buf) {
-                Ok(meta) => Ok(Value::truth(meta.is_file())),
-                Err(_) => Ok(io_path_missing_failure(p, method)),
-            },
-            "d" => match fs::metadata(path_buf) {
-                Ok(meta) => Ok(Value::truth(meta.is_dir())),
-                Err(_) => Ok(io_path_missing_failure(p, method)),
-            },
-            "l" => match fs::symlink_metadata(path_buf) {
-                Ok(meta) => Ok(Value::truth(meta.file_type().is_symlink())),
-                Err(_) => Ok(io_path_missing_failure(p, method)),
-            },
-            "r" => match fs::metadata(path_buf) {
-                Ok(_) => Ok(Value::truth(path_is_readable(path_buf))),
-                Err(_) => Ok(io_path_missing_failure(p, method)),
-            },
-            "w" => match fs::metadata(path_buf) {
-                Ok(_) => Ok(Value::truth(path_is_writable(path_buf))),
-                Err(_) => Ok(io_path_missing_failure(p, method)),
-            },
-            "x" => match fs::metadata(path_buf) {
-                Ok(_) => Ok(Value::truth(path_is_executable(path_buf))),
-                Err(_) => Ok(io_path_missing_failure(p, method)),
-            },
-            "rw" => match fs::metadata(path_buf) {
-                Ok(_) => Ok(Value::truth(
-                    path_is_readable(path_buf) && path_is_writable(path_buf),
-                )),
-                Err(_) => Ok(io_path_missing_failure(p, method)),
-            },
-            "rwx" => match fs::metadata(path_buf) {
-                Ok(_) => Ok(Value::truth(
-                    path_is_readable(path_buf)
-                        && path_is_writable(path_buf)
-                        && path_is_executable(path_buf),
-                )),
-                Err(_) => Ok(io_path_missing_failure(p, method)),
-            },
+            "f" | "d" | "l" | "r" | "w" | "x" | "rw" | "rwx" => {
+                match super::helpers::io_file_test(path_buf, method) {
+                    Some(answer) => Ok(Value::truth(answer)),
+                    None => Ok(io_path_missing_failure(p, method)),
+                }
+            }
             "z" => match fs::metadata(path_buf) {
                 Ok(meta) => Ok(Value::truth(meta.len() == 0)),
                 Err(_) => {
