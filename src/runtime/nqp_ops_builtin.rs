@@ -114,8 +114,10 @@ impl Interpreter {
             // by JSON::Fast's `nom-ws`, which calls it once per character over
             // the WHOLE document -- so the position is resolved through the
             // string's cached grapheme index, never by re-collecting it.
+            // nqp::ord($str) / nqp::ord($str, $pos) is the same op with the
+            // position defaulting to 0 (MoarVM's `ord` / `ordat`).
             // Cost: O(1) amortized for a flat string, O(STRIDE) otherwise.
-            "ordat" => {
+            "ord" | "ordat" => {
                 let pos = args
                     .get(1)
                     .and_then(|v| match v.view() {
