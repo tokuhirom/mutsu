@@ -596,6 +596,19 @@ impl Interpreter {
         {
             return Err(RuntimeError::assignment_ro_value(current.clone()));
         }
+        // The same for a method handing back a plain non-container value
+        // (`$s.Str[0] = 1`, `$n.Int[0] = 1`, `$n.Str<k> = 1`): the element
+        // store has nothing to land in, so it is refused exactly like the
+        // subscript store into a `$` holding that value -- "Cannot modify an
+        // immutable Str (ab)" / "Type Int does not support associative
+        // indexing." -- instead of the copy-and-write-back below silently
+        // doing nothing (#9256).
+        if plain_receiver
+            && dims.len() < 2
+            && let Some(err) = self.scalar_subscript_protocol_error(&current, index_is_positional)
+        {
+            return Err(err);
+        }
 
         // Modify the container
         let updated = if dims.len() >= 2 {
