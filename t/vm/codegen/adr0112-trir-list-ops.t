@@ -39,10 +39,11 @@ is $on-out, q:to/END/ x 2, 'the transcript carries the expected answers';
     counts => 6 3 2 1
     drain-sized => 4294967295 44 7 0
     build => abcF 70 4
+    rotate => bcda 4
     copy-except => abc 0
     END
 
-my @routines = <counts drain-sized build copy-except>;
+my @routines = <counts drain-sized build rotate copy-except>;
 my @accepted = $on-err.lines.map({ m/^ 'trir: ' (\S+) ' accepted'/ ?? ~$0 !! Empty }).grep(* (elem) @routines);
 is-deeply @accepted.sort.List, @routines.sort.List, 'every shape routine is accepted into TRIR'
     or diag $on-err;

@@ -15,6 +15,7 @@
 //! membership rules by probing `nqp::iscclass` per class (see
 //! `t/nqp/nqp-cclass-uniprop.t`, which pins both against the same values).
 
+pub(crate) use super::nqp_backing::push_elem;
 use super::*;
 use crate::builtins::unicode_gc::GeneralCategory;
 
@@ -138,28 +139,6 @@ const fn cclass_bits_for_gc(gc: GeneralCategory) -> i64 {
     bits
 }
 
-/// Push a value onto an nqp list / native array in place. Returns the
-/// pushed value itself (not the array) -- nqp's own `push`/`push_i`/
-/// `push_s`/`push_n` all hand back the element just appended, which is what
-/// lets idioms like `has-word`'s
-/// `nqp::add_i(nqp::push_i(@positions,$pos),$move)` chain off it directly.
-pub(crate) fn push_elem(op: &str, target: &Value, val: Value) -> Result<Value, RuntimeError> {
-    // A Buf encodes just the new element onto its storage (#7680, #9132);
-    // the generic element editor below would decode and re-encode it whole.
-    if let Some((class_name, attrs)) = crate::value::value_buf::buf_target(target) {
-        let end = crate::value::value_buf::BufEnd::Back;
-        crate::value::value_buf::extend_buf_elems(
-            &attrs,
-            class_name,
-            std::slice::from_ref(&val),
-            end,
-        );
-        return Ok(val);
-    }
-    Interpreter::nqp_with_elems_mut(op, target, |elems| elems.push(val.clone()))?;
-    Ok(val)
-}
-
 impl Interpreter {
     /// Try a text / Unicode / native-list `nqp::` op. `None` means "not an op
     /// this table knows"; the caller then raises the unsupported-op error.
@@ -264,7 +243,7 @@ impl Interpreter {
                 let target = args.get(2).cloned().unwrap_or(Value::NIL);
                 let normalized = match crate::builtins::str_prim::Normal::from_nqp_mode(mode) {
                     Some(form) => crate::builtins::str_prim::normalize(&text, form),
-                    None if mode == 0 => text,
+                    None if mode == 0 => std::borrow::Cow::Borrowed(text.as_str()),
                     None => {
                         return Some(Err(RuntimeError::new(format!(
                             "nqp::strtocodes: unknown normalization mode {mode}"
@@ -311,10 +290,15 @@ impl Interpreter {
                 // sequence it was handed. Without this, `JSON::Fast`'s escaper
                 // — which round-trips every string through `.NFD` and back —
                 // emitted decomposed text for any composed input.
-                Ok(Value::str(crate::builtins::str_prim::normalize(
-                    &out,
-                    crate::builtins::str_prim::Normal::Nfc,
-                )))
+                Ok(Value::str(
+                    match crate::builtins::str_prim::normalize(
+                        &out,
+                        crate::builtins::str_prim::Normal::Nfc,
+                    ) {
+                        std::borrow::Cow::Borrowed(_) => out,
+                        std::borrow::Cow::Owned(nfc) => nfc,
+                    },
+                ))
             }
 
             // -- string primitives --

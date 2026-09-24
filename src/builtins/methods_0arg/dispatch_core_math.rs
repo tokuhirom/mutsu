@@ -711,7 +711,7 @@ pub(super) fn dispatch(
         "NFC" | "NFD" | "NFKC" | "NFKD" => {
             let s = uni_or_str(target);
             let form = crate::builtins::str_prim::Normal::from_name(method)?;
-            let normalized = crate::builtins::str_prim::normalize(&s, form);
+            let normalized = crate::builtins::str_prim::normalize(&s, form).into_owned();
             Some(Some(Ok(Value::uni(method.to_string(), normalized))))
         }
         _ => None,

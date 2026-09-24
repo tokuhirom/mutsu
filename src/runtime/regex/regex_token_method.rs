@@ -123,7 +123,7 @@ impl Interpreter {
         self.run_token_method_at_unwrapped(pkg, name, extra_args, text, pos)
     }
 
-    pub(super) fn token_method_wrap_chain(
+    pub(crate) fn token_method_wrap_chain(
         &self,
         receiver_pkg: &str,
         name: &str,
@@ -163,20 +163,41 @@ impl Interpreter {
         pos: usize,
         chain: &[(u64, Value)],
     ) -> Result<Value, RuntimeError> {
-        if chain.is_empty() {
-            return Err(RuntimeError::new(
-                "Cannot dispatch an empty token method wrap chain",
-            ));
-        }
-        let cursor = Value::make_match_object_full(
+        let mut call_args = vec![Self::token_wrap_cursor(text, pos)];
+        call_args.extend(extra_args.iter().cloned());
+        self.call_wrapped_token_method_with_terminal(pkg, name, call_args, chain, None)
+    }
+
+    /// The cursor a token's wrapper receives: a Match anchored at `pos`.
+    pub(crate) fn token_wrap_cursor(text: &str, pos: usize) -> Value {
+        Value::make_match_object_full(
             pos as i64,
             pos as i64,
             &[],
             &Default::default(),
             MatchTarget::new(text),
-        );
-        let mut call_args = vec![cursor];
-        call_args.extend(extra_args.iter().cloned());
+        )
+    }
+
+    /// Dispatch a token's `.wrap` chain with `call_args` (a cursor, then the
+    /// token's own arguments). The terminal that `callsame` reaches runs the
+    /// token body at the cursor, or -- when `parse_call` names the
+    /// `.parse`/`.subparse` call that entered a wrapped start rule -- re-runs
+    /// that whole parse with the wrap check bypassed
+    /// (`methods_grammar_wrapped_start`).
+    pub(crate) fn call_wrapped_token_method_with_terminal(
+        &mut self,
+        pkg: Symbol,
+        name: &str,
+        call_args: Vec<Value>,
+        chain: &[(u64, Value)],
+        parse_call: Option<(&str, &[Value])>,
+    ) -> Result<Value, RuntimeError> {
+        if chain.is_empty() {
+            return Err(RuntimeError::new(
+                "Cannot dispatch an empty token method wrap chain",
+            ));
+        }
 
         let mut original_env = crate::env::Env::new();
         original_env.insert(
@@ -187,6 +208,16 @@ impl Interpreter {
             "__mutsu_token_method_wrapper_name".to_string(),
             Value::str(name.to_string()),
         );
+        if let Some((method, parse_args)) = parse_call {
+            original_env.insert(
+                "__mutsu_token_method_wrapper_parse_method".to_string(),
+                Value::str(method.to_string()),
+            );
+            original_env.insert(
+                "__mutsu_token_method_wrapper_parse_args".to_string(),
+                Value::real_array(parse_args.to_vec()),
+            );
+        }
         let original = Value::make_sub(
             pkg,
             Symbol::intern(name),

@@ -123,14 +123,23 @@ impl Normal {
     }
 }
 
-/// `s` in normalization form `form`.
+/// `s` in normalization form `form`. ASCII text is returned borrowed: no
+/// ASCII codepoint has a decomposition, a compatibility mapping or a nonzero
+/// combining class, and no canonical composition has an all-ASCII source
+/// pair, so all four forms map an ASCII string to itself. (ADR-0116 D2.3:
+/// the normalizer was 5.2% of a JSON::Fast record, every string of which is
+/// ASCII.)
 ///
-/// Cost: O(n), n = codepoints of `s`.
-pub(crate) fn normalize(s: &str, form: Normal) -> String {
-    match form {
+/// Cost: O(n), n = bytes of `s` (one ASCII scan; the normalizer only for
+/// non-ASCII input).
+pub(crate) fn normalize(s: &str, form: Normal) -> std::borrow::Cow<'_, str> {
+    if s.is_ascii() {
+        return std::borrow::Cow::Borrowed(s);
+    }
+    std::borrow::Cow::Owned(match form {
         Normal::Nfc => s.nfc().collect(),
         Normal::Nfd => s.nfd().collect(),
         Normal::Nfkc => s.nfkc().collect(),
         Normal::Nfkd => s.nfkd().collect(),
-    }
+    })
 }

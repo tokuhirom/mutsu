@@ -43,6 +43,7 @@ pub(crate) mod entry;
 mod entry_values;
 pub(crate) mod exec;
 pub(crate) mod exec_call;
+mod exec_list;
 mod exec_str;
 pub(crate) mod frame;
 pub(crate) mod gen_link;
