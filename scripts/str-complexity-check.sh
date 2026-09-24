@@ -58,6 +58,14 @@ CASES=(
     'trans (char ranges, control)|200000|my $s = "abc " x NN;|$s.trans("a..z" => "A..Z")|once'
     'Str.Str|20000|my $s = "a" x NN;|$s.Str|loop'
     'Str.WHICH|20000|my $s = "a" x NN;|$s.WHICH|loop'
+    # --- prefix of a comb / lines / words Seq (#9251) ----------------------
+    # O(prefix) per call, so a loop of NN calls over an NN-char string is ~2.
+    'comb.head(3)|5000|my $s = "a" x NN;|$s.comb.head(3)|loop'
+    'comb(2).first|5000|my $s = "a" x NN;|$s.comb(2).first|loop'
+    'comb(Str).head(3)|5000|my $s = "ab" x NN;|$s.comb("b").head(3)|loop'
+    'comb[1]|5000|my $s = "a" x NN;|$s.comb[1]|loop'
+    'lines.head(3)|5000|my $s = "a\n" x NN;|$s.lines.head(3)|loop'
+    'words.head(3)|5000|my $s = "a " x NN;|$s.words.head(3)|loop'
     # --- split / match / subst ---------------------------------------------
     's:g/// (one call)|2000|my $c = "a," x NN;|$c ~~ s:g/","/;/|once'
     'subst regex + closure|1000|my $s = "a" x NN;|$s.subst(/a+/, { "b" })|once'

@@ -12,92 +12,54 @@
 //! needs the interpreter-coupled regex engine (`regex_find_all`, code blocks,
 //! `Match` objects), so those cases stay in `runtime/` — [`comb_pure`] returns
 //! `None` for them, signalling the caller to defer.
+//!
+//! Every pure form returns the same lazy `Seq` Rakudo does: a
+//! [`crate::value::StrIterSpec`] cursor that cuts the next piece only when a
+//! consumer pulls it, so `.comb.head(3)` and `.comb(2, 3)` cost O(prefix).
 
-use crate::value::{RuntimeError, Value, ValueView};
-use unicode_segmentation::UnicodeSegmentation;
+use crate::value::{RuntimeError, StrIterMode, Value, ValueView, str_iter_seq};
 
-/// Pure `.comb` split for the `Int` (chunk) and `Str` (fixed needle) matchers.
+/// Pure `.comb` for no matcher, the `Int` (chunk) matcher and the `Str`
+/// (fixed needle) matcher, as a lazy `Seq` over `target`'s string.
 ///
-/// Returns `Some(items)` for those matchers (and `Some(empty)` when `limit <= 0`,
-/// matching the interpreter's early-out). Returns `None` for any other matcher
-/// (`Regex`, `Sub`, a bare value to be reinterpreted as a regex, or no matcher),
-/// signalling the caller to fall back to the interpreter's regex path.
+/// A non-positive `limit` yields an empty Seq whatever the matcher. Returns
+/// `None` for any other matcher (`Regex`, `Sub`, a bare value to be
+/// reinterpreted as a regex), signalling the caller to fall back to the
+/// interpreter's regex path.
+// Cost: O(1); each pulled element then costs O(its bytes) (a needle pull also
+// scans the bytes up to its match).
 pub(crate) fn comb_pure(
-    text: &str,
+    target: &Value,
     matcher: Option<&Value>,
     limit: Option<i64>,
-) -> Option<Vec<Value>> {
+) -> Option<Value> {
     // A non-positive limit yields empty regardless of matcher (mirrors the
     // interpreter's early return before matching).
-    if matches!(limit, Some(lim) if lim <= 0) {
-        return Some(Vec::new());
-    }
-
-    match matcher.map(Value::view) {
-        // Cost: O(n), n = chars of the invocant; with `$limit` k, O(k * c), c =
-        // chunk size (segmentation stops after the k-th chunk).
-        Some(ValueView::Int(n)) => {
-            let chunk_size = if n <= 0 { 1usize } else { n as usize };
-            let max_chunks = limit.map_or(usize::MAX, |lim| lim as usize);
-            let mut result: Vec<Value> = Vec::new();
-            let mut graphemes = text.grapheme_indices(true).peekable();
-            while result.len() < max_chunks {
-                let Some(&(start, _)) = graphemes.peek() else {
-                    break;
-                };
-                let mut end = start;
-                for (i, g) in graphemes.by_ref().take(chunk_size) {
-                    end = i + g.len();
-                }
-                result.push(Value::str(text[start..end].to_string()));
-            }
-            Some(result)
-        }
-        // Cost: O(n + k), n = bytes of the invocant, k = matches (substring
-        // search resumes after each hit, and stops at `$limit`); an empty needle
-        // is O(n) graphemes, O(k) with `$limit` k.
-        Some(ValueView::Str(needle)) => {
-            if needle.is_empty() {
-                let chars: Vec<Value> = text
-                    .graphemes(true)
-                    .take(limit.map_or(usize::MAX, |lim| lim as usize))
-                    .map(|g| Value::str(g.to_string()))
-                    .collect();
-                return Some(chars);
-            }
-            let mut result = Vec::new();
-            let mut offset = 0usize;
-            while offset <= text.len() {
-                if let Some(lim) = limit
-                    && result.len() >= lim as usize
-                {
-                    break;
-                }
-                let Some(pos) = text[offset..].find(needle.as_str()) else {
-                    break;
-                };
-                let start = offset + pos;
-                let end = start + needle.len();
-                result.push(Value::str(text[start..end].to_string()));
-                offset = end;
-            }
-            Some(result)
-        }
-        _ => None,
-    }
+    let limit = match limit {
+        Some(lim) if lim <= 0 => return Some(Value::seq(Vec::new())),
+        Some(lim) => Some(lim as usize),
+        None => None,
+    };
+    let mode = match matcher.map(Value::view) {
+        None => StrIterMode::Graphemes,
+        Some(ValueView::Int(n)) if n <= 1 => StrIterMode::Graphemes,
+        Some(ValueView::Int(n)) => StrIterMode::Chunks(n as usize),
+        Some(ValueView::Str(needle)) if needle.is_empty() => StrIterMode::Graphemes,
+        Some(ValueView::Str(needle)) => StrIterMode::Needle(std::sync::Arc::clone(&needle)),
+        _ => return None,
+    };
+    Some(str_iter_seq(target, mode, limit))
 }
 
 /// Native `.comb(...)` for the pure matcher cases. Parses the positional
 /// matcher + optional limit (the `:match` adverb only affects the regex path and
 /// is ignored here, exactly as the interpreter ignores it for `Int`/`Str`).
 /// Returns `None` to defer to the interpreter for `Regex`/`Sub`/bare matchers.
-// Cost: `comb_pure`'s cost (a plain Str invocant is borrowed, not copied).
+// Cost: O(1), see `comb_pure`.
 pub(crate) fn native_comb_method(
     target: &Value,
     args: &[Value],
 ) -> Option<Result<Value, RuntimeError>> {
-    let text = target.string_value_cow();
-
     // Separate positional args from named ones. `.comb` declares only `:match`
     // (regex-only, irrelevant to this pure path) and swallows every other named
     // through the implicit `*%_` every Raku method carries, so ALL named-flavour
@@ -120,5 +82,5 @@ pub(crate) fn native_comb_method(
     };
     let matcher = positional.first().copied();
 
-    comb_pure(&text, matcher, limit).map(|items| Ok(Value::seq(items)))
+    comb_pure(target, matcher, limit).map(Ok)
 }

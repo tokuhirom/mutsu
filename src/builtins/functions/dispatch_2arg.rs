@@ -386,28 +386,14 @@ pub(crate) fn native_function_2arg(
             }
             Some(minmax_two(arg1, arg2, true))
         }
+        // Cost: O(1), the same lazy Seq as `Str.words($limit)`.
         "words" => {
-            let s = arg1.to_string_value();
-            let limit = match arg2.view() {
-                ValueView::Int(i) => Some(i.max(0) as usize),
-                ValueView::BigInt(bi) => {
-                    use num_traits::ToPrimitive;
-                    Some(bi.to_usize().unwrap_or(usize::MAX))
-                }
-                ValueView::Whatever => None,
-                ValueView::Num(f) if f.is_infinite() && f.is_sign_positive() => None,
-                ValueView::Num(f) if f >= 0.0 => Some(f as usize),
-                ValueView::Rat(n, d) if d == 0 && n > 0 => None,
-                _ => return None,
-            };
-            let mut words: Vec<Value> = s
-                .split_whitespace()
-                .map(|w| Value::str(w.to_string()))
-                .collect();
-            if let Some(n) = limit {
-                words.truncate(n);
-            }
-            Some(Ok(Value::seq(words)))
+            let limit = crate::value::str_iter_limit(arg2)?;
+            Some(Ok(crate::value::str_iter_seq(
+                arg1,
+                crate::value::StrIterMode::Words,
+                limit,
+            )))
         }
         "uniprop" => {
             // uniprop(target, property_name)
