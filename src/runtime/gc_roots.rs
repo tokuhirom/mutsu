@@ -169,6 +169,7 @@ impl Interpreter {
         }
         for ctx in &self.samewith_context_stack {
             visit_opt(visitor, &ctx.invocant);
+            visit_opt(visitor, &ctx.callable);
             if let Some(args) = &ctx.args {
                 visit_slice(visitor, args);
             }

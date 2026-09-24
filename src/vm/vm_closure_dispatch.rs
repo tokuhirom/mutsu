@@ -1083,6 +1083,15 @@ impl Interpreter {
                 None
             }
         };
+        // `samewith` is lexical to the routine containing it. An anonymous
+        // `sub` has no registry name to restart through, so retain the
+        // callable value for the duration of this routine frame. Bare and
+        // pointy blocks are not routine boundaries: their `samewith` belongs
+        // to the enclosing routine, as it does in Rakudo.
+        let pushed_samewith_context = cc.is_routine && !cc.is_pointy_block && !data.is_bare_block;
+        if pushed_samewith_context {
+            self.push_samewith_callable_context(Value::sub_value(data.clone()));
+        }
         let mut ip = 0;
         let mut result = Ok(());
         let mut explicit_return: Option<Value> = None;
@@ -1238,6 +1247,9 @@ impl Interpreter {
         // under the caller's package, matching prior behavior. On a Rust
         // panic mid-loop above, the guard's `Drop` still runs during unwind
         // even though this line is never reached.
+        if pushed_samewith_context {
+            self.pop_samewith_context();
+        }
         drop(pkg_guard);
 
         let ret_val = if result.is_ok() {
