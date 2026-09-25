@@ -898,7 +898,7 @@ mod tests {
         let attrs = attrs_of(&wide);
         let map = attrs.as_map();
         let node = node_in(&map).expect("node");
-        assert_eq!(node.bytes, vec![0x70, 0x11]); // little-endian
+        assert_eq!(node.bytes, BufBytes::from(vec![0x70, 0x11])); // little-endian
         assert_eq!(node.width, 2);
         assert_eq!(node.kind, ElemKind::Uint);
     }
@@ -987,6 +987,6 @@ mod tests {
             Some(vec![Value::int(1), Value::int(0x1234)])
         );
         let map = attrs.as_map();
-        assert_eq!(node_in(&map).expect("node").bytes, vec![1, 0, 0x34, 0x12]);
+        assert_eq!(node_in(&map).expect("node").bytes, BufBytes::from(vec![1, 0, 0x34, 0x12]));
     }
 }
