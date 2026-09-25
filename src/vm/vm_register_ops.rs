@@ -825,7 +825,7 @@ impl Interpreter {
             let compiled_fns = compiled_code
                 .as_ref()
                 .and_then(|cc| cc.compiled_fns.clone());
-            let val = Value::sub_value(crate::gc::Gc::new(crate::value::SubData {
+            let mut val = Value::sub_value(crate::gc::Gc::new(crate::value::SubData {
                 package: self.lexical_closure_package_sym(),
                 // Anonymous closures pool a SubDecl with an empty name; a
                 // named `anon sub NAME` decl carries its name through here.
@@ -863,6 +863,80 @@ impl Interpreter {
                 param_name_syms_cache: std::sync::OnceLock::new(),
                 source_file_sym_cache: std::sync::OnceLock::new(),
             }));
+            // Anonymous routine literals carry their custom `is` traits in the
+            // pooled declaration just like named subs do. Apply them after the
+            // closure value exists so traits such as `Sub::Memoized` can wrap
+            // this exact value. Parser markers (and built-in declaration-only
+            // traits) never reach user `trait_mod:<is>` dispatch.
+            let has_trait_mod =
+                self.has_proto("trait_mod:<is>") || self.has_multi_candidates("trait_mod:<is>");
+            for (trait_name, trait_arg) in custom_traits.iter().filter(|(t, _)| {
+                !t.starts_with("__")
+                    && t != "default"
+                    && !t.starts_with("DEPRECATED")
+                    && *t != "hidden-from-USAGE"
+                    && !matches!(t.as_str(), "native" | "symbol" | "nativeconv" | "encoded")
+            }) {
+                if !has_trait_mod {
+                    if trait_name == "test-assertion" {
+                        continue;
+                    }
+                    if self
+                        .env()
+                        .get("__mutsu_in_eval")
+                        .is_some_and(|v| v.truthy())
+                    {
+                        return Err(RuntimeError::new(format!(
+                            "Can't use unknown trait 'is' -> '{}' in anonymous sub declaration.",
+                            trait_name
+                        )));
+                    }
+                    continue;
+                }
+                let trait_arg_val = match trait_arg {
+                    Some(arg) => Some(self.vm_eval_block_value(&[Stmt::Expr(arg.clone())])?),
+                    None => None,
+                };
+                let type_obj = self.resolve_type_object(trait_name);
+                let mut args = vec![val.clone()];
+                if let Some(type_val) = type_obj {
+                    args.push(type_val);
+                    if let Some(arg_val) = trait_arg_val {
+                        args.push(arg_val);
+                    }
+                } else {
+                    args.push(Value::pair(
+                        trait_name.clone(),
+                        trait_arg_val.unwrap_or(Value::TRUE),
+                    ));
+                }
+                let saved_writeback_key = self.trait_mod_writeback_key.take();
+                let call_result = self.vm_call_function("trait_mod:<is>", args);
+                self.trait_mod_writeback_key = saved_writeback_key;
+                let mixin_writeback = self.trait_mod_writeback_value.take();
+                match call_result {
+                    Ok(result) if matches!(result.view(), ValueView::Mixin(..)) => val = result,
+                    Ok(_) => {
+                        if let Some(mixin_val) = mixin_writeback {
+                            val = mixin_val;
+                        }
+                    }
+                    Err(e) if Self::is_trait_mod_no_candidate(&e) => {
+                        if trait_name != "test-assertion"
+                            && self
+                                .env()
+                                .get("__mutsu_in_eval")
+                                .is_some_and(|v| v.truthy())
+                        {
+                            return Err(RuntimeError::new(format!(
+                                "Can't use unknown trait 'is' -> '{}' in anonymous sub declaration.",
+                                trait_name
+                            )));
+                        }
+                    }
+                    Err(e) => return Err(e),
+                }
+            }
             self.stack.push(val);
             Ok(())
         } else {

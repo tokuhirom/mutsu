@@ -165,6 +165,7 @@ pub(crate) fn compose_prefix_into_whatevercode(op: TokenKind, expr: Expr) -> Exp
             mut body,
             is_rw,
             is_raw,
+            custom_traits,
             is_whatever_code,
             declarator,
         } => {
@@ -176,6 +177,7 @@ pub(crate) fn compose_prefix_into_whatevercode(op: TokenKind, expr: Expr) -> Exp
                 body,
                 is_rw,
                 is_raw,
+                custom_traits,
                 is_whatever_code,
                 declarator,
             }

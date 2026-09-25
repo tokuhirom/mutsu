@@ -151,6 +151,7 @@ impl Compiler {
                     body: body.to_vec(),
                     is_rw: rw_block,
                     is_raw: false,
+                    custom_traits: Vec::new(),
                     is_whatever_code: false,
                     declarator: crate::ast::RoutineDeclarator::Block,
                 }

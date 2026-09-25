@@ -1240,6 +1240,7 @@ impl Compiler {
                 body,
                 is_rw,
                 is_raw,
+                custom_traits,
                 is_whatever_code,
                 // `declarator` records the source spelling. It selects the
                 // Block vs Routine compile path (see
@@ -1254,6 +1255,7 @@ impl Compiler {
                     body,
                     *is_rw,
                     *is_raw,
+                    custom_traits,
                     *is_whatever_code,
                     *declarator,
                 );

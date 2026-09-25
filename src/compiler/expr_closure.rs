@@ -192,6 +192,7 @@ impl Compiler {
         body: &[Stmt],
         is_rw: bool,
         is_raw: bool,
+        custom_traits: &[(String, Option<crate::ast::Expr>)],
         is_whatever_code: bool,
         declarator: crate::ast::RoutineDeclarator,
     ) {
@@ -378,11 +379,13 @@ impl Compiler {
             // `__mutsu_callable_type::<Type>` marker, which is what the
             // closure-building opcode installs in the captured environment —
             // the same marker a class-body method declaration sets.
-            custom_traits: declarator
-                .literal_marker()
-                .map(|marker| (marker.to_string(), None))
-                .into_iter()
-                .collect(),
+            custom_traits: {
+                let mut traits = custom_traits.to_vec();
+                if let Some(marker) = declarator.literal_marker() {
+                    traits.push((marker.to_string(), None));
+                }
+                traits
+            },
         });
         self.code.emit(OpCode::MakeAnonSubParams(
             idx,
