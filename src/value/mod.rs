@@ -2603,8 +2603,8 @@ pub struct RegexAdverbs {
     /// The defining scope this literal closed over, when its pattern embeds
     /// code — see [`RegexClosure`]. `None` for every ordinary literal.
     pub captured: Option<Arc<ValueMap>>,
-    /// The defining scope's `$_`, snapshotted when the literal escaped a
-    /// callable body — see [`RegexClosure::topic`].
+    /// The defining scope's `$_`, captured when the literal escaped — see
+    /// [`RegexClosure::topic`].
     pub topic: Option<Value>,
     /// Source-level provenance for a parser-created static regex. This is
     /// separate from the execution spelling in `pattern`: the runtime may
@@ -2640,9 +2640,12 @@ pub struct RegexClosure {
     /// `Interpreter::instantiate_regex_value_with_args`.
     pub signature: Option<Arc<Vec<crate::ast::ParamDef>>>,
     /// The `$_` of the scope the literal was written in, captured when the
-    /// literal is the escaping value of a callable body (`{ /foo/ }`).
-    /// `Regex.Bool` matches against the regex's *lexical* `$_`, not the
-    /// caller's: `my &f = { /foo/ }; so f("foo")` is `True` in Rakudo.
+    /// literal's value escapes (`{ /foo/ }`, `my $r = /foo/`). `Regex.Bool`
+    /// matches against the regex's *lexical* `$_`, not the caller's:
+    /// `my &f = { /foo/ }; so f("foo")` is `True` in Rakudo. An env-held `$_`
+    /// is captured as its shared `ContainerRef` cell, so a later assignment
+    /// in the defining scope is seen while a `for`/routine rebind is not
+    /// (#9396); a `$_` held in a local slot is captured by value.
     /// `None` means "use the `$_` visible where the regex is boolified".
     pub topic: Option<Value>,
 }

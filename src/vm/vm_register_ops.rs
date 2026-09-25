@@ -96,8 +96,9 @@ impl Interpreter {
     /// `todo/tickets/stored-regex-loses-its-defining-scope-lexicals.md`).
     /// Unmutated captures stay cheap by-value snapshots.
     ///
-    /// `topic` (`Some(slot)`, or `Some(NOT_A_LOCAL)` for `env`) snapshots the
-    /// frame's `$_` onto the value for `Regex.Bool` (`RegexClosure::topic`).
+    /// `topic` (`Some(slot)`, or `Some(NOT_A_LOCAL)` for `env`) captures the
+    /// frame's `$_` onto the value for `Regex.Bool` (`RegexClosure::topic`):
+    /// a local slot by value, an env-held `$_` as its container cell.
     pub(super) fn capture_regex_closure(
         &mut self,
         code: &CompiledCode,
@@ -124,17 +125,15 @@ impl Interpreter {
             }
             scope.insert(name.to_string(), v);
         }
-        // The defining frame's `$_` (see `RegexClosure::topic`). A regex that
-        // captured no topic falls back to the `$_` visible where it is
-        // boolified, so an unset topic is simply left out.
+        // The defining frame's `$_` (see `RegexClosure::topic`): a set local
+        // slot by value, otherwise the env `$_`'s container cell.
         let topic = topic.and_then(|slot| {
             (slot != crate::opcode::NOT_A_LOCAL)
                 .then(|| self.locals.get(slot as usize))
                 .flatten()
                 .filter(|v| !v.is_nil())
                 .cloned()
-                .or_else(|| self.env().get("_").cloned())
-                .filter(|v| !v.is_nil())
+                .or_else(|| Some(self.topic_container_cell()))
         });
         if scope.is_empty() && topic.is_none() {
             return base.clone();

@@ -7,7 +7,7 @@ use Test;
 # caller's `$_`, so `so f("foo")` was False and `List::MoreUtils`'s
 # `after { /foo/ }, ...` never fired.
 
-plan 18;
+plan 26;
 
 my &f = { /foo/ };
 
@@ -56,4 +56,36 @@ is-deeply after({ /foo/ }, <bar foo baz>).List, ('baz',), 'after: yields the tai
     @o[.value].push(.key) for @tokens.grep({ /\w+/ }).Bag.pairs;
     is @o.pairs.grep(*.value.defined).map({ .key * .value }).sum, 6,
         'occurrence sum counts only the words the grep kept';
+}
+
+# Issue #9396: the regex captures its defining scope's `$_` *container*, not a
+# value snapshot. An assignment to that `$_` after the literal was created is
+# seen; a routine's own `$_` and a `for` loop's rebinding are not.
+{
+    my $q = /zz/;
+    sub h { $_ = "zz"; $q.Bool }
+    $_ = "a";
+    nok h(), "a routine's own \$_ does not reach a mainline regex";
+    my @seen = do for <zz> { $q.Bool };
+    is-deeply @seen, [False], "a for loop's topic rebind does not reach it";
+    $_ = "zz";
+    ok $q.Bool, 'a later assignment to the defining $_ is seen';
+    $_ = "a";
+    nok ?$q, 'and re-assigning it back is seen too';
+}
+{
+    sub g { my $r = /foo/; $_ = "foo"; $r.Bool }
+    ok g(), 'an assignment after the literal, in the same routine, is seen';
+    sub g2 { my $r = /foo/; $_ = "bar"; $r }
+    nok g2().Bool, 'the routine-local $_ is kept after the routine returns';
+}
+{
+    # Boxing `$_` for the capture must not break `given $x`'s live
+    # write-back of `$_ = ...` into `$x`.
+    my $t = "hello";
+    given $t { my $g = /ell/; $_ = "no" }
+    is $t, 'no', 'given $x still writes $_ assignments back to $x';
+    my @a = 1, 2;
+    for @a { my $g = /1/; $_ = 7 if $g }
+    is-deeply @a, [7, 2], 'a for element topic still writes back';
 }

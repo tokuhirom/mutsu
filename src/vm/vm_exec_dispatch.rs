@@ -2165,6 +2165,13 @@ impl Interpreter {
                         // captured `@a`/`%h` whole-reassigned here must keep its
                         // backing `Gc` so by-value holders observe the update.
                         Self::cell_store_preserving_container_identity(&name, &arc, &val);
+                        // A `$_` boxed for a regex literal's topic capture
+                        // (`topic_container_cell`, #9396) is still the topic:
+                        // keep its assignment side effects.
+                        if name == "_" {
+                            self.note_rw_map_topic(&val);
+                            self.write_topic_to_source_var(code, &val);
+                        }
                         *ip += 1;
                         return Ok(());
                     }
@@ -2430,8 +2437,7 @@ impl Interpreter {
                 }
                 // Track topic mutations for map rw writeback
                 if name == "_" {
-                    self.env_mut()
-                        .insert("__mutsu_rw_map_topic__".to_string(), val.clone());
+                    self.note_rw_map_topic(&val);
                 }
                 // Sync to shared_vars for cross-thread visibility.
                 // Skip for raw_mode @-variables to preserve List kind.
@@ -2469,29 +2475,8 @@ impl Interpreter {
                         }
                     });
                 }
-                if name == "_"
-                    && !Self::is_topic_ro_assignment(&val)
-                    && let Some(ref source_var) = self.topic_source_var
-                    && !source_var.starts_with('@')
-                    && !source_var.starts_with('%')
-                    // A sigiled "$h" tag is the deref'd-container source
-                    // (`for @$h`): the per-element loop writeback owns it; the
-                    // whole-topic scalar write would pollute a "$h" env key.
-                    && !source_var.starts_with('$')
-                {
-                    let source_name = source_var.clone();
-                    self.set_env_with_main_alias(&source_name, val.clone());
-                    self.update_local_if_exists(code, &source_name, &val);
-                    // An attribute topic (`with $!result { .PQclear; $_ = Nil }`
-                    // — DBDish::Pg's StatementHandle.finish) must reach self's
-                    // attribute cell, not just the env mirror: the stale cell
-                    // otherwise keeps the freed C pointer and the next finish
-                    // double-frees it (SEGV).
-                    if Self::attr_twigil_base(&source_name).is_some()
-                        && !Self::is_non_mirrorable_attr_value(&val)
-                    {
-                        self.write_self_attr_cell(&source_name, val.clone());
-                    }
+                if name == "_" {
+                    self.write_topic_to_source_var(code, &val);
                 }
                 // Reverse alias propagation: find all variables that are
                 // bound TO this variable (i.e. `my $x := $name`) and update

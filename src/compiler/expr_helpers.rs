@@ -839,12 +839,15 @@ impl Compiler {
         (!captures.is_empty()).then_some(captures)
     }
 
-    /// Whether a regex literal must snapshot its defining frame's `$_`, and
+    /// Whether a regex literal must capture its defining frame's `$_`, and
     /// from where: `Some(slot)` (or `Some(NOT_A_LOCAL)` for `env`) when the
-    /// literal's value escapes a callable body (`{ /foo/ }`), `None` otherwise.
-    /// See [`Compiler::in_callable_body`] and `RegexClosure::topic`.
+    /// literal's value escapes (`{ /foo/ }`, `my $r = /foo/`), `None`
+    /// otherwise. An env-held `$_` is captured as its container
+    /// (`Interpreter::topic_container_cell`), so later assignments stay
+    /// visible to `Regex.Bool` but rebinds do not (#9396); see
+    /// `RegexClosure::topic`.
     pub(super) fn regex_literal_topic_capture(&self, v: &Value) -> Option<u32> {
-        if !self.in_callable_body || !self.escaping_position {
+        if !self.escaping_position {
             return None;
         }
         if !matches!(
