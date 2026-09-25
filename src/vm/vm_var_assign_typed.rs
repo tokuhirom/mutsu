@@ -1048,7 +1048,7 @@ impl Interpreter {
     }
 
     /// Store the result of a read-modify-write on a NAMED (env) scalar, mirroring
-    /// the non-cell write-back tail of `exec_post_increment_op_inner`. Applies
+    /// the non-cell write-back tail of `exec_scalar_incdec_op`. Applies
     /// native-int wrapping and the type constraint, writes the value into env
     /// (with main-alias), the anonymous-state shadow, this code's local slot, any
     /// `:=`-bound sibling slots, the sigilless-alias chain, and — when the target
