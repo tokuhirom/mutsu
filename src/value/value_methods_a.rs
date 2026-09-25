@@ -30,6 +30,20 @@ impl Value {
     pub fn str_from(s: &str) -> Self {
         Value::Str(Arc::new(crate::value::StrBody::Flat(s.to_string())))
     }
+    /// The `IterationEnd` iterator sentinel. It is still represented as the
+    /// string `"IterationEnd"` (every consumer recognizes it by that text),
+    /// but every producer hands out the SAME allocation, so object identity
+    /// (`nqp::eqaddr`, which compares `Str`s by pointer) holds between the
+    /// bareword term and whatever `pull-one` returned, as in rakudo where
+    /// `IterationEnd` is a singleton (#9333).
+    // Cost: O(1) (one Arc clone).
+    pub fn iteration_end() -> Self {
+        static SENTINEL: std::sync::LazyLock<Arc<crate::value::StrBody>> =
+            std::sync::LazyLock::new(|| {
+                Arc::new(crate::value::StrBody::Flat("IterationEnd".to_string()))
+            });
+        Value::Str(SENTINEL.clone())
+    }
     pub fn regex(s: String) -> Self {
         Value::Regex(Arc::new(s))
     }

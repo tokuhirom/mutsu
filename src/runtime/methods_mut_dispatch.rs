@@ -2541,7 +2541,7 @@ impl Interpreter {
                     let mut pull_one_squish = |this: &mut Self| -> Result<Value, RuntimeError> {
                         if !initialized {
                             let Some(first) = source.first().cloned() else {
-                                return Ok(Value::str_from("IterationEnd"));
+                                return Ok(Value::iteration_end());
                             };
                             prev_key = if let Some(func) = as_func.clone() {
                                 this.call_sub_value(func, vec![first.clone()], true)?
@@ -2577,7 +2577,7 @@ impl Interpreter {
                                 return Ok(item);
                             }
                         }
-                        Ok(Value::str_from("IterationEnd"))
+                        Ok(Value::iteration_end())
                     };
 
                     let ret = match method {
@@ -2610,7 +2610,7 @@ impl Interpreter {
                                 );
                                 self.overwrite_array_bindings_by_identity(&existing, updated_array);
                             }
-                            Value::str_from("IterationEnd")
+                            Value::iteration_end()
                         }
                         "skip-one" => {
                             let next = pull_one_squish(self)?;
@@ -2648,7 +2648,7 @@ impl Interpreter {
                                         Value::truth(initialized),
                                     );
                                     attributes.commit_attrs(updated.clone());
-                                    return Ok(Value::str_from("IterationEnd"));
+                                    return Ok(Value::iteration_end());
                                 }
                             }
                             pull_one_squish(self)?
@@ -2679,7 +2679,7 @@ impl Interpreter {
                             if collected.len() >= want {
                                 Value::NIL
                             } else {
-                                Value::str_from("IterationEnd")
+                                Value::iteration_end()
                             }
                         }
                         "sink-all" => {
@@ -2690,7 +2690,7 @@ impl Interpreter {
                                     break;
                                 }
                             }
-                            Value::str_from("IterationEnd")
+                            Value::iteration_end()
                         }
                         "can" => {
                             let method_name = args
