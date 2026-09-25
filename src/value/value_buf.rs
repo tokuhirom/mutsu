@@ -987,6 +987,9 @@ mod tests {
             Some(vec![Value::int(1), Value::int(0x1234)])
         );
         let map = attrs.as_map();
-        assert_eq!(node_in(&map).expect("node").bytes, BufBytes::from(vec![1, 0, 0x34, 0x12]));
+        assert_eq!(
+            node_in(&map).expect("node").bytes,
+            BufBytes::from(vec![1, 0, 0x34, 0x12])
+        );
     }
 }
