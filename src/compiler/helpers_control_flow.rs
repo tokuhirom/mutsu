@@ -93,7 +93,7 @@ impl Compiler {
                     // The taken branch's tail of an `is rw` routine's tail `if`
                     // is the routine's lvalue return (ADR-0059, #9060).
                     Stmt::Expr(expr) if rw_branch => self.compile_return_rw_arg(expr),
-                    Stmt::Expr(expr) => self.compile_expr(expr),
+                    Stmt::Expr(expr) => self.with_stmt_root(|c| c.compile_expr(expr)),
                     Stmt::If {
                         cond,
                         then_branch,

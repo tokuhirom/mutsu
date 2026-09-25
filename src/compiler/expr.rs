@@ -48,6 +48,12 @@ impl Compiler {
     }
 
     pub(super) fn compile_expr(&mut self, expr: &Expr) {
+        self.expr_depth += 1;
+        self.compile_expr_inner(expr);
+        self.expr_depth -= 1;
+    }
+
+    fn compile_expr_inner(&mut self, expr: &Expr) {
         // An extended identifier whose adverb value the parser could not
         // canonicalize (`$a:foo«$c»`) is finished here, against the `constant`
         // environment built by the statements compiled so far

@@ -1689,6 +1689,15 @@ pub(crate) struct Compiler {
     /// env key, since env is a single namespace shared across frames. See
     /// `todo/deep/sunk-list-reassign-leaks-containerref-into-shared-env.md`.
     sunk_list_assign_result: bool,
+    /// How many `compile_expr` frames enclose the expression being compiled,
+    /// counted from the nearest statement boundary. A statement-root
+    /// expression (a `Stmt::Expr` compiled as a statement or as a block's
+    /// tail) is compiled at depth 1; its operands are deeper. Only the `nqp::`
+    /// loop forms read it (`nqp_forms.rs`): rakudo runs those as a plain loop
+    /// yielding `Nil` at a statement root, but yields a lazy `Seq` of the body
+    /// values when the loop is an operand (#9415). See
+    /// [`Compiler::with_stmt_root`].
+    expr_depth: u32,
     /// Constant-folding state (ADR-0006 §2.1), shared with every child compiler
     /// of this compilation unit so an operator declaration found while compiling
     /// a sub body disables folding for the whole unit.
@@ -1816,6 +1825,7 @@ impl Compiler {
             suppress_pair_capture: false,
             suppress_list_var_alias: false,
             sunk_list_assign_result: false,
+            expr_depth: 0,
             synthetic_block_body: false,
             construct_body_block: None,
             next_dynamic_scope_inline_transparent: false,
@@ -4264,7 +4274,9 @@ impl Compiler {
                         for (j, inner) in body.iter().enumerate() {
                             if j == body.len() - 1 {
                                 match inner {
-                                    Stmt::Expr(expr) => self.compile_expr(expr),
+                                    Stmt::Expr(expr) => {
+                                        self.with_stmt_root(|c| c.compile_expr(expr))
+                                    }
                                     _ => {
                                         self.compile_stmt(inner);
                                         self.compile_expr(&Expr::Literal(Value::TRUE));

@@ -34,7 +34,7 @@ impl Compiler {
                 true
             }
             Stmt::Expr(expr) => {
-                self.compile_expr(expr);
+                self.with_stmt_root(|c| c.compile_expr(expr));
                 if let Expr::Var(name) = expr {
                     let source_slot = self.local_map.get(name.as_str()).copied();
                     let name_idx = self.code.add_constant(Value::str(name.clone()));
@@ -268,7 +268,7 @@ impl Compiler {
                         return;
                     }
                     Stmt::Expr(expr) => {
-                        self.compile_expr(expr);
+                        self.with_stmt_root(|c| c.compile_expr(expr));
                         // Don't emit Pop — leave value on stack as block's return value
                         self.pop_dynamic_scope_lexical(saved);
                         return;
