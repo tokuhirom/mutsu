@@ -252,9 +252,19 @@ probe and the lock.
   TRIR routine: `getattr(obj)` ~662 → ~105, `bindattr(obj)` ~670 → ~110,
   `getattr(@r, List, '$!reified')` ~150 → ~97. See
   `news/2026-09/literal-attribute-names-resolve-once-per-trir-site.md`.
+- **D3, bareword terms in TRIR and the construction probes (landed).**
+  Every bareword term in a TRIR routine compiles to `ClassOperand`; a site
+  whose value is used remembers only a type object named by the bareword's
+  own spelling (`nqp::create(IB)` ~650 → ~360 ns). `.new`'s call-site purity
+  reads `has_build`/`has_tweak` from `NativeCtorPlan`, the user-method probe
+  of the method-call preamble is memoized per `(class, method)` on the
+  registry write generation, and the alias attributes are collected into the
+  plan (`P.new(...)` ~33,640 → ~26,960 instructions). See
+  `news/2026-09/bareword-terms-and-construction-probes-stop-re-resolving.md`.
 - **D3, the rest:** not started. That covers a per-site layout cache for
   the TRIR attribute ops, the same resolution for the untyped
-  `OpCode::NqpOp` path, and `Array` / `Hash` `$!descriptor`.
+  `OpCode::NqpOp` path (including `OpCode::GetBareWord`), and `Array` /
+  `Hash` `$!descriptor`.
 - **D4:** not started.
 
 ## 6. Reproduction

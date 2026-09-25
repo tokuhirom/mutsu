@@ -242,12 +242,15 @@ impl Interpreter {
     /// $n++ }`). So a construction of such a class is NOT env-pure — the caller's
     /// slot must be reconciled at the call site (Slice F). Used by the VM `.new`
     /// dispatch to set `method_dispatch_pure` correctly.
-    pub(crate) fn mro_has_build_or_tweak(&self, cn: &str) -> bool {
-        self.mro_readonly(cn).iter().any(|cls| {
-            let registry = self.registry();
-            registry.user_method_overloads(cls, "BUILD").is_some()
-                || registry.user_method_overloads(cls, "TWEAK").is_some()
-        })
+    ///
+    /// Answered from the class's cached [`super::NativeCtorPlan`], whose
+    /// `has_build`/`has_tweak` also count a role submethod the construction
+    /// phases run. Walking the MRO with two registry probes per level on every
+    /// `.new` was ~4,100 instructions of each construction (#9291).
+    // Cost: O(1) on a cached plan.
+    pub(crate) fn mro_has_build_or_tweak(&mut self, cn: Symbol) -> bool {
+        let plan = self.native_ctor_plan(cn);
+        plan.has_build || plan.has_tweak
     }
 
     /// Compute (or fetch the memoized) per-class plan for the native default
@@ -488,7 +491,18 @@ impl Interpreter {
         } else {
             crate::value::AttrMap::new()
         });
+        // The `has $x` (no twigil) alias metadata every construction adds,
+        // collected across the MRO once instead of per construction.
+        let alias_attributes: std::sync::Arc<[String]> = {
+            let mro = self.class_mro(cn_resolved);
+            let registry = self.registry();
+            mro.iter()
+                .filter_map(|cn| registry.classes.get(cn.as_str()))
+                .flat_map(|cd| cd.alias_attributes.iter().map(|a| a.to_string()))
+                .collect()
+        };
         let plan = std::sync::Arc::new(super::NativeCtorPlan {
+            alias_attributes,
             is_cunion,
             eligible,
             class_attrs,

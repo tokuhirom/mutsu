@@ -1610,17 +1610,17 @@ impl Interpreter {
             )
         {
             let class_name = match target.view() {
-                ValueView::Instance { class_name, .. } => Some(class_name.resolve()),
-                ValueView::Package(name) => Some(name.resolve()),
+                ValueView::Instance { class_name, .. } => Some(class_name),
+                ValueView::Package(name) => Some(name),
                 _ => None,
             };
             if let Some(cn) = class_name
                 && match target.view() {
                     ValueView::Package(_) => {
-                        self.grammar_has_user_method_sym(&cn, method_sym)
+                        self.grammar_has_user_method_memo(cn, method_sym)
                             || self.package_has_applicable_user_method(&target, method, &args)
                     }
-                    _ => self.grammar_has_user_method_sym(&cn, method_sym),
+                    _ => self.grammar_has_user_method_memo(cn, method_sym),
                 }
             {
                 skip_native = true;

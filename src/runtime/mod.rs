@@ -899,6 +899,7 @@ mod plain_fn_resolve_memo;
 pub(crate) mod undeclared_routines;
 mod unicode;
 mod unit_private_routines;
+mod user_method_probe_memo;
 pub(crate) mod utf8_c8;
 pub(crate) mod utils;
 pub(crate) mod value_iterator;
@@ -1482,6 +1483,11 @@ pub(crate) struct NativeCtorPlan {
     /// `attr_syms` key, in the same order. Every construction path that works
     /// from this plan lays its instance out by it.
     pub(crate) layout: Arc<crate::value::ClassLayout>,
+    /// The `has $x` (no twigil) attribute names across the MRO, whose alias
+    /// metadata a construction adds (`add_alias_attribute_metadata`). Walking
+    /// the MRO for them on every construction cost ~400 instructions of each
+    /// `.new` (#9291), almost always to find none.
+    pub(crate) alias_attributes: Arc<[String]>,
 }
 
 /// The no-initializer seed of one `$`-sigil attribute, precomputed per class
@@ -4451,6 +4457,9 @@ pub struct Interpreter {
     /// `^compose`). A class not yet registered is never cached (a role punned
     /// to a class on first use must not freeze a negative plan).
     pub(crate) native_ctor_plan_cache: rustc_hash::FxHashMap<Symbol, Arc<NativeCtorPlan>>,
+    /// `grammar_has_user_method_sym` answers per `(class, method)`, valid for
+    /// one registry write generation (see `user_method_probe_memo.rs`).
+    pub(crate) user_method_probe_memo: user_method_probe_memo::UserMethodProbeMemo,
     /// Sound multi-method resolution cache (§B): for a multi whose dispatch is
     /// purely type+arity based (no `where` / literal / subset / `:D`/`:U` smiley /
     /// coercion candidate), the resolved candidate is a function of the receiver

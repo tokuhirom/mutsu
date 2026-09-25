@@ -352,7 +352,12 @@ impl Interpreter {
         // Embed `is default(...)` element defaults into `@`/`%` containers.
         self.apply_container_attribute_defaults(cn_resolved, &mut attrs);
         // Add alias metadata for `has $x` (no twigil) attributes
-        self.add_alias_attribute_metadata(cn_resolved, &mut attrs);
+        for attr_name in plan.alias_attributes.iter() {
+            attrs.insert(
+                crate::runtime::meta_ns::MetaNs::AttrAlias.owned_key_for_str(attr_name),
+                Value::str(attr_name.clone()),
+            );
+        }
         // The gate (`is_native_default_constructible`) allows BUILD/TWEAK-only
         // classes; the instance is assembled (defaults first) at this point, so
         // running BUILD then TWEAK here matches the full `.new` path (which also
