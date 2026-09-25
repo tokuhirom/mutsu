@@ -54,18 +54,35 @@ mod unix_impl {
                 let flags = libc::fcntl(fds[1], libc::F_GETFL);
                 libc::fcntl(fds[1], libc::F_SETFL, flags | libc::O_NONBLOCK);
             }
-            // Start the reader thread. Registered as a GC mutator
-            // (`spawn_gc_helper_thread`): `dispatch_signal` clones registered
-            // `Value`s (potential Gc nodes) but never runs user VM code, so
-            // the default stack suffices; the blocking pipe read is a
-            // quiescent safe region so the daemon never stalls a
-            // stop-the-world.
-            let read_fd = fds[0];
-            crate::runtime::builtins_system::spawn_gc_helper_thread("signal-rd", move || {
-                signal_reader_thread(read_fd)
-            });
             (fds[0], fds[1])
         })
+    }
+
+    /// Start the process-lifetime reader thread on first use. Registered as a
+    /// GC mutator (`try_spawn_gc_helper_thread`): `dispatch_signal` clones
+    /// registered `Value`s (potential Gc nodes) but never runs user VM code,
+    /// so the default stack suffices; the blocking pipe read is a quiescent
+    /// safe region so the daemon never stalls a stop-the-world.
+    ///
+    /// A refused spawn (#9401) is reported to the caller and leaves the reader
+    /// unstarted, so the next `signal()` tries again instead of the process
+    /// panicking.
+    fn ensure_reader_thread(read_fd: i32) -> std::io::Result<()> {
+        use std::sync::atomic::Ordering;
+        static STARTED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+        static STARTING: Mutex<()> = Mutex::new(());
+        if STARTED.load(Ordering::Acquire) {
+            return Ok(());
+        }
+        let _guard = STARTING.lock().unwrap_or_else(|e| e.into_inner());
+        if STARTED.load(Ordering::Acquire) {
+            return Ok(());
+        }
+        crate::runtime::builtins_system::try_spawn_gc_helper_thread("signal-rd", move || {
+            signal_reader_thread(read_fd)
+        })?;
+        STARTED.store(true, Ordering::Release);
+        Ok(())
     }
 
     /// Signal handler: writes the signal number byte to the pipe.
@@ -177,10 +194,14 @@ mod unix_impl {
         supply_id: u64,
         tx: crate::runtime::native_methods::supply_channel::SupplySender,
         value: Value,
-    ) {
-        // Ensure signal pipe is set up
-        get_signal_pipe();
+    ) -> std::io::Result<()> {
+        // Ensure the signal pipe and its reader thread are set up before the
+        // handler is installed, so a refused reader thread leaves the signal's
+        // default disposition in place.
+        let (read_fd, _) = get_signal_pipe();
+        ensure_reader_thread(read_fd)?;
         register_watcher(signum, supply_id, tx, value);
+        Ok(())
     }
 
     /// The registry-and-disposition half of [`register_signal`], split out so a
@@ -419,8 +440,9 @@ pub(super) fn register_signal(
     _supply_id: u64,
     _tx: crate::runtime::native_methods::supply_channel::SupplySender,
     _value: Value,
-) {
+) -> std::io::Result<()> {
     // Signal handling is not available on non-Unix platforms
+    Ok(())
 }
 
 /// No-op stub for non-Unix platforms (e.g., WASM).

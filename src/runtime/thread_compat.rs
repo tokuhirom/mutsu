@@ -4,7 +4,7 @@
 //!
 //! Every spawn site in the interpreter goes through
 //! [`crate::runtime::builtins_system::spawn_user_thread`] /
-//! `spawn_gc_helper_thread`, which return this module's [`JoinHandle`] rather
+//! `try_spawn_gc_helper_thread`, which return this module's [`JoinHandle`] rather
 //! than `std::thread::JoinHandle`. That is what keeps the wasm build free of
 //! `cfg` noise at ~20 call sites: the concurrency primitives are written once
 //! against real threads, and only this module knows the browser has none.

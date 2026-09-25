@@ -417,10 +417,16 @@ impl Interpreter {
                         });
                     };
                     if deferred {
-                        interval_timer::register_once(
+                        // A refused timer driver thread is a catchable
+                        // X::AdHoc (#9401); the cue never ran, so it no
+                        // longer counts towards `.loads`.
+                        if let Err(e) = interval_timer::register_once(
                             interval_timer::clamp_delay_secs(delay),
                             Box::new(run),
-                        );
+                        ) {
+                            state_scheduler::scheduler_task_finished();
+                            return Err(crate::runtime::builtins_system::refused_thread_error(e));
+                        }
                     } else {
                         run();
                     }
@@ -596,7 +602,7 @@ impl Interpreter {
         );
         let stopped = Arc::new(AtomicBool::new(false));
         let mut dispatched: usize = 0;
-        interval_timer::register_entry(
+        let registered = interval_timer::register_entry(
             interval_timer::clamp_delay_secs(delay),
             Box::new(move || {
                 // Driver-thread rules: cheap checks and a pool enqueue only —
@@ -656,6 +662,12 @@ impl Interpreter {
                 Some(std::time::Duration::from_secs_f64(interval))
             }),
         );
+        // A refused timer driver thread is a catchable X::AdHoc (#9401); the
+        // cue never ticks, so it no longer counts towards `.loads`.
+        if let Err(e) = registered {
+            state_scheduler::scheduler_task_finished();
+            return Err(crate::runtime::builtins_system::refused_thread_error(e));
+        }
         Ok(())
     }
 

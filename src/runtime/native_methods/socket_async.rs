@@ -216,87 +216,109 @@ impl Interpreter {
                 // Registered spawn: it builds `Gc` values (the connection
                 // Instance) whose drop on a failed send must not race a cycle
                 // scan; the poll sleep is a quiescent safe region.
-                crate::runtime::builtins_system::spawn_gc_helper_thread("sock-async", move || {
-                    // Use a short timeout on accept so we can check the closed flag
-                    // TcpListener doesn't have set_timeout, so we use non-blocking + sleep
-                    let _ = tcp_listener.set_nonblocking(true);
-                    // Set once the close flag is seen: the backlog is drained
-                    // one last time before the thread stops. The OS completes
-                    // the TCP handshake without this thread's help, so a peer
-                    // whose `connect` has already returned is an ESTABLISHED
-                    // connection sitting in the backlog -- dropping it because
-                    // `Tap.close` won the 10ms poll race would lose a
-                    // connection the client believes it made.
-                    let mut draining = false;
-                    loop {
-                        if !draining && closed_flag.load(Ordering::SeqCst) {
-                            draining = true;
-                        }
-                        match tcp_listener.accept() {
-                            Ok((stream, peer_addr)) => {
-                                let conn_id = next_async_socket_id();
-                                // Store the TcpStream globally
-                                if let Ok(cloned) = stream.try_clone() {
-                                    register_tcp_stream(conn_id, cloned);
-                                }
-
-                                let mut conn_attrs = HashMap::new();
-                                conn_attrs
-                                    .insert("conn-id".to_string(), Value::int(conn_id as i64));
-                                conn_attrs.insert("tcp-real".to_string(), Value::TRUE);
-                                conn_attrs.insert(
-                                    "socket-host".to_string(),
-                                    Value::str(accept_host.clone()),
-                                );
-                                conn_attrs.insert(
-                                    "socket-port".to_string(),
-                                    Value::int(actual_port as i64),
-                                );
-                                conn_attrs.insert(
-                                    "peer-host".to_string(),
-                                    Value::str(peer_addr.ip().to_string()),
-                                );
-                                conn_attrs.insert(
-                                    "peer-port".to_string(),
-                                    Value::int(peer_addr.port() as i64),
-                                );
-                                conn_attrs
-                                    .insert("enc".to_string(), Value::str(accept_enc.clone()));
-                                let conn_val = Value::make_instance(
-                                    Symbol::intern("IO::Socket::Async"),
-                                    conn_attrs,
-                                );
-                                if tx.send(SupplyEvent::Emit(conn_val)).is_err() {
-                                    break;
-                                }
+                let stopped_on_refusal = stopped_flag.clone();
+                let spawned = crate::runtime::builtins_system::try_spawn_gc_helper_thread(
+                    "sock-async",
+                    move || {
+                        // Use a short timeout on accept so we can check the closed flag
+                        // TcpListener doesn't have set_timeout, so we use non-blocking + sleep
+                        let _ = tcp_listener.set_nonblocking(true);
+                        // Set once the close flag is seen: the backlog is drained
+                        // one last time before the thread stops. The OS completes
+                        // the TCP handshake without this thread's help, so a peer
+                        // whose `connect` has already returned is an ESTABLISHED
+                        // connection sitting in the backlog -- dropping it because
+                        // `Tap.close` won the 10ms poll race would lose a
+                        // connection the client believes it made.
+                        let mut draining = false;
+                        loop {
+                            if !draining && closed_flag.load(Ordering::SeqCst) {
+                                draining = true;
                             }
-                            Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
-                                if draining {
-                                    // Backlog empty and the tap is closed.
+                            match tcp_listener.accept() {
+                                Ok((stream, peer_addr)) => {
+                                    let conn_id = next_async_socket_id();
+                                    // Store the TcpStream globally
+                                    if let Ok(cloned) = stream.try_clone() {
+                                        register_tcp_stream(conn_id, cloned);
+                                    }
+
+                                    let mut conn_attrs = HashMap::new();
+                                    conn_attrs
+                                        .insert("conn-id".to_string(), Value::int(conn_id as i64));
+                                    conn_attrs.insert("tcp-real".to_string(), Value::TRUE);
+                                    conn_attrs.insert(
+                                        "socket-host".to_string(),
+                                        Value::str(accept_host.clone()),
+                                    );
+                                    conn_attrs.insert(
+                                        "socket-port".to_string(),
+                                        Value::int(actual_port as i64),
+                                    );
+                                    conn_attrs.insert(
+                                        "peer-host".to_string(),
+                                        Value::str(peer_addr.ip().to_string()),
+                                    );
+                                    conn_attrs.insert(
+                                        "peer-port".to_string(),
+                                        Value::int(peer_addr.port() as i64),
+                                    );
+                                    conn_attrs
+                                        .insert("enc".to_string(), Value::str(accept_enc.clone()));
+                                    let conn_val = Value::make_instance(
+                                        Symbol::intern("IO::Socket::Async"),
+                                        conn_attrs,
+                                    );
+                                    if tx.send(SupplyEvent::Emit(conn_val)).is_err() {
+                                        break;
+                                    }
+                                }
+                                Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                                    if draining {
+                                        // Backlog empty and the tap is closed.
+                                        let _ = tx.send(SupplyEvent::Done);
+                                        break;
+                                    }
+                                    // No pending connection, sleep briefly
+                                    crate::gc::block_quiescent(|| {
+                                        std::thread::sleep(std::time::Duration::from_millis(10))
+                                    });
+                                }
+                                Err(_) => {
+                                    // Fatal accept error, stop
                                     let _ = tx.send(SupplyEvent::Done);
                                     break;
                                 }
-                                // No pending connection, sleep briefly
-                                crate::gc::block_quiescent(|| {
-                                    std::thread::sleep(std::time::Duration::from_millis(10))
-                                });
-                            }
-                            Err(_) => {
-                                // Fatal accept error, stop
-                                let _ = tx.send(SupplyEvent::Done);
-                                break;
                             }
                         }
-                    }
-                    // Free the port *before* acknowledging, so a `Tap.close`
-                    // that waits on this flag can rely on the listener being
-                    // gone once it returns. On wasm32 `TcpListener` is an
-                    // unsupported stub with no `Drop`, so clippy is right that
-                    // the call does nothing there -- and wrong that it can go.
-                    #[cfg_attr(target_arch = "wasm32", allow(clippy::drop_non_drop))]
-                    drop(tcp_listener);
-                    stopped_flag.store(true, Ordering::SeqCst);
-                });
+                        // Free the port *before* acknowledging, so a `Tap.close`
+                        // that waits on this flag can rely on the listener being
+                        // gone once it returns. On wasm32 `TcpListener` is an
+                        // unsupported stub with no `Drop`, so clippy is right that
+                        // the call does nothing there -- and wrong that it can go.
+                        #[cfg_attr(target_arch = "wasm32", allow(clippy::drop_non_drop))]
+                        drop(tcp_listener);
+                        stopped_flag.store(true, Ordering::SeqCst);
+                    },
+                );
+                // A refused accept thread (#9401) ends the listener (the OS
+                // listener was dropped with the closure) and is reported the
+                // way a failed bind is: through the tap's `quit`, or as a
+                // catchable X::AdHoc when there is none.
+                if let Err(e) = spawned {
+                    close_async_listener(listener_id);
+                    stopped_on_refusal.store(true, Ordering::SeqCst);
+                    discard_supply_channel(supply_id);
+                    let err = crate::runtime::builtins_system::refused_thread_error(e);
+                    let Some(q) = quit_cb else {
+                        return Err(err);
+                    };
+                    let mut attrs = HashMap::new();
+                    attrs.insert("message".to_string(), Value::str(err.message.to_string()));
+                    let ex = Value::make_instance(Symbol::intern("X::AdHoc"), attrs);
+                    let _ = self.call_sub_value(q, vec![ex], true);
+                    return Ok(Value::make_instance(Symbol::intern("Tap"), HashMap::new()));
+                }
 
                 // Build a Supply instance that the react event loop can subscribe to
                 let mut supply_attrs = HashMap::new();

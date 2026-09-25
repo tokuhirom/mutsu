@@ -114,10 +114,13 @@ callback) is dropped with a diagnostic on stderr.
 - **Stack depth is no longer uniform across user threads** (ADR-0100 point 7). It is uniform for
   every thread created by optional growth, and only a thread created under pressure (every
   worker blocked, over budget; or an explicit `Thread` over budget) gets a smaller stack.
-- **Remaining panics.** The default-stack service threads (timer driver, socket pumps,
-  `Proc::Async` readers, signal reader, `IO::Path.watch`) still `.expect()` their spawn through
-  `spawn_gc_helper_thread`. They reserve a few MiB each and are not what exhausts an address
-  space, but their call sites should move to `try_spawn_gc_helper_thread` as they are touched.
+- **Remaining panics (resolved by #9401).** The default-stack service threads (timer driver,
+  socket pumps, `Proc::Async` readers, signal reader, `IO::Path.watch`) used to `.expect()` their
+  spawn through a panicking `spawn_gc_helper_thread` wrapper. Every call site now uses
+  `try_spawn_gc_helper_thread` and reports a refusal as the catchable `X::AdHoc` (raised, or
+  carried by the broken `Proc::Async.start` promise after the child is killed and reaped); the
+  process-lifetime timer driver and signal reader stay unstarted on refusal and are retried by
+  the next registration. The wrapper is gone.
 
 ## 4. Alternatives considered
 

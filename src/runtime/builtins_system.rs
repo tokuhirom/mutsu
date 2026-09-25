@@ -43,6 +43,13 @@ impl SpawnError {
     }
 }
 
+/// The catchable X::AdHoc for an OS-refused service thread (#9401): the
+/// [`try_spawn_gc_helper_thread`] error in the same words a refused user-code
+/// thread reports.
+pub(crate) fn refused_thread_error(e: std::io::Error) -> RuntimeError {
+    SpawnError::Os(e).to_runtime_error()
+}
+
 /// Spawn a worker thread with a large stack for running user code, so deep VM
 /// recursion does not overflow the default thread stack. `name` becomes the
 /// OS thread name (see `thread_compat::spawn_thread`), so pick something that
@@ -122,20 +129,10 @@ where
 /// collect). Long blocking waits inside the closure (sleeps, blocking reads)
 /// must be wrapped in `gc::block_quiescent` so the thread does not starve the
 /// stop-the-world rendezvous.
-pub(crate) fn spawn_gc_helper_thread<F, T>(
-    name: &str,
-    f: F,
-) -> crate::runtime::thread_compat::JoinHandle<T>
-where
-    F: FnOnce() -> T + Send + 'static,
-    T: Send + 'static,
-{
-    try_spawn_gc_helper_thread(name, f)
-        .unwrap_or_else(|e| panic!("failed to spawn helper thread: {e}"))
-}
-
-/// [`spawn_gc_helper_thread`], reporting a refused thread instead of
-/// panicking.
+///
+/// A thread the OS refuses is reported, never a panic: every caller turns it
+/// into the catchable `X::AdHoc` its API uses for other failures (a raised
+/// exception, a broken promise, a quit supply -- ADR-0123, #9401).
 pub(crate) fn try_spawn_gc_helper_thread<F, T>(
     name: &str,
     f: F,
@@ -144,11 +141,28 @@ where
     F: FnOnce() -> T + Send + 'static,
     T: Send + 'static,
 {
+    if service_thread_refusal_injected(name) {
+        return Err(std::io::Error::from(std::io::ErrorKind::WouldBlock));
+    }
     spawn_registered_thread(
         name,
         None,
         std::sync::Arc::new(std::sync::Mutex::new(Some(f))),
     )
+}
+
+/// Fault injection for the refused-service-thread paths (#9401), which an OS
+/// limit cannot drive deterministically: `MUTSU_REFUSE_SERVICE_THREADS` is a
+/// comma-separated list of thread names (`timer`, `proc-out`, ...) whose
+/// spawn is refused as if the OS returned `EAGAIN`, or `all`. Read once.
+fn service_thread_refusal_injected(name: &str) -> bool {
+    static REFUSED: std::sync::OnceLock<Vec<String>> = std::sync::OnceLock::new();
+    let refused = REFUSED.get_or_init(|| {
+        std::env::var("MUTSU_REFUSE_SERVICE_THREADS")
+            .map(|v| v.split(',').map(|n| n.trim().to_string()).collect())
+            .unwrap_or_default()
+    });
+    refused.iter().any(|n| n == name || n == "all")
 }
 
 type BodySlot<F> = std::sync::Arc<std::sync::Mutex<Option<F>>>;
