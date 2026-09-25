@@ -1130,7 +1130,7 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                                 body,
                                 is_rw: false,
                                 is_raw: false,
-                                custom_traits: Vec::new(),
+                                custom_traits: Default::default(),
                                 is_whatever_code: false,
                                 // `anon Type sub { }` IS a sub: this selects the
                                 // Sub compile path, so `(anon Str sub {}).^name`
@@ -1278,7 +1278,7 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                         body: body.clone(),
                         is_rw,
                         is_raw,
-                        custom_traits: Vec::new(),
+                        custom_traits: Default::default(),
                         is_whatever_code: false,
                         // One candidate of an anonymous `multi sub` -- still a sub.
                         declarator: crate::ast::RoutineDeclarator::Sub,

@@ -92,7 +92,7 @@ pub(crate) fn build_closure(expr: &Expr) -> Expr {
             })],
             is_rw: false,
             is_raw: false,
-            custom_traits: Vec::new(),
+            custom_traits: Default::default(),
             is_whatever_code: true,
             declarator: crate::ast::RoutineDeclarator::Block,
         };
@@ -123,7 +123,7 @@ pub(crate) fn build_closure(expr: &Expr) -> Expr {
             body: vec![Stmt::Expr(body_expr)],
             is_rw: false,
             is_raw: false,
-            custom_traits: Vec::new(),
+            custom_traits: Default::default(),
             is_whatever_code: true,
             declarator: crate::ast::RoutineDeclarator::Block,
         }
@@ -139,7 +139,7 @@ pub(crate) fn build_closure(expr: &Expr) -> Expr {
             body: vec![Stmt::Expr(body_expr)],
             is_rw: false,
             is_raw: false,
-            custom_traits: Vec::new(),
+            custom_traits: Default::default(),
             is_whatever_code: true,
             declarator: crate::ast::RoutineDeclarator::Block,
         }

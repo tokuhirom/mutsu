@@ -64,7 +64,7 @@ pub(crate) fn wrap_composition_operands(expr: Expr) -> Expr {
                         body: vec![Stmt::Expr(body_expr)],
                         is_rw: false,
                         is_raw: false,
-                        custom_traits: Vec::new(),
+                        custom_traits: Default::default(),
                         is_whatever_code: false,
                         declarator: crate::ast::RoutineDeclarator::Block,
                     };
