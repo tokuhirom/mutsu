@@ -96,6 +96,9 @@ impl Interpreter {
         args: &[Value],
     ) -> Result<Value, RuntimeError> {
         let (_, _, _, _, chomp, nl_in, _, _, enc, _, _) = self.parse_io_flags_values(args);
+        let utf8 = enc
+            .as_deref()
+            .is_none_or(|e| matches!(e.to_lowercase().as_str(), "utf-8" | "utf8"));
         let handle = self
             .open_file_handle(
                 path_buf,
@@ -121,7 +124,7 @@ impl Interpreter {
             state.seq_reader = state
                 .file
                 .take()
-                .map(crate::runtime::handle_seq_reader::SeqFileReader::new);
+                .map(|file| crate::runtime::handle_seq_reader::SeqFileReader::new(file, utf8));
             Ok(())
         })?;
         let Some(limit) = args.iter().find_map(numeric_limit_arg) else {

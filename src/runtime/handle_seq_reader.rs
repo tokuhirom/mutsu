@@ -17,14 +17,18 @@ pub(crate) struct SeqFileReader {
     file: fs::File,
     buf: Vec<u8>,
     pos: usize,
+    /// Drop a UTF-8 BOM at the start of the file (a UTF-8 text read) --
+    /// before the first record is cut, so a BOM-only file has no lines.
+    skip_bom: bool,
 }
 
 impl SeqFileReader {
-    pub(crate) fn new(file: fs::File) -> Self {
+    pub(crate) fn new(file: fs::File, skip_utf8_bom: bool) -> Self {
         Self {
             file,
             buf: Vec::new(),
             pos: 0,
+            skip_bom: skip_utf8_bom,
         }
     }
 
@@ -36,6 +40,7 @@ impl SeqFileReader {
             file: self.file.try_clone().ok()?,
             buf: self.buf.clone(),
             pos: self.pos,
+            skip_bom: self.skip_bom,
         })
     }
 }
@@ -90,7 +95,26 @@ impl SeqFileReader {
     /// Read the next block into the buffer; `false` at EOF.
     fn refill(&mut self) -> std::io::Result<bool> {
         self.buf.resize(CAPACITY, 0);
-        let n = self.file.read(&mut self.buf)?;
+        let mut n = self.file.read(&mut self.buf)?;
+        if self.skip_bom {
+            self.skip_bom = false;
+            // A read may return fewer than 3 bytes before EOF; top up so a BOM
+            // split across reads is still recognized.
+            while n > 0 && n < 3 {
+                let more = self.file.read(&mut self.buf[n..])?;
+                if more == 0 {
+                    break;
+                }
+                n += more;
+            }
+            if self.buf[..n].starts_with(b"\xEF\xBB\xBF") {
+                self.buf.copy_within(3..n, 0);
+                n -= 3;
+                if n == 0 {
+                    return self.refill();
+                }
+            }
+        }
         self.buf.truncate(n);
         self.pos = 0;
         Ok(n > 0)

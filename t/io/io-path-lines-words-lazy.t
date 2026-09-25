@@ -5,7 +5,7 @@ use Test;
 # prefix of the file (#9257). The handle is private: it closes at EOF, after a
 # consuming `.head` / `.first`, and when a `for` loop that claimed it is left.
 
-plan 25;
+plan 27;
 
 my $dir = $*TMPDIR.add("mutsu-io-path-lines-lazy-$*PID");
 $dir.mkdir;
@@ -43,6 +43,11 @@ my $e = $dir.add("e.txt");
 $e.spurt: "";
 is-deeply $e.lines, ().Seq, 'lines of an empty file';
 is-deeply $e.words, ().Seq, 'words of an empty file';
+
+my $b = $dir.add("b.txt");
+$b.spurt: Buf.new(0xEF, 0xBB, 0xBF);
+is $b.lines.elems, 0, 'a BOM-only file has no lines';
+is $b.words.elems, 0, 'a BOM-only file has no words';
 
 my $u = $dir.add("u.txt");
 $u.spurt: "h\xe9llo\nw\n", :enc<latin1>;

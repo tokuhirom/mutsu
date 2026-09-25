@@ -2,6 +2,9 @@
 use super::*;
 use crate::value::ValueView;
 
+/// A handle's line separators and chomp setting.
+type LineSettings = (Vec<Vec<u8>>, bool);
+
 impl Interpreter {
     pub(crate) fn read_record_bytes<R: Read + ?Sized>(
         reader: &mut R,
@@ -115,8 +118,7 @@ impl Interpreter {
 
     /// `@*ARGS` as strings, and `$*IN`'s line separators and chomp setting:
     /// what an `ArgFiles` handle's line read falls back to.
-    #[allow(clippy::type_complexity)]
-    fn argfiles_read_context(&self) -> (Vec<String>, Option<(Vec<Vec<u8>>, bool)>) {
+    fn argfiles_read_context(&self) -> (Vec<String>, Option<LineSettings>) {
         let argfiles_list: Vec<String> = self
             .env
             .get("@*ARGS")
