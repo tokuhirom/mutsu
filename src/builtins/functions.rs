@@ -7,8 +7,8 @@ pub(crate) mod flat;
 mod junction;
 mod math;
 mod sprintf_fmt;
-mod time;
-pub(crate) use time::process_rusage;
+mod rusage;
+pub(crate) use rusage::process_rusage;
 mod uniparse;
 
 use crate::symbol::Symbol;
@@ -19,7 +19,6 @@ use dispatch_2arg::native_function_2arg;
 use dispatch_3arg::native_function_3arg;
 use dispatch_variadic::native_function_variadic;
 use sprintf_fmt::native_sprintf;
-use time::builtin_localtime_gmtime;
 
 pub(crate) use flat::{deitemize_flat_operand, flat_val, join_flat, thread_junctions_in_items};
 pub(crate) use junction::build_junction;
@@ -85,9 +84,6 @@ pub(crate) fn native_function(
     }
     if name == "sprintf" || name == "zprintf" {
         return native_sprintf(args, name == "zprintf");
-    }
-    if name == "localtime" || name == "gmtime" {
-        return Some(builtin_localtime_gmtime(name, args));
     }
     match args.len() {
         0 => native_function_0arg(name),

@@ -328,9 +328,6 @@ pub(crate) fn is_listop(name: &str) -> bool {
             | "repl"
             | "slurp"
             | "spurt"
-            | "localtime"
-            | "gmtime"
-            | "times"
             | "undefine"
             | "unlink"
             // `item $x` / `item [1,2,3]` — the item-context coercion. Without
@@ -380,9 +377,6 @@ pub(crate) fn is_expr_listop(name: &str) -> bool {
             | "bag"
             | "mix"
             | "hash"
-            | "localtime"
-            | "gmtime"
-            | "times"
     ) || crate::parser::stmt::simple::is_imported_function(name)
 }
 

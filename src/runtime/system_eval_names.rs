@@ -247,7 +247,6 @@ pub(crate) const EVAL_KNOWN_ROUTINE_NAMES: &[&str] = &[
     "tc",
     "tclc",
     "time",
-    "times",
     "tmpdir",
     "trim",
     "trim-leading",
