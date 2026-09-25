@@ -16,7 +16,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.18,
+        "secs": 0.13,
         "skip": 1,
         "todo": 0,
         "verdict": "pass"
@@ -26,7 +26,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.9,
+        "secs": 0.66,
         "skip": 1,
         "todo": 0,
         "verdict": "pass"
@@ -38,7 +38,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.2,
+        "secs": 0.19,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -48,7 +48,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 2.6,
+        "secs": 2.72,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -61,7 +61,7 @@
         "nok": 1,
         "ok": 33,
         "plan": 34,
-        "secs": 0.35,
+        "secs": 0.41,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -71,7 +71,7 @@
         "nok": 0,
         "ok": 34,
         "plan": 34,
-        "secs": 1.33,
+        "secs": 1.25,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -80,11 +80,11 @@
     {
       "cmp": "partial",
       "mutsu": {
-        "first_failure": "Level 2 Examples",
-        "nok": 3,
-        "ok": 1,
+        "first_failure": "Level 1 Examples",
+        "nok": 4,
+        "ok": 0,
         "plan": 4,
-        "secs": 1.61,
+        "secs": 4.84,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -94,7 +94,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 4.03,
+        "secs": 3.74,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -103,11 +103,11 @@
     {
       "cmp": "partial",
       "mutsu": {
-        "first_failure": "3.2.2 Simple String Expansion",
-        "nok": 7,
-        "ok": 2,
+        "first_failure": "3.2.1 Variable Expansion",
+        "nok": 9,
+        "ok": 0,
         "plan": 9,
-        "secs": 2.05,
+        "secs": 7.21,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -117,7 +117,7 @@
         "nok": 0,
         "ok": 9,
         "plan": 9,
-        "secs": 1.09,
+        "secs": 1.04,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -127,10 +127,10 @@
       "cmp": "partial",
       "mutsu": {
         "first_failure": "Additional Examples 1",
-        "nok": 2,
-        "ok": 2,
+        "nok": 3,
+        "ok": 1,
         "plan": 4,
-        "secs": 0.71,
+        "secs": 1.72,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -140,29 +140,30 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 0.91,
+        "secs": 1.02,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "parity",
+      "cmp": "regression",
       "mutsu": {
+        "first_failure": "Unknown function: encoder",
         "nok": 0,
-        "ok": 1,
-        "plan": 1,
-        "secs": 0.19,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.18,
         "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "die"
       },
       "path": "t/060-synopsis.t",
       "raku": {
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.66,
+        "secs": 0.57,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -174,7 +175,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 0.19,
+        "secs": 0.22,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -184,7 +185,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 0.65,
+        "secs": 0.63,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -196,10 +197,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-24",
+    "date": "2026-09-25",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "338f021",
+    "mutsu_commit": "404ac78",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -214,9 +215,9 @@
   "totals": {
     "baseline_assertions": 56,
     "baseline_files": 8,
-    "mutsu_assertions": 43,
-    "parity_files": 4,
-    "regressed_files": 4
+    "mutsu_assertions": 38,
+    "parity_files": 3,
+    "regressed_files": 5
   },
   "version": "0.0.11"
 }

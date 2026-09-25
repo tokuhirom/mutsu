@@ -23,7 +23,7 @@
         "nok": 0,
         "ok": 8,
         "plan": 8,
-        "secs": 1.39,
+        "secs": 1.97,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -33,29 +33,30 @@
         "nok": 0,
         "ok": 8,
         "plan": 8,
-        "secs": 27.38,
+        "secs": 39.93,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "parity",
+      "cmp": "regression",
       "mutsu": {
+        "first_failure": "Methods .^name, .raku, .gist, or .say can be used to stringify it to something meaningful.",
         "nok": 0,
-        "ok": 20,
-        "plan": 20,
-        "secs": 1.05,
+        "ok": 4,
+        "plan": null,
+        "secs": 1.44,
         "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "die"
       },
       "path": "t/01-client-frame.rakutest",
       "raku": {
         "nok": 0,
         "ok": 20,
         "plan": 20,
-        "secs": 1.8,
+        "secs": 2.11,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -67,7 +68,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 0.96,
+        "secs": 1.39,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -77,51 +78,53 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 1.41,
+        "secs": 1.97,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "parity",
+      "cmp": "partial",
       "mutsu": {
-        "nok": 0,
-        "ok": 3,
+        "first_failure": "query parameters are URL encoded",
+        "nok": 1,
+        "ok": 2,
         "plan": 3,
-        "secs": 0.41,
+        "secs": 0.55,
         "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "fail"
       },
       "path": "t/03-transport.rakutest",
       "raku": {
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 0.82,
+        "secs": 1.23,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "parity",
+      "cmp": "regression",
       "mutsu": {
+        "first_failure": "Methods .^name, .raku, .gist, or .say can be used to stringify it to something meaningful.",
         "nok": 0,
-        "ok": 11,
-        "plan": 11,
-        "secs": 1.04,
+        "ok": 5,
+        "plan": null,
+        "secs": 1.52,
         "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "die"
       },
       "path": "t/04-rapids.rakutest",
       "raku": {
         "nok": 0,
         "ok": 11,
         "plan": 11,
-        "secs": 1.28,
+        "secs": 2.02,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -133,7 +136,7 @@
         "nok": 0,
         "ok": 11,
         "plan": 11,
-        "secs": 0.99,
+        "secs": 1.37,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -143,7 +146,7 @@
         "nok": 0,
         "ok": 11,
         "plan": 11,
-        "secs": 1.48,
+        "secs": 2.02,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -163,10 +166,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-24",
+    "date": "2026-09-25",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "338f021",
+    "mutsu_commit": "404ac78",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -177,13 +180,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/H/2O/H2O_CLIENT/78b5b8bdafee218d82305c102c86b798fb10af1f.tar.gz"
   },
-  "status": "green",
+  "status": "partial",
   "totals": {
     "baseline_assertions": 57,
     "baseline_files": 6,
-    "mutsu_assertions": 57,
-    "parity_files": 6,
-    "regressed_files": 0
+    "mutsu_assertions": 34,
+    "parity_files": 3,
+    "regressed_files": 3
   },
   "version": "0.0.2"
 }

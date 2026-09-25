@@ -9,13 +9,12 @@
   "dist": "Test::Scheduler",
   "files": [
     {
-      "cmp": "no_baseline",
-      "flaky": true,
+      "cmp": "parity",
       "mutsu": {
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 0.23,
+        "secs": 0.12,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -25,20 +24,19 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 1.97,
+        "secs": 1.42,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "no_baseline",
-      "flaky": true,
+      "cmp": "parity",
       "mutsu": {
         "nok": 0,
         "ok": 9,
         "plan": 9,
-        "secs": 0.21,
+        "secs": 0.14,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -48,7 +46,7 @@
         "nok": 0,
         "ok": 9,
         "plan": 9,
-        "secs": 0.82,
+        "secs": 0.49,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -60,7 +58,7 @@
         "nok": 0,
         "ok": 83,
         "plan": 83,
-        "secs": 1.37,
+        "secs": 1.13,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -70,7 +68,7 @@
         "nok": 0,
         "ok": 83,
         "plan": 83,
-        "secs": 2.15,
+        "secs": 1.7,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -82,10 +80,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-24",
+    "date": "2026-09-25",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "338f021",
+    "mutsu_commit": "404ac78",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -98,10 +96,10 @@
   },
   "status": "green",
   "totals": {
-    "baseline_assertions": 83,
-    "baseline_files": 1,
-    "mutsu_assertions": 83,
-    "parity_files": 1,
+    "baseline_assertions": 95,
+    "baseline_files": 3,
+    "mutsu_assertions": 95,
+    "parity_files": 3,
     "regressed_files": 0
   },
   "version": "1.2"

@@ -14,7 +14,7 @@
         "nok": 0,
         "ok": 14,
         "plan": 14,
-        "secs": 0.18,
+        "secs": 0.12,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -24,7 +24,7 @@
         "nok": 0,
         "ok": 14,
         "plan": 14,
-        "secs": 2.65,
+        "secs": 1.68,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -36,7 +36,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 0.28,
+        "secs": 0.2,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -46,7 +46,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 0.91,
+        "secs": 0.65,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -60,7 +60,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 12,
-        "secs": 1.26,
+        "secs": 0.68,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -72,7 +72,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 1.21,
+        "secs": 1.13,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -82,21 +82,20 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 1.68,
+        "secs": 1.45,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "no_baseline",
-      "flaky": true,
+      "cmp": "regression",
       "mutsu": {
         "first_failure": "Unknown function: atomic-fetch-sub",
         "nok": 0,
         "ok": 21,
         "plan": 25,
-        "secs": 0.2,
+        "secs": 0.13,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -106,7 +105,7 @@
         "nok": 0,
         "ok": 25,
         "plan": 25,
-        "secs": 0.65,
+        "secs": 0.42,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -118,7 +117,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 0.25,
+        "secs": 0.1,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -128,7 +127,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 0.71,
+        "secs": 0.41,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -140,7 +139,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 1.3,
+        "secs": 1.13,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -150,7 +149,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 1.64,
+        "secs": 1.51,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -163,7 +162,7 @@
         "nok": 9,
         "ok": 1,
         "plan": 10,
-        "secs": 1.39,
+        "secs": 1.27,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -173,7 +172,7 @@
         "nok": 0,
         "ok": 10,
         "plan": 10,
-        "secs": 1.73,
+        "secs": 1.49,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -185,7 +184,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 0.24,
+        "secs": 0.09,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -195,20 +194,21 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 0.76,
+        "secs": 0.35,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "partial",
+      "cmp": "no_baseline",
+      "flaky": true,
       "mutsu": {
         "first_failure": "Producer called expected number of times",
         "nok": 2,
         "ok": 11,
         "plan": 13,
-        "secs": 0.21,
+        "secs": 0.12,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -218,7 +218,7 @@
         "nok": 0,
         "ok": 13,
         "plan": 13,
-        "secs": 0.93,
+        "secs": 0.37,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -230,10 +230,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-24",
+    "date": "2026-09-25",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "338f021",
+    "mutsu_commit": "404ac78",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -246,9 +246,9 @@
   },
   "status": "partial",
   "totals": {
-    "baseline_assertions": 48,
+    "baseline_assertions": 60,
     "baseline_files": 8,
-    "mutsu_assertions": 37,
+    "mutsu_assertions": 47,
     "parity_files": 6,
     "regressed_files": 2
   },

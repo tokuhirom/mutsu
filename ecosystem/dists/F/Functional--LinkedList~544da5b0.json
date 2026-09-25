@@ -12,40 +12,16 @@
     "unresolved": []
   },
   "dist": "Functional::LinkedList",
-  "files": [
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "Cannot resolve caller ASSIGN-POS(Functional::LinkedList:D: Int:D, Int:D); none of these signatures matches:",
-        "nok": 0,
-        "ok": 2,
-        "plan": null,
-        "secs": 0.3,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/01-basic.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 60,
-        "plan": 60,
-        "secs": 8.24,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    }
-  ],
+  "files": [],
   "load": {
-    "Functional::LinkedList": "ok"
+    "Functional::LinkedList": "Unknown function: clone"
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-24",
+    "date": "2026-09-25",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "338f021",
+    "mutsu_commit": "404ac78",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -56,13 +32,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/F/UN/FUNCTIONAL_LINKEDLIST/986eb5fdb470afdab4409c43bd00154b86022a41.tar.gz"
   },
-  "status": "red",
+  "status": "blocked_load",
   "totals": {
-    "baseline_assertions": 60,
-    "baseline_files": 1,
-    "mutsu_assertions": 2,
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
     "parity_files": 0,
-    "regressed_files": 1
+    "regressed_files": 0
   },
   "version": "0.0.4"
 }

@@ -16,7 +16,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 0.29,
+        "secs": 0.13,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -26,7 +26,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 8.01,
+        "secs": 4.44,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -35,11 +35,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "No matching candidates for method: scalar-build",
+        "first_failure": "X::TypeCheck::Binding::Parameter: Type check failed in binding to parameter '%settings'; expected Associative but got Bool (True)",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.26,
+        "secs": 0.1,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -49,7 +49,7 @@
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 0.95,
+        "secs": 0.4,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -62,7 +62,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.26,
+        "secs": 0.15,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -72,29 +72,6 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 2.11,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "X::TypeCheck::Binding::Parameter: Type check failed in binding to parameter '%settings'; expected Associative but got Bool (True)",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 0.26,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/03-default.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 2,
-        "plan": 2,
         "secs": 0.98,
         "skip": 0,
         "todo": 0,
@@ -108,17 +85,17 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.31,
+        "secs": 0.16,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
       },
-      "path": "t/04-required.rakutest",
+      "path": "t/03-default.rakutest",
       "raku": {
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 1.01,
+        "secs": 0.59,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -131,7 +108,30 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.22,
+        "secs": 0.13,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/04-required.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 2,
+        "plan": 2,
+        "secs": 0.48,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "No matching candidates for method: scalar-build",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.15,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -141,7 +141,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 0.77,
+        "secs": 0.52,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -150,11 +150,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "No such method 'role_arguments' for invocant of type 'Perl6::Metamodel::ClassHOW'",
-        "nok": 6,
-        "ok": 0,
+        "first_failure": "X::TypeCheck::Binding::Parameter: Type check failed in binding to parameter '%settings'; expected Associative but got Bool (True)",
+        "nok": 4,
+        "ok": 2,
         "plan": null,
-        "secs": 0.48,
+        "secs": 0.24,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -164,7 +164,7 @@
         "nok": 0,
         "ok": 10,
         "plan": 10,
-        "secs": 1.07,
+        "secs": 0.73,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -177,7 +177,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.31,
+        "secs": 0.15,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -187,7 +187,7 @@
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 1.27,
+        "secs": 0.71,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -200,7 +200,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.28,
+        "secs": 0.11,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -210,7 +210,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.74,
+        "secs": 0.45,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -223,7 +223,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.29,
+        "secs": 0.11,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -233,7 +233,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 1.56,
+        "secs": 0.73,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -246,7 +246,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.22,
+        "secs": 0.15,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -256,7 +256,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.95,
+        "secs": 0.48,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -269,7 +269,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.22,
+        "secs": 0.11,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -279,7 +279,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 1.15,
+        "secs": 0.6,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -295,10 +295,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-24",
+    "date": "2026-09-25",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "338f021",
+    "mutsu_commit": "404ac78",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -313,7 +313,7 @@
   "totals": {
     "baseline_assertions": 39,
     "baseline_files": 12,
-    "mutsu_assertions": 3,
+    "mutsu_assertions": 5,
     "parity_files": 1,
     "regressed_files": 11
   },

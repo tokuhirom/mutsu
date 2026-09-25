@@ -14,7 +14,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 0.43,
+        "secs": 0.32,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -24,30 +24,30 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 5.89,
+        "secs": 4.62,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "partial",
+      "cmp": "regression",
       "mutsu": {
-        "first_failure": "t/valid/array-empty.json",
-        "nok": 1,
+        "first_failure": "Type Array does not support associative indexing.",
+        "nok": 0,
         "ok": 0,
         "plan": 66,
-        "secs": 0.37,
+        "secs": 0.23,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "die"
       },
       "path": "t/01-valid.t",
       "raku": {
         "nok": 0,
         "ok": 66,
         "plan": 66,
-        "secs": 1.87,
+        "secs": 1.36,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -59,7 +59,7 @@
         "nok": 0,
         "ok": 66,
         "plan": 66,
-        "secs": 0.43,
+        "secs": 0.31,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -69,7 +69,7 @@
         "nok": 0,
         "ok": 66,
         "plan": 66,
-        "secs": 0.73,
+        "secs": 0.44,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -82,7 +82,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 66,
-        "secs": 0.3,
+        "secs": 0.2,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -92,30 +92,30 @@
         "nok": 0,
         "ok": 66,
         "plan": 66,
-        "secs": 1.07,
+        "secs": 0.75,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "partial",
       "mutsu": {
-        "first_failure": "key is already assigned",
-        "nok": 0,
-        "ok": 0,
+        "first_failure": "not ok 1 -",
+        "nok": 4,
+        "ok": 34,
         "plan": 102,
-        "secs": 0.33,
+        "secs": 0.18,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "fail"
       },
       "path": "t/04-nqp.t",
       "raku": {
         "nok": 0,
         "ok": 102,
         "plan": 102,
-        "secs": 1.5,
+        "secs": 0.69,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -129,10 +129,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-24",
+    "date": "2026-09-25",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "338f021",
+    "mutsu_commit": "404ac78",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -147,7 +147,7 @@
   "totals": {
     "baseline_assertions": 302,
     "baseline_files": 5,
-    "mutsu_assertions": 68,
+    "mutsu_assertions": 102,
     "parity_files": 2,
     "regressed_files": 3
   },

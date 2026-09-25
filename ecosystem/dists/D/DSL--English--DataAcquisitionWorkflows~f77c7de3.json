@@ -57,15 +57,100 @@
     "unresolved": []
   },
   "dist": "DSL::English::DataAcquisitionWorkflows",
-  "files": [],
+  "files": [
+    {
+      "cmp": "no_baseline",
+      "path": "t/Ingredients-query-commands.rakutest",
+      "raku": {
+        "first_failure": "================================================================================",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 47.03,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/Introspection-query-commands.rakutest",
+      "raku": {
+        "first_failure": "Type check failed in binding to parameter '$library'; expected IO::Path but got Slip (Empty)",
+        "nok": 0,
+        "ok": 0,
+        "plan": 28,
+        "secs": 4.07,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/Recommendations-by-profile-commands.rakutest",
+      "raku": {
+        "first_failure": "Type check failed in binding to parameter '$library'; expected IO::Path but got Slip (Empty)",
+        "nok": 0,
+        "ok": 0,
+        "plan": 16,
+        "secs": 4.41,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/Recommendations-commands.rakutest",
+      "raku": {
+        "first_failure": "Type check failed in binding to parameter '$library'; expected IO::Path but got Slip (Empty)",
+        "nok": 0,
+        "ok": 0,
+        "plan": 20,
+        "secs": 4.13,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/Sanity-check-commands.rakutest",
+      "raku": {
+        "first_failure": "Type check failed in binding to parameter '$library'; expected IO::Path but got Slip (Empty)",
+        "nok": 0,
+        "ok": 0,
+        "plan": 10,
+        "secs": 4.22,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/User-ID-specs-handling.rakutest",
+      "raku": {
+        "first_failure": "Type check failed in binding to parameter '$library'; expected IO::Path but got Slip (Empty)",
+        "nok": 0,
+        "ok": 0,
+        "plan": 13,
+        "secs": 4.41,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    }
+  ],
   "load": {
-    "DSL::English::DataAcquisitionWorkflows": "raku_also_fails",
-    "DSL::English::DataAcquisitionWorkflows::Actions::Bulgarian::Standard": "Could not instantiate role 'DSL::Shared::Roles::English::PipelineCommand' because it died with X::Redeclaration; exception details:",
-    "DSL::English::DataAcquisitionWorkflows::Actions::Python::Ecosystem": "Could not instantiate role 'DSL::Shared::Roles::English::PipelineCommand' because it died with X::Redeclaration; exception details:",
-    "DSL::English::DataAcquisitionWorkflows::Actions::R::base": "Could not instantiate role 'DSL::Shared::Roles::English::PipelineCommand' because it died with X::Redeclaration; exception details:",
-    "DSL::English::DataAcquisitionWorkflows::Actions::Raku::Ecosystem": "Could not instantiate role 'DSL::Shared::Roles::English::PipelineCommand' because it died with X::Redeclaration; exception details:",
-    "DSL::English::DataAcquisitionWorkflows::Actions::WL::Ecosystem": "Could not instantiate role 'DSL::Shared::Roles::English::PipelineCommand' because it died with X::Redeclaration; exception details:",
-    "DSL::English::DataAcquisitionWorkflows::Grammar": "Could not instantiate role 'DSL::Shared::Roles::English::PipelineCommand' because it died with X::Redeclaration; exception details:",
+    "DSL::English::DataAcquisitionWorkflows": "ok",
+    "DSL::English::DataAcquisitionWorkflows::Actions::Bulgarian::Standard": "ok",
+    "DSL::English::DataAcquisitionWorkflows::Actions::Python::Ecosystem": "ok",
+    "DSL::English::DataAcquisitionWorkflows::Actions::R::base": "ok",
+    "DSL::English::DataAcquisitionWorkflows::Actions::Raku::Ecosystem": "ok",
+    "DSL::English::DataAcquisitionWorkflows::Actions::WL::Ecosystem": "ok",
+    "DSL::English::DataAcquisitionWorkflows::Grammar": "ok",
     "DSL::English::DataAcquisitionWorkflows::Grammar::DataAcquisitionPhrases": "ok",
     "DSL::English::DataAcquisitionWorkflows::Grammar::IngredientQuery": "ok",
     "DSL::English::DataAcquisitionWorkflows::Grammar::IngredientSpec": "ok",
@@ -75,10 +160,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-24",
+    "date": "2026-09-25",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "338f021",
+    "mutsu_commit": "404ac78",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -89,7 +174,7 @@
     "index": "fez",
     "url": "https://360.zef.pm/D/SL/DSL_ENGLISH_DATAACQUISITIONWORKFLOWS/07bcb4e3e15e151b573a2f62f7c365bfc762a2e6.tar.gz"
   },
-  "status": "blocked_load",
+  "status": "no_baseline",
   "totals": {
     "baseline_assertions": 0,
     "baseline_files": 0,

@@ -7,12 +7,103 @@
     "unresolved": []
   },
   "dist": "fez",
-  "files": [],
+  "files": [
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 23,
+        "plan": 23,
+        "secs": 1.31,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/00-use.t",
+      "raku": {
+        "nok": 0,
+        "ok": 23,
+        "plan": 23,
+        "secs": 30.88,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.2,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/01-config.t",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.87,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "No such method 'CALL-ME' for invocant of type 'Nil'",
+        "nok": 0,
+        "ok": 0,
+        "plan": 1,
+        "secs": 0.87,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/02-checkbuild.t",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 1.64,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "multi parse handles array of glob patterns",
+        "nok": 1,
+        "ok": 26,
+        "plan": 27,
+        "secs": 0.2,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/03-glob.t",
+      "raku": {
+        "nok": 0,
+        "ok": 27,
+        "plan": 27,
+        "secs": 1.84,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
   "load": {
     "Fez": "ok",
     "Fez::API": "ok",
     "Fez::Bundle": "ok",
-    "Fez::CLI": "expected statement: expected expected statement: expected expression statement or expected statement: expected expression statement or ')' [at lib/Fez/CLI.rakumod:887]",
+    "Fez::CLI": "ok",
     "Fez::Logr": "ok",
     "Fez::Types": "ok",
     "Fez::Util::Config": "ok",
@@ -34,10 +125,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-24",
+    "date": "2026-09-25",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "338f021",
+    "mutsu_commit": "404ac78",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -48,13 +139,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/F/EZ/FEZ/8718f3d6fd2ed206c4e6b465034d447e687880db.tar.gz"
   },
-  "status": "blocked_load",
+  "status": "partial",
   "totals": {
-    "baseline_assertions": 0,
-    "baseline_files": 0,
-    "mutsu_assertions": 0,
-    "parity_files": 0,
-    "regressed_files": 0
+    "baseline_assertions": 52,
+    "baseline_files": 4,
+    "mutsu_assertions": 50,
+    "parity_files": 2,
+    "regressed_files": 2
   },
   "version": "100.0.2"
 }

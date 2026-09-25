@@ -1,0 +1,63 @@
+{
+  "axis": "guts",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [],
+    "unresolved": []
+  },
+  "dist": "L10N::ES",
+  "files": [
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 0.14,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/01-basic.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 4.66,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
+  "load": {
+    "L10N::ES": "ok",
+    "RakuAST::Deparse::L10N::ES": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-09-25",
+    "harness": 2,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "404ac78",
+    "mutsu_version": "0.23.0",
+    "raku_backend": "moar 2026.07",
+    "raku_version": "2026.07",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/L/10/L10N_ES/715eaafb3ee2a506cfc825f58976d76ad5872e10.tar.gz"
+  },
+  "status": "green",
+  "totals": {
+    "baseline_assertions": 3,
+    "baseline_files": 1,
+    "mutsu_assertions": 3,
+    "parity_files": 1,
+    "regressed_files": 0
+  },
+  "version": "0.0.2"
+}

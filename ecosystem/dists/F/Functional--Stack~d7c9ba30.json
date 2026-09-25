@@ -13,39 +13,16 @@
     "unresolved": []
   },
   "dist": "Functional::Stack",
-  "files": [
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 1,
-        "plan": 1,
-        "secs": 0.27,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/01-basic.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 1,
-        "plan": 1,
-        "secs": 9.51,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    }
-  ],
+  "files": [],
   "load": {
-    "Functional::Stack": "ok"
+    "Functional::Stack": "Unknown function: clone"
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-24",
+    "date": "2026-09-25",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "338f021",
+    "mutsu_commit": "404ac78",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -56,12 +33,12 @@
     "index": "fez",
     "url": "https://360.zef.pm/F/UN/FUNCTIONAL_STACK/f1718b8e919d6987841ce7ad2ffef9f75aebfe12.tar.gz"
   },
-  "status": "green",
+  "status": "blocked_load",
   "totals": {
-    "baseline_assertions": 1,
-    "baseline_files": 1,
-    "mutsu_assertions": 1,
-    "parity_files": 1,
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
     "regressed_files": 0
   },
   "version": "0.0.3"
