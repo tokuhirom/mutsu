@@ -197,7 +197,7 @@ impl LazyList {
             Some(p) => p,
             None => return false,
         };
-        let spec = spec.lock().unwrap();
+        let spec = spec.lock().unwrap_or_else(|e| e.into_inner());
         // A multi-operand adaptor's finiteness depends on all its operands:
         // a zip ends with its shortest operand, while a cross product and a
         // roundrobin run as long as their longest one.

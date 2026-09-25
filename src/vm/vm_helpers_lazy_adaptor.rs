@@ -9,9 +9,7 @@
 //! and `roundrobin(1..*, (5, 6))` all stream exactly as they do in Rakudo.
 
 use super::*;
-use crate::value::{
-    DistinctMode, DistinctState, IndexTransform, PipeAdaptor, PullOperand, RowCombine,
-};
+use crate::value::{PipeAdaptor, PullOperand, RowCombine};
 
 /// What one adaptor step produced.
 struct AdaptorStep {
@@ -157,7 +155,12 @@ impl Interpreter {
                         if let Some(v) = self.pull_source_element(item, idx - base)? {
                             return Ok(Some(v));
                         }
-                        base += ll.cache.lock().unwrap().as_ref().map_or(0, Vec::len);
+                        base += ll
+                            .cache
+                            .lock()
+                            .unwrap_or_else(|e| e.into_inner())
+                            .as_ref()
+                            .map_or(0, Vec::len);
                     } else if base == idx {
                         return Ok(Some(item.clone()));
                     } else {
@@ -180,12 +183,10 @@ impl Interpreter {
             RowCombine::List => Ok(Value::array(row)),
             // ADR-0021 I2: data-minted pairs default positional, and the key
             // keeps its own value/type.
-            RowCombine::Pair if row.len() == 2 => {
-                let mut it = row.into_iter();
-                let k = it.next().unwrap();
-                Ok(Value::value_pair(k, it.next().unwrap()))
-            }
-            RowCombine::Pair => Ok(Value::array(row)),
+            RowCombine::Pair => match <[Value; 2]>::try_from(row) {
+                Ok([k, v]) => Ok(Value::value_pair(k, v)),
+                Err(row) => Ok(Value::array(row)),
+            },
             RowCombine::SmartMatch => {
                 let mut acc = row.first().cloned().unwrap_or(Value::NIL);
                 for r in row.iter().skip(1) {
@@ -219,7 +220,10 @@ impl Interpreter {
     // `unique`/`repeated` with `:with` (O(u) comparator calls).
     pub(super) fn step_lazy_adaptor(&mut self, list: &LazyList) -> Result<(), RuntimeError> {
         let (source, func, idx, adaptor) = {
-            let mut spec = list.lazy_pipe.as_ref().unwrap().lock().unwrap();
+            let Some(pipe) = list.lazy_pipe.as_ref() else {
+                return Ok(());
+            };
+            let mut spec = pipe.lock().unwrap_or_else(|e| e.into_inner());
             (
                 spec.source.clone(),
                 spec.func.clone(),
@@ -235,7 +239,10 @@ impl Interpreter {
             ));
         };
         let step = self.run_adaptor_step(&source, &func, idx, &mut adaptor);
-        let mut spec = list.lazy_pipe.as_ref().unwrap().lock().unwrap();
+        let Some(pipe) = list.lazy_pipe.as_ref() else {
+            return Ok(());
+        };
+        let mut spec = pipe.lock().unwrap_or_else(|e| e.into_inner());
         spec.adaptor = Some(Box::new(adaptor));
         let step = match step {
             Ok(step) => step,
@@ -256,7 +263,7 @@ impl Interpreter {
         if !step.out.is_empty() {
             list.cache
                 .lock()
-                .unwrap()
+                .unwrap_or_else(|e| e.into_inner())
                 .get_or_insert_with(Vec::new)
                 .extend(step.out);
         }
@@ -452,7 +459,8 @@ impl Interpreter {
                 }
                 Ok(one(out, idx + 1))
             }
-            PipeAdaptor::Busy => unreachable!("step_lazy_adaptor never runs a Busy adaptor"),
+            // `step_lazy_adaptor` refuses a Busy adaptor before getting here.
+            PipeAdaptor::Busy => Ok(AdaptorStep::finished(idx)),
             PipeAdaptor::Roundrobin {
                 operands,
                 alive,

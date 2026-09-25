@@ -184,7 +184,7 @@ impl LazyList {
     pub(crate) fn new_adaptor_pipe(source: Value, func: Value, adaptor: PipeAdaptor) -> Self {
         let mut ll = Self::new_pipe(source, func, false);
         if let Some(spec) = ll.lazy_pipe.as_mut() {
-            spec.get_mut().unwrap().adaptor = Some(Box::new(adaptor));
+            spec.get_mut().unwrap_or_else(|e| e.into_inner()).adaptor = Some(Box::new(adaptor));
         }
         ll
     }

@@ -4,7 +4,7 @@ use Test;
 # stream, like Rakudo -- never throw "Cannot .X a lazy list", never return a
 # silently truncated prefix (the old 1000-row `Z` / 256-element `X` caps).
 
-plan 45;
+plan 47;
 
 # --- list methods over an infinite map pipe ---
 is-deeply (1..*).map(* + 1).skip(2).head(2).List, (4, 5), '.skip over a lazy map';
@@ -81,3 +81,13 @@ is-deeply (Slip.new xx *).head(2).List, (), 'an empty Slip repeated forever is e
 
 # --- rotor with an unbounded count cycle is not pre-expanded ---
 is-deeply (1..20).rotor(1..*).map(*.elems).List, (1, 2, 3, 4, 5), 'rotor(1..*)';
+
+# --- a slice assignment pulls only as many elements as it has slots ---
+{
+    my @a;
+    @a[0, 1, 2] = (1..*).map(* + 1);
+    is-deeply @a, [2, 3, 4], 'slice assignment from an infinite map';
+    my %p;
+    %p{2, 4, 8} = 2 X=> 1..*;
+    is %p<8>.value, 3, 'slice assignment from an infinite cross product';
+}

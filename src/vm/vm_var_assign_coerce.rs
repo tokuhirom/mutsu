@@ -884,10 +884,15 @@ impl Interpreter {
             // A live gather coroutine may be infinite (`@a[0,1,2] =
             // (loop { 42 })`): bounded pull so the slice fills without
             // hanging (a finite gather completes below the cap). Every other
-            // lazy kind keeps the strict force (a lazy pipe's own bounded
-            // machinery handles it).
+            // finite lazy kind keeps the strict force.
             ValueView::LazyList(list) => {
-                if list.coroutine.is_some() && list.cache.lock().unwrap().is_none() {
+                if (list.coroutine.is_some() && list.cache.lock().unwrap_or_else(|e| e.into_inner()).is_none())
+                    // An infinite pipe (`(1..*).map(...)`, `a X=> 1..*`) or
+                    // sequence fills the slice from its first `needed`
+                    // elements; a strict force could never finish.
+                    || (list.lazy_pipe.is_some() && !list.pipe_bottoms_out_finite())
+                    || list.is_infinite_spec()
+                {
                     self.force_lazy_list_vm_n(&list, needed)?
                 } else {
                     self.force_lazy_list_vm(&list)?

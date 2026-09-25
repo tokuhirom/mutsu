@@ -599,9 +599,10 @@ impl Interpreter {
         match Self::op_associativity(combiner) {
             OpAssoc::Right => {
                 // Right-associative: fold from right
-                let mut acc = elements.last().unwrap().clone();
-                for elem in elements[..elements.len() - 1].iter().rev() {
-                    acc = self.call_sub_value(combiner.clone(), vec![elem.clone(), acc], false)?;
+                let mut rev = elements.into_iter().rev();
+                let mut acc = rev.next().unwrap_or(Value::NIL);
+                for elem in rev {
+                    acc = self.call_sub_value(combiner.clone(), vec![elem, acc], false)?;
                 }
                 Ok(acc)
             }

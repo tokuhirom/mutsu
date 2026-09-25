@@ -265,7 +265,15 @@ impl Interpreter {
                     if ll.is_genuinely_lazy() || ll.is_infinite_spec() {
                         has_infinite = true;
                         let needed = polymod_digit_bound(target);
-                        divisors.extend(self.force_lazy_list_vm_n(&ll, needed)?);
+                        // Pulled element by element: a cache-only lazy list
+                        // (`lazy 2, 3`) has no generator to extend it, and
+                        // runs out before `needed` like a finite list.
+                        for i in 0..needed {
+                            match self.pull_source_element(arg, i)? {
+                                Some(d) => divisors.push(d),
+                                None => break,
+                            }
+                        }
                     } else {
                         divisors.extend(self.force_lazy_list_bridge(&ll)?);
                     }

@@ -5,7 +5,9 @@
 
 use super::vm_helpers_lazy_adaptor::{is_unbounded_operand, pull_operand_of};
 use super::*;
-use crate::value::{DistinctMode, DistinctState, IndexTransform, PipeAdaptor, PullOperand, RowCombine};
+use crate::value::{
+    DistinctMode, DistinctState, IndexTransform, PipeAdaptor, PullOperand, RowCombine,
+};
 
 impl Interpreter {
     /// A lazy `Z`/`zip` over `columns` when every column is unbounded (so the
