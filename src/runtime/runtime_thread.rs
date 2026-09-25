@@ -527,7 +527,8 @@ impl Interpreter {
                 argfiles_reader: None, // Cannot clone BufReader; will reopen if needed
                 argfiles_paths: handle.argfiles_paths.clone(),
                 pending_words: handle.pending_words.clone(),
-                close_on_word_exhaust: handle.close_on_word_exhaust,
+                close_on_exhaust: handle.close_on_exhaust,
+                seq_reader: handle.seq_reader.as_ref().and_then(|r| r.try_clone()),
             };
             cloned_handles.insert(*id, cloned);
         }

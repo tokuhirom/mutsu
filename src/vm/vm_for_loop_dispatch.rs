@@ -153,7 +153,7 @@ impl Interpreter {
         {
             let body_start = *ip + 1;
             let loop_end = spec.body_end as usize;
-            self.exec_for_loop_lazy_io_lines(
+            let result = self.exec_for_loop_lazy_io_lines(
                 code,
                 spec,
                 &handle,
@@ -162,7 +162,12 @@ impl Interpreter {
                 body_start,
                 loop_end,
                 compiled_fns,
-            )?;
+            );
+            // The loop claimed the Seq, so once it is left (`last`, an
+            // exception, or EOF) nothing can read the handle again: close it
+            // if it is the private one `IO::Path.lines` opened (#9257).
+            self.close_if_seq_private_handle(&handle);
+            result?;
             *ip = loop_end;
             return Ok(());
         }

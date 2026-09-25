@@ -189,6 +189,7 @@ impl IoHandleState {
         }
         self.closed = true;
         self.file = None;
+        self.seq_reader = None;
         Ok(true)
     }
 
@@ -659,7 +660,8 @@ impl Interpreter {
             argfiles_reader: None,
             argfiles_paths: None,
             pending_words: std::collections::VecDeque::new(),
-            close_on_word_exhaust: false,
+            close_on_exhaust: false,
+            seq_reader: None,
         };
         // For utf16 encoding in write/append mode, write BOM at start
         let enc_lower = state.encoding.to_lowercase();

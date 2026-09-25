@@ -228,6 +228,23 @@ pub(crate) fn decode_utf8_handle_text(bytes: &[u8]) -> Result<String, RuntimeErr
     decode_bytes_with_builtin_encoding(bytes, "utf-8")
 }
 
+/// [`decode_utf8_handle_text`] for a record the caller owns: valid UTF-8 (the
+/// common case) becomes the `String` in place instead of being copied. Any
+/// other input takes the borrowed decoder, so the two agree on every byte
+/// sequence.
+// Cost: O(n), n = bytes.
+pub(crate) fn decode_utf8_handle_text_owned(bytes: Vec<u8>) -> Result<String, RuntimeError> {
+    match String::from_utf8(bytes) {
+        Ok(mut s) => {
+            if s.starts_with('\u{FEFF}') {
+                s.drain(..'\u{FEFF}'.len_utf8());
+            }
+            Ok(nfc(s))
+        }
+        Err(err) => decode_utf8_handle_text(err.as_bytes()),
+    }
+}
+
 /// One code point's bytes read off a UTF-8 handle (`read_utf8_char`): strict
 /// like [`decode_utf8_handle_text`], but neither NFC-normalized nor BOM-stripped
 /// -- a per-code-point reader seeks back by the decoded length, and

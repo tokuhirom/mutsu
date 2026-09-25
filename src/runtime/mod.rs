@@ -648,6 +648,7 @@ mod handle_io;
 mod handle_open;
 mod handle_read;
 mod handle_read_chars;
+mod handle_seq_reader;
 pub(crate) mod hoist_visibility;
 mod incdec_rw_sub;
 mod io;
@@ -1744,9 +1745,14 @@ pub(crate) struct IoHandleState {
     /// Buffered words not yet yielded by `read_word_from_handle_value`. A single
     /// line read can produce many words; the leftovers live here until consumed.
     pending_words: std::collections::VecDeque<String>,
-    /// When set, the handle is closed automatically the moment word iteration
-    /// reaches EOF (Raku's `words($fh, :close)` close-on-exhaust semantics).
-    close_on_word_exhaust: bool,
+    /// When set, the handle is closed automatically the moment a line or word
+    /// read reaches EOF (Raku's `words($fh, :close)` close-on-exhaust
+    /// semantics, and the handle `IO::Path.lines` / `.words` open).
+    close_on_exhaust: bool,
+    /// The buffered reader of a handle only a Seq can reach (the one
+    /// `IO::Path.lines` / `.words` open); `file` is `None` then. File reads go
+    /// through it instead of one syscall per byte (see `handle_seq_reader`).
+    seq_reader: Option<handle_seq_reader::SeqFileReader>,
 }
 
 /// Entry in the callframe stack, tracking state for each call frame.
