@@ -1,5 +1,5 @@
 //! Which of the frame's locals a `~~` must publish into `env` before its RHS
-//! runs (#9169).
+//! runs (#9169, #9293).
 //!
 //! The regex engine resolves a pattern's interpolated variables (`/a$x/`,
 //! `<$rule>`, `<&f>`) *by name* against `env` while it matches, and so does
@@ -14,60 +14,37 @@
 //! mirror or a shared cell, exactly as it does for a plain call `f($x)`, which
 //! pays no pre-sync either. So only the source text the engine evaluates by
 //! name needs the publish, and that text can name only the identifiers spelled
-//! in it -- unless it looks a name up indirectly (`EVAL`, `::($n)`, `MY::`),
-//! the one case still left to a whole-frame publish.
+//! in it.
+//!
+//! Text that looks a name up *indirectly* (`EVAL`, `::($n)`, `MY::`) is no
+//! different from the same lookup written outside a regex: the chunk holding
+//! it is marked reflective when it is finalized
+//! ([`regex_source_has_indirect_lookup`], read by
+//! `CompiledCode::scan_reflective_name_access`), which keeps every store
+//! mirroring into `env` -- the mechanism a plain `EVAL '$x'` already relies
+//! on. So no match publishes the whole frame any more.
 
 use super::*;
 
-/// What `~~` has to publish into `env` for the regex engine.
-pub(super) enum RhsSync {
-    /// Only these locals (env-key spellings: `x` for `$x`, `@a`, `%h`, `&f`);
-    /// empty when nothing is needed.
-    Names(Vec<String>),
-    /// Every local slot: embedded code that looks a name up indirectly
-    /// (`EVAL`, `::($name)`, a pseudo-package), or an RHS value whose regexes
-    /// cannot be reached without running user code (a lazy list, a `Proxy`).
-    Full,
-}
-
-impl RhsSync {
-    fn merge_names(self, more: Option<Vec<String>>) -> RhsSync {
-        match (self, more) {
-            (RhsSync::Names(mut have), Some(more)) => {
-                for n in more {
-                    if !have.contains(&n) {
-                        have.push(n);
-                    }
-                }
-                RhsSync::Names(have)
-            }
-            _ => RhsSync::Full,
-        }
-    }
-
-    fn merge_pattern(self, pattern: &str) -> RhsSync {
-        self.merge_names(regex_pattern_var_names(pattern))
-    }
-
-    fn merge(self, other: RhsSync) -> RhsSync {
-        match other {
-            RhsSync::Names(names) => self.merge_names(Some(names)),
-            RhsSync::Full => RhsSync::Full,
-        }
-    }
-}
-
 /// How deep [`Interpreter::smartmatch_value_sync`] follows nested containers
-/// before it gives up and asks for the whole-frame publish (a
-/// self-referential structure would otherwise never end).
-const VALUE_SYNC_MAX_DEPTH: usize = 64;
+/// before it starts remembering the mutable ones it has visited, so a
+/// self-referential structure (`@a[0] = @a`) cannot recurse forever.
+const VALUE_SYNC_TRACK_DEPTH: usize = 64;
+
+/// Add `more` to `have`, skipping duplicates.
+fn merge_names(have: &mut Vec<String>, more: Vec<String>) {
+    for n in more {
+        if !have.contains(&n) {
+            have.push(n);
+        }
+    }
+}
 
 impl Interpreter {
     /// What must be published before the RHS compiled into `[rhs_start,
     /// rhs_end)` runs: the variables every regex literal, and every
     /// `s///`/`S///` pattern and replacement, in it can name
-    /// ([`regex_pattern_var_names`], [`subst_replacement_var_names`]), or
-    /// [`RhsSync::Full`] when one of them looks a name up indirectly. A
+    /// ([`regex_pattern_var_names`], [`subst_replacement_var_names`]). A
     /// `tr///` interpolates nothing. Any other op needs nothing: a routine,
     /// method or closure it reaches reads its free variables the way it does
     /// for a plain call. A regex the RHS only *computes* (`$x ~~ $re`) is
@@ -78,12 +55,12 @@ impl Interpreter {
         code: &CompiledCode,
         rhs_start: usize,
         rhs_end: usize,
-    ) -> RhsSync {
+    ) -> Vec<String> {
         let const_str = |idx: u32| match code.constants.get(idx as usize).map(Value::view) {
             Some(ValueView::Str(s)) => s.to_string(),
             _ => String::new(),
         };
-        let mut sync = RhsSync::Names(Vec::new());
+        let mut names = Vec::new();
         for op in code.ops.get(rhs_start..rhs_end).unwrap_or(&[]) {
             let const_idx = match op {
                 OpCode::LoadConst(idx) => *idx,
@@ -98,28 +75,30 @@ impl Interpreter {
                     replacement_idx,
                     ..
                 } => {
-                    sync = sync
-                        .merge_pattern(&const_str(*pattern_idx))
-                        .merge_names(subst_replacement_var_names(&const_str(*replacement_idx)));
-                    if matches!(sync, RhsSync::Full) {
-                        return sync;
-                    }
+                    merge_names(
+                        &mut names,
+                        regex_pattern_var_names(&const_str(*pattern_idx)),
+                    );
+                    merge_names(
+                        &mut names,
+                        subst_replacement_var_names(&const_str(*replacement_idx)),
+                    );
                     continue;
                 }
                 _ => continue,
             };
-            sync = match code.constants.get(const_idx as usize).map(Value::view) {
-                Some(ValueView::Regex(pattern)) => sync.merge_pattern(pattern.as_str()),
-                Some(ValueView::RegexWithAdverbs(adverbs)) => {
-                    sync.merge_pattern(adverbs.pattern.as_str())
+            match code.constants.get(const_idx as usize).map(Value::view) {
+                Some(ValueView::Regex(pattern)) => {
+                    merge_names(&mut names, regex_pattern_var_names(pattern.as_str()))
                 }
-                _ => sync,
-            };
-            if matches!(sync, RhsSync::Full) {
-                return sync;
+                Some(ValueView::RegexWithAdverbs(adverbs)) => merge_names(
+                    &mut names,
+                    regex_pattern_var_names(adverbs.pattern.as_str()),
+                ),
+                _ => {}
             }
         }
-        sync
+        names
     }
 
     /// What must be published before the smartmatch itself runs `left`
@@ -130,101 +109,150 @@ impl Interpreter {
     /// value against value; any other `~~ %h` is a key lookup and runs no
     /// regex). Any other value (a type object, a scalar, a range, an instance
     /// with a user `ACCEPTS`, a callable) reads nothing by a runtime-parsed
-    /// name. Only a lazy list or a `Proxy`, whose elements cannot be reached
-    /// without running user code, keeps the whole-frame publish.
+    /// name.
+    ///
+    /// Nor does a value whose elements need user code to reach: the match
+    /// never runs that code. A lazy list RHS answers `False` without being
+    /// reified (as in Rakudo), and a nested `Proxy` or unforced lazy thunk is
+    /// compared as it stands. The op FETCHes / forces a *top-level* one before
+    /// calling this (Rakudo decontainerizes the RHS too), and a forced thunk's
+    /// cached value is searched like any other.
     // Cost: O(k + p), k = elements reachable in `right` (the match visits them
     // too), p = total pattern length of the regexes among them; O(1) for a
     // non-container value.
-    pub(super) fn smartmatch_value_sync(left: &Value, right: &Value) -> RhsSync {
+    pub(super) fn smartmatch_value_sync(left: &Value, right: &Value) -> Vec<String> {
         let left_is_hash = left.with_deref(|l| matches!(l.view(), ValueView::Hash(_)));
-        Self::value_sync_at(right, left_is_hash, 0)
+        let mut names = Vec::new();
+        let mut seen = std::collections::HashSet::new();
+        Self::value_sync_at(right, left_is_hash, 0, &mut seen, &mut names);
+        names
     }
 
-    fn value_sync_at(value: &Value, left_is_hash: bool, depth: usize) -> RhsSync {
-        if depth > VALUE_SYNC_MAX_DEPTH {
-            return RhsSync::Full;
-        }
-        let each = |items: &mut dyn Iterator<Item = &Value>| {
-            let mut sync = RhsSync::Names(Vec::new());
+    fn value_sync_at(
+        value: &Value,
+        left_is_hash: bool,
+        depth: usize,
+        seen: &mut std::collections::HashSet<usize>,
+        names: &mut Vec<String>,
+    ) {
+        // Past the tracking depth, visit each mutable container once: only an
+        // `Array`, a `Hash` or a container cell can close a cycle.
+        let first_visit = |seen: &mut std::collections::HashSet<usize>, addr: usize| {
+            depth <= VALUE_SYNC_TRACK_DEPTH || seen.insert(addr)
+        };
+        let each = |items: &mut dyn Iterator<Item = &Value>,
+                    seen: &mut std::collections::HashSet<usize>,
+                    names: &mut Vec<String>| {
             for item in items {
-                sync = sync.merge(Self::value_sync_at(item, left_is_hash, depth + 1));
-                if matches!(sync, RhsSync::Full) {
-                    break;
-                }
+                Self::value_sync_at(item, left_is_hash, depth + 1, seen, names);
             }
-            sync
         };
         match value.view() {
-            ValueView::Regex(pattern) => RhsSync::Names(Vec::new()).merge_pattern(pattern.as_str()),
+            ValueView::Regex(pattern) => {
+                merge_names(names, regex_pattern_var_names(pattern.as_str()))
+            }
             ValueView::RegexWithAdverbs(adverbs) => {
-                RhsSync::Names(Vec::new()).merge_pattern(adverbs.pattern.as_str())
+                merge_names(names, regex_pattern_var_names(adverbs.pattern.as_str()))
             }
             ValueView::Routine {
                 captured_regex: Some(inner),
                 ..
-            } => Self::value_sync_at(inner, left_is_hash, depth + 1),
-            ValueView::Junction { values, .. } => each(&mut values.iter()),
-            ValueView::Array(items, _) => each(&mut items.iter()),
-            ValueView::Seq(body) | ValueView::HyperSeq(body) | ValueView::RaceSeq(body) => {
-                each(&mut body.iter())
-            }
-            ValueView::Slip(items) => each(&mut items.iter()),
-            ValueView::Hash(map) if left_is_hash => each(&mut map.values()),
-            ValueView::Pair(_, v) => Self::value_sync_at(v, left_is_hash, depth + 1),
-            ValueView::ValuePair(_, v) => Self::value_sync_at(v, left_is_hash, depth + 1),
-            ValueView::Capture { positional, named } => {
-                each(&mut positional.iter().chain(named.values()))
-            }
-            ValueView::Mixin(inner, _) => Self::value_sync_at(inner, left_is_hash, depth + 1),
-            ValueView::Scalar(inner) => Self::value_sync_at(inner, left_is_hash, depth + 1),
-            ValueView::VarRef { value, .. } => Self::value_sync_at(value, left_is_hash, depth + 1),
-            ValueView::ContainerRef(..) | ValueView::ContainerView(..) => {
-                let inner = value.deref_container();
-                if matches!(
-                    inner.view(),
-                    ValueView::ContainerRef(..) | ValueView::ContainerView(..)
-                ) {
-                    return RhsSync::Full;
+            } => Self::value_sync_at(inner, left_is_hash, depth + 1, seen, names),
+            ValueView::Junction { values, .. } => each(&mut values.iter(), seen, names),
+            ValueView::Array(items, _) => {
+                if first_visit(seen, crate::gc::Gc::as_ptr(&items) as usize) {
+                    each(&mut items.iter(), seen, names)
                 }
-                Self::value_sync_at(&inner, left_is_hash, depth + 1)
             }
-            ValueView::LazyList(..) | ValueView::Proxy { .. } | ValueView::LazyThunk(..) => {
-                RhsSync::Full
+            ValueView::Seq(body) | ValueView::HyperSeq(body) | ValueView::RaceSeq(body) => {
+                each(&mut body.iter(), seen, names)
             }
-            _ => RhsSync::Names(Vec::new()),
+            ValueView::Slip(items) => each(&mut items.iter(), seen, names),
+            ValueView::Hash(map) if left_is_hash => {
+                if first_visit(seen, crate::gc::Gc::as_ptr(&map) as usize) {
+                    each(&mut map.values(), seen, names)
+                }
+            }
+            ValueView::Pair(_, v) => Self::value_sync_at(v, left_is_hash, depth + 1, seen, names),
+            ValueView::ValuePair(_, v) => {
+                Self::value_sync_at(v, left_is_hash, depth + 1, seen, names)
+            }
+            ValueView::Capture { positional, named } => {
+                each(&mut positional.iter().chain(named.values()), seen, names)
+            }
+            ValueView::Mixin(inner, _) => {
+                Self::value_sync_at(inner, left_is_hash, depth + 1, seen, names)
+            }
+            ValueView::Scalar(inner) => {
+                Self::value_sync_at(inner, left_is_hash, depth + 1, seen, names)
+            }
+            ValueView::VarRef { value, .. } => {
+                Self::value_sync_at(value, left_is_hash, depth + 1, seen, names)
+            }
+            ValueView::ContainerRef(cell) | ValueView::ContainerView(cell) => {
+                if first_visit(seen, crate::gc::Gc::as_ptr(&cell) as usize) {
+                    let inner = value.deref_container();
+                    Self::value_sync_at(&inner, left_is_hash, depth + 1, seen, names)
+                }
+            }
+            ValueView::LazyThunk(thunk) => {
+                let cached = thunk.cache.lock().ok().and_then(|c| c.clone());
+                if let Some(v) = cached {
+                    Self::value_sync_at(&v, left_is_hash, depth + 1, seen, names)
+                }
+            }
+            _ => {}
         }
     }
 
-    /// Carry out a [`RhsSync`] decision.
-    // Cost: O(n) for `Names`, n = names; O(L) for `Full`, L = local slots.
-    pub(super) fn apply_smartmatch_sync(&mut self, code: &CompiledCode, sync: &RhsSync) {
-        match sync {
-            RhsSync::Names(names) if names.is_empty() => {}
-            RhsSync::Names(names) => self.sync_regex_interpolation_env_for_names(code, names),
-            RhsSync::Full => self.sync_regex_interpolation_env_from_locals(code),
+    /// Publish the locals `names` selected (env-key spellings).
+    // Cost: O(n), n = names.
+    pub(super) fn apply_smartmatch_sync(&mut self, code: &CompiledCode, names: &[String]) {
+        if !names.is_empty() {
+            self.sync_regex_interpolation_env_for_names(code, names);
         }
     }
 }
 
-/// Every local a regex pattern can name, as env keys, or `None` when it
-/// embeds code that looks a name up indirectly (see [`source_var_names`]).
-/// A pattern embedding code (`{ }`, `<{ }>`, `<?{ }>`, `:my`) is scanned as
-/// code: every bare identifier in it is a candidate too.
-// Cost: O(p), p = pattern length.
-pub(super) fn regex_pattern_var_names(pattern: &str) -> Option<Vec<String>> {
-    let has_code = pattern.contains('{')
+/// Whether a regex pattern embeds code (`{ }`, `<{ }>`, `<?{ }>`, `:my`),
+/// which the scan then reads as code.
+fn pattern_has_code(pattern: &str) -> bool {
+    pattern.contains('{')
         || pattern.contains(":my")
         || pattern.contains(":our")
         || pattern.contains(":let")
-        || pattern.contains(":temp");
-    source_var_names(pattern, has_code)
+        || pattern.contains(":temp")
+}
+
+/// Every local a regex pattern can name, as env keys (see
+/// [`scan_source_names`]). A pattern embedding code is scanned as code: every
+/// bare identifier in it is a candidate too.
+// Cost: O(p), p = pattern length.
+pub(super) fn regex_pattern_var_names(pattern: &str) -> Vec<String> {
+    scan_source_names(pattern, pattern_has_code(pattern)).0
 }
 
 /// Every local a substitution's replacement can name. The replacement is a
 /// `qq` quote: interpolated variables, and embedded `{ }` code.
 // Cost: O(p), p = replacement length.
-pub(super) fn subst_replacement_var_names(replacement: &str) -> Option<Vec<String>> {
-    source_var_names(replacement, replacement.contains('{'))
+pub(super) fn subst_replacement_var_names(replacement: &str) -> Vec<String> {
+    scan_source_names(replacement, replacement.contains('{')).0
+}
+
+/// Whether a regex pattern (`replacement` false) or a substitution's
+/// replacement (`replacement` true) embeds code that looks a name up
+/// *indirectly* -- an [`INDIRECT_LOOKUP_NAMES`] word, `::(...)` or `::<...>`.
+/// No scan of the text can bound what such code reads, so the chunk holding
+/// it is treated like one that calls `EVAL` directly (see
+/// `CompiledCode::scan_reflective_name_access`).
+// Cost: O(p), p = source length; O(1)-ish for text that embeds no code.
+pub(crate) fn regex_source_has_indirect_lookup(src: &str, replacement: bool) -> bool {
+    let code = if replacement {
+        src.contains('{')
+    } else {
+        pattern_has_code(src)
+    };
+    code && scan_source_names(src, true).1
 }
 
 /// Names that make embedded code look another name up *indirectly*, which no
@@ -258,16 +286,14 @@ const INDIRECT_LOOKUP_NAMES: &[&str] = &[
 /// where `$a-b` ends, not this scan), and an `<ident` / `<.ident` / `<&ident`
 /// subrule contributes `&ident`. With `code` set (the text embeds code) every
 /// bare identifier contributes both its plain spelling (a sigilless variable,
-/// `self`) and `&ident` (a lexical routine), and the scan answers `None` for
-/// an indirect lookup -- an [`INDIRECT_LOOKUP_NAMES`] word, `::(...)` or
+/// `self`) and `&ident` (a lexical routine), and the second result reports an
+/// indirect lookup -- an [`INDIRECT_LOOKUP_NAMES`] word, `::(...)` or
 /// `::<...>` -- whose target no scan can know. Publishing a name nobody
 /// reads is harmless; missing one would let a by-name reader see a stale env
 /// value.
 // Cost: O(p), p = source length.
-fn source_var_names(src: &str, code: bool) -> Option<Vec<String>> {
-    if code && (src.contains("::(") || src.contains("::<")) {
-        return None;
-    }
+fn scan_source_names(src: &str, code: bool) -> (Vec<String>, bool) {
+    let mut indirect = code && (src.contains("::(") || src.contains("::<"));
     let chars: Vec<(usize, char)> = src.char_indices().collect();
     let is_ident = |c: char| c.is_alphanumeric() || c == '_';
     let is_ident_start = |c: char| c.is_alphabetic() || c == '_';
@@ -334,7 +360,7 @@ fn source_var_names(src: &str, code: bool) -> Option<Vec<String>> {
         for end in ends {
             let ident = &src[byte_at(name_start)..byte_at(end)];
             if code && sigil.is_none() && INDIRECT_LOOKUP_NAMES.contains(&ident) {
-                return None;
+                indirect = true;
             }
             match sigil {
                 // A scalar's env key carries no sigil; a twigil stays.
@@ -351,15 +377,17 @@ fn source_var_names(src: &str, code: bool) -> Option<Vec<String>> {
         }
         i = j;
     }
-    Some(names)
+    (names, indirect)
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{regex_pattern_var_names, subst_replacement_var_names};
+    use super::{
+        regex_pattern_var_names, regex_source_has_indirect_lookup, subst_replacement_var_names,
+    };
 
     fn names(p: &str) -> Vec<String> {
-        regex_pattern_var_names(p).expect("no embedded code")
+        regex_pattern_var_names(p)
     }
 
     #[test]
@@ -410,18 +438,23 @@ mod tests {
     }
 
     #[test]
-    fn indirect_lookup_is_unbounded() {
-        assert!(regex_pattern_var_names("a { EVAL '$x' } b").is_none());
-        assert!(regex_pattern_var_names("<?{ MY::<$x> }>").is_none());
-        assert!(regex_pattern_var_names("{ ::('$x') }").is_none());
-        assert!(regex_pattern_var_names("{ callframe(0) }").is_none());
+    fn indirect_lookup_is_reported_and_spelled_names_kept() {
+        assert!(regex_source_has_indirect_lookup("a { EVAL '$x' } b", false));
+        assert!(regex_source_has_indirect_lookup("<?{ MY::<$x> }>", false));
+        assert!(regex_source_has_indirect_lookup("{ ::('$x') }", false));
+        assert!(regex_source_has_indirect_lookup("{ callframe(0) }", false));
+        assert!(regex_source_has_indirect_lookup("<{ EVAL $y }>", true));
         // Outside code the same words are literal text.
-        assert!(regex_pattern_var_names("EVAL MY").is_some());
+        assert!(!regex_source_has_indirect_lookup("EVAL MY", false));
+        assert!(!regex_source_has_indirect_lookup("$x { $y }", false));
+        // The directly spelled names are still collected.
+        let n = names("<?{ $0 eq EVAL($w) }>");
+        assert!(n.iter().any(|x| x == "w"), "{n:?}");
     }
 
     #[test]
     fn replacements_name_their_interpolations() {
-        let n = subst_replacement_var_names("<$pre$0{ $count++ }>").unwrap();
+        let n = subst_replacement_var_names("<$pre$0{ $count++ }>");
         for want in ["pre", "count"] {
             assert!(n.iter().any(|x| x == want), "missing {want} in {n:?}");
         }

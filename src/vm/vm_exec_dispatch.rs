@@ -3170,10 +3170,8 @@ impl Interpreter {
             // Cost: O(m + n + p + k) + the RHS, m = match-variable slots
             // written back, n = locals the RHS's regexes / substitutions can
             // name, p = their source length, k = elements of a container RHS
-            // value; embedded code doing an indirect lookup (`EVAL`, `::($n)`,
-            // `MY::`) or a lazy/`Proxy` RHS still publishes every local slot:
-            // O(L), L = local slots of the current frame (see
-            // exec_smart_match_expr_op). Rakudo: O(1) + the RHS -- see #9293.
+            // value. Independent of the frame's size (see
+            // exec_smart_match_expr_op).
             OpCode::SmartMatchExpr {
                 rhs_end,
                 negate,
