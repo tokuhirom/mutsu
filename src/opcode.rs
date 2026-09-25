@@ -3021,6 +3021,9 @@ pub(crate) enum OpCode {
         name_idx: u32,
         index_mode: bool,
         is_temp: bool,
+        /// Snapshot every nesting level, not only the top one: set for the
+        /// save half of a multi-level element `temp` (`Stmt::Let::nested_lvalue`).
+        deep: bool,
         /// Compiler-baked local slot for the saved variable (§1.4/§1.5): the
         /// scope-exit restore writes `locals[slot]` directly instead of resolving
         /// the name via `find_local_slot` (position = OUTER slot, wrong for a live
@@ -5759,6 +5762,10 @@ pub(crate) struct CompiledCode {
     /// of names it has to reset without scanning every local of the frame
     /// (#9170).
     pub(crate) local_slot_index: std::sync::OnceLock<LocalSlotIndex>,
+    /// Lazily-built `Label` table and `StateVarInit` positions (see
+    /// [`crate::op_scan_index`]), so `goto`, label validation and the `state`
+    /// reset at a loop statement's entry do not rescan `ops` (#9173).
+    pub(crate) op_scan_index: std::sync::OnceLock<crate::op_scan_index::OpScanIndex>,
     /// Lazily-built shared body per `stmt_pool` slot (see `closure_body_arc`).
     /// A `SubData`'s body used to be deep-cloned out of the pool on every
     /// closure creation; the `Arc` is built once per slot instead.
@@ -6253,6 +6260,7 @@ impl CompiledCode {
             local_sym_set: std::sync::OnceLock::new(),
             capture_probe_keys: std::sync::OnceLock::new(),
             local_slot_index: std::sync::OnceLock::new(),
+            op_scan_index: std::sync::OnceLock::new(),
             stmt_pool_bodies: std::sync::OnceLock::new(),
             stmt_pool_signatures: std::sync::OnceLock::new(),
             #[cfg(feature = "jit")]

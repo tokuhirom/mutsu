@@ -1220,6 +1220,7 @@ impl Compiler {
                         index: None,
                         value: None,
                         undefine_first: false,
+                        nested_lvalue: false,
                         ..
                     } => Some(vname.clone()),
                     _ => None,
@@ -1246,6 +1247,7 @@ impl Compiler {
                         value: None,
                         is_temp: true,
                         undefine_first: false,
+                        nested_lvalue: false,
                     };
                     self.compile_stmt(&let_stmt);
                     // Then undefine the variable (assign Any type object)

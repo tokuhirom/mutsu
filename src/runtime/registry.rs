@@ -1001,43 +1001,67 @@ impl Registry {
             }
         }
         seqs.push(parents.clone());
-        let mut result = vec![class_name.to_string()];
-        while seqs.iter().any(|s| !s.is_empty()) {
-            let mut candidate = None;
-            for seq in &seqs {
-                if seq.is_empty() {
+        let merged = Self::c3_merge(class_name, seqs);
+        stack.pop();
+        merged
+    }
+
+    /// The C3 merge of `seqs` (each parent's linearization, then the parent
+    /// list itself), headed by `class_name`.
+    ///
+    /// Each sequence is consumed through a cursor rather than `remove(0)`, and
+    /// "is this head in some sequence's tail" is a counter lookup: `in_tail[x]`
+    /// counts the sequences holding `x` past their cursor, decremented as a
+    /// cursor advances onto `x`. So a class whose parent linearizations total
+    /// `n` names merges in O(n * k) (k = sequences, i.e. parents + 1), not the
+    /// O(n^2) of rescanning every tail per head -- which, with no memoized
+    /// ancestor MRO, made a chain of d classes cubic to declare (#9173).
+    // Cost: O(n * k), n = total names across `seqs`, k = `seqs.len()`.
+    fn c3_merge(class_name: &str, seqs: Vec<Vec<String>>) -> Result<Vec<String>, RuntimeError> {
+        let mut in_tail: HashMap<&str, usize> = HashMap::default();
+        for seq in &seqs {
+            for name in seq.iter().skip(1) {
+                *in_tail.entry(name.as_str()).or_insert(0) += 1;
+            }
+        }
+        let mut cursors = vec![0usize; seqs.len()];
+        let total: usize = seqs.iter().map(Vec::len).sum();
+        let mut result = Vec::with_capacity(total + 1);
+        result.push(class_name.to_string());
+        loop {
+            let mut candidate: Option<&str> = None;
+            let mut any_left = false;
+            for (seq, &pos) in seqs.iter().zip(&cursors) {
+                let Some(head) = seq.get(pos) else {
                     continue;
-                }
-                let head = &seq[0];
-                let mut in_tail = false;
-                for other in &seqs {
-                    if other.len() > 1 && other[1..].contains(head) {
-                        in_tail = true;
-                        break;
-                    }
-                }
-                if !in_tail {
-                    candidate = Some(head.clone());
+                };
+                any_left = true;
+                if in_tail.get(head.as_str()).copied().unwrap_or(0) == 0 {
+                    candidate = Some(head.as_str());
                     break;
                 }
             }
-            if let Some(head) = candidate {
-                result.push(head.clone());
-                for seq in seqs.iter_mut() {
-                    if !seq.is_empty() && seq[0] == head {
-                        seq.remove(0);
-                    }
-                }
-            } else {
-                stack.pop();
+            if !any_left {
+                return Ok(result);
+            }
+            let Some(head) = candidate else {
                 return Err(RuntimeError::new(format!(
                     "Inconsistent class hierarchy for {}",
                     class_name
                 )));
+            };
+            result.push(head.to_string());
+            for (seq, pos) in seqs.iter().zip(cursors.iter_mut()) {
+                if seq.get(*pos).is_some_and(|h| h == head) {
+                    *pos += 1;
+                    if let Some(next) = seq.get(*pos)
+                        && let Some(c) = in_tail.get_mut(next.as_str())
+                    {
+                        *c -= 1;
+                    }
+                }
             }
         }
-        stack.pop();
-        Ok(result)
     }
 
     /// [`Self::builtin_mro_table`]'s chain as `Symbol`s, interned once per

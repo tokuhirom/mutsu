@@ -263,9 +263,28 @@ impl Interpreter {
         self.registry_mut()
             .sync_accessor_entries(crate::symbol::Symbol::intern(name));
         let mut stack = Vec::new();
-        if let Err(err) = self.compute_class_mro(name, &mut stack) {
-            snapshot.restore(self, name);
-            return Err(err);
+        match self.compute_class_mro(name, &mut stack) {
+            Err(err) => {
+                snapshot.restore(self, name);
+                return Err(err);
+            }
+            // Memoize the linearization this validation just computed, so a
+            // subclass declared next reads it instead of re-walking the whole
+            // ancestor chain -- without it a chain of d classes cost O(d^3) to
+            // declare (#9173). A `__hoisted` shell is skipped: the real
+            // declaration re-registers it and computes its own.
+            Ok(mro) if !is_hoisted_shell => {
+                let mro: std::sync::Arc<[crate::symbol::Symbol]> = mro
+                    .iter()
+                    .map(|s| crate::symbol::Symbol::intern(s))
+                    .collect();
+                if let Some(class_def) = self.registry_mut().classes.get_mut(name)
+                    && class_def.mro.is_empty()
+                {
+                    class_def.mro = mro;
+                }
+            }
+            Ok(_) => {}
         }
         // Validate that all self!method() calls reference existing private
         // methods. Skip this for a `__hoisted` forward-reference shell

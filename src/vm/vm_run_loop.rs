@@ -111,21 +111,16 @@ impl Interpreter {
         RuntimeError::typed("X::Comp::BeginTime", attrs)
     }
 
-    // Cost: O(p), p = ops of the chunk, on every `run_inner`/`run_reuse` entry.
+    // Cost: O(1) amortized, on every `run_inner`/`run_reuse` entry (the label
+    // table is built once per chunk -- `CompiledCode::duplicate_label`).
     fn validate_labels(code: &CompiledCode) -> Result<(), RuntimeError> {
-        let mut seen: HashSet<String> = HashSet::new();
-        for op in &code.ops {
-            if let OpCode::Label(name_idx) = op {
-                let label_name = Self::const_str(code, *name_idx);
-                if !seen.insert(label_name.to_string()) {
-                    return Err(RuntimeError::new(format!(
-                        "X::Redeclaration: Label '{}' already declared",
-                        label_name
-                    )));
-                }
-            }
+        match code.duplicate_label() {
+            Some(label_name) => Err(RuntimeError::new(format!(
+                "X::Redeclaration: Label '{}' already declared",
+                label_name
+            ))),
+            None => Ok(()),
         }
-        Ok(())
     }
 
     /// Run the compiled bytecode. Always returns the interpreter back
@@ -205,8 +200,8 @@ impl Interpreter {
     /// The exec loop, borrowing `&mut self` so the `catch_unwind` closure in
     /// `run` does not move `self.interpreter` out (the caller must always get the
     /// interpreter back, even on panic).
-    // Cost: O(p + L) entry (label validation, env->locals seeding, L = frame locals) and
-    // exit (state/env sync), then O(1) per dispatched op: one cached `vm_poll::armed()`
+    // Cost: O(L) entry (env->locals seeding, L = the chunk's own locals; label
+    // validation is O(1) amortized) and exit (state/env sync), then O(1) per dispatched op: one cached `vm_poll::armed()`
     // load (a GC safepoint / profiler sample amortized O(1)) plus `exec_one`.
     fn run_inner(
         &mut self,
@@ -570,8 +565,9 @@ impl Interpreter {
 
     /// Run compiled bytecode without consuming self.
     /// Used by map/grep to avoid Interpreter creation/destruction per iteration.
-    // Cost: O(p + L) per call, p = ops of the body (label validation), L = its locals
-    // (seeded from env by name) -- paid per map/grep iteration -- then O(1) per op.
+    // Cost: O(L) per call, L = the body's OWN locals (seeded from env by name, as
+    // MoarVM initializes a frame's registers) -- independent of the enclosing frame's
+    // size; label validation is O(1) amortized -- then O(1) per op.
     pub(crate) fn run_reuse(
         &mut self,
         code: &CompiledCode,
@@ -743,25 +739,6 @@ impl Interpreter {
         }
     }
 
-    /// Whether the state variable `(slot, key)` has its `StateVarInit` opcode
-    /// within [start..end). Matches both slot and key symbol to avoid false
-    /// matches when multiple state variables share the same local slot.
-    fn state_local_init_in_range(
-        code: &CompiledCode,
-        slot: usize,
-        key: Symbol,
-        start: usize,
-        end: usize,
-    ) -> bool {
-        code.ops[start..end].iter().any(|op| {
-            if let OpCode::StateVarInit(s, k) = op {
-                *s as usize == slot && Symbol::from_id(*k) == key
-            } else {
-                false
-            }
-        })
-    }
-
     /// Sync only state variables whose `StateVarInit` opcode falls within
     /// the given instruction range [start..end). This avoids prematurely
     /// syncing state variables that haven't been initialized yet.
@@ -771,8 +748,8 @@ impl Interpreter {
         start: usize,
         end: usize,
     ) {
-        for (slot, key) in &code.state_locals {
-            if !Self::state_local_init_in_range(code, *slot, *key, start, end) {
+        for (i, (slot, key)) in code.state_locals.iter().enumerate() {
+            if !code.state_local_init_in_range(i, start, end) {
                 continue;
             }
             let local_name = &code.locals[*slot];
@@ -814,16 +791,16 @@ impl Interpreter {
     /// share state (the loop re-invokes the same clone), which is why this
     /// runs at statement entry, not per iteration. Callers must skip this when
     /// resuming a suspended gather coroutine into the same loop opcode.
-    // Cost: O(t * b), t = state locals of the chunk, b = ops in [start, end) (one
-    // `state_local_init_in_range` scan per state local). Rakudo: O(t) -- see #9173.
+    // Cost: O(t), t = state locals of the chunk (each init-in-range test is a
+    // lookup in the chunk's `StateVarInit` index -- `crate::op_scan_index`).
     pub(crate) fn reset_state_locals_in_range(
         &mut self,
         code: &CompiledCode,
         start: usize,
         end: usize,
     ) {
-        for (slot, key) in &code.state_locals {
-            if !Self::state_local_init_in_range(code, *slot, *key, start, end) {
+        for (i, (_, key)) in code.state_locals.iter().enumerate() {
+            if !code.state_local_init_in_range(i, start, end) {
                 continue;
             }
             let scoped_key = self.scoped_state_key(*key);
@@ -1071,15 +1048,9 @@ impl Interpreter {
         }
     }
 
-    // Cost: O(p), p = ops of the chunk (linear `Label` search per goto).
+    // Cost: O(1) amortized (the chunk's label table -- `crate::op_scan_index`).
     pub(crate) fn find_label_target(&self, code: &CompiledCode, label: &str) -> Option<usize> {
-        code.ops.iter().enumerate().find_map(|(i, op)| match op {
-            OpCode::Label(name_idx) => {
-                let name = Self::const_str(code, *name_idx);
-                if name == label { Some(i + 1) } else { None }
-            }
-            _ => None,
-        })
+        code.label_target(label)
     }
 
     /// Itemize a value read from a `$` scalar container so it behaves as a

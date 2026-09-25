@@ -246,6 +246,7 @@ impl Compiler {
             name_idx,
             index_mode: false,
             is_temp: true,
+            deep: false,
             slot,
         });
     }

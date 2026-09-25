@@ -43,6 +43,7 @@ fn let_compound_assign_stmt<'a>(
                     value: None,
                     is_temp,
                     undefine_first: false,
+                    nested_lvalue: false,
                 },
                 Stmt::Expr(assign_expr),
             ]),
@@ -103,6 +104,7 @@ pub(crate) fn let_stmt(input: &str) -> PResult<'_, Stmt> {
                     value: Some(Box::new(val_expr)),
                     is_temp: false,
                     undefine_first: false,
+                    nested_lvalue: false,
                 },
             );
         }
@@ -114,6 +116,7 @@ pub(crate) fn let_stmt(input: &str) -> PResult<'_, Stmt> {
                 value: None,
                 is_temp: false,
                 undefine_first: false,
+                nested_lvalue: false,
             },
         );
     }
@@ -138,6 +141,7 @@ pub(crate) fn let_stmt(input: &str) -> PResult<'_, Stmt> {
                     value: Some(Box::new(val_expr)),
                     is_temp: false,
                     undefine_first: false,
+                    nested_lvalue: false,
                 },
             );
         }
@@ -149,6 +153,7 @@ pub(crate) fn let_stmt(input: &str) -> PResult<'_, Stmt> {
                 value: None,
                 is_temp: false,
                 undefine_first: false,
+                nested_lvalue: false,
             },
         );
     }
@@ -170,6 +175,7 @@ pub(crate) fn let_stmt(input: &str) -> PResult<'_, Stmt> {
                 value: Some(Box::new(val_expr)),
                 is_temp: false,
                 undefine_first: false,
+                nested_lvalue: false,
             },
         );
     }
@@ -183,6 +189,7 @@ pub(crate) fn let_stmt(input: &str) -> PResult<'_, Stmt> {
             value: None,
             is_temp: false,
             undefine_first: false,
+            nested_lvalue: false,
         },
     )
 }
@@ -254,6 +261,7 @@ pub(crate) fn temp_stmt(input: &str) -> PResult<'_, Stmt> {
                 value: None,
                 is_temp: true,
                 undefine_first: false,
+                nested_lvalue: true,
             };
             return parse_statement_modifier(
                 expr_rest,
@@ -342,6 +350,7 @@ pub(crate) fn temp_stmt(input: &str) -> PResult<'_, Stmt> {
                     value: Some(Box::new(rhs_expr)),
                     is_temp: true,
                     undefine_first: true,
+                    nested_lvalue: false,
                 },
             );
         }
@@ -393,6 +402,7 @@ pub(crate) fn temp_stmt(input: &str) -> PResult<'_, Stmt> {
                     value: Some(Box::new(val_expr)),
                     is_temp: true,
                     undefine_first: false,
+                    nested_lvalue: false,
                 },
             );
         }
@@ -405,6 +415,7 @@ pub(crate) fn temp_stmt(input: &str) -> PResult<'_, Stmt> {
                 value: None,
                 is_temp: true,
                 undefine_first: false,
+                nested_lvalue: false,
             },
         );
     }
@@ -459,6 +470,7 @@ pub(crate) fn temp_stmt(input: &str) -> PResult<'_, Stmt> {
                     value: Some(Box::new(val_expr)),
                     is_temp: true,
                     undefine_first: false,
+                    nested_lvalue: false,
                 },
             );
         }
@@ -470,6 +482,7 @@ pub(crate) fn temp_stmt(input: &str) -> PResult<'_, Stmt> {
                 value: None,
                 is_temp: true,
                 undefine_first: false,
+                nested_lvalue: false,
             },
         );
     }
@@ -494,6 +507,7 @@ pub(crate) fn temp_stmt(input: &str) -> PResult<'_, Stmt> {
                     value: Some(Box::new(val_expr)),
                     is_temp: true,
                     undefine_first: false,
+                    nested_lvalue: false,
                 },
             );
         }
@@ -505,6 +519,7 @@ pub(crate) fn temp_stmt(input: &str) -> PResult<'_, Stmt> {
                 value: None,
                 is_temp: true,
                 undefine_first: false,
+                nested_lvalue: false,
             },
         );
     }
@@ -526,6 +541,7 @@ pub(crate) fn temp_stmt(input: &str) -> PResult<'_, Stmt> {
                 value: Some(Box::new(val_expr)),
                 is_temp: true,
                 undefine_first: false,
+                nested_lvalue: false,
             },
         );
     }
@@ -538,6 +554,7 @@ pub(crate) fn temp_stmt(input: &str) -> PResult<'_, Stmt> {
             value: None,
             is_temp: true,
             undefine_first: false,
+            nested_lvalue: false,
         },
     )
 }
