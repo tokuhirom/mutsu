@@ -7,7 +7,7 @@ use Test;
 # where the loop is sunk (a statement, a block's tail), but where its value is
 # used rakudo yields a lazy Seq of the body values (#9415).
 
-plan 21;
+plan 23;
 
 {
     my $i = 0;
@@ -49,6 +49,14 @@ plan 21;
     my $q = 0;
     is nqp::stmts(nqp::while(nqp::islt_i($q, 3), $q++), 5), 5, 'a non-final nqp::stmts operand is sunk';
     is $q, 3, '... and runs eagerly';
+    my $w = 0;
+    nqp::if(1, nqp::stmts(1, nqp::while(nqp::islt_i($w, 3), $w++)));
+    is $w, 3, 'the last nqp::stmts operand is sunk too (a void loop in rakudo)';
+    sub loop-return() {
+        my $i = 0;
+        nqp::if(0, 5, nqp::stmts(nqp::while(1, nqp::if(nqp::isge_i($i, 3), (return 42), $i++))))
+    }
+    is loop-return(), 42, 'a return inside a loop that ends an nqp::stmts leaves the routine';
     my $o = 0;
     my $inner;
     nqp::while(nqp::islt_i($o, 2),

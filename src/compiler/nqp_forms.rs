@@ -62,9 +62,9 @@ impl Compiler {
     /// dispatched in `runtime/nqp_ops.rs`).
     pub(super) fn try_compile_nqp_form(&mut self, name: &str, args: &[Expr]) -> bool {
         // Whether this form's value is discarded: it is a statement root (or a
-        // block's tail), or a sunk operand of an enclosing sunk form. Only the
-        // loop forms' lowering depends on it; `stmts`/`if` pass it through to
-        // their operands. See `Compiler::expr_depth`.
+        // block's tail), or a sunk operand of an enclosing form. Only the loop
+        // forms' lowering depends on it; `nqp::if` passes it on to its
+        // branches. See `Compiler::expr_depth`.
         let sunk = self.expr_depth <= 1;
         match name {
             // nqp::stmts(a, b, ..., z) — evaluate in order, yield the last.
@@ -75,12 +75,15 @@ impl Compiler {
                     self.code.emit(OpCode::LoadConst(nil_idx));
                     return true;
                 }
+                // Every operand is in sink position as far as a loop form is
+                // concerned, the last one included: rakudo compiles a loop
+                // there as a void loop (`nqp::stmts(nqp::while(...))` runs
+                // eagerly and yields null), which JSON::Fast relies on to
+                // `return` from inside the loop of its parse-obj.
                 for (i, arg) in args.iter().enumerate() {
+                    self.compile_nqp_operand(arg, true);
                     if i + 1 < args.len() {
-                        self.compile_nqp_operand(arg, true);
                         self.code.emit(OpCode::Pop);
-                    } else {
-                        self.compile_nqp_operand(arg, sunk);
                     }
                 }
                 true
@@ -137,7 +140,7 @@ impl Compiler {
                 self.compile_try_with_catch_value(&body, &catch);
                 true
             }
-            // The four loop forms. Sunk (a statement, a block's tail, a sunk
+            // The four loop forms. Sunk (a statement, a block's tail, an
             // `nqp::stmts` operand, the body of a sunk loop), each is a plain
             // jump loop that discards the body values and yields Nil -- the
             // hot path of nqp-style ecosystem code. Anywhere else the loop's

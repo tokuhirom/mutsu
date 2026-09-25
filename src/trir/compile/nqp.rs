@@ -20,7 +20,7 @@ impl TrirCompiler<'_> {
         for a in &args[..args.len() - 1] {
             self.compile_expr_sink(a)?;
         }
-        self.compile_expr(&args[args.len() - 1])
+        self.compile_expr_tail(&args[args.len() - 1])
     }
 
     /// A sunk `nqp::while` / `nqp::until`: the loop leaves nothing. In value
@@ -92,24 +92,15 @@ impl TrirCompiler<'_> {
         })
     }
 
-    /// Compile a body's tail expression. A tail loop form (also the last
-    /// operand of a tail `nqp::stmts`) yields Nil in rakudo, like a statement,
-    /// so it is compiled sunk, as the bytecode compiler's `with_stmt_root` does.
+    /// Compile an expression whose loop form, if it is one, yields Nil: a
+    /// body's tail, or an `nqp::stmts` operand (a void loop in rakudo). The
+    /// bytecode compiler's `with_stmt_root` draws the same line.
     pub(super) fn compile_expr_tail(&mut self, e: &Expr) -> Option<TrKind> {
         if let Some(done) = self.compile_nqp_loop_sink(e) {
             done?;
             let idx = self.add_const(Value::NIL);
             self.ops.push(TrOp::ConstObj(idx));
             return Some(TrKind::Obj);
-        }
-        if let Expr::Call { name, args } = e
-            && let Some((last, init)) = args.split_last()
-            && name.resolve() == "nqp::stmts"
-        {
-            for a in init {
-                self.compile_expr_sink(a)?;
-            }
-            return self.compile_expr_tail(last);
         }
         self.compile_expr(e)
     }
