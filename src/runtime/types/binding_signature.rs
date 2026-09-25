@@ -773,11 +773,28 @@ impl Interpreter {
                 // A subset failure is a *constraint* failure in raku:
                 // "Constraint type check failed in binding to
                 // parameter '$x'; expected Even but got Int (3)".
+                // It is only a constraint failure when the value already is
+                // of the subset's refinee type and the `where` rejected it;
+                // a value of another type (`"a"` for `subset P of Int`) is a
+                // plain type-check failure, reported by the generic path
+                // below. The expected type is named without its smiley
+                // (`P:D` reads `expected P`), as in rakudo. `UInt` is core's
+                // own `subset UInt of Int where * >= 0`.
                 let base = resolved_constraint
                     .split(':')
                     .next()
                     .unwrap_or(&resolved_constraint);
-                if self.registry().subsets.contains_key(base) {
+                let refinee = if base == "UInt" {
+                    Some("Int".to_string())
+                } else {
+                    self.registry()
+                        .subsets
+                        .get(base)
+                        .map(|def| def.base.clone())
+                };
+                if let Some(refinee) = refinee
+                    && self.type_matches_value(&refinee, &value)
+                {
                     let param_display = param_display_name(pd);
                     return Err(RuntimeError::typecheck_binding_parameter(
                         &display_name,
@@ -786,7 +803,7 @@ impl Interpreter {
                         Some(format!(
                             "Constraint type check failed in binding to parameter '{}'; expected {} but got {} ({})",
                             param_display,
-                            resolved_constraint,
+                            base,
                             got,
                             crate::runtime::utils::gist_value(&value)
                         )),
