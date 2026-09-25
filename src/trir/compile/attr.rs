@@ -62,7 +62,7 @@ impl TrirCompiler<'_> {
         Some(Some(TrKind::Obj))
     }
 
-    /// Whether `name` in operand position compiles to a plain `LoadBareWord`
+    /// Whether `name` in operand position compiles to a plain bareword `ClassOperand`
     /// (see the `BareWord` arm of `compile_expr`): not a no-paren `nqp::`
     /// term, a sigilless parameter or an inlined inner sub.
     fn plain_bareword(&self, name: &str) -> bool {

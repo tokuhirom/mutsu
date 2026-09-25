@@ -149,12 +149,6 @@ pub(crate) enum TrOp {
     /// Push the cached value of pre-resolved outer lexical `n`
     /// ([`TrChunk::outers`](super::TrChunk::outers)).
     LoadOuter(u16),
-    /// Push the value a BAREWORD names — a type object (`Map`, `NFD`), a
-    /// constant, a package. Resolved by name through the ordinary machinery:
-    /// these appear as arguments to `nqp::getattr`/`istype`/`create`, which
-    /// is a cold-ish position, and resolving one is not what the untyped
-    /// path's per-opcode cost was.
-    LoadBareWord(u32),
     /// Push the value of a dynamic variable (`$*ALLOW-JSONC`), or `Nil`.
     LoadDynamic(u32),
 
@@ -267,10 +261,12 @@ pub(crate) enum TrOp {
             crate::runtime::nqp_attr::NqpAttrConv,
         )>,
     ),
-    /// Push the value of the bareword class operand of an attribute op
-    /// (`IB` in `nqp::getattr($o, IB, '$!a')`), resolved as `LoadBareWord`
-    /// resolves it but remembered per registry write generation — see
-    /// [`ClassOperandSite`](super::class_operand::ClassOperandSite).
+    /// Push the value a BAREWORD names — a type object (`Map`, `IB`), a
+    /// constant, a package — resolved by name through the ordinary term
+    /// resolution, with a type-object answer remembered per registry write
+    /// generation (see
+    /// [`ClassOperandSite`](super::class_operand::ClassOperandSite)). These
+    /// appear as operands of `nqp::getattr`/`istype`/`create`.
     ClassOperand(Box<super::class_operand::ClassOperandSite>),
     /// `nqp::bindattr` / `bindattr_{i,n,s}` whose name operand is a literal:
     /// pop the value, the class operand and the object, bind, and push the

@@ -82,8 +82,11 @@ impl TrirCompiler<'_> {
                 if self.inline_subs.contains_key(name.as_str()) {
                     return self.compile_inline_call(name, &[]);
                 }
-                let idx = self.add_const(Value::str(name.clone()));
-                self.ops.push(TrOp::LoadBareWord(idx));
+                self.ops.push(TrOp::ClassOperand(Box::new(
+                    crate::trir::class_operand::ClassOperandSite::term(
+                        crate::symbol::Symbol::intern(name),
+                    ),
+                )));
                 Some(TrKind::Obj)
             }
             Expr::Var(name) => self.compile_var(name),
