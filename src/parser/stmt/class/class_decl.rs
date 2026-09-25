@@ -140,6 +140,23 @@ fn extract_export_tag_names(inner: &str) -> Vec<String> {
     tags
 }
 
+/// Record the tags of one `is export` trait whose argument list (if any)
+/// starts at `after_export`: each `:TAG` of `is export(:TAG, ...)`, or
+/// `DEFAULT` for a bare `is export`. Shared by class and role declarations.
+pub(crate) fn push_export_tags(after_export: &str, export_tags: &mut Vec<String>) {
+    if let Some(inner) = after_export.strip_prefix('(') {
+        let end = inner.find(')').unwrap_or(inner.len());
+        for tag in extract_export_tag_names(&inner[..end]) {
+            if !export_tags.contains(&tag) {
+                export_tags.push(tag);
+            }
+        }
+    }
+    if export_tags.is_empty() {
+        export_tags.push("DEFAULT".to_string());
+    }
+}
+
 /// Emit a runtime call that records a `is export`-ed type (class/grammar) so a
 /// later `use`/`import` of the enclosing module can import it by its bare name.
 pub(crate) fn export_type_stmt(type_name: &str, tags: &[String]) -> Stmt {
@@ -482,17 +499,7 @@ pub(crate) fn class_decl_body(input: &str, is_lexical: bool) -> PResult<'_, Stmt
                 // class as importable. A bare `is export` uses the DEFAULT tag
                 // (also imported under `:ALL`); tagged forms capture each `:TAG`.
                 is_export = true;
-                if let Some(inner) = r2.strip_prefix('(') {
-                    let end = inner.find(')').unwrap_or(inner.len());
-                    for tag in extract_export_tag_names(&inner[..end]) {
-                        if !export_tags.contains(&tag) {
-                            export_tags.push(tag);
-                        }
-                    }
-                }
-                if export_tags.is_empty() && !export_tags.iter().any(|t| t == "DEFAULT") {
-                    export_tags.push("DEFAULT".to_string());
-                }
+                push_export_tags(r2, &mut export_tags);
                 let r2 = skip_balanced_parens(r2);
                 let (r2, _) = ws(r2)?;
                 r = r2;
