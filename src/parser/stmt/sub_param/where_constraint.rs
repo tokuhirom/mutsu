@@ -28,6 +28,19 @@ pub(crate) fn parse_where_constraint_expr(input: &str) -> PResult<'_, Expr> {
     crate::parser::expr::expression_no_assign(input)
 }
 
+/// An optional `where` clause after a sigilless parameter name (`\N where
+/// * > 0`, `+bar where all-items ...`), with the whitespace after it. Returns
+/// the input unchanged and `None` when no `where` follows.
+pub(crate) fn parse_optional_where(input: &str) -> PResult<'_, Option<Box<Expr>>> {
+    let Some(r) = crate::parser::stmt::keyword("where", input) else {
+        return Ok((input, None));
+    };
+    let (r, _) = crate::parser::helpers::ws1(r)?;
+    let (r, constraint) = parse_where_constraint_expr(r)?;
+    let (r, _) = ws(r)?;
+    Ok((r, Some(Box::new(constraint))))
+}
+
 pub(crate) fn malformed_double_closure_error() -> PError {
     let msg = "Malformed double closure; WhateverCode is already a closure without curlies, so either remove the curlies or use valid parameter syntax instead of *".to_string();
     let mut attrs = HashMap::new();

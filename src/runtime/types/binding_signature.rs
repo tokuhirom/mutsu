@@ -33,7 +33,8 @@ fn param_display_name(pd: &crate::ast::ParamDef) -> String {
     if pd.name.is_empty() || crate::value::signature::is_anonymous_param_name(&pd.name) {
         return "<anon>".to_string();
     }
-    if pd.name.starts_with(['$', '@', '%', '&']) {
+    // A sigilless parameter (`\x`, `+x`) is named bare, as rakudo does.
+    if pd.name.starts_with(['$', '@', '%', '&']) || pd.sigilless {
         pd.name.clone()
     } else {
         format!("${}", pd.name)
@@ -1639,6 +1640,7 @@ impl Interpreter {
                             self.bind_param_type_constraint(&key, pd.assignment_type_constraint());
                         }
                     }
+                    self.check_where_constraint_against_value(pd, &lazy_value)?;
                     if let Some(sub_params) = &pd.sub_signature {
                         bind_sub_signature_from_value(self, sub_params, &lazy_value)?;
                     }
@@ -1758,6 +1760,9 @@ impl Interpreter {
                     self.bind_param_value(&key, slurpy_value.clone());
                     self.bind_param_type_constraint(&key, pd.assignment_type_constraint());
                 }
+                // `+@a where ...` / `+a where ...` (WhereList): the constraint
+                // sees the collected list, as for a `*@a` slurpy.
+                self.check_where_constraint_against_value(pd, &slurpy_value)?;
                 if let Some(sub_params) = &pd.sub_signature {
                     bind_sub_signature_from_value(self, sub_params, &slurpy_value)?;
                 }

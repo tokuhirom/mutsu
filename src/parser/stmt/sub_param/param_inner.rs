@@ -229,6 +229,9 @@ fn parse_single_param_inner(input: &str) -> PResult<'_, ParamDef> {
                 let (rt, _) = ws(rt)?;
                 r = rt;
             }
+            // `+bar where all-items ...` (WhereList): a `where` constraint
+            // may follow, exactly as on a `\bar` parameter.
+            let (r, where_constraint) = super::where_constraint::parse_optional_where(r)?;
             // Default value
             let (r, default) = if r.starts_with('=') && !r.starts_with("==") {
                 let r = &r[1..];
@@ -239,6 +242,7 @@ fn parse_single_param_inner(input: &str) -> PResult<'_, ParamDef> {
                 (r, None)
             };
             let mut p = super::helpers::make_param(name);
+            p.where_constraint = where_constraint;
             p.slurpy = true;
             p.onearg = true;
             p.sigilless = true;
@@ -781,14 +785,7 @@ fn parse_single_param_inner(input: &str) -> PResult<'_, ParamDef> {
         }
         // A `where` constraint may follow a sigilless parameter, before the
         // default value: `\N where * > 0`, `\N where BIG`.
-        let (r, sigilless_where) = if let Some(r2) = super::super::keyword("where", r) {
-            let (r2, _) = ws1(r2)?;
-            let (r2, constraint) = super::where_constraint::parse_where_constraint_expr(r2)?;
-            let (r2, _) = ws(r2)?;
-            (r2, Some(Box::new(constraint)))
-        } else {
-            (r, None)
-        };
+        let (r, sigilless_where) = super::where_constraint::parse_optional_where(r)?;
         // Default value
         let (r, default) = if r.starts_with('=') && !r.starts_with("==") {
             let r = &r[1..];
