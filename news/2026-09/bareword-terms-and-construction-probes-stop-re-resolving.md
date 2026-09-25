@@ -59,4 +59,4 @@ The rest of `.new` is not attribute storage:
 - the generic method-call preamble, about 13,500 Ir;
 - the mainline loop's own `SetLocal` / `$i++` through the shared-var store.
 
-Tests: `t/vm/trir-bareword-term-memo.t`, `t/oo/construction-probe-memos.t`.
+Tests: `t/vm/nqp-bareword-type-operand-memo.t`, `t/oo/construct/construction-probe-memos.t`.
