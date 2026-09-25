@@ -139,7 +139,7 @@ mod vm_frame_lexical;
 mod vm_lexsub_aliases;
 use vm_frame_lexical::FrameLexicalCallSite;
 pub(crate) use vm_frame_lexical::{FrameLexicalClosureBodies, FrameLexicalTarget};
-pub(crate) use vm_helpers_lazy_adaptor::is_unbounded_operand;
+pub(crate) use vm_helpers_lazy_adaptor::{is_infinite_operand, is_unbounded_operand};
 pub(crate) use vm_lexsub_aliases::LexSubAliasTable;
 mod vm_call_light_typed;
 mod vm_call_method_compiled;

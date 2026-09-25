@@ -56,7 +56,7 @@ impl Interpreter {
         // An unbounded list (infinite Range, lazy list) makes the product
         // infinite: stream it through a lazy `PipeAdaptor::Cross` stage
         // instead of materializing the operand (#9159).
-        if args.iter().any(crate::vm::is_unbounded_operand) {
+        if args.iter().any(crate::vm::is_infinite_operand) {
             let mut columns = Vec::new();
             for arg in &args {
                 match arg.view() {

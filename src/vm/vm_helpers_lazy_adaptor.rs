@@ -1,6 +1,6 @@
 //! Stateful lazy list adaptors (#9159).
 //!
-//! A [`PipeAdaptor`] rides a lazy `map`/`grep` pipe stage ([`MapGrepSpec`])
+//! A [`PipeAdaptor`] rides a lazy `map`/`grep` pipe stage ([`crate::value::MapGrepSpec`])
 //! and turns one list method or list operator into a pull-driven iterator:
 //! every step pulls only what it needs from its source(s) and emits zero or
 //! more elements into the pipe's cache. The same code serves a finite reified
@@ -45,6 +45,17 @@ pub(crate) fn is_unbounded_operand(v: &Value) -> bool {
             f.is_infinite() && f.is_sign_positive()
         }
         _ => extended_list(v).is_some() || lazy_segments(v).is_some(),
+    }
+}
+
+/// Whether `v` is an operand a cross product cannot finish: an infinite Range
+/// or a genuinely lazy list. A finite lazy list (a gather, a closure sequence
+/// with an endpoint) is reified instead.
+pub(crate) fn is_infinite_operand(v: &Value) -> bool {
+    match v.view() {
+        ValueView::LazyList(ll) => ll.is_genuinely_lazy(),
+        ValueView::Array(..) | ValueView::Seq(_) => lazy_segments(v).is_some(),
+        _ => is_unbounded_operand(v),
     }
 }
 
@@ -122,6 +133,16 @@ impl Interpreter {
             out.push(row);
         }
         Ok(out)
+    }
+
+    /// The elements of a finite cross-product operand (a finite lazy list is
+    /// reified).
+    // Cost: O(e), e = elements of the operand.
+    pub(crate) fn cross_operand_list(&mut self, v: &Value) -> Result<Vec<Value>, RuntimeError> {
+        match v.view() {
+            ValueView::LazyList(ll) => self.force_lazy_list_vm(&ll),
+            _ => Ok(crate::runtime::value_to_list(v)),
+        }
     }
 
     /// The elements of a finite zip operand. `Nil` in zip context is a

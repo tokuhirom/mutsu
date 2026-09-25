@@ -3,7 +3,7 @@
 //! lazy invocant into a stage. The pull side lives in
 //! `vm_helpers_lazy_adaptor.rs`.
 
-use super::vm_helpers_lazy_adaptor::{is_unbounded_operand, pull_operand_of};
+use super::vm_helpers_lazy_adaptor::{is_infinite_operand, is_unbounded_operand, pull_operand_of};
 use super::*;
 use crate::value::{
     DistinctMode, DistinctState, IndexTransform, PipeAdaptor, PullOperand, RowCombine,
@@ -27,10 +27,10 @@ impl Interpreter {
         ))
     }
 
-    /// A lazy `X`/`cross` over `columns` when any column is unbounded.
+    /// A lazy `X`/`cross` over `columns` when any column is infinite.
     // Cost: O(n), n = columns.
     pub(crate) fn lazy_cross_pipe(columns: &[Value], combine: RowCombine) -> Option<Value> {
-        if columns.is_empty() || !columns.iter().any(is_unbounded_operand) {
+        if columns.is_empty() || !columns.iter().any(is_infinite_operand) {
             return None;
         }
         let operands: Vec<PullOperand> = columns.iter().map(pull_operand_of).collect();

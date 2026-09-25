@@ -682,6 +682,19 @@ impl Interpreter {
             .any(|arg| matches!(arg.view(), ValueView::LazyList(_)));
         for arg in args {
             match arg.view() {
+                // A lazy (possibly infinite) spec stream (`|(2, 3) xx *`) is
+                // pulled only as far as the invocant can use: every
+                // skip/produce pair covers at least one element unless both
+                // counts are zero, so twice the element count (plus the
+                // implicit leading zero) is enough.
+                ValueView::LazyList(ll) if ll.is_genuinely_lazy() => {
+                    for i in 0..items.len().saturating_mul(2).saturating_add(2) {
+                        match self.pull_source_element(&arg, i)? {
+                            Some(v) => specs.push(v),
+                            None => break,
+                        }
+                    }
+                }
                 ValueView::Seq(_) | ValueView::LazyList(_) | ValueView::Slip(_) => {
                     specs.extend(crate::runtime::utils::value_to_list(&arg));
                 }

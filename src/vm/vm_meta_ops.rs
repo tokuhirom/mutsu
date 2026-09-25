@@ -34,7 +34,7 @@ impl Interpreter {
         let right = self.stack.pop().unwrap_or(Value::NIL);
         let left = self.stack.pop().unwrap_or(Value::NIL);
         // ADR-0058: the meta-ops below read their operands' elements through
-        // pure helpers (`ZipIter::from_value`, `value_to_list`), so a
+        // pure helpers (`value_to_list`), so a
         // still-deferred `.map` operand has to run its callback first.
         self.reify_map_grep_seq(&left)?;
         self.reify_map_grep_seq(&right)?;
@@ -85,8 +85,8 @@ impl Interpreter {
                     Some(pipe) => pipe,
                     None => {
                         let [left, right] = columns;
-                        let left_list = runtime::value_to_list(&left);
-                        let right_list = runtime::value_to_list(&right);
+                        let left_list = self.cross_operand_list(&left)?;
+                        let right_list = self.cross_operand_list(&right)?;
                         let mut results = Vec::with_capacity(left_list.len() * right_list.len());
                         if op.is_empty() || op == "," {
                             for l in &left_list {
@@ -295,8 +295,10 @@ impl Interpreter {
                 match Self::lazy_cross_pipe(&operands, combine.clone()) {
                     Some(pipe) => pipe,
                     None => {
-                        let lists: Vec<Vec<Value>> =
-                            operands.iter().map(runtime::value_to_list).collect();
+                        let lists: Vec<Vec<Value>> = operands
+                            .iter()
+                            .map(|v| self.cross_operand_list(v))
+                            .collect::<Result<_, _>>()?;
                         // Cartesian product: iterate combinations in row-major
                         // order, varying the last operand fastest (matches
                         // Raku's X ordering).
