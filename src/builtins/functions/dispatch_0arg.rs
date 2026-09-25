@@ -1,4 +1,3 @@
-use super::time::builtin_times;
 use crate::builtins::rng::{builtin_rand, builtin_srand_auto};
 use crate::value::{RuntimeError, Value};
 
@@ -14,7 +13,6 @@ pub(crate) fn native_function_0arg(name: &str) -> Option<Result<Value, RuntimeEr
             builtin_srand_auto();
             Some(Ok(Value::NIL))
         }
-        "times" => Some(builtin_times()),
         _ => None,
     }
 }

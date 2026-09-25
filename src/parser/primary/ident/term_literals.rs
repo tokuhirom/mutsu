@@ -596,24 +596,6 @@ pub(crate) fn keyword_literal(input: &str) -> PResult<'_, Expr> {
             ));
         }
     }
-    // times — returns ($user, $system) CPU times
-    // Only treated as a 0-arg call when followed by parens or used standalone
-    // (not when followed by => which creates a pair)
-    if input.starts_with("times")
-        && !input[5..].starts_with(|c: char| c.is_alphanumeric() || c == '_' || c == '-')
-    {
-        let after = input[5..].trim_start();
-        // Don't treat as a call if followed by => (fat arrow creates a Pair)
-        if !after.starts_with("=>") {
-            return Ok((
-                &input[5..],
-                Expr::Call {
-                    name: Symbol::intern("times"),
-                    args: vec![],
-                },
-            ));
-        }
-    }
     // BEGIN/INIT/CHECK/END/ENTER/LEAVE as expression prefix phasers
     for (kw, kw_len, phaser_kind) in [
         ("BEGIN", 5, crate::ast::PhaserKind::Begin),
