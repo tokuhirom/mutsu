@@ -20,7 +20,7 @@
 //! `Vec<Value>` banks beside them. Nothing ever reads a raw word as a
 //! `Value`, because no raw word is ever stored where a `Value` lives — the
 //! top risk in ADR-0110 §5 is removed structurally rather than contained by a
-//! verifier, which is what CLAUDE.md's definition of risk ("a mechanism that
+//! verifier, which is what AGENTS.md's definition of risk ("a mechanism that
 //! cannot go flaky" over "an optimization correct only under a static
 //! analysis") asks for. GC needs no change either: the native banks hold no
 //! references, and the boxed ones are visited as roots

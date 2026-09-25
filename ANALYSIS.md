@@ -76,7 +76,7 @@ mutsu is a Rust implementation of a minimal Raku-compatible interpreter. The ass
   rise at every measurement, and the second is in direct tension with PLAN §8.3's "mutsu must
   never Rust-panic on any input".
 - **One load-bearing decision is still unwritten**: the batteries adoption policy exists only
-  as prose in `BATTERIES.md`/`CLAUDE.md`, not as an ADR (§8).
+  as prose in `BATTERIES.md`/`AGENTS.md`, not as an ADR (§8).
 
 Nothing found is of the "the basic design is broken" kind. The debt is concentrated in file
 size, panic surface, and one substitution mechanism the batteries policy should not have
@@ -552,7 +552,7 @@ Ordering rule, stated so it can be argued with:
 
 | # | Item | Kind | Why here |
 |---|------|------|----------|
-| 1 | **Follow the parity frontier** (§1.8) — the adoption-policy ADR half of this row is **done**: [ADR-0096](docs/adr/0096-batteries-adoption-policy.md), [#8184](https://github.com/tokuhirom/mutsu/issues/8184) | policy / product architecture | The project's main goal rests on "vendor upstream verbatim; grow mutsu; no new native providers," which is now a decision document rather than prose in `BATTERIES.md`/`CLAUDE.md`: the rejected alternative, the two named exceptions, the retirement precedent, and the corrected `nqp::` framing all live in ADR-0096. What remains of this row is the follow-on work, and with ADR-0085 shipping a nightly parity number it can be chosen by measurement instead of by anecdote. |
+| 1 | **Follow the parity frontier** (§1.8) — the adoption-policy ADR half of this row is **done**: [ADR-0096](docs/adr/0096-batteries-adoption-policy.md), [#8184](https://github.com/tokuhirom/mutsu/issues/8184) | policy / product architecture | The project's main goal rests on "vendor upstream verbatim; grow mutsu; no new native providers," which is now a decision document rather than prose in `BATTERIES.md`/`AGENTS.md`: the rejected alternative, the two named exceptions, the retirement precedent, and the corrected `nqp::` framing all live in ADR-0096. What remains of this row is the follow-on work, and with ADR-0085 shipping a nightly parity number it can be chosen by measurement instead of by anecdote. |
 | ~~1b~~ | ~~**Retire the JSON `use`-time interception**~~ (§1.8, §4, [#8183](https://github.com/tokuhirom/mutsu/issues/8183)) | design cleanup | **Done 2026-09-12** (ADR-0096 §E2 closed). `JSON::Tiny` left the mechanism entirely (it is a vendored battery and now loads like any other module); the exception-shape guess keyed on the set of loaded module names is deleted; the dispatch sites no longer beat a resolved def; and the surviving `JSON::Fast` name is a last-resort provider consulted only when the ladder resolves nothing, so `-I`/`MUTSULIB`/site-repo copies win. The remaining bill — mutsu's grammar engine is ~15x rakudo on the real module, down from the >1000x that had made this look permanent — stands on its own. |
 | 2 | **Supply panic propagation ([#8185](https://github.com/tokuhirom/mutsu/issues/8185)), and a mechanism against the panic-surface trend ([#8186](https://github.com/tokuhirom/mutsu/issues/8186))** (§2.4, §5) | correctness debt | Detached-worker panics are silently swallowed instead of reaching QUIT. Separately, the panic-family count rises at every measurement against an explicit "never Rust-panic" goal — a goal with no enforcement mechanism is a wish, so either add one (a budget test, a lint) or amend the goal. |
 | 3 | **Finish the call-path thread: ADR-0084** (§1.3, [#7817](https://github.com/tokuhirom/mutsu/issues/7817)) | design cleanup | ADR-0066/0077/0078/0086/0092/0094 all landed; ADR-0084 ("the frame `Env` is not the program's symbol table") is the one piece still design-only, and it is what the others' remaining overhead funnels into. |
@@ -618,7 +618,7 @@ Reading 95 ADRs as a list is not useful; they fall into a small number of campai
 ### The missing ADR — written 2026-09-12
 
 **The batteries adoption policy** was the one load-bearing decision this review found recorded
-nowhere but in `BATTERIES.md` and `CLAUDE.md` prose. It is now
+nowhere but in `BATTERIES.md` and `AGENTS.md` prose. It is now
 [ADR-0096](docs/adr/0096-batteries-adoption-policy.md) ([#8184](https://github.com/tokuhirom/mutsu/issues/8184)),
 carrying the five things the prose could not: the rejected alternative (native reimplementation,
 and what it costs — the compatibility signal, silent divergence, a maintenance tail, the

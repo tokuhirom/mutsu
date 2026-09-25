@@ -273,7 +273,7 @@ page 0xFFF3..0xFFFF  kind タグ + インラインの値またはポインタ</c
           — 型付き IR (TRIR)</li>
         </ul>
         <p>開発者向けのガイドはリポジトリの
-        <a href="https://github.com/tokuhirom/mutsu/blob/main/CLAUDE.md" rel="noopener"><code>CLAUDE.md</code></a>
+        <a href="https://github.com/tokuhirom/mutsu/blob/main/AGENTS.md" rel="noopener"><code>AGENTS.md</code></a>
         です。</p>`,
     },
   ],

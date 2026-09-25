@@ -9587,7 +9587,7 @@ impl CompiledCode {
         }
         // NOTE the sigil: `GetArrayVar`'s constant is the SIGILED name `"@_"`,
         // unlike the topic, whose env key is a bare `"_"` (which is exactly the
-        // trap `CLAUDE.md`'s debugging section records — do not guess the key).
+        // trap `AGENTS.md`'s debugging section records — do not guess the key).
         if !self.reads_args_array
             && let OpCode::GetArrayVar(idx) = &op
             && let Some(ValueView::Str(name)) = self.constants.get(*idx as usize).map(Value::view)

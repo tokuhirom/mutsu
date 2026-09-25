@@ -659,7 +659,7 @@ jobs:
           echo "opened $pr_url" >> "$GITHUB_STEP_SUMMARY"
 
           # Auto-merge, like every other pull request in this repository
-          # (CLAUDE.md's PR workflow step 4). There is nothing in a records diff
+          # (AGENTS.md's PR workflow step 4). There is nothing in a records diff
           # for a human to read: it is thousands of machine-generated
           # measurements, and a reviewer cannot tell a right number from a wrong
           # one by looking at it. What protects the numbers is upstream of the

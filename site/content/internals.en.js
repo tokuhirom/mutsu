@@ -284,7 +284,7 @@ page 0xFFF3..0xFFFF  a kind tag + an inline value or a pointer</code></pre>
           — the typed IR (TRIR)</li>
         </ul>
         <p>The contributor guide is the repository's
-        <a href="https://github.com/tokuhirom/mutsu/blob/main/CLAUDE.md" rel="noopener"><code>CLAUDE.md</code></a>.</p>`,
+        <a href="https://github.com/tokuhirom/mutsu/blob/main/AGENTS.md" rel="noopener"><code>AGENTS.md</code></a>.</p>`,
     },
   ],
 };

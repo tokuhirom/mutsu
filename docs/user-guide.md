@@ -22,5 +22,5 @@ none of which is true), which is exactly the failure mode a second copy invites.
 The published manual is now the single source; keep it that way.
 
 Everything else under `docs/` is developer documentation: architecture notes,
-design docs and [ADRs](adr/). Start from [CLAUDE.md](../CLAUDE.md) and
+design docs and [ADRs](adr/). Start from [AGENTS.md](../AGENTS.md) and
 [PLAN.md](../PLAN.md) for those.

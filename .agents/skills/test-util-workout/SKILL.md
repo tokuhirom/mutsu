@@ -29,7 +29,7 @@ learn the expected behaviour.
 7. Run `make test` and `make roast` to check for regressions, then read the results out of
    `tmp/make-test.log` / `tmp/make-roast.log` rather than re-running.
 8. Branch off `main`, commit, push, and open a PR per the repository's PR workflow in
-   `CLAUDE.md`.
+   `AGENTS.md`.
 9. Enable auto-merge: `gh pr merge --auto --merge <pr-number>` — `--squash` is rejected by this
    repository.
 

@@ -249,7 +249,7 @@ path.
 
 Even after the heredoc bug is fixed, `Text::CSV.rakumod` itself (not just its
 tests) has `use Slang::Tuxic;` at the top, and mutsu has no slang-switching
-architecture (`CLAUDE.md`'s own "Raku's context-dependent parsing (slangs)"
+architecture (`AGENTS.md`'s own "Raku's context-dependent parsing (slangs)"
 section: "The parser does not natively support slang switching"). Confirmed
 by reduction — `mutsu -I lib -e 'use Text::CSV; say "ok"'` fails to parse
 before even reaching user code:

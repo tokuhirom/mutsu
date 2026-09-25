@@ -93,7 +93,7 @@ Never quarantine:
   cause. Investigate first; quarantine is a decision made after understanding,
   never instead of it.
 
-This mirrors the triage protocol in CLAUDE.md ("Triaging a suspected-flaky
+This mirrors the triage protocol in AGENTS.md ("Triaging a suspected-flaky
 failure"), which has a track record: `t/wrap.t`, `t/placeholder.t` and
 `t/tail-function.t` all sat mislabelled "flaky" for months and all three turned
 out to be deterministic correctness bugs.
@@ -164,7 +164,7 @@ back, the survey will show it.
 
 ## 6. Prose lists are not a mechanism
 
-CLAUDE.md's "Known flaky tests" section stays as *context* — it explains the
+AGENTS.md's "Known flaky tests" section stays as *context* — it explains the
 mechanism behind each historical flake and records the de-flaked ones, which is
 genuinely useful. But it is not, and must not become, the thing CI consults.
 The 2026-07-23 survey found that section had drifted from reality in both

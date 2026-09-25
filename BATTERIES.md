@@ -69,7 +69,7 @@ it (a) diverges from the ecosystem, (b) has to be maintained forever, and (c)
 earns us none of the compatibility signal that running the real module does. When
 weighing "grow the core (rung 2)" vs. "write a shim (rung 3)", the core work is
 the **gain** even when it is larger; the shim is the **risk** (a private dialect,
-a maintenance tail). See the "gain vs. risk" framing in `CLAUDE.md`.
+a maintenance tail). See the "gain vs. risk" framing in `AGENTS.md`.
 
 ## 2. Selection criteria
 
