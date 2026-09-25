@@ -1496,11 +1496,12 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
             if rest.trim_start().starts_with("=>") {
                 return Ok((rest, Expr::BareWord(name)));
             }
+            let (rest, label) = control_flow_label(rest);
             return Ok((
                 rest,
                 Expr::ControlFlow {
                     kind: crate::ast::ControlFlowKind::Last,
-                    label: None,
+                    label,
                 },
             ));
         }
@@ -1508,11 +1509,12 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
             if rest.trim_start().starts_with("=>") {
                 return Ok((rest, Expr::BareWord(name)));
             }
+            let (rest, label) = control_flow_label(rest);
             return Ok((
                 rest,
                 Expr::ControlFlow {
                     kind: crate::ast::ControlFlowKind::Next,
-                    label: None,
+                    label,
                 },
             ));
         }
@@ -1520,11 +1522,12 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
             if rest.trim_start().starts_with("=>") {
                 return Ok((rest, Expr::BareWord(name)));
             }
+            let (rest, label) = control_flow_label(rest);
             return Ok((
                 rest,
                 Expr::ControlFlow {
                     kind: crate::ast::ControlFlowKind::Redo,
-                    label: None,
+                    label,
                 },
             ));
         }
@@ -2483,4 +2486,22 @@ fn finalize_anon_regex_pattern(body: &str, kind: crate::regex_tree::RegexDeclKin
         finalize_anon_declarator_pattern, normalize_token_pattern,
     };
     finalize_anon_declarator_pattern(&normalize_token_pattern(body), kind)
+}
+
+/// The optional loop label after an expression-position `next` / `last` /
+/// `redo` (`$ok ?? ... !! (next LEVEL)`, Rakudo-Type-Introspection): the same
+/// label rule the statement forms (`next_stmt` and friends) apply. Without it
+/// the label was left behind as a stray bareword and the enclosing labeled
+/// loop failed to parse.
+fn control_flow_label(input: &str) -> (&str, Option<String>) {
+    let Ok((after_ws, _)) = ws(input) else {
+        return (input, None);
+    };
+    if after_ws.starts_with(crate::parser::helpers::is_raku_identifier_start)
+        && let Ok((r, label)) = crate::parser::stmt::ident_pub(after_ws)
+        && is_loop_label_name(&label)
+    {
+        return (r, Some(label));
+    }
+    (input, None)
 }
