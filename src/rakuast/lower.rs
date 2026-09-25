@@ -2427,7 +2427,7 @@ fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
                 body,
                 is_rw: false,
                 is_raw: false,
-                custom_traits: Vec::new(),
+                custom_traits: Default::default(),
                 is_whatever_code: false,
                 declarator: crate::ast::RoutineDeclarator::Sub,
             })
@@ -2462,7 +2462,7 @@ fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
                     body,
                     is_rw: false,
                     is_raw: false,
-                    custom_traits: Vec::new(),
+                    custom_traits: Default::default(),
                     is_whatever_code: false,
                     declarator: crate::ast::RoutineDeclarator::Block,
                 }),

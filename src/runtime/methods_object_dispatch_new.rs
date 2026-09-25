@@ -1944,7 +1944,7 @@ impl Interpreter {
                         // If class has BUILD, BUILD handles attribute setting,
                         // so we skip required check here (BUILD may set defaults)
                         if !has_build && !provided_attr_names.contains(attr.name.as_str()) {
-                            let attr_full_name = format!("$!{}", attr.name);
+                            let attr_full_name = format!("{}!{}", attr.sigil, attr.name);
                             return Err(RuntimeError::attribute_required(
                                 &attr_full_name,
                                 reason.as_deref(),
@@ -2429,7 +2429,7 @@ impl Interpreter {
                                         Some(ValueView::Package(n)) if n == "Any"
                                     );
                             if !is_set {
-                                let attr_full_name = format!("$!{}", attr_name);
+                                let attr_full_name = format!("{}!{}", attr.sigil, attr_name);
                                 return Err(RuntimeError::attribute_required(
                                     &attr_full_name,
                                     reason.as_deref(),
