@@ -2636,11 +2636,6 @@ impl Interpreter {
             ("Set", &["Setty", "QuantHash", "Associative"][..]),
             ("Bag", &["Baggy", "QuantHash", "Associative"][..]),
             ("Mix", &["Mixy", "Baggy", "QuantHash", "Associative"][..]),
-            // raku: `Date.^roles` / `DateTime.^roles` are `(Dateish)`, which
-            // is what `.^mro(:roles)` interleaves (the `are` distribution
-            // finds their common type through it).
-            ("Date", &["Dateish"][..]),
-            ("DateTime", &["Dateish"][..]),
         ] {
             ccr.insert(
                 class_name.to_string(),

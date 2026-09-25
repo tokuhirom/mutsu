@@ -374,12 +374,12 @@ impl Interpreter {
             .collect()
     }
 
-    fn catalog_roles(&self, class_name: &str) -> Vec<String> {
+    pub(super) fn catalog_roles(&self, class_name: &str) -> Vec<String> {
         let base = class_name
             .split_once('[')
             .map(|(base, _)| base)
             .unwrap_or(class_name);
-        if !matches!(base, "Promise" | "Channel") {
+        if !matches!(base, "Promise" | "Channel" | "Date" | "DateTime") {
             return Vec::new();
         }
         crate::builtins::builtin_type_catalog::builtin_type_info(base)

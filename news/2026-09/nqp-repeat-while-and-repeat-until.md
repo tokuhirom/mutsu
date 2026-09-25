@@ -20,9 +20,20 @@ Pinned by `t/vm/nqp-repeat-loops.t`, which covers the body-runs-once case in
 both the bytecode and the TRIR paths.
 
 With the loop in place, `are` got 3 of its 4 assertions. The fourth,
-`are(DateTime.now, Date.today)` expecting `Dateish`, failed because mutsu's
-built-in role seeds (`src/runtime/runtime_init.rs`) did not record that
-`Date` and `DateTime` compose `Dateish`: `.^roles` answered `()` and
-`.^mro(:roles)` skipped the role, so `are`'s MRO walk settled on `Any`.
-Both are seeded now (pinned by `t/types/temporal/dateish-builtin-roles.t`), and the
-`are` ledger record is green (4/4).
+`are(DateTime.now, Date.today)` expecting `Dateish`, walks
+`.^mro(:roles)`, and mutsu answered `(DateTime) (Any) (Mu)` without the
+role. `Date` and `DateTime` now have rows in the built-in type catalog
+(`roles: ["Dateish"]`), `.^roles` reads them, and `.^mro(:roles)` falls back
+to the catalog's roles when the registry has no composed-role record (which
+also fixes `Promise.^mro(:roles)` missing `Awaitable`).
+
+Two places had to be taught about that. The "a class doing `Dateish`
+stringifies through its `!formatter`" dispatch rule is for user classes
+composing the role, so it now skips the built-ins and their subclasses,
+which stringify natively. And the built-in `.are` ranked an instance's own
+MRO tail (`Any`, `Mu`) ahead of its shared-role fallbacks; with the catalog
+row supplying `DateTime`'s full MRO, that made `(DateTime.now,
+Date.today).are` answer `Any`, so the MRO tail now goes after them.
+
+Pinned by `t/types/temporal/dateish-builtin-roles.t`; the `are` ledger record
+is green (4/4).
