@@ -149,6 +149,29 @@ impl Compiler {
                 self.code.emit(OpCode::LoadConst(nil_idx));
                 true
             }
+            // nqp::repeat_while(c, body) / nqp::repeat_until(c, body) — the
+            // post-test loops: the body runs once before the condition is
+            // first evaluated. Yields Nil, like `nqp::while`.
+            // TODO: in value context rakudo yields a Seq of the body values
+            // (for all four loop forms); mutsu yields Nil.
+            // Cost: O(1) per iteration (compiles to jumps; no runtime op).
+            "nqp::repeat_while" | "nqp::repeat_until" if args.len() == 2 => {
+                let loop_start = self.code.ops.len();
+                self.compile_expr(&args[1]);
+                self.code.emit(OpCode::Pop);
+                self.compile_expr(&args[0]);
+                if name == "nqp::repeat_until" {
+                    // `JumpIfFalse` pops the condition on both paths.
+                    self.code.emit(OpCode::JumpIfFalse(loop_start as i32));
+                } else {
+                    let jump_end = self.code.emit(OpCode::JumpIfFalse(0));
+                    self.code.emit(OpCode::Jump(loop_start as i32));
+                    self.code.patch_jump(jump_end);
+                }
+                let nil_idx = self.code.add_constant(Value::NIL);
+                self.code.emit(OpCode::LoadConst(nil_idx));
+                true
+            }
             _ => false,
         }
     }

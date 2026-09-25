@@ -347,7 +347,15 @@ mod tests {
         assert_eq!(nqp_op_id("no_such_nqp_op"), None);
         // The control-flow forms are compiled as special forms and must never
         // reach the value-op path.
-        for form in ["if", "while", "until", "stmts", "handle"] {
+        for form in [
+            "if",
+            "while",
+            "until",
+            "repeat_while",
+            "repeat_until",
+            "stmts",
+            "handle",
+        ] {
             assert_eq!(nqp_op_id(form), None, "{form} is a control-flow form");
         }
     }

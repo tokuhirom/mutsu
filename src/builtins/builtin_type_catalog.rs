@@ -441,6 +441,8 @@ static CATALOG: &[BuiltinTypeInfo] = &[
     row!("Capture", mro: ["Capture", "Any", "Mu"], roles: [], owner: ""),
     row!("Promise", mro: ["Promise", "Any", "Mu"], roles: ["Awaitable"], owner: ""),
     row!("Channel", mro: ["Channel", "Any", "Mu"], roles: ["Awaitable"], owner: ""),
+    row!("Date", mro: ["Date", "Any", "Mu"], roles: ["Dateish"], owner: ""),
+    row!("DateTime", mro: ["DateTime", "Any", "Mu"], roles: ["Dateish"], owner: ""),
     row!("Whatever", mro: ["Whatever", "Any", "Mu"], roles: [], owner: ""),
     row!("HyperWhatever", mro: ["HyperWhatever", "Any", "Mu"], roles: [], owner: ""),
     row!("Proxy", mro: ["Proxy", "Any", "Mu"], roles: [], owner: ""),

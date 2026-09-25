@@ -53,6 +53,29 @@ impl TrirCompiler<'_> {
         Some(TrKind::Obj)
     }
 
+    /// `nqp::repeat_while` / `nqp::repeat_until`: the body runs before the
+    /// first test, so the loop is entered at the body and the condition
+    /// jumps back to it.
+    pub(super) fn compile_nqp_repeat_loop(
+        &mut self,
+        while_form: bool,
+        cond: &Expr,
+        body: &Expr,
+    ) -> Option<TrKind> {
+        let start = self.ops.len() as u32;
+        self.compile_expr_sink(body)?;
+        let ck = self.compile_expr(cond)?;
+        self.truthy(ck)?;
+        self.ops.push(if while_form {
+            TrOp::JumpIfTrueI(start)
+        } else {
+            TrOp::JumpIfFalseI(start)
+        });
+        let idx = self.add_const(Value::NIL);
+        self.ops.push(TrOp::ConstObj(idx));
+        Some(TrKind::Obj)
+    }
+
     pub(super) fn compile_nqp_if(&mut self, if_form: bool, args: &[Expr]) -> Option<TrKind> {
         let ck = self.compile_expr(&args[0])?;
         self.truthy(ck)?;
