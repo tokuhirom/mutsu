@@ -268,12 +268,12 @@ impl Interpreter {
                     index += 1;
                     out
                 } else {
-                    Value::str_from("IterationEnd")
+                    Value::iteration_end()
                 }
             }
             "sink-all" => {
                 index = len;
-                Value::str_from("IterationEnd")
+                Value::iteration_end()
             }
             "skip-one" => {
                 if index < len {
@@ -302,11 +302,11 @@ impl Interpreter {
                         index += 1;
                         out
                     } else {
-                        Value::str_from("IterationEnd")
+                        Value::iteration_end()
                     }
                 } else {
                     index = len;
-                    Value::str_from("IterationEnd")
+                    Value::iteration_end()
                 }
             }
             _ => unreachable!(),

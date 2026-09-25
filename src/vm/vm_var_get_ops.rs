@@ -649,6 +649,10 @@ impl Interpreter {
                 "X::Undeclared::Symbols: Undeclared name:\n    {} used at line 1",
                 name,
             )));
+        } else if name == "IterationEnd" {
+            // The singleton sentinel, so `nqp::eqaddr($it.pull-one,
+            // IterationEnd)` sees the same object `pull-one` returned (#9333).
+            Value::iteration_end()
         } else {
             Value::str(name.to_string())
         };

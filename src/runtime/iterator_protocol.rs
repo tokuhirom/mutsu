@@ -32,7 +32,7 @@ pub(crate) fn step(
     args: &[Value],
 ) -> Option<IterProtoStep> {
     let len = items.len();
-    let end = || Value::str_from("IterationEnd");
+    let end = || Value::iteration_end();
     let arg_int = |v: Option<&Value>, default: i64| -> usize {
         v.map(crate::runtime::to_int).unwrap_or(default).max(0) as usize
     };
