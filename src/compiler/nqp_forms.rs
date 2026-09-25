@@ -45,6 +45,26 @@ pub(crate) fn nqp_const_value(name: &str) -> Option<i64> {
         "STAT_FILESIZE" => 1,
         "STAT_ISDIR" => 2,
         "STAT_ISREG" => 3,
+        // Field indices of the array `nqp::getrusage` fills (MoarVM's
+        // `MVM_RUSAGE_*`, the order `builtins::process_rusage` produces).
+        "RUSAGE_UTIME_SEC" => 0,
+        "RUSAGE_UTIME_MSEC" => 1,
+        "RUSAGE_STIME_SEC" => 2,
+        "RUSAGE_STIME_MSEC" => 3,
+        "RUSAGE_MAXRSS" => 4,
+        "RUSAGE_IXRSS" => 5,
+        "RUSAGE_IDRSS" => 6,
+        "RUSAGE_ISRSS" => 7,
+        "RUSAGE_MINFLT" => 8,
+        "RUSAGE_MAJFLT" => 9,
+        "RUSAGE_NSWAP" => 10,
+        "RUSAGE_INBLOCK" => 11,
+        "RUSAGE_OUBLOCK" => 12,
+        "RUSAGE_MSGSND" => 13,
+        "RUSAGE_MSGRCV" => 14,
+        "RUSAGE_NSIGNALS" => 15,
+        "RUSAGE_NVCSW" => 16,
+        "RUSAGE_NIVCSW" => 17,
         _ => return None,
     })
 }

@@ -9,9 +9,6 @@ use crate::value::{ArrayKind, RuntimeError, Value};
 /// The one reading of rusage, shared by `times` and `nqp::getrusage`.
 ///
 /// Cost: O(1) + one syscall.
-// The `as i64` casts are identity on 64-bit Linux, but `tv_usec` is an
-// `i32` on macOS and the counters are `c_long` (32-bit on 32-bit targets).
-#[allow(clippy::unnecessary_cast)]
 pub(crate) fn process_rusage() -> Option<[i64; 18]> {
     #[cfg(all(unix, feature = "native"))]
     {
@@ -22,30 +19,39 @@ pub(crate) fn process_rusage() -> Option<[i64; 18]> {
         }
         let u = unsafe { usage.assume_init() };
         Some([
-            u.ru_utime.tv_sec as i64,
-            u.ru_utime.tv_usec as i64,
-            u.ru_stime.tv_sec as i64,
-            u.ru_stime.tv_usec as i64,
-            u.ru_maxrss as i64,
-            u.ru_ixrss as i64,
-            u.ru_idrss as i64,
-            u.ru_isrss as i64,
-            u.ru_minflt as i64,
-            u.ru_majflt as i64,
-            u.ru_nswap as i64,
-            u.ru_inblock as i64,
-            u.ru_oublock as i64,
-            u.ru_msgsnd as i64,
-            u.ru_msgrcv as i64,
-            u.ru_nsignals as i64,
-            u.ru_nvcsw as i64,
-            u.ru_nivcsw as i64,
+            widen(u.ru_utime.tv_sec),
+            widen(u.ru_utime.tv_usec),
+            widen(u.ru_stime.tv_sec),
+            widen(u.ru_stime.tv_usec),
+            widen(u.ru_maxrss),
+            widen(u.ru_ixrss),
+            widen(u.ru_idrss),
+            widen(u.ru_isrss),
+            widen(u.ru_minflt),
+            widen(u.ru_majflt),
+            widen(u.ru_nswap),
+            widen(u.ru_inblock),
+            widen(u.ru_oublock),
+            widen(u.ru_msgsnd),
+            widen(u.ru_msgrcv),
+            widen(u.ru_nsignals),
+            widen(u.ru_nvcsw),
+            widen(u.ru_nivcsw),
         ])
     }
     #[cfg(not(all(unix, feature = "native")))]
     {
         None
     }
+}
+
+/// Widen an rusage field to i64. The fields' C types differ per platform
+/// (`tv_usec` is an `i32` on macOS, the counters are `c_long`), so a plain
+/// `as i64` is an identity cast on 64-bit Linux and a lossless widening
+/// elsewhere; going through `Into` states that without either.
+#[cfg(all(unix, feature = "native"))]
+fn widen<T: Into<i64>>(v: T) -> i64 {
+    v.into()
 }
 
 /// Perl 5-compatible `times` builtin: returns `($user, $system)` CPU times in seconds.

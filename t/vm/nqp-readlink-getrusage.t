@@ -4,7 +4,7 @@ use nqp;
 # #9348: nqp::readlink and nqp::getrusage. Expected shapes measured with
 # rakudo 2026.07 (MoarVM's field order and libuv's error wording).
 
-plan 9;
+plan 10;
 
 my $dir = $*TMPDIR.add("mutsu-readlink-$*PID-{now.Rat}");
 $dir.mkdir;
@@ -28,4 +28,5 @@ my $burn = 0; $burn += $_ for ^20000;
 ok nqp::atpos_i($r, 0) >= 0, 'user seconds';
 ok 0 <= nqp::atpos_i($r, 1) < 1_000_000, 'user microseconds';
 ok 0 <= nqp::atpos_i($r, 3) < 1_000_000, 'system microseconds';
-ok nqp::atpos_i($r, 4) > 0, 'maxrss is positive';
+ok nqp::atpos_i($r, nqp::const::RUSAGE_MAXRSS) > 0, 'maxrss (by its nqp::const index) is positive';
+is nqp::const::RUSAGE_NIVCSW, 17, 'the RUSAGE_* constants follow MoarVM';
