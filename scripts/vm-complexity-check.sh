@@ -71,6 +71,9 @@ CASES=(
     '@a[5]++ vs array size (control)|100000|1|my @a = ^NN;|for ^20000 { @a[5]++ }'
     # --- #9173: the minor findings of the VM opcode audit -------------------
     'temp @a vs nested element size|2000|1|my @a = (^100).map({ [^NN] });|for ^200 { temp @a }'
+    # #9434: a multi-level element temp saves the one element, not the base.
+    'temp $t[1]<k>[1] vs container size|20000|1|my $t = [[^NN], { k => [0, 0] }];|for ^2000 { temp $t[1]<k>[1] = 5 }'
+    'temp @a[1] vs array size|20000|1|my @a = ^NN;|for ^2000 { temp @a[1] = 5 }'
     'goto vs code size|500|1|LOCALS my $gi = 0;|GL: $gi++; goto GL if $gi < 20000'
     # Run this one with MUTSU_JIT=off: with the JIT on, the one-time cranelift
     # compile of the enlarged chunk lands inside the timed body.

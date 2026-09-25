@@ -6809,15 +6809,29 @@ impl Interpreter {
             }
 
             // -- Let scope management --
-            // Cost: O(1) for a `$` variable; O(e) for an `@`/`%` variable or element temp, e = its elements (one-level copy); O(t) for the `deep` save of a multi-level element temp, t = total nodes. Rakudo: O(1) (element container) -- see #9434.
+            // Cost: O(1) for a `$` variable; O(e) for an `@`/`%` variable, e = its elements (one-level copy).
             OpCode::LetSave {
                 name_idx,
-                index_mode,
                 is_temp,
-                deep,
                 slot,
             } => {
-                self.exec_let_save_op(code, *name_idx, *index_mode, *is_temp, *deep, *slot);
+                self.exec_let_save_op(code, *name_idx, *is_temp, *slot);
+                *ip += 1;
+            }
+            // Cost: O(1) for one key; O(k) for a slice, k = its keys.
+            OpCode::LetSaveElem {
+                is_temp,
+                is_positional,
+            } => {
+                self.exec_let_save_elem_op(*is_temp, *is_positional, false);
+                *ip += 1;
+            }
+            // Cost: O(1) for one key; O(k) for a slice, k = its keys.
+            OpCode::LetSaveElemVivified {
+                is_temp,
+                is_positional,
+            } => {
+                self.exec_let_save_elem_op(*is_temp, *is_positional, true);
                 *ip += 1;
             }
             // Cost: O(k) plus the body, k = let/temp saves resolved at block exit.

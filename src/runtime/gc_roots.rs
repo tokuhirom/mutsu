@@ -244,8 +244,12 @@ impl Interpreter {
         self.once_values
             .visit_done_values(|v| visitor.visit_value(v));
         visit_map_values(visitor, &self.var_defaults);
-        for (_, v, _, _) in &self.let_saves {
-            visitor.visit_value(v);
+        for save in &self.let_saves {
+            visitor.visit_value(&save.value);
+            if let Some((container, key)) = &save.elem {
+                visitor.visit_value(container);
+                visitor.visit_value(key);
+            }
         }
         for vec in &self.supply_emit_buffer {
             visit_slice(visitor, vec);

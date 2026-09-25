@@ -244,10 +244,43 @@ impl Compiler {
         let name_idx = self.code.add_constant(Value::str(var.to_string()));
         self.code.emit(OpCode::LetSave {
             name_idx,
-            index_mode: false,
             is_temp: true,
-            deep: false,
             slot,
         });
+    }
+
+    /// Emit an ELEMENT `let`/`temp` (`temp @a[i] = v`, `temp $t[1]<k>[1] = v`):
+    /// save the element `container[key]`, then run the element assignment
+    /// `assign` (if any), so scope exit writes the old value back into that
+    /// element in place (#9434). When the container does not exist yet,
+    /// `LetSaveElem` leaves `True` and the element is saved again once the
+    /// assignment has vivified the path; the container and key expressions are
+    /// evaluated a second time only then.
+    pub(super) fn compile_let_save_elem(
+        &mut self,
+        container: &Expr,
+        key: &Expr,
+        is_positional: bool,
+        is_temp: bool,
+        assign: Option<&Expr>,
+    ) {
+        self.compile_expr(container);
+        self.compile_expr(key);
+        self.code.emit(OpCode::LetSaveElem {
+            is_temp,
+            is_positional,
+        });
+        if let Some(assign) = assign {
+            self.compile_expr(assign);
+            self.code.emit(OpCode::Pop);
+        }
+        let saved = self.code.emit(OpCode::JumpIfFalse(0));
+        self.compile_expr(container);
+        self.compile_expr(key);
+        self.code.emit(OpCode::LetSaveElemVivified {
+            is_temp,
+            is_positional,
+        });
+        self.code.patch_jump(saved);
     }
 }

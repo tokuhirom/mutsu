@@ -363,23 +363,16 @@ impl Interpreter {
         }
     }
 
-    // Cost: O(1) for a `$` variable; O(e) for an `@`/`%` variable or an element temp,
-    // e = the container's elements (one-level `shallow_copy_value`); O(t) when `deep`, t = total nodes (`deep_copy_value`).
-    // Rakudo: O(1) for the multi-level element temp that sets `deep` (it saves the
-    // one element container) -- see #9434.
+    // Cost: O(1) for a `$` variable; O(e) for an `@`/`%` variable,
+    // e = the container's elements (one-level `shallow_copy_value`).
     pub(super) fn exec_let_save_op(
         &mut self,
         code: &CompiledCode,
         name_idx: u32,
-        index_mode: bool,
         is_temp: bool,
-        deep: bool,
         slot: Option<u32>,
     ) {
         let name = Self::const_str(code, name_idx).to_string();
-        if index_mode {
-            let _idx_val = self.stack.pop().unwrap_or(Value::int(0));
-        }
         // §1.4/§1.5: when the compiler baked THIS frame's slot for `name`, read the
         // pre-scope value straight from the live slot rather than from `env` by
         // name. The slot is always current; `env` is only a mirror and can be stale
@@ -431,50 +424,17 @@ impl Interpreter {
         // `@a[i] = v` / `%h<k> = v` and the restore would be a no-op. `let`
         // needs this as much as `temp` (it restores on block failure).
         //
-        // The save half of a multi-level element temp (`temp $s[1]<k>[1] = v`,
-        // lowered to a save of the whole base variable) is the one case that
-        // needs every level copied, since the write lands below the top.
-        // TODO: save just the target element container, as Rakudo does, instead
-        // of the whole base variable -- O(1) rather than O(total nodes).
-        //
         // A plain `$` variable is not copied at all: its snapshot is the value
         // it held -- the same Array/Hash object, so `temp $s; $s[0] = 7` keeps
         // the element write after the restore, exactly as in raku. Only the
-        // `@`/`%` container itself, or an element temp through `$s[..]`, is
-        // snapshot as a fresh node.
-        let is_container_var = name.starts_with(['@', '%']);
-        let save_val = if deep {
-            Self::deep_copy_value(&old_val)
-        } else if is_container_var || index_mode {
+        // `@`/`%` container itself is snapshot as a fresh node. An element temp
+        // saves just that element (`exec_let_save_elem_op`).
+        let save_val = if name.starts_with(['@', '%']) {
             Self::shallow_copy_value(&old_val)
         } else {
             old_val
         };
         self.let_saves_push(name, save_val, is_temp, slot);
-    }
-
-    /// Recursively copy a Value so that every Array/Hash level of the snapshot
-    /// is independent of future in-place mutations (the backing nodes are
-    /// shared). Preserves each container's embedded metadata like
-    /// [`Self::shallow_copy_value`] does.
-    fn deep_copy_value(val: &Value) -> Value {
-        match val.view() {
-            ValueView::Array(arc_vec, kind) => {
-                let mut data = (**arc_vec).clone();
-                for v in data.items_mut().iter_mut() {
-                    *v = Self::deep_copy_value(v);
-                }
-                Value::array_with_kind(crate::gc::Gc::new(data), kind)
-            }
-            ValueView::Hash(arc_map) => {
-                let mut data = (**arc_map).clone();
-                for v in data.map.values_mut() {
-                    *v = Self::deep_copy_value(v);
-                }
-                Value::hash_with_data(crate::gc::Gc::new(data))
-            }
-            _ => val.clone(),
-        }
     }
 
     /// Snapshot an Array/Hash the way Rakudo's `.clone` does for `temp`/`let`:
