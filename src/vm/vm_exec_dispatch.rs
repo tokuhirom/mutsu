@@ -5458,7 +5458,7 @@ impl Interpreter {
             }
 
             // -- Exception handling --
-            // Cost: O(1) plus the body, except a resume-capable CATCH / resume-safe CONTROL: O(c +
+            // Cost: O(1) plus the body, except a resume-capable CATCH / CONTROL: O(c +
             // f) per entry, c = ops + constants of the enclosing CompiledCode, f = compiled
             // functions (both deep-cloned into the handler entry). Rakudo: O(1) -- see #9172.
             OpCode::TryCatch {
@@ -5472,6 +5472,7 @@ impl Interpreter {
                 is_bare_block,
                 traps,
                 catch_resume_capable,
+                control_resume_capable,
             } => {
                 self.sync_source_line(code, *ip);
                 self.exec_try_catch_op(
@@ -5486,6 +5487,7 @@ impl Interpreter {
                     *is_bare_block,
                     *traps,
                     *catch_resume_capable,
+                    *control_resume_capable,
                     ip,
                     compiled_fns,
                 )?;

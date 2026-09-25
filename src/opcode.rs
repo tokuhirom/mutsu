@@ -3018,6 +3018,14 @@ pub(crate) enum OpCode {
         /// it without re-running the handler. Computed at compile time by
         /// scanning the emitted CATCH op range (the runtime cannot see the AST).
         catch_resume_capable: bool,
+        /// #9469: true when this block's CONTROL handler lexically *contains* a
+        /// `.resume` call without being provably `resume_safe`. Like
+        /// `catch_resume_capable`, such a handler runs INLINE at a deep `warn`
+        /// raise site; when it does not resume, the raise site tags the warn
+        /// with this region's verdict so the region applies it without running
+        /// the handler again (`Interpreter::try_control_inline`). Computed at
+        /// compile time by scanning the emitted CONTROL op range.
+        control_resume_capable: bool,
     },
 
     /// Bracket `[ip+1..body_end)` with a routine-registry save/restore, so a
@@ -7582,7 +7590,7 @@ impl CompiledCode {
             });
             // A frame that installs a *resume-safe* CONTROL handler
             // (`CONTROL { default { $out ~= .Str; .resume } }`) has its handler run
-            // INLINE at a deep `warn` raise site (`try_resume_safe_control_inline`),
+            // INLINE at a deep `warn` raise site (`try_control_inline`),
             // which reconstructs the installing frame's locals FROM ENV by name (the
             // cross-frame store) because `self.locals` is the deep raise-site frame.
             // Under the gate a plain `my $out = ''` in this frame skips its env
@@ -7611,6 +7619,14 @@ impl CompiledCode {
                         control_start,
                         ..
                     } if catch_start < control_start
+                ) || matches!(
+                    op,
+                    OpCode::TryCatch {
+                        control_resume_capable: true,
+                        control_start,
+                        body_end,
+                        ..
+                    } if control_start < body_end
                 )
             });
             // A frame that constructs a regex value which interpolates a lexical
@@ -9786,6 +9802,16 @@ impl CompiledCode {
                 }
                 _ => false,
             })
+    }
+
+    pub(crate) fn patch_try_control_resume_capable(&mut self, idx: usize, capable: bool) {
+        match &mut self.ops[idx] {
+            OpCode::TryCatch {
+                control_resume_capable,
+                ..
+            } => *control_resume_capable = capable,
+            _ => panic!("patch_try_control_resume_capable on non-TryCatch opcode"),
+        }
     }
 
     pub(crate) fn patch_try_control_start(&mut self, idx: usize) {

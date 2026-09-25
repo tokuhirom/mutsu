@@ -1135,6 +1135,7 @@ impl Compiler {
             traps,
             // Patched below, once the CATCH op range exists (ADR-0072).
             catch_resume_capable: false,
+            control_resume_capable: false,
         });
         // Compile main body (last Stmt::Expr/Call leaves value on stack)
         let mut main_leaves_value = false;
@@ -1278,9 +1279,21 @@ impl Compiler {
             .patch_try_catch_resume_capable(try_idx, resume_capable);
         // Compile control block.
         if let Some(ref control_body) = control_stmts {
+            let control_range_start = self.code.ops.len();
             for stmt in control_body {
                 self.compile_stmt(stmt);
             }
+            // #9469: a CONTROL block that calls `.resume` somewhere but is not
+            // provably resume-safe still runs INLINE at a deep `warn` raise
+            // site, so `.resume` reaches the raise site. When it does not
+            // resume, the raise site hands this region its verdict instead.
+            let control_range_end = self.code.ops.len();
+            let control_capable = !resume_safe
+                && self
+                    .code
+                    .range_calls_resume(control_range_start, control_range_end);
+            self.code
+                .patch_try_control_resume_capable(try_idx, control_capable);
             // control result is Nil
             self.code.emit(OpCode::LoadNil);
         }

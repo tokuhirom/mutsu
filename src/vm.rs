@@ -328,9 +328,17 @@ pub(crate) struct ControlHandlerEntry {
     /// `resume_safe`). When false, `handler` is `None` and a deep warn falls
     /// back to the unwinding path.
     pub resume_safe: bool,
-    /// Present only for `resume_safe` handlers: the bytecode + range + function
-    /// table needed to run the handler INLINE at a deep `warn` raise site.
+    /// Present for `resume_safe` handlers and for handlers that merely
+    /// *contain* a `.resume` (`OpCode::TryCatch::control_resume_capable`): the
+    /// bytecode + range + function table needed to run the handler INLINE at a
+    /// deep `warn` raise site.
     pub handler: Option<ControlHandlerCode>,
+    /// Identifies this activation of the region (drawn from the same counter
+    /// as `CatchHandlerEntry::token`). A capable handler that ran inline and
+    /// did not resume stamps it into the warn signal, so the region applies the
+    /// recorded verdict instead of running the handler again (#9469). Nested
+    /// active regions always carry increasing tokens, innermost largest.
+    pub token: u64,
     /// Whether this handler has an arm that can match a `CX::Take` (see
     /// `OpCode::TryCatch::control_handles_take`). Read by `exec_take_op` to
     /// decide whether a `take` inside a `gather` must raise the control
