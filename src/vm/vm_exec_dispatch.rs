@@ -3146,24 +3146,24 @@ impl Interpreter {
                 self.exec_str_ne_op()?;
                 *ip += 1;
             }
-            // Cost: O(p), p = common prefix (see exec_str_lt_op).
+            // Cost: O(p), p = common prefix (see str_cmp_values).
             OpCode::StrLt => {
-                self.exec_str_lt_op()?;
+                self.exec_str_cmp_op(StrCmp::Lt)?;
                 *ip += 1;
             }
-            // Cost: O(p), p = common prefix (see exec_str_gt_op).
+            // Cost: O(p), p = common prefix (see str_cmp_values).
             OpCode::StrGt => {
-                self.exec_str_gt_op()?;
+                self.exec_str_cmp_op(StrCmp::Gt)?;
                 *ip += 1;
             }
-            // Cost: O(p), p = common prefix (see exec_str_le_op).
+            // Cost: O(p), p = common prefix (see str_cmp_values).
             OpCode::StrLe => {
-                self.exec_str_le_op()?;
+                self.exec_str_cmp_op(StrCmp::Le)?;
                 *ip += 1;
             }
-            // Cost: O(p), p = common prefix (see exec_str_ge_op).
+            // Cost: O(p), p = common prefix (see str_cmp_values).
             OpCode::StrGe => {
-                self.exec_str_ge_op()?;
+                self.exec_str_cmp_op(StrCmp::Ge)?;
                 *ip += 1;
             }
 

@@ -486,6 +486,15 @@ impl Interpreter {
                 acc = result;
                 continue;
             }
+            // The string comparisons, `leg`, `before`/`after`, `===`/`!==` and
+            // `min`/`max` have one body each, shared with their opcode and the
+            // metaop leaf (`vm_operator_values.rs`, #9447).
+            if Self::is_comparison_family_op(op)
+                && let Some(result) = self.comparison_family_values(op, &acc, rhs)
+            {
+                acc = result?;
+                continue;
+            }
             // `cmp` has structural Range/list/Inf handling in the operator
             // implementation. Once user-defined candidates decline, the
             // routine form must use that same native candidate instead of

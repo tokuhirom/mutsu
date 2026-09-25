@@ -36,6 +36,29 @@ impl Interpreter {
         left: &Value,
         right: &Value,
     ) -> Result<Value, RuntimeError> {
+        // The string comparisons, `leg`, `before`/`after`, `===`/`!==` and
+        // `min`/`max` run the very function their opcode runs
+        // (`vm_operator_values.rs`), so `[before] 10, 9`, `(Any,) »eq« ("",)`
+        // and `$a Zmin $b` agree with the plain infix (#9447). Those bodies
+        // thread junctions themselves, so this comes before the generic
+        // junction split below. A user `infix:<op>` candidate for an object
+        // operand still wins first, as it does for the numeric family.
+        let canonical = op.canonical();
+        if Self::is_comparison_family_op(canonical) {
+            if Self::value_needs_stringy_bridge(left)
+                || Self::value_needs_stringy_bridge(right)
+                || Self::value_needs_numeric_bridge(left)
+                || Self::value_needs_numeric_bridge(right)
+            {
+                let infix_name = format!("infix:<{canonical}>");
+                if let Some(v) = self.try_user_infix(&infix_name, left, right)? {
+                    return Ok(v);
+                }
+            }
+            if let Some(result) = self.comparison_family_values(canonical, left, right) {
+                return result;
+            }
+        }
         // Thread junctions through arithmetic/comparison reduction ops
         if matches!(left.view(), ValueView::Junction { .. })
             || matches!(right.view(), ValueView::Junction { .. })

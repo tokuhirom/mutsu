@@ -337,65 +337,21 @@ impl Interpreter {
         Ok(())
     }
 
+    // Cost: as `min_max_values`.
     pub(super) fn exec_infix_min_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
-        // ADR-0071, as for `gcd` above.
-        if let Some(result) = self.try_user_infix("infix:<min>", &left, &right)? {
-            self.stack.push(result);
-            return Ok(());
-        }
-        if matches!(left.view(), ValueView::Package(name) if name == "Any") {
-            self.stack.push(right);
-            return Ok(());
-        }
-        if matches!(right.view(), ValueView::Package(name) if name == "Any") {
-            self.stack.push(left);
-            return Ok(());
-        }
-        let left_is_failure = matches!(left.view(), ValueView::Instance { class_name, .. } if class_name == "Failure");
-        let right_is_failure = matches!(right.view(), ValueView::Instance { class_name, .. } if class_name == "Failure");
-        if left_is_failure {
-            self.stack.push(left);
-            return Ok(());
-        }
-        if right_is_failure {
-            self.stack.push(right);
-            return Ok(());
-        }
-        let ord = cmp_values(&left, &right);
-        self.stack.push(if ord.is_le() { left } else { right });
+        let result = self.min_max_values(true, left, right)?;
+        self.stack.push(result);
         Ok(())
     }
 
+    // Cost: as `min_max_values`.
     pub(super) fn exec_infix_max_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
-        // ADR-0071, as for `gcd` above.
-        if let Some(result) = self.try_user_infix("infix:<max>", &left, &right)? {
-            self.stack.push(result);
-            return Ok(());
-        }
-        if matches!(left.view(), ValueView::Package(name) if name == "Any") {
-            self.stack.push(right);
-            return Ok(());
-        }
-        if matches!(right.view(), ValueView::Package(name) if name == "Any") {
-            self.stack.push(left);
-            return Ok(());
-        }
-        let left_is_failure = matches!(left.view(), ValueView::Instance { class_name, .. } if class_name == "Failure");
-        let right_is_failure = matches!(right.view(), ValueView::Instance { class_name, .. } if class_name == "Failure");
-        if left_is_failure {
-            self.stack.push(left);
-            return Ok(());
-        }
-        if right_is_failure {
-            self.stack.push(right);
-            return Ok(());
-        }
-        let ord = cmp_values(&left, &right);
-        self.stack.push(if ord.is_ge() { left } else { right });
+        let result = self.min_max_values(false, left, right)?;
+        self.stack.push(result);
         Ok(())
     }
 

@@ -106,119 +106,31 @@ impl Interpreter {
         Ok(Some(Self::buf_cmp_bytes(left, right)))
     }
 
-    // Cost: O(p), p = common prefix; O(1) when the lengths differ (a plain Str
-    // operand is borrowed by `str_context_cow`, any other is stringified first).
-    pub(super) fn exec_str_eq_op(&mut self) -> Result<(), RuntimeError> {
-        let right = self.stack.pop().unwrap();
-        let left = self.stack.pop().unwrap();
-        let (left, right) = self.coerce_str_compare_operands(left, right)?;
-        let result = self.eval_binary_with_junctions(left, right, |_, l, r| {
-            if Self::is_buf_value(&l) && Self::is_buf_value(&r) {
-                Ok(Value::truth(
-                    Self::buf_cmp_bytes(&l, &r) == std::cmp::Ordering::Equal,
-                ))
-            } else {
-                Ok(Value::truth(l.str_context_cow() == r.str_context_cow()))
-            }
-        })?;
-        self.stack.push(result);
-        Ok(())
-    }
-
-    // Cost: O(p), p = common prefix; O(1) when the lengths differ (a plain Str
-    // operand is borrowed by `str_context_cow`, any other is stringified first).
-    pub(super) fn exec_str_ne_op(&mut self) -> Result<(), RuntimeError> {
-        let right = self.stack.pop().unwrap();
-        let left = self.stack.pop().unwrap();
-        let (left, right) = self.coerce_str_compare_operands(left, right)?;
-        // ne is a negation meta-operator shortcut for !eq.
-        // It first evaluates eq (which autothreads through junctions),
-        // then negates the boolean-collapsed result, always returning Bool.
-        let eq_result = self.eval_binary_with_junctions(left, right, |_, l, r| {
-            if Self::is_buf_value(&l) && Self::is_buf_value(&r) {
-                Ok(Value::truth(
-                    Self::buf_cmp_bytes(&l, &r) == std::cmp::Ordering::Equal,
-                ))
-            } else {
-                Ok(Value::truth(l.str_context_cow() == r.str_context_cow()))
-            }
-        })?;
-        self.stack.push(Value::truth(!eq_result.truthy()));
-        Ok(())
-    }
-
     fn buf_cmp_bytes(l: &Value, r: &Value) -> std::cmp::Ordering {
         let lb = Self::extract_buf_bytes(l);
         let rb = Self::extract_buf_bytes(r);
         lb.cmp(&rb)
     }
 
-    // Cost: O(p), p = common prefix (a plain Str operand is borrowed by
-    // `str_context_cow`, any other is stringified first).
-    pub(super) fn exec_str_lt_op(&mut self) -> Result<(), RuntimeError> {
+    /// The six string-comparison opcodes: pop the operands and run the shared
+    /// body ([`Interpreter::str_cmp_values`]).
+    // Cost: as `str_cmp_values`.
+    pub(super) fn exec_str_cmp_op(&mut self, kind: StrCmp) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
-        let (left, right) = self.coerce_str_compare_operands(left, right)?;
-        let result = self.eval_binary_with_junctions(left, right, |_, l, r| {
-            if let Some(ord) = Self::blob_ordering(&l, &r)? {
-                Ok(Value::truth(ord == std::cmp::Ordering::Less))
-            } else {
-                Ok(Value::truth(l.str_context_cow() < r.str_context_cow()))
-            }
-        })?;
+        let result = self.str_cmp_values(kind, left, right)?;
         self.stack.push(result);
         Ok(())
     }
 
-    // Cost: O(p), p = common prefix (a plain Str operand is borrowed by
-    // `str_context_cow`, any other is stringified first).
-    pub(super) fn exec_str_gt_op(&mut self) -> Result<(), RuntimeError> {
-        let right = self.stack.pop().unwrap();
-        let left = self.stack.pop().unwrap();
-        let (left, right) = self.coerce_str_compare_operands(left, right)?;
-        let result = self.eval_binary_with_junctions(left, right, |_, l, r| {
-            if let Some(ord) = Self::blob_ordering(&l, &r)? {
-                Ok(Value::truth(ord == std::cmp::Ordering::Greater))
-            } else {
-                Ok(Value::truth(l.str_context_cow() > r.str_context_cow()))
-            }
-        })?;
-        self.stack.push(result);
-        Ok(())
+    // Cost: as `str_cmp_values`.
+    pub(super) fn exec_str_eq_op(&mut self) -> Result<(), RuntimeError> {
+        self.exec_str_cmp_op(StrCmp::Eq)
     }
 
-    // Cost: O(p), p = common prefix (a plain Str operand is borrowed by
-    // `str_context_cow`, any other is stringified first).
-    pub(super) fn exec_str_le_op(&mut self) -> Result<(), RuntimeError> {
-        let right = self.stack.pop().unwrap();
-        let left = self.stack.pop().unwrap();
-        let (left, right) = self.coerce_str_compare_operands(left, right)?;
-        let result = self.eval_binary_with_junctions(left, right, |_, l, r| {
-            if let Some(ord) = Self::blob_ordering(&l, &r)? {
-                Ok(Value::truth(ord != std::cmp::Ordering::Greater))
-            } else {
-                Ok(Value::truth(l.str_context_cow() <= r.str_context_cow()))
-            }
-        })?;
-        self.stack.push(result);
-        Ok(())
-    }
-
-    // Cost: O(p), p = common prefix (a plain Str operand is borrowed by
-    // `str_context_cow`, any other is stringified first).
-    pub(super) fn exec_str_ge_op(&mut self) -> Result<(), RuntimeError> {
-        let right = self.stack.pop().unwrap();
-        let left = self.stack.pop().unwrap();
-        let (left, right) = self.coerce_str_compare_operands(left, right)?;
-        let result = self.eval_binary_with_junctions(left, right, |_, l, r| {
-            if let Some(ord) = Self::blob_ordering(&l, &r)? {
-                Ok(Value::truth(ord != std::cmp::Ordering::Less))
-            } else {
-                Ok(Value::truth(l.str_context_cow() >= r.str_context_cow()))
-            }
-        })?;
-        self.stack.push(result);
-        Ok(())
+    // Cost: as `str_cmp_values`.
+    pub(super) fn exec_str_ne_op(&mut self) -> Result<(), RuntimeError> {
+        self.exec_str_cmp_op(StrCmp::Ne)
     }
 
     pub(super) fn spaceship_ordering(left: &Value, right: &Value) -> std::cmp::Ordering {
@@ -525,17 +437,8 @@ impl Interpreter {
     pub(super) fn exec_before_after_op(&mut self, is_before: bool) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
-        let blob_ord = Self::blob_ordering(&left, &right)?;
-        let (left, right) = self
-            .coerce_numeric_bridge_pair(left.clone(), right.clone())
-            .unwrap_or((left, right));
-        let ord = blob_ord.unwrap_or_else(|| Self::spaceship_ordering(&left, &right));
-        let result = if is_before {
-            ord == std::cmp::Ordering::Less
-        } else {
-            ord == std::cmp::Ordering::Greater
-        };
-        self.stack.push(Value::truth(result));
+        let result = self.before_after_values(is_before, left, right)?;
+        self.stack.push(result);
         Ok(())
     }
 
@@ -732,7 +635,8 @@ impl Interpreter {
     /// junction autothreading as `eq` / `lt`. Rakudo has no Blob candidate
     /// for `leg`, so a Blob operand dies (`X::Buf::AsStr`, method `Stringy`)
     /// even against another Blob. The opcode, `&infix:<leg>` and the metaop
-    /// forms all come here.
+    /// forms all come here (the latter two through
+    /// [`Interpreter::comparison_family_values`]).
     pub(crate) fn str_leg(&mut self, left: Value, right: Value) -> Result<Value, RuntimeError> {
         let (left, right) = self.coerce_str_compare_operands(left, right)?;
         self.eval_binary_with_junctions(left, right, |_, l, r| {
@@ -742,36 +646,21 @@ impl Interpreter {
         })
     }
 
-    // Cost: O(t1 + t2), t = elements of a list-shaped operand counted
-    // recursively to depth 16 (`warm_which_identity` visits each one looking for
-    // a user `WHICH`), O(1) for scalars. Rakudo: O(1) -- see #9172.
+    // Cost: as `identical_values`. Rakudo: O(1) -- see #9172.
     pub(super) fn exec_strict_eq_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
-        // `===` is `$a.WHICH eq $b.WHICH`, so a class that overrides `WHICH`
-        // decides its own identity here (see `runtime::which_identity`).
-        self.warm_which_identity(&left);
-        self.warm_which_identity(&right);
-        let result = self.eval_binary_with_junctions(left, right, |_, l, r| {
-            Ok(Value::truth(runtime::values_identical(&l, &r)))
-        })?;
+        let result = self.identical_values(false, left, right)?;
         self.stack.push(result);
         Ok(())
     }
 
-    // Cost: O(t1 + t2), as `exec_strict_eq_op`. Rakudo: O(1) -- see #9172.
+    // Cost: as `identical_values`. Rakudo: O(1) -- see #9172.
     pub(super) fn exec_strict_ne_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
-        // !== is a negation meta-operator applied to ===.
-        // It first evaluates === (which autothreads through junctions),
-        // then negates the boolean-collapsed result, always returning Bool.
-        self.warm_which_identity(&left);
-        self.warm_which_identity(&right);
-        let eq_result = self.eval_binary_with_junctions(left, right, |_, l, r| {
-            Ok(Value::truth(runtime::values_identical(&l, &r)))
-        })?;
-        self.stack.push(Value::truth(!eq_result.truthy()));
+        let result = self.identical_values(true, left, right)?;
+        self.stack.push(result);
         Ok(())
     }
 

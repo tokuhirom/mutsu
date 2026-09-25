@@ -457,15 +457,30 @@ impl Interpreter {
                 };
                 Ok(Value::truth(if op == "eq" { equal } else { !equal }))
             }
-            "lt" | "gt" | "le" | "ge" | "after" | "before" => {
+            // `before`/`after` order by `cmp`, not as strings: `10 before 9` is
+            // False. The interpreter-level forms never reach this arm (they
+            // run `before_after_values`, #9447); it stays correct for the
+            // pure callers of this table.
+            "after" | "before" => {
+                let ord = match Self::blob_ordering(left, right)? {
+                    Some(ord) => ord,
+                    None => crate::runtime::compare_values(left, right).cmp(&0),
+                };
+                Ok(Value::truth(if op == "before" {
+                    ord == std::cmp::Ordering::Less
+                } else {
+                    ord == std::cmp::Ordering::Greater
+                }))
+            }
+            "lt" | "gt" | "le" | "ge" => {
                 let ord = match Self::blob_ordering(left, right)? {
                     Some(ord) => ord,
                     None => Self::stringify_compare_operand(left)?
                         .cmp(&Self::stringify_compare_operand(right)?),
                 };
                 let answer = match op {
-                    "lt" | "before" => ord == std::cmp::Ordering::Less,
-                    "gt" | "after" => ord == std::cmp::Ordering::Greater,
+                    "lt" => ord == std::cmp::Ordering::Less,
+                    "gt" => ord == std::cmp::Ordering::Greater,
                     "le" => ord != std::cmp::Ordering::Greater,
                     "ge" => ord != std::cmp::Ordering::Less,
                     _ => unreachable!(),
