@@ -11,6 +11,7 @@ use crate::token_kind::TokenKind;
 use crate::value::Value;
 
 use super::parse_comma_or_expr;
+use crate::parser::stmt::assign::parse_comma_or_expr_no_word_logical;
 
 /// Metadata for each variable in a destructuring declaration.
 struct DestructureVar {
@@ -449,7 +450,16 @@ fn parse_destructuring_with_rhs(
         &input[1..]
     };
     let (rest, _) = ws(rest)?;
-    let (rest, raw_rhs) = parse_comma_or_expr(rest)?;
+    let has_named = vars.iter().any(|v| v.is_named);
+    // A loose word-logical (`and`/`or`/...) binds looser than list assignment:
+    // `my ($z) = () and $z.defined` is `(my ($z) = ()) and $z.defined`. The
+    // positional form stops the RHS before it and re-attaches it below with
+    // the assigned LHS list as its left operand.
+    let (rest, raw_rhs) = if has_named {
+        parse_comma_or_expr(rest)?
+    } else {
+        parse_comma_or_expr_no_word_logical(rest)?
+    };
     // If the RHS is followed (after whitespace) by a `{` block, that block is a
     // separate statement / conditional body — NOT a hash subscript of the
     // declaration. Preserve the whitespace so the expression-context postfix
@@ -463,8 +473,6 @@ fn parse_destructuring_with_rhs(
     let block_rhs_ends_at_newline =
         rhs_ends_with_block && rest[..rest.len() - rest_ws.len()].contains('\n');
     let rest = if has_following_block { rest } else { rest_ws };
-
-    let has_named = vars.iter().any(|v| v.is_named);
 
     // List-assignment iterates the RHS with one level of decont (Rakudo
     // List.STORE): `my ($a, $b) = $row` where `$row` holds an itemized Array
@@ -687,7 +695,55 @@ fn parse_destructuring_with_rhs(
     // element still enforces in value context — e.g. an EVAL'd `my (\b, "foo") =
     // ...` whose trailing `MarkSigillessReadonly` would otherwise leave a
     // constrained decl block-final and skip its check. (subtypes.t 90)
-    stmts.push(Stmt::Expr(Expr::ArrayVar(array_bare)));
+    //
+    // In ASSIGNMENT mode the value is the LHS after the assignment -- the
+    // declared targets themselves, as Rakudo's `List.STORE` returns its
+    // invocant: `(my ($x, $y) = 1, 2, 3)` is `$(1, 2)`, and an infinite RHS
+    // (`my ($x, $y) = 1 xx *`) must not leak out, since sinking it would force
+    // it (#9342). A literal postconstraint element yields its staged value.
+    // Binding mode keeps yielding the staged RHS list.
+    let result = if is_binding {
+        Expr::ArrayVar(array_bare)
+    } else {
+        Expr::ArrayLiteral(
+            vars.iter()
+                .enumerate()
+                .map(|(i, dvar)| {
+                    if dvar.literal_value.is_some() {
+                        Expr::Index {
+                            target: Box::new(Expr::ArrayVar(array_bare.clone())),
+                            index: Box::new(Expr::Literal(Value::int(i as i64))),
+                            is_positional: true,
+                        }
+                    } else if dvar.sigilless {
+                        Expr::BareWord(dvar.name.clone())
+                    } else if let Some(n) = dvar.name.strip_prefix('@') {
+                        Expr::ArrayVar(n.to_string())
+                    } else if let Some(n) = dvar.name.strip_prefix('%') {
+                        Expr::HashVar(n.to_string())
+                    } else if let Some(n) = dvar.name.strip_prefix('&') {
+                        Expr::CodeVar(n.to_string())
+                    } else {
+                        Expr::Var(dvar.name.clone())
+                    }
+                })
+                .collect(),
+        )
+    };
+    // Re-attach a trailing loose word-logical with the assigned list as its
+    // left operand, so the block's value is `(<assignment>) and ...`.
+    let (rest, result, has_following_block) = {
+        let (r, _) = ws(rest)?;
+        if crate::parser::expr::starts_with_loose_word_logical(r) {
+            let (r, tail) = crate::parser::expr::word_logical_tail_pub(r, result)?;
+            let (r_ws, _) = ws(r)?;
+            let block_follows = r_ws.starts_with('{');
+            (if block_follows { r } else { r_ws }, tail, block_follows)
+        } else {
+            (rest, result, has_following_block)
+        }
+    };
+    stmts.push(Stmt::Expr(result));
     let block = Stmt::SyntheticBlock(stmts);
     if has_following_block || block_rhs_ends_at_newline {
         // In `if my ($a, $b) = f() { ... }`, the braced block belongs to the
