@@ -372,6 +372,16 @@ pub(in crate::parser::stmt) fn has_decl(input: &str) -> PResult<'_, Stmt> {
     let (rest, name) = take_while1(rest, |c: char| c.is_alphanumeric() || c == '_' || c == '-')?;
     let name = name.to_string();
 
+    // `has $.x: ARGLIST` -- see `parse_colon_arglist`. When present, the rest
+    // of this declaration is parsed from an empty statement (`;`) and the real
+    // remainder is returned at the end.
+    let (rest, colon_arglist) = if is_public && let Some((after, tail)) = parse_colon_arglist(rest)?
+    {
+        (";", Some((after, tail)))
+    } else {
+        (rest, None)
+    };
+
     // Only a *scalar* `HAS` is useless: `HAS num32 @.mat[16] is CArray` is an
     // inline array of 16 native floats, which is exactly what HAS is for, and
     // rakudo does not warn about it either.
@@ -1261,7 +1271,60 @@ pub(in crate::parser::stmt) fn has_decl(input: &str) -> PResult<'_, Stmt> {
         (None, Some(sink)) => Stmt::SyntheticBlock(vec![decl, sink]),
         (Some(assign_stmt), Some(sink)) => Stmt::SyntheticBlock(vec![decl, assign_stmt, sink]),
     };
-    Ok((rest, stmt))
+    let Some((colon_rest, tail)) = colon_arglist else {
+        return Ok((rest, stmt));
+    };
+    // Kept as ONE flat block for the class-body attribute-discovery walk. A
+    // nested declaration comes first: rakudo finishes it while still parsing
+    // this one's arglist, so it is the earlier attribute in `.^attributes`.
+    let mut stmts = match tail {
+        Some(Stmt::SyntheticBlock(v)) => v,
+        Some(s) => vec![s],
+        None => Vec::new(),
+    };
+    match stmt {
+        Stmt::SyntheticBlock(v) => stmts.extend(v),
+        s => stmts.push(s),
+    }
+    Ok((colon_rest, Stmt::SyntheticBlock(stmts)))
+}
+
+/// `has $.x: ARGLIST` -- rakudo's `variable` token lets a `.`-twigil variable
+/// take a colon arglist (`$.meth: args`, the colon-call form), and a
+/// declarator reuses that token, so `has Int $.gid:` followed by a newline
+/// and `has Str @.m;` parses the second declaration AS the first one's
+/// arglist (POSIX::PWDENT's `has Int $.gid:` typo).  The arglist's value is
+/// discarded (`has $.x: 42` gives `$.x` no default), but a declaration inside
+/// it still declares, so both attributes exist.
+///
+/// The `:` must be adjacent to the name and followed by whitespace, as in
+/// rakudo (`has $.x :1` and `has $.x:1` are both "Confused").  Returns the
+/// input after the arglist (and its terminating `;`) and the nested
+/// declaration, if the arglist was one.
+// TODO: an arbitrary expression arglist is parsed and discarded here, so a
+// `my` declared inside it (`has $.x: my $q = 5`) is not declared, while rakudo
+// declares it (unassigned).  Only a nested `has` is kept.
+fn parse_colon_arglist(input: &str) -> Result<Option<(&str, Option<Stmt>)>, PError> {
+    let Some(after_colon) = input.strip_prefix(':') else {
+        return Ok(None);
+    };
+    if !after_colon.starts_with(char::is_whitespace) {
+        return Ok(None);
+    }
+    let (r, _) = ws(after_colon)?;
+    if keyword("has", r).is_some() || keyword("HAS", r).is_some() {
+        let (r, nested) = has_decl(r)?;
+        return Ok(Some((r, Some(nested))));
+    }
+    let r = if r.is_empty() || r.starts_with(';') || r.starts_with('}') {
+        r
+    } else {
+        let (r, _discarded) = parse_assign_expr_or_comma(r)?;
+        let (r, _) = ws(r)?;
+        r
+    };
+    let (r, _) = opt_char(r, ';');
+    Ok(Some((r, None)))
 }
 
 fn has_type_method_decl<'a>(input: &'a str, has_type: &str) -> PResult<'a, Stmt> {
