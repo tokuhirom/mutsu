@@ -6514,8 +6514,19 @@ impl Interpreter {
                 *ip += 1;
             }
             // Cost: O(1) in a loop's steady state, else O(t), t = the chunk's `state` locals (see exec_set_var_dynamic_op). Rakudo: O(1) -- see #9171.
-            OpCode::SetVarDynamic { name_idx, dynamic } => {
-                self.exec_set_var_dynamic_op(code, *name_idx, *dynamic);
+            OpCode::SetVarDynamic {
+                name_idx,
+                dynamic,
+                local_slot,
+                reset_binding,
+            } => {
+                self.exec_set_var_dynamic_op(
+                    code,
+                    *name_idx,
+                    *dynamic,
+                    *local_slot,
+                    *reset_binding,
+                );
                 *ip += 1;
             }
             // Cost: O(t), t = export tags.

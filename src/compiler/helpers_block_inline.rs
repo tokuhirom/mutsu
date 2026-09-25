@@ -377,6 +377,8 @@ impl Compiler {
                     Stmt::VarDecl {
                         name,
                         expr,
+                        is_state,
+                        is_our,
                         is_dynamic: ast_is_dynamic,
                         type_constraint,
                         custom_traits,
@@ -400,6 +402,12 @@ impl Compiler {
                         self.code.emit(OpCode::SetVarDynamic {
                             name_idx,
                             dynamic: is_dynamic,
+                            local_slot: None,
+                            reset_binding: !*is_state
+                                && !*is_our
+                                && !custom_traits.iter().any(|(t, _)| t == "__constant")
+                                && !name.starts_with('@')
+                                && !name.starts_with('%'),
                         });
                         // Register the declared type constraint (e.g. `my Int %h`)
                         // so element type-checks and `:=` bind type-checks see it,
