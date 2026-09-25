@@ -4667,7 +4667,7 @@ impl Interpreter {
                 // enclosing `CONTROL {}` can `.resume` after this call — e.g.
                 // `my $w = &warn; $w.("x")` raises a resumable `warn` signal from
                 // inside the dispatched callable, exactly like a direct `warn`
-                // (which the `ExecCall` arm below already handles).
+                // (which the `CallFunc` arm above already handles).
                 match self.exec_call_on_value_op(
                     code,
                     *arity,
@@ -4704,35 +4704,6 @@ impl Interpreter {
                     *arity,
                     *arg_sources_idx,
                     *bare_args,
-                    compiled_fns,
-                ) {
-                    Ok(()) => {}
-                    Err(e) => {
-                        if !e.is_resume() && self.resume_ip.is_none() {
-                            self.resume_ip = Some((Self::resume_code_fp(code), *ip + 1));
-                        }
-                        return Err(e);
-                    }
-                }
-                *ip += 1;
-            }
-            // Cost: O(a) plus the callee's body, a = arguments (statement-level call, value sunk).
-            OpCode::ExecCall {
-                name_idx,
-                arity,
-                arg_sources_idx,
-            } => {
-                self.sync_source_line(code, *ip);
-                // `use fatal`: see the comment on the `CallFunc` arm above.
-                self.explode_if_fatal_failure_in_call_args(
-                    Self::const_str(code, *name_idx),
-                    *arity as usize,
-                )?;
-                match self.exec_exec_call_op(
-                    code,
-                    *name_idx,
-                    *arity,
-                    *arg_sources_idx,
                     compiled_fns,
                 ) {
                     Ok(()) => {}

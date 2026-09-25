@@ -64,23 +64,6 @@ impl Interpreter {
         }
     }
 
-    pub(crate) fn exec_call_values(
-        &mut self,
-        name: &str,
-        args: Vec<Value>,
-    ) -> Result<Value, RuntimeError> {
-        match self.call_function(name, args.clone()) {
-            Ok(v) => Ok(v),
-            Err(e)
-                if e.message
-                    .contains("Unknown function (call_function fallback disabled):") =>
-            {
-                self.exec_call(name, args)
-            }
-            Err(e) => Err(e),
-        }
-    }
-
     /// The `OpCode::ExecCallPairs` carrier arm.
     ///
     /// The opcode handler sanitizes the argument list at its entry (so its

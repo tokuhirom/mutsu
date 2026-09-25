@@ -3,172 +3,6 @@ use crate::runtime::dispatch_key;
 use crate::symbol::Symbol;
 
 impl Interpreter {
-    pub(super) fn exec_exec_call_op(
-        &mut self,
-        code: &CompiledCode,
-        name_idx: u32,
-        arity: u32,
-        arg_sources_idx: Option<u32>,
-        compiled_fns: &CompiledFns,
-    ) -> Result<(), RuntimeError> {
-        // The callsite name, both as text (for the `&str` probes below) and as
-        // its pre-interned `const_syms` entry — which is what the dispatch
-        // entries want, rather than re-interning the same constant per call
-        // (#7766 unit 2).
-        let name_sym = code.const_sym(name_idx);
-        // ADR-0113: a frame-lexical callee is resolved at compile time.
-        if let Some(r) = code.lexical_routine(name_sym) {
-            let call_has_named = Self::stack_args_have_named(code, arg_sources_idx);
-            if let Some(value) = self.exec_frame_lexical_call(
-                code,
-                r,
-                FrameLexicalCallSite {
-                    arity,
-                    arg_sources_idx,
-                    track_sources: true,
-                    call_has_named,
-                },
-                compiled_fns,
-            )? {
-                self.sink_discarded_call_value(&value)?;
-                return Ok(());
-            }
-        }
-        let name = Self::const_str(code, name_idx).to_string();
-        let arity = arity as usize;
-        if self.stack.len() < arity {
-            return Err(RuntimeError::new("Interpreter stack underflow in ExecCall"));
-        }
-        let start = self.stack.len() - arity;
-        let raw_args: Vec<Value> = self.stack.drain(start..).collect();
-        // ADR-0054 S2: spread only the positions the caller wrote as
-        // `|EXPR` -- decided by call-site syntax, not by a value merely
-        // evaluating to a Slip (e.g. `show maybe(0);` as a bare statement,
-        // where `maybe`'s tail `if` didn't fire and returned an Empty Slip,
-        // must pass exactly one argument).
-        let decoded_sources = self.decode_arg_sources(code, arg_sources_idx);
-        let (args, arg_sources) =
-            Self::spread_call_args_by_syntax(code, raw_args, arg_sources_idx, decoded_sources);
-        // NativeCall: a statement-level call to an `is native(...)` sub compiles
-        // to `ExecCall` (a bare call statement whose value is sunk), not
-        // `CallFunc` — but only `CallFunc`'s handler checked `native_call_specs`.
-        // A sunk native call (`sqlite3_extended_result_codes($p, 1);`, its return
-        // discarded) therefore ran its literal `{ ... }` stub body instead of
-        // dispatching over FFI, dying with "Stub code executed". Mirror
-        // `exec_call_func_op`'s native dispatch here so the check applies
-        // regardless of which opcode a given callsite compiled to.
-        if !self.native_call_specs.is_empty() {
-            // `resolve_native_call_spec` honors a same-scope plain-sub shadow
-            // of a bare-name native descriptor (Raku: a local declaration
-            // shadows a same-named imported/needed symbol) — see its doc
-            // comment.
-            let spec = self.resolve_native_call_spec(&name);
-            if let Some(mut spec) = spec {
-                self.resolve_native_ret_struct(&mut spec);
-                let mut call_args = args;
-                call_args.retain(|a| !Self::is_callsite_line_marker(a));
-                let (result, out_args) =
-                    crate::runtime::nativecall::call_native_with_out_args(self, &spec, &call_args)?;
-                if !out_args.is_empty() {
-                    let mut wrote = false;
-                    for (idx, val) in out_args {
-                        if let ValueView::VarRef { name, .. } = call_args[idx].view() {
-                            let n = name.resolve().to_string();
-                            self.env_mut().insert(n.clone(), val);
-                            self.pending_rw_writeback_sources.push(n);
-                            wrote = true;
-                        }
-                    }
-                    if wrote {
-                        self.apply_pending_rw_writeback(code);
-                    }
-                }
-                self.stack.push(result);
-                return Ok(());
-            }
-        }
-        let args = self.normalize_call_args_for_target(&name, name_sym, args);
-        let (args, callsite_line) = self.sanitize_call_args_owned(args);
-        // Auto-FETCH Proxy args for statement-level calls (same as CallFunc)
-        let args = if self.in_lvalue_assignment {
-            args
-        } else {
-            self.auto_fetch_proxy_args(args)?
-        };
-        loan_env!(self, set_pending_callsite_line(callsite_line));
-        // Check wrap chain for named function calls
-        if self.wrap_sub_id_for_name(&name).is_some()
-            && let Some(sub_val) = self.get_wrapped_sub(&name)
-        {
-            let result = self.vm_call_sub_value(sub_val, args, false)?;
-            self.stack.push(result);
-            // A wrapper closure (`&f.wrap(-> { $seen = True; callsame })`) may mutate
-            // a captured-outer lexical; the closure dispatch recorded it precisely
-            // (`pending_*_writeback`). Drain it so the caller's slot refreshes without
-            // the blanket env→locals pull (env_dirty-removal substrate).
-            self.apply_pending_rw_writeback(code);
-            return Ok(());
-        }
-        if let Some(cf) = self.find_compiled_function(compiled_fns, &name, name_sym, &args) {
-            self.set_pending_call_arg_sources(arg_sources);
-            let pkg_sym = self.current_package_sym();
-            let call_result =
-                self.call_compiled_function_named(cf, args, compiled_fns, pkg_sym, name_sym);
-            self.set_pending_call_arg_sources(None);
-            let value = call_result?;
-            // Slice F: write any `is rw` param writeback through to the caller's
-            // local slot (and clear the pending list so it never leaks to the
-            // next call site).
-            self.apply_pending_rw_writeback(code);
-            // No blanket mark: call_compiled_function_named already signals
-            // env_dirty precisely from its return merge (matches the hot
-            // vm_call_func_ops path). A blanket `= true` here would defeat that
-            // precision. See docs/vm-dual-store.md "CP-2 status & corrected plan".
-            self.sink_discarded_call_value(&value)?;
-        } else if let Some(native_result) = self.try_native_function(name_sym, &args) {
-            let value = native_result?;
-            self.sink_discarded_call_value(&value)?;
-        } else {
-            // A user-defined (or imported) sub shadows a same-named builtin. The
-            // `CallFunc` path has always honoured that (`dispatch_func_call_inner`'s
-            // `user_function_matches_call` branch); `ExecCall` did not, and
-            // `exec_call_values` tries `call_function` FIRST — which answers with
-            // the builtin and only falls back to user dispatch when the name is
-            // not a builtin at all. So a shadowed name reached the builtin here.
-            //
-            // `Cro::HTTP::Router` exports `get`, and mutsu has a builtin `get`
-            // (read a line from a handle): a `route` block whose `get -> {...}` sat
-            // in *non-final* (sink) position compiled to `ExecCall` and died with
-            // "Expected IO::Handle", while the same call in final position went
-            // through `CallFunc` and worked.
-            let shadows_builtin = loan_env!(self, user_function_matches_call(&name, &args));
-            self.set_pending_call_arg_sources(arg_sources);
-            // Carrier may write the caller env by name (e.g. EVAL'd lexicals).
-            // Slice B logs those writes (`begin_carrier`) and reconciles them into
-            // the caller's slots on return (`writeback_carrier_writes`), so the
-            // reverse sync is precise. See docs/vm-single-store.md.
-            let carrier_saved = self.begin_carrier();
-            let exec_result = if shadows_builtin {
-                loan_env!(self, exec_call(&name, args))
-            } else {
-                loan_env!(self, exec_call_values(&name, args))
-            };
-            self.set_pending_call_arg_sources(None);
-            let written = self.end_carrier(carrier_saved);
-            let value = exec_result?;
-            // This bareword carrier (EVAL and other interpreter-only routines)
-            // writes caller lexicals through `set_env_with_main_alias` (EVAL's
-            // SetGlobal) or — for an embedded regex `{ }`/`:my`/`:let` block —
-            // directly into env, which logs into the carrier set (regex_eval.rs,
-            // Slice C' / open-question #2). This writeback reconciles every scalar
-            // it wrote into a current-frame slot; cell-boxing keeps any diverged
-            // container / ancestor lexical coherent.
-            self.writeback_carrier_writes(code, &written);
-            self.sink_discarded_call_value(&value)?;
-        }
-        Ok(())
-    }
-
     /// The `&name` value a custom `sub EXPORT` installed into `env` for a
     /// bareword `name` that has no package routine of its own, if any.
     ///
@@ -176,7 +10,7 @@ impl Interpreter {
     /// EXPORT::all::{'&f'}:p)`) whose candidates live only under the
     /// exporting module's package, so name-based resolution cannot find them
     /// even though a `proto` of that bare name is registered. Every call form
-    /// -- `CallFunc` and the statement-position `ExecCall`/`ExecCallPairs` --
+    /// -- `CallFunc` and the statement-position `ExecCallPairs` --
     /// must dispatch through the installed value instead; the statement forms
     /// used to fall through to the registry and die with "Cannot resolve
     /// caller" on any call carrying a named argument (#9261). Ordinary exports
@@ -193,7 +27,7 @@ impl Interpreter {
     /// A statement-level call discards its value, so that value is *sunk* —
     /// and sinking an unhandled `Failure` throws, exactly as `OpCode::SinkPop`
     /// does for the call shapes that leave their result on the stack.
-    /// `OpCode::ExecCall`/`ExecCallPairs` leave nothing on the stack, so they
+    /// `OpCode::ExecCallPairs` leaves nothing on the stack, so it
     /// never reached `SinkPop` and swallowed the Failure instead: `EVAL 'use
     /// fatal; "foo"[2]';` ran on to the next statement where raku throws.
     ///
@@ -287,7 +121,7 @@ impl Interpreter {
             self.auto_fetch_proxy_args(args)?
         };
         // Strip the parser-injected `__mutsu_test_callsite_line` pair BEFORE the
-        // resolution probes below — the same preamble `ExecCall` has always had.
+        // resolution probes below.
         // Every test assertion (`ok 1, "x"`, `is $got, $exp, "..."`) carries that
         // pair, which is exactly why this opcode exists; leaving it in made both
         // probes ask about a call shape that does not exist, so a callee that IS
@@ -367,7 +201,7 @@ impl Interpreter {
         let pre_env: Vec<Option<Value>> = self.snapshot_carrier_overwritable_env(code);
         let carrier_saved = self.begin_carrier();
         // Tail position (`keep_value`) routes through the standard expression
-        // dispatcher first (call_function — same as exec_call_values) so the
+        // dispatcher first (call_function) so the
         // call's value is the real return value; the legacy exec_call carrier
         // reconstructs an implicit return from the topic, which is unreliable
         // for a value that must propagate (JSON::Marshal's tail

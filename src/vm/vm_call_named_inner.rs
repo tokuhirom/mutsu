@@ -23,7 +23,7 @@ impl Interpreter {
         // after each dispatch returns, so it must hold *only* this call's
         // sources on return. Clear any leftover from a sibling whose call site
         // did not drain (a non-rw path), so it can never be written into the
-        // wrong slot. Nested calls in the body self-drain via their own ExecCall
+        // wrong slot. Nested calls in the body self-drain via their own call opcode
         // ops, leaving the list empty before this frame records its own sources.
         self.pending_rw_writeback_sources.clear();
         // RAII (`MarkContextGuard`,
