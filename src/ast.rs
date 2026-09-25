@@ -4048,28 +4048,31 @@ mod env_only_decl_tests {
 }
 
 /// The custom routine traits of an anonymous sub (`sub () is foo(1) { }`),
-/// stored behind one pointer. Almost every anonymous sub has none, and an
+/// stored as an optional boxed slice. Almost every anonymous sub has none, and an
 /// inline `Vec` made `AnonSubParams` the widest variant, taking every `Expr`
 /// from 120 to 128 bytes. The parser and compiler recurse on `Expr` values, so that width
 /// is paid in every stack frame; it was enough to overflow the 2 MiB test
 /// thread stack in a debug build (`expr_size_guard` pins the size).
 #[derive(Debug, Clone, Default, Hash, serde::Serialize, serde::Deserialize)]
-pub(crate) struct AnonSubTraits(Option<Box<Vec<(String, Option<Expr>)>>>);
+pub(crate) struct AnonSubTraits(Option<Box<[AnonSubTrait]>>);
+
+/// One custom routine trait: its name and optional argument.
+pub(crate) type AnonSubTrait = (String, Option<Expr>);
 
 impl AnonSubTraits {
-    pub(crate) fn as_slice(&self) -> &[(String, Option<Expr>)] {
-        self.0.as_deref().map_or(&[], Vec::as_slice)
+    pub(crate) fn as_slice(&self) -> &[AnonSubTrait] {
+        self.0.as_deref().unwrap_or(&[])
     }
 }
 
-impl From<Vec<(String, Option<Expr>)>> for AnonSubTraits {
-    fn from(v: Vec<(String, Option<Expr>)>) -> Self {
-        Self((!v.is_empty()).then(|| Box::new(v)))
+impl From<Vec<AnonSubTrait>> for AnonSubTraits {
+    fn from(v: Vec<AnonSubTrait>) -> Self {
+        Self((!v.is_empty()).then(|| v.into_boxed_slice()))
     }
 }
 
 impl std::ops::Deref for AnonSubTraits {
-    type Target = [(String, Option<Expr>)];
+    type Target = [AnonSubTrait];
     fn deref(&self) -> &Self::Target {
         self.as_slice()
     }
