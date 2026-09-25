@@ -352,10 +352,11 @@ pub(crate) fn role_decl_with_keyword<'a>(input: &'a str, kw: &str) -> PResult<'a
                 let (r, _) = ws(r)?;
                 rest = r;
             } else if trait_name == "export" {
+                // `is export` / `is export(:TAG, :TAG2)`: exactly as for a
+                // class, a bare `is export` uses DEFAULT and a tagged form
+                // declares each named tag (and is importable under `:ALL`).
                 is_export = true;
-                if !export_tags.iter().any(|t| t == "DEFAULT") {
-                    export_tags.push("DEFAULT".to_string());
-                }
+                super::class_decl::push_export_tags(r, &mut export_tags);
                 let r = skip_balanced_parens(r);
                 let (r, _) = ws(r)?;
                 rest = r;

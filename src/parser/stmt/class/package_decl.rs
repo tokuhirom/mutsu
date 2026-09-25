@@ -433,9 +433,7 @@ pub(crate) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
                     r = r2;
                 } else if trait_name == "export" {
                     is_export = true;
-                    if !export_tags.iter().any(|t| t == "DEFAULT") {
-                        export_tags.push("DEFAULT".to_string());
-                    }
+                    super::class_decl::push_export_tags(r2, &mut export_tags);
                     let r2 = skip_balanced_parens(r2);
                     let (r2, _) = ws(r2)?;
                     r = r2;
