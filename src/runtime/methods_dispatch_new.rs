@@ -314,7 +314,11 @@ impl Interpreter {
     }
 
     /// Handle the "bless" method: creates a new instance with attributes from named args.
-    fn dispatch_bless(&mut self, target: &Value, args: Vec<Value>) -> Result<Value, RuntimeError> {
+    pub(super) fn dispatch_bless(
+        &mut self,
+        target: &Value,
+        args: Vec<Value>,
+    ) -> Result<Value, RuntimeError> {
         crate::alloc_scope!("bless");
         // self.bless(:attr1($val1), :attr2($val2), ...)
         // Creates a new instance of the invocant's class with attributes from named args

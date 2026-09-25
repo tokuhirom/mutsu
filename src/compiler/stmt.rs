@@ -2262,6 +2262,17 @@ impl Compiler {
                     self.code.emit(OpCode::CheckReadOnly(name_idx));
                 }
                 if matches!(op, AssignOp::Bind) {
+                    // `$a := my $z = 2` binds `$a` to `$z`'s container.
+                    // Evaluated as an expression the declaration yields only
+                    // its value, so the rebind stored it into a fresh cell
+                    // that a closure over `$a` never saw (#9308). Run the
+                    // declaration first -- before the bind markers below,
+                    // which its own store would otherwise consume -- and then
+                    // bind the declared variable exactly as `$a := $z` does.
+                    let decl_source = Self::scalar_decl_bind_source(effective_name, expr);
+                    if let Some((decl, _)) = decl_source {
+                        self.compile_stmt(decl);
+                    }
                     let mut scalar_elem_bind = false;
                     if effective_name.starts_with('@') || effective_name.starts_with('%') {
                         // A container rebind (`@a := ...`, `%h := ...`) replaces
@@ -2294,6 +2305,8 @@ impl Compiler {
                         self.compile_call_arg(expr);
                         self.scalar_bind_autovivify = false;
                         self.bind_terminal = false;
+                    } else if let Some((_, decl_name)) = decl_source {
+                        self.compile_call_arg(&Expr::Var(decl_name.to_string()));
                     } else {
                         self.compile_call_arg(expr);
                     }
@@ -2333,6 +2346,9 @@ impl Compiler {
                     let source_slot = self.local_map.get(effective_name).copied();
                     self.code.note_rebind_target(source_slot);
                     self.code.note_rebound_slot(source_slot);
+                    if source_slot.is_none() {
+                        self.code.note_rebound_name(effective_name);
+                    }
                 }
                 self.emit_set_named_var(effective_name);
             }

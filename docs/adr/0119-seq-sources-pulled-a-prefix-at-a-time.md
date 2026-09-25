@@ -81,3 +81,14 @@ pulling `n` elements, not by reifying the body.**
 - **Partial reification kept across a consuming read**: after `.head` rakudo's Seq is consumed,
   so there is nothing to keep. Stealing the source avoids a new "partly reified, still
   consumable" state in `SeqBody`.
+
+## 5. Follow-up: `IO::Path.lines` / `.words` (#9257, 2026-09-25)
+
+`IO::Path.lines` / `.words` now open a private read handle and return its `IoLines` Seq, so
+`.head(n)` / `.first` are O(prefix) for them too. Because mutsu has no finalizer that could
+close a handle when its Seq is dropped, the private handle is closed eagerly instead: at EOF
+(close-on-exhaust), after a consuming `.head` / `.first`, and when a `for` loop that claimed the
+Seq is left. A bounded subscript (`$path.IO.lines[0]`) would leave the Seq readable with its
+handle half-read and nothing left to close it, so for a private handle it reads to the end, as
+before. Its reads go through a buffer (`SeqFileReader`) because no user code can see its file
+offset, which keeps a full read at the old slurp-and-split cost.

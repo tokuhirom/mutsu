@@ -46,13 +46,13 @@
 //! the companion class-name filter: this module answers "what is in there", not
 //! "is this a Buf".
 
-use super::{AttrMap, BufData, ElemKind, InstanceAttrs, Value, ValueRepr, ValueView};
+use super::{AttrMap, BufBytes, BufData, ElemKind, InstanceAttrs, Value, ValueRepr, ValueView};
 use crate::gc::Gc;
 use crate::symbol::Symbol;
 
 mod inplace;
 pub(crate) use inplace::{
-    buf_target, pop_buf_elem, set_buf_elem, shift_buf_elem, with_buf_bytes_mut,
+    buf_storage_as, buf_target, pop_buf_elem, set_buf_elem, shift_buf_elem, with_buf_storage_mut,
 };
 
 /// The attribute a `Buf`/`Blob`-shaped instance keeps its storage under.
@@ -429,8 +429,8 @@ pub(crate) enum BufEnd {
 /// elements are encoded at the width the node already carries and appended in
 /// place, which is amortized O(k) for a `Back` push.
 ///
-/// The `Front` case still shifts the existing bytes, as any prepend onto
-/// contiguous storage must, but it too avoids decoding them.
+/// The `Front` case is amortized O(k) too: the node's [`BufBytes`] keeps front
+/// slack, the way MoarVM's `VMArray` keeps a start offset (#9191).
 ///
 /// `class_name` is needed only for the buffer that has no storage node yet,
 /// where the element type has nowhere else to come from — see the module note
@@ -477,17 +477,17 @@ pub(crate) fn extend_buf_elems(
             .unwrap_or_default();
         drop(map);
         splice_in(&mut bytes, added, end);
-        attrs.insert(ELEMS_ATTR, storage_value(bytes, width, kind));
+        attrs.insert(ELEMS_ATTR, storage_value(bytes.into_vec(), width, kind));
     }
 }
 
 /// The new elements' bytes onto one end of the bytes already there.
-fn splice_in(bytes: &mut Vec<u8>, added: Vec<u8>, end: BufEnd) {
+// Cost: O(k) amortized at either end, k = bytes added (`BufBytes` keeps front
+// slack, as MoarVM's `VMArray` keeps a start offset).
+fn splice_in(bytes: &mut BufBytes, added: Vec<u8>, end: BufEnd) {
     match end {
         BufEnd::Back => bytes.extend_from_slice(&added),
-        BufEnd::Front => {
-            bytes.splice(0..0, added);
-        }
+        BufEnd::Front => bytes.insert_front(&added),
     }
 }
 
@@ -506,11 +506,11 @@ pub(crate) fn buf_attrs_extended(
     };
     let (mut bytes, width, kind) = existing.unwrap_or_else(|| {
         let (w, k) = elem_type(&class_name.resolve());
-        (Vec::new(), w, k)
+        (BufBytes::new(), w, k)
     });
     splice_in(&mut bytes, encode_elems(new_elems, width, kind), end);
     let mut map = AttrMap::new();
-    map.insert(ELEMS_ATTR, storage_value(bytes, width, kind));
+    map.insert(ELEMS_ATTR, storage_value(bytes.into_vec(), width, kind));
     map
 }
 
@@ -689,7 +689,7 @@ pub(crate) fn buf_raw_bytes(attrs: &InstanceAttrs) -> Option<Vec<u8>> {
 
 /// [`buf_raw_bytes`] against an attribute map already in hand.
 pub(crate) fn buf_raw_bytes_in(map: &AttrMap) -> Option<Vec<u8>> {
-    Some(node_in(map)?.bytes.clone())
+    Some(node_in(map)?.bytes.to_vec())
 }
 
 /// [`buf_raw_bytes`] with an absent buffer read as empty.
@@ -898,7 +898,7 @@ mod tests {
         let attrs = attrs_of(&wide);
         let map = attrs.as_map();
         let node = node_in(&map).expect("node");
-        assert_eq!(node.bytes, vec![0x70, 0x11]); // little-endian
+        assert_eq!(node.bytes, BufBytes::from(vec![0x70, 0x11])); // little-endian
         assert_eq!(node.width, 2);
         assert_eq!(node.kind, ElemKind::Uint);
     }
@@ -987,6 +987,9 @@ mod tests {
             Some(vec![Value::int(1), Value::int(0x1234)])
         );
         let map = attrs.as_map();
-        assert_eq!(node_in(&map).expect("node").bytes, vec![1, 0, 0x34, 0x12]);
+        assert_eq!(
+            node_in(&map).expect("node").bytes,
+            BufBytes::from(vec![1, 0, 0x34, 0x12])
+        );
     }
 }

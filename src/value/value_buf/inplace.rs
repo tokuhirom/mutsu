@@ -9,13 +9,16 @@
 //!
 //! The functions here edit the node's bytes directly: they touch only the bytes
 //! a write covers (plus an amortized grow), exactly like MoarVM's `VMArray`.
-//! Like [`put_bytes`] they write **through** an unshared node
+//! Like [`put_bytes`](super::put_bytes) they write **through** an unshared node
 //! (keeping any address C holds valid) and fork a shared one (`.Buf`/`.Blob`
 //! re-tag one node under two names, and Raku's copy semantics mean a write to
 //! one must not show through the other).
 
-use super::{BufData, ELEMS_ATTR, InstanceAttrs, Value, decode_elem_bits, elem_bits, node_in};
-use super::{bytes_to_elems, decode_elems, encode_elems, put_bytes, storage_value};
+use super::storage_value;
+use super::{
+    BufBytes, BufData, ELEMS_ATTR, ElemKind, InstanceAttrs, Value, decode_elem_bits, elem_bits,
+    node_in,
+};
 
 /// Run `f` over the node's raw storage (`elems * width` little-endian bytes)
 /// and its element width, in place. `None` (without calling `f`) when the
@@ -25,7 +28,7 @@ use super::{bytes_to_elems, decode_elems, encode_elems, put_bytes, storage_value
 /// re-enter the interpreter: the attribute read guard is held across it.
 pub(crate) fn with_buf_storage_mut<R>(
     attrs: &InstanceAttrs,
-    f: impl FnOnce(&mut Vec<u8>, usize) -> R,
+    f: impl FnOnce(&mut BufBytes, usize) -> R,
 ) -> Option<R> {
     let (mut bytes, w, kind) = {
         let map = attrs.as_map();
@@ -44,44 +47,7 @@ pub(crate) fn with_buf_storage_mut<R>(
         (node.bytes.clone(), node.width, node.kind)
     };
     let out = f(&mut bytes, w as usize);
-    attrs.insert(ELEMS_ATTR, storage_value(bytes, w, kind));
-    Some(out)
-}
-
-/// Run `f` over the buffer's **byte view** — one byte per element, the shape
-/// the `nqp::` byte ops (`writeuint`, `splice`, `readfh`, ...) address — and
-/// store what it leaves behind as the new elements.
-///
-/// For a width-1 buffer (every `Buf`/`Blob`/`utf8`/`buf8`) that view *is* the
-/// storage, so the edit happens in place and costs only what `f` touches. A
-/// wider buffer's view is the low byte of each element, which has no storage of
-/// its own: that case projects, edits and re-encodes the whole buffer, O(e).
-// TODO: a wide buffer's byte ops should address its raw storage, as MoarVM's
-// do (`nqp::writeuint` on a `buf32` writes bytes, not low-byte elements);
-// until then this keeps the long-standing low-byte projection for them (#9191).
-pub(crate) fn with_buf_bytes_mut<R>(
-    attrs: &InstanceAttrs,
-    f: impl FnOnce(&mut Vec<u8>) -> R,
-) -> Option<R> {
-    let wide = {
-        let map = attrs.as_map();
-        let node = node_in(&map)?;
-        (node.width != 1).then(|| (decode_elems(&node), node.width, node.kind))
-    };
-    let Some((elems, width, kind)) = wide else {
-        return with_buf_storage_mut(attrs, |bytes, _| f(bytes));
-    };
-    let mut bytes: Vec<u8> = elems
-        .iter()
-        .map(|e| crate::runtime::to_int(e) as u8)
-        .collect();
-    let out = f(&mut bytes);
-    put_bytes(
-        attrs,
-        encode_elems(&bytes_to_elems(&bytes), width, kind),
-        width,
-        kind,
-    );
+    attrs.insert(ELEMS_ATTR, storage_value(bytes.into_vec(), w, kind));
     Some(out)
 }
 
@@ -123,8 +89,8 @@ pub(crate) fn pop_buf_elem(attrs: &InstanceAttrs) -> Option<Option<Value>> {
 
 /// Remove and return the first element (`nqp::shift` on a buffer). The outer
 /// `None` is "no element storage", the inner one "empty buffer".
-// TODO: this shifts the remaining bytes down, O(e) per call; MoarVM keeps a
-// start offset in the VMArray body and is O(1) (#9191).
+// Cost: O(1) amortized — `BufBytes` advances its head offset rather than
+// moving the remaining bytes, as MoarVM's `VMArray` advances `start`.
 pub(crate) fn shift_buf_elem(attrs: &InstanceAttrs) -> Option<Option<Value>> {
     let kind = {
         let map = attrs.as_map();
@@ -135,13 +101,33 @@ pub(crate) fn shift_buf_elem(attrs: &InstanceAttrs) -> Option<Option<Value>> {
             return None;
         }
         let v = elem_from(&bytes[..w], w, kind);
-        bytes.drain(..w);
+        bytes.drop_front(w);
         Some(v)
     })
 }
 
+/// The buffer's elements as storage bytes of element type `width`/`kind`: its
+/// raw storage when it already has that type, otherwise each element
+/// re-encoded at `width` (truncated, as MoarVM's `splice` truncates a `buf16`
+/// element spliced into a `buf8`). `None` when there is no element storage.
+// Cost: O(e), e = elements (one copy).
+pub(crate) fn buf_storage_as(attrs: &InstanceAttrs, width: u8, kind: ElemKind) -> Option<Vec<u8>> {
+    let map = attrs.as_map();
+    let node = node_in(&map)?;
+    if node.width == width && node.kind == kind {
+        return Some(node.bytes.to_vec());
+    }
+    let w = width as usize;
+    let mut out = Vec::with_capacity(node.elems() * w);
+    for chunk in node.bytes.chunks_exact(node.width as usize) {
+        let v = elem_from(chunk, node.width as usize, node.kind);
+        out.extend_from_slice(&elem_bits(&v, width, kind).to_le_bytes()[..w]);
+    }
+    Some(out)
+}
+
 /// The element whose bytes begin `chunk`.
-fn elem_from(chunk: &[u8], w: usize, kind: crate::value::ElemKind) -> Value {
+fn elem_from(chunk: &[u8], w: usize, kind: ElemKind) -> Value {
     let mut raw = [0u8; 8];
     raw[..w].copy_from_slice(&chunk[..w]);
     decode_elem_bits(u64::from_le_bytes(raw), w as u8, kind)

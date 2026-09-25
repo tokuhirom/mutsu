@@ -12,23 +12,22 @@
   "dist": "EERPG",
   "files": [
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Too deep recursion (out of stack space)",
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 1.45,
+        "secs": 0.14,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/01-basic.t",
       "raku": {
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 27.37,
+        "secs": 12.58,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -42,7 +41,7 @@
         "nok": 0,
         "ok": 11,
         "plan": 17,
-        "secs": 1.29,
+        "secs": 0.5,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -54,7 +53,7 @@
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 0.2,
+        "secs": 0.07,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -64,7 +63,7 @@
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 1.18,
+        "secs": 0.43,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -76,7 +75,7 @@
         "nok": 0,
         "ok": 9,
         "plan": 9,
-        "secs": 0.22,
+        "secs": 0.09,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -86,30 +85,29 @@
         "nok": 0,
         "ok": 9,
         "plan": 9,
-        "secs": 1.18,
+        "secs": 0.47,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Too deep recursion (out of stack space)",
         "nok": 0,
-        "ok": 0,
+        "ok": 6,
         "plan": 6,
-        "secs": 1.35,
+        "secs": 0.21,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/Belief.t",
       "raku": {
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 0.75,
+        "secs": 0.4,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -143,7 +141,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 0.13,
+        "secs": 0.08,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -153,122 +151,117 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 0.79,
+        "secs": 0.36,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "partial",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "do we have the right amount of food",
-        "nok": 6,
-        "ok": 1,
+        "nok": 0,
+        "ok": 7,
         "plan": 7,
-        "secs": 0.31,
+        "secs": 0.09,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "pass"
       },
       "path": "t/Inventory.t",
       "raku": {
         "nok": 0,
         "ok": 7,
         "plan": 7,
-        "secs": 0.91,
+        "secs": 0.33,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Too deep recursion (out of stack space)",
         "nok": 0,
-        "ok": 0,
+        "ok": 6,
         "plan": 6,
-        "secs": 1.29,
+        "secs": 0.08,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/Price.t",
       "raku": {
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 0.88,
+        "secs": 0.29,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "partial",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "did the actions fire only once",
-        "nok": 2,
-        "ok": 3,
+        "nok": 0,
+        "ok": 5,
         "plan": 5,
-        "secs": 0.33,
+        "secs": 0.15,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "pass"
       },
       "path": "t/Producer.t",
       "raku": {
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 1.5,
+        "secs": 0.51,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "partial",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "did the actions fire twice",
-        "nok": 2,
-        "ok": 9,
+        "nok": 0,
+        "ok": 11,
         "plan": 11,
-        "secs": 0.25,
+        "secs": 0.1,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "pass"
       },
       "path": "t/Rule.t",
       "raku": {
         "nok": 0,
         "ok": 11,
         "plan": 11,
-        "secs": 1.45,
+        "secs": 0.57,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "partial",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "did the actions fire only once",
-        "nok": 2,
-        "ok": 6,
+        "nok": 0,
+        "ok": 8,
         "plan": 8,
-        "secs": 0.35,
+        "secs": 0.1,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "pass"
       },
       "path": "t/Ruleset.t",
       "raku": {
         "nok": 0,
         "ok": 8,
         "plan": 8,
-        "secs": 1.5,
+        "secs": 0.53,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -301,10 +294,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-24",
+    "date": "2026-09-25",
     "harness": 2,
-    "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "338f021",
+    "host": "linux-x86_64",
+    "mutsu_commit": "6f038e900",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -315,13 +308,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/E/ER/EERPG/7afd13b7ba223b71dc037e2ba6e793c3a9791fa1.tar.gz"
   },
-  "status": "partial",
+  "status": "green",
   "totals": {
     "baseline_assertions": 63,
     "baseline_files": 11,
-    "mutsu_assertions": 39,
-    "parity_files": 4,
-    "regressed_files": 7
+    "mutsu_assertions": 63,
+    "parity_files": 11,
+    "regressed_files": 0
   },
   "version": "0.0.2"
 }

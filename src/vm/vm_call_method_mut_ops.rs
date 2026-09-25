@@ -614,6 +614,20 @@ impl Interpreter {
         arg_sources_idx: Option<u32>,
     ) -> Result<(), RuntimeError> {
         crate::vm::vm_stats::record_method_dispatch();
+        // ADR-0121 D3: a generated accessor already resolved to a slot of the
+        // receiver's layout reads it before the probe chain runs (see
+        // `vm_accessor_lane`).
+        if arity == 0
+            && modifier_idx.is_none()
+            && !quoted
+            && !self.accessor_ref_pending
+            && let Some(val) = self.try_accessor_lane(code.const_sym(name_idx))
+        {
+            crate::vm::vm_stats::record_dispatch_entry_outcome("callmethodmut", "accessor");
+            self.stack.pop();
+            self.stack.push(val);
+            return Ok(());
+        }
         // Consume (and unconditionally clear) the accessor-ref marker: it is
         // emitted immediately before this opcode and scoped to this one dispatch.
         let want_ref = std::mem::take(&mut self.accessor_ref_pending);
@@ -1175,6 +1189,9 @@ impl Interpreter {
             // Pure attribute read: does not mutate the invocant (see comment
             // above), so it does not dirty the caller's locals (Slice 6.3).
             crate::vm::vm_stats::record_dispatch_entry_outcome("callmethodmut", "accessor");
+            if !want_ref && modifier.is_none() && !quoted && args.is_empty() {
+                self.note_accessor_lane(&target, method_sym);
+            }
             self.stack.push(val);
             return Ok(());
         }

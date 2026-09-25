@@ -820,8 +820,41 @@ impl Interpreter {
         let Some(new) = self.locals.get(idx).cloned() else {
             return;
         };
-        if matches!(new.view(), ValueView::ContainerRef(c) if crate::gc::Gc::ptr_eq(&c, &cell)) {
+        let Some(binding) = Self::seat_in_binding_cell(new, cell) else {
             return;
+        };
+        self.locals[idx] = binding.clone();
+        let name = code.locals[idx].clone();
+        self.env_mut().insert(name, binding);
+    }
+
+    /// [`Self::reseat_binding_cell`] for a rebind that reached the variable by
+    /// NAME: a closure rebinding a captured outer lexical (`{ $a := $b }`)
+    /// stores through `SetGlobal` into its own env entry, so move what the
+    /// store left there into the binding cell the declaring frame and every
+    /// sibling closure share (#9307).
+    pub(super) fn reseat_env_binding_cell(
+        &mut self,
+        name: crate::symbol::Symbol,
+        cell: crate::gc::Gc<crate::value::ContainerCell>,
+    ) {
+        let Some(new) = self.env().get_sym(name).cloned() else {
+            return;
+        };
+        if let Some(binding) = Self::seat_in_binding_cell(new, cell) {
+            self.env_mut().insert_sym(name, binding);
+        }
+    }
+
+    /// Put the binding `new` a rebind just stored inside the binding cell
+    /// `cell`, returning the cell as the value the variable now holds, or
+    /// `None` when `new` already is that cell.
+    fn seat_in_binding_cell(
+        new: Value,
+        cell: crate::gc::Gc<crate::value::ContainerCell>,
+    ) -> Option<Value> {
+        if matches!(new.view(), ValueView::ContainerRef(c) if crate::gc::Gc::ptr_eq(&c, &cell)) {
+            return None;
         }
         let container = if new.is_container_ref() {
             Self::innermost_container(new)
@@ -831,10 +864,7 @@ impl Interpreter {
         *cell
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner) = container;
-        let binding = Value::container_ref(cell);
-        self.locals[idx] = binding.clone();
-        let name = code.locals[idx].clone();
-        self.env_mut().insert(name, binding);
+        Some(Value::container_ref(cell))
     }
 
     /// Peel binding cells off `v` (see `binding_cell_of`), returning the
@@ -1979,7 +2009,10 @@ impl Interpreter {
         let attr_constraint = match declared_view {
             Some(_) => None,
             None => (!is_bind && !val.is_nil())
-                .then(|| self.scalar_attr_type_constraint(name))
+                .then(|| {
+                    let sym = name_sym.unwrap_or_else(|| crate::symbol::Symbol::intern(name));
+                    self.scalar_attr_type_constraint_sym(name, sym)
+                })
                 .flatten(),
         };
         let constraint: Option<&str> = match &declared_view {

@@ -215,6 +215,9 @@ impl Interpreter {
         handle: &Value,
         words: bool,
     ) -> Result<Value, RuntimeError> {
+        if let Some(items) = self.drain_seq_private_handle(handle, words)? {
+            return Ok(Value::array(items));
+        }
         let mut items = Vec::new();
         if words {
             while let Some(word) = self.read_word_from_handle_value(handle)? {

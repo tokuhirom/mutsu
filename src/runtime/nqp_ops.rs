@@ -15,7 +15,7 @@ use crate::builtins::mvm_array_read_buf_oob_message;
 use crate::runtime::nqp_pure::NqpPure;
 use crate::runtime::{Interpreter, RuntimeError, path_is_readable};
 use crate::value::value_buf;
-use crate::value::{Value, ValueView};
+use crate::value::{BufBytes, Value, ValueView};
 use std::fs;
 
 fn iarg(args: &[Value], i: usize) -> i64 {
@@ -197,42 +197,64 @@ fn write_method_for(size: usize, signed: bool) -> &'static str {
     }
 }
 
-/// Run `f` over the bytes of a Buf/Blob instance, borrowed (no copy for a
-/// width-1 buffer), or error naming the op.
-fn with_buf_bytes_of<R>(
+/// Run `f` over a Buf/Blob instance's raw storage (`elems * width` bytes,
+/// borrowed, never copied) and its element width, or error naming the op.
+///
+/// The storage is what MoarVM's byte ops address: `nqp::decode` reads it whole,
+/// and `readuint`/`writeuint` place `offset * width` bytes in.
+fn with_buf_storage_of<R>(
     op: &str,
     v: &Value,
-    f: impl FnOnce(&[u8]) -> R,
+    f: impl FnOnce(&[u8], usize) -> R,
 ) -> Result<R, RuntimeError> {
     if let ValueView::Instance { attributes, .. } = v.view()
-        && let Some(r) = value_buf::with_buf_bytes(&attributes, f)
+        && let Some(r) =
+            value_buf::with_storage_node(&attributes, |n| f(&n.bytes, n.width as usize))
     {
         return Ok(r);
     }
-    Err(RuntimeError::new(format!(
-        "nqp::{op}: expected a Buf/Blob, got {}",
-        crate::runtime::value_type_name(v)
-    )))
+    Err(not_a_buf(op, v))
 }
 
-/// Mutate a Buf instance's bytes in place through its shared attribute cell
-/// (alias-visible), or error naming the op. On a width-1 buffer this edits the
-/// storage directly, so it costs only what `f` touches (see
-/// [`value_buf::with_buf_bytes_mut`]).
-fn buf_bytes_mutate(
+/// Edit a Buf instance's raw storage in place through its shared attribute cell
+/// (alias-visible), or error naming the op. Costs only what `f` touches (see
+/// [`value_buf::with_buf_storage_mut`]).
+fn buf_storage_mutate(
     op: &str,
     v: &Value,
-    f: impl FnOnce(&mut Vec<u8>) -> Result<(), RuntimeError>,
+    f: impl FnOnce(&mut BufBytes, usize) -> Result<(), RuntimeError>,
 ) -> Result<(), RuntimeError> {
     if let ValueView::Instance { attributes, .. } = v.view()
-        && let Some(r) = value_buf::with_buf_bytes_mut(&attributes, f)
+        && let Some(r) = value_buf::with_buf_storage_mut(&attributes, f)
     {
         return r;
     }
-    Err(RuntimeError::new(format!(
+    Err(not_a_buf(op, v))
+}
+
+fn not_a_buf(op: &str, v: &Value) -> RuntimeError {
+    RuntimeError::new(format!(
         "nqp::{op}: expected a Buf/Blob, got {}",
         crate::runtime::value_type_name(v)
-    )))
+    ))
+}
+
+/// MoarVM's `read_buf` bounds check, which compares `offset + size` (an element
+/// offset plus a byte count) against the element count; on success the byte
+/// position `offset * width` the read starts at.
+fn read_buf_at(
+    bytes: &[u8],
+    width: usize,
+    offset: usize,
+    size: usize,
+) -> Result<usize, RuntimeError> {
+    let elems = bytes.len() / width.max(1);
+    if elems < offset.saturating_add(size) {
+        return Err(RuntimeError::new(mvm_array_read_buf_oob_message(
+            offset, elems, size,
+        )));
+    }
+    Ok(offset * width.max(1))
 }
 
 impl Interpreter {
@@ -697,7 +719,8 @@ impl Interpreter {
             }
 
             // -- byte-string decode (nqp::decode(buf, 'utf8') -> str) --
-            // Cost: O(n), n = bytes of $buf (decoded into a fresh string).
+            // Cost: O(n), n = storage bytes of $buf (decoded into a fresh string; a wide buffer's
+            // raw storage, as MoarVM decodes it).
             // The one builtin decoder `Blob.decode` uses (ADR-0118 §2.4): the
             // same encoding names, strict ASCII, BOM handling, error text and
             // NFC normalization. This used to be a private decoder that let
@@ -708,7 +731,7 @@ impl Interpreter {
                     .get(1)
                     .map(|v| v.to_string_value())
                     .unwrap_or_else(|| "utf8".to_string());
-                match with_buf_bytes_of(op, &buf, |bytes| {
+                match with_buf_storage_of(op, &buf, |bytes, _| {
                     crate::builtins::decode_bytes_with_encoding_label(bytes, &enc).unwrap_or_else(
                         || {
                             Err(RuntimeError::new(format!(
@@ -760,27 +783,29 @@ impl Interpreter {
 
             // -- slice / splice (buf) --
             // nqp::slice($buf, $start, $end) — END-INCLUSIVE, same class out.
+            // `$start`/`$end` count elements, whatever the buffer's width.
             // Cost: O(k), k = bytes sliced (the source is borrowed, not copied).
             "slice" => {
                 let buf = args.first().cloned().unwrap_or(Value::NIL);
                 let start = iarg(args, 1).max(0) as usize;
                 let end = iarg(args, 2);
-                let piece = with_buf_bytes_of(op, &buf, |bytes| {
+                let piece = with_buf_storage_of(op, &buf, |bytes, w| {
+                    let elems = bytes.len() / w.max(1);
                     let end = if end < 0 {
-                        (bytes.len() as i64 + end).max(0) as usize
+                        (elems as i64 + end).max(0) as usize
                     } else {
                         end as usize
                     };
-                    let upper = end.saturating_add(1).min(bytes.len());
+                    let upper = end.saturating_add(1).min(elems);
                     if start < upper {
-                        bytes[start..upper].to_vec()
+                        bytes[start * w..upper * w].to_vec()
                     } else {
                         Vec::new()
                     }
                 });
                 match (buf.view(), piece) {
                     (ValueView::Instance { class_name, .. }, Ok(piece)) => {
-                        Ok(value_buf::make_buf_from_bytes(class_name, &piece))
+                        Ok(value_buf::make_buf_from_raw_bytes(class_name, piece))
                     }
                     (_, Err(e)) => Err(e),
                     _ => Err(RuntimeError::new(
@@ -791,7 +816,7 @@ impl Interpreter {
             // nqp::splice($target, $source, $offset, $count) — replace
             // target[offset .. offset+count) with source's elements, in place.
             // Cost: O(s + t), s = source elems, t = target elems after $offset (a Buf target is
-            // spliced in place; a width-1 source is copied once).
+            // spliced in place; the source is copied once).
             "splice" => {
                 let target = args.first().cloned().unwrap_or(Value::NIL);
                 let source = args.get(1).cloned().unwrap_or(Value::NIL);
@@ -817,16 +842,35 @@ impl Interpreter {
                 if let Some(r) = Self::nqp_splice_elems(op, &target, &source, offset, count) {
                     return Some(r);
                 }
-                let src_bytes = match with_buf_bytes_of(op, &source, <[u8]>::to_vec) {
-                    Ok(b) => b,
-                    Err(e) => return Some(Err(e)),
+                // Elements are spliced, re-encoded at the target's width when
+                // the source's differs (MoarVM truncates the same way).
+                let target_type = match target.view() {
+                    ValueView::Instance { attributes, .. } => {
+                        value_buf::with_storage_node(&attributes, |n| (n.width, n.kind))
+                    }
+                    _ => None,
                 };
-                let r = buf_bytes_mutate(op, &target, |bytes| {
+                let src_bytes = match (target_type, source.view()) {
+                    (Some((w, kind)), ValueView::Instance { attributes, .. }) => {
+                        value_buf::buf_storage_as(&attributes, w, kind)
+                    }
+                    _ => None,
+                };
+                let Some(src_bytes) = src_bytes else {
+                    let culprit = if target_type.is_none() {
+                        &target
+                    } else {
+                        &source
+                    };
+                    return Some(Err(not_a_buf(op, culprit)));
+                };
+                let r = buf_storage_mutate(op, &target, |bytes, w| {
+                    let (offset, count) = (offset * w, count * w);
                     if bytes.len() < offset {
                         bytes.resize(offset, 0);
                     }
                     let upper = (offset + count).min(bytes.len());
-                    bytes.splice(offset..upper, src_bytes.iter().copied());
+                    bytes.splice(offset, upper, &src_bytes);
                     Ok(())
                 });
                 match r {
@@ -836,74 +880,56 @@ impl Interpreter {
             }
 
             // -- sized binary reads/writes --
-            // Cost: O(1) on a width-1 buffer (read straight off the storage); O(e) on a
-            // wider one, e = elements (projected to low bytes first). MoarVM: O(1) -- see #9191.
+            // These address the buffer's raw storage the way MoarVM's `read_buf` /
+            // `write_buf` do: the byte position is `offset * width`, so on a
+            // `buf32` offset 1 is element 1's first byte, and a width-1 buffer
+            // keeps the plain byte offset.
+            // Cost: O(1) (size bytes read straight off the storage, any width).
             "readuint" | "readint" => {
                 let buf = args.first().cloned().unwrap_or(Value::NIL);
                 let offset = iarg(args, 1).max(0) as usize;
                 let (size, endian) = flag_size_endian(iarg(args, 2));
-                match with_buf_bytes_of(op, &buf, |bytes| {
-                    if bytes.len() < offset.saturating_add(size) {
-                        Err(RuntimeError::new(mvm_array_read_buf_oob_message(
-                            offset,
-                            bytes.len(),
-                            size,
-                        )))
-                    } else {
-                        Ok(crate::builtins::read_int_value(
-                            &bytes[offset..],
-                            size,
-                            op == "readint",
-                            endian,
-                        ))
-                    }
+                match with_buf_storage_of(op, &buf, |bytes, w| {
+                    let at = read_buf_at(bytes, w, offset, size)?;
+                    Ok(crate::builtins::read_int_value(
+                        &bytes[at..],
+                        size,
+                        op == "readint",
+                        endian,
+                    ))
                 }) {
                     Err(e) | Ok(Err(e)) => Err(e),
                     Ok(Ok(v)) => Ok(v),
                 }
             }
-            // Cost: O(1) on a width-1 buffer (read straight off the storage); O(e) on a
-            // wider one, e = elements (projected to low bytes first). MoarVM: O(1) -- see #9191.
+            // Cost: O(1) (size bytes read straight off the storage, any width).
             "readnum" => {
                 let buf = args.first().cloned().unwrap_or(Value::NIL);
                 let offset = iarg(args, 1).max(0) as usize;
                 let (size, endian) = flag_size_endian(iarg(args, 2));
-                match with_buf_bytes_of(op, &buf, |bytes| {
-                    if bytes.len() < offset.saturating_add(size) {
-                        Err(RuntimeError::new(mvm_array_read_buf_oob_message(
-                            offset,
-                            bytes.len(),
-                            size,
-                        )))
-                    } else if size == 4 {
-                        Ok(Value::num(crate::builtins::read_f32_endian(
-                            &bytes[offset..],
-                            endian,
-                        )))
+                match with_buf_storage_of(op, &buf, |bytes, w| {
+                    let at = read_buf_at(bytes, w, offset, size)?;
+                    Ok(Value::num(if size == 4 {
+                        crate::builtins::read_f32_endian(&bytes[at..], endian)
                     } else {
-                        Ok(Value::num(crate::builtins::read_f64_endian(
-                            &bytes[offset..],
-                            endian,
-                        )))
-                    }
+                        crate::builtins::read_f64_endian(&bytes[at..], endian)
+                    }))
                 }) {
                     Err(e) | Ok(Err(e)) => Err(e),
                     Ok(Ok(v)) => Ok(v),
                 }
             }
-            // Cost: O(1) amortized on a width-1 buffer (bytes written in place); O(e) on a
-            // wider one, e = elements (re-encoded whole). MoarVM: O(1) amortized -- see #9191.
+            // Cost: O(1) amortized (size bytes written in place, any width); O(g) when growing,
+            // g = bytes added.
             "writeuint" | "writeint" => {
                 let buf = args.first().cloned().unwrap_or(Value::NIL);
                 let offset = iarg(args, 1);
                 let val = args.get(2).cloned().unwrap_or(Value::int(0));
                 let (size, endian) = flag_size_endian(iarg(args, 3));
                 let method = write_method_for(size, op == "writeint");
-                let r = buf_bytes_mutate(op, &buf, |bytes| {
-                    // `buf_bytes_mutate` hands over one byte per element, so the
-                    // offset is already a plain byte offset — width 1.
+                let r = buf_storage_mutate(op, &buf, |bytes, w| {
                     crate::builtins::buf_write_int::apply_write_int(
-                        bytes, method, offset, &val, endian, 1,
+                        bytes, method, offset, &val, endian, w,
                     )
                 });
                 match r {
@@ -911,34 +937,27 @@ impl Interpreter {
                     Err(e) => Err(e),
                 }
             }
-            // Cost: O(1) amortized on a width-1 buffer (bytes written in place); O(e) on a
-            // wider one, e = elements (re-encoded whole). MoarVM: O(1) amortized -- see #9191.
+            // Cost: O(1) amortized (size bytes written in place, any width); O(g) when growing,
+            // g = bytes added.
             "writenum" => {
                 let buf = args.first().cloned().unwrap_or(Value::NIL);
-                let offset = iarg(args, 1).max(0) as usize;
+                let offset = iarg(args, 1).max(0);
                 let n = narg(args, 2);
                 let (size, endian) = flag_size_endian(iarg(args, 3));
-                let r = buf_bytes_mutate(op, &buf, |bytes| {
-                    let needed = offset + size;
-                    if bytes.len() < needed {
-                        bytes.resize(needed, 0);
-                    }
-                    if size == 4 {
-                        let enc = match endian {
-                            1 => (n as f32).to_le_bytes(),
-                            2 => (n as f32).to_be_bytes(),
-                            _ => (n as f32).to_ne_bytes(),
-                        };
-                        bytes[offset..offset + 4].copy_from_slice(&enc);
-                    } else {
-                        let enc = match endian {
-                            1 => n.to_le_bytes(),
-                            2 => n.to_be_bytes(),
-                            _ => n.to_ne_bytes(),
-                        };
-                        bytes[offset..offset + 8].copy_from_slice(&enc);
-                    }
-                    Ok(())
+                let method = if size == 4 {
+                    "write-num32"
+                } else {
+                    "write-num64"
+                };
+                let r = buf_storage_mutate(op, &buf, |bytes, w| {
+                    crate::builtins::buf_write_num::apply_write_num(
+                        bytes,
+                        method,
+                        offset,
+                        &Value::num(n),
+                        endian,
+                        w,
+                    )
                 });
                 match r {
                     Ok(()) => Ok(Value::num(n)),
@@ -993,17 +1012,28 @@ impl Interpreter {
             // nqp::readfh($fh, $buf, $count) — read up to $count bytes,
             // REPLACING the buffer's contents (MoarVM semantics), and return
             // the buffer. A short read (EOF) is not an error.
-            // Cost: O(c) + syscalls, c = bytes read (a width-1 $buf is overwritten in place).
+            // Only a width-1 buffer takes the read, as in MoarVM, which checks
+            // before touching the handle.
+            // Cost: O(c) + syscalls, c = bytes read ($buf is overwritten in place).
             "readfh" => {
                 let fh = args.first().cloned().unwrap_or(Value::NIL);
                 let buf = args.get(1).cloned().unwrap_or(Value::NIL);
                 let count = iarg(args, 2).max(0) as usize;
+                match with_buf_storage_of(op, &buf, |_, w| w) {
+                    Ok(1) => {}
+                    Ok(_) => {
+                        return Some(Err(RuntimeError::new(
+                            "read_fhb requires a native array of uint8 or int8",
+                        )));
+                    }
+                    Err(e) => return Some(Err(e)),
+                }
                 let bytes = match self.read_bytes_from_handle_value(&fh, count) {
                     Ok(b) => b,
                     Err(e) => return Some(Err(e)),
                 };
-                let r = buf_bytes_mutate(op, &buf, |dst| {
-                    *dst = bytes;
+                let r = buf_storage_mutate(op, &buf, |dst, _| {
+                    dst.set(&bytes);
                     Ok(())
                 });
                 match r {

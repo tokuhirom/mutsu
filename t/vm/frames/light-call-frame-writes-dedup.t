@@ -133,16 +133,28 @@ class ResourceAccess {
 gen-words-csv($words-csv, 5000);
 gen-pets-csv($pets-csv, 2000);
 
-my $t0 = now;
-ResourceAccess.bless.make;
-my $direct = (now - $t0).Num;
+# Take the best of several interleaved runs of each path. A single ~0.15s
+# sample of each was at the mercy of scheduler noise from the other
+# `prove -j4` jobs (#9299: ratios of 1.54-1.56 under load, 1.01-1.17
+# standalone). The minimum discards that noise, while a genuine regression
+# is a deterministic extra cost that every sample pays, so it survives the
+# minimum. Interleaving also means neither path alone gets the cold first
+# run.
+my $runs = 3;
+my $direct = Inf;
+my $via = Inf;
+for ^$runs {
+    my $t0 = now;
+    ResourceAccess.bless.make;
+    $direct = $direct min (now - $t0).Num;
 
-ResourceAccess.reset;
-$t0 = now;
-ResourceAccess.instance;
-my $via = (now - $t0).Num;
+    ResourceAccess.reset;
+    $t0 = now;
+    ResourceAccess.instance;
+    $via = $via min (now - $t0).Num;
+}
 
-ok $direct > 0, 'the direct path took measurable time';
+ok 0 < $direct < Inf, 'the direct path took measurable time';
 # Fixed, the two paths cost about the same (measured ~1.0x, run to run).
 # Pre-fix, the "via" path measured ~2x the "direct" one at this size (and
 # diverges further as size grows, since the underlying cost is O(n^2) over
@@ -150,4 +162,4 @@ ok $direct > 0, 'the direct path took measurable time';
 # sides, so this catches the regression without flagging ordinary noise.
 ok $via < $direct * 1.5,
     "calling .make() through the singleton doesn't cost multiples of calling "
-    ~ "it directly (direct $direct.fmt('%.3f')s, via $via.fmt('%.3f')s)";
+    ~ "it directly (best of $runs: direct $direct.fmt('%.3f')s, via $via.fmt('%.3f')s)";

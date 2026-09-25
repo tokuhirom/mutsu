@@ -404,7 +404,14 @@ impl Interpreter {
         for arg in args {
             flat_values.extend(Self::value_to_list(arg));
         }
-        let hash = crate::runtime::utils::build_hash_from_items(flat_values)?;
+        // An object hash is keyed by each key object's `.WHICH`, not by its
+        // stringification.  Keeping that identity during construction matters
+        // when two distinct objects have the same fallback `.Str`: stringifying
+        // first would collapse them before `into_object_hash` can re-key them.
+        let hash =
+            crate::runtime::utils::build_hash_from_items_with_key_coercion(flat_values, |key| {
+                Ok((crate::runtime::utils::value_which_key(key), true))
+            })?;
         Ok(crate::runtime::utils::into_object_hash(hash, "Mu"))
     }
 

@@ -19,6 +19,8 @@
 #   BATTERIES_JOBS        batteries to fetch+run concurrently (default: 4)
 #   BATTERY_FETCH_ATTEMPTS  tries per upstream fetch before a battery counts as
 #                         unfetchable, with a 5s/10s/... backoff (default: 4)
+#   BATTERY_SRC_CACHE     directory caching fetched checkouts by pinned commit
+#                         (default: unset = always fetch; CI sets it)
 #
 # The path overrides exist so the gate itself can be exercised against a
 # scratch manifest/baseline (e.g. to verify that a regression really does fail)
@@ -67,10 +69,30 @@ case "$MUTSU_BIN" in /*) ;; *) MUTSU_BIN="$ROOT/$MUTSU_BIN" ;; esac
 # suite, which does not read this variable.
 export DBIISH_WRITE_TEST=YES
 
+# Optional local cache of fetched upstream checkouts, one directory per pinned
+# commit (see fetch_commit). CI keeps it in actions/cache so the gate does not
+# depend on every upstream host being reachable on every run (#9275: git.sr.ht
+# was unreachable from GitHub runners for long stretches on 2026-09-24).
+BATTERY_SRC_CACHE="${BATTERY_SRC_CACHE:-}"
+case "$BATTERY_SRC_CACHE" in "" | /*) ;; *) BATTERY_SRC_CACHE="$ROOT/$BATTERY_SRC_CACHE" ;; esac
+
 # --- fetch a specific upstream commit into $dir (shallow, no full history) ----
+#
+# With BATTERY_SRC_CACHE set, a checkout is taken from $BATTERY_SRC_CACHE/<commit>
+# when one is there, and a fresh fetch is stored there. The commit is pinned in
+# batteries.lock, so a cached checkout has exactly the content a fetch would
+# produce: the cache changes where the bytes come from, never what the gate
+# runs. The copy is taken right after checkout, before any test has run in it.
 fetch_commit() {
   local dir="$1" url="$2" commit="$3"
+  local cached="${BATTERY_SRC_CACHE:+$BATTERY_SRC_CACHE/$commit}"
   rm -rf "$dir"
+  if [ -n "$cached" ] && [ -d "$cached/.git" ] &&
+    [ "$(git -C "$cached" rev-parse HEAD 2>/dev/null)" = "$commit" ]; then
+    mkdir -p "$(dirname "$dir")"
+    cp -a "$cached" "$dir"
+    return 0
+  fi
   mkdir -p "$dir"
   git -C "$dir" init -q
   git -C "$dir" remote add origin "$url"
@@ -93,6 +115,19 @@ fetch_commit() {
     sleep $((attempt * 5))
   done
   git -C "$dir" checkout -q FETCH_HEAD
+  if [ -n "$cached" ]; then
+    # Copy to a private name and rename, so a half-written copy is never
+    # mistaken for a cached checkout.
+    local tmp="$cached.tmp.$$"
+    rm -rf "$tmp"
+    mkdir -p "$BATTERY_SRC_CACHE"
+    if cp -a "$dir" "$tmp"; then
+      rm -rf "$cached"
+      mv "$tmp" "$cached"
+    else
+      rm -rf "$tmp"
+    fi
+  fi
 }
 
 # --- run one test file; echo PASS or FAIL(detail); return 0 iff it fully passes
@@ -147,6 +182,16 @@ sanitize_name() {
 
 rm -rf "$WORK"
 mkdir -p "$WORK/logs"
+
+# Drop cached checkouts of commits batteries.lock no longer pins, so the cache
+# does not grow with every re-vendor.
+if [ -n "$BATTERY_SRC_CACHE" ] && [ -d "$BATTERY_SRC_CACHE" ]; then
+  pinned="$(awk -F'\t' '!/^#/ && NF >= 4 { print $4 }' "$LOCK")"
+  for entry in "$BATTERY_SRC_CACHE"/*; do
+    [ -e "$entry" ] || continue
+    grep -qxF "$(basename "$entry")" <<< "$pinned" || rm -rf "$entry"
+  done
+fi
 
 BATTERIES_JOBS="${BATTERIES_JOBS:-4}"
 

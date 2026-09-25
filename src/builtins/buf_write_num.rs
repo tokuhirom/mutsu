@@ -47,7 +47,7 @@ pub(crate) fn to_f64_value(value: &Value) -> f64 {
 /// needed). `width` is the buffer's element width — see
 /// [`crate::builtins::buf_write_int::write_byte_offset`].
 pub(crate) fn apply_write_num(
-    bytes: &mut Vec<u8>,
+    bytes: &mut impl crate::builtins::buf_write_int::GrowBytes,
     method: &str,
     offset: i64,
     value: &Value,

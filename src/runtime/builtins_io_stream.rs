@@ -10,7 +10,7 @@ impl Interpreter {
     /// *method* forms already use — keeps the two spellings in agreement instead
     /// of growing a second read+split path here.
     fn try_io_path_content_sub(
-        &self,
+        &mut self,
         args: &[Value],
         method: &str,
     ) -> Option<Result<Value, RuntimeError>> {
@@ -293,7 +293,7 @@ impl Interpreter {
                 // full consumer triggers close-on-exhaust when `:close` was given.
                 if close_after {
                     self.with_handle_mut(&handle, |state| {
-                        state.close_on_word_exhaust = true;
+                        state.close_on_exhaust = true;
                         Ok(())
                     })?;
                 }

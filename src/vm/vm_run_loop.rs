@@ -1358,71 +1358,20 @@ impl Interpreter {
         (!matches!(tc.as_str(), "Mu" | "Any")).then_some(tc)
     }
 
-    /// Look up the declared type constraint of an attribute of the current
-    /// `self` instance, walking the MRO.
-    // Cost: O(d * a), d = ancestors of self's class, a = attributes declared per
-    // ancestor (the sigil-collision scan).
-    pub(crate) fn self_attr_type_constraint(&self, attr_name: &str) -> Option<String> {
-        let self_val = self.get_env_self()?;
-        let class_name = self_val.with_deref(|v| match v.view() {
-            crate::value::ValueView::Instance { class_name, .. } => Some(class_name.as_str()),
-            crate::value::ValueView::Mixin(inner, _) => match inner.view() {
-                crate::value::ValueView::Instance { class_name, .. } => Some(class_name.as_str()),
-                _ => None,
-            },
-            _ => None,
-        })?;
-        let (bare, sigil) = if let Some((bare, _)) = crate::value::attr_twigil_base(attr_name) {
-            (
-                bare,
-                crate::value::attr_twigil_sigil(attr_name).unwrap_or('$'),
-            )
-        } else {
-            (attr_name, '$')
-        };
-        // One MRO for the whole lookup: an `Arc` of the registry's cached C3
-        // order, where this used to copy it into `String`s up to three times
-        // per attribute store (ADR-0121 D1).
-        let mro = self.mro_syms_readonly(class_name);
-        let has_sigil_collision = mro.iter().any(|cls| {
-            self.registry()
-                .classes
-                .get(cls.as_str())
-                .is_some_and(|class_def| {
-                    class_def
-                        .attributes
-                        .iter()
-                        .any(|attr| attr.name == bare && attr.sigil != sigil)
-                })
-        });
-        let tc = if has_sigil_collision {
-            mro.iter().find_map(|cls| {
-                self.registry()
-                    .classes
-                    .get(cls.as_str())
-                    .and_then(|class_def| {
-                        class_def
-                            .attributes
-                            .iter()
-                            .find(|attr| attr.name == bare && attr.sigil == sigil)
-                            .and_then(|attr| attr.type_constraint.clone())
-                    })
-            })?
-        } else {
-            self.get_attr_type_constraint(class_name, bare)?
-        };
-        // A nested class type (`class URI { class Authority {}; has Authority
-        // $.authority }`) is declared by its short name but registered fully
-        // qualified — resolve it so the reset type object dispatches methods.
-        if !self.registry().classes.contains_key(&tc) {
-            for cls in mro.iter() {
-                let qualified = format!("{}::{}", cls, tc);
-                if self.registry().classes.contains_key(&qualified) {
-                    return Some(qualified);
-                }
-            }
+    /// [`Self::scalar_attr_type_constraint`] for a caller that already holds
+    /// `name`'s interned form.
+    // Cost: O(1) on a memo hit (see `vm_attr_type_constraint`).
+    pub(crate) fn scalar_attr_type_constraint_sym(
+        &self,
+        name: &str,
+        name_sym: crate::symbol::Symbol,
+    ) -> Option<String> {
+        if name.starts_with('@') || name.starts_with('%') {
+            return None;
         }
-        Some(tc)
+        let (_, _) = crate::value::attr_twigil_base(name)?;
+        let tc = self.self_attr_type_constraint_sym(name, name_sym)?;
+        (!matches!(tc.as_str(), "Mu" | "Any")).then_some(tc)
     }
 
     /// De-itemize a `for … -> @a` chunk element while preserving its element

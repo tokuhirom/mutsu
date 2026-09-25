@@ -527,7 +527,8 @@ impl Interpreter {
                 argfiles_reader: None, // Cannot clone BufReader; will reopen if needed
                 argfiles_paths: handle.argfiles_paths.clone(),
                 pending_words: handle.pending_words.clone(),
-                close_on_word_exhaust: handle.close_on_word_exhaust,
+                close_on_exhaust: handle.close_on_exhaust,
+                seq_reader: handle.seq_reader.as_ref().and_then(|r| r.try_clone()),
             };
             cloned_handles.insert(*id, cloned);
         }
@@ -656,6 +657,7 @@ impl Interpreter {
             registry: Arc::new(RwLock::new(Arc::clone(&self.registry.read().unwrap()))),
             registry_write_gen: std::sync::atomic::AtomicU64::new(0),
             numeric_bridge_probe: Default::default(),
+            attr_type_constraint_cache: Default::default(),
             proto_dispatch_stack: Vec::new(),
             pending_dispatch_error: None,
             skip_postcircumfix_overload: false,
@@ -1011,6 +1013,7 @@ impl Interpreter {
             plain_method_lane: rustc_hash::FxHashSet::default(),
             plain_method_lane_candidate: None,
             plain_method_lane_active: false,
+            accessor_lane: rustc_hash::FxHashMap::default(),
             native_ctor_plan_cache: rustc_hash::FxHashMap::default(),
             multi_resolve_cache: rustc_hash::FxHashMap::default(),
             multi_type_cacheable: rustc_hash::FxHashMap::default(),

@@ -761,6 +761,45 @@ impl Interpreter {
                 },
             );
             Ok(arr)
+        } else if let Some(base) = if Self::is_quanthash_ctor_type(type_name) {
+            Some(type_name)
+        } else {
+            self.quanthash_base_kind(type_name)
+        } {
+            // An `is BagHash` attribute is a coercion boundary, not a call to
+            // `BagHash.new`: the latter treats a supplied Hash's pairs as
+            // elements, while the attribute trait treats its values as bag
+            // weights.  Build the native QuantHash first, then wrap it in a
+            // user subclass such as AccountableBagHash so its protocol methods
+            // remain available.
+            let mut storage = match base {
+                "Set" | "SetHash" => crate::builtins::quanthash_coerce::to_set(value, base)?,
+                "Bag" | "BagHash" => crate::builtins::quanthash_coerce::to_bag(value, base)?,
+                "Mix" | "MixHash" => crate::builtins::quanthash_coerce::to_mix(value, base)?,
+                _ => {
+                    return Err(RuntimeError::new(format!(
+                        "unsupported QuantHash type {base}"
+                    )));
+                }
+            };
+            match base {
+                "SetHash" => storage.with_set_mut(|_, mutable| *mutable = true),
+                "BagHash" => storage.with_bag_mut(|_, mutable| *mutable = true),
+                "MixHash" => storage.with_mix_mut(|_, mutable| *mutable = true),
+                _ => None,
+            };
+            if type_name == base {
+                Ok(storage)
+            } else {
+                let instance = self.dispatch_bless(
+                    &Value::package(crate::symbol::Symbol::intern(type_name)),
+                    Vec::new(),
+                )?;
+                if let ValueView::Instance { attributes, .. } = instance.view() {
+                    attributes.insert("__baggy_data__", storage);
+                }
+                Ok(instance)
+            }
         } else if type_name == "List" {
             // `List.new(@values)` treats `@values` as one positional argument,
             // but an `is List` attribute receives its caller's list contents.

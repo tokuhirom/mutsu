@@ -1689,7 +1689,16 @@ impl Interpreter {
                     Value::str_from(callable_type),
                 );
             }
-            let sub_val = if let Some(def) = installed {
+            let mut sub_val = if multi {
+                // A multi method has no plain `Pkg::name` registry entry: its
+                // candidates live under arity/type-qualified keys.  Building a
+                // method value through the single-routine fallback below would
+                // therefore create an empty Sub with the plan's body-less AST,
+                // so `&name` silently returned Nil.  Capture the complete
+                // candidate family just as a resolved multi code value does.
+                let candidates = self.resolve_all_multi_candidates(name);
+                self.sub_value_from_multi_candidates(name, candidates)
+            } else if let Some(def) = installed {
                 Value::make_sub_for_routine(
                     def.package,
                     def.name,
@@ -1711,6 +1720,17 @@ impl Interpreter {
                     captured_env,
                 )
             };
+            if multi
+                && let Some(callable_type) = declarator.callable_type()
+                && let ValueView::Sub(data) = sub_val.view()
+            {
+                let mut new_data = (**data).clone();
+                new_data.env.insert(
+                    "__mutsu_callable_type".to_string(),
+                    Value::str_from(callable_type),
+                );
+                sub_val = Value::sub_value(crate::gc::Gc::new(new_data));
+            }
             self.env.insert(format!("&{}", name), sub_val);
             self.env
                 .insert(MetaNs::MethodValue.owned_key_for_str(name), Value::TRUE);

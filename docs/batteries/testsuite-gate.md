@@ -181,7 +181,18 @@ load-bearing.
 The gate itself still needs the network to *fetch* each suite at its pinned
 commit — that is unavoidable setup, not an assertion. A fetch failure reports
 `GATE ERROR` and exits 2, distinct from the `GATE FAILED` a real regression
-produces.
+produces. Each fetch is retried with a short backoff (`BATTERY_FETCH_ATTEMPTS`,
+default 4).
+
+To keep one unreachable upstream host from failing every PR, CI caches the
+fetched checkouts: with `BATTERY_SRC_CACHE=<dir>` the script reuses
+`<dir>/<commit>` when it is there, and stores each fresh fetch there right
+after checkout, before any test runs in it. It also drops entries for commits
+`batteries.lock` no longer pins. The commits are pinned, so a cached checkout
+holds exactly the files a fetch would. The cache changes where the bytes come
+from, not what the gate runs. `ci.yml`'s `test-suites` job keeps the directory
+in `actions/cache`, keyed on `batteries.lock`. Local runs leave it unset and
+always fetch.
 
 ## Re-vendoring a battery
 

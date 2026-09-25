@@ -139,7 +139,8 @@ impl Interpreter {
                     argfiles_reader: None,
                     argfiles_paths: None,
                     pending_words: std::collections::VecDeque::new(),
-                    close_on_word_exhaust: false,
+                    close_on_exhaust: false,
+                    seq_reader: None,
                 };
                 let id = self.insert_handle_state(state);
                 let mut attrs = HashMap::new();
@@ -184,7 +185,8 @@ impl Interpreter {
                 argfiles_reader: None,
                 argfiles_paths: None,
                 pending_words: std::collections::VecDeque::new(),
-                close_on_word_exhaust: false,
+                close_on_exhaust: false,
+                seq_reader: None,
             };
             let id = self.insert_handle_state(state);
             let mut attrs = HashMap::new();
@@ -242,7 +244,8 @@ impl Interpreter {
                     argfiles_reader: None,
                     argfiles_paths: None,
                     pending_words: std::collections::VecDeque::new(),
-                    close_on_word_exhaust: false,
+                    close_on_exhaust: false,
+                    seq_reader: None,
                 };
                 let id = self.insert_handle_state(state);
                 let mut attrs = HashMap::new();

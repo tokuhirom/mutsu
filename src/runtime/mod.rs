@@ -648,6 +648,7 @@ mod handle_io;
 mod handle_open;
 mod handle_read;
 mod handle_read_chars;
+mod handle_seq_reader;
 pub(crate) mod hoist_visibility;
 mod incdec_rw_sub;
 mod io;
@@ -1744,9 +1745,14 @@ pub(crate) struct IoHandleState {
     /// Buffered words not yet yielded by `read_word_from_handle_value`. A single
     /// line read can produce many words; the leftovers live here until consumed.
     pending_words: std::collections::VecDeque<String>,
-    /// When set, the handle is closed automatically the moment word iteration
-    /// reaches EOF (Raku's `words($fh, :close)` close-on-exhaust semantics).
-    close_on_word_exhaust: bool,
+    /// When set, the handle is closed automatically the moment a line or word
+    /// read reaches EOF (Raku's `words($fh, :close)` close-on-exhaust
+    /// semantics, and the handle `IO::Path.lines` / `.words` open).
+    close_on_exhaust: bool,
+    /// The buffered reader of a handle only a Seq can reach (the one
+    /// `IO::Path.lines` / `.words` open); `file` is `None` then. File reads go
+    /// through it instead of one syscall per byte (see `handle_seq_reader`).
+    seq_reader: Option<handle_seq_reader::SeqFileReader>,
 }
 
 /// Entry in the callframe stack, tracking state for each call frame.
@@ -2520,6 +2526,9 @@ pub struct Interpreter {
     /// `registry_write_gen` above. See [`numeric_bridge_probe`] for why that
     /// generation is a sound invalidation key (#7712).
     numeric_bridge_probe: numeric_bridge_probe::NumericBridgeProbeCache,
+    /// Per-`(class, attribute)` memo of `self_attr_type_constraint`, keyed by
+    /// the same `registry_write_gen` (ADR-0121). See `vm_attr_type_constraint`.
+    pub(crate) attr_type_constraint_cache: std::cell::RefCell<crate::vm::AttrTypeConstraintCache>,
     /// Active `{*}` proto dispatch frames: (proto_name, args, method_ctx).
     /// `method_ctx` is `Some` when the active proto is a `proto method` body, so
     /// `{*}` redispatches to a multi *method* candidate on the invocant rather
@@ -4430,6 +4439,11 @@ pub struct Interpreter {
     /// user-method tail; consumed by
     /// `try_compiled_method_mut_or_interpret_sym`.
     pub(crate) plain_method_lane_active: bool,
+    /// ADR-0121 D3: `(layout id, method name) -> slot` for a `CallMethodMut`
+    /// whose whole dispatch was the generated accessor's plain slot read.
+    /// Written only from that outcome, and cleared with the other method caches
+    /// on a registry generation change. See `vm_accessor_lane`.
+    pub(crate) accessor_lane: rustc_hash::FxHashMap<(u32, Symbol), u32>,
     /// Memoized `class -> NativeCtorPlan` for the native default constructor.
     /// Cleared wherever `fast_method_cache` is cleared, plus the MOP class-shape
     /// mutators (`Attribute.set_build`, `^add_attribute`, `^add_method`,
