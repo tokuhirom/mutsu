@@ -243,6 +243,44 @@ impl Interpreter {
             if self.scalar_name_has_no_container(target_var) {
                 return Ok(target);
             }
+            // Also a live property of the CURRENT binding, so probed before the
+            // name-keyed cache as well: `sub h(\p) { p.VAR }; h($x); h(1)` must
+            // answer `Int` for the second call, not the first call's cached
+            // `Scalar` (#9346, `nqp::iscont(p)`).
+            let readonly_key = crate::runtime::sigilless_readonly_key(target_var);
+            let alias_key = crate::runtime::sigilless_alias_key(target_var);
+            let has_sigilless_meta =
+                self.env.contains_key_sym(readonly_key) || self.env.contains_key_sym(alias_key);
+            if has_sigilless_meta {
+                // A sigilless raw parameter aliases an aggregate caller
+                // directly (`sub f(\x) { x.VAR } ; f(@a)`).  Its local value
+                // is still the Array/List/Hash itself, but the parameter name
+                // has no sigil, so the generic reflection path below would
+                // incorrectly manufacture a Scalar descriptor.  Preserve the
+                // aggregate's own container identity, just as `@a.VAR` does.
+                if !target_var.starts_with(['$', '@', '%', '&'])
+                    && let Some(source) = self.env.get_sym(alias_key).and_then(|value| match value
+                        .view()
+                    {
+                        ValueView::Str(source) => Some(source.to_string()),
+                        _ => None,
+                    })
+                    && ((source.starts_with('@') && matches!(target.view(), ValueView::Array(..)))
+                        || (source.starts_with('%')
+                            && matches!(target.view(), ValueView::Hash(..))))
+                {
+                    return Ok(target);
+                }
+                let readonly = self
+                    .env
+                    .get_sym(readonly_key)
+                    .is_some_and(|v| matches!(v.view(), ValueView::Bool(true)));
+                let itemized_array =
+                    matches!(target.view(), ValueView::Array(_, kind) if kind.is_real_array());
+                if readonly && !itemized_array {
+                    return Ok(target);
+                }
+            }
             if let Some(existing) = self.var_meta_value(target_var) {
                 // The cached meta instance goes stale when the SAME param name
                 // is re-bound differently on a later call of the sub (call 1
@@ -277,40 +315,6 @@ impl Interpreter {
                         );
                     }
                     return Ok(existing);
-                }
-            }
-            let readonly_key = crate::runtime::sigilless_readonly_key(target_var);
-            let alias_key = crate::runtime::sigilless_alias_key(target_var);
-            let has_sigilless_meta =
-                self.env.contains_key_sym(readonly_key) || self.env.contains_key_sym(alias_key);
-            if has_sigilless_meta {
-                // A sigilless raw parameter aliases an aggregate caller
-                // directly (`sub f(\x) { x.VAR } ; f(@a)`).  Its local value
-                // is still the Array/List/Hash itself, but the parameter name
-                // has no sigil, so the generic reflection path below would
-                // incorrectly manufacture a Scalar descriptor.  Preserve the
-                // aggregate's own container identity, just as `@a.VAR` does.
-                if !target_var.starts_with(['$', '@', '%', '&'])
-                    && let Some(source) = self.env.get_sym(alias_key).and_then(|value| match value
-                        .view()
-                    {
-                        ValueView::Str(source) => Some(source.to_string()),
-                        _ => None,
-                    })
-                    && ((source.starts_with('@') && matches!(target.view(), ValueView::Array(..)))
-                        || (source.starts_with('%')
-                            && matches!(target.view(), ValueView::Hash(..))))
-                {
-                    return Ok(target);
-                }
-                let readonly = self
-                    .env
-                    .get_sym(readonly_key)
-                    .is_some_and(|v| matches!(v.view(), ValueView::Bool(true)));
-                let itemized_array =
-                    matches!(target.view(), ValueView::Array(_, kind) if kind.is_real_array());
-                if readonly && !itemized_array {
-                    return Ok(target);
                 }
             }
             // A scalar `:=`-bound to a container (`my $r := @a` / `:= %h` /

@@ -176,6 +176,15 @@ impl TrirCompiler<'_> {
         if let Some(kind) = self.try_attr_op(op, args) {
             return kind;
         }
+        // `nqp::iscont` asks about its operand's CONTAINER, which the main
+        // compiler supplies by compiling the operand as `.VAR`
+        // (`try_compile_nqp_form`); a TRIR operand is always the bare value,
+        // so it would answer 0 for every variable (#9346). Leave the routine
+        // to the bytecode path.
+        if op == "iscont" {
+            self.note_decline(|| "nqp::iscont needs its operand's container".to_string());
+            return None;
+        }
         // Everything else in the namespace goes through the ordinary
         // implementation with boxed operands. That is not a fallback arm: an
         // `nqp::` op is a primitive either way, and boxing its operands is
