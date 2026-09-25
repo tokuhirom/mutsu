@@ -150,6 +150,19 @@ pub(super) fn try_keyword_dispatch(
     // my multi [sub] name(...) { ... }
     if let Some(r) = keyword("multi", rest) {
         let (r, _) = ws1(r)?;
+        // `my multi method` is a lexical multi-method declaration.  Keep the
+        // `method` keyword in the method-declaration path so the resulting AST
+        // retains the invocant and method declarator markers.  Treating it as
+        // the optional `sub` keyword below makes `method` the routine name and
+        // eventually reports the misleading "my used" error from the body.
+        if let Some(r) = keyword("method", r) {
+            let (r, _) = ws1(r)?;
+            return if is_our {
+                method_decl_body(r, true, true).map(Some)
+            } else {
+                method_decl_body_my(r, true, false).map(Some)
+            };
+        }
         let r = keyword("sub", r)
             .map(|r2| ws(r2).map(|(r3, _)| r3).unwrap_or(r2))
             .unwrap_or(r);
