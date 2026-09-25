@@ -26,4 +26,4 @@ TRIR binder copies values into its frame, and a sigilless parameter bound to a
 caller variable must see that variable's container. That is a speed matter
 only and is left as it is.
 
-Pinned by `t/vm/codegen/trir-fallback-user-sub-shadows-core.t`. Closes #9288.
+Pinned by `t/vm/codegen/adr0110-trir-fallback-user-sub-shadows-core.t`. Closes #9288.
