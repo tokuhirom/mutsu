@@ -2603,18 +2603,7 @@ impl Interpreter {
                                 }
                                 collected.push(next);
                             }
-                            if !collected.is_empty()
-                                && let Some(av) = args.first()
-                                && let ValueView::Array(existing, arr_kind) = av.view()
-                            {
-                                let mut next = existing.to_vec();
-                                next.extend(collected);
-                                let updated_array = Value::array_with_kind(
-                                    crate::gc::Gc::new(crate::value::ArrayData::new(next)),
-                                    arr_kind,
-                                );
-                                self.overwrite_array_bindings_by_identity(&existing, updated_array);
-                            }
+                            self.iterator_append_to_array_arg(&args, &collected);
                             Value::iteration_end()
                         }
                         "skip-one" => {
@@ -2669,18 +2658,7 @@ impl Interpreter {
                                 }
                                 collected.push(next);
                             }
-                            if !collected.is_empty()
-                                && let Some(av) = args.first()
-                                && let ValueView::Array(existing, arr_kind) = av.view()
-                            {
-                                let mut next = existing.to_vec();
-                                next.extend(collected.clone());
-                                let updated_array = Value::array_with_kind(
-                                    crate::gc::Gc::new(crate::value::ArrayData::new(next)),
-                                    arr_kind,
-                                );
-                                self.overwrite_array_bindings_by_identity(&existing, updated_array);
-                            }
+                            self.iterator_append_to_array_arg(&args, &collected);
                             if collected.len() >= want {
                                 Value::NIL
                             } else {

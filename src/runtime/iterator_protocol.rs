@@ -192,6 +192,17 @@ impl crate::Interpreter {
         if vals.is_empty() {
             return;
         }
+        // An `IterationBuffer` target (`.push-all(my $b := nqp::create(
+        // IterationBuffer))`, the ForwardIterables idiom) is appended in its
+        // own storage, the way `nqp::push` on it is (#9419).
+        if let Some(av) = args.first()
+            && matches!(av.view(), ValueView::Instance { class_name, .. } if class_name == "IterationBuffer")
+        {
+            let _ = Self::nqp_with_elems_mut("push-all", av, |items| {
+                items.extend(vals.iter().cloned())
+            });
+            return;
+        }
         if let Some(av) = args.first()
             && let ValueView::Array(existing, arr_kind) = av.view()
         {
