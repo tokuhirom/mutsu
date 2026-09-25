@@ -1428,38 +1428,30 @@ impl Compiler {
             return Self::control_block_is_resume_safe(body);
         }
         // All-arms form: `CONTROL { when CX::Warn { ...; .resume } ... }`. Only
-        // warns are routed through the inline mechanism, so this is resume-safe
-        // when every arm that can match a CX::Warn — an explicit `when CX::Warn`
-        // arm or a `default` arm — ends in `.resume`. An arm for a different
-        // CX:: type never matches a warn inside the inline run and is ignored.
-        // A `when` whose matcher we cannot classify stays conservative (false).
+        // warns are routed through the inline mechanism, so what matters is the
+        // arm a CX::Warn lands in: the FIRST explicit `when CX::Warn` or
+        // `default` arm. `when` is first-match (a matching arm `succeed`s out of
+        // the block), so every arm after that one is unreachable for a warn --
+        // `when CX::Warn { .resume }; default { ... }` is resume-safe however the
+        // `default` ends (#9425). An arm for a different CX:: type never matches
+        // a warn and is skipped. A `when` whose matcher we cannot classify might
+        // match a warn first, so it stays conservative (false).
         if meaningful
             .iter()
             .all(|s| matches!(s, Stmt::When { .. } | Stmt::Default(_)))
         {
-            let mut warn_arm_seen = false;
             for s in &meaningful {
                 match s {
                     Stmt::When { cond, body, .. } => match Self::when_cond_warn_class(cond) {
-                        WhenWarnClass::Warn => {
-                            warn_arm_seen = true;
-                            if !Self::control_block_body_resumes(body) {
-                                return false;
-                            }
-                        }
+                        WhenWarnClass::Warn => return Self::control_block_body_resumes(body),
                         WhenWarnClass::OtherControl => {}
                         WhenWarnClass::Unknown => return false,
                     },
-                    Stmt::Default(body) => {
-                        warn_arm_seen = true;
-                        if !Self::control_block_body_resumes(body) {
-                            return false;
-                        }
-                    }
+                    Stmt::Default(body) => return Self::control_block_body_resumes(body),
                     _ => unreachable!("filtered to When/Default above"),
                 }
             }
-            return warn_arm_seen;
+            return false;
         }
         // Any `when` arm or `succeed` escapes the block via a control signal
         // (it does NOT resume) — the #3372 killer case. Reject.
