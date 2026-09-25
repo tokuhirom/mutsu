@@ -265,6 +265,13 @@ fn walk_stmt(stmt: &Stmt, nil_hint: bool, line: &std::cell::Cell<i64>) {
     match stmt {
         Stmt::SetLine(n) => line.set(*n),
         Stmt::Expr(e) => warn_expr_sink(e, nil_hint, line.get()),
+        // A `my (...) = RHS` destructuring block ends in its result value -- the
+        // list of the declared targets (or, for `:=`, the internal staging temp)
+        // -- which is not a user-written expression, so it must not produce a
+        // spurious "Useless use of $a in sink context" on `my ($a, $b) = 1, 2;`.
+        Stmt::SyntheticBlock(body) if is_destructure_block(body) => {
+            walk_stmts(sunk_prefix(body), false, line)
+        }
         // Bare blocks and parser desugaring blocks stay in sink context.
         Stmt::Block(body) | Stmt::SyntheticBlock(body) => walk_stmts(body, false, line),
         // Loop / topicalizer bodies are sunk. The "(use Nil instead...)" hint is
@@ -294,6 +301,23 @@ fn walk_stmt(stmt: &Stmt, nil_hint: bool, line: &std::cell::Cell<i64>) {
         // Everything else (declarations, calls, say/print, assignments, and the
         // bodies of subs/classes/etc.) is not analysed for sink warnings.
         _ => {}
+    }
+}
+
+/// Whether `body` is the desugaring of a `my (...) = RHS` / `my (...) := RHS`
+/// destructuring declaration: it opens with the staging-temp declaration,
+/// wrapped in a `MarkBind` block in binding mode.
+fn is_destructure_block(body: &[Stmt]) -> bool {
+    fn is_tmp_decl(stmt: &Stmt) -> bool {
+        matches!(stmt, Stmt::VarDecl { name, .. }
+            if name == "@__destructure_tmp__" || name == "%__destructure_tmp__")
+    }
+    match body.first() {
+        Some(Stmt::SyntheticBlock(inner)) => {
+            matches!(inner.as_slice(), [Stmt::MarkBind, decl] if is_tmp_decl(decl))
+        }
+        Some(first) => is_tmp_decl(first),
+        None => false,
     }
 }
 
@@ -376,10 +400,6 @@ fn describe_useless(expr: &Expr) -> Option<String> {
         Expr::Var(n) if n == crate::env::LEX_SELF => Some(crate::env::LEX_SELF.to_string()),
         Expr::Var(n) if n.starts_with(['$', '@', '%', '&']) => None,
         Expr::Var(n) => Some(format!("${}", n)),
-        // The trailing result read a `my (...)` destructuring block leaves — an
-        // internal `@__destructure_tmp__` — is not a user-written bare array, so
-        // it must not produce a spurious sink warning on `my ($a,$b) = 1,2;`.
-        Expr::ArrayVar(n) if n == "__destructure_tmp__" => None,
         Expr::ArrayVar(n) => Some(format!("@{}", n)),
         Expr::HashVar(n) => Some(format!("%{}", n)),
         Expr::ArrayLiteral(elems) if elems.is_empty() => Some("()".to_string()),

@@ -687,7 +687,42 @@ fn parse_destructuring_with_rhs(
     // element still enforces in value context — e.g. an EVAL'd `my (\b, "foo") =
     // ...` whose trailing `MarkSigillessReadonly` would otherwise leave a
     // constrained decl block-final and skip its check. (subtypes.t 90)
-    stmts.push(Stmt::Expr(Expr::ArrayVar(array_bare)));
+    //
+    // In ASSIGNMENT mode the value is the LHS after the assignment -- the
+    // declared targets themselves, as Rakudo's `List.STORE` returns its
+    // invocant: `(my ($x, $y) = 1, 2, 3)` is `$(1, 2)`, and an infinite RHS
+    // (`my ($x, $y) = 1 xx *`) must not leak out, since sinking it would force
+    // it (#9342). A literal postconstraint element yields its staged value.
+    // Binding mode keeps yielding the staged RHS list.
+    let result = if is_binding {
+        Expr::ArrayVar(array_bare)
+    } else {
+        Expr::ArrayLiteral(
+            vars.iter()
+                .enumerate()
+                .map(|(i, dvar)| {
+                    if dvar.literal_value.is_some() {
+                        Expr::Index {
+                            target: Box::new(Expr::ArrayVar(array_bare.clone())),
+                            index: Box::new(Expr::Literal(Value::int(i as i64))),
+                            is_positional: true,
+                        }
+                    } else if dvar.sigilless {
+                        Expr::BareWord(dvar.name.clone())
+                    } else if let Some(n) = dvar.name.strip_prefix('@') {
+                        Expr::ArrayVar(n.to_string())
+                    } else if let Some(n) = dvar.name.strip_prefix('%') {
+                        Expr::HashVar(n.to_string())
+                    } else if let Some(n) = dvar.name.strip_prefix('&') {
+                        Expr::CodeVar(n.to_string())
+                    } else {
+                        Expr::Var(dvar.name.clone())
+                    }
+                })
+                .collect(),
+        )
+    };
+    stmts.push(Stmt::Expr(result));
     let block = Stmt::SyntheticBlock(stmts);
     if has_following_block || block_rhs_ends_at_newline {
         // In `if my ($a, $b) = f() { ... }`, the braced block belongs to the
