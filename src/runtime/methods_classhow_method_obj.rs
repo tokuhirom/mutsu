@@ -110,6 +110,16 @@ impl Interpreter {
         }
         let registry = self.registry();
         let Some(class_def) = registry.classes.get(class_name) else {
+            // A core type with no registry ClassDef (Int, Str, Num, ...): its
+            // methods are the built-in catalog entries, the same source
+            // `.^methods(:local)` reads (`collect_builtin_type_methods`), so
+            // the two introspection routes cannot disagree (#9388).
+            for name in registry.builtin_method_names(class_name) {
+                table.insert(
+                    name.to_string(),
+                    self.make_native_method_object(name, class_name),
+                );
+            }
             return table;
         };
         // A public attribute's auto-generated accessor is not yet installed
