@@ -37,10 +37,9 @@ impl Interpreter {
     // ...) the match writes back, n = locals the RHS's regexes, substitutions
     // and their embedded code can name (published to env for the engine), p =
     // their source length, k = elements of a container RHS value searched for
-    // regexes (see `vm_smartmatch_sync`). Embedded code doing an indirect
-    // lookup (`EVAL`, `::($n)`, `MY::`) or a lazy/`Proxy` RHS still publishes
-    // every local slot: O(L), L = local slots of the current frame.
-    // Rakudo: O(1) + the RHS -- see #9293.
+    // regexes (see `vm_smartmatch_sync`). Independent of the frame's size:
+    // embedded code doing an indirect lookup (`EVAL`, `::($n)`, `MY::`) reads
+    // the store-side env mirror its chunk keeps (#9293).
     #[allow(clippy::too_many_arguments)]
     pub(super) fn exec_smart_match_expr_op(
         &mut self,
@@ -148,8 +147,8 @@ impl Interpreter {
         // was removed in Stage 3 (the interpreter-bridge writes it covered, e.g.
         // EVAL modifying a `$GLOBAL::` variable, are now reconciled by precise
         // write-throughs at their own sites).
-        let rhs_sync = Self::smartmatch_rhs_sync(code, rhs_start, rhs_end);
-        self.apply_smartmatch_sync(code, &rhs_sync);
+        let rhs_names = Self::smartmatch_rhs_sync(code, rhs_start, rhs_end);
+        self.apply_smartmatch_sync(code, &rhs_names);
         let saved_in_smartmatch_rhs = self.in_smartmatch_rhs;
         self.in_smartmatch_rhs = true;
         self.transliterate_in_smartmatch = false;
@@ -167,13 +166,23 @@ impl Interpreter {
         }
         rhs_run?;
         let right = self.stack.pop().unwrap_or(Value::NIL);
+        // The match reads its RHS the way it reads its LHS: a `Proxy` is
+        // FETCHed (`"ab" ~~ $p` with `$p := Proxy.new(FETCH => { /b/ })` asks
+        // the regex FETCH answers, as in Rakudo) and a lazy thunk is forced
+        // (it caches, so this is the value any later read sees too).
+        let right = if right.is_proxy_value() {
+            loan_env!(self, auto_fetch_proxy(&right))?
+        } else if right.is_lazy_thunk_value()
+            && let ValueView::LazyThunk(thunk) = right.view()
+        {
+            self.force_lazy_thunk(&thunk)?
+        } else {
+            right
+        };
         // The RHS may have *computed* a regex (`$x ~~ $re`) whose pattern names
-        // this frame's locals; publish those before matching against it. A
-        // whole-frame publish already done before the RHS covers it.
-        if !matches!(rhs_sync, super::vm_smartmatch_sync::RhsSync::Full) {
-            let value_sync = Self::smartmatch_value_sync(&left, &right);
-            self.apply_smartmatch_sync(code, &value_sync);
-        }
+        // this frame's locals; publish those before matching against it.
+        let value_names = Self::smartmatch_value_sync(&left, &right);
+        self.apply_smartmatch_sync(code, &value_names);
         let native_lhs_match = self.direct_native_lhs_match(lhs_var, &right);
         // A destructive `s///`/`tr///` that actually matched against a string
         // literal has no writable container to update, so Raku throws

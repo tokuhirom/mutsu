@@ -2216,20 +2216,9 @@ impl Interpreter {
             .any(|set| set.contains(&sym))
     }
 
-    // Cost: O(L), L = local slots of `code` (an env probe, and for a live slot an
-    // env write, per slot). The `~~` op calls it only for an RHS whose by-name
-    // reads it cannot bound (see `smartmatch_rhs_sync`).
-    pub(super) fn sync_regex_interpolation_env_from_locals(&mut self, code: &CompiledCode) {
-        let saved_suppress = self.suppress_shared_publish;
-        self.suppress_shared_publish = true;
-        for i in 0..code.locals.len() {
-            self.sync_regex_interpolation_slot(code, i);
-        }
-        self.suppress_shared_publish = saved_suppress;
-    }
-
-    /// [`Self::sync_regex_interpolation_env_from_locals`] restricted to the
-    /// slots named in `names` (env-key spellings: `x` for `$x`, `@a`, `&f`).
+    /// Publish the local slots named in `names` (env-key spellings: `x` for
+    /// `$x`, `@a`, `&f`) into env for the regex engine's by-name readers (see
+    /// `vm_smartmatch_sync`).
     // Cost: O(n), n = names (one slot-index probe each).
     pub(super) fn sync_regex_interpolation_env_for_names(
         &mut self,
