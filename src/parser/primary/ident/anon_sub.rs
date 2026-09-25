@@ -44,7 +44,7 @@ pub(crate) fn make_anon_method(
         body,
         is_rw: false,
         is_raw: false,
-        custom_traits: Vec::new(),
+        custom_traits: Default::default(),
         is_whatever_code: false,
         declarator,
     }
@@ -191,7 +191,7 @@ pub(crate) fn parse_anon_sub_rest(
             body,
             is_rw: traits.is_rw,
             is_raw: traits.is_raw,
-            custom_traits: traits.custom_traits,
+            custom_traits: traits.custom_traits.into(),
             is_whatever_code: false,
             declarator,
         },
