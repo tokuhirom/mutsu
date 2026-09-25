@@ -260,6 +260,25 @@ impl Compiler {
         }
     }
 
+    /// The declaration inside the bind source of `$target := my $z = ...`,
+    /// with the variable it declares, when both names are plain scalar
+    /// lexicals. Such a bind aliases `$target` to `$z`'s container, so the
+    /// caller compiles the declaration and then binds `$z` as a variable
+    /// (#9308).
+    pub(super) fn scalar_decl_bind_source<'a>(
+        target: &str,
+        expr: &'a Expr,
+    ) -> Option<(&'a Stmt, &'a str)> {
+        let Expr::DoStmt(stmt) = expr else {
+            return None;
+        };
+        let Stmt::VarDecl { name, .. } = stmt.as_ref() else {
+            return None;
+        };
+        (Self::is_plain_lexical_name(target) && Self::is_plain_lexical_name(name))
+            .then_some((stmt.as_ref(), name.as_str()))
+    }
+
     pub(super) fn next_tmp_name(&mut self, prefix: &str) -> String {
         let name = format!("${}{}", prefix, self.tmp_counter);
         self.tmp_counter += 1;
