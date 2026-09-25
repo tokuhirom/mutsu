@@ -504,7 +504,13 @@ pub(super) fn parse_prefix_unary_op(input: &str) -> Option<(PrefixUnaryOp, usize
     // A symbolic prefix (`+`, `-`, `~`) may be followed by ANOTHER prefix
     // operator: `+!$x` is `+(!$x)`, `-?$x` is `-(?$x)`. Without this the leading
     // `+`/`-`/`~` falls through to numeric-literal parsing and fails on the `!`.
-    let starts_another_prefix = |s: &str| parse_prefix_unary_op(s.trim_start()).is_some();
+    // The atomic-fetch prefix `⚛` counts too (`+⚛$x`, `-⚛$!attr`): it is parsed
+    // by `prefix_expr` itself rather than returned from here, so without naming
+    // it the leading `+`/`-` fell through to numeric-literal parsing (#9324).
+    let starts_another_prefix = |s: &str| {
+        let s = s.trim_start();
+        s.starts_with('\u{269B}') || parse_prefix_unary_op(s).is_some()
+    };
     // A word infix operator's own name (`eq`, `and`, `div`, ...) can never be
     // a term, so `!!eq`/`!!and`/`!!div` are illegal ("doubled prefix:<!>",
     // `X::Syntax::Confused`) rather than double negation of a bareword call
