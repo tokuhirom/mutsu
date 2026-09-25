@@ -1589,17 +1589,66 @@ pub(crate) enum OpCode {
     Concat,
 
     // -- Numeric comparison --
+    /// Infix `==` (numeric equality). Stack: `[left, right] → [Bool]` (right on top).
+    ///
+    /// Shares `num_eq_values` with `&infix:<==>` (the form `cmp-ok` calls),
+    /// so both answer alike. Junction operands are threaded, a user
+    /// `infix:<==>` candidate gets first refusal, a numeric type-object
+    /// operand is an error, and two positional operands (arrays, lists,
+    /// ranges, Seqs) compare their element *counts*. Everything else is
+    /// compared after the numeric coercion bridge.
     NumEq,
+    /// Infix `!=`. Stack: `[left, right] → [Bool]` (right on top).
+    ///
+    /// `!==` spelled short: it evaluates `==` (threading Junctions through
+    /// [`Self::NumEq`]'s body) and negates the collapsed result, so it always
+    /// pushes a plain `Bool`. A user `infix:<!=>` candidate is tried first.
+    /// See [`Self::NumNeNative`] for the native-integer form.
     NumNe,
     /// Native-int-aware `!=`.  Flags encode signedness of each operand:
     /// bit 0 = left is unsigned, bit 1 = right is unsigned.
     /// When cross-signed and the signed operand is negative, returns False
     /// (matching Rakudo's MoarVM behaviour for native int registers).
     NumNeNative(u8),
+    /// Infix `<` (numeric). Stack: `[left, right] → [Bool]` (right on top).
+    ///
+    /// Shares its body with the routine form (`&infix:<<>`), so both answer
+    /// alike: Junction operands are threaded, a user `infix:<<>` candidate
+    /// gets first refusal, an undefined operand warns and counts as `0`, and
+    /// both operands go through the numeric coercion bridge (a list numifies
+    /// to its element count).
     NumLt,
+    /// Infix `<=` (numeric). Stack: `[left, right] → [Bool]` (right on top).
+    ///
+    /// Shares its body with the routine form (`&infix:<<=>`), so both answer
+    /// alike: Junction operands are threaded, a user `infix:<<=>` candidate
+    /// gets first refusal, an undefined operand warns and counts as `0`, and
+    /// both operands go through the numeric coercion bridge (a list numifies
+    /// to its element count).
     NumLe,
+    /// Infix `>` (numeric). Stack: `[left, right] → [Bool]` (right on top).
+    ///
+    /// Shares its body with the routine form (`&infix:<>>`), so both answer
+    /// alike: Junction operands are threaded, a user `infix:<>>` candidate
+    /// gets first refusal, an undefined operand warns and counts as `0`, and
+    /// both operands go through the numeric coercion bridge (a list numifies
+    /// to its element count).
     NumGt,
+    /// Infix `>=` (numeric). Stack: `[left, right] → [Bool]` (right on top).
+    ///
+    /// Shares its body with the routine form (`&infix:<>=>`), so both answer
+    /// alike: Junction operands are threaded, a user `infix:<>=>` candidate
+    /// gets first refusal, an undefined operand warns and counts as `0`, and
+    /// both operands go through the numeric coercion bridge (a list numifies
+    /// to its element count).
     NumGe,
+    /// Infix `=~=` / `≅` (approximately equal). Stack: `[left, right] → [Bool]` (right on top).
+    ///
+    /// The tolerance is `$*TOLERANCE` (default `1e-15`, relative). Two
+    /// operands compare by relative difference, or by absolute difference
+    /// when either is zero, and must be *strictly* within it
+    /// (`$*TOLERANCE = 0` makes every comparison false). Shared with the
+    /// hyper and meta forms (`»=~=«`) through `approx_eq_values`.
     ApproxEq,
     /// Container identity (`=:=`).
     /// The `u8` flags encode containerisation of operands:
@@ -1639,27 +1688,94 @@ pub(crate) enum OpCode {
     ContainerEqRaw,
 
     // -- String comparison --
+    /// Infix `eq` (string equality). Stack: `[left, right] → [Bool]` (right on top).
+    ///
+    /// All six string comparisons share `str_cmp_values`. Both operands are
+    /// coerced through `.Stringy` (a user `Str` method is called, a `utf8`
+    /// decodes, a `Proxy` is FETCHed), Junctions are threaded, and two Blobs
+    /// compare bytewise. `eq` and `ne` answer in O(1) when the lengths
+    /// differ.
     StrEq,
+    /// Infix `ne`. Stack: `[left, right] → [Bool]` (right on top). `!eq`: it threads `eq` over Junctions and negates
+    /// the collapsed result, so it always pushes a plain `Bool`. See
+    /// [`Self::StrEq`] for the shared coercion.
     StrNe,
+    /// Infix `lt` (string less than, by codepoint). Stack: `[left, right] → [Bool]` (right on top). See
+    /// [`Self::StrEq`] for the shared coercion and Junction threading.
     StrLt,
+    /// Infix `gt`. Stack: `[left, right] → [Bool]` (right on top). See [`Self::StrEq`].
     StrGt,
+    /// Infix `le`. Stack: `[left, right] → [Bool]` (right on top). See [`Self::StrEq`].
     StrLe,
+    /// Infix `ge`. Stack: `[left, right] → [Bool]` (right on top). See [`Self::StrEq`].
     StrGe,
 
     // -- Generic ordering (cmp-based) --
+    /// Infix `before`: whether `left cmp right` is `Less`. Stack: `[left, right] → [Bool]` (right on top).
+    ///
+    /// Uses the generic `cmp` order (numbers numerically, Blobs bytewise,
+    /// everything else as [`Self::Cmp`] would), through
+    /// `before_after_values`.
     Before,
+    /// Infix `after`: whether `left cmp right` is `More`. Stack: `[left, right] → [Bool]` (right on top). See
+    /// [`Self::Before`].
     After,
 
     // -- Three-way comparison --
+    /// Infix `<=>` (numeric three-way comparison). Stack: `[left, right] → [Order]` (right on top): an `Order` enum value (`Less`, `Same`, `More`), not an `Int`.
+    ///
+    /// Numeric, unlike [`Self::Cmp`]: a numeric type-object operand throws
+    /// `X::Numeric::Uninitialized`, and both operands go through the
+    /// numeric coercion bridge. A `NaN` on either side yields `Nil`
+    /// (unordered). A `Complex` operand whose imaginary part is within
+    /// `$*TOLERANCE` compares by its real part; otherwise it is an error.
+    /// Junction operands are threaded.
     Spaceship,
+    /// Infix `cmp` (generic three-way comparison). Stack: `[left, right] → [Order]` (right on top): an `Order` enum value (`Less`, `Same`, `More`), not an `Int`.
+    ///
+    /// A user `infix:<cmp>` candidate gets first refusal. The native
+    /// candidate, shared with `&infix:<cmp>`, orders numbers numerically,
+    /// strings by codepoint, and lists, pairs and ranges structurally, and
+    /// compares an object through its user `Str`/`Stringy` method.
     Cmp,
+    /// Infix `coll` (collation-aware three-way comparison). Stack: `[left, right] → [Order]` (right on top): an `Order` enum value (`Less`, `Same`, `More`), not an `Int`.
+    ///
+    /// Both operands are stringified and compared by the Unicode Collation
+    /// Algorithm with the levels set by `$*COLLATION`
+    /// (`crate::builtins::collation::coll_compare`).
     Coll,
+    /// Infix `unicmp` (Unicode collation comparison). Stack: `[left, right] → [Order]` (right on top): an `Order` enum value (`Less`, `Same`, `More`), not an `Int`.
+    ///
+    /// As [`Self::Coll`], but always with the default collation settings:
+    /// `$*COLLATION` is not consulted.
     Unicmp,
+    /// Infix `leg` (string three-way comparison, "less, equal, greater").
+    /// Stack: `[left, right] → [Order]` (right on top): an `Order` enum value (`Less`, `Same`, `More`), not an `Int`.
+    ///
+    /// Compares the operands' `.Stringy` by codepoint
+    /// (`crate::builtins::str_prim::str_order`), with the same coercion and
+    /// Junction threading as [`Self::StrEq`]. A Blob operand dies, as in
+    /// Rakudo, which has no Blob candidate for `leg`.
     Leg,
 
     // -- Identity/value equality --
+    /// Infix `===` (value identity). Stack: `[left, right] → [Bool]` (right on top).
+    ///
+    /// `$a.WHICH eq $b.WHICH`, so a class that overrides `WHICH` decides its
+    /// own identity: value types compare by value, and containers and
+    /// objects by identity. Shares `identical_values` with the routine form.
     StrictEq,
+    /// Infix `!==`. Stack: `[left, right] → [Bool]` (right on top). Threads [`Self::StrictEq`] over Junctions and
+    /// negates the collapsed result.
     StrictNe,
+    /// Infix `eqv` (structural equivalence). Stack: `[left, right] → [Bool]` (right on top).
+    ///
+    /// Same type and same structure, compared recursively by the pure
+    /// `Value::eqv`. Before that comparison, `eqv_values` (shared with
+    /// `&infix:<eqv>`) applies the lazy-iterable rules (two lazy operands
+    /// throw instead of iterating forever), resolves `Proxy` elements,
+    /// short-cuts the same Seq, and reifies and consumes a Seq operand (so a
+    /// consumed Seq raises `X::Seq::Consumed`).
     Eqv,
     /// Smart match with compiled RHS expression at [ip+1..rhs_end).
     SmartMatchExpr {
@@ -1790,7 +1906,27 @@ pub(crate) enum OpCode {
         first: bool,
     },
     // -- Type check --
+    /// Infix `isa`: whether the left operand's class has the right operand
+    /// in its nominal hierarchy. Stack: `[left, right] → [Bool]` (right on top).
+    ///
+    /// The right operand is taken as a type name (`Value::isa_check`). Only
+    /// the class MRO counts: a role the value merely does is `False` here,
+    /// unlike `~~` / `.does`. The compiler's binary-operator table maps an
+    /// `isa` infix to this op, but Raku has no such infix and the parser
+    /// never produces one (`5 isa Int` is "Two terms in a row", as in
+    /// Rakudo), so in practice the op is unreachable; `.isa(T)` is a method
+    /// call.
     Isa,
+    /// Infix `does` in expression position: mix a role into a value, in
+    /// place. Stack: `[target, role] → [result]`.
+    ///
+    /// Composes the role (or a list of roles) into the target. A
+    /// `ContainerRef` target (`$obj.attr.VAR does R`) is composed inside
+    /// the cell, so every alias of the container sees the mixin, and the
+    /// container itself is pushed. Mixing into a built-in type object is
+    /// `X::Does::TypeObject`. Writes a `submethod BUILD`/`TWEAK` makes to a
+    /// caller's lexical are drained back. A `does` whose target is a
+    /// variable compiles to [`Self::DoesVar`] instead.
     Does,
     /// `$x does R` in-place mixin. `.0` = constant index of the target variable
     /// name; `.1` = compiler-baked local slot for that name (§1.5), `None` when the
@@ -1822,18 +1958,55 @@ pub(crate) enum OpCode {
     ContainerizePair,
 
     // -- Bitwise --
+    /// Infix `+&` (integer bitwise AND). Stack: `[left, right] → [Int]` (right on top).
+    ///
+    /// A `Failure` operand throws its exception rather than coercing to 0.
+    /// The operands are numified and combined by `crate::builtins::int_bitop`
+    /// (`src/builtins/arith/int_ops.rs`, ADR-0118), two's complement on big
+    /// integers too. Junctions are not threaded here.
     BitAnd,
+    /// Infix `+|` (integer bitwise OR). Stack: `[left, right] → [Int]` (right on top). As [`Self::BitAnd`].
     BitOr,
+    /// Infix `+^` (integer bitwise XOR). Stack: `[left, right] → [Int]` (right on top). As [`Self::BitAnd`].
     BitXor,
+    /// Infix `+<` (integer shift left). Stack: `[left, right] → [Int]` (right on top).
+    ///
+    /// `crate::builtins::int_shift_left`: an `Int` left shift always goes
+    /// through a big integer, so it never overflows. A `Failure` operand
+    /// throws.
     BitShiftLeft,
+    /// Infix `+>` (integer arithmetic shift right). Stack: `[left, right] → [Int]` (right on top).
+    /// `crate::builtins::int_shift_right`; a `Failure` operand throws.
     BitShiftRight,
+    /// Infix `?|` (boolean OR, both operands evaluated). Stack: `[left, right] → [Bool]` (right on top).
     BoolBitOr,
+    /// Infix `?&` (boolean AND, both operands evaluated). Stack: `[left, right] → [Bool]` (right on top).
     BoolBitAnd,
+    /// Infix `?^` (boolean XOR). Stack: `[left, right] → [Bool]` (right on top).
     BoolBitXor,
+    /// Infix `~&` (string bitwise AND). Stack: `[left, right] → [Str]`.
+    ///
+    /// ANDs corresponding *codepoints* (not bytes), truncating to the shorter
+    /// operand, with NFC normalization; two `Buf` operands are combined
+    /// bytewise. Shares `str_bitwise_op` with the `infix:<~&>` routine.
     StrBitAnd,
+    /// Infix `~|` (string bitwise OR). Stack: `[left, right] → [Str]`. As
+    /// [`Self::StrBitAnd`], but padding to the longer operand.
     StrBitOr,
+    /// Infix `~^` (string bitwise XOR). Stack: `[left, right] → [Str]`. As
+    /// [`Self::StrBitAnd`], but padding to the longer operand.
     StrBitXor,
+    /// Infix `~<` (string shift left). Stack: `[string, count] → [Str]`.
+    ///
+    /// Treats the left operand's bytes as a big-endian bit string and
+    /// shifts it left by `count` bits, appending zero bits (`"a" ~< 8` is
+    /// `"a\0"`). A negative count counts as 0. Reached only through the
+    /// compound assignment `$s ~<= 8`: the bare `~<` infix does not parse
+    /// (Rakudo reports it as not yet implemented).
     StrShiftLeft,
+    /// Infix `~>` (string shift right). Stack: `[string, count] → [Str]`.
+    /// As [`Self::StrShiftLeft`], dropping the low-order `count` bits
+    /// (`"aa" ~> 8` is `"a"`). Reached only through `$s ~>= 8`.
     StrShiftRight,
 
     // -- Set operations --
