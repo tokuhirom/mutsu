@@ -20,7 +20,31 @@ pub(crate) fn array_literal(input: &str) -> PResult<'_, Expr> {
     // sections move into `sections`.
     let mut sections: Vec<Vec<Expr>> = Vec::new();
     let mut saw_semicolon = false;
-    let (mut rest, first) = parse_array_element(input)?;
+    // An empty semicolon slice contributes `Any` in an array composer.  The
+    // first slice can be empty (`[;1]`), and additional semicolons before the
+    // first element are additional empty slices (`[;;1]`).
+    let (mut rest, first) = if input.starts_with(';') {
+        let mut rest = input;
+        loop {
+            let (r, _) = parse_char(rest, ';')?;
+            let (r, _) = ws(r)?;
+            saw_semicolon = true;
+            sections.push(empty_array_section());
+            rest = r;
+            if !rest.starts_with(';') {
+                break;
+            }
+        }
+        if let Ok((r, _)) = parse_char(rest, ']') {
+            return Ok((
+                r,
+                finalize_array_sections(sections, Vec::new(), saw_semicolon, false),
+            ));
+        }
+        parse_array_element(rest)?
+    } else {
+        parse_array_element(input)?
+    };
     items.push(first);
     loop {
         let (r, _) = ws(rest)?;
@@ -38,12 +62,21 @@ pub(crate) fn array_literal(input: &str) -> PResult<'_, Expr> {
             let (r, next) = parse_array_element(r).map_err(|_| array_fail_goal(r))?;
             items.push(next);
             rest = r;
-        } else if r.starts_with(';') && !r.starts_with(";;") {
+        } else if r.starts_with(';') {
             // Semicolon section separator.
             let (r, _) = parse_char(r, ';')?;
-            let (r, _) = ws(r)?;
+            let (mut r, _) = ws(r)?;
             saw_semicolon = true;
             sections.push(std::mem::take(&mut items));
+            // The first semicolon closes the current section.  Every
+            // immediately following semicolon opens an empty section, which
+            // is represented by `Any` (`[1;;2]` => `[1, Any, 2]`).
+            while r.starts_with(';') {
+                let (next, _) = parse_char(r, ';')?;
+                let (next, _) = ws(next)?;
+                sections.push(empty_array_section());
+                r = next;
+            }
             if let Ok((r, _)) = parse_char(r, ']') {
                 return Ok((
                     r,
@@ -76,6 +109,11 @@ pub(crate) fn array_literal(input: &str) -> PResult<'_, Expr> {
             ));
         }
     }
+}
+
+/// The value of an empty slice in an array composer (`[;]` is `[Any]`).
+fn empty_array_section() -> Vec<Expr> {
+    vec![Expr::Literal(Value::package(crate::symbol::wk::any()))]
 }
 
 /// Parse one array-composer element: an expression optionally followed by inline

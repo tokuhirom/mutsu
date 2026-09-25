@@ -9,12 +9,14 @@
 
 mod arith;
 mod hyper_concat;
+mod infix_term;
 mod meta_bracket;
 mod set_ops;
 
 // Re-exports preserving original pub(super) visibility
 pub(super) use arith::{additive_expr, multiplicative_expr, power_expr, power_expr_tight};
 pub(super) use hyper_concat::concat_expr;
+pub(super) use infix_term::{infix_term_call, parse_infix_term_op};
 pub(super) use meta_bracket::{
     BracketInfix, cannot_meta_loose_bracket_assign_error, cannot_meta_ternary_error,
     op_str_to_token_kind, parse_bracket_infix_op, parse_infix_func_op, parse_meta_op,

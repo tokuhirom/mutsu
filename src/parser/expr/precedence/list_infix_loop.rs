@@ -185,6 +185,34 @@ fn parse_list_infix_loop_impl<'a>(
             rest = r;
             continue;
         }
+        // `[&TERM]` for any other `&`-term (`[&($f)]`, `[&infix:<+>]`), with
+        // the same meta prefixes: lowered to a call on the callable.
+        if let Some(op) = parse_infix_term_op(r) {
+            let op_key = r[..op.len].to_string();
+            if let Some(prev) = current_assoc_key.as_deref()
+                && prev != op_key
+            {
+                return Err(non_list_associative_error(prev, &op_key));
+            }
+            let r = &r[op.len..];
+            let (r, _) = ws(r)?;
+            let (r, right_exprs) = if op.modifier == Some('X') {
+                operand.parse_comma_list(r)?
+            } else {
+                let (r, expr) = operand.parse_single(r).map_err(|err| {
+                    enrich_expected_error(
+                        err,
+                        "expected expression after infixed function",
+                        r.len(),
+                    )
+                })?;
+                (r, vec![expr])
+            };
+            *left = infix_term_call(op, left.clone(), right_exprs);
+            *current_assoc_key = Some(op_key);
+            rest = r;
+            continue;
+        }
         // Negated bracket infix operators: ![op]
         if let Some(r_after_bang) = r.strip_prefix('!')
             && let Some(bracket_infix) = parse_bracket_infix_op(r_after_bang)
