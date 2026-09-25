@@ -1,4 +1,6 @@
 use super::*;
+use crate::runtime::dispatch_key;
+use crate::symbol::Symbol;
 
 impl Interpreter {
     pub(super) fn exec_exec_call_op(
@@ -167,6 +169,27 @@ impl Interpreter {
         Ok(())
     }
 
+    /// The `&name` value a custom `sub EXPORT` installed into `env` for a
+    /// bareword `name` that has no package routine of its own, if any.
+    ///
+    /// Such a hook may hand back a materialized dispatcher (`Map.new(
+    /// EXPORT::all::{'&f'}:p)`) whose candidates live only under the
+    /// exporting module's package, so name-based resolution cannot find them
+    /// even though a `proto` of that bare name is registered. Every call form
+    /// -- `CallFunc` and the statement-position `ExecCall`/`ExecCallPairs` --
+    /// must dispatch through the installed value instead; the statement forms
+    /// used to fall through to the registry and die with "Cannot resolve
+    /// caller" on any call carrying a named argument (#9261). Ordinary exports
+    /// (JSON::Tiny's `from-json`) keep the normal dispatch precedence because
+    /// they do have a registered package routine.
+    // Cost: O(1) hash probes when `name` is not an EXPORT-installed override.
+    pub(super) fn export_hook_callable(&self, name: &str, name_sym: Symbol) -> Option<Value> {
+        if !self.export_amp_override_names.contains(&name_sym) || self.has_function(name) {
+            return None;
+        }
+        dispatch_key::with_amp_name(name, |ampname| self.env().get(ampname).cloned())
+    }
+
     /// A statement-level call discards its value, so that value is *sunk* —
     /// and sinking an unhandled `Failure` throws, exactly as `OpCode::SinkPop`
     /// does for the call shapes that leave their result on the stack.
@@ -274,6 +297,17 @@ impl Interpreter {
         // the line each of them recovered from the pair is published here now.
         let (args, callsite_line) = self.sanitize_call_args_owned(args);
         loan_env!(self, set_pending_callsite_line(callsite_line));
+        // A routine a custom `sub EXPORT` installed with no same-named package
+        // routine (#9261) -- same precedence as `CallFunc`'s check.
+        if let Some(callable) = self.export_hook_callable(&name, name_sym) {
+            let v = self.vm_call_on_value(callable, args, Some(compiled_fns))?;
+            if keep_value {
+                self.stack.push(v);
+            } else {
+                self.sink_discarded_call_value(&v)?;
+            }
+            return Ok(());
+        }
         // Try compiled function dispatch first. `resolved_memo` catches the
         // routine the probe resolved on the way, so the carrier arm below does
         // not resolve the same call a second time (see `exec_call_sanitized`).
