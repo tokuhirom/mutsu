@@ -758,10 +758,16 @@ impl Interpreter {
                     new_env.entry_or_insert(k.resolve(), v.clone());
                     continue;
                 }
+                // A caller array of the same name normally wins (it is the live
+                // container of a shared outer variable), but never over an array
+                // the closure lexically owns: that would let an unrelated caller
+                // `@m` -- or a previous call's leaked copy -- shadow this
+                // closure's own capture (#9429).
                 if matches!(
                     new_env.get_sym(*k).map(Value::view),
                     Some(ValueView::Array(..))
                 ) && matches!(v.view(), ValueView::Array(..))
+                    && !is_authoritative(*k)
                 {
                     continue;
                 }
@@ -1260,8 +1266,14 @@ impl Interpreter {
                     }
                     if matches!(v.view(), ValueView::Array(..)) {
                         // Arrays are Arc-shared; in-place mutations are already
-                        // visible to the caller, and reassignment should propagate.
-                        merged.insert_sym(*k, v.clone());
+                        // visible to the caller, and reassignment should propagate
+                        // -- but only to a caller variable. An array the closure
+                        // owns (its creating routine's `*@m`) is not the caller's:
+                        // writing it into the caller env leaked it, and the next
+                        // closure of the same routine read that stale copy (#9429).
+                        if !is_authoritative(*k) {
+                            merged.insert_sym(*k, v.clone());
+                        }
                     } else if merged.contains_key_sym(*k)
                         && matches!(
                             v.view(),
