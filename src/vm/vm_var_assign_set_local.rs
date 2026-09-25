@@ -1979,7 +1979,10 @@ impl Interpreter {
         let attr_constraint = match declared_view {
             Some(_) => None,
             None => (!is_bind && !val.is_nil())
-                .then(|| self.scalar_attr_type_constraint(name))
+                .then(|| {
+                    let sym = name_sym.unwrap_or_else(|| crate::symbol::Symbol::intern(name));
+                    self.scalar_attr_type_constraint_sym(name, sym)
+                })
                 .flatten(),
         };
         let constraint: Option<&str> = match &declared_view {

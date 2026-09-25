@@ -1,6 +1,6 @@
 # ADR-0121: Instance attributes live in per-class slots, and each access site resolves its slot once
 
-- **Status**: Accepted (user approval 2026-09-24; D1, D2 and the `$!x` part of D3 implemented, see §5)
+- **Status**: Accepted (user approval 2026-09-24; D1, D2, and the `$!x` and accessor parts of D3 implemented, see §5)
 - **Deciders**: tokuhirom, Claude
 - **Context**: [#9291](https://github.com/tokuhirom/mutsu/issues/9291) (the measurements),
   [#9134](https://github.com/tokuhirom/mutsu/issues/9134) group 1 and `create` (the `nqp::`
@@ -229,8 +229,17 @@ probe and the lock.
   requires the same layout, an empty `extra`, a present slot, and a non-role owner. A read
   is now 2,976 instructions above the empty loop, and a write 7,466. See
   `news/2026-09/attributes-live-in-per-class-slots-with-site-caches.md`.
-- **D3, the rest:** not started. That covers the generated accessor, constant
-  `getattr` / `bindattr` sites, and `Array` / `Hash` `$!descriptor`.
+- **D3, generated accessors (landed).** A `CallMethodMut` answered by the
+  accessor's plain read remembers `(layout id, method) -> slot`, and the next
+  call on that layout reads the slot before the probe chain runs. The lane is
+  cleared on a `method_generation` change. An accessor call is now about as
+  expensive as a local store: 6,640 instructions above `$s = $i` before, about
+  0 after. The attribute's declared-type lookup on a `$!x = v` store is
+  memoized per `(class, attribute)` on the registry write generation, which
+  took a write from 7,466 to 5,833 instructions. See
+  `news/2026-09/generated-accessor-reads-its-slot-before-dispatch.md`.
+- **D3, the rest:** not started. That covers constant `getattr` / `bindattr`
+  sites and `Array` / `Hash` `$!descriptor`.
 - **D4:** not started.
 
 ## 6. Reproduction
