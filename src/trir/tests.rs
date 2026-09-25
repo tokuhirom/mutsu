@@ -247,3 +247,44 @@ fn mutsu_trir_off_declines_everything() {
         assert!(TrChunk::enabled());
     }
 }
+
+/// A literal attribute name compiles to the pre-resolved attribute ops
+/// (ADR-0121 D3), and a bareword class operand to the remembered form. A
+/// computed name still takes the generic `NqpOpGen`.
+#[test]
+fn literal_attribute_names_use_the_resolved_attr_ops() {
+    use crate::runtime::nqp_attr::NqpAttrConv;
+    let chunk = chunk_of("use nqp; my sub f($o) { nqp::getattr_i($o, IB, '$!n') }")
+        .expect("a literal getattr must be admitted");
+    match &chunk.ops[..] {
+        [
+            TrOp::LoadObj(0),
+            TrOp::ClassOperand(class),
+            TrOp::GetAttrC(site),
+            TrOp::ReturnObj,
+        ] => {
+            assert_eq!(class.name, Symbol::intern("IB"));
+            assert_eq!(site.0.name, Symbol::intern("$!n"));
+            assert_eq!(site.0.read_key, Symbol::intern("n"));
+            assert_eq!(site.1, NqpAttrConv::Int);
+        }
+        other => panic!("unexpected ops: {other:?}"),
+    }
+    let chunk = chunk_of("use nqp; my sub f($o, $v) { nqp::bindattr($o, List, '@!xs', $v) }")
+        .expect("a literal bindattr must be admitted");
+    assert!(
+        matches!(chunk.ops[2], TrOp::BindAttrC(ref site) if site.0.write_key == Some(Symbol::intern("xs"))),
+        "{:?}",
+        chunk.ops
+    );
+    let chunk = chunk_of("use nqp; my sub f($o, $n) { nqp::getattr($o, IB, $n) }")
+        .expect("a computed-name getattr must be admitted");
+    assert!(
+        chunk
+            .ops
+            .iter()
+            .any(|op| matches!(op, TrOp::NqpOpGen { arity: 3, .. })),
+        "{:?}",
+        chunk.ops
+    );
+}

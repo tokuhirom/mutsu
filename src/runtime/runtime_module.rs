@@ -106,6 +106,20 @@ impl Interpreter {
             .contains(&Symbol::intern(&format!("{package}::{name}")))
     }
 
+    /// Whether `name` is an imported routine alias of any package a bare name
+    /// resolves through here (`bare_name_packages_syms`).
+    // Cost: O(p), p = enclosing packages; O(1) when nothing was imported.
+    pub(crate) fn imported_routine_alias_in_scope(&self, name: &str) -> bool {
+        if self.imported_routine_aliases.is_empty() {
+            return false;
+        }
+        let name_sym = Symbol::intern(name);
+        self.bare_name_packages_syms().iter().any(|&package| {
+            self.imported_routine_aliases
+                .contains(&crate::qualified::qualified(package, name_sym))
+        })
+    }
+
     pub(crate) fn remove_imported_routine_alias(&mut self, package: &str, name: &str) {
         self.imported_routine_aliases
             .remove(&Symbol::intern(&format!("{package}::{name}")));

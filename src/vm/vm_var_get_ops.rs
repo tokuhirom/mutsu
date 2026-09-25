@@ -130,12 +130,14 @@ impl Interpreter {
         // routine before the type-object paths below, so the bare term is
         // invoked when it is used as an argument (`ok-time localtime`) rather
         // than being replaced by the lower-case class's type object.
-        let imported_routine = self
-            .bare_name_packages()
-            .iter()
-            .any(|package| self.imported_routine_alias(package, name));
-        if self.has_type(name)
-            && imported_routine
+        //
+        // Both probes are pure, so the cheap one goes first: with no imported
+        // routine alias at all (most programs) `has_type` is never asked, and
+        // the alias probe uses the memoized `Pkg::name` symbols instead of a
+        // `format!` + intern per enclosing package on every bareword read.
+        let imported_routine = self.imported_routine_alias_in_scope(name);
+        if imported_routine
+            && self.has_type(name)
             && (self.has_declared_function(name) || self.has_multi_function(name))
             && let Some(def) = loan_env!(self, resolve_function_with_types(name, &[]))
         {
@@ -265,10 +267,13 @@ impl Interpreter {
             // Pseudo-package names (MY, CORE, OUTER, CALLER, etc.) resolve to
             // Package values so that .WHO/.WHAT etc. work correctly.
             Value::package(Symbol::intern(name))
-        } else if self.current_package() != "GLOBAL"
+        } else if !self.current_package_is_global()
             && let Some(enum_val) = self
                 .env()
-                .get(&format!("{}::{name}", self.current_package()))
+                .get(
+                    crate::qualified::qualified(self.current_package_sym(), Symbol::intern(name))
+                        .as_str(),
+                )
                 .filter(|value| matches!(value.view(), ValueView::Enum { .. }))
                 .cloned()
         {
@@ -347,7 +352,7 @@ impl Interpreter {
                     self.poisoned_enum_alias_check(name)?;
                 }
                 v
-            } else if matches!(v.view(), ValueView::Package(pkg) if pkg.resolve() != name) {
+            } else if matches!(v.view(), ValueView::Package(pkg) if pkg.as_str() != name) {
                 // A package binding can share a short name with an imported
                 // routine (`class Time::localtime` and the exported
                 // `localtime` sub). In term position the callable wins; the

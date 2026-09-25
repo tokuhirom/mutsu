@@ -256,6 +256,31 @@ pub(crate) enum TrOp {
         id: u16,
         arity: u8,
     },
+    /// `nqp::getattr` / `getattr_{i,n,s}` whose name operand is a literal
+    /// (ADR-0121 D3): pop the class operand and the object, push the
+    /// attribute, boxed and converted as the typed read converts it. The name
+    /// was resolved when the chunk was compiled; the class operand is
+    /// evaluated for its effects and ignored, as the generic op ignores it.
+    GetAttrC(
+        Box<(
+            crate::runtime::nqp_attr::NqpAttrName,
+            crate::runtime::nqp_attr::NqpAttrConv,
+        )>,
+    ),
+    /// Push the value of the bareword class operand of an attribute op
+    /// (`IB` in `nqp::getattr($o, IB, '$!a')`), resolved as `LoadBareWord`
+    /// resolves it but remembered per registry write generation — see
+    /// [`ClassOperandSite`](super::class_operand::ClassOperandSite).
+    ClassOperand(Box<super::class_operand::ClassOperandSite>),
+    /// `nqp::bindattr` / `bindattr_{i,n,s}` whose name operand is a literal:
+    /// pop the value, the class operand and the object, bind, and push the
+    /// stored value.
+    BindAttrC(
+        Box<(
+            crate::runtime::nqp_attr::NqpAttrName,
+            crate::runtime::nqp_attr::NqpAttrConv,
+        )>,
+    ),
     /// `nqp::elems` of a boxed operand, answered on the native bank. A list,
     /// an `IterationBuffer` or a `Uni` is counted in place; anything else goes
     /// through the same op the dispatch table runs (ADR-0112 Step 3).

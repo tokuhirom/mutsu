@@ -463,6 +463,7 @@ impl<'a> TrirCompiler<'a> {
     }
 }
 
+mod attr;
 mod binary;
 mod call;
 mod dump;

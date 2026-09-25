@@ -34,7 +34,7 @@ pub(crate) const CURSOR_MATCH_MARKER: &str = "__grammar_cursor__";
 /// [`CURSOR_MATCH_MARKER`] interned once, so asking an instance for it is an
 /// integer-keyed probe rather than a string hash per ask (`is_match_instance`
 /// runs on every `nqp::getattr`).
-fn cursor_match_marker() -> crate::symbol::Symbol {
+pub(crate) fn cursor_match_marker() -> crate::symbol::Symbol {
     static MARKER: std::sync::OnceLock<crate::symbol::Symbol> = std::sync::OnceLock::new();
     *MARKER.get_or_init(|| crate::symbol::Symbol::intern(CURSOR_MATCH_MARKER))
 }

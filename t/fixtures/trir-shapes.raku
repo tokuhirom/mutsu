@@ -288,6 +288,49 @@ my $rw2 = 0;
 writes-rw($rw2);
 say "rw-param={$rw},{$rw2}";
 
+# --- literal-name `nqp::getattr` / `bindattr` sites (ADR-0121 D3) ----------
+# The name is resolved when the chunk is compiled and a bareword class operand
+# is remembered per registry generation; every receiver kind must still get
+# the generic op's answer. Each routine is called twice so the second call
+# runs the compiled chunk.
+class AttrSite { has $!a; has int $!n; has str $!s; has @!items; }
+my sub as-get($o) { nqp::getattr($o, AttrSite, '$!a') }
+my sub as-get-i($o, $d) { nqp::getattr_i($o, AttrSite, '$!n') }
+my sub as-get-s($o, $d) { nqp::getattr_s($o, AttrSite, '$!a') }
+my sub as-get-list($o, $d) { nqp::elems(nqp::getattr($o, AttrSite, '@!items')) }
+my sub as-get-missing($o, $d) { nqp::getattr($o, AttrSite, '$!nope').raku }
+my sub as-bind($o, $v) { nqp::bindattr($o, AttrSite, '$!a', $v) }
+my sub as-bind-i($o, $v) { nqp::bindattr_i($o, AttrSite, '$!n', $v) }
+my sub as-bind-s($o, $v) { nqp::bindattr_s($o, AttrSite, '$!s', $v) }
+my sub as-bind-empty($o, $v) { nqp::bindattr($o, AttrSite, '$!', $v) }
+my sub as-reified($r, $d) { nqp::elems(nqp::getattr($r, List, '$!reified')) }
+my sub as-storage($h, $d) { nqp::elems(nqp::getattr($h, Map, '$!storage')) }
+my sub as-rebind($r, $b) { nqp::bindattr($r, List, '$!reified', $b); nqp::elems($r) }
+my sub as-match-pos($m, $d) { nqp::getattr_i($m, Match, '$!pos') }
+{
+    my $o = AttrSite.new;
+    my @got;
+    for ^2 {
+        @got.push: as-get($o).raku;
+        @got.push: as-bind($o, 41 + $_);
+        @got.push: as-get($o);
+        @got.push: as-bind-i($o, "7");
+        @got.push: as-get-i($o, 0);
+        @got.push: as-bind-s($o, 12);
+        @got.push: as-get-s($o, 0);
+        @got.push: as-get-list($o, 0);
+        @got.push: as-get-missing($o, 0);
+        @got.push: (try as-bind-empty($o, 1)) // $!.message;
+        my @r = 1, 2, 3;
+        my %h = a => 1, b => 2;
+        @got.push: as-reified(@r, 0);
+        @got.push: as-storage(%h, 0);
+        @got.push: as-rebind(@r, nqp::list(9, 8));
+        @got.push: as-match-pos("abcd" ~~ /bc/, 0);
+    }
+    say "attr-sites={@got.join(',')}";
+}
+
 # --- `.wrap` (ADR-0110 §3.3's run-time guard) ------------------------------
 # A statically linked call site would step straight past the wrapper, so the
 # guard has to send the call back to the ordinary dispatch. Kept LAST: once
