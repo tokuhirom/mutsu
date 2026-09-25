@@ -826,3 +826,54 @@ details.expected pre {
   vertical-align: baseline;
 }
 .opt-table td:first-child { white-space: nowrap; padding-right: 1.1rem; }
+
+/* ------------------------------------------------------------------ *
+ * Internals pages (internals.html, opcodes.html)
+ * ------------------------------------------------------------------ */
+
+.op-crumb { font-size: 0.8rem; margin-bottom: 0.2rem; }
+.op-crumb a { color: var(--pink); text-decoration: none; }
+.op-crumb a:hover { text-decoration: underline; }
+.op-provenance { color: var(--dim); font-size: 0.8rem; margin: -0.8rem 0 1rem; }
+.op-controls { display: flex; flex-wrap: wrap; gap: 0.75rem; align-items: center; margin-bottom: 1.4rem; }
+.op-controls input[type="search"] {
+  flex: 1 1 16rem;
+  padding: 0.5rem 0.7rem;
+  font: inherit;
+  color: var(--text);
+  background: var(--console-bg);
+  border: 1px solid var(--border);
+  border-radius: 0.4rem;
+}
+.op-controls input[type="search"]:focus { outline: none; border-color: var(--pink); }
+.op-shown { color: var(--dim); font-size: 0.85rem; }
+.op-family { scroll-margin-top: 4.2rem; }
+.op-card { margin-bottom: 1rem; scroll-margin-top: 4.2rem; }
+.op-card:target { border-color: var(--pink); }
+.op-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.4rem 0.7rem; }
+.op-head h3 { font-family: var(--mono); font-size: 1.02rem; margin: 0; }
+.op-head h3 a { color: var(--text); text-decoration: none; }
+.op-head h3 a:hover { color: var(--pink); }
+.op-sig {
+  margin: 0.5rem 0;
+  padding: 0.45rem 0.7rem;
+  background: var(--console-bg);
+  border: 1px solid var(--border);
+  border-radius: 0.4rem;
+  overflow-x: auto;
+}
+.op-sig code { font-family: var(--mono); font-size: 0.8rem; color: var(--syn-type); white-space: pre; }
+.op-doc { font-size: 0.9rem; }
+.op-muted { color: var(--dim); font-style: italic; font-size: 0.88rem; }
+.op-fields { margin: 0.6rem 0 0; font-size: 0.88rem; }
+.op-fields dt code { font-family: var(--mono); font-size: 0.8rem; color: var(--syn-var); }
+.op-fields dd { margin: 0.15rem 0 0.5rem 1.2rem; }
+.op-meta { margin-top: 0.6rem; font-size: 0.82rem; display: grid; gap: 0.2rem; }
+.op-meta .bat-meta-key { min-width: 0; margin-right: 0.3rem; }
+.op-cost { font-family: var(--mono); font-size: 0.78rem; color: var(--syn-number); }
+.op-src a { color: var(--pink); font-family: var(--mono); font-size: 0.76rem; }
+.op-missing { margin-top: 1rem; }
+
+/* A generated diagram block on internals.html: monospace art that must keep
+   its alignment, so it scrolls sideways inside its box instead of wrapping. */
+.ascii-diagram { font-family: var(--mono); white-space: pre; overflow-x: auto; }

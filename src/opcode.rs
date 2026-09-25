@@ -728,6 +728,7 @@ pub(crate) enum WhenMatcherKind {
 /// Bytecode operations for the VM.
 #[derive(Debug, Clone)]
 pub(crate) enum OpCode {
+    // -- Typed IR (TRIR) calls --
     /// ADR-0110 §3.3: call a statically resolved TRIR routine whose arguments
     /// are all plain caller lexicals. `site` indexes
     /// [`CompiledCode::trir_call_sites`]; the opcode takes NOTHING from the

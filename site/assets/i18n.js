@@ -19,6 +19,7 @@ const STRINGS = {
     'nav.batteries': 'Bundled Libraries',
     'nav.ecosystem': 'Ecosystem',
     'nav.bench': 'Benchmarks',
+    'nav.internals': 'Internals',
     'nav.github': 'GitHub',
 
     'footer.tagline': 'mutsu — a Raku interpreter written in Rust, running here as WebAssembly.',
@@ -116,6 +117,7 @@ const STRINGS = {
     'nav.batteries': '同梱ライブラリ',
     'nav.ecosystem': 'エコシステム',
     'nav.bench': 'ベンチマーク',
+    'nav.internals': 'Internals',
     'nav.github': 'GitHub',
 
     'footer.tagline': 'mutsu — Rust で書かれた Raku インタプリタ。このページでは WebAssembly として動いています。',
@@ -254,6 +256,7 @@ const NAV = [
   { key: 'nav.batteries', href: 'batteries.html', page: 'batteries' },
   { key: 'nav.ecosystem', href: 'ecosystem.html', page: 'ecosystem' },
   { key: 'nav.bench', href: 'bench-trend.html', page: 'bench' },
+  { key: 'nav.internals', href: 'internals.html', page: 'internals' },
 ];
 
 /**
