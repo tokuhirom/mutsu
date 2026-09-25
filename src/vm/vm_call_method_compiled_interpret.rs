@@ -87,7 +87,7 @@ impl Interpreter {
             let runs_message =
                 (cn == "Exception" || cn.starts_with("X::") || cn.starts_with("CX::"))
                     && self.has_user_method(cn, "message");
-            self.method_dispatch_pure = !self.mro_has_build_or_tweak(cn) && !runs_message;
+            self.method_dispatch_pure = !self.mro_has_build_or_tweak(class_name) && !runs_message;
             return result;
         }
         // Native built-in construction: `Buf`/`Blob` (byte overlay), `utf8`/

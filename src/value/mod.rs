@@ -688,11 +688,14 @@ fn is_in_destroy_handler() -> bool {
 /// ping-pong per collect on S17-lowlevel/thread.t (vs ~40ms uncontended).
 const LIVE_REFCOUNT_SHARDS: usize = 64;
 
-fn live_instance_refcounts(id: u64) -> &'static Mutex<HashMap<u64, usize>> {
-    static SHARDS: OnceLock<Vec<Mutex<HashMap<u64, usize>>>> = OnceLock::new();
+// Keyed by an instance id, which is not attacker-chosen, so the default
+// SipHash buys nothing: it was ~280 instructions of every instance's
+// construction plus drop (#9291).
+fn live_instance_refcounts(id: u64) -> &'static Mutex<rustc_hash::FxHashMap<u64, usize>> {
+    static SHARDS: OnceLock<Vec<Mutex<rustc_hash::FxHashMap<u64, usize>>>> = OnceLock::new();
     let shards = SHARDS.get_or_init(|| {
         (0..LIVE_REFCOUNT_SHARDS)
-            .map(|_| Mutex::new(HashMap::new()))
+            .map(|_| Mutex::new(rustc_hash::FxHashMap::default()))
             .collect()
     });
     &shards[(id as usize) & (LIVE_REFCOUNT_SHARDS - 1)]

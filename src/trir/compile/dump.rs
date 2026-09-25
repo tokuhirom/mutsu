@@ -1,6 +1,6 @@
 //! `MUTSU_TRIR_DUMP`: report each routine's eligibility decision, and with
 //! `MUTSU_TRIR_DUMP=ops` list the accepted chunk one op a line, followed by
-//! its constants (what a `LoadBareWord(i)` or `ConstObj(i)` names).
+//! its constants (what a `ConstObj(i)` names).
 
 use super::TrChunk;
 use crate::symbol::Symbol;

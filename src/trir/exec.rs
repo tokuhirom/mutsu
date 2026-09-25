@@ -406,12 +406,6 @@ impl Interpreter {
                     self.trir.ns.push(yes);
                 }
 
-                TrOp::LoadBareWord(i) => {
-                    let name = chunk.constants[*i as usize].to_string_value();
-                    self.push_bare_word_value(&name, compiled_fns)?;
-                    let v = self.stack.pop().unwrap_or(Value::NIL);
-                    self.trir.os.push(v);
-                }
                 TrOp::LoadDynamic(i) => {
                     let name = chunk.constants[*i as usize].to_string_value();
                     let v = self.env().get(&name).cloned().unwrap_or(Value::NIL);

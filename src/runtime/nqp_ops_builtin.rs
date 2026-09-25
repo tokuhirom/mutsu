@@ -384,8 +384,14 @@ impl Interpreter {
                     // Both sets are keyed by short name (see
                     // `register_vm_storage_class`), which is what this matched
                     // by when it scanned them.
+                    // A type object's short name is memoized per symbol;
+                    // building a `StrSearcher` for `rsplit("::")` on every
+                    // call cost ~215 instructions of each `create` (#9291).
+                    let short: &str = match ty.view() {
+                        ValueView::Package(sym) => crate::qualified::unqualified_part(sym).as_str(),
+                        _ => name.rsplit("::").next().unwrap_or(name),
+                    };
                     let reg = self.registry();
-                    let short = name.rsplit("::").next().unwrap_or(name);
                     let holds = |set: &rustc_hash::FxHashSet<String>| set.contains(short);
                     if holds(&reg.vmhash_classes) {
                         return Some(Ok(Value::hash_with_data(Value::hash_arc(
