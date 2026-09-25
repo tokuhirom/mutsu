@@ -487,7 +487,10 @@ impl Interpreter {
     fn shallow_copy_value(val: &Value) -> Value {
         fn decont(v: &mut Value) {
             let inner = match v.view() {
-                ValueView::ContainerRef(arc) => arc.lock().unwrap().clone(),
+                ValueView::ContainerRef(arc) => match arc.lock() {
+                    Ok(guard) => guard.clone(),
+                    Err(poisoned) => poisoned.into_inner().clone(),
+                },
                 _ => return,
             };
             *v = inner;
