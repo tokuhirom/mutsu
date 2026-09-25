@@ -2156,7 +2156,20 @@ impl Interpreter {
                 let readonly_key = runtime::sigilless_readonly_key(name);
                 self.env_mut().remove_sym(readonly_key);
             }
-            self.local_bind_pairs.retain(|&(source, _)| source != idx);
+            // A rebind re-points THIS name, so it also leaves whatever it was
+            // bound to: drop the pairs where it is the target and its own
+            // FORWARD alias (`alias::z = y` from `my $z := $y`). Otherwise the
+            // alias-chain walk after the store writes the new binding into the
+            // old source (`$z := 5` turned `$y` into 5, #9357). A rebind whose
+            // source is a variable re-records its forward alias just below
+            // (the `bind_source` arm).
+            self.local_bind_pairs
+                .retain(|&(source, target)| source != idx && target != idx);
+            if crate::env::closure_meta_keys_possible()
+                && let Some(sym) = code.alias_sym(idx)
+            {
+                self.env_mut().remove_sym(sym);
+            }
             // Also remove env-based aliases that point TO this variable,
             // so GetLocal alias-following doesn't read the new value.
             let mut aliases_to_remove = Vec::new();
@@ -2957,9 +2970,11 @@ impl Interpreter {
         // `my $f := $a`, which put `$a` and `$f` in one cell), every by-name
         // env write would otherwise store the NEW value *through* that old
         // cell, re-binding `$f` along with `$a` (#9207). Replace the entry
-        // outright instead of writing through it.
+        // outright instead of writing through it. A whole-container rebind
+        // (`%b := {...}`, which also carries the bind mark) is the same case:
+        // after `my %b := %a` the entry is the cell `%a` shares (#9357).
         let rebind_detaches_env_cell = is_rebind
-            && !is_bind
+            && (!is_bind || name.starts_with(['@', '%']))
             && !val.is_container_ref()
             && !name.starts_with('&')
             && matches!(

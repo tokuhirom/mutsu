@@ -1805,6 +1805,23 @@ impl Interpreter {
                 ) {
                     return Err(RuntimeError::assignment_ro(None));
                 }
+                // A rebind to a value re-points this name and leaves whatever it
+                // was bound to: drop its FORWARD alias, or the alias-chain walk
+                // below writes the new binding into the old source (`sub f {
+                // $*D := 0 }` turned the caller's `my $*D := $x` source `$x`
+                // into 0, #9357). A rebind to a variable re-records it below.
+                // The key is overwritten with `Nil` rather than removed: this
+                // store may run in a callee's env overlay, and only an entry --
+                // not a removal -- is merged back into the declaring frame's
+                // tier on return, where the stale alias would otherwise send
+                // the frame's next `$D = v` into the old source.
+                if is_rebind
+                    && bind_source.is_none()
+                    && crate::env::closure_meta_keys_possible()
+                    && self.env().get_sym(alias_key).is_some_and(|v| !v.is_nil())
+                {
+                    self.env_mut().insert_sym(alias_key, Value::NIL);
+                }
                 if let Some(source_name) = bind_source.as_ref() {
                     let mut resolved_source = source_name.clone();
                     let mut seen = std::collections::HashSet::new();
@@ -2347,6 +2364,17 @@ impl Interpreter {
                     // invocant's attribute cell was updated above and is the
                     // authoritative storage for this assignment.
                     self.env_mut().insert_sym_noting(name_sym, val.clone());
+                } else if is_rebind
+                    && (!is_bind_ctx || name.starts_with(['@', '%']))
+                    && !val.is_container_ref()
+                {
+                    // A rebind to a VALUE is a new binding, not a store: the
+                    // by-name write below would go THROUGH the cell the name
+                    // holds into the container it was bound to (`my $D := $x;
+                    // { $D := 0 }` turned `$x` into 0, #9357). Replace the
+                    // entry instead; when the name has a binding cell, the
+                    // reseat right after seats the new value in it.
+                    self.set_env_with_main_alias_fresh_binding(&name, val.clone());
                 } else {
                     self.set_env_with_main_alias(&name, val.clone());
                 }

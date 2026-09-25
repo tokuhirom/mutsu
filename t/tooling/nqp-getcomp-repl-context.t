@@ -6,7 +6,7 @@ use nqp;
 # Jupyter::Kernel, Text::CodeProcessing) use to keep one session's
 # declarations alive from one `.eval` to the next (ADR-0122, #9349).
 
-plan 19;
+plan 20;
 
 my $compiler = nqp::getcomp("Raku");
 is $compiler.^name, 'Perl6::Compiler', 'nqp::getcomp("Raku") is the compiler object';
@@ -51,10 +51,13 @@ throws-like { EVAL 'double(1)' }, Exception, 'the REPL sub stays in the session'
 
 # rakudo's core REPL class drives the same protocol.
 my $repl = REPL.new($compiler, {}, True);
-my $*CTXSAVE = $repl;
+# Bound, as rakudo's REPL does: `REPL.ctxsave` rebinds `$*CTXSAVE := 0`,
+# which must leave `$repl` itself alone (#9357).
+my $*CTXSAVE := $repl;
 my $*MAIN_CTX;
 my $exception;
 my $value = $repl.repl-eval('my $r = 7; $r * 6', $exception);
 is $value, 42, 'REPL.repl-eval evaluates';
 $repl.repl-eval('die "boom"', $exception);
 is $exception.message, 'boom', 'REPL.repl-eval hands the exception back';
+isa-ok $repl, REPL, 'rebinding $*CTXSAVE left the REPL object in $repl';
