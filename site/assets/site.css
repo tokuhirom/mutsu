@@ -47,7 +47,7 @@ a { color: #e6a3ff; }
 .site-nav {
   display: flex;
   align-items: center;
-  gap: 1rem;
+  gap: 0.8rem;
   padding: 0.7rem 1.2rem;
   border-bottom: 1px solid var(--border);
   background: rgba(13, 5, 20, 0.6);
@@ -66,12 +66,12 @@ a { color: #e6a3ff; }
   background-clip: text;
   -webkit-text-fill-color: transparent;
 }
-.site-nav .nav-links { display: flex; gap: 0.4rem; flex-wrap: wrap; }
+.site-nav .nav-links { display: flex; gap: 0.3rem; flex-wrap: wrap; }
 .site-nav .nav-links a {
   color: var(--dim);
   text-decoration: none;
   font-size: 0.9rem;
-  padding: 0.25rem 0.6rem;
+  padding: 0.25rem 0.5rem;
   border-radius: 0.35rem;
 }
 .site-nav .nav-links a:hover { color: var(--text); background: var(--panel-bg); }
@@ -877,3 +877,30 @@ details.expected pre {
 /* A generated diagram block on internals.html: monospace art that must keep
    its alignment, so it scrolls sideways inside its box instead of wrapping. */
 .ascii-diagram { font-family: var(--mono); white-space: pre; overflow-x: auto; }
+
+.type-subhead { font-size: 1rem; color: var(--syn-type); margin: 1.2rem 0 0.2rem; }
+.type-table-wrap { overflow-x: auto; margin-top: 0.8rem; }
+.type-table { width: 100%; border-collapse: collapse; font-size: 0.86rem; }
+.type-table th {
+  text-align: left;
+  color: var(--dim);
+  font-weight: 600;
+  font-size: 0.78rem;
+  padding: 0.35rem 0.7rem 0.35rem 0;
+  border-bottom: 1px solid var(--border);
+}
+.type-table td { border-top: 1px solid var(--border); padding: 0.4rem 0.7rem 0.4rem 0; vertical-align: top; }
+.type-table td.type-name a { color: var(--text); font-family: var(--mono); font-size: 0.82rem; text-decoration: none; }
+.type-table td.type-name a:hover { color: var(--pink); }
+.type-table td.type-payload { font-family: var(--mono); font-size: 0.78rem; color: var(--syn-type); white-space: nowrap; }
+.type-table td.type-notes { font-size: 0.84rem; }
+.type-table td.type-notes p { margin: 0 0 0.4rem; }
+.type-tree { list-style: none; margin: 0; padding-left: 1.1rem; border-left: 1px solid var(--border); }
+.type-root { padding-left: 0; border-left: none; margin-top: 0.8rem; }
+.type-node { margin: 0.15rem 0; }
+.type-line { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.3rem 0.6rem; }
+.type-label { font-family: var(--mono); font-size: 0.86rem; color: var(--text); text-decoration: none; }
+a.type-label:hover { color: var(--pink); }
+.type-ancestor { color: var(--dim); font-style: italic; }
+.type-also { color: var(--dim); font-size: 0.78rem; font-style: italic; }
+.op-doc code, .op-fields code, .type-notes code { overflow-wrap: anywhere; }

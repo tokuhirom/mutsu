@@ -117,7 +117,7 @@ const STRINGS = {
     'nav.batteries': '同梱ライブラリ',
     'nav.ecosystem': 'エコシステム',
     'nav.bench': 'ベンチマーク',
-    'nav.internals': 'Internals',
+    'nav.internals': '内部構造',
     'nav.github': 'GitHub',
 
     'footer.tagline': 'mutsu — Rust で書かれた Raku インタプリタ。このページでは WebAssembly として動いています。',

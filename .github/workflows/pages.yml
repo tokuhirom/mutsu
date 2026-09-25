@@ -130,6 +130,15 @@ jobs:
               > site/content/ecosystem.json
           cp ecosystem/history.svg site/history.svg 2>/dev/null || true
 
+      - name: Generate the Internals reference data
+        # opcodes.html and types.html list every VM opcode, every Value kind
+        # and the built-in type tree. Those lists are read out of src/ here
+        # (not committed) so the published pages always describe the commit
+        # being deployed. Unlike the ecosystem listing this is NOT best-effort:
+        # a parse failure means the source layout changed under the script,
+        # and publishing an empty reference would hide that.
+        run: python3 scripts/gen-internals-manifest.py
+
       - name: Record compatibility stats
         # The landing page headlines "N% of the official spec files pass". Count
         # it here rather than hand-writing it into the copy, so the figure cannot

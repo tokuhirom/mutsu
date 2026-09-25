@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Values and types — mutsu internals</title>
+<meta name="description" content="How mutsu represents a Raku value: every tag a NaN-boxed Value word can carry and where its payload lives, plus the built-in type tree, generated from the interpreter's source at deploy time.">
+<link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+<link rel="icon" href="assets/favicon-32.png" sizes="32x32" type="image/png">
+<link rel="icon" href="assets/favicon-16.png" sizes="16x16" type="image/png">
+<link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
+<link rel="stylesheet" href="assets/site.css">
+</head>
+<body>
+
+<nav class="site-nav"></nav>
+
+<div class="tutorial-layout">
+  <aside class="toc">
+    <p class="toc-intro" id="toc-intro"></p>
+    <h2 id="toc-title"></h2>
+    <div id="toc-body"></div>
+  </aside>
+
+  <main class="manual">
+    <p class="crumb op-crumb"><a id="crumb-link" href="internals.html"></a></p>
+    <h1 id="page-title"></h1>
+    <p class="page-intro" id="page-intro"></p>
+    <p class="op-provenance" id="provenance"></p>
+    <div id="type-body"></div>
+  </main>
+</div>
+
+<footer class="site-footer"></footer>
+
+<script type="module">
+import { renderChrome, currentLang, langHref } from './assets/i18n.js';
+import { renderMarkdown } from './assets/mini-md.js';
+import { fetchData } from './assets/data.js';
+
+renderChrome('internals');
+
+const REPO = 'https://github.com/tokuhirom/mutsu';
+
+/* The storage classes, in the order a reader meets them: the two word pages
+   that are not kinds at all, then inline kinds, then the heap payloads. */
+const STORAGE_ORDER = ['inline', 'arc', 'gc', 'weak'];
+
+const TEXT = {
+  en: {
+    title: 'Values and types',
+    crumb: '← Internals',
+    intro: 'The two trees behind every Raku value in mutsu: how the interpreter ' +
+      'stores one (the tags of the 8-byte Value word, mutsu\'s answer to Perl 5\'s ' +
+      'SV body types), and where a built-in type sits in Raku\'s own class ' +
+      'hierarchy. Both lists are read out of the source when the site is deployed.',
+    tocIntro: 'Representation first, then the Raku-level hierarchy.',
+    tocTitle: 'Contents',
+    provenance: (k, t, commit) => `${k} value kinds · ${t} catalogued built-in types · generated from ${commit}`,
+    wordTitle: 'The Value word',
+    wordBody: 'A `Value` is one 64-bit word: a 16-bit *page* and a 48-bit *payload*. ' +
+      'Page `0x0001` is a small Int (48-bit two\'s complement), pages `0x0002`–`0xFFF2` ' +
+      'are an f64 shifted up by `0x0002` pages, and the last 13 pages (`0xFFF3`–`0xFFFF`) ' +
+      'hold a **kind** tag, 8 per page. Every kind is listed below, grouped by where ' +
+      'its payload lives. A pointer kind\'s word owns one strong reference to its payload, ' +
+      'so cloning or dropping the word is exactly a clone or drop of the smart pointer.',
+    immediateTitle: 'Not a kind: Int and Num',
+    immediateBody: 'Small integers and doubles carry their value in the word itself and ' +
+      'have no kind tag at all. An `Int` outside the 48-bit range is stored as the ' +
+      '`IntBoxed` kind below and still reads back as `Int`, never as `BigInt`.',
+    storage: {
+      inline: ['Inline kinds', 'The whole value is in the word (a Symbol id or a flag in bits 8–40). Cloning one touches no memory.'],
+      arc: ['Arc<T> kinds', 'Payloads behind a plain atomic reference count. They are not collector nodes themselves, so number and string hot paths register no GC work; when one holds other values (a Seq, a Slip, a Scalar), the collector traces through it to the Gc nodes inside.'],
+      gc: ['Gc<T> kinds (cycle-collected)', 'Containers and code — everything that can take part in a reference cycle. These are the nodes the Bacon–Rajan cycle collector traces.'],
+      weak: ['WeakGc<T> kinds', 'A weak edge the collector does not follow; used to break a known self-cycle.'],
+    },
+    colKind: 'Kind', colPayload: 'Payload', colNotes: 'Notes',
+    treeTitle: 'The built-in type tree',
+    treeBody: 'Every built-in type in mutsu\'s type catalog, placed under its parent class. ' +
+      'The rows were captured from Rakudo\'s own `.^mro`, so this is Raku\'s hierarchy as ' +
+      'mutsu knows it; the chips are the roles each type does, and hovering a name shows ' +
+      'its whole MRO. A class with more than one parent sits under the first and names the ' +
+      'others (`IntStr` is an `Allomorph` and also an `Int`). Types that appear only as an ' +
+      'ancestor (such as `Any` and `Mu`) have no row of their own.',
+    roles: 'does',
+    also: 'also is',
+    source: 'catalog row',
+    missing: 'The type listing has not been generated for this copy of the site. ' +
+      'Run python3 scripts/gen-internals-manifest.py to create content/types.json.',
+    loading: 'Loading…',
+  },
+  ja: {
+    title: '値と型',
+    crumb: '← Internals',
+    intro: 'mutsu のあらゆる Raku の値の背後にある 2 本の木です。インタプリタが値をどう' +
+      '格納しているか（8 バイトの Value ワードのタグ。Perl 5 の SV ボディ型にあたるもの）と、' +
+      '組み込み型が Raku 自身のクラス階層のどこにいるか。どちらの一覧もデプロイ時に' +
+      'ソースから読み出しています。',
+    tocIntro: 'まず内部表現、次に Raku レベルの型階層。',
+    tocTitle: '目次',
+    provenance: (k, t, commit) => `値の種別 ${k} · 組み込み型 ${t} · ${commit} から生成`,
+    wordTitle: 'Value ワード',
+    wordBody: '`Value` は 64 ビットのワード 1 つで、16 ビットの *ページ* と 48 ビットの ' +
+      '*ペイロード* からなります。ページ `0x0001` は小さな Int（48 ビット 2 の補数）、' +
+      'ページ `0x0002`〜`0xFFF2` は `0x0002` ページ分ずらした f64、最後の 13 ページ' +
+      '（`0xFFF3`〜`0xFFFF`）は 1 ページあたり 8 個の **kind** タグです。下の表は全 kind を' +
+      'ペイロードの置き場所ごとにまとめたものです。ポインタ系 kind のワードはペイロードへの' +
+      '強参照を 1 つ所有するので、ワードの clone / drop はそのままスマートポインタの ' +
+      'clone / drop になります。',
+    immediateTitle: 'kind ではないもの: Int と Num',
+    immediateBody: '小さな整数と倍精度浮動小数点数はワード自体に値を持ち、kind タグを' +
+      '持ちません。48 ビットに収まらない `Int` は下の `IntBoxed` kind として格納されますが、' +
+      '読み出すとやはり `Int` であり、`BigInt` にはなりません。',
+    storage: {
+      inline: ['インライン kind', '値全体がワードの中にあります（ビット 8〜40 の Symbol id やフラグ）。clone してもメモリに触れません。'],
+      arc: ['Arc<T> kind', '普通のアトミック参照カウントの後ろにあるペイロード。これ自体はコレクタのノードではないので、数値や文字列のホットパスは GC の仕事を一切登録しません。他の値を抱えるもの（Seq、Slip、Scalar など）については、コレクタがそれを通り抜けて中の Gc ノードまでたどります。'],
+      gc: ['Gc<T> kind（循環回収対象）', 'コンテナとコード、つまり参照循環に加わり得るものすべて。Bacon–Rajan 循環コレクタがたどるノードです。'],
+      weak: ['WeakGc<T> kind', 'コレクタがたどらない弱い辺。既知の自己循環を断つために使います。'],
+    },
+    colKind: 'Kind', colPayload: 'ペイロード', colNotes: '説明',
+    treeTitle: '組み込み型の木',
+    treeBody: 'mutsu の型カタログにある組み込み型を、親クラスの下に並べたものです。' +
+      '各行は Rakudo 自身の `.^mro` から取ったものなので、これは mutsu が知っている ' +
+      'Raku の型階層です。チップはその型が does するロールで、名前にカーソルを合わせると MRO ' +
+      '全体が出ます。親が複数あるクラスは最初の親の下に置き、残りの親を併記します' +
+      '（`IntStr` は `Allomorph` であり `Int` でもある）。祖先としてだけ現れる型' +
+      '（`Any` や `Mu` など）は自分の行を持ちません。',
+    roles: 'does',
+    also: '親クラス（他にも）:',
+    source: 'カタログ行',
+    missing: 'このサイトには型一覧がまだ生成されていません。' +
+      'python3 scripts/gen-internals-manifest.py を実行すると content/types.json が作られます。',
+    loading: '読み込み中…',
+  },
+};
+const L = () => TEXT[currentLang()] ?? TEXT.en;
+
+const els = {
+  title: document.getElementById('page-title'),
+  crumb: document.getElementById('crumb-link'),
+  intro: document.getElementById('page-intro'),
+  provenance: document.getElementById('provenance'),
+  tocIntro: document.getElementById('toc-intro'),
+  tocTitle: document.getElementById('toc-title'),
+  toc: document.getElementById('toc-body'),
+  body: document.getElementById('type-body'),
+};
+
+let DATA;   // undefined: loading · null: not generated · object: the manifest
+
+function srcHref(path, line) {
+  return `${REPO}/blob/${DATA.commit || 'main'}/${path}#L${line}`;
+}
+
+function el(tag, cls, text) {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text !== undefined) e.textContent = text;
+  return e;
+}
+
+function section(id, title) {
+  const sec = el('section', 'manual-section');
+  sec.id = id;
+  const h = el('h2');
+  const a = el('a', null, title);
+  a.href = `#${id}`;
+  h.appendChild(a);
+  sec.appendChild(h);
+  const link = el('a', 'lesson-link', title);
+  link.href = `#${id}`;
+  els.toc.appendChild(link);
+  return sec;
+}
+
+function prose(md) {
+  const d = el('div', 'manual-body');
+  d.appendChild(renderMarkdown(md));
+  return d;
+}
+
+function kindTable(kinds) {
+  const l = L();
+  const wrap = el('div', 'type-table-wrap');
+  const t = el('table', 'type-table');
+  const head = el('tr');
+  for (const c of [l.colKind, l.colPayload, l.colNotes]) head.appendChild(el('th', null, c));
+  t.appendChild(el('thead')).appendChild(head);
+  const tb = el('tbody');
+  for (const k of kinds) {
+    const tr = el('tr');
+    tr.id = `kind-${k.name}`;
+    const name = el('td', 'type-name');
+    const a = el('a', null, k.name);
+    a.href = srcHref(DATA.sources.kinds, k.def_line);
+    a.rel = 'noopener';
+    name.appendChild(a);
+    const pay = el('td', 'type-payload', k.payload ?? '—');
+    const notes = el('td', 'manual-body type-notes');
+    if (k.doc) notes.appendChild(renderMarkdown(k.doc));
+    tr.append(name, pay, notes);
+    tb.appendChild(tr);
+  }
+  t.appendChild(tb);
+  wrap.appendChild(t);
+  return wrap;
+}
+
+/**
+ * Build the parent -> children map. An MRO is a linearization, not a chain of
+ * parents: `IntStr`'s is `IntStr, Allomorph, Str, Int, Cool, Any, Mu`, where
+ * `Int` is a second parent, not `Str`'s. So a catalogued type hangs under
+ * `mro[1]` (its first parent) only, and whatever its MRO has beyond that
+ * parent's own MRO is reported as an extra parent. Ancestors with no row of
+ * their own (`Any`, `Mu`) take their place from the first chain naming them.
+ */
+function buildTree(types) {
+  const children = new Map();
+  const parentOf = new Map();
+  const rows = new Map(types.map(t => [t.name, t]));
+  const place = (child, parent) => {
+    if (parentOf.has(child)) return;
+    parentOf.set(child, parent);
+    if (!children.has(parent)) children.set(parent, new Set());
+    children.get(parent).add(child);
+  };
+  for (const t of types) if (t.mro.length > 1) place(t.name, t.mro[1]);
+  for (const t of types) {
+    for (let i = 1; i + 1 < t.mro.length; i++) {
+      if (!rows.has(t.mro[i])) place(t.mro[i], t.mro[i + 1]);
+    }
+  }
+  const extraParents = new Map();
+  for (const t of types) {
+    const parent = rows.get(t.mro[1]);
+    if (!parent) continue;
+    const inherited = new Set(parent.mro);
+    const extra = t.mro.slice(1).filter(n => !inherited.has(n));
+    if (extra.length) extraParents.set(t.name, extra);
+  }
+  return { children, rows, extraParents };
+}
+
+function renderNode(name, tree, depth) {
+  const l = L();
+  const li = el('li', 'type-node');
+  li.id = `type-${name.replace(/[^A-Za-z0-9]+/g, '-')}`;
+  const line = el('div', 'type-line');
+  const row = tree.rows.get(name);
+  const label = el(row ? 'a' : 'span', row ? 'type-label' : 'type-label type-ancestor', name);
+  if (row) {
+    label.href = srcHref(DATA.sources.catalog, row.def_line);
+    label.rel = 'noopener';
+    label.title = `${l.source} ${DATA.sources.catalog.split('/').pop()}:${row.def_line}`;
+  }
+  line.appendChild(label);
+  if (row) label.title = `${row.mro.join(' → ')}\n${label.title}`;
+  const extra = tree.extraParents.get(name);
+  if (extra) line.appendChild(el('span', 'type-also', `${l.also} ${extra.join(', ')}`));
+  if (row && row.roles.length) {
+    const chips = el('span', 'bat-chips');
+    for (const r of row.roles) chips.appendChild(el('span', 'bat-chip', r));
+    line.appendChild(chips);
+  }
+  li.appendChild(line);
+  const kids = [...(tree.children.get(name) ?? [])].sort((a, b) => a.localeCompare(b));
+  if (kids.length) {
+    const ul = el('ul', 'type-tree');
+    for (const k of kids) ul.appendChild(renderNode(k, tree, depth + 1));
+    li.appendChild(ul);
+  }
+  return li;
+}
+
+function paint() {
+  const l = L();
+  document.title = `${l.title} — mutsu internals`;
+  els.title.textContent = l.title;
+  els.crumb.textContent = l.crumb;
+  els.crumb.href = langHref('internals.html');
+  els.intro.textContent = l.intro;
+  els.tocIntro.textContent = l.tocIntro;
+  els.tocTitle.textContent = l.tocTitle;
+  els.body.textContent = '';
+  els.toc.textContent = '';
+  els.provenance.textContent = '';
+  if (DATA === undefined) { els.body.appendChild(el('p', 'op-muted', l.loading)); return; }
+  if (DATA === null) { els.body.appendChild(el('p', 'manual-note op-missing', l.missing)); return; }
+
+  els.provenance.textContent =
+    l.provenance(DATA.kinds.length, DATA.types.length, (DATA.commit || '?').slice(0, 12));
+
+  const word = section('value-word', l.wordTitle);
+  word.appendChild(prose(l.wordBody));
+  const imm = el('h3', 'type-subhead', l.immediateTitle);
+  word.appendChild(imm);
+  word.appendChild(prose(l.immediateBody));
+  els.body.appendChild(word);
+
+  for (const s of STORAGE_ORDER) {
+    const kinds = DATA.kinds.filter(k => k.storage === s);
+    if (!kinds.length) continue;
+    const [title, blurb] = l.storage[s];
+    const sec = section(`kinds-${s}`, `${title} (${kinds.length})`);
+    sec.appendChild(prose(blurb));
+    sec.appendChild(kindTable(kinds));
+    els.body.appendChild(sec);
+  }
+
+  const treeSec = section('type-tree', l.treeTitle);
+  treeSec.appendChild(prose(l.treeBody));
+  const tree = buildTree(DATA.types);
+  const root = el('ul', 'type-tree type-root');
+  root.appendChild(renderNode('Mu', tree, 0));
+  treeSec.appendChild(root);
+  els.body.appendChild(treeSec);
+}
+
+window.addEventListener('langchange', paint);
+paint();
+
+try {
+  const res = await fetchData('content/types.json');
+  DATA = res.ok ? await res.json() : null;
+} catch {
+  DATA = null;
+}
+paint();
+if (location.hash) document.getElementById(location.hash.slice(1))?.scrollIntoView();
+document.body.dataset.ready = '1';
+</script>
+
+</body>
+</html>

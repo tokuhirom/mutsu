@@ -138,7 +138,10 @@ pub(in crate::value) enum Kind {
     FatRat,
     BigRat,
     Complex,
+    /// Listed with the Arc kinds for its discriminant only: the payload is a
+    /// cycle-collected `Gc<PairData>` (see `payload_op`).
     Pair,
+    /// A data `Pair` (ADR-0021); `Gc<PairData>`, like [`Kind::Pair`].
     ValuePair,
     Enum,
     GenericRange,

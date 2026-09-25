@@ -87,7 +87,7 @@ set -u
 # `scripts/*.py`: the Python under scripts/ is reporting and campaign tooling --
 # ecosystem sweeps, roast/bench/backlog plots, manifest generation, one-off
 # surveys. None of it is on the `make test` / `make roast` / ci.yml path, with
-# the single exception denied below. The shell and .mjs scripts are a different
+# the exceptions denied below. The shell and .mjs scripts are a different
 # story (CI runs run-t-test.sh, run-roast-test.sh, check-site-snippets.sh, ...),
 # so scripts/ as a whole stays off the allowlist.
 is_doc_path() {
@@ -104,6 +104,9 @@ is_doc_path() {
     # step, #8186) runs it -- and it carries the ratchet's own baseline, so a
     # change to it must never skip the suite that enforces it.
     scripts/check-panic-surface.py) return 1 ;;
+    # ci.yml's wasm-e2e job runs it to generate the Internals pages' data
+    # before the site e2e test reads it.
+    scripts/gen-internals-manifest.py) return 1 ;;
     scripts/*.py) return 0 ;;
     LICENSE) return 0 ;;
     */*) return 1 ;;          # any other nested path: not documentation
@@ -350,6 +353,7 @@ self_test() {
   check true  'ecosystem tooling'       scripts/ecosystem-sweep.py scripts/ecosystem_common.py
   check false 'a python make test runs' scripts/migrate-t-layout.py
   check false 'the panic ratchet'       scripts/check-panic-surface.py
+  check false 'internals site data'     scripts/gen-internals-manifest.py
   check false 'shell script'            scripts/run-t-test.sh
   check false 'node script'             scripts/check-site-snippets.mjs
   check false 'nested tsv'              t/fixtures/data.tsv

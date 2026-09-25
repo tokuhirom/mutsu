@@ -19,6 +19,8 @@ import { parseCorpus } from './assets/corpus.js';
 import landingEn from './content/landing.en.js';
 import manualEn from './content/manual.en.js';
 import manualJa from './content/manual.ja.js';
+import internalsEn from './content/internals.en.js';
+import internalsJa from './content/internals.ja.js';
 import INSTALL from './content/install.js';
 
 const PORT = 18765;
@@ -449,6 +451,77 @@ try {
   await page.click('.lang-switch button[data-lang="en"]');
 
   /* =============================================================== *
+   * Internals — the hub and its two generated reference pages
+   * =============================================================== */
+
+  console.log('Test: internals hub');
+  await page.goto(`${BASE}/internals.html?lang=en`, { waitUntil: 'networkidle' });
+  await page.waitForFunction(() => document.body.dataset.ready === '1', { timeout: 15000 });
+  assert(await page.textContent('.site-nav a[aria-current="page"]') === 'Internals',
+         'the nav includes the internals section and marks it current');
+  assert(await page.locator('.manual-section').count() === internalsEn.sections.length,
+         `every internals section renders (${internalsEn.sections.length})`);
+  assert(internalsJa.sections.map(s => s.id).join() === internalsEn.sections.map(s => s.id).join(),
+         'the Japanese internals page has the same sections, in the same order');
+  assert(await page.locator('#manual-body a[href="opcodes.html"]').count() > 0 &&
+         await page.locator('#manual-body a[href="types.html"]').count() > 0,
+         'the hub links both generated reference pages');
+  assert(await page.evaluate(() =>
+    document.documentElement.scrollWidth <= document.documentElement.clientWidth),
+    'the internals page does not scroll sideways');
+  await page.click('.lang-switch button[data-lang="ja"]');
+  assert(await page.textContent('#manual-title') === internalsJa.title,
+         'switching to Japanese re-renders the internals page');
+  assert(!(await page.textContent('#manual-body')).includes('バイトコード インタプリタ'),
+         'Japanese prose is not broken up by source line breaks');
+  await page.click('.lang-switch button[data-lang="en"]');
+
+  // The two reference pages render data that scripts/gen-internals-manifest.py
+  // generated from the source, so the counts to expect come from those files.
+  const opManifest = JSON.parse(readFileSync('site/content/opcodes.json', 'utf8'));
+  const typeManifest = JSON.parse(readFileSync('site/content/types.json', 'utf8'));
+
+  console.log('Test: opcode reference lists every opcode');
+  await page.goto(`${BASE}/opcodes.html?lang=en`, { waitUntil: 'networkidle' });
+  await page.waitForFunction(() => document.body.dataset.ready === '1', { timeout: 15000 });
+  assert(await page.locator('.op-card').count() === opManifest.ops.length,
+         `one card per opcode (${opManifest.ops.length})`);
+  assert(await page.locator('.toc .lesson-link').count() === opManifest.categories.length,
+         `the contents list every opcode family (${opManifest.categories.length})`);
+  assert((await page.textContent('#op-LoadConst .op-cost')).startsWith('O('),
+         'an opcode card shows the Cost line from the dispatch arm');
+  assert(await page.evaluate(() =>
+    document.documentElement.scrollWidth <= document.documentElement.clientWidth),
+    'the opcode page does not scroll sideways');
+
+  console.log('Test: opcode filter lives in the URL');
+  await page.fill('#op-search', 'GetLocal');
+  const filtered = await page.locator('.op-card').count();
+  assert(filtered > 0 && filtered < opManifest.ops.length,
+         `the filter narrows the listing (${filtered} cards)`);
+  assert(new URL(page.url()).hash === '#q=GetLocal', 'the filter is written to the hash');
+  await page.goto(`${BASE}/opcodes.html?lang=en#q=GetLocal`, { waitUntil: 'networkidle' });
+  await page.waitForFunction(() => document.body.dataset.ready === '1', { timeout: 15000 });
+  assert(await page.locator('.op-card').count() === filtered,
+         'a #q= link reopens the same filtered view');
+  await page.fill('#op-search', '');
+  assert(new URL(page.url()).hash === '', 'clearing the filter leaves a bare URL');
+
+  console.log('Test: values and types page');
+  await page.goto(`${BASE}/types.html?lang=en`, { waitUntil: 'networkidle' });
+  await page.waitForFunction(() => document.body.dataset.ready === '1', { timeout: 15000 });
+  assert(await page.locator('.type-table tbody tr').count() === typeManifest.kinds.length,
+         `one row per value kind (${typeManifest.kinds.length})`);
+  const catalogued = await page.locator('.type-node a.type-label').count();
+  assert(catalogued === typeManifest.types.length,
+         `every catalogued built-in type appears once in the tree (${catalogued})`);
+  assert(await page.locator('.type-root > li > .type-line .type-label').textContent() === 'Mu',
+         'the type tree is rooted at Mu');
+  assert(await page.evaluate(() =>
+    document.documentElement.scrollWidth <= document.documentElement.clientWidth),
+    'the types page does not scroll sideways');
+
+  /* =============================================================== *
    * Tutorial
    * =============================================================== */
 
@@ -789,6 +862,7 @@ try {
   // reaches for a generated file with a bare `fetch`.
   console.log('Test: generated data files are revalidated, not read from a cache');
   for (const name of ['ecosystem.json', 'batteries.json', 'stats.json',
+                      'opcodes.json', 'types.json',
                       'highlights.txt', 'lessons.txt']) {
     const req = dataReqs.get(name);
     assert(req !== undefined, `some page fetched content/${name}`);

@@ -31,6 +31,9 @@ tutorial.html       the tutorial: chapter/lesson navigation + one runnable lesso
 playground.html     editor + Run + output: whole programs, one clean run each
 repl.html           the interactive session: one line at a time, state kept
 embed-demo.html     runnable installed-package demo and browser integration guide
+internals.html      Internals hub: pipeline, value representation, VM, GC (prose)
+opcodes.html        every VM opcode with operands, doc and cost — generated data
+types.html          every Value kind + the built-in type tree — generated data
 assets/
   site.css          all styling
   i18n.js           language selection, UI strings, shared nav + footer
@@ -50,6 +53,10 @@ content/
   tutorial.ja.js    tutorial titles and prose (Japanese)
   landing.en.js     landing-page copy (English)
   landing.ja.js     landing-page copy (Japanese)
+  internals.en.js   Internals hub prose (English)
+  internals.ja.js   Internals hub prose (Japanese)
+  opcodes.json      VM opcode reference — generated, git-ignored (see below)
+  types.json        value kinds + built-in type tree — generated, git-ignored
   stats.json        compatibility numbers — generated, git-ignored (see below)
 bench-trend.html    benchmark dashboard — generated, git-ignored (see below)
 pkg/                installed npm package — generated, git-ignored
@@ -87,6 +94,32 @@ fully self-contained file for offline use:
 git show origin/bench-data:bench-history.tsv \
   | python3 scripts/bench-visualize.py --standalone --site-chrome -o site/bench-trend.html
 ```
+
+## The Internals section
+
+`internals.html` explains how mutsu works inside, for contributors: the
+pipeline, the NaN-boxed `Value`, the bytecode VM and the cycle collector. It is
+hand-written prose, and deliberately contains no *lists*. The lists live on two
+reference pages whose data is read out of the source at deploy time by
+`scripts/gen-internals-manifest.py`:
+
+| Page | Data | Read from |
+| --- | --- | --- |
+| `opcodes.html` | `content/opcodes.json` | `enum OpCode` in `src/opcode.rs` (operands, `///` docs, `// -- Section --` families) and the `// Cost:` line above each arm of `exec_one_dispatch` in `src/vm/vm_exec_dispatch.rs` |
+| `types.html` | `content/types.json` | `enum Kind` + `payload_op` in `src/value/nanbox/mod.rs` (each kind's payload and whether it is inline, `Arc`, `Gc` or `WeakGc`) and `CATALOG` in `src/builtins/builtin_type_catalog.rs` (MROs and roles) |
+
+Both JSON files are git-ignored, like `stats.json`: `pages.yml` generates them
+for the deploy and ci.yml's `wasm-e2e` job generates them before the e2e test,
+so the published reference always describes the commit it came from. The
+script fails instead of writing an empty listing when the source layout it
+parses has changed. To preview locally:
+
+```sh
+python3 scripts/gen-internals-manifest.py --summary   # --summary lists doc/Cost gaps
+```
+
+Improving the reference means improving the source: a `///` doc comment on an
+`OpCode` variant or a `Kind` shows up on the page at the next deploy.
 
 ## Languages
 
