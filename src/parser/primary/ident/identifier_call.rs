@@ -1901,6 +1901,13 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
             let r3 = &r3_unspaced[1..];
             let (r3, _) = ws(r3)?;
             let block_expr = make_anon_sub(block_body);
+            // A trailing comma after the block argument ends the argument
+            // list (`check { ... },` then `}` / `;` / `)`), exactly as
+            // `foo 1, 2,` does: the listop takes just the block
+            // (DB::Migration::Declare's tests wrap `check { ... },` in a block).
+            if is_comma && (r3.is_empty() || r3.starts_with([';', '}', ')', ']'])) {
+                return Ok((r3, make_call_expr(name, input, vec![block_expr])));
+            }
             let mut method_args = Vec::new();
             let (mut r3, first_arg) = expression(r3)?;
             method_args.push(first_arg);
