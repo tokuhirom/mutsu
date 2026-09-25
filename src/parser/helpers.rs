@@ -325,8 +325,12 @@ fn pod_block(input: &str) -> PResult<'_, &str> {
             } else {
                 break;
             }
-            // If blank line or another Pod directive, stop
-            if rest.is_empty() || rest.starts_with('\n') || rest.starts_with('=') {
+            // If blank line or another Pod directive, stop. A directive is `=`
+            // followed by an identifier; any other `=` line is paragraph text
+            // -- above all a table's `====|====` header separator (#9329).
+            let line = &rest[..rest.find('\n').unwrap_or(rest.len())];
+            if rest.is_empty() || rest.starts_with('\n') || parse_pod_directive_line(line).is_some()
+            {
                 break;
             }
             // Collect and skip continuation line
