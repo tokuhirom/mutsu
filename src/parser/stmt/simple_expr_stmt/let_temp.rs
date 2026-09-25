@@ -52,11 +52,12 @@ fn let_compound_assign_stmt<'a>(
 }
 
 /// A `let`/`temp` of one subscripted element, `@a[i]`, `%h<k>` or `%h{EXPR}`,
-/// with an optional `= value`. `rest` is positioned right after the variable
-/// name. Returns `None` when no subscript follows. The `{EXPR}` spelling was
+/// with an optional `= value` or compound assignment. `var_start` is the input
+/// at the variable, `rest` is positioned right after its name. Returns `None` when no subscript follows. The `{EXPR}` spelling was
 /// missing, so `temp %!replacing{$key} = True` (Pod::To::PDF::Lite) failed to
 /// parse while `temp %h<key>` worked.
 fn let_subscript_stmt<'a>(
+    var_start: &'a str,
     rest: &'a str,
     full_name: &str,
     is_temp: bool,
@@ -86,6 +87,26 @@ fn let_subscript_stmt<'a>(
     };
     Some((|| {
         let (r, _) = ws(after_index?)?;
+        // A compound assignment to the element (`temp %h<k> //= v`,
+        // Net::HTTP): save the element, then run the whole assignment as an
+        // ordinary expression, the lowering `let_compound_assign_stmt` uses
+        // for a plain variable.
+        if r.starts_with(".=") || crate::parser::stmt::assign::parse_compound_assign_op(r).is_some()
+        {
+            let (r, assign_expr) = expression(var_start)?;
+            let save = Stmt::Let {
+                name: full_name.to_string(),
+                index: Some(Box::new(index)),
+                value: None,
+                is_temp,
+                undefine_first: false,
+                nested_lvalue: false,
+            };
+            return parse_statement_modifier(
+                r,
+                Stmt::SyntheticBlock(vec![save, Stmt::Expr(assign_expr)]),
+            );
+        }
         let (r, value) = if r.starts_with('=') && !r.starts_with("==") {
             let (r, _) = ws(&r[1..])?;
             let (r, value) = expression(r)?;
@@ -141,7 +162,7 @@ pub(crate) fn let_stmt(input: &str) -> PResult<'_, Stmt> {
     };
     let (rest, _) = ws(rest)?;
 
-    if let Some(parsed) = let_subscript_stmt(rest, &full_name, false) {
+    if let Some(parsed) = let_subscript_stmt(var_start, rest, &full_name, false) {
         return parsed;
     }
 
@@ -438,7 +459,7 @@ pub(crate) fn temp_stmt(input: &str) -> PResult<'_, Stmt> {
     };
     let (rest, _) = ws(rest)?;
 
-    if let Some(parsed) = let_subscript_stmt(rest, &full_name, true) {
+    if let Some(parsed) = let_subscript_stmt(var_start, rest, &full_name, true) {
         return parsed;
     }
 
