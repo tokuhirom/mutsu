@@ -27,6 +27,12 @@ repository API reads them: `.repo-chain`, `.next-repo`, and `.resolve`, which de
   interpreter that shares the chain therefore sees the same pending state, and the links are
   appended once.
 
+A local A/B with `scripts/bench-det.sh benchmarks/bench-startup.raku` compared the same toolchain
+with and without this change. `main` measured 9,956,180 instructions and 15,538 allocations. This
+change measured 9,216,343 instructions and 14,226 allocations: -7.4% instructions and 1,312 fewer
+allocations, which is essentially all of the step. The bench CI's history will give the
+authoritative number.
+
 Chain order and what each link resolves are unchanged. `t/modules/compunit/repo-resolve-bundled.t`
 still passes as written. The new `t/modules/compunit/repo-chain-bundled-lazy.t` pins a program
 whose first touch of the chain is a hand walk over `.next-repo`, and checks that a second
