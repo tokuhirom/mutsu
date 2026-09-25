@@ -14,6 +14,10 @@
 //! `list-installed` / `is-installed` only consult Installation repositories,
 //! and a bundled battery must stay upgradable through `mzef install`
 //! (BATTERIES.md §6) rather than read as already installed.
+//!
+//! The links are built lazily, on the first read of the chain tail's
+//! `next-repo` ([`Interpreter::repo_next_link`]): module loading never walks
+//! the chain, so most programs never need them.
 
 use super::*;
 
@@ -26,43 +30,97 @@ const CORE_DIST_DIR: &str = "Rakudo-Core";
 /// directory name under the bundle.
 const BUNDLED_DIST_ATTR: &str = "__mutsu_bundled_dist";
 
+/// Marks the link the bundled batteries hang off until they are built: the
+/// tail of the default chain. Its presence means "`next-repo` is the bundled
+/// sub-chain, not yet materialized".
+const BUNDLED_TAIL_PENDING_ATTR: &str = "__mutsu_bundled_tail_pending";
+
 impl Interpreter {
-    /// Append one FileSystem repository per bundled distribution to the tail
-    /// of `$*REPO`'s chain, in the order `resolve_module_path` searches them.
+    /// Reserve the tail of `$*REPO`'s chain for the bundled batteries, without
+    /// building them.
+    ///
+    /// Module loading never walks this chain -- `use` finds a battery through
+    /// `resolve_module_path`'s fallback -- so only a program that introspects
+    /// the repository API reads these links. Building one FileSystem
+    /// repository per distribution at every start (a `canonicalize` and an
+    /// `IO::Path` each) was ~9% of `say "hello"`'s instructions; the links are
+    /// built on the first read of the tail's `next-repo` instead (see
+    /// [`Interpreter::repo_next_link`]).
     pub(super) fn add_bundled_repos(&mut self) {
-        let paths = Arc::clone(&self.bundled_lib_paths);
-        // Build the sub-chain back to front so each link can point at the next.
-        let mut head = Value::NIL;
-        for lib in paths.iter().rev() {
-            head = self.bundled_repo_link(lib, head);
+        if self.bundled_lib_paths.is_empty() {
+            return;
         }
-        if head.truthy() {
-            self.append_repo_to_chain_tail(head);
+        let Some(tail) = self.repo_chain_tail() else {
+            return;
+        };
+        if let ValueView::Instance { attributes, .. } = tail.view() {
+            attributes.insert(BUNDLED_TAIL_PENDING_ATTR, Value::TRUE);
         }
     }
 
-    /// Hang `repo` off the last link of `$*REPO`'s chain.
-    pub(super) fn append_repo_to_chain_tail(&mut self, repo: Value) {
-        let mut cursor = self.env.get("*REPO").cloned();
-        while let Some(node) = cursor {
-            let ValueView::Instance { attributes, .. } = node.view() else {
-                break;
+    /// The `next-repo` of `repo`, whose attribute map is `attrs`.
+    ///
+    /// Every reader of a repository's `next-repo` goes through here, because
+    /// the tail of the default chain carries the bundled batteries lazily: the
+    /// first read builds them and links them in.
+    // Cost: O(1); the one read that builds the bundled links is O(d),
+    // d = bundled distributions.
+    pub(crate) fn repo_next_link(&self, repo: &Value, attrs: &AttrMap) -> Value {
+        let next = attrs.get("next-repo").cloned();
+        if let Some(next) = &next
+            && next.truthy()
+        {
+            return next.clone();
+        }
+        if !attrs.contains_key(BUNDLED_TAIL_PENDING_ATTR) {
+            return next.unwrap_or(Value::NIL);
+        }
+        let head = self.build_bundled_chain();
+        if let ValueView::Instance { attributes, .. } = repo.view() {
+            attributes.write_keys(vec![
+                (Symbol::intern("next-repo"), Some(head.clone())),
+                (Symbol::intern(BUNDLED_TAIL_PENDING_ATTR), None),
+            ]);
+        }
+        head
+    }
+
+    /// One FileSystem repository per bundled distribution, chained in the
+    /// order `resolve_module_path` searches them; Nil when there are none.
+    fn build_bundled_chain(&self) -> Value {
+        // Build the sub-chain back to front so each link can point at the next.
+        let mut head = Value::NIL;
+        for lib in self.bundled_lib_paths.iter().rev() {
+            head = self.bundled_repo_link(lib, head);
+        }
+        head
+    }
+
+    /// The last link of `$*REPO`'s chain.
+    fn repo_chain_tail(&self) -> Option<Value> {
+        let mut cursor = self.env.get("*REPO").cloned()?;
+        loop {
+            let ValueView::Instance { attributes, .. } = cursor.view() else {
+                return Some(cursor);
             };
-            // Read the current `next-repo` and release the read lock before
-            // taking the write lock below (holding both on the same
-            // interior-mutable cell would self-deadlock).
             let next = attributes.as_map().get("next-repo").cloned();
             match next {
                 Some(next)
                     if next.truthy() && matches!(next.view(), ValueView::Instance { .. }) =>
                 {
-                    cursor = Some(next);
+                    cursor = next;
                 }
-                _ => {
-                    attributes.insert("next-repo".to_string(), repo);
-                    break;
-                }
+                _ => return Some(cursor),
             }
+        }
+    }
+
+    /// Hang `repo` off the last link of `$*REPO`'s chain.
+    pub(super) fn append_repo_to_chain_tail(&mut self, repo: Value) {
+        if let Some(tail) = self.repo_chain_tail()
+            && let ValueView::Instance { attributes, .. } = tail.view()
+        {
+            attributes.insert("next-repo", repo);
         }
     }
 
