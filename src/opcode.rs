@@ -1739,12 +1739,6 @@ pub(crate) enum OpCode {
         /// names) baked the same way `CallMethodMut`'s does.
         arg_sources_idx: Option<u32>,
     },
-    /// Statement-level call: pop `arity` args, call name (no push).
-    ExecCall {
-        name_idx: u32,
-        arity: u32,
-        arg_sources_idx: Option<u32>,
-    },
     /// Statement-level call with positional/named values encoded as Pair.
     ///
     /// ADR-0054 Slice 4: `arg_sources_idx` is the SAME per-argument-position
@@ -5269,7 +5263,7 @@ pub(crate) struct CompiledCode {
     /// a `let`-restored variable; same-named `my` locals share one slot).
     pub(crate) named_sub_captures: Vec<(Vec<Symbol>, Vec<Symbol>)>,
     /// Frame-lexical routines (ADR-0113) this chunk calls by bare name. A
-    /// `CallFunc`/`CallFuncNamed`/`ExecCall`/`ExecCallPairs` whose callee is
+    /// `CallFunc`/`CallFuncNamed`/`ExecCallPairs` whose callee is
     /// listed here dispatches straight to that routine, never through the
     /// name-keyed resolution: the routine is not in the registry at all.
     /// Empty for almost every chunk, so the call handlers' probe is one
@@ -7421,8 +7415,8 @@ impl CompiledCode {
                 | OpCode::IndirectCodeLookup(_) => true,
                 // `EVAL`/`EVALFILE` are reflective regardless of which call
                 // shape the call site compiled to: a statement-position call
-                // (`EVAL q[...];`, whose value is discarded) reaches
-                // `ExecCall`/`ExecCallPairs`, not just the tail/expression
+                // (`EVAL q[...];`, whose value is discarded) may reach
+                // `ExecCallPairs`, not just the tail/expression
                 // forms `CallFunc`/`CallFuncNamed`. Missing the statement
                 // forms here left the READ side of EVAL's caller-lexical
                 // visibility working only when an EVAL happened to also
@@ -7437,7 +7431,6 @@ impl CompiledCode {
                 // of the live value.
                 OpCode::CallFunc { name_idx, .. }
                 | OpCode::CallFuncNamed { name_idx, .. }
-                | OpCode::ExecCall { name_idx, .. }
                 | OpCode::ExecCallPairs { name_idx, .. } => {
                     matches!(
                         self.constants.get(*name_idx as usize).map(Value::view),
@@ -7885,9 +7878,6 @@ impl CompiledCode {
             | OpCode::CallMethodMut {
                 arg_sources_idx, ..
             }
-            | OpCode::ExecCall {
-                arg_sources_idx, ..
-            }
             | OpCode::CallOnValue {
                 arg_sources_idx, ..
             }
@@ -7917,9 +7907,9 @@ impl CompiledCode {
     /// really a code-variable read this closure must capture.
     pub(crate) fn op_callee_name_const_idx(op: &OpCode) -> Option<u32> {
         match op {
-            OpCode::CallFunc { name_idx, .. }
-            | OpCode::CallFuncNamed { name_idx, .. }
-            | OpCode::ExecCall { name_idx, .. } => Some(*name_idx),
+            OpCode::CallFunc { name_idx, .. } | OpCode::CallFuncNamed { name_idx, .. } => {
+                Some(*name_idx)
+            }
             _ => None,
         }
     }
@@ -9013,7 +9003,6 @@ impl CompiledCode {
                     | OpCode::CallMethodMut { .. }
                     | OpCode::CallMethodDynamic { .. }
                     | OpCode::CallMethodDynamicMut { .. }
-                    | OpCode::ExecCall { .. }
                     | OpCode::ExecCallPairs { .. }
                     | OpCode::CallOnValue { .. }
                     | OpCode::CallOnCodeVar { .. }
@@ -9088,7 +9077,6 @@ impl CompiledCode {
                     | OpCode::CallMethodMut { .. }
                     | OpCode::CallMethodDynamic { .. }
                     | OpCode::CallMethodDynamicMut { .. }
-                    | OpCode::ExecCall { .. }
                     | OpCode::ExecCallPairs { .. }
                     | OpCode::HyperMethodCall { .. }
                     | OpCode::HyperMethodCallDynamic { .. }

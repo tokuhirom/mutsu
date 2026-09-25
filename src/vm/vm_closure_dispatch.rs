@@ -1538,7 +1538,7 @@ impl Interpreter {
         //     it.
         //   * `-> $blk, $v { $blk($v) }` forwards a call to a closure that mutates
         //     an outer lexical the forwarder never names.
-        // `cc.has_calls` covers *every* call opcode (CallFunc/CallMethod/ExecCall/
+        // `cc.has_calls` covers *every* call opcode (CallFunc/CallMethod/
         // CallOnValue/CallOnCodeVar/Hyper.../CallDefined/...) -- unlike
         // `has_env_writes`, which lists only some of them and so missed
         // `CallOnCodeVar` (the `$blk($v)` case).

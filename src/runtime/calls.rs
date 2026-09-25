@@ -107,27 +107,17 @@ impl Interpreter {
         }
     }
 
-    /// Execute a statement-position call. Returns the call's value so a
-    /// tail-position statement call (`ExecCallPairs { keep_value: true }`) can
-    /// use it as the body result; plain statement sites ignore it.
-    pub(crate) fn exec_call(
-        &mut self,
-        name: &str,
-        args: Vec<Value>,
-    ) -> Result<Value, RuntimeError> {
-        let (args, callsite_line) = self.sanitize_call_args_owned(args);
-        self.exec_call_sanitized(name, args, callsite_line, None)
-    }
-
-    /// [`Self::exec_call`] for a caller that has already run
+    /// Execute a statement-position call for a caller that has already run
     /// `sanitize_call_args_owned` and therefore holds both the marker-free
-    /// argument list and the callsite line it yielded.
+    /// argument list and the callsite line it yielded. Returns the call's value
+    /// so a tail-position statement call (`ExecCallPairs { keep_value: true }`)
+    /// can use it as the body result.
     ///
     /// `OpCode::ExecCallPairs` is that caller: it sanitizes at the opcode entry
     /// so its own `find_compiled_function` / `try_native_function` probes see
     /// the *real* argument list rather than one carrying the parser-injected
-    /// `__mutsu_test_callsite_line` pair — the same preamble `OpCode::ExecCall`
-    /// has always had. Re-sanitizing here would be harmless but would reset
+    /// `__mutsu_test_callsite_line` pair — the same preamble the statement-call
+    /// opcodes have always had. Re-sanitizing here would be harmless but would reset
     /// `test_pending_callsite_line` to `None`, losing the assertion's source
     /// line, so the line is threaded in instead.
     ///

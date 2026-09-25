@@ -489,11 +489,13 @@ impl Compiler {
         if let Some(plan_arg) = Self::extract_test_more_plan_arg(arg) {
             self.compile_expr(plan_arg);
             let plan_name_idx = self.code.add_constant(Value::str_from("plan"));
-            self.code.emit(OpCode::ExecCall {
+            self.code.emit(OpCode::CallFunc {
                 name_idx: plan_name_idx,
                 arity: 1,
                 arg_sources_idx: None,
+                literal_native_args: 0,
             });
+            self.code.emit(OpCode::SinkPop(false, true));
         }
     }
 
@@ -2694,7 +2696,7 @@ impl Compiler {
                 // statement-position bare call too — the same shadowing
                 // `compile_expr_call_inner` already applies at expression
                 // position (`self.amp_binding_in_active_scope`). Without this,
-                // the `ExecCall` opcode below dispatches purely by name at
+                // the `ExecCallPairs` opcode below dispatches purely by name at
                 // runtime, with no notion of a local Callable binding, so a
                 // mid-body (non-final) statement call could reach a builtin or
                 // control-flow implementation of the same name instead of the
@@ -2770,14 +2772,18 @@ impl Compiler {
                     return;
                 }
 
-                // Statement-level call: compile positional args only.
-                // Fall back if named args or raw-expression args remain.
+                // Statement-level call with positional args only: the same
+                // `CallFunc` the expression form compiles to, then sink its value.
+                // This used to be a dedicated `ExecCall` opcode -- a second copy of
+                // call dispatch that drifted from `CallFunc` repeatedly (NativeCall,
+                // builtin shadowing, EXPORT hooks, sunk Failures) and finally leaked
+                // the wrap-chain / native-call result onto the operand stack, where
+                // it replaced the enclosing block's value (#9448).
                 if positional_only
                     && rewritten_args
                         .iter()
                         .all(|arg| matches!(arg, CallArg::Positional(_)))
                 {
-                    let arity = rewritten_args.len() as u32;
                     let positional_exprs: Vec<Expr> = rewritten_args
                         .iter()
                         .filter_map(|arg| match arg {
@@ -2785,18 +2791,13 @@ impl Compiler {
                             _ => None,
                         })
                         .collect();
-                    let arg_sources_idx = self.add_arg_sources_constant(&positional_exprs);
-                    for arg in &rewritten_args {
-                        if let CallArg::Positional(expr) = arg {
-                            self.compile_call_arg(expr);
-                        }
-                    }
-                    let name_idx = self.code.add_constant(Value::str(name.resolve()));
-                    self.code.emit(OpCode::ExecCall {
-                        name_idx,
-                        arity,
-                        arg_sources_idx,
-                    });
+                    let call_expr = Expr::Call {
+                        name: *name,
+                        args: positional_exprs,
+                    };
+                    self.compile_expr(&call_expr);
+                    // Sink context, exactly as the normalized path above.
+                    self.code.emit(OpCode::SinkPop(false, true));
                     return;
                 }
 
@@ -4227,11 +4228,13 @@ impl Compiler {
                     let name_idx = self
                         .code
                         .add_constant(Value::str_from("__mutsu_set_newline"));
-                    self.code.emit(OpCode::ExecCall {
+                    self.code.emit(OpCode::CallFunc {
                         name_idx,
                         arity: 1,
                         arg_sources_idx: None,
+                        literal_native_args: 0,
                     });
+                    self.code.emit(OpCode::SinkPop(false, true));
                 }
             }
             Stmt::Use { module, arg, .. } if module == "variables" => {
