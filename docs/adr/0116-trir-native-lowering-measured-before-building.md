@@ -1,8 +1,8 @@
 # ADR-0116: ADR-0112 Step 4 measured before it was built — native lowering of TRIR is capped at ~1/5 of the decode, so Step 4 becomes "shrink the op bodies"
 
-- **Status**: Proposed (2026-09-23). Replaces the *ordering* of ADR-0112 Step 4 only; ADR-0112's
-  Steps 1-3 and its goal stand.
-- **Deciders**: tokuhirom (pending), Claude
+- **Status**: Accepted (2026-09-25; proposed 2026-09-23). Replaces the *ordering* of ADR-0112
+  Step 4 only; ADR-0112's Steps 1-3 and its goal stand.
+- **Deciders**: tokuhirom, Claude
 - **Context**: [#8673](https://github.com/tokuhirom/mutsu/issues/8673) (goal: the SPDX `from-json`
   faster than rakudo), [ADR-0112](0112-trir-completion-plan-for-beating-rakudo.md) §2 Step 4,
   [ADR-0110](0110-typed-resolved-ir-for-statically-typed-routines.md),
@@ -144,6 +144,11 @@ backend can remove, so it comes first, which is the same ordering argument ADR-0
 Steps 1-3.
 
 ### D3. When native lowering comes back
+
+This section decides *when*, not *whether*. The maintainer fixed #8673's bar at **below 1.0x
+rakudo** on 2026-09-25 and ruled out relaxing it to the ~1.2x that D2 alone is estimated to reach.
+Since D2 cannot close the gap on its own, native lowering remains on the path to that goal; D2
+goes first because it is what makes native lowering pay off.
 
 Revisit the S1 design when both of these hold:
 
