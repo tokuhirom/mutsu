@@ -1211,8 +1211,30 @@ pub(crate) enum OpCode {
     PushLastRegisteredRole,
 
     // -- Arithmetic --
+    /// Infix `+`. Stack: `[left, right] → [result]` (right on top).
+    ///
+    /// Fast paths first: `Int + Int` that does not overflow, `Num + Num` and
+    /// two big integers are computed inline, unless a user `infix:<+>` is in
+    /// scope (a user candidate may override even native addition). Everything
+    /// else goes through the generic Junction threading
+    /// (`eval_binary_with_junctions`), then a user `infix:<+>` candidate,
+    /// `Range` arithmetic, temporal (`Instant`/`Duration`/`Date`) operands, and
+    /// finally the numeric coercion of both operands into
+    /// `crate::builtins::arith_add` (`src/builtins/arith/add_sub.rs`), the
+    /// one implementation every `+` form shares (ADR-0118).
     Add,
+    /// Infix `-`. Stack: `[left, right] → [result]` (right on top).
+    ///
+    /// The twin of [`Self::Add`]: the same fast paths, the same user
+    /// `infix:<->` override check, Junction threading, `Range` and temporal
+    /// operand handling, and `crate::builtins::arith_sub` for the rest.
     Sub,
+    /// Infix `*`. Stack: `[left, right] → [result]` (right on top).
+    ///
+    /// Same structure as [`Self::Add`] (inline `Int`/`Num`/big-integer fast
+    /// paths unless a user `infix:<*>` exists, then Junction threading and a
+    /// user candidate), ending in `crate::builtins::arith_mul`
+    /// (`src/builtins/arith/mul_div_mod.rs`).
     Mul,
     /// Add, subtract, or multiply operands that the compiler knows are native
     /// integers. `unsigned` selects the machine `u64` operation; the native
@@ -1221,18 +1243,70 @@ pub(crate) enum OpCode {
         op: CompoundBaseOp,
         unsigned: bool,
     },
+    /// Infix `/`. Stack: `[left, right] → [result]` (right on top).
+    ///
+    /// No inline fast path: both operands go through Junction threading and
+    /// a user `infix:</>` candidate, then `crate::builtins::arith_div`
+    /// (`src/builtins/arith/mul_div_mod.rs`). Two integers give a `Rat`;
+    /// `1/0` is a zero-denominator `Rat`, which only throws
+    /// `X::Numeric::DivideByZero` once it is used as a number.
     Div,
+    /// Infix `%` (modulo). Stack: `[left, right] → [result]` (right on top).
+    ///
+    /// Junction threading and a user `infix:<%>` candidate, then
+    /// `crate::builtins::arith_mod` (`src/builtins/arith/mul_div_mod.rs`), the
+    /// same routine [`Self::IntMod`] and [`Self::DivisibleBy`] use: floored
+    /// for integers, exact for rationals. Temporal operands are handled
+    /// before the numeric coercion.
     Mod,
+    /// Infix `**`. Stack: `[left, right] → [result]` (right on top).
+    ///
+    /// Skips its fast path when a user `infix:<**>` is in scope, then
+    /// Junction threading, a user candidate, and `crate::builtins::arith_pow`
+    /// (`src/builtins/arith/pow_negate.rs`). `Int ** Int` stays an `Int`
+    /// (big when needed) for a non-negative exponent.
     Pow,
+    /// Prefix `-` (numeric negation). Stack: `[v] → [-v]`.
+    ///
+    /// A `Str` operand is numified first (`X::Str::Numeric` when it is not
+    /// a number; an empty string negates to `0`). A type object warns and
+    /// resumes with its negated numeric zero (`-Int` is `0`, `-Num` is
+    /// `-0e0`), except `Mu`, which has no candidate, and a class with a user
+    /// `Numeric` method, which is called first. The result comes from
+    /// `crate::builtins::arith_negate` (`src/builtins/arith/pow_negate.rs`).
+    /// A Junction operand is not threaded here.
     Negate,
-    IntBitNeg,  // +^ prefix: integer bitwise negation
-    BoolBitNeg, // ?^ prefix: boolean bitwise negation
-    StrBitNeg,  // ~^ prefix: string/buffer bitwise negation
-    MakeSlip,   // | prefix: convert array/list to Slip for flattening
-    DeSlip,     // demote a top-level Slip VALUE to a Seq so it is NOT flattened
-    // by a `**@`-slurpy consumer (say/put/print/note). A `|EXPR` pipe-slip is
-    // left untouched (still flattens); an ordinary `.Slip`/`slip(...)` value is
-    // kept whole. See exec_say_op / flatten_slip_args.
+    /// Prefix `+^` (integer bitwise negation, two's complement). Stack:
+    /// `[v] → [+^v]`. The operand is numified, then negated by
+    /// `crate::builtins::int_bitneg`.
+    IntBitNeg,
+    /// Prefix `?^` (boolean bitwise negation). Stack: `[v] → [Bool]`: the
+    /// opposite of the operand's truthiness.
+    BoolBitNeg,
+    /// Prefix `~^` (string bitwise negation). Stack: `[v] → [result]`.
+    ///
+    /// A `Buf`/`Blob`/`utf8` operand has each byte inverted and keeps its
+    /// type. Anything else is
+    /// stringified and its UTF-8 bytes are inverted, decoded lossily back
+    /// into a `Str`.
+    StrBitNeg,
+    /// Prefix `|` (slip). Stack: `[v] → [Slip]`.
+    ///
+    /// The operand is decontainerized first, so `|$x` flattens an itemized
+    /// list. A deferred `Seq` is pulled (and consumed), a `gather` is forced
+    /// with its side effects (a `lazy gather` stays lazy), and a list,
+    /// array, range or hash is turned into a `Slip` of its elements. Emitted
+    /// for prefix `|EXPR` and for the `name |capture` listop form.
+    MakeSlip,
+    /// Demote a top-level `Slip` VALUE to a `Seq`, so a `**@`-slurpy
+    /// consumer (`say`, `put`, `print`, `note`) does not flatten it. Stack:
+    /// `[v] → [v']`; anything that is not a `Slip` passes through.
+    ///
+    /// Emitted for each argument of those I/O routines that is not written
+    /// as `|EXPR`: a `.Slip`/`slip(...)` value is data and stays one
+    /// argument (gisting as `(...)`), while a `|EXPR` pipe-slip skips this
+    /// op and still flattens. See `exec_say_op` / `flatten_slip_args`.
+    DeSlip,
     /// Read a `ContainerRef` on the stack top through its cell, pushing the
     /// plain value it holds (a no-op for everything else). Emitted where a
     /// compiler-synthesized temp must hold a *value snapshot* rather than an
@@ -1241,8 +1315,15 @@ pub(crate) enum OpCode {
     /// the next iteration of a loop, be written *through* by `SetGlobal`,
     /// storing the cell into itself.
     DerefContainer,
-    Decont, // strip ONE level of Scalar for slurpy flattening (NOT the
-    // recursive Value::descalarize; touches no ArrayKind flag — see decont family note)
+    /// Strip ONE level of `Scalar` itemization. Stack: `[v] → [v']`; a value
+    /// that is not a `Scalar` wrapper passes through.
+    ///
+    /// Deliberately shallow: it is not the recursive `Value::descalarize` and
+    /// does not touch an Array's itemized `ArrayKind` flag (see the decont
+    /// family note in `value/mod.rs` §3). Emitted after a call argument that
+    /// needs its container stripped for slurpy flattening, and for a bind
+    /// target that returns an aggregate.
+    Decont,
     /// Snapshot a list's elements to plain VALUES: pop a list/array and push a
     /// fresh real array where every element is read through its `ContainerRef`
     /// cell (`:=` / list-element container alias) and descalarized. Used by
@@ -1284,7 +1365,18 @@ pub(crate) enum OpCode {
     FlattenSlurpy,
 
     // -- Logic / coercion --
+    /// Prefix `!` / `not`. Stack: `[v] → [Bool]`: the negated truthiness.
+    ///
+    /// Truthiness is Raku's `.Bool`, so a user `Bool` method is called. A
+    /// `Failure` operand is marked handled (testing it defuses it). Also
+    /// emitted to negate an `until` loop condition.
     Not,
+    /// Prefix `?` / `so`. Stack: `[v] → [Bool]`: the operand's truthiness.
+    ///
+    /// A bare regex (a `Regex` value, or a regex routine) is matched against
+    /// the current topic `$_` instead of being tested for definedness, as
+    /// Raku's `Regex.Bool` does. A `Failure` operand is marked handled. A
+    /// not-yet-run `.map`/`.grep` Seq is forced to see whether it is empty.
     BoolCoerce,
     /// Tag the top-of-stack value with the variable name it was read from
     /// (`name_idx` constant), for `is rw`/`is raw`/`:=` aliasing and
@@ -1485,6 +1577,15 @@ pub(crate) enum OpCode {
     MarkElementShare,
 
     // -- String --
+    /// Infix `~` (string concatenation). Stack: `[left, right] → [result]` (right on top).
+    ///
+    /// Junction operands are threaded left-first (unlike the arithmetic
+    /// ops). Each operand is stringified through `.Stringy` (falling back to
+    /// `.Str`; a user method is called, a `Proxy` is FETCHed, a `Nil`
+    /// operand warns and counts as `""`, an unhandled `Failure` throws), and
+    /// the strings are joined by `crate::builtins::str_prim::concat`. An
+    /// unshared left `Str` is grown in place. `infix_concat` is the one
+    /// implementation shared with the `[~]` reduction.
     Concat,
 
     // -- Numeric comparison --
@@ -1592,20 +1693,86 @@ pub(crate) enum OpCode {
     ScalarizeRegexMatchResult,
 
     // -- Divisibility --
+    /// Infix `%%` (is divisible by). Stack: `[left, right] → [result]` (right on top).
+    ///
+    /// Computes `left % right` with `crate::builtins::arith_mod` (so `Rat`,
+    /// `Num` and big-integer operands work) and pushes whether the remainder
+    /// is zero. A zero divisor pushes a soft `Failure`
+    /// (`X::Numeric::DivideByZero`, from `infix:<%%>`) instead of throwing,
+    /// so `grep * %% 0` sees it as false. Junction operands are threaded.
     DivisibleBy,
+    /// Infix `!%%` (is not divisible by). Stack: `[left, right] → [result]` (right on top).
+    ///
+    /// The negation of [`Self::DivisibleBy`]. A zero-divisor `Failure` is
+    /// marked handled and reads as false, so `6 !%% 0` is `True` rather than
+    /// an exception. Junction operands are threaded.
     NotDivisibleBy,
 
     // -- Keyword math --
+    /// Infix `div` (integer division, floored). Stack: `[left, right] → [result]` (right on top).
+    ///
+    /// Junction threading, then a user `infix:<div>` candidate (ADR-0071),
+    /// then `crate::builtins::int_div` (`src/builtins/arith/int_ops.rs`), the
+    /// one floored integer division every `div` form shares (ADR-0118).
     IntDiv,
+    /// Infix `mod`. Stack: `[left, right] → [result]` (right on top).
+    ///
+    /// Junction threading, a user `infix:<mod>` candidate (ADR-0071), then
+    /// `crate::builtins::arith_mod`, the same routine as [`Self::Mod`]:
+    /// floored for integers, exact for rationals (`7.5 mod 2` is `1.5`).
     IntMod,
+    /// Infix `gcd` (greatest common divisor). Stack: `[left, right] → [result]` (right on top).
+    ///
+    /// A user `infix:<gcd>` candidate first (the only way to give `gcd` a
+    /// non-`Int` meaning, e.g. Gaussian integers), otherwise both operands
+    /// are reduced to `Int` by `crate::builtins::int_gcd`
+    /// (`src/builtins/arith/int_ops.rs`). Junctions are not threaded here.
     Gcd,
+    /// Infix `lcm` (least common multiple). Stack: `[left, right] → [result]` (right on top).
+    ///
+    /// As [`Self::Gcd`], with a user `infix:<lcm>` candidate and
+    /// `crate::builtins::int_lcm`.
     Lcm,
+    /// Infix `min`. Stack: `[left, right] → [result]` (right on top).
+    ///
+    /// Shares `min_max_values` with the `[min]` reduction and the routine
+    /// form: a user `infix:<min>` candidate first (ADR-0071), an `Any` type
+    /// object yields the other operand, a `Failure` operand is passed
+    /// through, and otherwise the `cmp` order decides, the left operand
+    /// winning a tie.
     InfixMin,
+    /// Infix `max`. Stack: `[left, right] → [result]` (right on top).
+    ///
+    /// The twin of [`Self::InfixMin`] (same `min_max_values` body, the
+    /// larger operand by `cmp`, the left one on a tie).
     InfixMax,
 
     // -- Repetition --
+    /// Infix `x` (string repetition). Stack: `[string, count] → [Str]`.
+    ///
+    /// The left operand is stringified through `.Str` (a user `Str` method
+    /// is called); the count is coerced to `Int` and clamped at 0. A bare
+    /// `Int` type object as the count warns about an uninitialized value;
+    /// `Inf` raises `X::Numeric::CannotConvert`; a `*` count builds a
+    /// `WhateverCode`. The result is built by
+    /// `crate::builtins::str_prim::repeat`, which returns a repeat strand
+    /// rather than copying (ADR-0120).
     StringRepeat,
+    /// Infix `xx` (list repetition). Stack: `[item, count] → [Seq]`.
+    ///
+    /// The compiler wraps a left operand that must be re-evaluated per
+    /// repetition (a call-like operand such as `rand xx 3` or
+    /// `@a.shift xx 2`; literals and lists are not thunked) in a bare-block
+    /// thunk, which this op calls once per repetition; `@a.shift xx N` /
+    /// `@a.pop xx N` drain the array in bulk. Otherwise the value is
+    /// repeated as is. A finite count up to 10**6 is built eagerly; a
+    /// larger one or `xx *` yields a lazy sequence.
     ListRepeat,
+    /// Infix `o` / `∘` (function composition). Stack: `[f, g] → [f∘g]`.
+    ///
+    /// Pushes a new callable that calls `g` and passes its result to `f`
+    /// (`compose_callables`). The `∘` spelling is normalized to `o` by the
+    /// parser.
     FunctionCompose,
 
     // -- Mixin --
@@ -2383,8 +2550,31 @@ pub(crate) enum OpCode {
     UndefineAggregate(u32),
 
     // -- Unary coercion --
+    /// Prefix `+` (numeric coercion). Stack: `[v] → [Numeric]`.
+    ///
+    /// A `Proxy` is FETCHed first, and a Junction is threaded element by
+    /// element. A list, array or `Seq` numifies to its element count (a
+    /// deferred `.map` is run first; a lazy list yields an `X::Cannot::Lazy`
+    /// Failure); a `Range` to its element count; a `Str` is parsed as a Raku
+    /// number (`X::Str::Numeric` Failure when it is not one); an instance
+    /// dispatches its `Numeric` method (a role's, for a punned mixin). A type
+    /// object warns and yields its numeric zero (`+Int` is `0`), except `Mu`,
+    /// which is an error.
     NumCoerce,
+    /// Prefix `~` (string coercion). Stack: `[v] → [Str]`.
+    ///
+    /// A `Proxy` is FETCHed and a `ContainerRef` is read through first; a
+    /// deferred `.map` Seq is run. An instance dispatches its user `Str`
+    /// method; lists stringify element by element, space-separated. `~Nil`
+    /// and `~/regex/` warn and yield `""`, `~Mu` is an error, and an
+    /// unhandled `Failure` throws. Also emitted for the `~~=` assignment.
     StrCoerce,
+    /// Prefix `^` (the up-to range). Stack: `[n] → [Range]`: `0 ..^ n`.
+    ///
+    /// A non-numeric operand is numified first (so `^@a` ranges over the
+    /// indices of `@a`). An `Int` gives the integer range; a `Num`, `Rat` or
+    /// big integer gives a range with that end point; anything that is not
+    /// numeric at all gives the empty range `0..^0`.
     UptoRange,
 
     /// METAOP_ASSIGN identity substitution for the LHS of `$x OP= $y`: replace a
@@ -2395,12 +2585,41 @@ pub(crate) enum OpCode {
     MetaAssignIdentity(crate::token_kind::MetaAssignIdentity),
 
     // -- Prefix increment/decrement (returns NEW value) --
-    // Optional second field: the compile-time-resolved local slot for the named
-    // scalar (§1.5, mirrors PostIncrement/PostDecrement — docs/lexical-scope-slot-
-    // campaign.md). `None` for a non-local / temp-value target (env-by-name).
+    /// Prefix `++$x` on a named scalar. Stack: `[] → [new value]`.
+    ///
+    /// The first operand is the constant-pool index of the variable name;
+    /// the second is its compile-time-resolved local slot (§1.5,
+    /// `docs/lexical-scope-slot-campaign.md`), or `None` for a non-local
+    /// target (global, `our`, dynamic, a temp value), which is stepped in
+    /// `env` by name.
+    ///
+    /// The variable is read, stepped with `.succ` semantics
+    /// (`crate::builtins::value_succ`: `Int`, magic string increment
+    /// `"a9"` → `"b0"`, a user `succ` method on an instance), type-checked
+    /// against its declared constraint, and written back through whatever
+    /// holds it (a local slot, a shared `ContainerRef` cell, a `Proxy`, an
+    /// attribute cell, `$CALLER::x`), with the new value carried along the
+    /// sigilless alias chain. An undefined variable counts from `0`. A
+    /// read-only operand raises `X::Multi::NoMatch` naming `prefix:<++>`.
+    /// All four scalar `++`/`--` ops share one body, `exec_scalar_incdec_op`
+    /// (#9450).
     PreIncrement(u32, Option<u32>),
+    /// Prefix `--$x` on a named scalar. Stack: `[] → [new value]`. As
+    /// [`Self::PreIncrement`], stepping with `.pred` semantics
+    /// (`crate::builtins::value_pred`).
     PreDecrement(u32, Option<u32>),
+    /// Prefix `++` on a subscripted element, `++@a[$i]` / `++%h<k>`. Stack:
+    /// `[index] → [new value]`.
+    ///
+    /// The first operand is the constant-pool index of the container
+    /// variable's name; the second is the *base container's* local slot
+    /// (see [`Self::PostIncrementIndex`] for why it is needed), or `None`.
+    /// The element is autovivified when missing (a typed array fills with
+    /// its element type), stepped, and written back; `@!attr` elements reach
+    /// the attribute's cell. The indexed forms share `exec_inc_dec_index_op`.
     PreIncrementIndex(u32, Option<u32>),
+    /// Prefix `--` on a subscripted element, `--@a[$i]` / `--%h<k>`. Stack:
+    /// `[index] → [new value]`. As [`Self::PreIncrementIndex`].
     PreDecrementIndex(u32, Option<u32>),
 
     // -- Variable access --
@@ -2414,7 +2633,14 @@ pub(crate) enum OpCode {
     // ambiguous once a name occupies several slots — docs/lexical-scope-slot-
     // campaign.md). `None` for a non-local (global / `our` / dynamic / a temp
     // value target), where the writeback stays env-by-name.
+    /// Postfix `$x++` on a named scalar. Stack: `[] → [old value]`.
+    ///
+    /// Operands and semantics as [`Self::PreIncrement`], except that the
+    /// expression's value is the value *before* the step. An undefined
+    /// variable is normalized to `0` first, so `my $x; $x++` yields `0`.
     PostIncrement(u32, Option<u32>),
+    /// Postfix `$x--` on a named scalar. Stack: `[] → [old value]`. As
+    /// [`Self::PostIncrement`], stepping with `.pred` semantics.
     PostDecrement(u32, Option<u32>),
     /// `$c[i]++` / `%h<k>--`. The optional second field is the same §1.5
     /// compile-time-resolved local slot as `PostIncrement`'s: the *base
@@ -2424,6 +2650,9 @@ pub(crate) enum OpCode {
     /// (a bare block, which shares the enclosing frame's locals) incremented the
     /// OUTER array's element.
     PostIncrementIndex(u32, Option<u32>),
+    /// Postfix `--` on a subscripted element, `@a[$i]--` / `%h<k>--`. Stack:
+    /// `[index] → [old value]`. Operands as [`Self::PostIncrementIndex`];
+    /// shares `exec_inc_dec_index_op` with the other indexed forms.
     PostDecrementIndex(u32, Option<u32>),
     /// Named index assignment: `var[idx] = value` where `var` is a known
     /// variable name. `is_positional` records whether the subscript was
