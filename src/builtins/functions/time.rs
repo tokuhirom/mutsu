@@ -1,33 +1,65 @@
 use crate::value::{ArrayKind, RuntimeError, Value};
 
-/// Perl 5-compatible `times` builtin: returns `($user, $system)` CPU times in seconds.
-pub(crate) fn builtin_times() -> Result<Value, RuntimeError> {
-    #[cfg(unix)]
+/// The process's own `getrusage(RUSAGE_SELF)` fields, in MoarVM's
+/// `MVM_proc_getrusage` order: user seconds, user microseconds, system
+/// seconds, system microseconds, then maxrss, ixrss, idrss, isrss, minflt,
+/// majflt, nswap, inblock, oublock, msgsnd, msgrcv, nsignals, nvcsw, nivcsw.
+/// `None` where the platform has no `getrusage` (or it failed).
+///
+/// The one reading of rusage, shared by `times` and `nqp::getrusage`.
+///
+/// Cost: O(1) + one syscall.
+// The `as i64` casts are identity on 64-bit Linux, but `tv_usec` is an
+// `i32` on macOS and the counters are `c_long` (32-bit on 32-bit targets).
+#[allow(clippy::unnecessary_cast)]
+pub(crate) fn process_rusage() -> Option<[i64; 18]> {
+    #[cfg(all(unix, feature = "native"))]
     {
         let mut usage = std::mem::MaybeUninit::<libc::rusage>::uninit();
         let ret = unsafe { libc::getrusage(libc::RUSAGE_SELF, usage.as_mut_ptr()) };
-        if ret == 0 {
-            let usage = unsafe { usage.assume_init() };
-            let user = usage.ru_utime.tv_sec as f64 + usage.ru_utime.tv_usec as f64 / 1_000_000.0;
-            let sys = usage.ru_stime.tv_sec as f64 + usage.ru_stime.tv_usec as f64 / 1_000_000.0;
-            Ok(Value::array_with_kind(
-                crate::value::Value::array_arc(vec![Value::num(user), Value::num(sys)]),
-                ArrayKind::List,
-            ))
-        } else {
-            Ok(Value::array_with_kind(
-                crate::value::Value::array_arc(vec![Value::num(0.0), Value::num(0.0)]),
-                ArrayKind::List,
-            ))
+        if ret != 0 {
+            return None;
         }
+        let u = unsafe { usage.assume_init() };
+        Some([
+            u.ru_utime.tv_sec as i64,
+            u.ru_utime.tv_usec as i64,
+            u.ru_stime.tv_sec as i64,
+            u.ru_stime.tv_usec as i64,
+            u.ru_maxrss as i64,
+            u.ru_ixrss as i64,
+            u.ru_idrss as i64,
+            u.ru_isrss as i64,
+            u.ru_minflt as i64,
+            u.ru_majflt as i64,
+            u.ru_nswap as i64,
+            u.ru_inblock as i64,
+            u.ru_oublock as i64,
+            u.ru_msgsnd as i64,
+            u.ru_msgrcv as i64,
+            u.ru_nsignals as i64,
+            u.ru_nvcsw as i64,
+            u.ru_nivcsw as i64,
+        ])
     }
-    #[cfg(not(unix))]
+    #[cfg(not(all(unix, feature = "native")))]
     {
-        Ok(Value::array_with_kind(
-            crate::value::Value::array_arc(vec![Value::num(0.0), Value::num(0.0)]),
-            ArrayKind::List,
-        ))
+        None
     }
+}
+
+/// Perl 5-compatible `times` builtin: returns `($user, $system)` CPU times in seconds.
+pub(crate) fn builtin_times() -> Result<Value, RuntimeError> {
+    let (user, sys) = process_rusage().map_or((0.0, 0.0), |r| {
+        (
+            r[0] as f64 + r[1] as f64 / 1_000_000.0,
+            r[2] as f64 + r[3] as f64 / 1_000_000.0,
+        )
+    });
+    Ok(Value::array_with_kind(
+        crate::value::Value::array_arc(vec![Value::num(user), Value::num(sys)]),
+        ArrayKind::List,
+    ))
 }
 
 /// Perl 5-compatible `localtime`/`gmtime` builtins.

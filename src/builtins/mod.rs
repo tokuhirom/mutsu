@@ -149,6 +149,7 @@ pub(crate) use arith::{
 pub(crate) use functions::build_junction;
 pub(crate) use functions::join_flat;
 pub(crate) use functions::native_function;
+pub(crate) use functions::process_rusage;
 pub(crate) use functions::{deitemize_flat_operand, flat_val, thread_junctions_in_items};
 pub(crate) use methods_0arg::native_method_0arg;
 pub(crate) use methods_narg::{
