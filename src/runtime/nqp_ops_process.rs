@@ -154,6 +154,27 @@ impl Interpreter {
                 Ok(Value::int(i64::from(self.eval_truthy(&v))))
             }
 
+            // nqp::iscont($v) — int 0/1: is the operand a container. The
+            // compiler hands this op the operand's `.VAR` (see
+            // `try_compile_nqp_form`), so what arrives is the container
+            // descriptor `.VAR` produced: a `Scalar` (or a native array's
+            // `*PosRef` element descriptor), a `Proxy`, or -- for a bare value
+            // -- the value itself (#9346).
+            // Cost: O(1).
+            "iscont" => {
+                let v = args.first().cloned().unwrap_or(Value::NIL);
+                let is_cont = match v.view() {
+                    ValueView::Instance { class_name, .. } => {
+                        let name = class_name.resolve();
+                        name == "Scalar" || name == "Proxy" || name.ends_with("PosRef")
+                    }
+                    ValueView::Package(name) => name == "Scalar",
+                    ValueView::Proxy { .. } => true,
+                    _ => false,
+                };
+                Ok(Value::int(i64::from(is_cont)))
+            }
+
             // nqp::isfalse($v) — the logical negation of nqp::istrue($v),
             // using the same VM boolification so user Bool methods and lazy
             // values follow exactly the same rules as `?` and `if`.

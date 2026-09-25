@@ -100,6 +100,39 @@ impl Compiler {
                 self.code.patch_jump(jump_end);
                 true
             }
+            // nqp::where(obj) — the object's identity integer. It is `.WHERE`
+            // (rakudo's `Mu.WHERE` is `nqp::where(self)`), so it compiles to
+            // that method rather than keeping a second identity scheme (#9346).
+            // Cost: O(1) (the `.WHERE` method call it compiles to).
+            "nqp::where" if args.len() == 1 => {
+                let call = Expr::MethodCall {
+                    target: Box::new(args[0].clone()),
+                    name: crate::symbol::Symbol::intern("WHERE"),
+                    args: Vec::new(),
+                    modifier: None,
+                    quoted: false,
+                };
+                self.compile_expr(&call);
+                true
+            }
+            // nqp::iscont(obj) — 1 when the operand is a container (a Scalar,
+            // an element container, a Proxy) rather than a bare value. The
+            // `nqp::` layer sees only decontainerized values, so the operand is
+            // compiled as `obj.VAR` -- the one place mutsu already answers
+            // "which container is this" for a variable, an element or a
+            // parameter -- and the runtime op classifies what that yields
+            // (#9346).
+            // Cost: O(1) (a `.VAR` plus one classification op).
+            "nqp::iscont" if args.len() == 1 => {
+                let var = Expr::MethodCall {
+                    target: Box::new(args[0].clone()),
+                    name: crate::symbol::Symbol::intern("VAR"),
+                    args: Vec::new(),
+                    modifier: None,
+                    quoted: false,
+                };
+                self.try_compile_nqp_value_op(name, std::slice::from_ref(&var))
+            }
             // nqp::ifnull(a, b) — yield `a` unless it is null, in which case
             // yield `b`. A special form because `b` must not be evaluated when
             // `a` is there: rakudo's idiom is

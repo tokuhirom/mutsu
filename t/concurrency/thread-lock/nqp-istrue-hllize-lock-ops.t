@@ -64,10 +64,9 @@ nqp::push($l2, 4);
 is nqp::elems($l), 3, 'nqp::clone_nd leaves the original list untouched';
 is nqp::elems($l2), 4, 'and the clone can grow independently';
 
-# -- nqp::iscont stays a loud, explicit gap ----------------------------------
-# (real Scalar-vs-raw container identity isn't tracked at the Value level;
-# see the ecosystem AttrX::Mooish issue for the reduction this came from.)
+# -- nqp::iscont --------------------------------------------------------------
+# Was pinned here as an explicit "Unsupported" gap; #9346 implemented it (the
+# operand is compiled as `.VAR`). Full coverage: t/vm/nqp-iscont-where.t.
 
-throws-like 'use nqp; nqp::iscont(1)', X::AdHoc,
-    message => /'Unsupported nqp:: op' .* 'nqp::iscont'/,
-    'nqp::iscont is not yet supported (tracked separately, real Scalar-container identity isn\'t in the Value model)';
+my $cont = 1;
+is nqp::iscont($cont) ~ nqp::iscont(1), '10', 'nqp::iscont tells a container from a bare value';
