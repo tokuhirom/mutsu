@@ -429,8 +429,16 @@ impl Interpreter {
         // mask this call publishes for multi-candidate selection is empty —
         // but it must be published, or the callee's dispatch would read the
         // CALLER's.
+        //
+        // The site was linked to a USER routine, so the name must resolve the
+        // way the untyped `CallFunc` resolves a user sub that shadows a core
+        // routine: user declarations first. `call_function` matches builtin
+        // names before it ever consults the registry, so a `sub copy(...)`
+        // whose bind declined here used to run the core `copy` (#9288).
         let saved = std::mem::replace(&mut self.literal_native_args, 0);
-        let result = self.call_function(&name, args);
+        let (args, callsite_line) = self.sanitize_call_args_owned(args);
+        self.test_pending_callsite_line = callsite_line;
+        let result = self.vm_call_function_fallback(&name, &args);
         self.literal_native_args = saved;
         result
     }
