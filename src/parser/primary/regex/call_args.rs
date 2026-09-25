@@ -65,7 +65,13 @@ pub(in crate::parser) fn parse_call_arg_list(input: &str) -> PResult<'_, Vec<Exp
     fn parse_call_arg_expr(input: &str) -> PResult<'_, Expr> {
         let (rest, expr) =
             if let Ok(result) = crate::parser::primary::misc::reduction_call_style_expr(input) {
-                result
+                // `[+](1,2)` is only a term: an infix may follow it inside the
+                // argument (`say([+](1,2) + 1)`, #9328). Keep the reduction
+                // alone only when the full expression parse reads no further.
+                match expression(input) {
+                    Ok(full) if full.0.len() < result.0.len() => full,
+                    _ => result,
+                }
             } else if let Ok((rest, assign_expr)) =
                 crate::parser::stmt::assign::try_parse_assign_expr(input)
             {

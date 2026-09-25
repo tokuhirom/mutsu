@@ -1678,6 +1678,11 @@ pub(crate) enum OpCode {
     /// bypassing full method dispatch. Stack: `[val] -> [array]`.
     ArrayPush {
         target_name_idx: u32,
+        /// The declaration slot for a lexical target, when available. The
+        /// name-keyed env mirror can lag behind a variable trait (for example
+        /// `my @q is Queue`), so the slot is authoritative for deciding
+        /// whether the array fast path is valid.
+        target_slot: Option<u32>,
         /// When the pushed argument is a bare container variable (`@a.push(@b)` /
         /// `@a.push(%h)`), this carries that source variable's name. The pushed
         /// element then shares a `ContainerRef` cell with the source, so later

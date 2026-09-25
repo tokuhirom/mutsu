@@ -4472,11 +4472,12 @@ impl Interpreter {
             // exec_array_push_op). Rakudo: O(1) amortized -- see #9156.
             OpCode::ArrayPush {
                 target_name_idx,
+                target_slot,
                 value_source_idx,
             } => {
                 self.sync_source_line(code, *ip);
                 let pre = self.attr_env_snapshot(code, *target_name_idx);
-                self.exec_array_push_op(code, *target_name_idx, *value_source_idx)?;
+                self.exec_array_push_op(code, *target_name_idx, *target_slot, *value_source_idx)?;
                 self.mirror_attr_env_to_cell(code, *target_name_idx, pre);
                 *ip += 1;
             }

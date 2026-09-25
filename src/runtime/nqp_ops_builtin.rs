@@ -552,6 +552,22 @@ impl Interpreter {
         if Self::nqp_bind_container_storage(attr_key, obj, &val) {
             return Ok(());
         }
+        let is_pair = matches!(obj.view(), ValueView::Pair(..));
+        let is_value_pair = matches!(obj.view(), ValueView::ValuePair(..));
+        if (is_pair || is_value_pair) && matches!(attr_key, "key" | "value") {
+            obj.with_pair_inplace(|data| {
+                if attr_key == "key" {
+                    data.key = if is_pair {
+                        crate::value::PairKey::String(val.to_string_value())
+                    } else {
+                        crate::value::PairKey::Value(val)
+                    };
+                } else {
+                    data.value = val;
+                }
+            });
+            return Ok(());
+        }
         if let ValueView::Instance { attributes, .. } = obj.view() {
             attributes.bind_attr_through(attr_key, val);
         }
@@ -588,6 +604,23 @@ impl Interpreter {
         let bare = Self::nqp_attr_bare(name);
         if matches!(obj.view(), ValueView::Array(..)) && matches!(bare, "reified" | "storage") {
             return Some(obj.clone());
+        }
+        match obj.view() {
+            ValueView::Pair(key, value) => {
+                return match bare {
+                    "key" => Some(Value::str(key.clone())),
+                    "value" => Some(value.hash_entry_read()),
+                    _ => None,
+                };
+            }
+            ValueView::ValuePair(key, value) => {
+                return match bare {
+                    "key" => Some(key.clone()),
+                    "value" => Some(value.hash_entry_read()),
+                    _ => None,
+                };
+            }
+            _ => {}
         }
         // A `Match`'s NQP-level attribute names are not the keys mutsu stores,
         // and a still-lazy Match is not an `Instance` at all, so neither the

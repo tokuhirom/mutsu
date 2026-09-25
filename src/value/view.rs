@@ -272,30 +272,30 @@ impl Value {
     /// Construct a `Pair` with a string key.
     #[inline]
     pub fn pair(key: String, val: Value) -> Self {
-        Value::Pair(key, Box::new(val))
+        Value::Pair(key, val)
     }
 
     /// Construct a `ValuePair` (a pair with a non-string key).
     #[inline]
     pub fn value_pair(key: Value, val: Value) -> Self {
-        Value::ValuePair(Box::new(key), Box::new(val))
+        Value::ValuePair(key, val)
     }
 
     /// Construct a Pair yielded by a mutable QuantHash's `.pairs`. Its source
     /// binding is private lvalue metadata: reads remain an ordinary Pair value,
     /// while `.value =` can update the weight (including zero-removal).
     pub(crate) fn quanthash_weight_pair(key: Value, val: Value, source: String) -> Self {
-        Value::from_repr(ValueRepr::ValuePair(
-            Box::new(key),
-            Box::new(val),
-            Some(source),
-        ))
+        Value::from_repr(ValueRepr::ValuePair(crate::gc::Gc::new(PairData {
+            key: PairKey::Value(key),
+            value: val,
+            source: Some(source),
+        })))
     }
 
     /// Return the mutable QuantHash binding a `.pairs` result writes through.
     pub(crate) fn quanthash_weight_source(&self) -> Option<String> {
         match self.clone().into_repr() {
-            ValueRepr::Pair(_, _, source) | ValueRepr::ValuePair(_, _, source) => source,
+            ValueRepr::Pair(data) | ValueRepr::ValuePair(data) => data.source.clone(),
             _ => None,
         }
     }
@@ -940,6 +940,12 @@ impl Value {
             }
             _ => None,
         }
+    }
+
+    /// Run `f` on the shared Pair payload in place.
+    #[inline]
+    pub(crate) fn with_pair_inplace<R>(&self, f: impl FnOnce(&mut PairData) -> R) -> Option<R> {
+        self.0.with_pair_inplace(f)
     }
 
     /// Raku `=` copy semantics: if this Array/Hash's backing `Gc` is SHARED

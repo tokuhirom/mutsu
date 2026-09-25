@@ -454,10 +454,8 @@ fn ser_to_value(sv: SerValue) -> Value {
             is_regex,
             captured_regex: None,
         }),
-        SerValue::Pair(k, v) => Value::Pair(k, Box::new(ser_to_value(*v))),
-        SerValue::ValuePair(k, v) => {
-            Value::ValuePair(Box::new(ser_to_value(*k)), Box::new(ser_to_value(*v)))
-        }
+        SerValue::Pair(k, v) => Value::Pair(k, ser_to_value(*v)),
+        SerValue::ValuePair(k, v) => Value::ValuePair(ser_to_value(*k), ser_to_value(*v)),
         SerValue::Enum {
             enum_type,
             key,

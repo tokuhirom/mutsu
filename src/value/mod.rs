@@ -1933,6 +1933,22 @@ impl Value {
     }
 }
 
+/// The payload shared by all holders of a Pair. Pair attributes are mutable
+/// through `nqp::bindattr`, so the key/value cells need identity semantics
+/// rather than the copy-on-write behavior of an Arc wrapper.
+#[derive(Debug)]
+pub(crate) enum PairKey {
+    String(String),
+    Value(Value),
+}
+
+#[derive(Debug)]
+pub(crate) struct PairData {
+    pub(crate) key: PairKey,
+    pub(crate) value: Value,
+    pub(crate) source: Option<String>,
+}
+
 /// The `Value` representation (3b-1 step A). Private to `crate::value` — this
 /// is the compile-time seal: only the wall API (`view()` / `as_*` /
 /// constructors) crosses the module boundary. Tuple/unit variant construction
@@ -2023,13 +2039,13 @@ pub(in crate::value) enum ValueRepr {
     /// directly in an argument list) may mint. No value-producing operation
     /// — a literal outside an argument list, a constructor, `.pairs`,
     /// iteration, coercion — may return one; see `ValuePair` below for that.
-    Pair(String, Box<Value>, Option<String>),
+    Pair(crate::gc::Gc<PairData>),
     /// The positional (data) flavour of Pair — the default for everything
     /// that isn't call-site argument syntax, including a plain string key
     /// (not just a non-string typed key, despite the name predating
     /// ADR-0021's minting-default flip; preserves the original key type/
     /// value for `.key`/`.value`).
-    ValuePair(Box<Value>, Box<Value>, Option<String>),
+    ValuePair(crate::gc::Gc<PairData>),
     Enum {
         enum_type: Symbol,
         key: Symbol,
@@ -2371,12 +2387,20 @@ impl Value {
         Value::from_repr(ValueRepr::Package(sym))
     }
     #[inline]
-    pub(in crate::value) fn Pair(key: String, val: Box<Value>) -> Value {
-        Value::from_repr(ValueRepr::Pair(key, val, None))
+    pub(in crate::value) fn Pair(key: String, val: Value) -> Value {
+        Value::from_repr(ValueRepr::Pair(crate::gc::Gc::new(PairData {
+            key: PairKey::String(key),
+            value: val,
+            source: None,
+        })))
     }
     #[inline]
-    pub(in crate::value) fn ValuePair(key: Box<Value>, val: Box<Value>) -> Value {
-        Value::from_repr(ValueRepr::ValuePair(key, val, None))
+    pub(in crate::value) fn ValuePair(key: Value, val: Value) -> Value {
+        Value::from_repr(ValueRepr::ValuePair(crate::gc::Gc::new(PairData {
+            key: PairKey::Value(key),
+            value: val,
+            source: None,
+        })))
     }
     #[inline]
     pub(in crate::value) fn Regex(pat: Arc<String>) -> Value {
