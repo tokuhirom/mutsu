@@ -77,8 +77,8 @@ enum GistRoute {
 /// Decide a collection's gist route in a single walk.
 ///
 /// Both questions are answered together on purpose: `.gist` renders at most
-/// `GIST_ELEM_CAP` elements, but a probe walks the whole structure, so a probe
-/// pass costs more than the rendering it guards on a large receiver. Adding a
+/// `GIST_ELEM_CAP` elements of each list, and the probe stops at the same cap,
+/// so it never costs more than the rendering it guards. Adding a
 /// second, separate cycle pass would have made every `say @big-array` walk it
 /// twice.
 ///
@@ -88,10 +88,10 @@ enum GistRoute {
 /// already walked, which keeps a diamond-shaped graph from being re-walked once
 /// per path. The depth cap is the backstop for a pathologically deep acyclic
 /// structure.
-/// Cost: O(t), t = total nodes reachable from the receiver (every element is
-/// probed even though at most `GIST_ELEM_CAP` are rendered). Rakudo: O(1) for
-/// the 100-element head -- see #9162.
+/// Cost: O(t), t = nodes reachable through at most the first `GIST_ELEM_CAP`
+/// elements of each list level (the rendered head; a hash level is walked whole).
 fn gist_route(v: &Value) -> GistRoute {
+    use crate::runtime::utils::GIST_ELEM_CAP;
     /// A `:=`-bound element holds a `ContainerRef` cell, and a cycle can close
     /// through one (`my @e; @e.push(@e)` stores a cell whose contents reach the
     /// array again), so cells are cycle participants with an identity of their
@@ -144,9 +144,11 @@ fn gist_route(v: &Value) -> GistRoute {
                 }
             };
             match v.view() {
-                ValueView::Array(items, _) => items.iter().for_each(&mut visit),
-                ValueView::Seq(items) => items.iter().for_each(&mut visit),
-                ValueView::Slip(items) => items.iter().for_each(&mut visit),
+                // A list renders only its first `GIST_ELEM_CAP` elements, so
+                // nothing past them can need dispatch or loop back.
+                ValueView::Array(items, _) => items.iter().take(GIST_ELEM_CAP).for_each(&mut visit),
+                ValueView::Seq(items) => items.iter().take(GIST_ELEM_CAP).for_each(&mut visit),
+                ValueView::Slip(items) => items.iter().take(GIST_ELEM_CAP).for_each(&mut visit),
                 ValueView::Hash(map) => map.values().for_each(&mut visit),
                 ValueView::Pair(_, val) => visit(val),
                 ValueView::ValuePair(k, val) => {

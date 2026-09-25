@@ -72,14 +72,27 @@ fn sample_one_from_range(target: &Value) -> Option<Value> {
     }
 }
 
+/// One uniformly random element of `items`, `Nil` when there is none.
+// Cost: O(1).
+fn random_item(items: &[Value]) -> Value {
+    if items.is_empty() {
+        return Value::NIL;
+    }
+    let mut idx = (crate::builtins::rng::builtin_rand() * items.len() as f64) as usize;
+    if idx >= items.len() {
+        idx = items.len() - 1;
+    }
+    items[idx].clone()
+}
+
 pub(super) fn dispatch(
     target: &Value,
     method: &str,
 ) -> Option<Option<Result<Value, RuntimeError>>> {
     match method {
-        // Cost: O(1) on an Array or a Range; O(e) on any other list-like, e = elements
-        // of the invocant (decomposed into a Vec to read one slot). Rakudo: O(1) --
-        // see #9162.
+        // Cost: O(1) on an Array, a List, a reified Seq or a Range; O(e) on any other
+        // list-like, e = elements of the invocant (decomposed into a Vec to read one
+        // slot).
         "head" => Some(match target.view() {
             // User-defined class instances may have a `head` attribute or
             // method — defer to runtime dispatch so the user accessor wins
@@ -141,28 +154,25 @@ pub(super) fn dispatch(
                 // ADR-0040: decompose the RECEIVER into its own elements,
                 // ignoring its own itemization (see
                 // `value_to_list_for_receiver`'s doc comment).
-                let items = runtime::value_to_list_for_receiver(target);
-                Some(Ok(items.first().cloned().unwrap_or(Value::NIL)))
+                Some(Ok(runtime::with_receiver_items(target, |items| {
+                    items.first().cloned().unwrap_or(Value::NIL)
+                })))
             }
         }),
-        // Cost: O(1) on an Array; O(e) otherwise, e = elements of the invocant
-        // (decomposed into a Vec to read the last slot). `@a.tail` on a named array
-        // measures O(e): that call reaches `dispatch_tail` instead. Rakudo: O(1) --
-        // see #9162.
+        // Cost: O(1) on an Array, a List or a reified Seq; O(e) otherwise, e =
+        // elements of the invocant (decomposed into a Vec to read the last slot).
         "tail" => Some(match target.view() {
             // User-defined class instances may have a `tail` attribute or
             // method — defer to runtime dispatch so the user accessor wins
             // over the list-like fallback.
             ValueView::Instance { .. } => return None,
             ValueView::Array(items, ..) => Some(Ok(items.last().cloned().unwrap_or(Value::NIL))),
-            _ => {
-                let items = runtime::value_to_list_for_receiver(target);
-                Some(Ok(items.last().cloned().unwrap_or(Value::NIL)))
-            }
+            _ => Some(Ok(runtime::with_receiver_items(target, |items| {
+                items.last().cloned().unwrap_or(Value::NIL)
+            }))),
         }),
-        // Cost: O(e), e = elements of a list/array invocant (the receiver is copied
-        // into a fresh Vec just to index one slot); O(1) on an integer Range.
-        // Rakudo: O(1) -- see #9162.
+        // Cost: O(1) on an Array, a List, a reified Seq or an integer Range; O(e) on
+        // any other list-like, e = elements (decomposed into a Vec to index one slot).
         "pick" => Some(match target.view() {
             ValueView::Mix(_, _) => Some(Err(RuntimeError::new(
                 "Cannot call .pick on a Mix (immutable)",
@@ -204,28 +214,17 @@ pub(super) fn dispatch(
                 if let Some(v) = sample_one_from_range(target) {
                     return Some(Some(Ok(v)));
                 }
-                let items = if crate::runtime::utils::is_shaped_array(target) {
-                    crate::runtime::utils::shaped_array_leaves(target)
+                Some(Ok(if crate::runtime::utils::is_shaped_array(target) {
+                    random_item(&crate::runtime::utils::shaped_array_leaves(target))
                 } else {
-                    // ADR-0040: decompose the RECEIVER into its own
-                    // elements, ignoring its own itemization.
-                    runtime::value_to_list_for_receiver(target)
-                };
-                if items.is_empty() {
-                    Some(Ok(Value::NIL))
-                } else {
-                    let mut idx =
-                        (crate::builtins::rng::builtin_rand() * items.len() as f64) as usize;
-                    if idx >= items.len() {
-                        idx = items.len() - 1;
-                    }
-                    Some(Ok(items[idx].clone()))
-                }
+                    // ADR-0040: the RECEIVER's own elements, ignoring its own
+                    // itemization -- borrowed, not copied, to index one slot.
+                    runtime::with_receiver_items(target, random_item)
+                }))
             }
         }),
-        // Cost: O(e), e = elements of a list/array invocant (the receiver is copied
-        // into a fresh Vec just to index one slot); O(1) on an integer Range.
-        // Rakudo: O(1) -- see #9162.
+        // Cost: O(1) on an Array, a List, a reified Seq or an integer Range; O(e) on
+        // any other list-like, e = elements (decomposed into a Vec to index one slot).
         "roll" => {
             if let ValueView::Mix(items, _) = target.view() {
                 return Some(Some(Ok(
@@ -273,22 +272,15 @@ pub(super) fn dispatch(
             if let Some(v) = sample_one_from_range(target) {
                 return Some(Some(Ok(v)));
             }
-            let items = if crate::runtime::utils::is_shaped_array(target) {
-                crate::runtime::utils::shaped_array_leaves(target)
-            } else {
-                // ADR-0040: decompose the RECEIVER into its own elements,
-                // ignoring its own itemization.
-                runtime::value_to_list_for_receiver(target)
-            };
-            if items.is_empty() {
-                Some(Some(Ok(Value::NIL)))
-            } else {
-                let mut idx = (crate::builtins::rng::builtin_rand() * items.len() as f64) as usize;
-                if idx >= items.len() {
-                    idx = items.len() - 1;
-                }
-                Some(Some(Ok(items[idx].clone())))
-            }
+            Some(Some(Ok(
+                if crate::runtime::utils::is_shaped_array(target) {
+                    random_item(&crate::runtime::utils::shaped_array_leaves(target))
+                } else {
+                    // ADR-0040: the RECEIVER's own elements, ignoring its own
+                    // itemization -- borrowed, not copied, to index one slot.
+                    runtime::with_receiver_items(target, random_item)
+                },
+            )))
         }
         "pickpairs" => Some(match target.view() {
             ValueView::Bag(items, _) => {

@@ -1,11 +1,13 @@
 mod collation_temporal;
 mod encoding_rotor_toggle;
+mod first_chunked;
 mod first_polymod_tree;
 mod grep;
 mod minmax_extrema;
 mod socket_inet_proc;
 mod socket_thread;
 pub(crate) mod sort;
+mod squish_env;
 mod tail_rotate;
 mod thread_ops;
 mod unique_squish;

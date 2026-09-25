@@ -639,9 +639,9 @@ impl Interpreter {
 
     /// Dispatch the "skip" method.
     ///
-    /// Cost: O(e), e = elements of the invocant (copied whole before the skip
-    /// counts are applied), even when the result is only a short suffix. Rakudo:
-    /// O(1) per call on a reified list, O(1) per element pulled -- see #9162.
+    /// Cost: O(r + s), r = elements produced, s = skip/produce specs, on an
+    /// Array, a List or a reified Seq (the invocant is borrowed and only the
+    /// produced spans are cloned); O(e), e = elements, on any other list-like.
     fn dispatch_skip_method(
         &mut self,
         target: Value,
@@ -662,13 +662,27 @@ impl Interpreter {
         // the `call_method_with_values` guard's `reify_or_consume_seq_target`
         // already claimed that and would have thrown `X::Seq::Consumed` if
         // it was already spent).
-        let items = crate::runtime::utils::value_to_list(&target);
+        // The skip/produce specs are resolved against the length alone and
+        // turned into index spans; only the produced items are cloned out of
+        // the borrowed invocant at the end.
+        let len = crate::runtime::utils::list_items_len(&target);
+        let collect_spans = |spans: &[(usize, usize)]| {
+            Value::seq(crate::runtime::utils::with_list_items(&target, |items| {
+                // A spec callback may have shrunk the invocant since `len`
+                // was read, so clamp to what is there now.
+                let n = items.len();
+                spans
+                    .iter()
+                    .flat_map(|&(a, b)| items[a.min(n)..b.min(n)].iter().cloned())
+                    .collect()
+            }))
+        };
         if args.len() == 1 && matches!(args[0].view(), ValueView::Sub(..)) {
             // Callable arg: call with list length to get actual skip count
-            let len = Value::int(items.len() as i64);
-            let result = self.call_sub_value(args[0].clone(), vec![len], false)?;
+            let len_arg = Value::int(len as i64);
+            let result = self.call_sub_value(args[0].clone(), vec![len_arg], false)?;
             let n = result.to_f64().max(0.0) as usize;
-            return Ok(Value::seq(items.into_iter().skip(n).collect()));
+            return Ok(collect_spans(&[(n, len)]));
         }
 
         // In 6.e, the arguments alternate between a number of values to skip
@@ -688,7 +702,7 @@ impl Interpreter {
                 // counts are zero, so twice the element count (plus the
                 // implicit leading zero) is enough.
                 ValueView::LazyList(ll) if ll.is_genuinely_lazy() => {
-                    for i in 0..items.len().saturating_mul(2).saturating_add(2) {
+                    for i in 0..len.saturating_mul(2).saturating_add(2) {
                         match self.pull_source_element(&arg, i)? {
                             Some(v) => specs.push(v),
                             None => break,
@@ -713,7 +727,7 @@ impl Interpreter {
         }
 
         let mut cursor = 0usize;
-        let mut result = Vec::new();
+        let mut spans: Vec<(usize, usize)> = Vec::new();
         let mut skipping = true;
         for spec in specs {
             let count = match spec.view() {
@@ -722,22 +736,20 @@ impl Interpreter {
                 // argument can affect the result.
                 ValueView::Whatever | ValueView::HyperWhatever => {
                     if !skipping {
-                        result.extend(items[cursor..].iter().cloned());
+                        spans.push((cursor, len));
                     }
-                    cursor = items.len();
+                    cursor = len;
                     break;
                 }
                 _ => spec.to_f64().max(0.0) as usize,
             };
-            let end = cursor.saturating_add(count).min(items.len());
-            if skipping {
-                cursor = end;
-            } else {
-                result.extend(items[cursor..end].iter().cloned());
-                cursor = end;
+            let end = cursor.saturating_add(count).min(len);
+            if !skipping {
+                spans.push((cursor, end));
             }
+            cursor = end;
             skipping = !skipping;
-            if cursor == items.len() {
+            if cursor == len {
                 break;
             }
         }
@@ -745,10 +757,10 @@ impl Interpreter {
         // An odd number of numeric specs ends in a skip position, so the
         // remaining tail is produced. An even number ends in a produce
         // position, so the remaining tail is skipped.
-        if cursor < items.len() && !skipping {
-            result.extend(items[cursor..].iter().cloned());
+        if cursor < len && !skipping {
+            spans.push((cursor, len));
         }
-        Ok(Value::seq(result))
+        Ok(collect_spans(&spans))
     }
 
     /// Dispatch `.Str`/`.Stringy` on a list whose elements need the

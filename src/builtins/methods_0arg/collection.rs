@@ -1265,8 +1265,9 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
             };
             Some(Ok(Value::seq(combinations_all(&items))))
         }
-        // Cost: O(1) on a real Array or an unpulled Seq; O(e) on a reified List/Seq,
-        // e = elements (copied into a fresh List). Rakudo: O(1) -- see #9162.
+        // Cost: O(1) on an Array, a List or a Seq (a reified or unpulled Seq is
+        // handed back as a List view over its own body); O(e) on any other
+        // list-like, e = elements (copied into a fresh List).
         "cache" => {
             // A genuinely-lazy list (infinite sequence, lazy pipe, cat-handle
             // pull, …) must stay lazy under `.cache`: Rakudo's `.cache` reifies
@@ -1284,8 +1285,13 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
             // returns the PLAIN array — `for $node.cache` iterates elements,
             // not the item (zef's `Zef::Config::plugin-lookup` recursion
             // terminates on exactly this).
+            // A List caches as itself too (Rakudo's `List.cache` is `self`).
             if let ValueView::Array(items, kind) = target.view()
-                && kind.is_real_array()
+                && (kind.is_real_array()
+                    || matches!(
+                        kind,
+                        crate::value::ArrayKind::List | crate::value::ArrayKind::ItemList
+                    ))
             {
                 return Some(Ok(Value::array_with_kind(
                     items.clone(),
@@ -1303,16 +1309,14 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
             // Seq value.
             if let ValueView::Seq(body) = target.view() {
                 body.mark_cache_requested();
-                if body.needs_touch() {
-                    // ADR-0038 phase 3: a deferred `SeqBody` has no elements
-                    // to hand back yet (that is exactly why a strict force is
-                    // wrong here — S1.6), but rakudo's `.cache` still returns
-                    // a `List`-typed value, not a `Seq`-typed one. Return a
-                    // second handle over the SAME core so a later real read
-                    // reifies once and both handles observe it.
-                    let body = std::sync::Arc::clone(&body);
-                    return Some(Ok(Value::seq_list_view(&body)));
-                }
+                // ADR-0038 phase 3: rakudo's `.cache` returns a `List`-typed
+                // value, not a `Seq`-typed one. Return a second handle over the
+                // SAME core: a deferred body (which has no elements to hand
+                // back yet -- a strict force is wrong here, S1.6) reifies once
+                // on a later real read and both handles observe it, and a
+                // reified one shares its elements instead of copying them.
+                let body = std::sync::Arc::clone(&body);
+                return Some(Ok(Value::seq_list_view(&body)));
             }
             let items = target
                 .as_list_items()

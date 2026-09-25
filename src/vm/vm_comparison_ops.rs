@@ -325,13 +325,12 @@ impl Interpreter {
             };
             vm.reify_map_grep_seq(&l)?;
             vm.reify_map_grep_seq(&r)?;
-            // Cost: O(e_l + e_r), e = elements of each operand: both are copied out via
-            // `value_to_list` (a Range is expanded) only to compare lengths. Rakudo: O(1)
-            // for reified arrays -- see #9162.
+            // Cost: O(1) on an Array/List/Seq operand (its length is read in place);
+            // O(e) on a Range, e = elements (expanded to count them).
             if is_numeric_collection(&l) && is_numeric_collection(&r) {
                 return Ok(Value::truth(
-                    crate::runtime::utils::value_to_list(&l).len()
-                        == crate::runtime::utils::value_to_list(&r).len(),
+                    crate::runtime::utils::list_items_len(&l)
+                        == crate::runtime::utils::list_items_len(&r),
                 ));
             }
             let l = vm.warn_uninitialized_numeric_operand(l, 0)?;

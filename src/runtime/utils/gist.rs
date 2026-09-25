@@ -55,8 +55,10 @@ fn contains_instance_seen(
         return false;
     }
     if let Some(items) = value.as_list_items() {
+        // Only the rendered head can need dispatch.
         return items
             .iter()
+            .take(GIST_ELEM_CAP)
             .any(|v| contains_instance_seen(v, seen, depth + 1));
     }
     match value.view() {
@@ -110,8 +112,9 @@ pub(crate) fn contains_cycle(value: &Value) -> bool {
             ValueView::ValuePair(k, val) => vec![k.clone(), val.clone()],
             ValueView::Scalar(inner) => vec![inner.clone()],
             ValueView::ContainerRef(cell) => vec![cell.lock().unwrap().clone()],
+            // Only the rendered head of a list can loop back into the render.
             _ => match v.as_list_items() {
-                Some(items) => items.to_vec(),
+                Some(items) => items.iter().take(GIST_ELEM_CAP).cloned().collect(),
                 None => Vec::new(),
             },
         };
@@ -146,9 +149,10 @@ pub(crate) fn contains_cycle(value: &Value) -> bool {
 /// The walk is cycle-guarded. Without that guard a circular container aborted
 /// the whole process on a stack overflow *here*, in the dispatch probe, before
 /// [`gist_value`] — which does detect the cycle — was ever reached.
-/// Cost: O(t), t = nodes reachable from `value` when no instance is found (the
-/// common case), so every `.gist`/`say` of a large aggregate pays a full walk.
-/// Rakudo: O(1) for the 100-element gist head -- see #9162.
+/// A list is probed only as far as its gist renders -- its first
+/// [`GIST_ELEM_CAP`] elements -- since nothing past them is ever dispatched.
+/// Cost: O(t), t = nodes reachable through at most the first 100 elements of
+/// each list level (a hash level is walked whole) when no instance is found.
 pub(crate) fn collection_contains_instance(value: &Value) -> bool {
     let mut seen = std::collections::HashSet::new();
     if let Some(id) = container_id(value) {
@@ -157,6 +161,7 @@ pub(crate) fn collection_contains_instance(value: &Value) -> bool {
     if let Some(items) = value.as_list_items() {
         return items
             .iter()
+            .take(GIST_ELEM_CAP)
             .any(|v| contains_instance_seen(v, &mut seen, 1));
     }
     match value.view() {
@@ -246,7 +251,50 @@ pub(crate) fn setbagmix_gist_named(value: &Value, type_override: Option<&str>) -
 /// Rakudo caps an aggregate's gist at its first 100 elements, then appends
 /// ` ...` (`List.gist` stops the element walk at 101), so `say @a` on a huge
 /// array prints the same head `@a.gist` does, nested aggregates included.
-const GIST_ELEM_CAP: usize = 100;
+pub(crate) const GIST_ELEM_CAP: usize = 100;
+
+/// `v` cut down to what its gist renders, for a caller that walks the value
+/// before rendering it (`say`/`note` FETCH its Proxies and check it for a
+/// zero-denominator Rational or an unhandled Failure first): an Array/List or
+/// a reified Seq longer than [`GIST_ELEM_CAP`] + 1 keeps only that head -- the
+/// extra element is what makes the renderer emit the trailing ` ...` -- with
+/// its container metadata (element type, default, holes). Anything else, and
+/// an array whose rendered head loops back into itself (the cycle rendering
+/// names the node by identity, which a copy would not share), is returned
+/// unchanged. Elements past the head are never rendered, so Rakudo never
+/// FETCHes or checks them either.
+// Cost: O(k), k = the rendered head (at most GIST_ELEM_CAP + 1 elements per
+// list level, walked once for the cycle probe).
+pub(crate) fn gist_head(v: &Value) -> Value {
+    const KEEP: usize = GIST_ELEM_CAP + 1;
+    match v.view() {
+        ValueView::Array(data, kind)
+            if data.len() > KEEP
+                && kind != crate::value::ArrayKind::Shaped
+                && !kind.is_lazy()
+                && !contains_cycle(v) =>
+        {
+            let mut head = crate::value::ArrayData::new(data.as_slice()[..KEEP].to_vec());
+            head.value_type = data.value_type.clone();
+            head.key_type = data.key_type.clone();
+            head.declared_type = data.declared_type.clone();
+            head.default = data.default.clone();
+            head.initialized = data
+                .initialized
+                .as_ref()
+                .map(|set| (0..KEEP).filter(|i| set.contains(i)).collect());
+            head.descriptor_name = data.descriptor_name.clone();
+            head.nqp_elem = data.nqp_elem;
+            Value::array_with_kind(crate::gc::Gc::new(head), kind)
+        }
+        ValueView::Seq(items)
+            if items.len() > KEEP && !items.is_lazy() && !items.has_element_containers() =>
+        {
+            Value::seq(items[..KEEP].to_vec())
+        }
+        _ => v.clone(),
+    }
+}
 
 /// Gist every element of `items`, joined by `sep`, stopping after
 /// [`GIST_ELEM_CAP`] elements with a trailing ` ...`.
