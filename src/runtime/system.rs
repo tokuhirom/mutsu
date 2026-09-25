@@ -218,7 +218,12 @@ impl Interpreter {
                 // being exception-safe), so a failing snippet is cleaned up too.
                 self.push_lexical_class_scope();
                 let free_var_writes_mark = self.recorded_free_var_writes.len();
+                // `nqp::getcomp("Raku").eval` keeps what this unit declares for
+                // the next line of a REPL session (runtime::repl_compiler); the
+                // snapshot has to be taken before the cleanup below drops it.
+                self.begin_unit_capture();
                 let mut outcome = self.eval_block_value_opts(&stmts, true);
+                self.end_unit_capture();
                 // The free variables this snippet WROTE (`EVAL '$a = 32'`). They are
                 // assignments to the caller's lexicals, not the snippet's own `my`,
                 // so the leaked-lexical cleanup below must leave them alone.

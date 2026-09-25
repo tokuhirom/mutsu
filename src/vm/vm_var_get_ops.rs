@@ -99,6 +99,11 @@ impl Interpreter {
                 "Undeclared name:\n    _ used at line 1",
             ));
         }
+        // Rakudo's core `REPL` and `Perl6::Compiler` classes are registered
+        // on first use (runtime::repl_compiler), like `nqp::getcomp` does.
+        if matches!(name, "REPL" | "Perl6::Compiler") && !self.has_class(name) {
+            self.ensure_repl_compiler_prelude()?;
+        }
         // #7797: a package-qualified bareword (a constant, enum value/type,
         // class, role, or sub reached as `Pkg::name`) is only in scope for a
         // compunit that `use`/`need`/`require`d `Pkg` itself — reaching it

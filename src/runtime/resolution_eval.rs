@@ -653,6 +653,8 @@ impl Interpreter {
             _ => None,
         };
         self.block_scope_depth = self.block_scope_depth.saturating_sub(1);
+        // A REPL unit's scope is saved before it unwinds (runtime::repl_compiler).
+        self.capture_eval_unit_scope(is_eval_unit);
         // Restore the routine registry only if the block actually wrote to it
         // (tracked by the monotonic `registry_write_gen`, bumped by every
         // `registry_mut()`). The common declaration-free block leaves the
