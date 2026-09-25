@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VM opcodes — mutsu internals</title>
+<meta name="description" content="Every bytecode instruction the mutsu VM executes: its operands, what it does, and what it costs, generated from the interpreter's source at deploy time.">
+<link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+<link rel="icon" href="assets/favicon-32.png" sizes="32x32" type="image/png">
+<link rel="icon" href="assets/favicon-16.png" sizes="16x16" type="image/png">
+<link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
+<link rel="stylesheet" href="assets/site.css">
+</head>
+<body>
+
+<nav class="site-nav"></nav>
+
+<div class="tutorial-layout">
+  <aside class="toc">
+    <p class="toc-intro" id="toc-intro"></p>
+    <h2 id="toc-title"></h2>
+    <div id="toc-body"></div>
+  </aside>
+
+  <main class="manual">
+    <p class="crumb op-crumb"><a id="crumb-link" href="internals.html"></a></p>
+    <h1 id="page-title"></h1>
+    <p class="page-intro" id="page-intro"></p>
+    <p class="op-provenance" id="provenance"></p>
+    <div class="op-controls">
+      <input type="search" id="op-search" autocomplete="off">
+      <span class="op-shown" id="op-shown"></span>
+    </div>
+    <div id="op-list"></div>
+  </main>
+</div>
+
+<footer class="site-footer"></footer>
+
+<script type="module">
+import { renderChrome, currentLang, langHref } from './assets/i18n.js';
+import { renderMarkdown } from './assets/mini-md.js';
+import { fetchData } from './assets/data.js';
+
+renderChrome('internals');
+
+const REPO = 'https://github.com/tokuhirom/mutsu';
+
+const TEXT = {
+  en: {
+    title: 'VM opcodes',
+    crumb: '← Internals',
+    intro: 'Every bytecode instruction the mutsu VM executes, grouped as the ' +
+      'instruction set itself groups them. Operands, descriptions and costs are ' +
+      'read out of the interpreter\'s source when the site is deployed, so this ' +
+      'page always describes the build it came from.',
+    tocIntro: 'The instruction set, by family.',
+    tocTitle: 'Families',
+    search: 'Filter by name or description (e.g. Local, loop, slot)',
+    shown: (n, total) => n === total ? `${total} opcodes` : `${n} of ${total} opcodes`,
+    provenance: (c, commit) =>
+      `${c.ops} opcodes in ${c.categories} families · ${c.documented} documented · ` +
+      `generated from ${commit}`,
+    cost: 'Cost',
+    operands: 'Operands',
+    none: 'no operands',
+    note: 'developer note',
+    undocumented: 'undocumented',
+    noDoc: 'This opcode has no doc comment in src/opcode.rs yet.',
+    defined: 'definition',
+    dispatch: 'VM dispatch',
+    empty: 'No opcode matches this filter.',
+    missing: 'The opcode listing has not been generated for this copy of the site. ' +
+      'Run python3 scripts/gen-opcode-manifest.py to create content/opcodes.json.',
+    loading: 'Loading…',
+  },
+  ja: {
+    title: 'VM オペコード',
+    crumb: '← Internals',
+    intro: 'mutsu の VM が実行するすべてのバイトコード命令を、命令セット自身の分類どおりに' +
+      '並べたものです。オペランド・説明・コストはサイトのデプロイ時にインタプリタの' +
+      'ソースから読み出しているので、このページは常にそのビルドの実態を表します。' +
+      '説明文はソースのドキュメントコメントそのもの（英語）です。',
+    tocIntro: '命令セットの系統別一覧。',
+    tocTitle: '系統',
+    search: '名前や説明で絞り込み（例: Local, loop, slot）',
+    shown: (n, total) => n === total ? `${total} 命令` : `${total} 命令中 ${n} 件`,
+    provenance: (c, commit) =>
+      `${c.categories} 系統・${c.ops} 命令 · うちドキュメントあり ${c.documented} · ` +
+      `${commit} から生成`,
+    cost: 'コスト',
+    operands: 'オペランド',
+    none: 'オペランドなし',
+    note: '開発メモ',
+    undocumented: 'ドキュメントなし',
+    noDoc: 'この命令にはまだ src/opcode.rs のドキュメントコメントがありません。',
+    defined: '定義',
+    dispatch: 'VM ディスパッチ',
+    empty: 'この条件に合う命令はありません。',
+    missing: 'このサイトにはオペコード一覧がまだ生成されていません。' +
+      'python3 scripts/gen-opcode-manifest.py を実行すると content/opcodes.json が作られます。',
+    loading: '読み込み中…',
+  },
+};
+const L = () => TEXT[currentLang()] ?? TEXT.en;
+
+const els = {
+  title: document.getElementById('page-title'),
+  crumb: document.getElementById('crumb-link'),
+  intro: document.getElementById('page-intro'),
+  provenance: document.getElementById('provenance'),
+  tocIntro: document.getElementById('toc-intro'),
+  tocTitle: document.getElementById('toc-title'),
+  toc: document.getElementById('toc-body'),
+  search: document.getElementById('op-search'),
+  shown: document.getElementById('op-shown'),
+  list: document.getElementById('op-list'),
+};
+
+let DATA;          // undefined: loading · null: not generated · object: the manifest
+let BY_NAME = new Map();
+
+const slug = s => 'fam-' + s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+
+function srcLink(path, line, label) {
+  const a = document.createElement('a');
+  const ref = DATA.commit || 'main';
+  a.href = `${REPO}/blob/${ref}/${path}#L${line}`;
+  a.rel = 'noopener';
+  a.textContent = `${label} ${path.split('/').pop()}:${line}`;
+  return a;
+}
+
+function signature(op) {
+  const p = op.payload;
+  if (p.kind === 'tuple') return `${op.name}(${p.types.join(', ')})`;
+  if (p.kind === 'struct') return `${op.name} { ${p.fields.map(f => `${f.name}: ${f.type}`).join(', ')} }`;
+  return op.name;
+}
+
+function renderOp(op) {
+  const l = L();
+  const card = document.createElement('article');
+  card.className = 'card op-card';
+  card.id = `op-${op.name}`;
+
+  const head = document.createElement('div');
+  head.className = 'op-head';
+  const h = document.createElement('h3');
+  const a = document.createElement('a');
+  a.href = `#op-${op.name}`;
+  a.textContent = op.name;
+  h.appendChild(a);
+  head.appendChild(h);
+  if (op.doc_kind !== 'doc') {
+    const chip = document.createElement('span');
+    chip.className = 'bat-chip op-chip';
+    chip.textContent = op.doc_kind === 'note' ? l.note : l.undocumented;
+    head.appendChild(chip);
+  }
+  card.appendChild(head);
+
+  const sig = document.createElement('pre');
+  sig.className = 'op-sig';
+  const code = document.createElement('code');
+  code.textContent = signature(op);
+  sig.appendChild(code);
+  card.appendChild(sig);
+
+  const body = document.createElement('div');
+  body.className = 'manual-body op-doc';
+  if (op.doc) body.appendChild(renderMarkdown(op.doc));
+  else {
+    const p = document.createElement('p');
+    p.className = 'op-muted';
+    p.textContent = l.noDoc;
+    body.appendChild(p);
+  }
+  card.appendChild(body);
+
+  const documentedFields = op.payload.kind === 'struct' ? op.payload.fields.filter(f => f.doc) : [];
+  if (documentedFields.length) {
+    const dl = document.createElement('dl');
+    dl.className = 'op-fields';
+    for (const f of documentedFields) {
+      const dt = document.createElement('dt');
+      const c = document.createElement('code');
+      c.textContent = `${f.name}: ${f.type}`;
+      dt.appendChild(c);
+      const dd = document.createElement('dd');
+      dd.className = 'manual-body';
+      dd.appendChild(renderMarkdown(f.doc));
+      dl.append(dt, dd);
+    }
+    card.appendChild(dl);
+  }
+
+  const meta = document.createElement('div');
+  meta.className = 'op-meta';
+  if (op.cost) {
+    const cost = document.createElement('p');
+    const k = document.createElement('span');
+    k.className = 'bat-meta-key';
+    k.textContent = l.cost;
+    const v = document.createElement('span');
+    v.className = 'op-cost';
+    v.textContent = op.cost;
+    cost.append(k, ' ', v);
+    meta.appendChild(cost);
+  }
+  const links = document.createElement('p');
+  links.className = 'op-src';
+  links.appendChild(srcLink(DATA.sources.opcodes, op.def_line, l.defined));
+  if (op.dispatch_line) {
+    links.appendChild(document.createTextNode(' · '));
+    links.appendChild(srcLink(DATA.sources.dispatch, op.dispatch_line, l.dispatch));
+  }
+  meta.appendChild(links);
+  card.appendChild(meta);
+  return card;
+}
+
+function matches(op, needle) {
+  if (!needle) return true;
+  return op.name.toLowerCase().includes(needle) ||
+    op.doc.toLowerCase().includes(needle) ||
+    op.category.toLowerCase().includes(needle);
+}
+
+function paintChrome() {
+  const l = L();
+  document.title = `${l.title} — mutsu internals`;
+  els.title.textContent = l.title;
+  els.crumb.textContent = l.crumb;
+  els.crumb.href = langHref('internals.html');
+  els.intro.textContent = l.intro;
+  els.tocIntro.textContent = l.tocIntro;
+  els.tocTitle.textContent = l.tocTitle;
+  els.search.placeholder = l.search;
+  els.provenance.textContent = DATA
+    ? l.provenance(DATA.counts, (DATA.commit || 'an unknown commit').slice(0, 12)) : '';
+}
+
+function paintList() {
+  const l = L();
+  els.list.textContent = '';
+  els.toc.textContent = '';
+  if (DATA === undefined) { els.shown.textContent = l.loading; return; }
+  if (DATA === null) {
+    els.shown.textContent = '';
+    const p = document.createElement('p');
+    p.className = 'manual-note op-missing';
+    p.textContent = l.missing;
+    els.list.appendChild(p);
+    return;
+  }
+  const needle = els.search.value.trim().toLowerCase();
+  let shown = 0;
+  for (const cat of DATA.categories) {
+    const ops = cat.ops.map(n => BY_NAME.get(n)).filter(op => matches(op, needle));
+    if (!ops.length) continue;
+    shown += ops.length;
+
+    const sec = document.createElement('section');
+    sec.className = 'manual-section op-family';
+    sec.id = slug(cat.name);
+    const h = document.createElement('h2');
+    const a = document.createElement('a');
+    a.href = `#${sec.id}`;
+    a.textContent = cat.name;
+    h.appendChild(a);
+    sec.appendChild(h);
+    for (const op of ops) sec.appendChild(renderOp(op));
+    els.list.appendChild(sec);
+
+    const link = document.createElement('a');
+    link.className = 'lesson-link';
+    link.href = `#${sec.id}`;
+    link.textContent = `${cat.name} (${ops.length})`;
+    els.toc.appendChild(link);
+  }
+  els.shown.textContent = l.shown(shown, DATA.ops.length);
+  if (!shown) {
+    const p = document.createElement('p');
+    p.className = 'op-muted';
+    p.textContent = l.empty;
+    els.list.appendChild(p);
+  }
+}
+
+/* ---- URL state ----------------------------------------------------------
+ * The filter is the page's only state, so it lives in the hash as `#q=...`
+ * (left out when empty, written with replaceState so typing does not flood
+ * the history). Any other hash is an ordinary anchor — `#op-GetLocal` or a
+ * family's `#fam-...` — and is scrolled to once the listing exists. */
+function readHash() {
+  const h = location.hash.replace(/^#/, '');
+  return h.startsWith('q=') ? { q: decodeURIComponent(h.slice(2)) } : { anchor: h };
+}
+let lastHash = location.hash.replace(/^#/, '');
+function writeHash() {
+  const q = els.search.value.trim();
+  lastHash = q ? 'q=' + encodeURIComponent(q) : '';
+  history.replaceState(null, '',
+    location.pathname + location.search + (lastHash ? '#' + lastHash : ''));
+}
+function adoptHash() {
+  const { q, anchor } = readHash();
+  els.search.value = q ?? '';
+  paintList();
+  if (anchor) document.getElementById(anchor)?.scrollIntoView();
+}
+
+els.search.addEventListener('input', () => { writeHash(); paintList(); });
+window.addEventListener('hashchange', () => {
+  if (location.hash.replace(/^#/, '') === lastHash) return;
+  lastHash = location.hash.replace(/^#/, '');
+  adoptHash();
+});
+window.addEventListener('langchange', () => { paintChrome(); paintList(); });
+
+paintChrome();
+paintList();
+
+try {
+  const res = await fetchData('content/opcodes.json');
+  DATA = res.ok ? await res.json() : null;
+} catch {
+  DATA = null;
+}
+if (DATA) BY_NAME = new Map(DATA.ops.map(op => [op.name, op]));
+paintChrome();
+adoptHash();
+document.body.dataset.ready = '1';
+</script>
+
+</body>
+</html>

@@ -5020,6 +5020,8 @@ impl Interpreter {
                 self.element_source = Some((container, vec![(index, positional)]));
                 *ip += 1;
             }
+            // Cost: O(k + d), k = path length (one index op per level, each its own cost),
+            // d = env tiers probed for the container name; plus an O(k) path copy.
             OpCode::TagElementSourcePath {
                 container_idx,
                 positionals,

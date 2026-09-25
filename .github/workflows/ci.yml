@@ -974,6 +974,12 @@ jobs:
           # shared libraries Chromium needs.
           npx playwright install chromium
 
+      # The Internals pages (opcodes.html, types.html) render JSON generated
+      # from src/ at deploy time; generate it here the same way so the e2e
+      # test checks them against the tree under test.
+      - name: Generate the Internals data
+        run: python3 scripts/gen-internals-manifest.py
+
       - name: Run E2E tests
         run: node site/e2e.test.mjs
 

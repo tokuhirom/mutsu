@@ -58,6 +58,8 @@ target-local/
 # Compatibility numbers counted at deploy time by pages.yml (the landing page
 # falls back to a baked-in figure when it is absent).
 /site/content/stats.json
+/site/content/opcodes.json
+/site/content/types.json
 /node_modules/
 /package.json
 /package-lock.json
