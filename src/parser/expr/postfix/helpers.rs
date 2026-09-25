@@ -204,10 +204,13 @@ pub(crate) fn wrap_last_stmt_with_unary(stmts: &mut [Stmt], op: TokenKind) {
 /// `%h{$a;$b}`, `%h{}`)? A `}` that closes a subscript is not a block
 /// boundary, so Raku's line-ending-block rule ("a `}` at end of line ends the
 /// statement") must not fire on it: `%h{"a"}\n    .Str` chains `.Str` onto
-/// the subscript in rakudo (#9330).
+/// the subscript in rakudo (#9330). The hyper form `@a>>.{...}` /
+/// `@a»{...}` (parsed as a hyper `AT-KEY` call) is a subscript too: taurus
+/// chains `>>.{0..4}` newline `.grep(...)`.
 pub(in crate::parser) fn is_subscript_expr(expr: &Expr) -> bool {
-    matches!(
-        expr,
-        Expr::Index { .. } | Expr::MultiDimIndex { .. } | Expr::ZenSlice(_)
-    )
+    match expr {
+        Expr::Index { .. } | Expr::MultiDimIndex { .. } | Expr::ZenSlice(_) => true,
+        Expr::HyperMethodCall { name, .. } => name.resolve() == "AT-KEY",
+        _ => false,
+    }
 }
