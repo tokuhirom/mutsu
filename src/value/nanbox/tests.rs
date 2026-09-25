@@ -485,6 +485,7 @@ fn every_variant_roundtrips_losslessly() {
             samespace: false,
             source_adverbs: None,
             captured: None,
+            topic: None,
             source_tree: None,
         })),
         ValueRepr::RegexCaptured(Arc::new(crate::value::RegexClosure {
@@ -496,6 +497,7 @@ fn every_variant_roundtrips_losslessly() {
             )),
             source_tree: None,
             signature: None,
+            topic: None,
         })),
         ValueRepr::Sub(sample_sub()),
         ValueRepr::Junction {

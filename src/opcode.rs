@@ -760,8 +760,15 @@ pub(crate) enum OpCode {
     /// `captures` pairs each capture's env key (`$x` -> `x`, `@x`/`%x`/`&x`
     /// keep their sigil) with its local slot in the creating frame, or
     /// [`NOT_A_LOCAL`] when the name is only reachable through `env`.
+    ///
+    /// `topic` is `Some(slot)` when the literal is the escaping value of a
+    /// callable body (`{ /foo/ }`): the creating frame's `$_` (its local
+    /// `slot`, or `env` when [`NOT_A_LOCAL`]) is snapshotted onto the value so
+    /// `Regex.Bool` matches against the regex's lexical topic
+    /// (`crate::value::RegexClosure::topic`).
     LoadRegexClosure {
         const_idx: u32,
+        topic: Option<u32>,
         captures: Arc<Vec<(Symbol, u32)>>,
     },
     LoadNil,
@@ -7278,6 +7285,7 @@ impl CompiledCode {
                 || installs_resume_control
                 || holds_interpolating_regex
                 || holds_dynamic_substitution
+                || self.holds_indirect_regex_lookup()
             {
                 self.needs_env_sync.iter_mut().for_each(|b| *b = true);
             }
@@ -7387,10 +7395,55 @@ impl CompiledCode {
                 break;
             }
         }
+        // Code embedded in a regex or a substitution replacement that looks a
+        // name up indirectly (`/ <?{ EVAL '$x' }> /`, `s/x/{ ::($n) }/`) is
+        // the same reflective access, only compiled from the regex text at
+        // match time instead of into this chunk's ops (#9293).
+        if !own_reflective && self.holds_indirect_regex_lookup() {
+            own_reflective = true;
+        }
         if own_reflective {
             REFLECTIVE_NAME_ACCESS_SEEN.store(true, Ordering::Relaxed);
         }
         self.needs_reflective_capture |= own_reflective || self.chunk_reflective_capture_traits();
+    }
+
+    /// Whether a regex literal or a substitution of this chunk embeds code that
+    /// looks a name up indirectly (`EVAL`, `::($n)`, a pseudo-package), which
+    /// no scan of its text can bound. Such a chunk is reflective: its locals
+    /// keep their store-side env mirror, which is what those lookups read (the
+    /// `~~` op no longer publishes the whole frame for them).
+    // Cost: O(c + p), c = constants and ops of this chunk, p = total source
+    // length of its code-bearing regexes and replacements.
+    fn holds_indirect_regex_lookup(&self) -> bool {
+        use crate::vm::vm_smartmatch_sync::regex_source_has_indirect_lookup as indirect;
+        let in_constants = self.constants.iter().any(|c| match c.view() {
+            ValueView::Regex(p) => indirect(p.as_str(), false),
+            ValueView::RegexWithAdverbs(a) => indirect(a.pattern.as_str(), false),
+            _ => false,
+        });
+        in_constants
+            || self.ops.iter().any(|op| {
+                let (pattern_idx, replacement_idx) = match op {
+                    OpCode::Subst {
+                        pattern_idx,
+                        replacement_idx,
+                        ..
+                    }
+                    | OpCode::NonDestructiveSubst {
+                        pattern_idx,
+                        replacement_idx,
+                        ..
+                    } => (*pattern_idx, *replacement_idx),
+                    _ => return false,
+                };
+                let text = |idx: u32| match self.constants.get(idx as usize).map(Value::view) {
+                    Some(ValueView::Str(s)) => Some(s),
+                    _ => None,
+                };
+                text(pattern_idx).is_some_and(|p| indirect(p.as_str(), false))
+                    || text(replacement_idx).is_some_and(|r| indirect(r.as_str(), true))
+            })
     }
 
     /// The per-chunk half of [`Self::scan_reflective_name_access`]: everything

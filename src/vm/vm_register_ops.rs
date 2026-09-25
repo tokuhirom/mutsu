@@ -95,10 +95,14 @@ impl Interpreter {
     /// (raku-verified same-scope mutation semantics; bug 1 of
     /// `todo/tickets/stored-regex-loses-its-defining-scope-lexicals.md`).
     /// Unmutated captures stay cheap by-value snapshots.
+    ///
+    /// `topic` (`Some(slot)`, or `Some(NOT_A_LOCAL)` for `env`) snapshots the
+    /// frame's `$_` onto the value for `Regex.Bool` (`RegexClosure::topic`).
     pub(super) fn capture_regex_closure(
         &mut self,
         code: &CompiledCode,
         base: &Value,
+        topic: Option<u32>,
         captures: &[(Symbol, u32)],
     ) -> Value {
         let mut scope: ValueMap = ValueMap::default();
@@ -120,10 +124,23 @@ impl Interpreter {
             }
             scope.insert(name.to_string(), v);
         }
-        if scope.is_empty() {
+        // The defining frame's `$_` (see `RegexClosure::topic`). A regex that
+        // captured no topic falls back to the `$_` visible where it is
+        // boolified, so an unset topic is simply left out.
+        let topic = topic.and_then(|slot| {
+            (slot != crate::opcode::NOT_A_LOCAL)
+                .then(|| self.locals.get(slot as usize))
+                .flatten()
+                .filter(|v| !v.is_nil())
+                .cloned()
+                .or_else(|| self.env().get("_").cloned())
+                .filter(|v| !v.is_nil())
+        });
+        if scope.is_empty() && topic.is_none() {
             return base.clone();
         }
-        let scope = std::sync::Arc::new(scope);
+        let scope = (!scope.is_empty()).then(|| std::sync::Arc::new(scope));
+        let topic_only = scope.is_none();
         match base.view() {
             ValueView::Regex(p) => Value::regex_closure(
                 std::sync::Arc::clone(&p),
@@ -131,17 +148,22 @@ impl Interpreter {
                 // An anonymous declarator term's signature rides on the value;
                 // attaching the defining scope must not drop it.
                 base.regex_signature(),
+                // A topic-only capture changes nothing about the pattern, so
+                // its source tree survives whole.
                 base.regex_source_tree()
                     .filter(|tree| {
-                        tree.contains_array_interpolation()
+                        topic_only
+                            || tree.contains_array_interpolation()
                             || tree.contains_regex_value_interpolation()
                     })
                     .cloned()
                     .map(Box::new),
+                topic,
             ),
             ValueView::RegexWithAdverbs(a) => {
                 let mut adv = a.clone();
-                adv.captured = Some(scope);
+                adv.captured = scope;
+                adv.topic = topic;
                 Value::regex_with_adverbs(adv)
             }
             _ => base.clone(),

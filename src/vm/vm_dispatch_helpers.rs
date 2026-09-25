@@ -460,27 +460,30 @@ impl Interpreter {
                     Err(_) => val.truthy(),
                 }
             }
+            // The IMPLICIT topic of a bare regex coerces quietly -- see
+            // `quiet_topic_for_regex_match`.
             ValueView::Regex(_)
             | ValueView::RegexWithAdverbs { .. }
-            | ValueView::Routine { is_regex: true, .. } => {
-                let topic = self.env().get("_").cloned().unwrap_or(Value::NIL);
-                // The IMPLICIT topic of a bare regex coerces quietly -- see
-                // `quiet_topic_for_regex_match`.
-                let topic = self.quiet_topic_for_regex_match(topic);
-                self.vm_smart_match(&topic, val)
-            }
+            | ValueView::Routine { is_regex: true, .. } => self.regex_bool(val, true),
             _ => val.truthy(),
         }
     }
 
-    /// Evaluate a callable's result as a grep/map predicate. Regex values are
-    /// truthy results here; they are not the regex matcher supplied directly
-    /// to grep, so they must not be implicitly smartmatched against the
-    /// caller's topic.
+    /// Evaluate a callable's result as a grep/map predicate. A regex value
+    /// that captured its defining block's `$_` (`{ /foo/ }`, see
+    /// `RegexClosure::topic`) matches against that topic -- the element the
+    /// block was called with, as in Rakudo. Any other regex value is a
+    /// truthy result here; it is not the regex matcher supplied directly to
+    /// grep, so it must not be implicitly smartmatched against the caller's
+    /// topic.
     pub(crate) fn eval_predicate_truthy(&mut self, val: &Value) -> bool {
         let _ = self.reify_map_grep_seq(val);
         if Self::is_regex_like_value(val) {
-            val.truthy()
+            if val.regex_captured_topic().is_some() {
+                self.regex_bool(val, true)
+            } else {
+                val.truthy()
+            }
         } else {
             self.eval_truthy(val)
         }

@@ -1850,19 +1850,9 @@ impl Interpreter {
             _ => target,
         };
         // Regex.Bool / Regex.so: smartmatch against $_ (needs runtime context)
-        if matches!(method, "Bool" | "so")
-            && args.is_empty()
-            && matches!(
-                target.view(),
-                ValueView::Regex(_)
-                    | ValueView::RegexWithAdverbs { .. }
-                    | ValueView::Routine { is_regex: true, .. }
-            )
-        {
+        if let Some(result) = self.try_regex_bool_method(&target, method, &args) {
             crate::vm::vm_stats::record_dispatch_entry_intercept("callmethod", "regex-bool-topic");
-            let topic = self.env().get("_").cloned().unwrap_or(Value::NIL);
-            let matched = self.vm_smart_match(&topic, &target);
-            self.stack.push(Value::truth(matched));
+            self.stack.push(result);
             return Ok(());
         }
         // .WHO on pseudo-package Package values: build the stash in the Interpreter

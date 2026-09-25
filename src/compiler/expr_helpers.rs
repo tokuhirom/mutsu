@@ -839,6 +839,28 @@ impl Compiler {
         (!captures.is_empty()).then_some(captures)
     }
 
+    /// Whether a regex literal must snapshot its defining frame's `$_`, and
+    /// from where: `Some(slot)` (or `Some(NOT_A_LOCAL)` for `env`) when the
+    /// literal's value escapes a callable body (`{ /foo/ }`), `None` otherwise.
+    /// See [`Compiler::in_callable_body`] and `RegexClosure::topic`.
+    pub(super) fn regex_literal_topic_capture(&self, v: &Value) -> Option<u32> {
+        if !self.in_callable_body || !self.escaping_position {
+            return None;
+        }
+        if !matches!(
+            v.view(),
+            ValueView::Regex(_) | ValueView::RegexWithAdverbs(_)
+        ) {
+            return None;
+        }
+        Some(
+            self.local_map
+                .get("_")
+                .copied()
+                .unwrap_or(crate::opcode::NOT_A_LOCAL),
+        )
+    }
+
     /// [`Compiler::regex_literal_closure_captures`], applied to a `token`/
     /// `rule` declaration's body instead of an `Expr::Literal` reached through
     /// ordinary expression compilation.

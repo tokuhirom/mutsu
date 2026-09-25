@@ -110,7 +110,11 @@ impl Value {
         // A code-bearing regex literal's captured scope owns arbitrary `Value`s
         // and would otherwise be an invisible edge: it VIEWS as a plain Regex
         // (deliberately — see `Value::RegexCaptured`), so the match arms below
-        // cannot reach it. Probe the repr first.
+        // cannot reach it. Probe the repr first. The captured `$_` (see
+        // `RegexClosure::topic`) is the same kind of invisible edge.
+        if let Some(topic) = self.0.regex_captured_topic() {
+            topic.gc_trace(visit);
+        }
         if let Some(scope) = self.0.regex_closure_scope() {
             if uniquely_owned(scope) {
                 for v in scope.values() {

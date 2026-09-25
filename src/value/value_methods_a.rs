@@ -51,15 +51,17 @@ impl Value {
     /// [`crate::value::RegexClosure`]. Views as a plain `Regex`.
     pub(crate) fn regex_closure(
         pattern: Arc<String>,
-        scope: Arc<ValueMap>,
+        scope: Option<Arc<ValueMap>>,
         signature: Option<Arc<Vec<crate::ast::ParamDef>>>,
         source_tree: Option<Box<crate::regex_tree::RegexTree>>,
+        topic: Option<Value>,
     ) -> Self {
         Value::RegexCaptured(Arc::new(crate::value::RegexClosure {
             pattern,
-            scope: Some(scope),
+            scope,
             source_tree,
             signature,
+            topic,
         }))
     }
 
@@ -73,6 +75,7 @@ impl Value {
             scope: None,
             source_tree: None,
             signature: Some(Arc::new(params)),
+            topic: None,
         }))
     }
 
@@ -102,6 +105,7 @@ impl Value {
                     scope: None,
                     source_tree: Some(Box::new(tree)),
                     signature: self.regex_signature(),
+                    topic: None,
                 }))
             }
             ValueView::RegexWithAdverbs(adverbs) => {
@@ -149,6 +153,18 @@ impl Value {
         }
         match self.view() {
             ValueView::RegexWithAdverbs(a) => a.captured.clone(),
+            _ => None,
+        }
+    }
+
+    /// The defining scope's `$_` a regex literal captured (see
+    /// [`crate::value::RegexClosure::topic`]), or `None`.
+    pub(crate) fn regex_captured_topic(&self) -> Option<Value> {
+        if let Some(topic) = self.0.regex_captured_topic() {
+            return Some(topic.clone());
+        }
+        match self.view() {
+            ValueView::RegexWithAdverbs(a) => a.topic.clone(),
             _ => None,
         }
     }
