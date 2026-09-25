@@ -51,7 +51,7 @@ fn parse_quote_word_list<'a>(
         return Err(PError::expected("angle list"));
     }
     let end = if quoted_words {
-        find_quote_word_close(input, close)
+        find_quote_word_close(input, open, close)
     } else if close == ">" {
         find_nested_angle_close(input)
     } else {
@@ -72,7 +72,7 @@ fn parse_quote_word_list<'a>(
         ));
     }
     if quoted_words {
-        let exprs = split_quotish_words(content)?;
+        let exprs = split_quotish_words(content, Some((open, close)))?;
         return Ok((
             rest,
             crate::parser::primary::string::make_word_result_expr(exprs),
@@ -103,15 +103,30 @@ fn parse_quote_word_list<'a>(
     }
 }
 
-fn find_quote_word_close(input: &str, close: &str) -> Option<usize> {
+fn find_quote_word_close(input: &str, open: &str, close: &str) -> Option<usize> {
     let mut i = 0usize;
     let mut quoted_by: Option<char> = None;
     let mut escaped = false;
-    let mut angle_depth = 0usize;
+    // Only a full copy of the opener nests (`<< a <<b>> c >>`,
+    // `« a «b» c »`); each one needs its own closer before the list ends.
+    let mut depth = 0usize;
+    // A `<` inside `<< >>` / `« »` is word text, not a nested opener (rakudo:
+    // `<< < <= >>` is `("<", "<=")`, `<< a<b >>` is `"a<b"`). Only the closing
+    // delimiter is special, and a `>>` immediately followed by another `>` is
+    // not it: that first `>` ends a subscript in the last word (`<<$h<a>>>`).
     while i < input.len() {
         let rest = &input[i..];
+        if quoted_by.is_none() && rest.starts_with(open) {
+            depth += 1;
+            i += open.len();
+            continue;
+        }
+        if quoted_by.is_none() && depth > 0 && rest.starts_with(close) {
+            depth -= 1;
+            i += close.len();
+            continue;
+        }
         if quoted_by.is_none()
-            && angle_depth == 0
             && rest.starts_with(close)
             && !rest
                 .strip_prefix(close)
@@ -160,12 +175,6 @@ fn find_quote_word_close(input: &str, close: &str) -> Option<usize> {
                 '\u{201A}' => '\u{2019}',
                 _ => unreachable!(),
             });
-        } else if close == ">>" {
-            if ch == '<' {
-                angle_depth += 1;
-            } else if ch == '>' && angle_depth > 0 {
-                angle_depth -= 1;
-            }
         }
         i += ch_len;
     }
@@ -209,13 +218,15 @@ fn find_nested_angle_close(input: &str) -> Option<usize> {
 /// (matching Rakudo's `%h«a b»` semantics). Falls back to a plain literal key if the
 /// content cannot be tokenised as quote-words.
 pub(crate) fn angle_words_subscript_index_expr(content: &str) -> Expr {
-    match split_quotish_words(content) {
+    match split_quotish_words(content, None) {
         Ok(exprs) => crate::parser::primary::string::make_word_result_expr(exprs),
         Err(_) => Expr::Literal(crate::value::Value::str(content.to_string())),
     }
 }
 
-fn split_quotish_words(content: &str) -> Result<Vec<Expr>, PError> {
+/// `delims` is the list's own `(open, close)` pair when known: a nested copy of
+/// it ends the word it is glued to (`<< a<<b>>c >>` is `("a<<", "b", ">>c")`).
+fn split_quotish_words(content: &str, delims: Option<(&str, &str)>) -> Result<Vec<Expr>, PError> {
     let mut words = Vec::new();
     let mut rest = content;
     let flags = QuoteFlags::qq_double();
@@ -229,7 +240,7 @@ fn split_quotish_words(content: &str) -> Result<Vec<Expr>, PError> {
             rest = r;
             continue;
         }
-        let word_len = find_quotish_word_end(rest);
+        let word_len = find_quotish_word_end(rest, delims);
         let (word, r) = rest.split_at(word_len);
         if word.starts_with(':')
             && let Ok((remaining, expr)) = expression(word)
@@ -346,8 +357,18 @@ fn skip_quotish_embedded_comment(input: &str) -> Option<&str> {
     }
 }
 
-fn find_quotish_word_end(input: &str) -> usize {
+fn find_quotish_word_end(input: &str, delims: Option<(&str, &str)>) -> usize {
     for (idx, c) in input.char_indices() {
+        if let Some((open, close)) = delims {
+            // A nested opener closes the word it ends; a nested closer starts
+            // a new one (rakudo: `<< a<<b>>c >>` is `("a<<", "b", ">>c")`).
+            if input[idx..].starts_with(open) {
+                return idx + open.len();
+            }
+            if idx > 0 && input[idx..].starts_with(close) {
+                return idx;
+            }
+        }
         if (c.is_whitespace() && !is_non_breaking_space(c))
             || c == '#'
             || c == '"'
