@@ -27,4 +27,9 @@ Two more things had to line up for it to agree with rakudo:
   sigilless-readonly probe now runs before that cache, like the other
   "is there a container right now" probes already did.
 
-Pinned by `t/vm/nqp-iscont-where.t`.
+Pinned by `t/vm/nqp-iscont-where.t`; the assertion in
+`t/concurrency/thread-lock/nqp-istrue-hllize-lock-ops.t` that pinned
+`nqp::iscont` as an explicit "Unsupported" gap now checks the op instead.
+Scalar::Util goes from 7/9 to 8/9 files: `refaddr` passes, and `readonly`'s last
+failure is a raw parameter losing its container when the sub was imported
+through `sub EXPORT`, filed as #9410.
