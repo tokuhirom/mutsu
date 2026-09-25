@@ -55,14 +55,7 @@ impl Interpreter {
                 ..
             } if {
                 let cn = class_name.resolve();
-                cn == "Buf"
-                    || cn == "Blob"
-                    || cn == "utf8"
-                    || cn == "utf16"
-                    || cn.starts_with("Buf[")
-                    || cn.starts_with("Blob[")
-                    || cn.starts_with("buf")
-                    || cn.starts_with("blob")
+                crate::runtime::utils::is_buf_or_blob_class(&cn)
             } =>
             {
                 Value::seq(crate::value::value_buf::buf_elems_or_empty(&attributes))

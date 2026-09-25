@@ -615,7 +615,7 @@ impl Interpreter {
                 "buf-write-num-mut",
             );
             let cn = class_name.resolve();
-            if cn == "Blob" || cn.starts_with("Blob[") || cn.starts_with("blob") {
+            if crate::runtime::utils::is_blob_like_class(&cn) && !cn.starts_with("utf") {
                 return Err(RuntimeError::new(format!(
                     "Cannot modify immutable {} with {}",
                     cn, method
@@ -714,7 +714,7 @@ impl Interpreter {
                 "buf-write-int-mut",
             );
             let cn = class_name.resolve();
-            if cn == "Blob" || cn.starts_with("Blob[") || cn.starts_with("blob") {
+            if crate::runtime::utils::is_blob_like_class(&cn) && !cn.starts_with("utf") {
                 return Err(RuntimeError::new(format!(
                     "Cannot modify immutable {} with {}",
                     cn, method

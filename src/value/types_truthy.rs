@@ -110,13 +110,7 @@ impl Value {
                 }
                 // Buf/Blob: truthy when non-empty
                 let cn = class_name.resolve();
-                if cn == "Buf"
-                    || cn == "Blob"
-                    || cn.starts_with("Buf[")
-                    || cn.starts_with("Blob[")
-                    || cn.starts_with("buf")
-                    || cn.starts_with("blob")
-                {
+                if crate::runtime::utils::is_buf_or_blob_class(&cn) {
                     return crate::value::value_buf::with_buf_elems(&attributes, |items| {
                         !items.is_empty()
                     })

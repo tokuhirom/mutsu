@@ -330,6 +330,7 @@ pub(crate) fn is_buf_like_class(cn: &str) -> bool {
     matches!(cn, "Buf" | "buf8" | "buf16" | "buf32" | "buf64")
         || cn.starts_with("Buf[")
         || cn.starts_with("buf")
+        || crate::value::value_buf::buffer_class_type(cn).is_some_and(|t| t.starts_with("Buf"))
 }
 
 /// Check if a class name represents a Blob-like type (`Blob`, `Blob[uint8]`, `blob8`,
@@ -340,6 +341,7 @@ pub(crate) fn is_blob_like_class(cn: &str) -> bool {
         "Blob" | "blob8" | "blob16" | "blob32" | "blob64" | "utf8" | "utf16" | "utf32"
     ) || cn.starts_with("Blob[")
         || cn.starts_with("blob")
+        || crate::value::value_buf::buffer_class_type(cn).is_some_and(|t| t.starts_with("Blob"))
 }
 
 /// Check if a class name represents any Buf or Blob type

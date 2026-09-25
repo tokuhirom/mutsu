@@ -191,10 +191,10 @@ impl Interpreter {
             };
             if let Some(class_name) = class_name {
                 let class = class_name.resolve();
-                if class == "Blob" || class.starts_with("blob") || class.starts_with("Blob[") {
+                if crate::runtime::utils::is_blob_like_class(&class) && !class.starts_with("utf") {
                     return Err(RuntimeError::assignment_ro(None));
                 }
-                if class == "Buf" || class.starts_with("buf") || class.starts_with("Buf[") {
+                if crate::runtime::utils::is_buf_like_class(&class) {
                     let items = runtime::value_to_list(&assigned)
                         .into_iter()
                         .map(|v| Value::int(runtime::to_int(&v)))

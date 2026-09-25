@@ -612,14 +612,7 @@ impl Interpreter {
                         ValueView::Instance { class_name, .. }
                             if {
                                 let cn = class_name.resolve();
-                                cn == "Buf"
-                                    || cn == "Blob"
-                                    || cn == "utf8"
-                                    || cn == "utf16"
-                                    || cn.starts_with("buf")
-                                    || cn.starts_with("blob")
-                                    || cn.starts_with("Buf[")
-                                    || cn.starts_with("Blob[")
+                                crate::runtime::utils::is_buf_or_blob_class(&cn)
                             } =>
                         {
                             bytes.extend(self.supply_chunk_to_bytes(arg, "utf-8"));

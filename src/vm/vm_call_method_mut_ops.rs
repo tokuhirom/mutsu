@@ -3844,7 +3844,7 @@ impl Interpreter {
             return None;
         }
         // Immutable Blob: let the interpreter raise "Cannot modify immutable Blob".
-        if cn == "Blob" || cn.starts_with("Blob[") || cn.starts_with("blob") {
+        if crate::runtime::utils::is_blob_like_class(&cn) && !cn.starts_with("utf") {
             return None;
         }
         let mut bytes = crate::value::value_buf::buf_raw_bytes_or_empty(&attributes);

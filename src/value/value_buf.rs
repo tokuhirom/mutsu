@@ -62,6 +62,49 @@ pub(crate) use inplace::{
 const ELEMS_ATTR: &str = "bytes";
 
 // ---------------------------------------------------------------------------
+// User classes that are buffers.
+// ---------------------------------------------------------------------------
+
+/// Set once any user class has been registered as a buffer, so the class-name
+/// predicates below pay one relaxed load, not a lock, in every program that
+/// declares none.
+static ANY_BUFFER_CLASS: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// User classes that compose a buffer role over a `VMArray` body
+/// (`class B does Blob[uint8] is repr('VMArray')`), mapped to the buffer type
+/// they compose (`Blob[uint8]`). Their instances are ordinary storage-backed
+/// buffers that carry the user's class name, so every class-name keyed buffer
+/// predicate and the element type have to resolve through this table (#9438).
+/// Process-wide, like the class names it holds.
+static BUFFER_CLASSES: std::sync::LazyLock<
+    std::sync::RwLock<std::collections::HashMap<String, String>>,
+> = std::sync::LazyLock::new(Default::default);
+
+/// Record `class_name` as a user class whose instances are buffers of
+/// `buffer_type` (a canonical `Blob[..]` / `Buf[..]` name).
+pub(crate) fn register_buffer_class(class_name: &str, buffer_type: String) {
+    BUFFER_CLASSES
+        .write()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .insert(class_name.to_string(), buffer_type);
+    ANY_BUFFER_CLASS.store(true, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// The buffer type the user class `class_name` composes, when it is one (see
+/// [`register_buffer_class`]).
+// Cost: O(1) (one relaxed load; a hash lookup once any buffer class exists).
+pub(crate) fn buffer_class_type(class_name: &str) -> Option<String> {
+    if !ANY_BUFFER_CLASS.load(std::sync::atomic::Ordering::Relaxed) {
+        return None;
+    }
+    BUFFER_CLASSES
+        .read()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .get(class_name)
+        .cloned()
+}
+
+// ---------------------------------------------------------------------------
 // The node, and the encode/decode across it.
 // ---------------------------------------------------------------------------
 
@@ -77,6 +120,9 @@ const ELEMS_ATTR: &str = "bytes";
 /// short name that only encodes a width (`buf16`, `utf8`, bare `Buf`) falls back
 /// to the width and signedness its spelling implies.
 pub(crate) fn elem_type(class_name: &str) -> (u8, ElemKind) {
+    if let Some(buffer_type) = buffer_class_type(class_name) {
+        return elem_type(&buffer_type);
+    }
     if let Some(inner) = class_name
         .split_once('[')
         .and_then(|(_, rest)| rest.strip_suffix(']'))
@@ -743,6 +789,9 @@ pub(crate) fn make_buf_from_bytes(class_name: Symbol, bytes: &[u8]) -> Value {
 /// reason it is a single function now is so that P2 changes it here rather than
 /// in the four places that each had their own `contains` ladder.
 pub(crate) fn buf_elem_width(class_name: &str) -> usize {
+    if let Some(buffer_type) = buffer_class_type(class_name) {
+        return buf_elem_width(&buffer_type);
+    }
     if class_name.contains("64") {
         8
     } else if class_name.contains("32") {
@@ -759,6 +808,9 @@ pub(crate) fn buf_elem_width(class_name: &str) -> usize {
 /// width/signedness the short name encodes (`buf16` → `uint16`), defaulting
 /// to `uint8` — matching Rakudo (`Buf.of` is `(uint8)`).
 pub(crate) fn buf_elem_type_name(class_name: &str) -> String {
+    if let Some(buffer_type) = buffer_class_type(class_name) {
+        return buf_elem_type_name(&buffer_type);
+    }
     if let Some(inner) = class_name
         .split_once('[')
         .and_then(|(_, rest)| rest.strip_suffix(']'))

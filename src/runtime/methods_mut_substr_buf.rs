@@ -244,7 +244,7 @@ impl Interpreter {
         {
             // Blob is immutable — cannot reallocate
             let cn = class_name.resolve();
-            if cn == "Blob" || cn.starts_with("Blob[") || cn.starts_with("blob") {
+            if crate::runtime::utils::is_blob_like_class(&cn) && !cn.starts_with("utf") {
                 return Err(RuntimeError::new(format!(
                     "Cannot reallocate an immutable {}",
                     cn
@@ -316,14 +316,7 @@ impl Interpreter {
     pub(crate) fn is_buf_like_value(val: &Value) -> bool {
         if let ValueView::Instance { class_name, .. } = val.view() {
             let cn = class_name.resolve();
-            cn == "Buf"
-                || cn == "Blob"
-                || cn == "utf8"
-                || cn == "utf16"
-                || cn.starts_with("Buf[")
-                || cn.starts_with("Blob[")
-                || cn.starts_with("buf")
-                || cn.starts_with("blob")
+            crate::runtime::utils::is_buf_or_blob_class(&cn)
         } else {
             false
         }
