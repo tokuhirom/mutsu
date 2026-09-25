@@ -7,7 +7,7 @@ use Test;
 # caller's `$_`, so `so f("foo")` was False and `List::MoreUtils`'s
 # `after { /foo/ }, ...` never fired.
 
-plan 16;
+plan 18;
 
 my &f = { /foo/ };
 
@@ -44,3 +44,16 @@ sub after(&c, *@l) {
 }
 is-deeply after({ /foo/ }, <bar baz>).List, (), 'after: no match yields the empty list';
 is-deeply after({ /foo/ }, <bar foo baz>).List, ('baz',), 'after: yields the tail after the match';
+
+# Issue #9263: List::MoreUtils's `occurrences` test filters words out of a
+# `.comb` with `.grep: { /\w+/ }`. Treating the returned Regex as plainly true
+# kept the punctuation, so the Bag-based occurrence sum came out 142, not 124.
+{
+    my @tokens = "a b, a. c, b a.".comb(/ \w+ | <[,.]> /);
+    is-deeply @tokens.grep({ /\w+/ }).List, <a b a c b a>,
+        'grep with a bare-regex block drops the non-matching punctuation';
+    my @o;
+    @o[.value].push(.key) for @tokens.grep({ /\w+/ }).Bag.pairs;
+    is @o.pairs.grep(*.value.defined).map({ .key * .value }).sum, 6,
+        'occurrence sum counts only the words the grep kept';
+}
