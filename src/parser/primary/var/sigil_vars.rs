@@ -15,6 +15,7 @@ use super::ident::{
 };
 use super::perl5::detect_perl5_sigil_var;
 use super::scalar::scalar_var;
+use super::self_call::contextualized_self_call;
 
 static ANON_ARRAY_COUNTER: AtomicU64 = AtomicU64::new(0);
 
@@ -193,6 +194,9 @@ pub(crate) fn array_var(input: &str) -> PResult<'_, Expr> {
     {
         let after_dot = &input[1..];
         let (rest, name) = parse_qualified_ident_with_hyphens(after_dot)?;
+        if let Some(call) = contextualized_self_call(rest, &name, "list") {
+            return call;
+        }
         return Ok((rest, Expr::ArrayVar(format!(".{}", name))));
     }
     // Handle twigils
@@ -386,6 +390,9 @@ pub(crate) fn hash_var(input: &str) -> PResult<'_, Expr> {
     {
         let after_dot = &input[1..];
         let (rest, name) = parse_qualified_ident_with_hyphens(after_dot)?;
+        if let Some(call) = contextualized_self_call(rest, &name, "hash") {
+            return call;
+        }
         return Ok((rest, Expr::HashVar(format!(".{}", name))));
     }
     // Handle twigils
