@@ -256,7 +256,19 @@ pub(crate) fn junctive_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Exp
         // Whether the operator is written glued to the left operand — the one
         // thing that settles `&` between an infix and a `&name` sigil term; see
         // `parse_junction_infix_op_after`.
-        let glued_left = std::ptr::eq(r, rest);
+        //
+        // The same holds when the left operand is a complete term rather than
+        // a listop name: after `self`, `$x` or `$o.m`, a spaced `&name` is in
+        // infix position and cannot start an argument (`self &callback` is an
+        // all-junction, GLFW). Only a bareword / call head keeps the sigil
+        // reading, so `f &g` still passes `&g` (`self` is a bareword too, but
+        // a term, never a listop).
+        let glued_left = std::ptr::eq(r, rest)
+            || match &left {
+                Expr::BareWord(name) => name == "self",
+                Expr::Call { .. } => false,
+                _ => true,
+            };
         // Longest-token rule (Raku LTM): a user-declared *symbol* infix operator
         // that shadows or extends a junction operator (`multi sub infix:<&>`,
         // `infix:<&&&>`) routes to the list-infix layer, which dispatches through
