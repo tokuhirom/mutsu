@@ -51,6 +51,62 @@ fn let_compound_assign_stmt<'a>(
     })())
 }
 
+/// A `let`/`temp` of one subscripted element, `@a[i]`, `%h<k>` or `%h{EXPR}`,
+/// with an optional `= value`. `rest` is positioned right after the variable
+/// name. Returns `None` when no subscript follows. The `{EXPR}` spelling was
+/// missing, so `temp %!replacing{$key} = True` (Pod::To::PDF::Lite) failed to
+/// parse while `temp %h<key>` worked.
+fn let_subscript_stmt<'a>(
+    rest: &'a str,
+    full_name: &str,
+    is_temp: bool,
+) -> Option<PResult<'a, Stmt>> {
+    let (after_index, index) = if let Some(key_rest) = rest.strip_prefix('<')
+        && let Some(end_pos) = key_rest.find('>')
+    {
+        let key = Expr::Literal(Value::str(key_rest[..end_pos].to_string()));
+        (Ok(&key_rest[end_pos + 1..]), key)
+    } else {
+        let close = match rest.as_bytes().first() {
+            Some(b'[') => ']',
+            Some(b'{') => '}',
+            _ => return None,
+        };
+        let parsed = (|| {
+            let (r, _) = ws(&rest[1..])?;
+            let (r, idx) = expression(r)?;
+            let (r, _) = ws(r)?;
+            let (r, _) = parse_char(r, close)?;
+            Ok((r, idx))
+        })();
+        match parsed {
+            Ok((r, idx)) => (Ok(r), idx),
+            Err(e) => return Some(Err(e)),
+        }
+    };
+    Some((|| {
+        let (r, _) = ws(after_index?)?;
+        let (r, value) = if r.starts_with('=') && !r.starts_with("==") {
+            let (r, _) = ws(&r[1..])?;
+            let (r, value) = expression(r)?;
+            (r, Some(Box::new(value)))
+        } else {
+            (r, None)
+        };
+        parse_statement_modifier(
+            r,
+            Stmt::Let {
+                name: full_name.to_string(),
+                index: Some(Box::new(index)),
+                value,
+                is_temp,
+                undefine_first: false,
+                nested_lvalue: false,
+            },
+        )
+    })())
+}
+
 /// Parse `let` statement: `let $var = expr`, `let $var`, `let @arr[idx] = expr`.
 pub(crate) fn let_stmt(input: &str) -> PResult<'_, Stmt> {
     let rest = keyword("let", input).ok_or_else(|| PError::expected("let statement"))?;
@@ -85,77 +141,8 @@ pub(crate) fn let_stmt(input: &str) -> PResult<'_, Stmt> {
     };
     let (rest, _) = ws(rest)?;
 
-    // Check for index: @arr[idx]
-    if let Some(idx_rest) = rest.strip_prefix('[') {
-        let (idx_rest, _) = ws(idx_rest)?;
-        let (idx_rest, idx_expr) = expression(idx_rest)?;
-        let (idx_rest, _) = ws(idx_rest)?;
-        let (idx_rest, _) = parse_char(idx_rest, ']')?;
-        let (idx_rest, _) = ws(idx_rest)?;
-        if idx_rest.starts_with('=') && !idx_rest.starts_with("==") {
-            let val_rest = &idx_rest[1..];
-            let (val_rest, _) = ws(val_rest)?;
-            let (val_rest, val_expr) = expression(val_rest)?;
-            return parse_statement_modifier(
-                val_rest,
-                Stmt::Let {
-                    name: full_name,
-                    index: Some(Box::new(idx_expr)),
-                    value: Some(Box::new(val_expr)),
-                    is_temp: false,
-                    undefine_first: false,
-                    nested_lvalue: false,
-                },
-            );
-        }
-        return parse_statement_modifier(
-            idx_rest,
-            Stmt::Let {
-                name: full_name,
-                index: Some(Box::new(idx_expr)),
-                value: None,
-                is_temp: false,
-                undefine_first: false,
-                nested_lvalue: false,
-            },
-        );
-    }
-
-    // Check for hash key: let %hash<key> = expr
-    if let Some(key_rest) = rest.strip_prefix('<')
-        && let Some(end_pos) = key_rest.find('>')
-    {
-        let key_str = &key_rest[..end_pos];
-        let after_key = &key_rest[end_pos + 1..];
-        let (after_key, _) = ws(after_key)?;
-        let key_expr = Expr::Literal(Value::str(key_str.to_string()));
-        if after_key.starts_with('=') && !after_key.starts_with("==") {
-            let val_rest = &after_key[1..];
-            let (val_rest, _) = ws(val_rest)?;
-            let (val_rest, val_expr) = expression(val_rest)?;
-            return parse_statement_modifier(
-                val_rest,
-                Stmt::Let {
-                    name: full_name,
-                    index: Some(Box::new(key_expr)),
-                    value: Some(Box::new(val_expr)),
-                    is_temp: false,
-                    undefine_first: false,
-                    nested_lvalue: false,
-                },
-            );
-        }
-        return parse_statement_modifier(
-            after_key,
-            Stmt::Let {
-                name: full_name,
-                index: Some(Box::new(key_expr)),
-                value: None,
-                is_temp: false,
-                undefine_first: false,
-                nested_lvalue: false,
-            },
-        );
+    if let Some(parsed) = let_subscript_stmt(rest, &full_name, false) {
+        return parsed;
     }
 
     if let Some(parsed) = let_compound_assign_stmt(var_start, rest, full_name.clone(), false) {
@@ -451,77 +438,8 @@ pub(crate) fn temp_stmt(input: &str) -> PResult<'_, Stmt> {
     };
     let (rest, _) = ws(rest)?;
 
-    // Check for array index: temp @array[idx] = expr
-    if let Some(idx_rest) = rest.strip_prefix('[') {
-        let (idx_rest, _) = ws(idx_rest)?;
-        let (idx_rest, idx_expr) = expression(idx_rest)?;
-        let (idx_rest, _) = ws(idx_rest)?;
-        let (idx_rest, _) = parse_char(idx_rest, ']')?;
-        let (idx_rest, _) = ws(idx_rest)?;
-        if idx_rest.starts_with('=') && !idx_rest.starts_with("==") {
-            let val_rest = &idx_rest[1..];
-            let (val_rest, _) = ws(val_rest)?;
-            let (val_rest, val_expr) = expression(val_rest)?;
-            return parse_statement_modifier(
-                val_rest,
-                Stmt::Let {
-                    name: full_name,
-                    index: Some(Box::new(idx_expr)),
-                    value: Some(Box::new(val_expr)),
-                    is_temp: true,
-                    undefine_first: false,
-                    nested_lvalue: false,
-                },
-            );
-        }
-        return parse_statement_modifier(
-            idx_rest,
-            Stmt::Let {
-                name: full_name,
-                index: Some(Box::new(idx_expr)),
-                value: None,
-                is_temp: true,
-                undefine_first: false,
-                nested_lvalue: false,
-            },
-        );
-    }
-
-    // Check for hash key: temp %hash<key> = expr
-    if let Some(key_rest) = rest.strip_prefix('<')
-        && let Some(end_pos) = key_rest.find('>')
-    {
-        let key_str = &key_rest[..end_pos];
-        let after_key = &key_rest[end_pos + 1..];
-        let (after_key, _) = ws(after_key)?;
-        let key_expr = Expr::Literal(Value::str(key_str.to_string()));
-        if after_key.starts_with('=') && !after_key.starts_with("==") {
-            let val_rest = &after_key[1..];
-            let (val_rest, _) = ws(val_rest)?;
-            let (val_rest, val_expr) = expression(val_rest)?;
-            return parse_statement_modifier(
-                val_rest,
-                Stmt::Let {
-                    name: full_name,
-                    index: Some(Box::new(key_expr)),
-                    value: Some(Box::new(val_expr)),
-                    is_temp: true,
-                    undefine_first: false,
-                    nested_lvalue: false,
-                },
-            );
-        }
-        return parse_statement_modifier(
-            after_key,
-            Stmt::Let {
-                name: full_name,
-                index: Some(Box::new(key_expr)),
-                value: None,
-                is_temp: true,
-                undefine_first: false,
-                nested_lvalue: false,
-            },
-        );
+    if let Some(parsed) = let_subscript_stmt(rest, &full_name, true) {
+        return parsed;
     }
 
     if let Some(parsed) = let_compound_assign_stmt(var_start, rest, full_name.clone(), true) {
