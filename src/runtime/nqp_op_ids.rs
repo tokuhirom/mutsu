@@ -86,7 +86,7 @@ pub(crate) enum NqpOpTable {
 /// SORTED BY NAME — [`nqp_op_id`] binary-searches it, and an id IS an index
 /// into it. Ids are therefore not stable across edits to this list; nothing
 /// persists one (bytecode is compiled per run), but do not write one down.
-static NQP_OPS: [(&str, NqpOpTable); 177] = [
+static NQP_OPS: [(&str, NqpOpTable); 181] = [
     ("abs_i", NqpOpTable::Value),
     ("abs_n", NqpOpTable::Value),
     ("add_I", NqpOpTable::Value),
@@ -130,6 +130,9 @@ static NQP_OPS: [(&str, NqpOpTable); 177] = [
     ("coerce_si", NqpOpTable::Value),
     ("concat", NqpOpTable::Str),
     ("create", NqpOpTable::Builtin),
+    ("ctx", NqpOpTable::Builtin),
+    ("ctxcaller", NqpOpTable::Builtin),
+    ("ctxlexpad", NqpOpTable::Builtin),
     ("decode", NqpOpTable::Value),
     ("decont", NqpOpTable::Builtin),
     ("defined", NqpOpTable::Process),
@@ -150,6 +153,7 @@ static NQP_OPS: [(&str, NqpOpTable); 177] = [
     ("getattr_i", NqpOpTable::Builtin),
     ("getattr_n", NqpOpTable::Builtin),
     ("getattr_s", NqpOpTable::Builtin),
+    ("getcomp", NqpOpTable::Builtin),
     ("gethllsym", NqpOpTable::Builtin),
     ("gethostname", NqpOpTable::Builtin),
     ("getlexdyn", NqpOpTable::Builtin),

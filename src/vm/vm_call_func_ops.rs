@@ -2266,6 +2266,10 @@ impl Interpreter {
                     // The mixin + writeback behind the `trait_mod:<does>`
                     // prelude candidates (see vm::vm_trait_mod_does_ops).
                     result
+                } else if let Some(result) = self.try_repl_compiler_builtin(name, &args) {
+                    // `Perl6::Compiler.eval`'s primitive (see
+                    // runtime::repl_compiler).
+                    result
                 } else if let Some(result) = self.try_trait_mod_set_default(name, &args) {
                     // The writeback behind the `trait_mod:<is>(Attribute,
                     // :$default!)` prelude candidate (see
