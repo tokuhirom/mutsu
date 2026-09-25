@@ -849,7 +849,7 @@ impl Interpreter {
     /// Put the binding `new` a rebind just stored inside the binding cell
     /// `cell`, returning the cell as the value the variable now holds, or
     /// `None` when `new` already is that cell.
-    fn seat_in_binding_cell(
+    pub(super) fn seat_in_binding_cell(
         new: Value,
         cell: crate::gc::Gc<crate::value::ContainerCell>,
     ) -> Option<Value> {

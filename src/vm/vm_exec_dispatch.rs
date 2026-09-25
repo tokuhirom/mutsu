@@ -2130,6 +2130,13 @@ impl Interpreter {
                 // the same resolver `unit_scope_lexical_write` calls again,
                 // unconditionally, further down for the general `unit`
                 // compunit case.
+                if is_rebind
+                    && !val.is_container_ref()
+                    && self.unit_scope_lexical_rebind(&name, &val)
+                {
+                    *ip += 1;
+                    return Ok(());
+                }
                 if self.unit_scope_lexical_write(&name, &val) {
                     *ip += 1;
                     return Ok(());
