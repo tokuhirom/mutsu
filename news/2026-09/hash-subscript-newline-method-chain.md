@@ -18,7 +18,7 @@ affected, since they do not end in `}`.
 
 It was found while reducing fez 100.0.2 (`lib/Fez/CLI.rakumod`, a
 `%rsult{$k}` newline `.keys` newline `.sort` chain). The regression test is
-`t/lang/parsing/hash-subscript-newline-method-chain.t`. It covers the
+`t/collections/subscript/hash-subscript-brace-newline-continues.t`. It covers the
 assignment and parenthesised forms, nested, slice, multi-dim and zen
 subscripts, an infix continuation, and a real block-final `}` that must still
 end its statement.
