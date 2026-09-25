@@ -37,6 +37,11 @@ pub(crate) fn block_newline_terminates(
     ) {
         return false;
     }
+    // Nor is the `}` closing a hash subscript: `%h{"a"}\n~ $x` continues the
+    // expression in rakudo (#9330).
+    if crate::parser::expr::postfix::is_subscript_expr(left) {
+        return false;
+    }
     // Check if the character just before `rest` is `}`
     if !consumed.ends_with('}') {
         return false;

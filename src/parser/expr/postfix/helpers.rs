@@ -197,3 +197,15 @@ pub(crate) fn wrap_last_stmt_with_unary(stmts: &mut [Stmt], op: TokenKind) {
         };
     }
 }
+
+/// Is `expr` a postcircumfix subscript (`%h{...}`, `%h<...>`, `@a[...]`,
+/// `%h{$a;$b}`, `%h{}`)? A `}` that closes a subscript is not a block
+/// boundary, so Raku's line-ending-block rule ("a `}` at end of line ends the
+/// statement") must not fire on it: `%h{"a"}\n    .Str` chains `.Str` onto
+/// the subscript in rakudo (#9330).
+pub(in crate::parser) fn is_subscript_expr(expr: &Expr) -> bool {
+    matches!(
+        expr,
+        Expr::Index { .. } | Expr::MultiDimIndex { .. } | Expr::ZenSlice(_)
+    )
+}
