@@ -15,7 +15,7 @@ predicate lists, the EVAL known-routine name, and `builtins/functions/time.rs`
 itself. A user or module definition now dispatches normally, and a bare call
 with no declaration is `X::Undeclared::Symbols`, as in rakudo. The local test
 that exercised the builtins (`t/types/temporal/temporal-time.t`) was removed;
-`t/routines/p5-time-builtins-not-core.t` pins the new behaviour (issue #9418).
+`t/routines/p5-time-routines-not-core.t` pins the new behaviour (issue #9418).
 
 P5times `t/01-basic.t` gets past the shadowing but still stops at test 3 on
 `nqp::getrusage`, which is tracked separately in #9348.
