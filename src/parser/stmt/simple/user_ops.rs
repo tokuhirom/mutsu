@@ -247,6 +247,25 @@ pub(crate) fn match_user_declared_infix_symbol_op(input: &str) -> Option<(String
                     if (c0 == b'+' || c0 == b'-') && after.as_bytes().first() == Some(&c0) {
                         continue;
                     }
+                    // A longer built-in infix spelled with this character as
+                    // its first half wins by longest-token matching: the
+                    // numeric/string/boolean bitwise ops (`+&`, `+|`, `+^`,
+                    // `+<`, `+>`, `~&`, ..., `?|`), `**`, `//` and `~~`.
+                    // Without this, a module's `multi sub infix:<+>(Point,
+                    // Point)` (ecosystem EC) made every later `$s[0] +&= 8`
+                    // parse as `+` followed by a stray `&=`.
+                    let next = after.as_bytes().first().copied();
+                    let longer_builtin = match c0 {
+                        b'+' => matches!(next, Some(b'&' | b'|' | b'^' | b'<' | b'>')),
+                        b'~' => matches!(next, Some(b'&' | b'|' | b'^' | b'<' | b'>' | b'~')),
+                        b'?' => matches!(next, Some(b'&' | b'|' | b'^')),
+                        b'*' => next == Some(b'*'),
+                        b'/' => next == Some(b'/'),
+                        _ => false,
+                    };
+                    if longer_builtin {
+                        continue;
+                    }
                     // compound assignment `op=` (but not `op==` / `op=>`)
                     if after.starts_with('=')
                         && !after.starts_with("==")
