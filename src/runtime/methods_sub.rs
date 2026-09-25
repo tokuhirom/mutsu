@@ -555,6 +555,19 @@ impl Interpreter {
                     .map(|value| Value::truth(value.truthy())),
             );
         }
+        // Code.ACCEPTS: `self.count ?? self($topic) !! self()`, answering the
+        // call's own result (raku: `(-> $x { $x }).ACCEPTS(0)` is 0, not
+        // False). Without it `.ACCEPTS` fell through to method composition and
+        // answered a `<composed-method:ACCEPTS>` Sub (#9429).
+        // Cost: O(1) plus the call.
+        if method == "ACCEPTS" && args.len() == 1 {
+            let call_args = if data.empty_sig {
+                Vec::new()
+            } else {
+                vec![args[0].clone()]
+            };
+            return Some(self.call_sub_value(target.clone(), call_args, false));
+        }
         if method == "nextwith" {
             // Tail-style dispatch: call target with caller frame and return from current frame.
             let saved_env = self.env.clone();
