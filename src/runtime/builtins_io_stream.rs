@@ -36,76 +36,18 @@ impl Interpreter {
         self.try_io_path_content_read(&attributes.to_map(), method, &rest)
     }
 
+    /// The routine form of `say`/`put`/`print`/`note` (`&say(...)`, an alias
+    /// `my &s = &say`, ...): the same renderer the opcodes use.
+    // Cost: as `render_output`.
     pub(super) fn builtin_print(
         &mut self,
         name: &str,
         args: &[Value],
     ) -> Result<Value, RuntimeError> {
-        // put and print thread through Junctions: each eigenstate is output individually
-        if matches!(name, "put" | "print") {
-            let has_junctions = args
-                .iter()
-                .any(|a| matches!(a.view(), ValueView::Junction { .. }));
-            if has_junctions {
-                let mut flat = Vec::new();
-                for arg in args {
-                    Self::collect_junction_eigenstates(arg, &mut flat);
-                }
-                let (handle, newline) = if name == "put" {
-                    ("$*OUT", true)
-                } else {
-                    ("$*OUT", false)
-                };
-                for v in &flat {
-                    let content = self.render_str_value(v);
-                    self.write_to_named_handle(handle, &content, newline)?;
-                }
-                return Ok(Value::TRUE);
-            }
-            // No junctions: regular put/print behavior
-            let mut content = String::new();
-            for arg in args {
-                content.push_str(&self.render_str_value(arg));
-            }
-            let (handle, newline) = if name == "put" {
-                ("$*OUT", true)
-            } else {
-                ("$*OUT", false)
-            };
-            self.write_to_named_handle(handle, &content, newline)?;
-            return Ok(Value::TRUE);
-        }
-        let mut content = String::new();
-        if args.is_empty() && name == "note" {
-            content.push_str("Noted");
-        } else if name == "note" || name == "say" {
-            // say and note use .gist for rendering
-            for arg in args {
-                content.push_str(&self.render_gist_value(arg)?);
-            }
-        } else {
-            for arg in args {
-                content.push_str(&self.render_str_value(arg));
-            }
-        }
-        let (handle, newline) = match name {
-            "print" => ("$*OUT", false),
-            "say" | "put" => ("$*OUT", true),
-            _ => ("$*ERR", true),
-        };
-        self.write_to_named_handle(handle, &content, newline)?;
+        let kind = crate::vm::OutputKind::from_name(name)
+            .ok_or_else(|| RuntimeError::new(format!("not an output routine: {name}")))?;
+        self.render_output(kind, args.to_vec())?;
         Ok(Value::TRUE)
-    }
-
-    /// Collect all non-junction eigenstates from a value, flattening junctions recursively.
-    fn collect_junction_eigenstates(v: &Value, out: &mut Vec<Value>) {
-        if let ValueView::Junction { values, .. } = v.view() {
-            for elem in values.iter() {
-                Self::collect_junction_eigenstates(elem, out);
-            }
-        } else {
-            out.push(v.clone());
-        }
     }
 
     pub(super) fn builtin_prompt(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {

@@ -4261,28 +4261,28 @@ impl Interpreter {
             }
 
             // -- I/O --
-            // Cost: O(t), t = rendered size (see exec_say_op).
+            // Cost: O(t), t = rendered size (see render_output).
             OpCode::Say(n) => {
                 self.sync_source_line(code, *ip);
-                self.exec_say_op(*n)?;
+                self.exec_output_op(OutputKind::Say, *n)?;
                 *ip += 1;
             }
-            // Cost: O(t), t = total `.Str` length (see exec_put_op).
+            // Cost: O(t), t = total `.Str` length (see render_output).
             OpCode::Put(n) => {
                 self.sync_source_line(code, *ip);
-                self.exec_put_op(*n)?;
+                self.exec_output_op(OutputKind::Put, *n)?;
                 *ip += 1;
             }
             // Cost: O(t), t = total `.Str` length.
             OpCode::Print(n) => {
                 self.sync_source_line(code, *ip);
-                self.exec_print_op(*n)?;
+                self.exec_output_op(OutputKind::Print, *n)?;
                 *ip += 1;
             }
-            // Cost: O(t), t = rendered size (see exec_note_op).
+            // Cost: O(t), t = rendered size (see render_output).
             OpCode::Note(n) => {
                 self.sync_source_line(code, *ip);
-                self.exec_note_op(*n)?;
+                self.exec_output_op(OutputKind::Note, *n)?;
                 *ip += 1;
             }
 

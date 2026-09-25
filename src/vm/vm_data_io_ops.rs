@@ -165,12 +165,12 @@ fn check_unhandled_failure(v: &Value) -> Result<(), RuntimeError> {
     } = v.view()
         && class_name == "Failure"
     {
-        let handled = attributes
-            .as_map()
-            .get("handled")
-            .map(|h| h.truthy())
-            .unwrap_or(false);
-        if !handled && let Some(ex) = attributes.as_map().get("exception").cloned() {
+        // The one "is this Failure handled?" answer (`.handled`, method-call
+        // explosion and sinking all ask it): `.so`/`.Bool`/`.handled = True`
+        // record it by instance id, which the `handled` attribute alone misses.
+        if !v.is_failure_handled()
+            && let Some(ex) = attributes.as_map().get("exception").cloned()
+        {
             let ex = crate::runtime::Interpreter::as_exception_value(ex);
             let mut err = RuntimeError::new(ex.to_string_value());
             // Fail-site backtrace for the dual-backtrace rendering (see
@@ -202,6 +202,44 @@ fn check_rat_divide_by_zero(v: &Value) -> Result<(), RuntimeError> {
     }
 }
 
+/// Which of the four output routines.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(crate) enum OutputKind {
+    Say,
+    Put,
+    Print,
+    Note,
+}
+
+impl OutputKind {
+    /// The routine a name spells, if it is one of the four.
+    pub(crate) fn from_name(name: &str) -> Option<Self> {
+        Some(match name {
+            "say" => OutputKind::Say,
+            "put" => OutputKind::Put,
+            "print" => OutputKind::Print,
+            "note" => OutputKind::Note,
+            _ => return None,
+        })
+    }
+
+    fn handle(self) -> &'static str {
+        if self == OutputKind::Note {
+            "$*ERR"
+        } else {
+            "$*OUT"
+        }
+    }
+
+    fn appends_newline(self) -> bool {
+        self != OutputKind::Print
+    }
+
+    fn renders_gist(self) -> bool {
+        matches!(self, OutputKind::Say | OutputKind::Note)
+    }
+}
+
 impl Interpreter {
     /// Flatten top-level `Slip` arguments into the surrounding argument list.
     /// A `|(...)` slip passed to a list operator (say/put/print/note) spreads its
@@ -228,143 +266,82 @@ impl Interpreter {
             .collect()
     }
 
-    /// Cost: O(t) per argument, t = total rendered size of the whole aggregate:
-    /// the Proxy pre-scan walks it and `gist_value` renders every element (no
-    /// 100-element cap, unlike `.gist`/`.say`). Rakudo: O(1) for the 100-element
-    /// head -- see #9162.
-    pub(super) fn exec_say_op(&mut self, n: u32) -> Result<(), RuntimeError> {
-        let n = n as usize;
-        let start = self.stack.len() - n;
-        let values: Vec<Value> = Self::flatten_slip_args(self.stack.drain(start..).collect());
-        // ADR-0058: rendering reads elements through pure code, so a
-        // still-deferred `.map` Seq must run its callback first.
-        self.reify_map_grep_seq_args(&values)?;
-        // Slice F: a user `.gist`/`.Str` closure run below can mutate a
-        // captured-outer caller lexical (`say $x but role { method gist {$seen=1} }`).
-        // `say` is a dedicated op (no `code` param), so capture the caller frame's
-        // code before any dispatch clobbers `current_code` and reconcile after.
-        let caller_code = self.current_code;
-        let mut parts = Vec::new();
-        for v in &values {
-            // ADR-0040 §9.2: `say` renders its argument, so a `Proxy` anywhere
-            // inside it FETCHes — not just a top-level one, which is all this
-            // used to do (`say (1, $p, 3)` printed `(1 Proxy 3)`).
-            let v = loan_env!(self, resolve_proxies_in_value(v))?;
-            check_rat_divide_by_zero(&v)?;
-            check_unhandled_failure(&v)?;
-            // Resolve bound-element sentinels inside arrays before gist
-            let v = self.resolve_bound_array_elements(v);
-            if needs_method_dispatch(&v) {
-                parts.push(loan_env!(self, render_gist_value(&v))?);
-            } else {
-                parts.push(runtime::gist_value(&v));
-            }
+    /// The four output opcodes: pop `n` arguments and hand them to
+    /// [`Interpreter::render_output`].
+    // Cost: as `render_output`.
+    pub(super) fn exec_output_op(&mut self, kind: OutputKind, n: u32) -> Result<(), RuntimeError> {
+        let start = self.stack.len() - n as usize;
+        let values: Vec<Value> = self.stack.drain(start..).collect();
+        self.render_output(kind, values)
+    }
+
+    /// `say`, `put`, `print` and `note`: the one renderer behind every form --
+    /// the opcodes, the routine form (`&say(...)`, `my &s = &say; s(...)`) and
+    /// anything else that reaches `builtin_print`. They used to be five
+    /// bodies applying different subsets of the checks below, so `note 1/0`
+    /// and `&put(1/0)` printed `Inf` where every other form died (#9449).
+    ///
+    /// Every argument, for every kind: Proxies anywhere inside it are FETCHed
+    /// (ADR-0040 §9.2), a zero-denominator Rational dies, and an unhandled
+    /// Failure throws, because rendering it calls `.gist`/`.Str` on it. `say`
+    /// and `note` then render `.gist`; `put` and `print` render `.Str`, which
+    /// warns on `Nil` and on a `Regex` and threads a Junction. `put` of a lone
+    /// Junction prints one line per eigenstate.
+    // Cost: O(t) per argument, t = total rendered size of the whole aggregate:
+    // the Proxy pre-scan walks it and the render visits every element (no
+    // 100-element cap, unlike `.gist`/`.say`). Rakudo: O(1) for the
+    // 100-element head -- see #9162.
+    pub(crate) fn render_output(
+        &mut self,
+        kind: OutputKind,
+        values: Vec<Value>,
+    ) -> Result<(), RuntimeError> {
+        let values = Self::flatten_slip_args(values);
+        if kind == OutputKind::Note && values.is_empty() {
+            return self.write_to_named_handle("$*ERR", "Noted", true);
         }
-        self.reconcile_caller_after_internal_dispatch(caller_code);
-        let line = parts.join("");
-        loan_env!(self, write_to_named_handle("$*OUT", &line, true))?;
-        Ok(())
-    }
-
-    /// Cost: O(t) per argument, as `exec_say_op` (full render, no 100-element
-    /// cap). Rakudo: O(1) for the 100-element head -- see #9162.
-    pub(super) fn exec_note_op(&mut self, n: u32) -> Result<(), RuntimeError> {
-        let n = n as usize;
-        let content = if n == 0 {
-            "Noted".to_string()
-        } else {
-            let start = self.stack.len() - n;
-            let values: Vec<Value> = Self::flatten_slip_args(self.stack.drain(start..).collect());
-            // ADR-0058: rendering reads elements through pure code, so a
-            // still-deferred `.map` Seq must run its callback first.
-            self.reify_map_grep_seq_args(&values)?;
-            // Slice F: see exec_say_op — reconcile after a user `.gist` closure.
-            let caller_code = self.current_code;
-            let mut parts = Vec::new();
-            for v in &values {
-                // `note` renders exactly as `say` does (ADR-0040 §9.2).
-                let v = loan_env!(self, resolve_proxies_in_value(v))?;
-                if needs_method_dispatch(&v) {
-                    parts.push(loan_env!(self, render_gist_value(&v))?);
-                } else {
-                    parts.push(runtime::gist_value(&v));
-                }
-            }
-            self.reconcile_caller_after_internal_dispatch(caller_code);
-            parts.join("")
-        };
-        loan_env!(self, write_to_named_handle("$*ERR", &content, true))?;
-        Ok(())
-    }
-
-    /// Cost: O(t) per argument, t = total length of its `.Str` (every element is
-    /// stringified, as in Rakudo).
-    pub(super) fn exec_put_op(&mut self, n: u32) -> Result<(), RuntimeError> {
-        let n = n as usize;
-        let start = self.stack.len() - n;
-        let values: Vec<Value> = Self::flatten_slip_args(self.stack.drain(start..).collect());
         // ADR-0058: rendering reads elements through pure code, so a
         // still-deferred `.map` Seq must run its callback first.
         self.reify_map_grep_seq_args(&values)?;
-        // A lone Junction argument autothreads: each eigenstate is put on its
-        // own line (`put 1|2` => "1\n2\n").
-        if values.len() == 1 && matches!(values[0].view(), ValueView::Junction { .. }) {
-            let v = loan_env!(self, auto_fetch_proxy(&values[0]))?;
+        // A lone Junction argument to `put` autothreads: each eigenstate is
+        // put on its own line (`put 1|2` => "1\n2\n").
+        if kind == OutputKind::Put
+            && values.len() == 1
+            && matches!(values[0].view(), ValueView::Junction { .. })
+        {
+            let v = self.auto_fetch_proxy(&values[0])?;
             check_rat_divide_by_zero(&v)?;
             let mut lines = Vec::new();
             self.collect_put_lines(&v, &mut lines)?;
             for line in &lines {
-                loan_env!(self, write_to_named_handle("$*OUT", line, true))?;
+                self.write_to_named_handle("$*OUT", line, true)?;
             }
             return Ok(());
         }
-        // Otherwise concatenate every argument's `.Str` into a single line plus a
-        // trailing newline (`put 1, 2, 3` => "123\n"), like `print` with a newline.
-        // Slice F: a user `.Str` closure run below can mutate a captured-outer
-        // caller lexical; capture the caller frame's code and reconcile after (see
-        // exec_say_op).
+        // Slice F: a user `.gist`/`.Str` closure run below can mutate a
+        // captured-outer caller lexical (`say $x but role { method gist
+        // {$seen=1} }`). Capture the caller frame's code before any dispatch
+        // clobbers `current_code`, and reconcile after.
         let caller_code = self.current_code;
         let mut content = String::new();
         for v in &values {
-            // Deep, for the reason `say` is — see ADR-0040 §9.2.
-            let v = loan_env!(self, resolve_proxies_in_value(v))?;
+            let v = self.resolve_proxies_in_value(v)?;
             check_rat_divide_by_zero(&v)?;
-            // `put` stringifies via `.Str`, so a `Regex` warns and contributes
-            // nothing -- see `regex_str_coercion`, and the twin in
-            // `collect_str_threaded` that `print` goes through.
-            if let Some(coerced) = self.regex_str_coercion(&v) {
-                content.push_str(&coerced?.to_string_value());
-            } else if needs_method_dispatch(&v) {
-                content.push_str(&loan_env!(self, render_str_value(&v)));
+            check_unhandled_failure(&v)?;
+            if kind.renders_gist() {
+                // Resolve bound-element sentinels inside arrays before gist.
+                let v = self.resolve_bound_array_elements(v);
+                if needs_method_dispatch(&v) {
+                    content.push_str(&self.render_gist_value(&v)?);
+                } else {
+                    content.push_str(&runtime::gist_value(&v));
+                }
             } else {
-                content.push_str(&v.to_str_context());
+                self.collect_str_threaded(&v, &mut content)?;
             }
         }
         self.reconcile_caller_after_internal_dispatch(caller_code);
-        loan_env!(self, write_to_named_handle("$*OUT", &content, true))?;
-        Ok(())
-    }
-
-    pub(super) fn exec_print_op(&mut self, n: u32) -> Result<(), RuntimeError> {
-        let n = n as usize;
-        let start = self.stack.len() - n;
-        let values: Vec<Value> = Self::flatten_slip_args(self.stack.drain(start..).collect());
-        // ADR-0058: rendering reads elements through pure code, so a
-        // still-deferred `.map` Seq must run its callback first.
-        self.reify_map_grep_seq_args(&values)?;
-        // Slice F: see exec_put_op — reconcile after a user `.Str` closure.
-        let caller_code = self.current_code;
-        let mut content = String::new();
-        for v in &values {
-            // `print` renders exactly as `put` does (ADR-0040 §9.2).
-            let v = loan_env!(self, resolve_proxies_in_value(v))?;
-            check_rat_divide_by_zero(&v)?;
-            // For Junctions, thread: call .Str on each element recursively
-            self.collect_str_threaded(&v, &mut content)?;
-        }
-        self.reconcile_caller_after_internal_dispatch(caller_code);
-        loan_env!(self, write_to_named_handle("$*OUT", &content, false))?;
-        Ok(())
+        self.write_to_named_handle(kind.handle(), &content, kind.appends_newline())
     }
 
     /// Recursively collect put lines from a value, threading through Junctions.
