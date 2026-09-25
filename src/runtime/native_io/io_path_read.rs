@@ -2,18 +2,15 @@ use super::*;
 use crate::value::AttrMap;
 
 impl Interpreter {
-    /// Filesystem *whole-file content reads* on an `IO::Path`
-    /// (`slurp`/`lines`/`words`): resolve the path against the VM-owned cwd, read
-    /// the entire file (`fs::read[_to_string]`), then split / decode the bytes.
-    /// These allocate **no `io_handles`** and emit nothing; flag parsing
-    /// (`parse_io_flags_values`) and encoding lookup (`decode_with_encoding`, which
-    /// reads the VM-owned encoding registry) are `&self` reads, so the VM
-    /// dispatches them natively (ledger §D) via the single impl `native_io_path`
-    /// also delegates to. `comb` (its regex/closure dispatch needs `&mut self`)
-    /// and `open`/`spurt` (io_handles / FS writes) return `None` and stay in
-    /// `native_io_path`. Behavior-invariant (same read + split/decode logic).
+    /// File *content reads* on an `IO::Path` (`slurp`/`lines`/`words`): resolve
+    /// the path against the VM-owned cwd, then either read the entire file and
+    /// decode it (`slurp`) or open a private read handle whose deferred Seq
+    /// reads records on demand (`lines`/`words`, see
+    /// [`Self::io_path_lines_or_words`]). The VM dispatches them natively
+    /// (ledger §D) via the single impl `native_io_path` also delegates to.
+    /// `comb` and `open`/`spurt` return `None` and stay in `native_io_path`.
     pub(crate) fn try_io_path_content_read(
-        &self,
+        &mut self,
         attributes: &AttrMap,
         method: &str,
         args: &[Value],
@@ -25,11 +22,9 @@ impl Interpreter {
     }
 
     /// The fallible body of [`Self::try_io_path_content_read`] (the gate returns
-    /// `Option` so it cannot use `?`). Resolves the path then reads + splits /
-    /// decodes the whole file. Behavior-invariant with the arms `native_io_path`
-    /// previously held.
+    /// `Option` so it cannot use `?`).
     fn io_path_content_read(
-        &self,
+        &mut self,
         attributes: &AttrMap,
         method: &str,
         args: &[Value],
@@ -74,32 +69,78 @@ impl Interpreter {
                     Ok(Value::str(super::utils::decode_text_content(content)))
                 }
             }
-            "lines" => {
-                let content = fs::read_to_string(&path_buf)
-                    .map_err(|err| RuntimeError::new(format!("Failed to read '{}': {}", p, err)))?;
-                let content = super::utils::decode_text_content(content);
-                let (_, _, _, _, chomp, nl_in, _, _, _, _, _) = self.parse_io_flags_values(args);
-                let mut parts = Self::split_content_by_separators(&content, &nl_in, chomp);
-                if let Some(n) = args.iter().find_map(numeric_limit_arg) {
-                    parts.truncate(n);
-                }
-                Ok(Value::seq(parts))
-            }
-            "words" => {
-                let content = fs::read_to_string(&path_buf)
-                    .map_err(|err| RuntimeError::new(format!("Failed to read '{}': {}", p, err)))?;
-                let content = super::utils::decode_text_content(content);
-                let mut parts: Vec<Value> = content
-                    .split_whitespace()
-                    .map(|token| Value::str(token.to_string()))
-                    .collect();
-                if let Some(n) = args.iter().find_map(numeric_limit_arg) {
-                    parts.truncate(n);
-                }
-                Ok(Value::seq(parts))
+            "lines" | "words" => {
+                self.io_path_lines_or_words(&path_buf, &p, method == "words", args)
             }
             _ => unreachable!("io_path_content_read called with non-content method"),
         }
+    }
+
+    /// `IO::Path.lines` / `.words`: open a private read handle and return its
+    /// deferred line / word Seq (`SeqSource::IoLines`), as Rakudo's
+    /// `self.open(:$chomp, :$enc, :$nl-in).lines(:close)` does. `.head(n)`,
+    /// `.first` and `[i]` then read only the prefix they need (ADR-0119,
+    /// #9257). The handle closes when the read reaches EOF, or when a
+    /// consuming `.head` / `.first` is done with it (`take_seq_prefix`); a Seq
+    /// that is abandoned half-read keeps it open, as in Rakudo. Reads go
+    /// through a buffer (`SeqFileReader`), since nothing else can see the
+    /// handle's file offset. With a `$limit` the first `$limit` records are
+    /// read eagerly and the handle is closed.
+    // Cost: O(1) (an open(2)) without a limit; O(bytes up to the limit-th
+    // record) with one.
+    fn io_path_lines_or_words(
+        &mut self,
+        path_buf: &std::path::Path,
+        display: &str,
+        words: bool,
+        args: &[Value],
+    ) -> Result<Value, RuntimeError> {
+        let (_, _, _, _, chomp, nl_in, _, _, enc, _, _) = self.parse_io_flags_values(args);
+        let handle = self
+            .open_file_handle(
+                path_buf,
+                true,
+                false,
+                false,
+                false,
+                chomp,
+                nl_in,
+                None,
+                None,
+                enc,
+                false,
+                false,
+                Some(std::path::Path::new(display)),
+            )
+            .map_err(|err| {
+                let reason = err.message.rsplit(": ").next().unwrap_or("").to_string();
+                RuntimeError::new(format!("Failed to read '{}': {}", display, reason))
+            })?;
+        self.with_handle_mut(&handle, |state| {
+            state.close_on_exhaust = true;
+            state.seq_reader = state
+                .file
+                .take()
+                .map(crate::runtime::handle_seq_reader::SeqFileReader::new);
+            Ok(())
+        })?;
+        let Some(limit) = args.iter().find_map(numeric_limit_arg) else {
+            return Ok(Value::lazy_io_lines(handle, false, words));
+        };
+        let mut parts = Vec::new();
+        while parts.len() < limit {
+            let next = if words {
+                self.read_word_from_handle_value(&handle)?
+            } else {
+                self.read_line_from_handle_value(&handle)?
+            };
+            match next {
+                Some(s) => parts.push(Value::str(s)),
+                None => break,
+            }
+        }
+        self.close_handle_value(&handle)?;
+        Ok(Value::seq(parts))
     }
 
     /// Open a file handle for an `IO::Path` (`open`): allocate an `io_handles`

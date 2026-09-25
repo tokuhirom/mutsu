@@ -40,51 +40,6 @@ impl Interpreter {
         }
     }
 
-    /// Split a string into lines using the given line separators and chomp
-    /// setting.  Used by IO::Path.lines to honour :nl-in / :!chomp.
-    pub(super) fn split_content_by_separators(
-        content: &str,
-        separators: &[Vec<u8>],
-        chomp: bool,
-    ) -> Vec<Value> {
-        let bytes = content.as_bytes();
-        let mut result = Vec::new();
-        let mut pos = 0;
-        while pos < bytes.len() {
-            // Scan for the next separator starting from current position
-            let mut found: Option<(usize, usize)> = None; // (offset, sep_len)
-            'outer: for i in pos..bytes.len() {
-                for sep in separators {
-                    if bytes[i..].starts_with(sep) {
-                        found = Some((i, sep.len()));
-                        break 'outer;
-                    }
-                }
-            }
-            match found {
-                Some((offset, sep_len)) => {
-                    if chomp {
-                        let line = &bytes[pos..offset];
-                        result.push(Value::str(String::from_utf8_lossy(line).to_string()));
-                    } else {
-                        let line = &bytes[pos..offset + sep_len];
-                        result.push(Value::str(String::from_utf8_lossy(line).to_string()));
-                    }
-                    pos = offset + sep_len;
-                }
-                None => {
-                    // Remaining text (no trailing separator)
-                    let line = &bytes[pos..];
-                    if !line.is_empty() {
-                        result.push(Value::str(String::from_utf8_lossy(line).to_string()));
-                    }
-                    break;
-                }
-            }
-        }
-        result
-    }
-
     pub(crate) fn handle_id_from_value(value: &Value) -> Option<usize> {
         if let ValueView::Instance {
             class_name,
@@ -296,5 +251,29 @@ impl Interpreter {
         handle_value: &Value,
     ) -> Result<bool, RuntimeError> {
         self.with_handle_mut(handle_value, |state| state.close())
+    }
+
+    /// Whether `handle_value` is the private handle `IO::Path.lines` /
+    /// `.words` opened for its Seq (#9257) -- one no user code can reach.
+    // Cost: O(1).
+    pub(crate) fn is_seq_private_handle(&self, handle_value: &Value) -> bool {
+        Self::handle_id_from_value(handle_value).is_some_and(|id| {
+            self.io_handles()
+                .map
+                .get(&id)
+                .is_some_and(|state| state.seq_reader.is_some())
+        })
+    }
+
+    /// Close `handle_value` if it is a Seq's private handle. Called once the
+    /// Seq that owns it can no longer be read (a consuming `.head` / `.first`,
+    /// or a `for` loop that claimed it), so an abandoned read does not keep
+    /// its fd open for the rest of the program. A user's own handle is left
+    /// alone.
+    // Cost: O(1).
+    pub(crate) fn close_if_seq_private_handle(&mut self, handle_value: &Value) {
+        if self.is_seq_private_handle(handle_value) {
+            let _ = self.close_handle_value(handle_value);
+        }
     }
 }

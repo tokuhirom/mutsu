@@ -562,7 +562,7 @@ impl Interpreter {
                     // consumer triggers close-on-exhaust when `:close` was given.
                     if close_after {
                         self.with_handle_mut(&target_val, |state| {
-                            state.close_on_word_exhaust = true;
+                            state.close_on_exhaust = true;
                             Ok(())
                         })?;
                     }

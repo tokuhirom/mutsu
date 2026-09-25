@@ -311,6 +311,9 @@ impl Interpreter {
         words: bool,
         kv: bool,
     ) -> Result<Vec<Value>, RuntimeError> {
+        if !kv && let Some(items) = self.drain_seq_private_handle(&handle, words)? {
+            return Ok(items);
+        }
         let forced = loan_env!(self, force_lazy_io_lines(&handle, words))?;
         let items = crate::runtime::utils::value_to_list(&forced);
         if kv {
@@ -370,7 +373,16 @@ impl Interpreter {
         body: &Arc<SeqBody>,
         needed: usize,
     ) -> Result<(), RuntimeError> {
-        if !body.has_prefix_source() {
+        // The private handle of an `IO::Path.lines` / `.words` Seq (#9257)
+        // is read to the end instead: a Seq that is only subscripted stays
+        // readable, so nothing could close a half-read handle, and mutsu has
+        // no finalizer to close it when the Seq is dropped.
+        // TODO: close the handle when its Seq is dropped, then pull a
+        // bounded prefix here too.
+        let private_io = body
+            .peek_io_lines_parts()
+            .is_some_and(|(handle, _, _)| self.is_seq_private_handle(&handle));
+        if !body.has_prefix_source() || private_io {
             self.reify_seq_body(body)?;
             return Ok(());
         }
@@ -1072,7 +1084,12 @@ impl Interpreter {
                 items
             }
             Some(crate::value::PrefixSource::IoLines { handle, words }) => {
-                self.pull_io_lines_prefix_to_vec(&handle, words, n)?.0
+                let items = self.pull_io_lines_prefix_to_vec(&handle, words, n);
+                // The Seq is consumed, so the private handle `IO::Path.lines` /
+                // `.words` opened (#9257) can never be read again: close it
+                // now rather than leak its fd. A user's own handle stays open.
+                self.close_if_seq_private_handle(&handle);
+                items?.0
             }
             None => return Ok(None),
         };
