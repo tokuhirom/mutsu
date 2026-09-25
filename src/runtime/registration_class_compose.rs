@@ -241,6 +241,18 @@ impl Interpreter {
             cx.out
                 .class_role_param_bindings
                 .insert(p.clone(), v.clone());
+            // Signature binding publishes callable parameters under both their
+            // sigilless name and their `&` code-variable spelling. Role
+            // composition stores the parameter bindings directly, so preserve
+            // that alias for a role method such as `:&cmp` as well as `cmp(...)`.
+            if matches!(
+                v.view(),
+                ValueView::Sub(_) | ValueView::WeakSub(_) | ValueView::Routine { .. }
+            ) {
+                cx.out
+                    .class_role_param_bindings
+                    .insert(format!("&{p}"), v.clone());
+            }
         }
         // Per-candidate role param bindings (`T => Int`), stamped onto each
         // composed MethodDef below in addition to the flat per-class map
@@ -254,13 +266,17 @@ impl Interpreter {
             if role_param_names.is_empty() {
                 None
             } else {
-                Some(std::sync::Arc::new(
-                    role_param_names
-                        .iter()
-                        .cloned()
-                        .zip(role_arg_values.iter().cloned())
-                        .collect(),
-                ))
+                let mut bindings = Vec::with_capacity(role_param_names.len() * 2);
+                for (name, value) in role_param_names.iter().zip(role_arg_values.iter()) {
+                    bindings.push((name.clone(), value.clone()));
+                    if matches!(
+                        value.view(),
+                        ValueView::Sub(_) | ValueView::WeakSub(_) | ValueView::Routine { .. }
+                    ) {
+                        bindings.push((format!("&{name}"), value.clone()));
+                    }
+                }
+                Some(std::sync::Arc::new(bindings))
             };
         for attr in &role.attributes {
             if !cx
@@ -484,11 +500,19 @@ impl Interpreter {
                 cx.class_def.wildcard_handles.push(wh.clone());
             }
         }
-        let role_param_values: ValueMap = role_param_names
+        let mut role_param_values: ValueMap = role_param_names
             .iter()
             .cloned()
             .zip(role_arg_values.iter().cloned())
             .collect();
+        for (name, value) in role_param_names.iter().zip(role_arg_values.iter()) {
+            if matches!(
+                value.view(),
+                ValueView::Sub(_) | ValueView::WeakSub(_) | ValueView::Routine { .. }
+            ) {
+                role_param_values.insert(format!("&{name}"), value.clone());
+            }
+        }
         // A role's deferred body must run once per (class, role) composition,
         // not once per `register_class_decl` call. Rakudo memoises the
         // composed *type*: `class A does R {}` re-executed against the same

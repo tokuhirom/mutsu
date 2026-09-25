@@ -227,7 +227,9 @@ impl Compiler {
             return;
         }
         // Fast path: @arr.push(single_expr) with no modifiers → ArrayPush opcode
-        // Only for local variables (not captured closures) to avoid COW env sync issues
+        // Only for local variables (not captured closures) to avoid COW env
+        // sync issues. Custom positional containers captured by a closure use
+        // the ordinary method receiver path, which resolves their live value.
         if name.resolve() == "push"
             && args.len() == 1
             && modifier.is_none()
@@ -252,9 +254,11 @@ impl Compiler {
                 Expr::HashVar(n) => Some(self.code.add_constant(Value::str(format!("%{}", n)))),
                 _ => None,
             };
+            let target_slot = self.local_map.get(&target_name).copied();
             let target_name_idx = self.code.add_constant(Value::str(target_name));
             self.code.emit(OpCode::ArrayPush {
                 target_name_idx,
+                target_slot,
                 value_source_idx,
             });
             return;
