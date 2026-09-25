@@ -324,31 +324,13 @@ impl Interpreter {
         }
         // Set operators: check for Failure and lazy list values
         if is_set_op {
-            let is_lazy_value = |v: &Value| -> bool {
-                match v.view() {
-                    ValueView::LazyList(_) => true,
-                    ValueView::Range(_, end)
-                    | ValueView::RangeExcl(_, end)
-                    | ValueView::RangeExclStart(_, end)
-                    | ValueView::RangeExclBoth(_, end) => end == i64::MAX,
-                    ValueView::GenericRange { end, .. } => match end.view() {
-                        ValueView::HyperWhatever => true,
-                        ValueView::Num(n) => n.is_infinite() && n.is_sign_positive(),
-                        _ => {
-                            let n = end.to_f64();
-                            n.is_infinite() && n.is_sign_positive()
-                        }
-                    },
-                    _ => false,
-                }
-            };
             for arg in &args {
                 if let ValueView::Instance { class_name, .. } = arg.view()
                     && class_name == "Failure"
                 {
                     return Err(RuntimeError::new("Exception"));
                 }
-                if is_lazy_value(arg) {
+                if crate::runtime::is_lazy_set_operand(arg) {
                     let mut attrs = std::collections::HashMap::new();
                     attrs.insert(
                         "message".to_string(),
