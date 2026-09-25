@@ -34,6 +34,6 @@ allocations, which is essentially all of the step. The bench CI's history will g
 authoritative number.
 
 Chain order and what each link resolves are unchanged. `t/modules/compunit/repo-resolve-bundled.t`
-still passes as written. The new `t/modules/compunit/repo-chain-bundled-lazy.t` pins a program
+still passes as written. The new `t/modules/compunit/repo-chain-bundled-links.t` pins a program
 whose first touch of the chain is a hand walk over `.next-repo`, and checks that a second
 `repo-chain` does not grow.
