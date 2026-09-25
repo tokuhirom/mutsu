@@ -2333,6 +2333,9 @@ impl Compiler {
                     let source_slot = self.local_map.get(effective_name).copied();
                     self.code.note_rebind_target(source_slot);
                     self.code.note_rebound_slot(source_slot);
+                    if source_slot.is_none() {
+                        self.code.note_rebound_name(effective_name);
+                    }
                 }
                 self.emit_set_named_var(effective_name);
             }

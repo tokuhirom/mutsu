@@ -5680,6 +5680,19 @@ pub(crate) struct CompiledCode {
     /// rebind swaps what every capturing closure sees without dragging along
     /// a second name `:=`-bound to the old container (#9237, #9207).
     pub(crate) rebound_slots: Vec<u32>,
+    /// Names a `:=` in this chunk REBINDS without an own slot to record in
+    /// [`Self::rebound_slots`] — a free variable rebound from inside a closure
+    /// (`my $a; my &c = { $a := $b }`), recorded by
+    /// [`Self::note_rebound_name`]. Raw compiler input to
+    /// [`Self::free_var_rebinds`].
+    pub(crate) rebound_free_names: Vec<Symbol>,
+    /// Free variables this code or a nested closure REBINDS with `:=` (#9307).
+    /// Folded up by `compute_free_vars` until it reaches the chunk that
+    /// declares the name, where the name's slots join
+    /// [`Self::rebound_slots`]: the declaring frame then gives the capture a
+    /// binding cell, so a rebind made inside one closure is seen by the frame
+    /// and by every sibling closure over the same variable.
+    pub(crate) free_var_rebinds: Vec<Symbol>,
     /// Lazily-built `Symbol` sets over [`free_var_syms`](Self::free_var_syms)
     /// and [`locals_sym`](Self::locals_sym), for `capture_closure_env`'s
     /// membership tests. Both are pure functions of the chunk, but the capture
@@ -6183,6 +6196,8 @@ impl CompiledCode {
             local_read_plain: std::sync::OnceLock::new(),
             rebind_target_slots: Vec::new(),
             rebound_slots: Vec::new(),
+            rebound_free_names: Vec::new(),
+            free_var_rebinds: Vec::new(),
             free_var_sym_set: std::sync::OnceLock::new(),
             local_sym_set: std::sync::OnceLock::new(),
             capture_probe_keys: std::sync::OnceLock::new(),
@@ -6265,6 +6280,15 @@ impl CompiledCode {
             && !self.rebound_slots.contains(&slot)
         {
             self.rebound_slots.push(slot);
+        }
+    }
+
+    /// Record `name` as rebound by a `:=` that has no own slot for it — see
+    /// [`Self::rebound_free_names`].
+    pub(crate) fn note_rebound_name(&mut self, name: &str) {
+        let sym = Symbol::intern(name);
+        if !self.rebound_free_names.contains(&sym) {
+            self.rebound_free_names.push(sym);
         }
     }
 
@@ -8201,6 +8225,23 @@ impl CompiledCode {
                 }
             }
         }
+        // Rebinds of a free variable (#9307): our own by-name `:=` targets that
+        // are not ours, plus every nested closure's, bubble up to the chunk
+        // that declares the name, which records the name's slots as rebound
+        // (see `free_var_rebinds`).
+        let mut free_rebinds: std::collections::HashSet<Symbol> = std::collections::HashSet::new();
+        let mut own_rebinds: Vec<Symbol> = Vec::new();
+        for sym in self.rebound_free_names.iter().chain(
+            self.closure_compiled_codes
+                .iter()
+                .flat_map(|n| n.free_var_rebinds.iter()),
+        ) {
+            if sym.with_str(|s| own.contains(s)) {
+                own_rebinds.push(*sym);
+            } else {
+                free_rebinds.insert(*sym);
+            }
+        }
         // Fold nested closures: their free vars are ours unless we declare them;
         // their free-var *writes* of one of our locals make that local mutated.
         for nested in &self.closure_compiled_codes {
@@ -8456,6 +8497,20 @@ impl CompiledCode {
         self.free_var_syms = free.into_iter().collect();
         self.outer_ref_names = outer_ref_names;
         self.free_var_writes = free_writes.into_iter().collect();
+        self.free_var_rebinds = free_rebinds.into_iter().collect();
+        for sym in own_rebinds {
+            let slots: Vec<u32> = sym.with_str(|s| {
+                self.locals
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, l)| l.as_str() == s)
+                    .map(|(i, _)| i as u32)
+                    .collect()
+            });
+            for slot in slots {
+                self.note_rebound_slot(Some(slot));
+            }
+        }
         self.free_var_container_writes = free_container_writes.into_iter().collect();
         self.captured_mutated_locals = captured_mutated.into_iter().collect();
         self.needs_cell_locals = needs_cell.into_iter().collect();
