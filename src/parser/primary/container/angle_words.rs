@@ -107,11 +107,13 @@ fn find_quote_word_close(input: &str, close: &str) -> Option<usize> {
     let mut i = 0usize;
     let mut quoted_by: Option<char> = None;
     let mut escaped = false;
-    let mut angle_depth = 0usize;
+    // A `<` inside `<< >>` / `« »` is word text, not a nested opener (rakudo:
+    // `<< < <= >>` is `("<", "<=")`, `<< a<b >>` is `"a<b"`). Only the closing
+    // delimiter is special, and a `>>` immediately followed by another `>` is
+    // not it: that first `>` ends a subscript in the last word (`<<$h<a>>>`).
     while i < input.len() {
         let rest = &input[i..];
         if quoted_by.is_none()
-            && angle_depth == 0
             && rest.starts_with(close)
             && !rest
                 .strip_prefix(close)
@@ -160,12 +162,6 @@ fn find_quote_word_close(input: &str, close: &str) -> Option<usize> {
                 '\u{201A}' => '\u{2019}',
                 _ => unreachable!(),
             });
-        } else if close == ">>" {
-            if ch == '<' {
-                angle_depth += 1;
-            } else if ch == '>' && angle_depth > 0 {
-                angle_depth -= 1;
-            }
         }
         i += ch_len;
     }
