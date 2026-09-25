@@ -164,6 +164,9 @@ pub(crate) enum PrefixSource {
     Str(crate::value::StrIterSpec),
     /// An `IO::Handle.lines` (`words: false`) / `.words` read.
     IoLines { handle: Value, words: bool },
+    /// A `Seq.new($iterator)` source: a user/native `Iterator` driven one
+    /// `pull-one` at a time.
+    Iterator(Value),
 }
 
 /// Outcome of [`SeqBody::take`]: whether the caller may treat the Seq as
@@ -474,8 +477,8 @@ impl SeqBody {
 
     /// A consuming `.head(n)` / `.first` on a body nobody has read yet whose
     /// source can be pulled one element at a time: a [`SeqSource::StrIter`],
-    /// or an `IO::Handle.lines` / `.words` read ([`SeqSource::IoLines`]
-    /// without `kv`). Steals and returns that source, leaving the body
+    /// an `IO::Handle.lines` / `.words` read ([`SeqSource::IoLines`]
+    /// without `kv`), or a `Seq.new($iterator)` ([`SeqSource::Iterator`]). Steals and returns that source, leaving the body
     /// `Taken` exactly as a full [`SeqBody::take`] would, so the caller can
     /// pull only the prefix it needs, the way Rakudo's `.head` pulls `n`
     /// times from the Seq's iterator. `None` (and nothing changes) for any
@@ -491,7 +494,7 @@ impl SeqBody {
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let granular = matches!(
             state.source,
-            SeqSource::StrIter(_) | SeqSource::IoLines { kv: false, .. }
+            SeqSource::StrIter(_) | SeqSource::IoLines { kv: false, .. } | SeqSource::Iterator(_)
         );
         if !granular || state.cache_requested || !self.live_generation().is_empty() {
             return None;
@@ -504,7 +507,8 @@ impl SeqBody {
             SeqSource::IoLines { handle, words, .. } => {
                 Some(PrefixSource::IoLines { handle, words })
             }
-            // `granular` above admits only the two shapes matched here.
+            SeqSource::Iterator(iterator) => Some(PrefixSource::Iterator(iterator)),
+            // `granular` above admits only the shapes matched here.
             other => {
                 state.source = other;
                 None
