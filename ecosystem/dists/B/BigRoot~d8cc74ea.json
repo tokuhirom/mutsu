@@ -9,69 +9,66 @@
   "dist": "BigRoot",
   "files": [
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Cannot modify an immutable Int (30)",
         "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 0.05,
+        "ok": 2,
+        "plan": 2,
+        "secs": 1.76,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/01-first-sqrt2-sqrt3-high-precision.rakutest",
       "raku": {
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 3.35,
+        "secs": 8.94,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Type check failed for return value; expected FatRat but got Any (Any)",
         "nok": 0,
-        "ok": 0,
+        "ok": 3,
         "plan": 3,
-        "secs": 0.07,
+        "secs": 0.36,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/02-basic-tests.rakutest",
       "raku": {
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 0.57,
+        "secs": 1.81,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Cannot modify an immutable Int (30)",
         "nok": 0,
-        "ok": 0,
+        "ok": 6,
         "plan": 6,
-        "secs": 0.09,
+        "secs": 1.89,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/03-rational-roots.rakutest",
       "raku": {
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 3.15,
+        "secs": 6.49,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -83,10 +80,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-24",
+    "date": "2026-09-25",
     "harness": 2,
-    "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "338f021",
+    "host": "linux-x86_64",
+    "mutsu_commit": "40fddd42",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -97,13 +94,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/B/IG/BIGROOT/a2c2139d9444da7338796af28afb123defdfd399.tar.gz"
   },
-  "status": "red",
+  "status": "green",
   "totals": {
     "baseline_assertions": 11,
     "baseline_files": 3,
-    "mutsu_assertions": 0,
-    "parity_files": 0,
-    "regressed_files": 3
+    "mutsu_assertions": 11,
+    "parity_files": 3,
+    "regressed_files": 0
   },
   "version": "0.1.1"
 }
