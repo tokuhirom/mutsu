@@ -118,8 +118,9 @@ pub(crate) fn run_slang_activation(
     module: String,
     lib_paths: Vec<String>,
 ) -> Result<SlangActivation, String> {
-    let handle = crate::runtime::builtins_system::spawn_user_thread(
+    let handle = crate::runtime::builtins_system::try_spawn_user_thread(
         ACTIVATION_THREAD_NAME,
+        crate::runtime::builtins_system::StackPolicy::Required,
         move || -> Result<SlangActivation, String> {
             let mut interp = Interpreter::new();
             for path in lib_paths {
@@ -134,7 +135,8 @@ pub(crate) fn run_slang_activation(
                 declarators: std::mem::take(&mut interp.defined_slang_declarators),
             })
         },
-    );
+    )
+    .map_err(|e| e.message())?;
     crate::gc::block_quiescent(|| handle.join())
         .map_err(|_| "slang activation thread panicked".to_string())?
 }

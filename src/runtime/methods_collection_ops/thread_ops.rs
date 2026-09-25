@@ -34,7 +34,7 @@ impl Interpreter {
 
         let thread_id = super::next_thread_id();
         super::claim_thread_start(thread_id);
-        self.spawn_thread_body(block, thread_id, app_lifetime);
+        self.spawn_thread_body(block, thread_id, app_lifetime)?;
 
         let mut attrs = HashMap::new();
         attrs.insert("id".to_string(), Value::int(thread_id as i64));
@@ -73,14 +73,22 @@ impl Interpreter {
                 "Thread.run: cannot run a thread that has already been started",
             ));
         }
-        self.spawn_thread_body(block, thread_id, app_lifetime);
+        self.spawn_thread_body(block, thread_id, app_lifetime)?;
         Ok(target.clone())
     }
 
     /// Spawn the OS thread that runs `block`, registering its join handle under
     /// `thread_id` unless the thread is `app_lifetime` (those are killed when
     /// the process's main thread terminates, so nothing ever joins them).
-    fn spawn_thread_body(&mut self, block: Value, thread_id: u64, app_lifetime: bool) {
+    ///
+    /// A thread the OS refuses (even at the smallest stack tier, ADR-0123) is
+    /// a catchable `X::AdHoc`, not a panic.
+    fn spawn_thread_body(
+        &mut self,
+        block: Value,
+        thread_id: u64,
+        app_lifetime: bool,
+    ) -> Result<(), RuntimeError> {
         // Immediate stdout so the thread's output lands in real chronological
         // order relative to the main thread's direct writes.
         let mut thread_interp = self.clone_for_thread();
@@ -90,10 +98,11 @@ impl Interpreter {
         // worker threads): `Thread.start` runs arbitrary user code, and the
         // default ~2-8 MiB thread stack overflows on deep VM nesting (e.g. an
         // async server whose react loop constructs objects whose BUILD re-enters
-        // the VM -- HTTP::Server::Tiny). See `USER_THREAD_STACK_SIZE`.
+        // the VM -- HTTP::Server::Tiny). See `stack_budget::STACK_TIERS`.
         // Deliberately NOT pooled (ADR-0020 §3.6): a `Thread.start` thread has
         // user-visible identity (`$*THREAD.id`) stable for its whole lifetime.
-        let handle = crate::runtime::builtins_system::spawn_user_thread("raku-thread", move || {
+        use crate::runtime::builtins_system::{StackPolicy, try_spawn_user_thread};
+        let handle = try_spawn_user_thread("raku-thread", StackPolicy::Required, move || {
             // Set the mutsu thread ID for $*THREAD.id consistency
             super::set_current_mutsu_thread_id(mutsu_tid);
             match thread_interp.call_sub_value(block, vec![], false) {
@@ -124,7 +133,8 @@ impl Interpreter {
                 let _ = std::io::stderr().write_all(stderr.as_bytes());
                 let _ = std::io::stderr().flush();
             }
-        });
+        })
+        .map_err(|e| e.to_runtime_error())?;
 
         if app_lifetime {
             // For app_lifetime threads, don't store the handle -- the thread
@@ -133,6 +143,7 @@ impl Interpreter {
         } else {
             THREAD_HANDLES.lock().unwrap().insert(thread_id, handle);
         }
+        Ok(())
     }
 
     /// Thread.finish -- join the thread (block until it completes)

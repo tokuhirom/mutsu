@@ -263,12 +263,21 @@ impl Interpreter {
             // Registered spawn: `p.wait()` clones arbitrary result `Value`s
             // and the thread drops its promise handles at exit (the waits
             // themselves are already STW-aware / quiescent).
-            crate::runtime::builtins_system::spawn_gc_helper_thread("promise-comb", move || {
-                for p in &promises {
-                    p.wait();
-                }
-                promise.keep(Value::TRUE, String::new(), String::new());
-            });
+            // A refused thread is a catchable X::AdHoc (ADR-0123).
+            let spawned = crate::runtime::builtins_system::try_spawn_gc_helper_thread(
+                "promise-comb",
+                move || {
+                    for p in &promises {
+                        p.wait();
+                    }
+                    promise.keep(Value::TRUE, String::new(), String::new());
+                },
+            );
+            if let Err(e) = spawned {
+                return Some(Err(
+                    crate::runtime::builtins_system::SpawnError::Os(e).to_runtime_error()
+                ));
+            }
             return Some(Ok(ret));
         }
         None

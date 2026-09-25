@@ -25,19 +25,31 @@
 
 use std::cell::Cell;
 
-/// Stack kept below the guard, out of the 256 MiB every VM-running thread
-/// gets (`main.rs`'s `mutsu-main`, and
-/// `builtins_system::USER_THREAD_STACK_SIZE` for `start`/Promise/Supply
-/// workers). It has to cover three things once the guard fires: building the
-/// error, unwinding, and running the `END` phasers that unwind reaches — plus
-/// the native recursion a *single* Raku call can do between two checks (a deep
-/// regex match, dropping a deeply nested value), which the call-boundary check
-/// by construction cannot see.
+/// Stack kept below the guard on a full-size (256 MiB) stack -- the one every
+/// VM-running thread normally gets (`main.rs`'s `mutsu-main`, and
+/// `stack_budget::STACK_TIERS[0]` for `start`/Promise/Supply workers). It has
+/// to cover three things once the guard fires: building the error, unwinding,
+/// and running the `END` phasers that unwind reaches — plus the native
+/// recursion a *single* Raku call can do between two checks (a deep regex
+/// match, dropping a deeply nested value), which the call-boundary check by
+/// construction cannot see.
+///
+/// A worker the address-space budget stepped down to a smaller stack
+/// (ADR-0123) keeps a quarter of it instead, see [`reserve_for`].
 const STACK_RESERVE_BYTES: usize = 16 * 1024 * 1024;
 
-/// A stack at most this large is left unguarded: the reserve would eat most of
-/// it, so the guard would refuse calls a thread of that size handles fine.
-const MIN_GUARDABLE_STACK_BYTES: usize = STACK_RESERVE_BYTES * 4;
+/// A stack smaller than this is left unguarded: its reserve would no longer
+/// cover one check interval's worth of overshoot plus the unwind. The
+/// smallest stack tier (`stack_budget::STACK_TIERS`) is exactly this.
+const MIN_GUARDABLE_STACK_BYTES: usize = 32 * 1024 * 1024;
+
+/// The reserve kept below the guard on a stack of `stack_size` bytes:
+/// [`STACK_RESERVE_BYTES`], or a quarter of a smaller stack (8 MiB on the
+/// 32 MiB tier -- still above the ~5 MiB worst-case interval overshoot of a
+/// debug build, see [`STACK_CHECK_INTERVAL`]).
+fn reserve_for(stack_size: usize) -> usize {
+    STACK_RESERVE_BYTES.min(stack_size / 4)
+}
 
 thread_local! {
     /// Lowest stack address this thread may still make a call from, or 0 when
@@ -76,7 +88,7 @@ pub fn init_thread_stack_floor(stack_size: usize) {
     // and every `start {}` block died with "Too deep recursion".
     let Some(floor) = top
         .checked_sub(stack_size)
-        .and_then(|bottom| bottom.checked_add(STACK_RESERVE_BYTES))
+        .and_then(|bottom| bottom.checked_add(reserve_for(stack_size)))
         .filter(|floor| *floor < top)
     else {
         return;
@@ -108,7 +120,8 @@ pub(crate) const DEEP_RECURSION_MESSAGE: &str = "Too deep recursion (out of stac
 /// the floor by at most one interval's worth of frames — which is what
 /// [`STACK_RESERVE_BYTES`] is sized to absorb: 32 frames of the fattest kind
 /// observed (~156 KiB each, an interpreted non-JIT frame in a debug build) is
-/// ~5 MiB of the 16 MiB reserve.
+/// ~5 MiB of the 16 MiB reserve (or of the 8 MiB one on the smallest stack
+/// tier).
 pub(crate) const STACK_CHECK_INTERVAL: u32 = 32;
 
 /// Refuse a Raku call that this thread no longer has the stack to make.
@@ -205,6 +218,32 @@ mod tests {
                 // the few bytes between `top` and the arming call's own frame.
                 let usable = top - floor;
                 let expected = MIN_GUARDABLE_STACK_BYTES * 2 - STACK_RESERVE_BYTES;
+                assert!(
+                    usable.abs_diff(expected) < 64 * 1024,
+                    "usable {usable} vs expected {expected}"
+                );
+            })
+            .unwrap()
+            .join()
+            .unwrap();
+    }
+
+    #[test]
+    fn the_smallest_stack_tier_keeps_a_quarter_as_its_reserve() {
+        // ADR-0123: a worker the address-space budget stepped down to the
+        // smallest tier is still guarded, with a proportionally smaller
+        // reserve.
+        let size = *crate::runtime::stack_budget::STACK_TIERS.last().unwrap();
+        assert_eq!(size, MIN_GUARDABLE_STACK_BYTES);
+        std::thread::Builder::new()
+            .stack_size(size)
+            .spawn(move || {
+                let top = approx_stack_pointer();
+                init_thread_stack_floor(size);
+                let floor = STACK_FLOOR.with(|c| c.get());
+                assert_ne!(floor, 0, "the smallest tier must be guarded");
+                let usable = top - floor;
+                let expected = size - size / 4;
                 assert!(
                     usable.abs_diff(expected) < 64 * 1024,
                     "usable {usable} vs expected {expected}"

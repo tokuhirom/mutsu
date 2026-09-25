@@ -2,16 +2,54 @@ use super::*;
 use crate::symbol::Symbol;
 use std::sync::OnceLock;
 
-/// Stack size for worker threads that execute user code (Promise / `start` /
-/// Supply callbacks). Matches the main thread's stack (see `main.rs`): the
-/// default ~2 MiB thread stack overflows on deep VM recursion, which shows up
-/// as debug-build-only crashes (release frames are smaller and fit in 2 MiB).
-pub(crate) const USER_THREAD_STACK_SIZE: usize = 256 * 1024 * 1024;
+/// How hard a user-code spawn may try to get its thread (ADR-0123).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(crate) enum StackPolicy {
+    /// Optional growth (the worker pool adding capacity while other workers
+    /// are still making progress): only a full-size stack, and only if it fits
+    /// the address-space budget. It does not -> [`SpawnError::OverBudget`].
+    /// (wasm32 has no pool, so nothing grows optionally there.)
+    #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
+    Budgeted,
+    /// A thread that has to exist -- nothing else can run the work, or user
+    /// code asked for a `Thread` explicitly. Steps down through the stack
+    /// tiers, past the budget if it has to.
+    Required,
+}
+
+/// Why a user-code thread could not be started.
+#[derive(Debug)]
+pub(crate) enum SpawnError {
+    /// [`StackPolicy::Budgeted`] and no stack tier fits the budget.
+    OverBudget,
+    /// The OS refused every stack size tried.
+    Os(std::io::Error),
+}
+
+impl SpawnError {
+    /// The text of the Raku exception the caller raises (rakudo's MoarVM
+    /// reports a refused thread as a plain `X::AdHoc` as well).
+    pub(crate) fn message(&self) -> String {
+        match self {
+            SpawnError::OverBudget => {
+                "Could not create a new Thread: stack address-space budget exhausted".to_string()
+            }
+            SpawnError::Os(e) => format!("Could not create a new Thread: {e}"),
+        }
+    }
+
+    pub(crate) fn to_runtime_error(&self) -> RuntimeError {
+        RuntimeError::typed_msg("X::AdHoc", self.message())
+    }
+}
 
 /// Spawn a worker thread with a large stack for running user code, so deep VM
 /// recursion does not overflow the default thread stack. `name` becomes the
 /// OS thread name (see `thread_compat::spawn_thread`), so pick something that
 /// identifies the call site in a crash report's `thread:` field.
+///
+/// Panics when no thread can be created at all; code that runs on behalf of a
+/// Raku program uses [`try_spawn_user_thread`] and raises instead.
 pub(crate) fn spawn_user_thread<F, T>(
     name: &str,
     f: F,
@@ -20,7 +58,54 @@ where
     F: FnOnce() -> T + Send + 'static,
     T: Send + 'static,
 {
-    spawn_registered_thread(name, Some(USER_THREAD_STACK_SIZE), f)
+    try_spawn_user_thread(name, StackPolicy::Required, f)
+        .unwrap_or_else(|e| panic!("failed to spawn worker thread: {e:?}"))
+}
+
+/// Spawn a user-code thread (see [`spawn_user_thread`]) under `policy`,
+/// stepping down through `stack_budget::STACK_TIERS` when the budget or the
+/// OS cannot afford the full stack, and reporting failure instead of
+/// panicking (ADR-0123).
+pub(crate) fn try_spawn_user_thread<F, T>(
+    name: &str,
+    policy: StackPolicy,
+    f: F,
+) -> Result<crate::runtime::thread_compat::JoinHandle<T>, SpawnError>
+where
+    F: FnOnce() -> T + Send + 'static,
+    T: Send + 'static,
+{
+    use crate::runtime::stack_budget::{STACK_TIERS, reserve_over_budget, try_reserve};
+    // `Builder::spawn` consumes its closure even when it fails, so the body
+    // lives in a slot each attempt borrows from; a refused attempt drops only
+    // its handle on the slot.
+    let slot = std::sync::Arc::new(std::sync::Mutex::new(Some(f)));
+    let mut last_os_error = None;
+    // Optional growth only ever takes a full-size stack, so which worker a
+    // task lands on never changes how deep it may recurse.
+    if let Some(reservation) = try_reserve(STACK_TIERS[0]) {
+        match spawn_registered_thread(name, Some(reservation), slot.clone()) {
+            Ok(handle) => return Ok(handle),
+            Err(e) => last_os_error = Some(e),
+        }
+    }
+    if policy == StackPolicy::Required {
+        // A thread that has to exist steps down through the tiers, past the
+        // budget if it must; the full size is retried only if the budget,
+        // not the OS, refused it above.
+        let first = usize::from(last_os_error.is_some());
+        for &size in &STACK_TIERS[first..] {
+            let reservation = try_reserve(size).unwrap_or_else(|| reserve_over_budget(size));
+            match spawn_registered_thread(name, Some(reservation), slot.clone()) {
+                Ok(handle) => return Ok(handle),
+                Err(e) => last_os_error = Some(e),
+            }
+        }
+    }
+    Err(match last_os_error {
+        Some(e) => SpawnError::Os(e),
+        None => SpawnError::OverBudget,
+    })
 }
 
 /// Spawn a runtime service thread (timer, promise combinator, socket
@@ -45,14 +130,34 @@ where
     F: FnOnce() -> T + Send + 'static,
     T: Send + 'static,
 {
-    spawn_registered_thread(name, None, f)
+    try_spawn_gc_helper_thread(name, f)
+        .unwrap_or_else(|e| panic!("failed to spawn helper thread: {e}"))
 }
+
+/// [`spawn_gc_helper_thread`], reporting a refused thread instead of
+/// panicking.
+pub(crate) fn try_spawn_gc_helper_thread<F, T>(
+    name: &str,
+    f: F,
+) -> std::io::Result<crate::runtime::thread_compat::JoinHandle<T>>
+where
+    F: FnOnce() -> T + Send + 'static,
+    T: Send + 'static,
+{
+    spawn_registered_thread(
+        name,
+        None,
+        std::sync::Arc::new(std::sync::Mutex::new(Some(f))),
+    )
+}
+
+type BodySlot<F> = std::sync::Arc<std::sync::Mutex<Option<F>>>;
 
 fn spawn_registered_thread<F, T>(
     name: &str,
-    stack_size: Option<usize>,
-    f: F,
-) -> crate::runtime::thread_compat::JoinHandle<T>
+    stack: Option<crate::runtime::stack_budget::StackReservation>,
+    body: BodySlot<F>,
+) -> std::io::Result<crate::runtime::thread_compat::JoinHandle<T>>
 where
     F: FnOnce() -> T + Send + 'static,
     T: Send + 'static,
@@ -73,7 +178,10 @@ where
     // without this a spawn burst starves every stop-the-world attempt — see
     // `gc::stw::preregister_worker_quiescent`.
     crate::gc::preregister_worker_quiescent();
-    crate::runtime::thread_compat::spawn_thread(name, stack_size, move || {
+    let stack_size = stack.as_ref().map(|r| r.size());
+    let spawned = crate::runtime::thread_compat::spawn_thread(name, stack_size, move || {
+        // The reservation is this thread's for as long as it lives.
+        let _stack = stack;
         // ADR-0100: arm the deep-recursion guard, from the top of this
         // thread's stack. Only a worker that was given an explicit stack size
         // can be guarded -- a default-stack service thread runs no user VM
@@ -115,8 +223,19 @@ where
         // quiescence now counts toward (and is required by) the STW
         // rendezvous (gc::stw).
         crate::gc::worker_started();
+        let f = body
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .take()
+            .expect("thread body taken twice");
         f()
-    })
+    });
+    if spawned.is_err() {
+        // The thread never existed: hand back the GC registration taken on its
+        // behalf above, or every later stop-the-world waits for it forever.
+        crate::gc::abort_unborn_worker();
+    }
+    spawned
 }
 
 /// Split a finished child's `ExitStatus` into rakudo's `(exitcode, signal)`
@@ -265,70 +384,85 @@ impl Interpreter {
 
         // Pooled (ADR-0020 slice 1): `start` is the hottest spawner, and its
         // body may block (`await`) — the elastic pool reuses a warm worker or
-        // grows instead of deadlocking.
-        crate::runtime::worker_pool::submit(move || {
-            // CP-3 collapse: the thread's cloned Interpreter *is* the VM — run the
-            // block on it directly instead of wrapping it in a sub-VM.
-            let mut thread_interp = thread_interp;
-            promise.set_thread_id(crate::runtime::current_mutsu_thread_id());
-            // Worker bodies run via `call_value` without the main thread's
-            // `run_top` panic boundary, so guard them here: a Rust panic in
-            // user code becomes a catchable broken-Promise error (X::AdHoc)
-            // instead of silently killing the thread (hanging `await`) or
-            // aborting the process.
-            let result = crate::vm::guard_worker_panic(|| thread_interp.call_value(block, vec![]));
-            // Transfer any handles opened by this thread back to the awaiter.
-            let mut new_handles: Vec<(usize, IoHandleState)> = Vec::new();
-            let new_ids: Vec<usize> = thread_interp
-                .io_handles()
-                .map
-                .keys()
-                .copied()
-                .filter(|id| !parent_handles_snapshot.contains(id))
-                .collect();
-            for id in new_ids {
-                if let Some(state) = thread_interp.io_handles_mut().map.remove(&id) {
-                    new_handles.push((id, state));
-                }
-            }
-            let next_id = thread_interp.io_handles().next_id;
-            if !new_handles.is_empty() {
-                promise.set_thread_payload(Box::new(ThreadPromisePayload {
-                    new_handles,
-                    next_handle_id: next_id,
-                }));
-            }
-            match result {
-                Ok(result) => {
-                    let output = std::mem::take(&mut thread_interp.output_sink_mut().output);
-                    let stderr = std::mem::take(&mut thread_interp.output_sink_mut().stderr_output);
-                    promise.keep(result, output, stderr);
-                }
-                Err(e) => {
-                    let output = std::mem::take(&mut thread_interp.output_sink_mut().output);
-                    let stderr = std::mem::take(&mut thread_interp.output_sink_mut().stderr_output);
-                    let error_val = if let Some(ex) = e.exception {
-                        *ex
-                    } else {
-                        Value::str(e.message.into_owned())
-                    };
-                    promise.break_with(error_val.clone(), output, stderr);
-                    // Call uncaught_handler if set, running in a helper thread
-                    // so we don't block the promise thread.
-                    if let Some(handler) =
-                        crate::runtime::native_methods::state_scheduler::get_uncaught_handler()
-                    {
-                        let handler_interp = thread_interp.clone_for_thread();
-                        let ex_val = error_val;
-                        // Pooled (ADR-0020 slice 3): short one-shot callback.
-                        crate::runtime::worker_pool::submit(move || {
-                            let mut handler_interp = handler_interp;
-                            let _ = handler_interp.call_value(handler, vec![ex_val]);
-                        });
+        // grows instead of deadlocking. If no thread can be had for it at all
+        // (ADR-0123), the promise breaks with a catchable X::AdHoc.
+        let reject_promise = promise.clone();
+        crate::runtime::worker_pool::submit_or_reject(
+            move || {
+                // CP-3 collapse: the thread's cloned Interpreter *is* the VM — run the
+                // block on it directly instead of wrapping it in a sub-VM.
+                let mut thread_interp = thread_interp;
+                promise.set_thread_id(crate::runtime::current_mutsu_thread_id());
+                // Worker bodies run via `call_value` without the main thread's
+                // `run_top` panic boundary, so guard them here: a Rust panic in
+                // user code becomes a catchable broken-Promise error (X::AdHoc)
+                // instead of silently killing the thread (hanging `await`) or
+                // aborting the process.
+                let result =
+                    crate::vm::guard_worker_panic(|| thread_interp.call_value(block, vec![]));
+                // Transfer any handles opened by this thread back to the awaiter.
+                let mut new_handles: Vec<(usize, IoHandleState)> = Vec::new();
+                let new_ids: Vec<usize> = thread_interp
+                    .io_handles()
+                    .map
+                    .keys()
+                    .copied()
+                    .filter(|id| !parent_handles_snapshot.contains(id))
+                    .collect();
+                for id in new_ids {
+                    if let Some(state) = thread_interp.io_handles_mut().map.remove(&id) {
+                        new_handles.push((id, state));
                     }
                 }
-            }
-        });
+                let next_id = thread_interp.io_handles().next_id;
+                if !new_handles.is_empty() {
+                    promise.set_thread_payload(Box::new(ThreadPromisePayload {
+                        new_handles,
+                        next_handle_id: next_id,
+                    }));
+                }
+                match result {
+                    Ok(result) => {
+                        let output = std::mem::take(&mut thread_interp.output_sink_mut().output);
+                        let stderr =
+                            std::mem::take(&mut thread_interp.output_sink_mut().stderr_output);
+                        promise.keep(result, output, stderr);
+                    }
+                    Err(e) => {
+                        let output = std::mem::take(&mut thread_interp.output_sink_mut().output);
+                        let stderr =
+                            std::mem::take(&mut thread_interp.output_sink_mut().stderr_output);
+                        let error_val = if let Some(ex) = e.exception {
+                            *ex
+                        } else {
+                            Value::str(e.message.into_owned())
+                        };
+                        promise.break_with(error_val.clone(), output, stderr);
+                        // Call uncaught_handler if set, running in a helper thread
+                        // so we don't block the promise thread.
+                        if let Some(handler) =
+                            crate::runtime::native_methods::state_scheduler::get_uncaught_handler()
+                        {
+                            let handler_interp = thread_interp.clone_for_thread();
+                            let ex_val = error_val;
+                            // Pooled (ADR-0020 slice 3): short one-shot callback.
+                            crate::runtime::worker_pool::submit(move || {
+                                let mut handler_interp = handler_interp;
+                                let _ = handler_interp.call_value(handler, vec![ex_val]);
+                            });
+                        }
+                    }
+                }
+            },
+            move |err| {
+                let error_val = err
+                    .to_runtime_error()
+                    .exception
+                    .map(|ex| *ex)
+                    .unwrap_or_else(|| Value::str(err.message()));
+                reject_promise.break_with(error_val, String::new(), String::new());
+            },
+        );
 
         ret
     }

@@ -1,6 +1,8 @@
 # ADR-0100: Deep recursion raises a catchable error, guarded by native stack headroom
 
-- Status: Accepted (implemented)
+- Status: Accepted (implemented). Point 7 and the fixed 16 MiB reserve are amended by
+  [ADR-0123](0123-bounded-user-thread-stack-reservations.md): user-code threads may get a smaller
+  stack tier under address-space pressure, and the reserve scales as `min(16 MiB, stack / 4)`.
 - Date: 2026-09-13
 - Issue: [#8232](https://github.com/tokuhirom/mutsu/issues/8232)
 
