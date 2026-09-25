@@ -25,9 +25,66 @@
     "unresolved": []
   },
   "dist": "FFmpegProgressBar",
-  "files": [],
+  "files": [
+    {
+      "cmp": "no_baseline",
+      "path": "t/01-basic.rakutest",
+      "raku": {
+        "first_failure": "get-frame-count",
+        "nok": 1,
+        "ok": 4,
+        "plan": 5,
+        "secs": 20.37,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/02-cli.rakutest",
+      "raku": {
+        "first_failure": "Failed to open file /tmp/test-ffpbrc: Read-only file system",
+        "nok": 0,
+        "ok": 1,
+        "plan": null,
+        "secs": 0.83,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/03-edge-cases.rakutest",
+      "raku": {
+        "first_failure": "Failed to open file /tmp/test-dotfile: Read-only file system",
+        "nok": 0,
+        "ok": 1,
+        "plan": null,
+        "secs": 1.45,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/04-progress-snapshot.rakutest",
+      "raku": {
+        "first_failure": "ProgressSnapshot with test video file",
+        "nok": 1,
+        "ok": 4,
+        "plan": 5,
+        "secs": 1.02,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      }
+    }
+  ],
   "load": {
-    "FFmpegProgressBar": "expected statement: expected expected statement: expected expected statement: expected expected statement: expected return value expression or '.' or digits or generic radix literal or unicode numeric [at FFmpegProgressBar-0.0.7/lib/FFmpegProgressBar.rakumod:2125]",
+    "FFmpegProgressBar": "ok",
     "FFmpegProgressBar::FFmpegFlags": "ok",
     "FFmpegProgressBar::Formatter": "ok",
     "FFmpegProgressBar::Parser": "ok",
@@ -37,10 +94,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-24",
+    "date": "2026-09-25",
     "harness": 2,
-    "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "338f021",
+    "host": "linux-x86_64",
+    "mutsu_commit": "51feb4cf",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -51,7 +108,7 @@
     "index": "fez",
     "url": "https://360.zef.pm/F/FM/FFMPEGPROGRESSBAR/a6a03194df4a7a9648b302bd1f93aab8c39503c1.tar.gz"
   },
-  "status": "blocked_load",
+  "status": "no_baseline",
   "totals": {
     "baseline_assertions": 0,
     "baseline_files": 0,
