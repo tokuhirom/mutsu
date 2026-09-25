@@ -980,7 +980,7 @@ impl Interpreter {
         }
     }
 
-    fn delete_from_container(
+    pub(crate) fn delete_from_container(
         container: &mut Value,
         idx: Value,
         hole_type: &str,

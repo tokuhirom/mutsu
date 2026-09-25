@@ -319,9 +319,8 @@ impl Interpreter {
         // `$hdr.comb.Bag{$sep-set.list}:kv`). Project through `.hash` — which
         // decodes the internal WHICH-encoded keys — and let the Hash arm below
         // own the key/value logic.
-        // TODO: `:delete` on a mutable SetHash/BagHash/MixHash should write
-        // back through the original container; the projection makes the delete
-        // a no-op on the source (previously the whole slice returned empty).
+        // The projection is a copy, so a `:delete` companion deletes from the
+        // original QuantHash instead (`quanthash_source`, below).
         //
         // ADR-0036 slice 2: whether the final `target` below is the genuine
         // backing Hash (so `:p`/`:kv` can hand out a live element container)
@@ -330,6 +329,7 @@ impl Interpreter {
         // with a fresh Hash that shares nothing with the source container, so
         // promoting a slot in it would be invisible to the source.
         let mut target_is_real_hash = assoc_instance.is_none();
+        let mut quanthash_source: Option<Value> = None;
         let target = match target.view() {
             ValueView::Instance {
                 class_name,
@@ -354,7 +354,9 @@ impl Interpreter {
             }) =>
             {
                 target_is_real_hash = false;
-                self.call_method_with_values(target.deref_container(), "hash", vec![])?
+                let source = target.deref_container();
+                quanthash_source = Some(source.clone());
+                self.call_method_with_values(source, "hash", vec![])?
             }
             _ => target,
         };
@@ -745,6 +747,23 @@ impl Interpreter {
             for idx in &indices {
                 self.call_method_with_values(inst.clone(), "DELETE-KEY", vec![idx.clone()])?;
             }
+        } else if delete_after && let Some(source) = quanthash_source {
+            // `$qh{...}:delete:k` and friends: the rows above were read from the
+            // `.hash` projection, so remove the keys from the QuantHash itself,
+            // through its shared backing node -- the same removal (and the same
+            // refusal for an immutable Set/Bag/Mix) the plain `:delete` does.
+            let ro_type = match source.view() {
+                ValueView::Mix(_, false) => Some("Mix"),
+                ValueView::Set(_, false) => Some("Set"),
+                ValueView::Bag(_, false) => Some("Bag"),
+                _ => None,
+            };
+            if let Some(typename) = ro_type {
+                let repr = crate::runtime::utils::gist_value(&source);
+                return Err(RuntimeError::assignment_ro_typename(typename, &repr));
+            }
+            let mut container = source;
+            Self::delete_from_container(&mut container, Value::array(indices.clone()), "Any")?;
         } else if delete_after
             && let Some(var_name) = var_name.as_ref()
             // Read/write THROUGH a shared `ContainerRef` cell: `%h` is boxed
