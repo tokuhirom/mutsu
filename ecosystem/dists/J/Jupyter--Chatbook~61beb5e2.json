@@ -73,7 +73,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 3.62,
+        "secs": 5.81,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -83,30 +83,30 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 119.62,
+        "secs": 95.84,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "partial",
       "mutsu": {
-        "first_failure": "Unsupported nqp:: op: nqp::getcomp",
-        "nok": 0,
-        "ok": 0,
+        "first_failure": "simple eval",
+        "nok": 45,
+        "ok": 9,
         "plan": 54,
-        "secs": 0.32,
+        "secs": 5.73,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "fail"
       },
       "path": "t/02-sandbox.rakutest",
       "raku": {
         "nok": 0,
         "ok": 54,
         "plan": 54,
-        "secs": 10.45,
+        "secs": 23.19,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -116,11 +116,11 @@
       "cmp": "no_baseline",
       "path": "t/03-service.rakutest",
       "raku": {
-        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/deps/Digest__SHA256__Native/Digest-SHA256-Native-1.0.2/resources/libraries/sha256.dll': /home/runner/.cache/mutsu-ecosystem/deps/Diges",
+        "first_failure": "Cannot locate native library 'libzmq.so.5': libzmq.so.5: cannot open shared object file: No such file or directory",
         "nok": 0,
-        "ok": 2,
+        "ok": 0,
         "plan": 5,
-        "secs": 1.25,
+        "secs": 3.23,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -134,7 +134,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.88,
+        "secs": 1.59,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -143,11 +143,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "Confused. expected statement: expected known call arguments or call argument after ',' or positional argument expression or reduction operator or expression statement or ... [at dist/t/05-autocomplete.rakutest:18]",
-        "nok": 0,
-        "ok": 0,
+        "first_failure": "Codepoint 55296 (0xD800) is out of bounds in 'chr'",
+        "nok": 1,
+        "ok": 9,
         "plan": null,
-        "secs": 0.05,
+        "secs": 0.49,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -157,7 +157,7 @@
         "nok": 0,
         "ok": 21,
         "plan": 21,
-        "secs": 1.18,
+        "secs": 2.28,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -171,7 +171,7 @@
         "nok": 0,
         "ok": 48,
         "plan": 56,
-        "secs": 3.39,
+        "secs": 6.24,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -184,7 +184,7 @@
         "nok": 1,
         "ok": 3,
         "plan": 11,
-        "secs": 0.26,
+        "secs": 0.33,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -194,7 +194,7 @@
         "nok": 0,
         "ok": 11,
         "plan": 11,
-        "secs": 0.71,
+        "secs": 1.16,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -206,7 +206,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.07,
+        "secs": 0.09,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -216,7 +216,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.43,
+        "secs": 1.79,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -230,7 +230,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 7,
-        "secs": 0.79,
+        "secs": 2.14,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -244,7 +244,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 5.86,
+        "secs": 10.54,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -256,7 +256,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.13,
+        "secs": 0.19,
         "skip": 1,
         "todo": 0,
         "verdict": "pass"
@@ -266,7 +266,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.45,
+        "secs": 0.71,
         "skip": 1,
         "todo": 0,
         "verdict": "pass"
@@ -289,10 +289,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-24",
+    "date": "2026-09-25",
     "harness": 2,
-    "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "338f021",
+    "host": "linux-x86_64",
+    "mutsu_commit": "0084c875b",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -307,7 +307,7 @@
   "totals": {
     "baseline_assertions": 89,
     "baseline_files": 6,
-    "mutsu_assertions": 6,
+    "mutsu_assertions": 24,
     "parity_files": 3,
     "regressed_files": 3
   },
