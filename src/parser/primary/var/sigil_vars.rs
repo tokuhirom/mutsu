@@ -453,6 +453,12 @@ pub(crate) fn hash_var(input: &str) -> PResult<'_, Expr> {
             ));
         }
     }
+    // `%%hash` applies hash context to a hash variable, and a bare `%%` is the
+    // anonymous hash (an empty Hash term), mirroring `@@` above.  Only reached
+    // in term position; the infix `%%` (divisibility) never gets here.
+    if twigil.is_empty() && rest.starts_with('%') {
+        return hash_var(rest);
+    }
     // Bare % (anonymous hash variable)
     let next_is_ident =
         !rest.is_empty() && rest.chars().next().is_some_and(is_raku_identifier_start);
