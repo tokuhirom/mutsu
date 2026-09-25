@@ -294,7 +294,9 @@ fn value_from_i128(n: i128) -> Value {
 }
 
 /// Exact `(self / $scale + 1/2).floor * $scale` per Rakudo's `Real.round(Real)`,
-/// staying in exact Int/Rat arithmetic. Returns `None` when either operand is
+/// staying in exact Int/Rat arithmetic. The result's type is that of
+/// `Int * $scale`: an Int scale gives an Int, a `FatRat` scale a `FatRat`, any
+/// other rational scale a `Rat`. Returns `None` when either operand is
 /// inexact (Num/Complex), the scale is zero, or i128 overflow would occur — the
 /// caller then falls back to the f64 path.
 pub(crate) fn exact_round_scaled(target: &Value, scale: &Value) -> Option<Value> {
@@ -332,6 +334,12 @@ fn exact_round_scaled_i128(target: &Value, scale: &Value) -> Option<Value> {
     if is_integer_scale(&scale.view()) {
         // sd == 1 for an integer scale, so the result is an exact integer.
         Some(value_from_i128(rn.checked_div(sd)?))
+    } else if is_fat_rat_like(scale) {
+        // `Int * FatRat` is a FatRat: the result keeps the scale's type.
+        Some(crate::value::make_big_fat_rat(
+            NumBigInt::from(rn),
+            NumBigInt::from(sd),
+        ))
     } else {
         Some(rat_from_i128_or_num(rn, sd))
     }
@@ -362,6 +370,10 @@ fn exact_round_scaled_bigint(target: &Value, scale: &Value) -> Option<Value> {
     if is_integer_scale(&scale.view()) {
         // sd == 1 for an integer scale, so the result is an exact integer.
         Some(Value::from_bigint(rn / &sd))
+    } else if is_fat_rat_like(scale) {
+        // `Int * FatRat` is a FatRat, which never degrades to Num: rounding to
+        // `FatRat.new(1, 10**40)` keeps all forty digits.
+        Some(crate::value::make_big_fat_rat(rn, sd))
     } else {
         Some(crate::value::make_big_rat_arith(rn, sd))
     }

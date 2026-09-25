@@ -192,6 +192,14 @@ impl Interpreter {
         let scoped_key = self.scoped_state_key(base_key);
         let slot_idx = slot as usize;
         let name = &code.locals[slot_idx];
+        // A `state` declaration names a fresh variable of THIS frame, whatever
+        // the readonly registry says about a same-named binding further up the
+        // call stack (`sub t($p) { f() }` with `sub f { state $p = 1; $p = 2 }`
+        // refused the store as "readonly variable"). `my` clears it at its
+        // `SetLocal` declaration; `state` needs it on every call, since the
+        // guard skips its initializer after the first. The unmark is journaled
+        // per frame, so the caller's own mark comes back on return.
+        self.unmark_readonly(name);
         // A type-constrained state scalar lives in a cell too (like untyped
         // scalars since #5959), with the constraint registered ON the cell so
         // the `ContainerRef` write chokepoint re-checks it

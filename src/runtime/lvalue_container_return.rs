@@ -243,6 +243,58 @@ impl Interpreter {
             .map(Some)
     }
 
+    /// The private-method half of the lvalue return: `self!m(args) = value`
+    /// where `!m` names a declared private method. Like a public rw method it
+    /// computes a location, so run it once and write through what it hands back
+    /// (`assign_through_rw_result`: a container, an `@`/`%` aggregate, or
+    /// Rakudo's `Cannot modify an immutable ...` refusal).
+    ///
+    /// Covers both a concrete instance and a type-object invocant
+    /// (`Class.m` calling `self!m`, whose `self` is the type object). Before
+    /// this, the instance form fell to the private-*attribute* store
+    /// (`$a!A::foo = v`), which wrote an attribute named after the method, and
+    /// the type-object form fell to the legacy setter chain; both reported
+    /// success and wrote nowhere the method would ever read.
+    ///
+    /// `Ok(None)` when `method` is not `!`-prefixed or no private method of
+    /// that name resolves, leaving the caller's chain untouched.
+    pub(crate) fn try_private_method_container_lvalue(
+        &mut self,
+        target: &Value,
+        method: &str,
+        method_args: &[Value],
+        value: &Value,
+    ) -> Result<Option<Value>, RuntimeError> {
+        if !method.starts_with('!') {
+            return Ok(None);
+        }
+        let target = Self::unwrap_lvalue_invocant(target);
+        let target = if target.is_container_ref() {
+            target.deref_container()
+        } else {
+            target
+        };
+        let Some(class_name) = Self::lvalue_invocant_class_name(&target) else {
+            return Ok(None);
+        };
+        if self
+            .resolve_private_method_for_vm(&class_name, method, method_args)
+            .is_none()
+        {
+            return Ok(None);
+        }
+        let was_lvalue = self.in_lvalue_assignment;
+        self.in_lvalue_assignment = true;
+        // As in `try_rw_method_container_lvalue`: the pending argument-source
+        // names describe the enclosing `__mutsu_assign_method_lvalue` call.
+        let saved_sources = self.take_pending_call_arg_sources();
+        let result = self.call_method_with_values(target, method, method_args.to_vec());
+        self.set_pending_call_arg_sources(saved_sources);
+        self.in_lvalue_assignment = was_lvalue;
+        self.assign_through_rw_result(result?, value.clone())
+            .map(Some)
+    }
+
     /// The assignment call site wraps the invocant in a `VarRef` (its source
     /// name rides along for the attribute writeback paths). Dispatch on the
     /// value itself: a `VarRef` invocant makes the method dispatcher treat the

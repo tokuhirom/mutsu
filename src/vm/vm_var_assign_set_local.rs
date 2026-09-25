@@ -1030,6 +1030,9 @@ impl Interpreter {
         // storing the cell itself would silently alias the routine's source, so
         // `$c = 99` would write it. Raku copies there — only `:=` (and rw
         // parameter binding, which never reaches this op) keeps the container.
+        // A deferred `HashEntryRef` (the tail of `sub f is rw { %h<a><b> }`
+        // for a key that does not exist yet) is the same lvalue return and
+        // reads as the entry's current value.
         //
         // Every other producer of a `ContainerRef` already deconts at its read
         // chokepoint (`GetLocal`'s `into_deref`, `resolve_array_entry`, ...), so
@@ -1041,7 +1044,8 @@ impl Interpreter {
             && !is_constant
             && !param_raw_bind
             && !scalar_bind
-            && raw_popped.is_container_ref()
+            && (raw_popped.is_container_ref()
+                || matches!(raw_popped.view(), ValueView::HashEntryRef { .. }))
         {
             raw_popped = raw_popped.deref_container();
         }

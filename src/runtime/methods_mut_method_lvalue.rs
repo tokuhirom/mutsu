@@ -165,6 +165,15 @@ impl Interpreter {
         {
             return Ok(assigned);
         }
+        // A declared private method (`method !slot($k) is rw { %!h{$k} }`, then
+        // `self!slot($k) = $v`) is an lvalue call like its public twin, for an
+        // instance and a type-object invocant alike. Only a `!name` with no
+        // private method behind it reaches the private-attribute store below.
+        if let Some(assigned) =
+            self.try_private_method_container_lvalue(&target, method, &method_args, &value)?
+        {
+            return Ok(assigned);
+        }
         // ADR-0067 slice 3a: the invocant arrived as a *container* because the
         // callee binds parameter zero raw (`.snitch`, `method m(\S:) is raw`).
         // Run it and write through the container it hands back. The VM's gate

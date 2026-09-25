@@ -802,6 +802,34 @@ impl Compiler {
         }
     }
 
+    /// Leave the value of a tail `my $x = ...` / `$x = ...` statement on the
+    /// stack as the routine's implicit return. `global_fallback` reads a
+    /// non-local assignment target by name; a non-local declaration is `Nil`.
+    ///
+    /// In an `is rw` / `is raw` routine (`rw_tail`) that value is the
+    /// variable's *container*, exactly as a bare `$x` tail is
+    /// (`compile_routine_tail_expr`): rakudo's
+    /// `method precision is rw { state $p = 30 }` hands back `$p` itself, so
+    /// `C.precision = 50` writes it. Boxing the slot's shared cell is the same
+    /// two-op tail `return-rw my $x = 1` gets.
+    pub(super) fn emit_tail_var_stmt_value(&mut self, name: &str, global_fallback: bool) {
+        if let Some(&slot) = self.local_map.get(name) {
+            self.code.emit(OpCode::GetLocal(slot));
+        } else if global_fallback {
+            let idx = self
+                .code
+                .add_constant(Value::str(self.qualify_variable_name(name)));
+            self.code.emit(OpCode::GetGlobal(idx));
+        } else {
+            self.emit_nil_value();
+            return;
+        }
+        if self.rw_tail && Self::is_plain_lexical_name(name) {
+            self.emit_wrap_var_ref(name);
+            self.code.emit(OpCode::CaptureVarCell);
+        }
+    }
+
     /// Compile an `if`/`elsif`/`else` that is the tail statement of a routine
     /// body. For an `is rw` / `is raw` routine the taken branch's tail is the
     /// routine's return value, so it denotes a container just like a bare
@@ -942,12 +970,7 @@ impl Compiler {
                     }
                     Stmt::VarDecl { name, .. } => {
                         sub_compiler.compile_stmt(stmt);
-                        // VarDecl as last statement returns the variable value
-                        if let Some(&slot) = sub_compiler.local_map.get(name) {
-                            sub_compiler.code.emit(OpCode::GetLocal(slot));
-                        } else {
-                            sub_compiler.emit_nil_value();
-                        }
+                        sub_compiler.emit_tail_var_stmt_value(name, false);
                         continue;
                     }
                     // ENTER phaser as last statement: compile body inline
@@ -973,15 +996,7 @@ impl Compiler {
                     }
                     Stmt::Assign { name, .. } => {
                         sub_compiler.compile_stmt(stmt);
-                        // Assignment as last statement returns the assigned value
-                        if let Some(&slot) = sub_compiler.local_map.get(name) {
-                            sub_compiler.code.emit(OpCode::GetLocal(slot));
-                        } else {
-                            let idx = sub_compiler
-                                .code
-                                .add_constant(Value::str(sub_compiler.qualify_variable_name(name)));
-                            sub_compiler.code.emit(OpCode::GetGlobal(idx));
-                        }
+                        sub_compiler.emit_tail_var_stmt_value(name, true);
                         continue;
                     }
                     // `let`/`temp` as last statement is an assignment too, so it
@@ -1480,23 +1495,12 @@ impl Compiler {
                 }
                 if is_value && let Stmt::VarDecl { name, .. } = stmt {
                     sub_compiler.compile_stmt(stmt);
-                    if let Some(&slot) = sub_compiler.local_map.get(name) {
-                        sub_compiler.code.emit(OpCode::GetLocal(slot));
-                    } else {
-                        sub_compiler.emit_nil_value();
-                    }
+                    sub_compiler.emit_tail_var_stmt_value(name, false);
                     continue;
                 }
                 if is_value && let Stmt::Assign { name, .. } = stmt {
                     sub_compiler.compile_stmt(stmt);
-                    if let Some(&slot) = sub_compiler.local_map.get(name) {
-                        sub_compiler.code.emit(OpCode::GetLocal(slot));
-                    } else {
-                        let idx = sub_compiler
-                            .code
-                            .add_constant(Value::str(sub_compiler.qualify_variable_name(name)));
-                        sub_compiler.code.emit(OpCode::GetGlobal(idx));
-                    }
+                    sub_compiler.emit_tail_var_stmt_value(name, true);
                     continue;
                 }
                 // `let`/`temp` is an assignment too — see the twin arm in
@@ -1654,25 +1658,12 @@ impl Compiler {
                         }
                         Stmt::VarDecl { name, .. } => {
                             sub_compiler.compile_stmt(stmt);
-                            // VarDecl as last statement returns the variable value
-                            if let Some(&slot) = sub_compiler.local_map.get(name) {
-                                sub_compiler.code.emit(OpCode::GetLocal(slot));
-                            } else {
-                                sub_compiler.emit_nil_value();
-                            }
+                            sub_compiler.emit_tail_var_stmt_value(name, false);
                             continue;
                         }
                         Stmt::Assign { name, .. } => {
                             sub_compiler.compile_stmt(stmt);
-                            // Assignment as last statement returns the assigned value
-                            if let Some(&slot) = sub_compiler.local_map.get(name) {
-                                sub_compiler.code.emit(OpCode::GetLocal(slot));
-                            } else {
-                                let idx = sub_compiler.code.add_constant(Value::str(
-                                    sub_compiler.qualify_variable_name(name),
-                                ));
-                                sub_compiler.code.emit(OpCode::GetGlobal(idx));
-                            }
+                            sub_compiler.emit_tail_var_stmt_value(name, true);
                             continue;
                         }
                         // `let`/`temp` is an assignment too — see the twin arm
