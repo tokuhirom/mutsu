@@ -452,9 +452,9 @@ impl Interpreter {
         Ok(())
     }
 
-    // Cost: O(k * s), k = repeat count (capped at 4096, or 256 for a callable,
-    // above 10**6 or for `xx *`), s = Slip width: every element is built eagerly
-    // even when only a prefix is read. Rakudo: O(1) until consumed -- see #9159.
+    // Cost: O(k * s), k = repeat count up to 10**6, s = Slip width (every
+    // element built eagerly, as Rakudo does for a finite count); above that or
+    // for `xx *`, O(1) and a lazy stage building each repetition on pull.
     pub(super) fn exec_list_repeat_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
@@ -479,72 +479,7 @@ impl Interpreter {
             return Ok(());
         }
 
-        // Warn on uninitialized type object used as repeat count
-        if let ValueView::Package(name) = right.view()
-            && name == "Int"
-        {
-            self.warn_uninitialized_repeat_count(&name.resolve())?;
-        }
-
-        // A finite `xx` count is eager in Raku (materializes all N elements,
-        // `is-lazy` is False). We materialize any finite count up to
-        // EAGER_LIMIT so realistic repeats (e.g. `1 xx 999999`) reify fully.
-        // Above that, an astronomically large finite count (`42 xx 2**62`, up
-        // to `2⁹⁹⁹⁹⁹`) or a genuinely infinite one (`xx *`) must NOT be
-        // materialized — it keeps only a cache prefix plus the logical count.
-        const EAGER_LIMIT: usize = 1_000_000;
-        const LAZY_CACHE: usize = 4_096;
-        // Callable LHS is expensive (each element calls `eval_call_on_value`),
-        // so it caches far fewer elements to avoid timeouts on `callable xx *`.
-        const LAZY_CACHE_CALLABLE: usize = 256;
-
-        let is_callable = matches!(
-            left.view(),
-            ValueView::Sub(_) | ValueView::WeakSub(_) | ValueView::Routine { .. }
-        );
-        let lazy_cache = if is_callable {
-            LAZY_CACHE_CALLABLE
-        } else {
-            LAZY_CACHE
-        };
-
-        let count = crate::runtime::Interpreter::parse_repeat_count(&right)?;
-        let (repeat, lazy) = match count {
-            Some(n) if n <= 0 => (0usize, false),
-            Some(n) if (n as usize) <= EAGER_LIMIT => (n as usize, false),
-            Some(n) => ((n as usize).min(lazy_cache), true),
-            None => (lazy_cache, true),
-        };
-
-        let mut items = Vec::with_capacity(repeat);
-        if let ValueView::Slip(slip_items) = left.view() {
-            if slip_items.is_empty() {
-                items.extend(std::iter::repeat_n(Value::NIL, repeat));
-            } else {
-                for _ in 0..repeat {
-                    items.extend(slip_items.iter().cloned());
-                }
-            }
-        } else {
-            for _ in 0..repeat {
-                let v = self.repeat_lhs_once(&left)?;
-                // A callable LHS whose call yields a Slip contributes its
-                // elements per repetition (`Slip(1,2) xx *` is 1,2,1,2,…),
-                // mirroring the value-repeat Slip arm above.
-                if let ValueView::Slip(sub) = v.view() {
-                    items.extend(sub.iter().cloned());
-                } else {
-                    items.push(v);
-                }
-            }
-        }
-
-        let result = if lazy {
-            let count = crate::runtime::Interpreter::repeat_logical_count(&right);
-            crate::runtime::Interpreter::make_repeat_lazy_cache_counted(items, count)
-        } else {
-            Value::seq(items)
-        };
+        let result = self.list_repeat(&left, &right)?;
         self.stack.push(result);
         Ok(())
     }

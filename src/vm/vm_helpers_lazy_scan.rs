@@ -5,7 +5,7 @@ impl Interpreter {
     /// has fewer than `idx + 1` elements (finite source exhausted). Infinite
     /// integer ranges always produce. Nested lazy pipelines / gathers are pulled
     /// incrementally via [`Self::force_lazy_list_vm_n`].
-    pub(super) fn pull_source_element(
+    pub(crate) fn pull_source_element(
         &mut self,
         source: &Value,
         idx: usize,
@@ -121,6 +121,18 @@ impl Interpreter {
             ValueView::Slip(items) => Ok(items.get(idx).cloned()),
             ValueView::Array(items, _) => Ok(items.get(idx).cloned()),
             ValueView::LazyList(ll) => {
+                // An element already produced is read straight from the cache
+                // (an adaptor re-reads earlier elements: an overlapping
+                // `rotor`, a cross product's inner operand).
+                if let Some(v) = ll
+                    .cache
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .as_ref()
+                    .and_then(|c| c.get(idx))
+                {
+                    return Ok(Some(v.clone()));
+                }
                 let items = self.force_lazy_list_vm_n(&ll, idx + 1)?;
                 Ok(items.get(idx).cloned())
             }

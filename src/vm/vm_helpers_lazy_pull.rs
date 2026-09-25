@@ -359,6 +359,18 @@ impl Interpreter {
                 }
             }
 
+            // A stateful adaptor stage (`.skip`/`.rotor`/`Z`/`X`/..., #9159)
+            // runs its own pull step instead of the map/grep callback.
+            if list.lazy_pipe.as_ref().is_some_and(|p| {
+                p.lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .adaptor
+                    .is_some()
+            }) {
+                self.step_lazy_adaptor(list)?;
+                continue;
+            }
+
             // Snapshot the stage so no pipe lock is held across the pull/apply
             // (which may recursively pull from a nested pipe source).
             let (source, func, is_grep, source_idx, index_transform) = {

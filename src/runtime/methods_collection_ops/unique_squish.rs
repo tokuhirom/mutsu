@@ -1,6 +1,7 @@
 use super::*;
 use crate::runtime::utils::IdentityIndex;
 use crate::value::types::is_stash_class_name;
+use crate::value::{DistinctMode, DistinctState};
 
 /// Read a `:as(...)` / `:with(...)` adverb argument regardless of Pair
 /// flavour (ADR-0021 P3a prep): these are always written as literal named
@@ -74,7 +75,102 @@ fn dispatch_keys_same(seen: &Value, key: &Value) -> bool {
     values_identical(seen, key)
 }
 
+/// Parse the `:as(...)` / `:with(...)` adverbs shared by `unique`,
+/// `repeated` and `squish` (a false value is the same as leaving it out).
+pub(crate) fn distinct_adverbs(args: &[Value]) -> (Option<Value>, Option<Value>) {
+    let mut as_func: Option<Value> = None;
+    let mut with_func: Option<Value> = None;
+    for arg in args {
+        if let Some((key, value)) = adverb_pair(arg) {
+            if key == "as" && value.truthy() {
+                as_func = Some(value.clone());
+            } else if key == "with" && value.truthy() {
+                with_func = Some(value.clone());
+            }
+        }
+    }
+    (as_func, with_func)
+}
+
+impl DistinctState {
+    pub(crate) fn new(mode: DistinctMode, as_fn: Option<Value>, with_fn: Option<Value>) -> Self {
+        Self {
+            mode,
+            as_fn,
+            with_fn,
+            seen: IdentityIndex::new(),
+            with_seen: Vec::new(),
+            prev: None,
+        }
+    }
+}
+
 impl Interpreter {
+    /// Feed one element through a `unique` / `repeated` / `squish` filter and
+    /// answer whether it is emitted. This is the single per-element rule the
+    /// eager methods and the lazy pipe stage (`PipeAdaptor::Distinct`, #9159)
+    /// share, so the two cannot drift apart.
+    ///
+    /// Cost: O(1) average (one `:as` call) for Int/BigInt/Str/Bool/Num keys
+    /// under `unique`/`repeated`, O(u) key comparisons for other kinds and
+    /// O(u) comparator calls under `:with`, u = distinct keys seen so far;
+    /// O(1) for `squish`.
+    pub(crate) fn distinct_admit(
+        &mut self,
+        state: &mut DistinctState,
+        item: &Value,
+    ) -> Result<bool, RuntimeError> {
+        let key = match state.as_fn.clone() {
+            // `squish` keeps only the previous needle and rakudo never caches
+            // it there (see `cache_seq_needle`).
+            Some(func) if state.mode == DistinctMode::Squish => {
+                self.call_sub_value(func, vec![item.clone()], true)?
+            }
+            Some(func) => cache_seq_needle(self.call_sub_value(func, vec![item.clone()], true)?),
+            None => item.clone(),
+        };
+        if state.mode == DistinctMode::Squish {
+            let duplicate = match (state.prev.take(), state.with_fn.clone()) {
+                (None, _) => false,
+                (Some(prev), Some(func)) => self
+                    .call_sub_value(func, vec![prev, key.clone()], true)?
+                    .truthy(),
+                (Some(prev), None) => values_identical(&prev, &key),
+            };
+            state.prev = Some(key);
+            return Ok(!duplicate);
+        }
+        let duplicate = if let Some(func) = state.with_fn.clone() {
+            // A user comparator defines its own equality class, which the
+            // index cannot model, so `:with` keeps the full scan (rakudo's
+            // `:with` path is quadratic for the same reason).
+            let mut found = false;
+            for prev in state.with_seen.clone() {
+                if self
+                    .call_sub_value(func.clone(), vec![prev, key.clone()], true)?
+                    .truthy()
+                {
+                    found = true;
+                    break;
+                }
+            }
+            found
+        } else {
+            state.seen.contains_by(&key, dispatch_keys_same)
+        };
+        if !duplicate {
+            if state.with_fn.is_some() {
+                state.with_seen.push(key);
+            } else {
+                state.seen.insert(key);
+            }
+        }
+        Ok(match state.mode {
+            DistinctMode::Repeated => duplicate,
+            _ => !duplicate,
+        })
+    }
+
     /// Cost: O(e) average plus one `:as` call per element, e = elements of the
     /// invocant, when every key is an Int/BigInt/Str/Bool/Num; O(e * u) key
     /// comparisons when keys are of any other kind (u = distinct keys; see
@@ -85,20 +181,7 @@ impl Interpreter {
         target: Value,
         args: &[Value],
     ) -> Result<Value, RuntimeError> {
-        let mut as_func: Option<Value> = None;
-        let mut with_func: Option<Value> = None;
-        for arg in args {
-            if let Some((key, value)) = adverb_pair(arg) {
-                if key == "as" && value.truthy() {
-                    as_func = Some(value.clone());
-                    continue;
-                }
-                if key == "with" && value.truthy() {
-                    with_func = Some(value.clone());
-                    continue;
-                }
-            }
-        }
+        let (as_func, with_func) = distinct_adverbs(args);
 
         let items: Vec<Value> = if let Some(list_items) = target.as_list_items() {
             list_items.to_vec()
@@ -116,41 +199,10 @@ impl Interpreter {
         } else {
             vec![target]
         };
-        let mut seen = IdentityIndex::new();
-        let mut with_seen_keys: Vec<Value> = Vec::new();
+        let mut state = DistinctState::new(DistinctMode::Unique, as_func, with_func);
         let mut unique_items: Vec<Value> = Vec::new();
         for item in items {
-            let key = if let Some(func) = as_func.clone() {
-                cache_seq_needle(self.call_sub_value(func, vec![item.clone()], true)?)
-            } else {
-                item.clone()
-            };
-
-            let duplicate = if let Some(func) = with_func.clone() {
-                // A user comparator defines its own equality class, which the
-                // index cannot model, so `:with` keeps the full scan (rakudo's
-                // `:with` path is quadratic for the same reason).
-                let mut found = false;
-                for prev in &with_seen_keys {
-                    if self
-                        .call_sub_value(func.clone(), vec![prev.clone(), key.clone()], true)?
-                        .truthy()
-                    {
-                        found = true;
-                        break;
-                    }
-                }
-                found
-            } else {
-                seen.contains_by(&key, dispatch_keys_same)
-            };
-
-            if !duplicate {
-                if with_func.is_some() {
-                    with_seen_keys.push(key);
-                } else {
-                    seen.insert(key);
-                }
+            if self.distinct_admit(&mut state, &item)? {
                 unique_items.push(item);
             }
         }
@@ -166,20 +218,7 @@ impl Interpreter {
         target: Value,
         args: &[Value],
     ) -> Result<Value, RuntimeError> {
-        let mut as_func: Option<Value> = None;
-        let mut with_func: Option<Value> = None;
-        for arg in args {
-            if let Some((key, value)) = adverb_pair(arg) {
-                if key == "as" && value.truthy() {
-                    as_func = Some(value.clone());
-                    continue;
-                }
-                if key == "with" && value.truthy() {
-                    with_func = Some(value.clone());
-                    continue;
-                }
-            }
-        }
+        let (as_func, with_func) = distinct_adverbs(args);
 
         let items: Vec<Value> = if let Some(list_items) = target.as_list_items() {
             list_items.to_vec()
@@ -197,38 +236,11 @@ impl Interpreter {
         } else {
             vec![target]
         };
-        let mut seen = IdentityIndex::new();
-        let mut with_seen_keys: Vec<Value> = Vec::new();
+        let mut state = DistinctState::new(DistinctMode::Repeated, as_func, with_func);
         let mut repeated_items: Vec<Value> = Vec::new();
         for item in items {
-            let key = if let Some(func) = as_func.clone() {
-                cache_seq_needle(self.call_sub_value(func, vec![item.clone()], true)?)
-            } else {
-                item.clone()
-            };
-
-            let duplicate = if let Some(func) = with_func.clone() {
-                let mut found = false;
-                for prev in &with_seen_keys {
-                    if self
-                        .call_sub_value(func.clone(), vec![prev.clone(), key.clone()], true)?
-                        .truthy()
-                    {
-                        found = true;
-                        break;
-                    }
-                }
-                found
-            } else {
-                seen.contains_by(&key, dispatch_keys_same)
-            };
-
-            if duplicate {
+            if self.distinct_admit(&mut state, &item)? {
                 repeated_items.push(item);
-            } else if with_func.is_some() {
-                with_seen_keys.push(key);
-            } else {
-                seen.insert(key);
             }
         }
 
@@ -245,20 +257,7 @@ impl Interpreter {
         target: Value,
         args: &[Value],
     ) -> Result<Value, RuntimeError> {
-        let mut as_func: Option<Value> = None;
-        let mut with_func: Option<Value> = None;
-        for arg in args {
-            if let Some((key, value)) = adverb_pair(arg) {
-                if key == "as" && value.truthy() {
-                    as_func = Some(value.clone());
-                    continue;
-                }
-                if key == "with" && value.truthy() {
-                    with_func = Some(value.clone());
-                    continue;
-                }
-            }
-        }
+        let (as_func, with_func) = distinct_adverbs(args);
 
         if as_func.is_none()
             && with_func.is_none()

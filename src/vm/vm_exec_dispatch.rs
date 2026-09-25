@@ -3244,10 +3244,9 @@ impl Interpreter {
                 self.exec_string_repeat_op()?;
                 *ip += 1;
             }
-            // Cost: O(k * s), k = repeat count (capped at 4096 for `xx *` or a
-            // count above 10**6), s = Slip width; every element is materialized
-            // eagerly (see exec_list_repeat_op). Rakudo: O(1) until consumed --
-            // see #9159.
+            // Cost: O(k * s), k = repeat count up to 10**6, s = Slip width
+            // (materialized eagerly); for `xx *` or a larger count, O(1) and a
+            // lazy stage (see exec_list_repeat_op).
             OpCode::ListRepeat => {
                 self.exec_list_repeat_op()?;
                 *ip += 1;

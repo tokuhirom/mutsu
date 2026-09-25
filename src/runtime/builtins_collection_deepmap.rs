@@ -47,10 +47,32 @@ impl Interpreter {
     ///
     /// Cost: O(n * prod e_i), e_i = elements of the i-th of n lists: every
     /// n-tuple is materialized (and each partial tuple re-cloned per level)
-    /// before any is returned.
+    /// before any is returned. With an unbounded list the result is a lazy
+    /// stage costing O(n) pulls per tuple produced.
     pub(super) fn builtin_cross(&mut self, args: Vec<Value>) -> Result<Value, RuntimeError> {
         let mut lists: Vec<Vec<Value>> = Vec::new();
         let mut with_func: Option<Value> = None;
+
+        // An unbounded list (infinite Range, lazy list) makes the product
+        // infinite: stream it through a lazy `PipeAdaptor::Cross` stage
+        // instead of materializing the operand (#9159).
+        if args.iter().any(crate::vm::is_infinite_operand) {
+            let mut columns = Vec::new();
+            for arg in &args {
+                match arg.view() {
+                    ValueView::Pair(k, v) if k.as_str() == "with" => with_func = Some(v.clone()),
+                    _ => columns.push(arg.clone()),
+                }
+            }
+            let combine = match with_func {
+                Some(func) => crate::value::RowCombine::With { func, fold: false },
+                None => crate::value::RowCombine::List,
+            };
+            if let Some(pipe) = Self::lazy_cross_pipe(&columns, combine) {
+                return Ok(pipe);
+            }
+            with_func = None;
+        }
 
         for arg in &args {
             match arg.view() {
@@ -189,10 +211,8 @@ impl Interpreter {
     }
 
     /// Cost: O(sum e_i), e_i = elements of the i-th stream (each copied into a
-    /// Vec, then every round built eagerly). An infinite stream is not pulled
-    /// lazily: `roundrobin(1..*, (5, 6)).head(4)` panics (the `1..*` expansion
-    /// overflows the Vec capacity) and a lazy `.map` stream is taken as one
-    /// element, where Rakudo pulls O(1) per element -- see #9159.
+    /// Vec, then every round built eagerly). With an unbounded stream the
+    /// result is a lazy stage costing O(n) pulls per round, n = streams.
     pub(super) fn builtin_roundrobin(&self, raw_args: &[Value]) -> Result<Value, RuntimeError> {
         // Split off the `:slip` adverb (a `slip => Bool` named arg); the rest are
         // the lists-of-lists streams. With `:slip`, the tuples are concatenated
@@ -229,9 +249,8 @@ impl Interpreter {
             return Ok(Value::seq(Vec::new()));
         }
 
-        let streams: Vec<Vec<Value>> = effective_args
-            .iter()
-            .map(|arg| match arg.view() {
+        let stream_items = |arg: &Value| -> Vec<Value> {
+            match arg.view() {
                 ValueView::Capture { positional, named }
                     if named.is_empty() && positional.len() == 1 =>
                 {
@@ -245,8 +264,29 @@ impl Interpreter {
                 ValueView::RangeExcl(a, b) => (a..b).map(Value::int).collect(),
                 _ if arg.is_range() => crate::runtime::utils::value_to_list(arg),
                 _ => vec![arg.clone()],
-            })
-            .collect();
+            }
+        };
+        // An unbounded stream (an infinite Range, a lazy list) is pulled one
+        // element per round by a lazy `PipeAdaptor::Roundrobin` stage (#9159);
+        // expanding `1..*` here used to overflow the Vec capacity.
+        if effective_args.iter().any(|a| {
+            crate::vm::is_unbounded_operand(a) && !matches!(a.view(), ValueView::Array(..))
+        }) {
+            let streams = effective_args
+                .iter()
+                .map(|arg| {
+                    if crate::vm::is_unbounded_operand(arg)
+                        && !matches!(arg.view(), ValueView::Array(..))
+                    {
+                        arg.clone()
+                    } else {
+                        Value::array(stream_items(arg))
+                    }
+                })
+                .collect();
+            return Ok(Self::lazy_roundrobin_pipe(streams, slip));
+        }
+        let streams: Vec<Vec<Value>> = effective_args.iter().map(stream_items).collect();
 
         let mut indices = vec![0usize; streams.len()];
         let mut rounds = Vec::new();

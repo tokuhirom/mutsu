@@ -503,8 +503,9 @@ impl Interpreter {
 
     /// zip:with — zip lists using a custom combining function.
     // Cost: O(sum e_i + n * r), e_i = elements of the i-th of n lists (each
-    // copied whole), r = rows (the shortest list; capped at 1000 only when a
-    // column is lazy), plus one combiner call per pair folded.
+    // copied whole), r = rows (the shortest list), plus one combiner call per
+    // pair folded. When every column is lazy the result is a lazy pipe
+    // (`PipeAdaptor::Zip`) costing O(n) pulls plus the fold per row pulled.
     pub(super) fn builtin_zip_with(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
         let mut raw_inputs: Vec<&Value> = Vec::new();
         let mut with_fn: Option<Value> = None;
@@ -517,26 +518,8 @@ impl Interpreter {
             }
             raw_inputs.push(arg);
         }
-        let is_lazy_input = |v: &Value| -> bool {
-            matches!(v.view(), ValueView::LazyList(_))
-                || matches!(v.view(),
-                    ValueView::Range(_, end)
-                    | ValueView::RangeExcl(_, end)
-                    | ValueView::RangeExclStart(_, end)
-                    | ValueView::RangeExclBoth(_, end) if end == i64::MAX)
-                || matches!(v.view(), ValueView::GenericRange { end, .. } if {
-                    let f = end.to_f64();
-                    f.is_infinite() && f.is_sign_positive()
-                })
-        };
-        let all_lazy = raw_inputs.iter().all(|v| is_lazy_input(v));
-        let any_lazy = raw_inputs.iter().any(|v| is_lazy_input(v));
-        let lists: Vec<Vec<Value>> = raw_inputs
-            .iter()
-            .map(|v| crate::runtime::value_to_list(v))
-            .collect();
         let combiner = with_fn.ok_or_else(|| RuntimeError::new("zip: missing :with argument"))?;
-        if lists.is_empty() {
+        if raw_inputs.is_empty() {
             // `zip` returns a Seq, with or without `:with` -- `zip().raku` and
             // `zip(with => &infix:<+>).raku` are both `().Seq` in raku. The
             // no-`:with` path already did; this one handed back a List, which
@@ -544,84 +527,130 @@ impl Interpreter {
             // multi-way call) answered `(9, 12)` where raku says `(9, 12).Seq`.
             return Ok(Value::seq(vec![]));
         }
-        // Determine associativity from the operator name
-        let assoc = Self::op_associativity(&combiner);
-        // Check if the combiner has special multi-arg semantics (e.g. set
-        // symmetric difference) that requires passing all elements at once
-        // rather than folding pairwise.
-        let use_multi_arg = Self::combiner_needs_multi_arg(&combiner);
-        // The cap bounds how much of an infinite column is materialized; an
-        // all-finite zip keeps every row (same rule as the plain `zip`).
-        // TODO: a truly lazy zip would drop the cap altogether.
-        let max_expand: usize = if any_lazy { 1_000 } else { usize::MAX };
-        let min_len = lists
-            .iter()
-            .map(|l| l.len())
-            .min()
-            .unwrap_or(0)
-            .min(max_expand);
-        let mut result = Vec::with_capacity(min_len);
-        for i in 0..min_len {
-            let elements: Vec<Value> = lists.iter().map(|l| l[i].clone()).collect();
-            let combined = if elements.len() <= 1 {
-                elements.into_iter().next().unwrap_or(Value::NIL)
-            } else if elements.len() > 2 && use_multi_arg {
-                // Pass all elements at once for operators with special
-                // multi-arg semantics (e.g. set symmetric difference).
-                self.call_sub_value(combiner.clone(), elements, false)?
-            } else {
-                match assoc {
-                    OpAssoc::Right => {
-                        // Right-associative: fold from right
-                        let mut acc = elements.last().unwrap().clone();
-                        for elem in elements[..elements.len() - 1].iter().rev() {
-                            acc = self.call_sub_value(
-                                combiner.clone(),
-                                vec![elem.clone(), acc],
-                                false,
-                            )?;
-                        }
-                        acc
-                    }
-                    OpAssoc::Chain => {
-                        // Chain-associative: all pairwise comparisons must be true
-                        let mut all_true = true;
-                        for pair in elements.windows(2) {
-                            let r = self.call_sub_value(
-                                combiner.clone(),
-                                vec![pair[0].clone(), pair[1].clone()],
-                                false,
-                            )?;
-                            if !r.truthy() {
-                                all_true = false;
-                                break;
-                            }
-                        }
-                        Value::truth(all_true)
-                    }
-                    OpAssoc::Left => {
-                        // Left-associative (default): fold from left
-                        let mut acc = elements[0].clone();
-                        for elem in &elements[1..] {
-                            acc = self.call_sub_value(
-                                combiner.clone(),
-                                vec![acc, elem.clone()],
-                                false,
-                            )?;
-                        }
-                        acc
+        let columns: Vec<Value> = raw_inputs.iter().map(|v| (*v).clone()).collect();
+        let combine = crate::value::RowCombine::With {
+            func: combiner.clone(),
+            fold: true,
+        };
+        if let Some(pipe) = Self::lazy_zip_pipe(&columns, combine) {
+            return Ok(pipe);
+        }
+        let rows = self.zip_rows_bounded(&columns)?;
+        let mut result = Vec::with_capacity(rows.len());
+        for row in rows {
+            result.push(self.zip_with_combine_row(&combiner, row)?);
+        }
+        Ok(Value::seq(result))
+    }
+
+    /// Plain `zip(...)` (no `:with`) with an unbounded column: a lazy pipe
+    /// when every column is unbounded, otherwise the rows the finite columns
+    /// bound, pulling the unbounded ones only that far. `None` when every
+    /// column is finite (the native `zip` handles it) or `:with` is present.
+    // Cost: O(n) to classify the n columns, then as `zip_rows_bounded` /
+    // O(n) pulls per row pulled from the lazy result.
+    pub(crate) fn builtin_zip_unbounded(
+        &mut self,
+        args: &[Value],
+    ) -> Result<Option<Value>, RuntimeError> {
+        if args.iter().any(|a| matches!(a.view(), ValueView::Pair(..))) {
+            return Ok(None);
+        }
+        // The single-argument rule (`+@lol`): one list argument is the list
+        // of columns.
+        let columns: Vec<Value> = match args {
+            [single] => match single.view() {
+                ValueView::Array(items, kind) if !kind.is_itemized() => items.to_vec(),
+                ValueView::Seq(items) => items.to_vec(),
+                _ => return Ok(None),
+            },
+            _ => args.to_vec(),
+        };
+        if !columns.iter().any(crate::vm::is_unbounded_operand) {
+            return Ok(None);
+        }
+        if let Some(pipe) = Self::lazy_zip_pipe(&columns, crate::value::RowCombine::List) {
+            return Ok(Some(pipe));
+        }
+        let rows = self.zip_rows_bounded(&columns)?;
+        Ok(Some(Value::seq(
+            rows.into_iter().map(Value::array).collect(),
+        )))
+    }
+
+    /// Combine one row of a `zip(..., :with(&op))` by the operator's
+    /// associativity (or all at once for the multi-arg set operators). The
+    /// single home for this rule: the eager `zip:with` and the lazy
+    /// `PipeAdaptor::Zip` both call it.
+    // Cost: O(n) combiner calls, n = elements in the row.
+    pub(crate) fn zip_with_combine_row(
+        &mut self,
+        combiner: &Value,
+        elements: Vec<Value>,
+    ) -> Result<Value, RuntimeError> {
+        if elements.len() <= 1 {
+            return Ok(elements.into_iter().next().unwrap_or(Value::NIL));
+        }
+        if elements.len() > 2 && Self::combiner_needs_multi_arg(combiner) {
+            // Pass all elements at once for operators with special
+            // multi-arg semantics (e.g. set symmetric difference).
+            return self.call_sub_value(combiner.clone(), elements, false);
+        }
+        match Self::op_associativity(combiner) {
+            OpAssoc::Right => {
+                // Right-associative: fold from right
+                let mut rev = elements.into_iter().rev();
+                let mut acc = rev.next().unwrap_or(Value::NIL);
+                for elem in rev {
+                    acc = self.call_sub_value(combiner.clone(), vec![elem, acc], false)?;
+                }
+                Ok(acc)
+            }
+            OpAssoc::Chain => {
+                // Chain-associative: all pairwise comparisons must be true
+                for pair in elements.windows(2) {
+                    let r = self.call_sub_value(
+                        combiner.clone(),
+                        vec![pair[0].clone(), pair[1].clone()],
+                        false,
+                    )?;
+                    if !r.truthy() {
+                        return Ok(Value::truth(false));
                     }
                 }
-            };
-            result.push(combined);
+                Ok(Value::truth(true))
+            }
+            OpAssoc::Left => {
+                // Left-associative (default): fold from left
+                let mut acc = elements[0].clone();
+                for elem in &elements[1..] {
+                    acc = self.call_sub_value(combiner.clone(), vec![acc, elem.clone()], false)?;
+                }
+                Ok(acc)
+            }
         }
-        if all_lazy {
-            Ok(Value::lazy_list(crate::gc::Gc::new(
-                crate::value::LazyList::new_cached_infinite(result),
-            )))
-        } else {
-            Ok(Value::seq(result))
-        }
+    }
+
+    /// Whether `.produce(&callable)` can stream one element per step (a
+    /// two-argument, non-right-associative reducer), so a lazy invocant can
+    /// become a `PipeAdaptor::Produce` stage instead of being forced.
+    pub(crate) fn produce_streams(&self, callable: &Value) -> bool {
+        matches!(
+            callable.view(),
+            ValueView::Sub(_) | ValueView::WeakSub(_) | ValueView::Routine { .. }
+        ) && self.callable_produce_arity(callable) == 2
+            && !matches!(self.callable_produce_assoc(callable), OpAssoc::Right)
+    }
+
+    /// One `produce` step: fold `elem` into `acc` (shared with the eager
+    /// `eval_produce_over_items` through `reduce_call_step`).
+    pub(crate) fn produce_step(
+        &mut self,
+        callable: &Value,
+        acc: Value,
+        elem: Value,
+    ) -> Result<Value, RuntimeError> {
+        self.reduce_call_step(callable, vec![acc, elem])
     }
 
     /// Check if a combiner operator needs all elements passed at once

@@ -197,8 +197,37 @@ impl LazyList {
             Some(p) => p,
             None => return false,
         };
-        let source = spec.lock().unwrap().source.clone();
-        Self::value_source_is_finite(&source)
+        let spec = spec.lock().unwrap_or_else(|e| e.into_inner());
+        // A multi-operand adaptor's finiteness depends on all its operands:
+        // a zip ends with its shortest operand, while a cross product and a
+        // roundrobin run as long as their longest one.
+        let operand_finite = |op: &crate::value::PullOperand| match op {
+            crate::value::PullOperand::Source(v) => Self::value_source_is_finite(v),
+            crate::value::PullOperand::Extended { .. } => false,
+            crate::value::PullOperand::Segments(items) => {
+                items.iter().all(Self::value_source_is_finite_item)
+            }
+        };
+        match spec.adaptor.as_deref() {
+            Some(crate::value::PipeAdaptor::Zip { operands, .. }) => {
+                operands.iter().any(operand_finite)
+            }
+            Some(
+                crate::value::PipeAdaptor::Cross { operands, .. }
+                | crate::value::PipeAdaptor::Roundrobin { operands, .. },
+            ) => operands.iter().all(operand_finite),
+            _ => {
+                let source = spec.source.clone();
+                drop(spec);
+                Self::value_source_is_finite(&source)
+            }
+        }
+    }
+
+    /// A `PullOperand::Segments` element: a plain element counts once, a
+    /// slipped lazy child is finite only if its own source is.
+    fn value_source_is_finite_item(item: &Value) -> bool {
+        !matches!(item.view(), ValueView::LazyList(_)) || Self::value_source_is_finite(item)
     }
 
     fn value_source_is_finite(source: &Value) -> bool {

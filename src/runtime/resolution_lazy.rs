@@ -7,8 +7,15 @@ impl Interpreter {
         // return the result if the pipe became `done`, otherwise throw
         // X::Cannot::Lazy (genuinely infinite). Mirrors `force_lazy_list_vm`.
         if list.lazy_pipe.is_some() {
+            // A pipe over a provably finite source runs to its end, however
+            // long; only a possibly-infinite one gets the bounded attempt.
             const EAGER_FORCE_CAP: usize = 1_000_000;
-            let forced = self.force_lazy_pipe(list, EAGER_FORCE_CAP)?;
+            let cap = if list.pipe_bottoms_out_finite() {
+                usize::MAX
+            } else {
+                EAGER_FORCE_CAP
+            };
+            let forced = self.force_lazy_pipe(list, cap)?;
             let done = list
                 .lazy_pipe
                 .as_ref()

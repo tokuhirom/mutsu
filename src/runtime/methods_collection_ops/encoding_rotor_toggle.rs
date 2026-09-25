@@ -144,9 +144,10 @@ impl Interpreter {
         #[derive(Clone)]
         enum RotorCount {
             Fixed(usize),
-            Whatever,        // * — take everything remaining
-            Inf,             // Inf — take everything remaining
-            Range(Vec<i64>), // 1..* or similar — cycling counts
+            Whatever, // * — take everything remaining
+            Inf,      // Inf — take everything remaining
+            // `a..b` / `a..*` — counts a, a+1, ... (`len` None: unbounded)
+            Range { start: i64, len: Option<usize> },
         }
 
         // Flatten any nested Seq/Array specs into a flat list
@@ -246,29 +247,22 @@ impl Interpreter {
                 ValueView::Range(start, end) | ValueView::RangeExcl(start, end) => {
                     let is_excl = matches!(spec.view(), ValueView::RangeExcl(..));
                     let end_val = if is_excl { end - 1 } else { end };
-                    if end_val == i64::MAX || end == i64::MAX {
-                        // 1..* — infinite range, treated like cycling counts
-                        let mut counts = Vec::new();
-                        for i in start.. {
-                            counts.push(i);
-                            if counts.len() > 10000 {
-                                break; // safety limit
-                            }
-                        }
-                        rotor_specs.push(RotorSpec {
-                            count: RotorCount::Range(counts),
-                            gap: 0,
-                        });
+                    // `1..*` counts up forever; a finite range cycles its
+                    // counts. Either way the next count is computed, never
+                    // pre-expanded.
+                    let len = if end_val == i64::MAX || end == i64::MAX {
+                        None
                     } else {
-                        let mut counts = Vec::new();
-                        for i in start..=end_val {
-                            counts.push(i);
-                        }
-                        rotor_specs.push(RotorSpec {
-                            count: RotorCount::Range(counts),
-                            gap: 0,
-                        });
-                    }
+                        Some(if end_val >= start {
+                            (end_val - start) as usize + 1
+                        } else {
+                            0
+                        })
+                    };
+                    rotor_specs.push(RotorSpec {
+                        count: RotorCount::Range { start, len },
+                        gap: 0,
+                    });
                 }
                 _ => {
                     // Try to coerce to int
@@ -342,12 +336,15 @@ impl Interpreter {
             let count = match &spec.count {
                 RotorCount::Fixed(n) => *n,
                 RotorCount::Whatever | RotorCount::Inf => items.len() - pos,
-                RotorCount::Range(counts) => {
-                    let c = counts[range_sub_idx % counts.len()];
-                    if c == i64::MAX {
-                        items.len() - pos
-                    } else {
-                        c as usize
+                RotorCount::Range { start, len } => {
+                    let sub = match len {
+                        Some(n) if *n > 0 => range_sub_idx % n,
+                        _ => range_sub_idx,
+                    };
+                    match start.checked_add(sub as i64) {
+                        Some(c) if c >= 0 => c as usize,
+                        Some(_) => 0,
+                        None => items.len() - pos,
                     }
                 }
             };
@@ -396,9 +393,9 @@ impl Interpreter {
 
             // Advance spec index
             match &spec.count {
-                RotorCount::Range(counts) => {
+                RotorCount::Range { len, .. } => {
                     range_sub_idx += 1;
-                    if range_sub_idx >= counts.len() {
+                    if len.is_some_and(|n| range_sub_idx >= n) {
                         range_sub_idx = 0;
                         spec_idx += 1;
                     }

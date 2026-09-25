@@ -96,30 +96,36 @@ impl Interpreter {
     }
 
     /// Build a lazy `map`/`grep` pipeline stage over `target` if `func` is
-    /// eligible for single-element pull (arity-1, no full-binding signature and
-    /// no grep adverbs handled by the caller). Returns `None` to fall back to
-    /// the eager path.
+    /// eligible for pull (no full-binding signature and no grep adverbs
+    /// handled by the caller). Returns `None` to fall back to the eager path.
     ///
-    /// Cost: O(1) per call; the stage runs one callback per source element
-    /// pulled, so `(1..*).map(&f).head(k)` is O(k). A multi-arity callback
-    /// declines here, and on an infinite source the eager fallback then fails
-    /// (`(1..*).map(-> $a, $b { ... }).head(3)` dies "Not enough elements")
-    /// where Rakudo pulls O(1) per chunk -- see #9159.
+    /// Cost: O(1) per call; the stage runs one callback per source chunk
+    /// pulled, so `(1..*).map(&f).head(k)` is O(k * arity).
     pub(crate) fn make_lazy_pipe(target: Value, func: Value, is_grep: bool) -> Option<Value> {
-        // Only callbacks that consume one element per call can be pulled lazily.
-        // A multi-arity block (`-> $a, $b { }`) or a slurpy param (`*@a`)
-        // consumes a chunk of the source per call, which single-element pull
-        // cannot reproduce; defer those to the eager path (unchanged behaviour).
-        // Other signature features (types, defaults, where, …) still bind one
-        // element per call in `eval_map_over_items`, so they stay eligible.
+        // A multi-arity block (`-> $a, $b { }`) consumes a chunk of the source
+        // per call: a `map` pulls it through a `MultiMap` adaptor stage. A
+        // slurpy param (`*@a`) would consume the whole (possibly infinite)
+        // source, and a multi-arity `grep` has no chunked form here; both
+        // defer to the eager path (unchanged behaviour). Other signature
+        // features (types, defaults, where, ...) still bind one element per
+        // call in `eval_map_over_items`, so they stay eligible.
         if let ValueView::Sub(data) = func.view() {
             let arity = data
                 .params
                 .len()
                 .saturating_sub(data.assumed_positional.len());
             let has_slurpy = data.param_defs.iter().any(|pd| pd.slurpy);
-            if arity > 1 || has_slurpy {
+            if has_slurpy || (arity > 1 && is_grep) {
                 return None;
+            }
+            if arity > 1 {
+                return Some(Value::lazy_list(crate::gc::Gc::new(
+                    crate::value::LazyList::new_adaptor_pipe(
+                        target,
+                        func.clone(),
+                        crate::value::PipeAdaptor::MultiMap { arity },
+                    ),
+                )));
             }
         }
         Some(Value::lazy_list(crate::gc::Gc::new(

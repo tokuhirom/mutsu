@@ -1491,6 +1491,14 @@ impl Interpreter {
             self.stack.push(pipe);
             return Ok(());
         }
+        // `.skip`/`.rotor`/`.batch`/`.unique`/`.repeated`/`.squish`/`.produce`/
+        // `.flat` over a lazy invocant: stream through an adaptor stage
+        // instead of forcing the (possibly infinite) source (#9159).
+        if let Some(pipe) = self.try_lazy_adaptor_method(&target, method, &args)? {
+            crate::vm::vm_stats::record_dispatch_entry_intercept("callmethod", "lazy-adaptor");
+            self.stack.push(pipe);
+            return Ok(());
+        }
         // `.cache` on a genuinely-lazy list must stay lazy: Rakudo's `.cache`
         // reifies on demand, it does not force. A `LazyList` already caches
         // pulled elements internally, so return it unchanged — this keeps

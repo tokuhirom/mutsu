@@ -118,6 +118,7 @@ impl LazyList {
                 source_idx: 0,
                 done: false,
                 index_transform: None,
+                adaptor: None,
             })),
             closure_seq: None,
             walk_pending: None,
@@ -163,6 +164,7 @@ impl LazyList {
                 source_idx: 0,
                 done: false,
                 index_transform: Some(transform),
+                adaptor: None,
             })),
             closure_seq: None,
             walk_pending: None,
@@ -172,6 +174,19 @@ impl LazyList {
             cached_no_sink: false,
             itemized: false,
         }
+    }
+
+    /// Create a lazy stage driven by a stateful [`PipeAdaptor`] over `source`
+    /// (`.skip`/`.rotor`/`.unique`/.../`Z`/`X`/`roundrobin`, #9159). `func`
+    /// is only read by [`PipeAdaptor::MultiMap`]. For the multi-operand
+    /// adaptors `source` is the first operand; the adaptor pulls from its own
+    /// operand list.
+    pub(crate) fn new_adaptor_pipe(source: Value, func: Value, adaptor: PipeAdaptor) -> Self {
+        let mut ll = Self::new_pipe(source, func, false);
+        if let Some(spec) = ll.lazy_pipe.as_mut() {
+            spec.get_mut().unwrap_or_else(|e| e.into_inner()).adaptor = Some(Box::new(adaptor));
+        }
+        ll
     }
 
     /// Create the lazy view used by the left-exclusive sequence operators.

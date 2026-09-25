@@ -79,6 +79,7 @@ fn identity_bucket(value: &Value) -> Option<u64> {
 
 /// The values `unique` / `repeated` have already seen, with a hash index over
 /// the kinds that admit one.
+#[derive(Debug, Clone)]
 pub(crate) struct IdentityIndex {
     seen: Vec<Value>,
     /// bucket hash -> indices into `seen`

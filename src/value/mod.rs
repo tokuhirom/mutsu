@@ -2678,6 +2678,120 @@ pub(crate) struct MapGrepSpec {
     /// `source_idx` as the positional key. Lets these methods stay lazy over a
     /// lazy source instead of materializing it.
     pub(crate) index_transform: Option<IndexTransform>,
+    /// When set, this stage ignores `func`/`is_grep`/`index_transform` and is
+    /// driven by a stateful list adaptor (`.skip`, `.rotor`, `.unique`, `Z`,
+    /// `X`, `roundrobin`, ...) that pulls from `source` (and, for the
+    /// multi-operand adaptors, from its own operands) on demand. See
+    /// [`PipeAdaptor`] and `vm/vm_helpers_lazy_adaptor.rs`.
+    pub(crate) adaptor: Option<Box<PipeAdaptor>>,
+}
+
+/// A stateful iterator adaptor over one or more pull sources, carried by a
+/// [`MapGrepSpec`]. Each pull step consumes what it needs from its source(s)
+/// and emits zero or more elements, so the adaptor works identically over a
+/// finite reified list and an infinite one (`(1..*).map(...).rotor(2)`,
+/// `(1..*) Z (1..*)`) -- no prefix cap is ever needed (#9159).
+#[derive(Debug, Clone)]
+pub(crate) enum PipeAdaptor {
+    /// `.skip(n)`: drop the first `remaining` source elements.
+    Skip { remaining: usize },
+    /// `.map` with a callback taking `arity` (> 1) positionals per call.
+    /// The callback is the owning spec's `func`.
+    MultiMap { arity: usize },
+    /// `.rotor` / `.batch`: a cycle of `(count, gap)` chunk specs.
+    Chunk {
+        specs: Vec<(usize, i64)>,
+        next_spec: usize,
+        partial: bool,
+        emitted: bool,
+    },
+    /// `.unique` / `.repeated` / `.squish`.
+    Distinct(Box<DistinctState>),
+    /// `.produce(&op)`: running fold, emitting every intermediate value.
+    Produce { op: Value, acc: Option<Value> },
+    /// `Z` / `zip`: row `i` combines element `i` of every operand; ends as
+    /// soon as any operand is exhausted. Uses the owning spec's `source_idx`
+    /// as the row index.
+    Zip {
+        operands: Vec<PullOperand>,
+        combine: RowCombine,
+    },
+    /// `X` / `cross`: the Cartesian product in odometer order (last operand
+    /// fastest). An infinite later operand simply never lets an earlier one
+    /// advance, exactly as in Rakudo.
+    Cross {
+        operands: Vec<PullOperand>,
+        combine: RowCombine,
+        pos: Vec<usize>,
+        started: bool,
+    },
+    /// `roundrobin`: row `i` holds element `i` of every operand that still has
+    /// one; ends when every operand is exhausted.
+    Roundrobin {
+        operands: Vec<PullOperand>,
+        alive: Vec<bool>,
+        slip: bool,
+    },
+    /// `LHS xx COUNT` beyond the eager limit or `xx *`: each step builds one
+    /// repetition of the spec's `func` (the LHS). `remaining` is `None` for
+    /// an infinite count.
+    Repeat { remaining: Option<u64> },
+    /// Placeholder left in the spec while a step runs (the real state is
+    /// moved out for the step), so a re-entrant pull is detected.
+    Busy,
+}
+
+/// Which `unique`-family method a [`PipeAdaptor::Distinct`] implements.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum DistinctMode {
+    Unique,
+    Repeated,
+    Squish,
+}
+
+/// State of a lazy `.unique` / `.repeated` / `.squish` stage.
+#[derive(Debug, Clone)]
+pub(crate) struct DistinctState {
+    pub(crate) mode: DistinctMode,
+    pub(crate) as_fn: Option<Value>,
+    pub(crate) with_fn: Option<Value>,
+    /// Keys seen so far under the default `===` rule (`unique`/`repeated`).
+    pub(crate) seen: crate::runtime::utils::IdentityIndex,
+    /// Keys seen so far under a `:with` comparator (`unique`/`repeated`).
+    pub(crate) with_seen: Vec<Value>,
+    /// The previous element's key (`squish`).
+    pub(crate) prev: Option<Value>,
+}
+
+/// One operand of a multi-source [`PipeAdaptor`]. Elements are pulled by
+/// index through the VM, so a lazy operand is only reified as far as needed.
+#[derive(Debug, Clone)]
+pub(crate) enum PullOperand {
+    /// Any pullable value (Range, list, lazy list, ...).
+    Source(Value),
+    /// A list with a trailing `*`: past its end it repeats `fill` forever.
+    Extended { items: Vec<Value>, fill: Value },
+    /// A list literal that slipped a lazy list in as a direct element
+    /// (`(1, |map {...}, 0..*)`): in list context that child is part of the
+    /// surrounding sequence, so it is walked element by element.
+    Segments(Vec<Value>),
+}
+
+/// How a [`PipeAdaptor::Zip`] / [`PipeAdaptor::Cross`] turns one row of
+/// operand elements into an output element.
+#[derive(Debug, Clone)]
+pub(crate) enum RowCombine {
+    /// Plain `Z` / `X` / `zip` / `cross`: the row as a List.
+    List,
+    /// `Z=>`: a Pair of the two elements.
+    Pair,
+    /// `X~~`: smartmatch.
+    SmartMatch,
+    /// `Zop` / `Xop`: the infix operator folded over the row.
+    Infix(crate::symbol::Symbol),
+    /// `zip(..., :with(&f))` / `cross(..., :with(&f))`: the callable, folded
+    /// by its associativity (`zip`) or called with the whole row (`cross`).
+    With { func: Value, fold: bool },
 }
 
 /// Index-based transform applied lazily to a positional source, used by

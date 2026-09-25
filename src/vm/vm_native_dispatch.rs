@@ -726,6 +726,15 @@ impl Interpreter {
         // See `try_native_floor_ceiling` for the compile-time signal
         // (`literal_native_args`'s call-specific meaning for these three
         // names) that makes the distinction here.
+        // `zip` over an unbounded column streams its rows instead of letting
+        // the pure native `zip` materialize the column (#9159).
+        if name_sym.as_str() == "zip" {
+            match self.builtin_zip_unbounded(args) {
+                Ok(Some(result)) => return Some(Ok(result)),
+                Ok(None) => {}
+                Err(e) => return Some(Err(e)),
+            }
+        }
         if let Some(result) = self.try_native_floor_ceiling(name_sym, args) {
             return Some(result);
         }

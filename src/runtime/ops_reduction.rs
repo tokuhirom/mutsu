@@ -785,29 +785,15 @@ impl Interpreter {
                 }
                 Ok(Value::array(results))
             }
-            "xx" => {
-                const EAGER_LIMIT: usize = 10_000;
-                const LAZY_CACHE: usize = 4_096;
-                let (repeat, lazy) = match Self::reduction_parse_repeat_count(right)? {
-                    Some(n) if n <= 0 => (0usize, false),
-                    Some(n) if (n as usize) <= EAGER_LIMIT => (n as usize, false),
-                    Some(n) => ((n as usize).min(LAZY_CACHE), true),
-                    None => (LAZY_CACHE, true),
-                };
-                let items: Vec<Value> = std::iter::repeat_n(left.clone(), repeat).collect();
-                if lazy {
-                    // Record the LOGICAL element count (`Inf` for `xx *`), the
-                    // way the infix `xx` operator does: the cache is only a
-                    // bounded prefix, and `is_genuinely_lazy` has nothing else
-                    // to go on.
-                    Ok(Self::make_repeat_lazy_cache_counted(
-                        items,
-                        Self::repeat_logical_count(right),
-                    ))
-                } else {
-                    Ok(Value::seq(items))
-                }
-            }
+            // The pure fold has no interpreter to call a thunk LHS with, so a
+            // value LHS is repeated as-is; see `Interpreter::list_repeat`.
+            "xx" => match Self::reduction_parse_repeat_count(right)? {
+                Some(n) if n <= 0 => Ok(Value::seq(Vec::new())),
+                Some(n) if (n as usize) <= Self::REPEAT_EAGER_LIMIT => Ok(Value::seq(
+                    std::iter::repeat_n(left.clone(), n as usize).collect(),
+                )),
+                count => Ok(Self::repeat_lazy_value(left, right, count)),
+            },
             "," => {
                 let mut items = match left.view() {
                     ValueView::Array(values, kind) if !kind.is_itemized() => values.to_vec(),
