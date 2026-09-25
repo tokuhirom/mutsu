@@ -450,12 +450,16 @@ fn every_variant_roundtrips_losslessly() {
             is_regex: true,
             captured_regex: None,
         },
-        ValueRepr::Pair("key".to_string(), Box::new(Value::int(9)), None),
-        ValueRepr::ValuePair(
-            Box::new(Value::int(1)),
-            Box::new(Value::str("v".to_string())),
-            None,
-        ),
+        ValueRepr::Pair(Gc::new(PairData {
+            key: PairKey::String("key".to_string()),
+            value: Value::int(9),
+            source: None,
+        })),
+        ValueRepr::ValuePair(Gc::new(PairData {
+            key: PairKey::Value(Value::int(1)),
+            value: Value::str("v".to_string()),
+            source: None,
+        })),
         ValueRepr::Enum {
             enum_type: Symbol::intern("Color"),
             key: Symbol::intern("Red"),
@@ -647,16 +651,20 @@ fn promise_and_channel_roundtrip_sharing_state() {
 
 #[test]
 fn debug_matches_the_repr_debug() {
-    let b = NanBox::from_repr(ValueRepr::Pair(
-        "k".to_string(),
-        Box::new(Value::int(1)),
-        None,
-    ));
+    let b = NanBox::from_repr(ValueRepr::Pair(Gc::new(PairData {
+        key: PairKey::String("k".to_string()),
+        value: Value::int(1),
+        source: None,
+    })));
     assert_eq!(
         format!("{b:?}"),
         format!(
             "{:?}",
-            ValueRepr::Pair("k".to_string(), Box::new(Value::int(1)), None)
+            ValueRepr::Pair(Gc::new(PairData {
+                key: PairKey::String("k".to_string()),
+                value: Value::int(1),
+                source: None,
+            }))
         )
     );
 }

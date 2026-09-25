@@ -8,9 +8,9 @@
 //!
 //! `gc_trace` yields the erased `Gc` node handle for every migrated `Gc<T>`
 //! node variant (`Array`/`Hash`/`Set`/`Bag`/`Mix`/`ContainerRef`/`Sub`/
-//! `Instance`/`LazyList`/`Promise`/`Channel`, plus the `Gc<HashData>` inside a
-//! `HashEntryRef`), and recurses through every *non-node* wrapper that owns or
-//! shares `Value`s (`Pair`/`ValuePair`/`Scalar`/`Capture`/`Seq`/`HyperSeq`/
+//! `Instance`/`LazyList`/`Promise`/`Channel`/`Pair`/`ValuePair`, plus the
+//! `Gc<HashData>` inside a `HashEntryRef`), and recurses through every
+//! *non-node* wrapper that owns or shares `Value`s (`Scalar`/`Capture`/`Seq`/`HyperSeq`/
 //! `RaceSeq`/`Slip`/`Mixin`/`Junction`/`GenericRange`/`Proxy`/`Enum`/
 //! `ParametricRole`/`CustomType`/`CustomTypeInstance`/`LazyThunk`/`LazyIoLines`)
 //! so a `Gc` node nested inside one is still reached — otherwise the wrapper is
@@ -27,6 +27,23 @@ use super::{
     ArrayData, BagData, BufData, ChannelState, EnumValue, HashData, InstanceAttrs, LazyList,
     MixData, MixinOverrides, PromiseState, SetData, SharedChannel, SharedPromise, SubData, Value,
 };
+
+impl Trace for super::PairData {
+    fn trace(&self, visit: &mut dyn FnMut(&ErasedGc)) {
+        if let super::PairKey::Value(key) = &self.key {
+            key.gc_trace(visit);
+        }
+        self.value.gc_trace(visit);
+    }
+
+    fn drop_gc_edges(&mut self) {
+        if let super::PairKey::Value(key) = &mut self.key {
+            *key = Value::NIL;
+        }
+        self.value = Value::NIL;
+        self.source = None;
+    }
+}
 
 /// Whether an `Arc`-shared wrapper is *uniquely owned* — its only holder is the
 /// `Value` currently being traced.
@@ -77,7 +94,11 @@ impl Value {
             visit(&node);
             return;
         }
-        // Post-flip, the multi-field payloads (Pair, Scalar, Capture, ...)
+        if let Some(node) = self.0.pair_node_erased() {
+            visit(&node);
+            return;
+        }
+        // Post-flip, the immutable multi-field payloads (Scalar, Capture, ...)
         // live behind one shared `Arc<...Box>`: when that box is shared by
         // N > 1 holders, tracing through every holder would over-count its
         // inner `Gc` edges (trial-deletion underflow). Treat a shared box as
@@ -127,11 +148,7 @@ impl Value {
             // only when uniquely owned (see `uniquely_owned` for why a shared
             // wrapper would over-decrement). `WeakSub` is a WEAK edge — not
             // traced.
-            ValueView::Pair(_, v) | ValueView::Scalar(v) => v.gc_trace(visit),
-            ValueView::ValuePair(k, v) => {
-                k.gc_trace(visit);
-                v.gc_trace(visit);
-            }
+            ValueView::Scalar(v) => v.gc_trace(visit),
             ValueView::Capture { positional, named } => {
                 for v in positional.iter() {
                     v.gc_trace(visit);

@@ -92,6 +92,31 @@ impl NanBox {
         Some(f(node))
     }
 
+    /// Run `f` on the shared Pair payload in place.
+    ///
+    /// Pair attributes are directly mutable through `nqp::bindattr`; the
+    /// mutation must therefore reach the Gc node shared by every copied Pair
+    /// value instead of decoding and repacking one holder.
+    #[inline]
+    pub(in crate::value) fn with_pair_inplace<R>(
+        &self,
+        f: impl FnOnce(&mut PairData) -> R,
+    ) -> Option<R> {
+        let bits = self.0.get();
+        if !matches!(
+            classify(bits),
+            Classified::Kind(Kind::Pair | Kind::ValuePair)
+        ) {
+            return None;
+        }
+        let gc = ManuallyDrop::new(unsafe { take_gc::<PairData>(bits) });
+        // SAFETY: Pair mutation is synchronous and the caller must not hold a
+        // borrow into the payload across the closure, just like other
+        // audited aliased Gc writes in this module.
+        let data = unsafe { crate::value::gc_contents_mut(&*gc) };
+        Some(f(data))
+    }
+
     /// True iff this is a big-integer-backed rational tagged as a FatRat.
     #[inline]
     pub(in crate::value) fn is_bigfatrat(&self) -> bool {
@@ -230,8 +255,6 @@ impl NanBox {
         unsafe {
             match kind {
                 Kind::Scalar => unique::<Value>(bits),
-                Kind::Pair => unique::<PairBox>(bits),
-                Kind::ValuePair => unique::<ValuePairBox>(bits),
                 Kind::Capture => unique::<CaptureBox>(bits),
                 Kind::VarRef => unique::<VarRefBox>(bits),
                 Kind::Proxy => unique::<ProxyBox>(bits),
@@ -635,6 +658,22 @@ impl NanBox {
         }
     }
 
+    /// The erased Pair payload node if this is a Pair or ValuePair. Pair is a
+    /// real Gc node because `nqp::bindattr` mutates its shared slots.
+    #[inline]
+    pub(in crate::value) fn pair_node_erased(&self) -> Option<crate::gc::ErasedGc> {
+        let bits = self.0.get();
+        match classify(bits) {
+            Classified::Kind(Kind::Pair | Kind::ValuePair) => {
+                // SAFETY: both Pair kinds carry a Gc<PairData>; the handle is
+                // wrapped in ManuallyDrop so the word keeps its reference.
+                let g = ManuallyDrop::new(unsafe { take_gc::<PairData>(bits) });
+                Some(g.erased())
+            }
+            _ => None,
+        }
+    }
+
     /// A representation-variant tag for `same_variant`: collapses the kind
     /// space back onto `ValueRepr` discriminants (all six Array kinds are one
     /// variant, IntBoxed is Int, the four Junction kinds are one, etc.).
@@ -763,12 +802,18 @@ unsafe fn view_kind<'a>(kind: Kind, bits: u64) -> ValueView<'a> {
                 ValueView::Complex(p.0, p.1)
             }
             Kind::Pair => {
-                let p = peek_arc::<PairBox>(bits);
-                ValueView::Pair(&p.0, &p.1)
+                let p = peek_gc::<PairData>(bits);
+                match &p.key {
+                    PairKey::String(key) => ValueView::Pair(key, &p.value),
+                    PairKey::Value(key) => ValueView::ValuePair(key, &p.value),
+                }
             }
             Kind::ValuePair => {
-                let p = peek_arc::<ValuePairBox>(bits);
-                ValueView::ValuePair(&p.0, &p.1)
+                let p = peek_gc::<PairData>(bits);
+                match &p.key {
+                    PairKey::String(key) => ValueView::Pair(key, &p.value),
+                    PairKey::Value(key) => ValueView::ValuePair(key, &p.value),
+                }
             }
             Kind::Enum => {
                 let e = peek_arc::<EnumBox>(bits);
