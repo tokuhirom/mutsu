@@ -799,10 +799,14 @@ impl Interpreter {
     ) -> Option<String> {
         match expr {
             Expr::BareWord(name) => {
-                // A bare `_` is never a declared name in raku (the topic is
-                // `$_`); report it before the env lookup below would excuse it
-                // via the topic entry.
-                if name == "_" {
+                // A bare `_` is only declared when the caller has a sigilless
+                // `_` term. Its value lives under a private key; the ordinary
+                // topic entry must not make an undeclared `_` look valid.
+                if name == "_"
+                    && !self
+                        .env()
+                        .contains_key(crate::symbol::SIGILLESS_UNDERSCORE_STORAGE)
+                {
                     return Some("_".to_string());
                 }
                 // Skip well-known constants and special names

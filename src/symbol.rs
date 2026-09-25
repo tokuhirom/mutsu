@@ -5,6 +5,19 @@ use std::fmt;
 use std::sync::atomic::{AtomicU16, AtomicU32, Ordering};
 use std::sync::{OnceLock, RwLock};
 
+/// Private storage for the sigilless `_` term. The source spelling collides
+/// with the environment key used by the topical `$_` variable.
+pub(crate) const SIGILLESS_UNDERSCORE_STORAGE: &str = "__mutsu_sigilless_underscore";
+
+#[inline]
+pub(crate) fn sigilless_storage_name(name: &str) -> &str {
+    if name == "_" {
+        SIGILLESS_UNDERSCORE_STORAGE
+    } else {
+        name
+    }
+}
+
 /// An interned symbol — a lightweight handle that supports O(1) equality
 /// comparison instead of byte-by-byte string comparison.
 ///

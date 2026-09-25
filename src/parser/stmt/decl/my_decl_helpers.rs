@@ -103,8 +103,9 @@ pub(super) fn parse_sigilless_decl(
     type_constraint: Option<String>,
     apply_modifier: bool,
 ) -> PResult<'_, Stmt> {
-    let (r, name) = parse_sigilless_decl_name(input)?;
-    register_term_symbol_from_decl_name(&name);
+    let (r, source_name) = parse_sigilless_decl_name(input)?;
+    register_term_symbol_from_decl_name(&source_name);
+    let name = crate::symbol::sigilless_storage_name(&source_name).to_string();
     let (r, _) = ws(r)?;
     if let Some(r) = r.strip_prefix("::=").or_else(|| r.strip_prefix(":=")) {
         let (r, _) = ws(r)?;

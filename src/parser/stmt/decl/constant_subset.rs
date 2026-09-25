@@ -63,6 +63,7 @@ pub(in crate::parser::stmt) fn constant_decl(input: &str) -> PResult<'_, Stmt> {
         register_term_symbol_from_decl_name(&n);
         (r, n)
     };
+    let name = crate::symbol::sigilless_storage_name(&name).to_string();
     // A constant with a `?` twigil (e.g. `constant $?FILE = ...`) is not
     // implemented; Raku rejects it at compile time with X::Comp::NYI.
     if name.starts_with('?') || name.starts_with("@?") || name.starts_with("%?") {
