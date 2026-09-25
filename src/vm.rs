@@ -134,6 +134,7 @@ mod vm_call_exec_ops;
 mod vm_call_fast;
 mod vm_call_func_ops;
 mod vm_call_helpers;
+mod vm_call_lexical_override;
 mod vm_call_light;
 mod vm_frame_lexical;
 mod vm_lexsub_aliases;

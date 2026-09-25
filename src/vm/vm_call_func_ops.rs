@@ -1397,7 +1397,8 @@ impl Interpreter {
         // exports such as JSON::Tiny's from-json retain the normal dispatch
         // precedence because they do have a registered package routine.
         if let Some(callable) = self.export_hook_callable(&name, name_sym) {
-            let result = self.vm_call_on_value(callable, args, None)?;
+            let result =
+                self.call_lexical_callable_with_sources(callable, args, &arg_sources, None)?;
             self.stack.push(result);
             return Ok(());
         }
@@ -1429,7 +1430,12 @@ impl Interpreter {
         // (`env_callable_is_lexical_override`), so this never reaches the
         // interpreter terminal.
         if let Some(callable) = lexical_override {
-            let result = self.vm_call_on_value(callable, args, Some(compiled_fns))?;
+            let result = self.call_lexical_callable_with_sources(
+                callable,
+                args,
+                &arg_sources,
+                Some(compiled_fns),
+            )?;
             self.stack.push(result);
             return Ok(());
         }
