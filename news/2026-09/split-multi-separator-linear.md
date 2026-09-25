@@ -22,4 +22,4 @@ a t(2N)/t(N) ratio of 1.99 for the string list (was 3.95) and 1.83-2.16 for the
 new regex-list case at N = 20k-80k (was ~3.6); the regex-list call at N = 10k
 went from 0.36 s to 0.02 s.
 
-Pinned by `t/types/string/split-multi-separator.t`.
+Pinned by `t/types/string/split-separator-list.t`.
