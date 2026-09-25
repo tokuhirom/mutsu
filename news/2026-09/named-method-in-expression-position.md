@@ -25,3 +25,16 @@ class writes `has @.ignored-functions = <...commented-out list...> method TOP
 initializer, and a grammar using the class as actions has to find `TOP`.
 Part of the #7988 parse-gap cluster; pinned by
 `t/oo/method/named-method-expression-position.t` (issue #9474).
+
+Parsing the named form correctly exposed a masked bug.
+`t/vm/destroy-latch-late-registration.t` wrote
+`my $late = method DESTROY { @events.push("early") }`, which used to misparse
+as the bareword `method` followed by an immediately-run bare block -- the block
+pushed `"early"` itself, so the test passed without any DESTROY firing. With the
+method really built and added through `^add_method`, it did not fire: instance
+death ran only DESTROYs flagged as submethods, so a plain `method DESTROY`
+(declared in a class body or added through the metamodel) never ran at all,
+where rakudo runs each MRO class's own DESTROY in either spelling. The
+submethod-only filter in `run_pending_instance_destroys_inner` is gone; the
+latch test now uses `anon method` plus `^compose` and passes for the right
+reason, and `t/vm/destroy-plain-method.t` pins the plain-method spelling.
