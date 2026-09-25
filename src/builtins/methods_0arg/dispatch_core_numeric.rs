@@ -217,6 +217,10 @@ pub(super) fn dispatch(
                 // A rational whose numerator outgrew `i64` is a `BigRat`, not a
                 // `Rat`; without this arm every numeric method below declines
                 // and the call reports "No such method 'abs'".
+                // `.abs` keeps the Rational type: a big `FatRat` stays a FatRat.
+                ValueView::BigRat(n, d) if target.is_bigfatrat() => {
+                    Value::bigfatrat(n.magnitude().clone().into(), d.clone())
+                }
                 ValueView::BigRat(n, d) => Value::bigrat(n.magnitude().clone().into(), d.clone()),
                 ValueView::Complex(r, i) => Value::num((r * r + i * i).sqrt()),
                 ValueView::Bool(b) => Value::int(if b { 1 } else { 0 }),

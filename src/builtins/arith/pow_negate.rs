@@ -212,14 +212,24 @@ pub(crate) fn arith_pow(left: Value, right: Value) -> Value {
                     return RuntimeError::numeric_overflow_failure();
                 }
                 let p = b as u32;
-                make_big_rat_arith(n.pow(p), d.pow(p))
+                // A FatRat raised to an Int stays a FatRat (it never degrades
+                // to Num the way an over-`uint64` Rat does).
+                if l.is_bigfatrat() {
+                    make_big_fat_rat(n.pow(p), d.pow(p))
+                } else {
+                    make_big_rat_arith(n.pow(p), d.pow(p))
+                }
             }
             (ValueView::BigRat(n, d), ValueView::Int(b)) => {
                 if b <= -POW_EXP_LIMIT && !n.is_zero() && n.magnitude() != d.magnitude() {
                     return RuntimeError::numeric_underflow_failure();
                 }
                 let p = (-b) as u32;
-                make_big_rat_arith(d.pow(p), n.pow(p))
+                if l.is_bigfatrat() {
+                    make_big_fat_rat(d.pow(p), n.pow(p))
+                } else {
+                    make_big_rat_arith(d.pow(p), n.pow(p))
+                }
             }
             (ValueView::Num(a), ValueView::Int(b)) => Value::num(a.powi(b as i32)),
             (ValueView::BigInt(a), ValueView::Int(b)) if b >= 0 => {

@@ -702,6 +702,17 @@ impl Interpreter {
         let target = self.stack.pop().ok_or_else(|| {
             RuntimeError::new("Interpreter stack underflow in CallMethodMut target".to_string())
         })?;
+        // A deferred hash-entry token held by a variable that keeps the
+        // container on purpose (the `with`/`without` topic temp over an rw
+        // routine's result, `without f() { ... }` where `f` is
+        // `sub f is rw { %h<absent><key> }`) reads as the entry's current value
+        // -- `Any` while the key does not exist -- as it does on the
+        // `CallMethod` path. `.VAR` is the one method that wants the token.
+        let target = if method != "VAR" && matches!(target.view(), ValueView::HashEntryRef { .. }) {
+            target.deref_container()
+        } else {
+            target
+        };
         if method == "raku"
             && crate::builtins::methods_0arg::raku_repr::raku_scalar_itemized(&target)
         {

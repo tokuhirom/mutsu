@@ -1635,6 +1635,20 @@ impl Interpreter {
                     // rebinds, and internal `__*` temporaries (for-loop element
                     // sources, `with` topic temps) keep the raw value — an
                     // itemized loop source would iterate as a single item.
+                    //
+                    // The same plain `=` stores a VALUE, never the container an
+                    // rw routine handed back (`(my $t = f())` where `f` is
+                    // `is rw` lands here, not on SetLocal): a `ContainerRef`
+                    // cell or a deferred `HashEntryRef` token is read through,
+                    // as `exec_set_local_op_inner` does, so a later `$t = 7`
+                    // cannot write the routine's source.
+                    let raw_val = if raw_val.is_container_ref()
+                        || matches!(raw_val.view(), ValueView::HashEntryRef { .. })
+                    {
+                        raw_val.deref_container()
+                    } else {
+                        raw_val
+                    };
                     Self::itemize_scalar_store(&name, raw_val)
                 } else {
                     raw_val
