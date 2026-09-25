@@ -161,7 +161,10 @@ impl Interpreter {
     /// Runs at most once per `(class, method)` pair -- only on the install side,
     /// never on the gate -- so the `resolve()`/MRO walk here is not on any hot
     /// path.
-    fn plain_method_lane_class_eligible(&mut self, class_sym: crate::symbol::Symbol) -> bool {
+    pub(super) fn plain_method_lane_class_eligible(
+        &mut self,
+        class_sym: crate::symbol::Symbol,
+    ) -> bool {
         let class_name = class_sym.resolve();
         if !self.user_declared_classes.contains(class_name.as_str()) {
             return false;
