@@ -747,6 +747,15 @@ pub(crate) enum OpCode {
         arg_sources_idx: Option<u32>,
     },
     // -- Constants --
+    /// Push a constant-pool entry. Stack: `[] → [value]`.
+    ///
+    /// The operand indexes `CompiledCode::constants`; the entry is cloned, so
+    /// the pool itself is never mutated. Emitted for every compile-time literal
+    /// (`42`, `"str"`, `1.5`, a type-object term, a code-free regex literal)
+    /// and for the synthetic values the compiler needs on the stack (names
+    /// passed to helper calls, default arguments). A literal `Nil`, `True` or
+    /// `False` has its own constant-free op instead ([`Self::LoadNil`],
+    /// [`Self::LoadTrue`], [`Self::LoadFalse`]).
     LoadConst(u32),
     /// Load a *code-bearing* regex literal as the closure it is.
     ///
@@ -772,8 +781,17 @@ pub(crate) enum OpCode {
         topic: Option<u32>,
         captures: Arc<Vec<(Symbol, u32)>>,
     },
+    /// Push `Nil`. Stack: `[] → [Nil]`.
+    ///
+    /// Emitted for a literal `Nil`, and as the compiler's filler wherever a
+    /// construct in value position produced no value (an inlined block whose
+    /// last statement is not an expression, a discarded block result).
     LoadNil,
+    /// Push `Bool::True`. Stack: `[] → [True]`. Emitted for a literal `True`
+    /// and for an absent loop condition (`loop { }`, `loop (;;) { }`).
     LoadTrue,
+    /// Push `Bool::False`. Stack: `[] → [False]`. Emitted for a literal
+    /// `False`.
     LoadFalse,
     /// Pop (regex-with-adverbs value, position), clone the value with its
     /// `:pos(N)` anchor set to the position (coerced to `Int`, `None` if that
@@ -786,6 +804,21 @@ pub(crate) enum OpCode {
     PatchRegexAdverbContinue,
 
     // -- Variables --
+    /// Read a lexical by its local slot. Stack: `[] → [value]`.
+    ///
+    /// The operand indexes the frame's `locals` (and `CompiledCode::locals`
+    /// for the slot's name). Emitted for every variable the compiler resolved
+    /// to a slot of the current frame: `my $x`/`@a`/`%h`, parameters, loop
+    /// variables, sigilless bindings, `$!attr` inside a method.
+    ///
+    /// The pushed value is the slot's *contents*: a `ContainerRef` cell
+    /// (`:=` alias, closure-shared lexical) or a `Proxy` is read through, a
+    /// lazy thunk is forced, and a deferred `HashEntryRef` bind token is
+    /// resolved to the element's current value (see [`Self::GetLocalRaw`] and
+    /// [`Self::GetLocalDeferred`] for the two readers that keep those). A slot
+    /// that still holds `Nil` falls back to `env` by name. A fast path
+    /// takes a plain `clone()` of the slot when none of those cases can apply
+    /// (#8332).
     GetLocal(u32),
     /// Fused `GetLocal(slot); MetaAssignIdentity(identity)` (emit-time peephole,
     /// same shape as `SetLocalDecl`). `$i += 1` on a local is the single most
@@ -842,6 +875,21 @@ pub(crate) enum OpCode {
         name_idx: u32,
         local_idx: Option<u32>,
     },
+    /// Assign to a lexical by its local slot. Stack: `[value] → []`.
+    ///
+    /// The operand is the local slot, as for [`Self::GetLocal`]. Emitted for
+    /// assignment to, and initialization of, a slot-resolved variable (a loop
+    /// variable, a `my` whose declaration markers were not fused into
+    /// [`Self::SetLocalDecl`], compiler temporaries).
+    ///
+    /// This is an *assignment*, not a bind: an `@`/`%` target coerces the
+    /// value into a fresh Array/Hash (list assignment), a typed variable is
+    /// type-checked, an existing `ContainerRef` cell or tied container
+    /// (`my %h is Foo`) is written through rather than replaced, and a
+    /// read-only binding raises `X::Assignment::RO`. The one-shot context
+    /// flags set by the `Mark*Context` ops right before it (bind, constant,
+    /// declaration, shaped declaration) are consumed here. A `state` slot's
+    /// new value is published to the state store.
     SetLocal(u32),
     /// `SetLocal` fused with the declaration markers that always precede it in a
     /// `my $x = <expr>` (ADR-0006 §2.3 peephole): `MarkExplicitInitializerContext`
@@ -871,6 +919,22 @@ pub(crate) enum OpCode {
         slot: u32,
         qualified_idx: u32,
     },
+    /// Read a variable by name. Stack: `[] → [value]`.
+    ///
+    /// The operand is the constant-pool index of the variable's env key
+    /// (scalars without their `$` sigil: `$x` is `x`, `$*OUT` is `*OUT`).
+    /// Emitted for every variable read the compiler could not resolve to a
+    /// slot of the current frame: dynamic variables (`$*x`, always by name so
+    /// a callee's write is seen), compile-time variables (`$?PACKAGE`,
+    /// `$?FILE`), package-qualified and `our` variables (`$Foo::x`), and free
+    /// variables of a closure that were not given an upvalue
+    /// ([`Self::GetUpvalue`]).
+    ///
+    /// This is the slow, general lookup: besides `env` it consults, in order,
+    /// the magic names (`$?CALLER::LINE`, `$*THREAD`), atomic variables,
+    /// sigilless-attribute cells, anonymous `state` storage, package-block
+    /// lexicals and escaping-`our` captures, and finally the default for an
+    /// undeclared name. A plain `env` hit is served by a fast path.
     GetGlobal(u32),
     /// Read a captured read-only scalar free variable by index from this frame's
     /// upvalue array (`self.upvalues`). Emitted in place of `GetGlobal` for a
@@ -890,6 +954,19 @@ pub(crate) enum OpCode {
     /// Raises X::Syntax::NoSelf (the operand is the constant index of the
     /// accessor's display name, e.g. `$.a`) when `self` is unavailable.
     GetSelfOrNoSelf(u32),
+    /// Assign to a variable by name. Stack: `[value] → []`.
+    ///
+    /// The operand is the constant-pool index of the env key, spelled as for
+    /// [`Self::GetGlobal`]. Emitted for assignment to every variable that is
+    /// not slot-resolved (dynamic, `our`, package-qualified, anonymous `$`
+    /// state) and for compiler temporaries kept in `env`.
+    ///
+    /// Like [`Self::SetLocal`] it is an assignment: `@`/`%` names coerce the
+    /// value into an Array/Hash ([`Self::SetGlobalRaw`] is the variant that
+    /// does not), and it consumes the pending bind/scalar-bind context flags.
+    /// A bare free variable that the compiler auto-qualified with the current
+    /// package (`$x` inside `grammar G` compiles to `G::x`) is redirected to
+    /// the captured outer lexical when no such package variable exists.
     SetGlobal(u32),
     /// Like SetGlobal but skips @/% coercion (used for `constant @x` / `constant %x`).
     SetGlobalRaw(u32),
@@ -927,8 +1004,32 @@ pub(crate) enum OpCode {
     /// Only `ApplyVarTrait`'s custom-container branches read the stash, so this
     /// is purely additive for every other declaration.
     StashVarDeclInit,
+    /// Register a variable's declared type constraint. Stack: `[] → []`.
+    ///
+    /// Emitted before the store of a typed declaration that is not scoped to
+    /// a frame or block: `our` variables, dynamics (`my Int $*x`), an
+    /// anonymous `my T $`, package-qualified names, and mainline
+    /// declarations outside any block (`my Int $x` at file scope). Also
+    /// emitted around an expression-position declaration, to clear a stale
+    /// constraint and to re-tag the stored value. It writes both the
+    /// env-scoped and the global name-keyed constraint stores; the
+    /// constraint is recorded under the variable's name so later
+    /// assignments are checked against it; an `@`/`%` container currently
+    /// bound to the name is tagged with its element type (so it reports
+    /// `Array[Int]`), and a scalar that still holds `Nil` is seeded with the
+    /// type object (`my Int $x; say $x` prints `(Int)`). A user type named
+    /// unqualified inside a package is resolved to its package-qualified
+    /// name first.
+    ///
+    /// See [`Self::SetVarTypeScoped`] for the routine-body form and
+    /// [`Self::SetVarTypeHoisted`] for the block-entry pre-registration.
     SetVarType {
+        /// Constant-pool index of the variable name, with its sigil.
         name_idx: u32,
+        /// Constant-pool index of the constraint's spelling (`Int`,
+        /// `Array[Str]`, `Int:D`, a captured `::T`). The empty string CLEARS
+        /// the name's constraint: an untyped expression-position declaration
+        /// emits it to drop a stale one left by an unrelated earlier lexical.
         tc_idx: u32,
     },
     /// [`Self::SetVarType`] for a scalar `my`/`state` declaration LEXICALLY
@@ -966,17 +1067,83 @@ pub(crate) enum OpCode {
         tc_idx: u32,
         scoped: bool,
     },
+    /// Pop a value and bind it as the topic `$_`. Stack: `[value] → []`.
+    ///
+    /// Writes `env`'s `_` key (the topic's env key has no sigil) and
+    /// remembers the value as the last topic. Emitted by the `andthen` /
+    /// `orelse` / `notandthen` chains, which topicalize their left operand
+    /// for the right one, and at the end of a compunit whose body needed an
+    /// implicit `try` (for a mainline `CATCH`/`CONTROL`), to hand the body's
+    /// value on as the topic. Usually bracketed by [`Self::SaveTopic`] /
+    /// [`Self::RestoreTopic`].
     SetTopic,
+    /// Save the current `$_` onto the interpreter's topic save stack.
+    /// Stack: `[] → []`.
+    ///
+    /// Reads `env`'s `_` (`Nil` when unset). Paired with
+    /// [`Self::RestoreTopic`], which must run on every path out of the
+    /// region, so that a [`Self::SetTopic`] inside it does not leak the
+    /// rebound topic to the enclosing scope. Emitted by `andthen`, `orelse`
+    /// and `notandthen`.
     SaveTopic,
+    /// Pop the topic save stack back into `$_`. Stack: `[] → []`.
+    ///
+    /// The closing half of [`Self::SaveTopic`]; a no-op when the save stack
+    /// is empty.
     RestoreTopic,
     /// Enter a pointy-topic scope (`if COND -> $_`, `with COND -> $_`): save the
     /// current `$_` and `topic_source_var`, then clear `topic_source_var` so the
     /// fresh `$_` binding shadows an enclosing `given`'s topic without writing
     /// back to its source variable. Paired with `ExitPointyTopic`.
     EnterPointyTopic,
+    /// Leave a pointy-topic scope opened by [`Self::EnterPointyTopic`]:
+    /// restore the saved `$_` and `topic_source_var`. Stack: `[] → []`.
+    ///
+    /// Emitted after the branch body of an `if COND -> $_ { }` /
+    /// `with COND -> $_ { }` (and their `elsif`/`orwith` chains), so the
+    /// branch's topic binding does not survive the statement.
     ExitPointyTopic,
+    /// Read an `@`-sigiled variable by name. Stack: `[] → [array]`.
+    ///
+    /// The operand is the constant-pool index of the name *with* its `@`
+    /// sigil (possibly package-qualified: `@Foo::list`). Emitted for an
+    /// `@name` read that has no local slot (a `my @a` read through a slot
+    /// compiles to [`Self::GetLocal`] instead): `our`/package arrays, dynamic
+    /// `@*ARGS`, arrays captured by name from an enclosing scope, and the
+    /// read-back after an `@`-declaration in expression position.
+    ///
+    /// The lookup tries `@!attr` / `@.attr` attribute storage on `self`
+    /// (`X::Syntax::NoSelf` when there is no `self`), atomic and
+    /// thread-shared arrays, `env`, the running module's file-scope lexicals,
+    /// enclosing packages' class-body lexicals, and persisted package-block
+    /// statics. An unknown `@*x` reads as `Nil` (so `@*x // default` falls
+    /// through), and any other undeclared name as a fresh empty Array.
     GetArrayVar(u32),
+    /// Read a `%`-sigiled variable by name. Stack: `[] → [hash]`.
+    ///
+    /// The `%` twin of [`Self::GetArrayVar`]: the operand names the variable
+    /// with its `%` sigil, the lookup chain is the same (`%!attr`/`%.attr`,
+    /// `env`, module and class-body lexicals, package statics), and an
+    /// undeclared plain name reads as an empty Hash. Emitted for a slotless
+    /// `%name` read such as `%*ENV`, `%Foo::h` or an `our %h`.
     GetHashVar(u32),
+    /// Resolve a bare identifier used as a term. Stack: `[] → [value]`.
+    ///
+    /// The operand is the constant-pool index of the identifier as written
+    /// (`Int`, `Foo::Bar`, `pi`, `Int:D`, `Array[Str]`). Emitted for a
+    /// sigilless name that is not a slot-resolved sigilless binding, a
+    /// constant or a call with arguments. The resolver, in order: dispatches
+    /// a no-paren `nqp::op` term, rejects a package-qualified name the current
+    /// compunit cannot see (#7797), invokes an imported nullary routine that
+    /// shares its name with a type, substitutes bound generic type
+    /// parameters (`T:D` → `Int:D`, `Box[Type]` → `Box[Int]`), prefers a
+    /// nested class's qualified name inside its parent, then tries the term
+    /// constants (`i`, `NaN`, `Inf`, `Empty`), pseudo-package names (`MY`,
+    /// `CALLER`, ...), enum values, `env`, types, `our` constants and
+    /// file-scope module constants. Registers `REPL`/`Perl6::Compiler` on
+    /// first use. The short name of a type private to some class body raises
+    /// `X::Undeclared::Symbols`; any other name nothing claims degrades to
+    /// the name itself as a `Str` (the old bareword-string fallback).
     GetBareWord(u32),
     /// Push a CORE term keyword's value (`True`, `False`, `Nil`, `Empty`,
     /// `Any`), preferring a binding of the same name that a module's run-time
@@ -1000,6 +1167,20 @@ pub(crate) enum OpCode {
         name_idx: u32,
         end: u32,
     },
+    /// Materialize a pseudo-package or package stash as a hash. Stack:
+    /// `[] → [stash]`.
+    ///
+    /// The operand is the constant-pool index of the stash's name, including
+    /// its trailing `::` (`CALLER::`, `OUTER::`, `GLOBAL::`, `Foo::`).
+    /// Emitted for a bare pseudo-package or package term (`OUTER::`,
+    /// `CALLER::CALLER::`, `Foo::`) that [`Self::GetLexicalStash`] could not
+    /// compile to a fixed lexical scope description.
+    ///
+    /// `CALLER::` chains snapshot the caller frame at the requested depth and
+    /// stamp the stash with its origin package, routine and unit (so a
+    /// `.WHO`/lookup through it resolves there); `OUTER::` exposes every
+    /// visible `env` entry under its sigiled name; a package name builds the
+    /// package's symbol table. The stash is a fresh map on every execution.
     GetPseudoStash(u32),
     /// Build a lexical pseudo-stash from a compiler-baked scope description.
     /// Unlike `GetPseudoStash`, this names exactly one lexical frame, so an
@@ -1520,8 +1701,33 @@ pub(crate) enum OpCode {
     Label(u32),
     /// Jump to `Label` by runtime-evaluated name on stack.
     Goto,
+    /// Unconditional jump. Stack: `[] → []`.
+    ///
+    /// The operand is the absolute index of the target op in this chunk's
+    /// `ops` (not a relative offset); the compiler emits it as `Jump(0)` and
+    /// back-patches the target once it is known. Emitted to skip over the
+    /// `else` arm of a conditional and to leave a short-circuit operator
+    /// (`andthen`, `orelse`) once its value is decided.
     Jump(i32),
+    /// Pop a value and jump if it is false. Stack: `[cond] → []`.
+    ///
+    /// The operand is an absolute op index, as for [`Self::Jump`]. Truthiness
+    /// is Raku's `.Bool` (a user class's own `Bool` method is called). A
+    /// `Failure` tested here is marked handled, both the popped value and a
+    /// `Dup`ed original left below it, so `$f && ...` does not later throw
+    /// it as unhandled. Emitted for `if`/`unless`/`while`/ternary conditions
+    /// and for `&&`/`and`, where it follows a `Dup` so the left operand
+    /// survives as the result when it is false.
     JumpIfFalse(i32),
+    /// Jump if the top of the stack is true, WITHOUT popping it. Stack:
+    /// `[cond] → [cond]`.
+    ///
+    /// The operand is an absolute op index, as for [`Self::Jump`]. Keeping
+    /// the value is what `||`/`or` need: a true left operand *is* the
+    /// result, so the jump lands past the right operand with it still on the
+    /// stack, and the fall-through path `Pop`s it before evaluating the
+    /// right-hand side. A `Failure` tested here is marked handled, as in
+    /// [`Self::JumpIfFalse`].
     JumpIfTrue(i32),
     /// Jump if top of stack is not nil/defined (without popping)
     JumpIfNotNil(i32),
@@ -1533,7 +1739,21 @@ pub(crate) enum OpCode {
     XorXor,
 
     // -- Stack manipulation --
+    /// Push a copy of the top of the stack. Stack: `[v] → [v, v]`.
+    ///
+    /// The copy is a `Value` clone, so a container on the stack is shared,
+    /// not deep-copied. Emitted wherever a value is needed twice: an
+    /// assignment used as an expression, the left operand of a
+    /// short-circuit operator (tested and kept), a `given`/`with` topic
+    /// that also binds a placeholder.
     Dup,
+    /// Discard the top of the stack. Stack: `[v] → []`.
+    ///
+    /// A lazy list popped here is forced first, since discarding it is sink
+    /// context and a sunk `gather`/`map` must still run for its side
+    /// effects. Emitted after an expression statement whose value is unused
+    /// and to drop compiler temporaries; see also `SinkPop` for the
+    /// statement-level sink that also calls a user `sink` method.
     Pop,
     /// Mark a sunk `start` promise for Raku's deferred unhandled-exception
     /// diagnostic, then let the following `SinkPop` discard its value.
@@ -2081,12 +2301,46 @@ pub(crate) enum OpCode {
     StringConcat(u32),
 
     // -- Loop control --
+    /// `last` / `last LABEL`: leave the innermost (or the labelled) loop.
+    /// Stack: `[] → []`; the op never falls through.
+    ///
+    /// Raises a `last` control signal carrying the label (`None` for the
+    /// innermost loop), which the loop opcodes ([`Self::RepeatLoop`],
+    /// [`Self::WhileLoop`], [`Self::CStyleLoop`], [`Self::ForLoop`], ...)
+    /// catch when the label matches. With no loop construct anywhere in the
+    /// dynamic extent it raises `X::ControlFlow::Illegal` instead of an
+    /// uncatchable signal. Emitted for the `last` statement and the `last`
+    /// term.
     Last(Option<String>),
+    /// `next` / `next LABEL`: end the current iteration and continue with
+    /// the next one (the loop's condition / step still runs). Stack:
+    /// `[] → []`; never falls through. Same label and
+    /// `X::ControlFlow::Illegal` rules as [`Self::Last`].
     Next(Option<String>),
+    /// `redo` / `redo LABEL`: restart the current iteration's body without
+    /// re-testing the condition or advancing the iterator. Stack: `[] → []`;
+    /// never falls through. Same label and `X::ControlFlow::Illegal` rules
+    /// as [`Self::Last`].
     Redo(Option<String>),
 
     // -- Given/When control --
+    /// `proceed`: leave the current `when`/`default` body and continue with
+    /// the statement after it, as if the clause had not matched. Stack:
+    /// `[] → []`; never falls through.
+    ///
+    /// Raises the proceed control signal, which [`Self::When`] and
+    /// [`Self::Default`] consume (a postfix `STMT when COND` does not: it
+    /// lets the signal unwind to the nearest real `when` clause). Emitted
+    /// for the `proceed` statement.
     Proceed,
+    /// `succeed`: leave the innermost `given`/topicalizing block as if the
+    /// current `when` clause had matched and completed. Stack: `[] → []`;
+    /// never falls through.
+    ///
+    /// Raises the succeed control signal with no value (`Nil`), which
+    /// [`Self::Given`] (or a `for` loop iteration) catches. Emitted for the
+    /// `succeed` statement; a matching `when`/`default` body raises the same
+    /// signal itself, carrying the body's value.
     Succeed,
     /// `done` — terminate the innermost react event loop
     ReactDone,
@@ -2381,7 +2635,24 @@ pub(crate) enum OpCode {
     },
 
     // -- Given/When/Default (compound opcodes) --
+    /// `given EXPR { ... }` (and the `with`/`without` topicalizers) as one
+    /// compound op. Stack: `[topic] → [result]`.
+    ///
+    /// Layout: `[topic expr] [Given] [body..] ← body_end`. Pops the topic,
+    /// binds it as `$_` (read-only unless it is a bare scalar variable), and
+    /// runs the body region `ip+1 .. body_end` itself; execution resumes at
+    /// `body_end`. A matching `when`/`default` inside ends the body early:
+    /// its succeed signal is caught here and its value becomes the result.
+    /// Otherwise the result is the body's last value, or `Nil`. Exactly one
+    /// value is pushed on every normal exit, so a statement-position `given`
+    /// can be followed by an unconditional `Pop`.
+    ///
+    /// On exit the previous `$_`, `when`-matched flag and topic-source
+    /// bookkeeping are restored, and a topic that aliases a variable or an
+    /// element (`given $x`, `given %h<k>`, `given @a -> @p`) has its final
+    /// value written back to that source.
     Given {
+        /// Absolute op index one past the body: where execution resumes.
         body_end: u32,
         /// When true, the topic (`$_`) is read-only: assigning to it (`$_ = ...`)
         /// must fail. True for every topic except a bare scalar variable
@@ -2397,7 +2668,23 @@ pub(crate) enum OpCode {
         /// compiler records the declared name here. `None` for non-pointy `given`.
         pointy_param_idx: Option<u32>,
     },
+    /// `when MATCHER { ... }` as one compound op. Stack: `[matcher] → [v]`
+    /// on the non-matching and `proceed` paths; a matching clause exits by
+    /// raising the succeed signal instead.
+    ///
+    /// Layout: `[matcher expr] [When] [body..] ← body_end`. Pops the
+    /// matcher and smartmatches the current topic against it (`when *`
+    /// always matches). On a match it runs the body `ip+1 .. body_end`,
+    /// records the match, and raises the succeed signal carrying the body's
+    /// value, which the enclosing [`Self::Given`] (or `for` iteration)
+    /// catches. A `proceed` inside the body pushes `Nil` and continues after
+    /// the clause. A non-matching clause pushes the falsy value selected by
+    /// `matcher_kind` and continues at `body_end`. The postfix
+    /// `STMT when COND` form never raises succeed: it pushes the body's
+    /// value on a match and an empty `Slip` otherwise.
     When {
+        /// Absolute op index one past the body: where a non-matching clause
+        /// resumes.
         body_end: u32,
         /// True for the postfix `STMT when COND` spelling. Rakudo lowers that
         /// to a plain conditional, so it is not a `when` *clause*: a `proceed`
@@ -2408,14 +2695,40 @@ pub(crate) enum OpCode {
         /// non-matching clause pushes (ADR-0052 §2.4). See [`WhenMatcherKind`].
         matcher_kind: WhenMatcherKind,
     },
+    /// `default { ... }` as one compound op: an always-matching
+    /// [`Self::When`]. Stack: `[] → []` when it completes, since it exits by
+    /// raising the succeed signal carrying the body's value; a `proceed`
+    /// inside it pushes `Nil` and continues at `body_end` instead.
+    ///
+    /// Layout: `[Default] [body..] ← body_end`. The body `ip+1 .. body_end`
+    /// is run by the op itself.
     Default {
+        /// Absolute op index one past the body.
         body_end: u32,
     },
 
     // -- Repeat loop (compound opcode) --
+    /// `repeat { ... } while COND` / `repeat { ... } until COND` (and the
+    /// `repeat while COND { ... }` spellings) as one compound op. Stack:
+    /// `[] → []`.
+    ///
+    /// Layout: `[RepeatLoop] [body..] ← cond_end [cond..] ← body_end`.
+    /// The op runs the loop itself: the body first, unconditionally, then
+    /// the condition region, which leaves one value whose truthiness decides
+    /// whether to go round again (`until` is compiled as a negated
+    /// condition; a missing condition is `LoadTrue`). The body's stack is
+    /// truncated after every iteration. `next`, `last` and `redo` signals
+    /// whose label matches `label` (or carry none) are handled here;
+    /// anything else propagates. `state` variables declared in the loop are
+    /// re-initialized when the statement is entered afresh.
     RepeatLoop {
+        /// Absolute op index where the body ends and the condition begins.
         cond_end: u32,
+        /// Absolute op index one past the condition: where execution
+        /// resumes after the loop.
         body_end: u32,
+        /// The loop's label (`OUTER: repeat { ... }`), matched against a
+        /// labelled `next`/`last`/`redo`.
         label: Option<String>,
     },
 
