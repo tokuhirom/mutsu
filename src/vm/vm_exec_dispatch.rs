@@ -1196,6 +1196,14 @@ impl Interpreter {
                 // Interned once: the typed-lexical probes below run several
                 // times per store and each `&str` probe re-hashed the name.
                 let name_sym = crate::symbol::Symbol::intern(&name);
+                // A rebind of a captured lexical that the declaring frame gave a
+                // binding cell (#9307): note the cell before the store replaces
+                // the env entry, so the new binding can be seated inside it.
+                let binding_cell = if is_rebind && !self.vardecl_context().get() {
+                    self.env().get_sym(name_sym).and_then(Self::binding_cell_of)
+                } else {
+                    None
+                };
                 // A `%h = ...` / `@a = ...` where the env slot holds a *tied*
                 // instance (`my %h is Foo` closed over into a block, so the store
                 // reaches SetGlobal instead of a local slot) must route through the
@@ -1927,6 +1935,9 @@ impl Interpreter {
                         // `Value::with_deref` collapses a chain of cells rather
                         // than stopping at the first.
                         self.set_env_with_main_alias(&name, container.clone());
+                        if let Some(cell) = binding_cell.clone() {
+                            self.reseat_env_binding_cell(name_sym, cell);
+                        }
                         let source_is_unit_lexical =
                             self.unit_scope_lexical_bind(&resolved_source, &container);
                         if !source_is_unit_lexical {
@@ -2312,6 +2323,9 @@ impl Interpreter {
                     self.env_mut().insert_sym_noting(name_sym, val.clone());
                 } else {
                     self.set_env_with_main_alias(&name, val.clone());
+                }
+                if let Some(cell) = binding_cell {
+                    self.reseat_env_binding_cell(name_sym, cell);
                 }
                 if sg_is_vardecl
                     && !carrier_logged_before

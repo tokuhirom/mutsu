@@ -63,6 +63,9 @@ impl Compiler {
             let name_idx = self.code.add_constant(Value::str(name.to_string()));
             self.code.note_rebind_target(source_slot);
             self.code.note_rebound_slot(source_slot);
+            if source_slot.is_none() {
+                self.code.note_rebound_name(name);
+            }
             self.code
                 .emit(OpCode::TagContainerRef(name_idx, source_slot));
             return;

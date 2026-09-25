@@ -798,8 +798,25 @@ The fix adds one level of indirection, only where it is needed:
   container `C`, not to `B`. The source's own slot keeps `B`, so a later rebind
   of `$a` leaves `$g` alone.
 
-What this does not cover: a rebind made *inside* the closure (`{ $a := 5 }`)
-still changes only the closure's own view, and so do captures that bypass
-`box_captured_lexicals` (the non-escaping, value-frozen `owned_captures`).
-Neither shape was reported. If one turns up, the same binding cell is the place
-to extend.
+What this does not cover: captures that bypass `box_captured_lexicals` (the
+non-escaping, value-frozen `owned_captures`). That shape was not reported. If
+one turns up, the same binding cell is the place to extend.
+
+### 14.1 A rebind made inside a closure (#9307, 2026-09-25)
+
+`{ $a := $b }` rebinds a *free* variable, so it has no own slot to record in
+`rebound_slots`, and the sibling closures kept the old container.
+
+- **Compile time.** A `:=` with no own slot records its target name in
+  `CompiledCode::rebound_free_names`. `compute_free_vars` folds those names and
+  every nested closure's `free_var_rebinds` upward. The chunk that declares the
+  name adds all of the name's slots to `rebound_slots`, and the other names
+  continue up as its own `free_var_rebinds`. The declaring frame then boxes the
+  capture into a binding cell exactly as in §14.
+- **Rebind.** The closure's rebind is a by-name `SetGlobal`. It notes the
+  binding cell in its env entry before the store. After the store it moves the
+  new binding into the cell and puts the cell back in the env entry
+  (`reseat_env_binding_cell`). Both store paths do this: the variable-to-variable
+  bind that returns early and the general path. The frame and every sibling
+  closure share the cell, so they see the new binding, and the call-return
+  writeback carries the same cell back to the frame's slot.
