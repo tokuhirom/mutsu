@@ -16,6 +16,7 @@ mod adverb;
 mod ident;
 mod perl5;
 mod scalar;
+mod self_call;
 mod sigil_vars;
 
 // ── pub(crate): accessible from anywhere in the crate ──────────────────────
