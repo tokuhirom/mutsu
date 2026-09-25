@@ -1,10 +1,9 @@
 //! Heap payload structs for multi-field / oversized `ValueRepr` variants.
 //!
 //! A NaN-box payload is one 48-bit pointer, so every variant whose fields
-//! exceed that moves behind a single `Arc<...Box>` allocation. The boxes are
-//! immutable-by-convention: mutation decodes to `ValueRepr` (via
-//! `Arc::try_unwrap`-or-clone in `decode.rs`) and re-packs, so sharing a box
-//! between clones of a `Value` is never observable.
+//! exceed that moves behind a single heap allocation. Immutable multi-field
+//! variants use `Arc<...Box>` and decode/repack on mutation; mutable container
+//! and Pair payloads use `Gc<T>` so shared identity remains observable.
 //!
 //! On 64-bit targets the subkind lives in the pointer's low 3 bits, so every
 //! payload allocation must be at least 8-aligned — asserted per type below
@@ -27,20 +26,6 @@ pub(in crate::value) struct BigRatBox(
     pub(in crate::value) NumBigInt,
     /// FatRat flag: `true` for a big `FatRat`, `false` for a big `Rat`.
     pub(in crate::value) bool,
-);
-
-#[derive(Debug, Clone)]
-pub(in crate::value) struct PairBox(
-    pub(in crate::value) String,
-    pub(in crate::value) Value,
-    pub(in crate::value) Option<String>,
-);
-
-#[derive(Debug, Clone)]
-pub(in crate::value) struct ValuePairBox(
-    pub(in crate::value) Value,
-    pub(in crate::value) Value,
-    pub(in crate::value) Option<String>,
 );
 
 #[derive(Debug, Clone)]
@@ -161,8 +146,6 @@ const _: () = {
         I64Pair,
         F64Pair,
         BigRatBox,
-        PairBox,
-        ValuePairBox,
         EnumBox,
         GenericRangeBox,
         VersionBox,

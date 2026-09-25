@@ -5,7 +5,7 @@ use nqp;
 # attribute in place, and `nqp::create` starts from a per-class slot template
 # (ADR-0121 D1). These pin what that must not change.
 
-plan 13;
+plan 21;
 
 class P {
     has int $!n;
@@ -63,6 +63,24 @@ is R.new.bump, 2, 'bindattr from a method on self';
     is %h<b>, 2, "a Map's \$!storage is the hash itself";
     my @l = 1, 2;
     is nqp::getattr(@l, List, '$!reified').elems, 2, "a List's \$!reified is the array itself";
+}
+
+# Pair's core slots are reachable through the same NQP attribute operations as
+# user-defined instance slots. The Pair payload is shared, so both writes must
+# be visible through the ordinary Pair API as well.
+{
+    my $p := nqp::decont('a' => 1);
+    is nqp::getattr($p, Pair, '$!key'), 'a', "Pair's \$!key is readable";
+    is nqp::getattr($p, Pair, '$!value'), 1, "Pair's \$!value is readable";
+    nqp::bindattr($p, Pair, '$!key', 'b');
+    is nqp::getattr($p, Pair, '$!key'), 'b', "Pair's \$!key is writable";
+    nqp::bindattr($p, Pair, '$!value', 2);
+    is nqp::getattr($p, Pair, '$!value'), 2, "Pair's \$!value is writable";
+    is $p.key, 'b', 'a bound Pair key is visible through Pair.key';
+    is $p.value, 2, 'a bound Pair value is visible through Pair.value';
+    is $p.raku, ':b(2)', 'a bound Pair renders with its updated slots';
+    my $copy := $p;
+    is nqp::getattr($copy, Pair, '$!key'), 'b', 'a copied Pair shares its key slot';
 }
 
 # VMHash / VMArray storage classes, matched by short name.
