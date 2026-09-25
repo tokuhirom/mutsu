@@ -811,8 +811,16 @@ impl Compiler {
     /// (`compile_routine_tail_expr`): rakudo's
     /// `method precision is rw { state $p = 30 }` hands back `$p` itself, so
     /// `C.precision = 50` writes it. Boxing the slot's shared cell is the same
-    /// two-op tail `return-rw my $x = 1` gets.
-    pub(super) fn emit_tail_var_stmt_value(&mut self, name: &str, global_fallback: bool) {
+    /// two-op tail `return-rw my $x = 1` gets. A `:=` declaration
+    /// (`my $p := Proxy.new(...)`) is excluded: the variable IS the bound
+    /// object, so boxing it into a fresh cell would hide a `Proxy` (and its
+    /// `.VAR`) behind a plain Scalar.
+    pub(super) fn emit_tail_var_stmt_value(
+        &mut self,
+        stmt: &Stmt,
+        name: &str,
+        global_fallback: bool,
+    ) {
         if let Some(&slot) = self.local_map.get(name) {
             self.code.emit(OpCode::GetLocal(slot));
         } else if global_fallback {
@@ -824,7 +832,9 @@ impl Compiler {
             self.emit_nil_value();
             return;
         }
-        if self.rw_tail && Self::is_plain_lexical_name(name) {
+        let is_bind_decl = matches!(stmt, Stmt::VarDecl { custom_traits, .. }
+            if custom_traits.iter().any(|(t, _)| t == "__scalar_bind"));
+        if self.rw_tail && !is_bind_decl && Self::is_plain_lexical_name(name) {
             self.emit_wrap_var_ref(name);
             self.code.emit(OpCode::CaptureVarCell);
         }
@@ -970,7 +980,7 @@ impl Compiler {
                     }
                     Stmt::VarDecl { name, .. } => {
                         sub_compiler.compile_stmt(stmt);
-                        sub_compiler.emit_tail_var_stmt_value(name, false);
+                        sub_compiler.emit_tail_var_stmt_value(stmt, name, false);
                         continue;
                     }
                     // ENTER phaser as last statement: compile body inline
@@ -996,7 +1006,7 @@ impl Compiler {
                     }
                     Stmt::Assign { name, .. } => {
                         sub_compiler.compile_stmt(stmt);
-                        sub_compiler.emit_tail_var_stmt_value(name, true);
+                        sub_compiler.emit_tail_var_stmt_value(stmt, name, true);
                         continue;
                     }
                     // `let`/`temp` as last statement is an assignment too, so it
@@ -1495,12 +1505,12 @@ impl Compiler {
                 }
                 if is_value && let Stmt::VarDecl { name, .. } = stmt {
                     sub_compiler.compile_stmt(stmt);
-                    sub_compiler.emit_tail_var_stmt_value(name, false);
+                    sub_compiler.emit_tail_var_stmt_value(stmt, name, false);
                     continue;
                 }
                 if is_value && let Stmt::Assign { name, .. } = stmt {
                     sub_compiler.compile_stmt(stmt);
-                    sub_compiler.emit_tail_var_stmt_value(name, true);
+                    sub_compiler.emit_tail_var_stmt_value(stmt, name, true);
                     continue;
                 }
                 // `let`/`temp` is an assignment too — see the twin arm in
@@ -1658,12 +1668,12 @@ impl Compiler {
                         }
                         Stmt::VarDecl { name, .. } => {
                             sub_compiler.compile_stmt(stmt);
-                            sub_compiler.emit_tail_var_stmt_value(name, false);
+                            sub_compiler.emit_tail_var_stmt_value(stmt, name, false);
                             continue;
                         }
                         Stmt::Assign { name, .. } => {
                             sub_compiler.compile_stmt(stmt);
-                            sub_compiler.emit_tail_var_stmt_value(name, true);
+                            sub_compiler.emit_tail_var_stmt_value(stmt, name, true);
                             continue;
                         }
                         // `let`/`temp` is an assignment too — see the twin arm
