@@ -1935,6 +1935,9 @@ impl Interpreter {
                         // `Value::with_deref` collapses a chain of cells rather
                         // than stopping at the first.
                         self.set_env_with_main_alias(&name, container.clone());
+                        if let Some(cell) = binding_cell.clone() {
+                            self.reseat_env_binding_cell(name_sym, cell);
+                        }
                         let source_is_unit_lexical =
                             self.unit_scope_lexical_bind(&resolved_source, &container);
                         if !source_is_unit_lexical {
