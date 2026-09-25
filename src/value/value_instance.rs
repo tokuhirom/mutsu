@@ -205,6 +205,14 @@ impl InstanceAttrs {
         write_attrs(&self.attributes).insert(key, value)
     }
 
+    /// Store (`Some`) or remove (`None`) several keys under one write lock.
+    /// When this thread holds a read guard on the cell the write is queued, as
+    /// [`Self::commit_attrs`] queues one, rather than self-deadlocking.
+    // Cost: O(k), k = keys written.
+    pub(crate) fn write_keys(&self, ops: Vec<(Symbol, Option<Value>)>) {
+        write_cell_respecting_reads(&self.attributes, PendingWrite::Delta(ops));
+    }
+
     /// Drop every attribute (breaking any `Gc` edge out of this object) — the
     /// GC collector's cycle-sever for a proven-garbage `Instance` node (§11
     /// step 8/9). The attribute cell is interior-mutable, so this is a plain

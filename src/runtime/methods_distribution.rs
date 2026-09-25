@@ -200,10 +200,7 @@ impl Interpreter {
                     .unwrap_or_default();
                 Some(Ok(Value::array(loaded)))
             }
-            "next-repo" => Some(Ok(attributes
-                .get("next-repo")
-                .cloned()
-                .unwrap_or(Value::NIL))),
+            "next-repo" => Some(Ok(self.repo_next_link(repo, attributes))),
             "prefix" => Some(Ok(self.make_io_path_instance(&prefix))),
             "need" => Some(self.cur_inst_need(&prefix, repo, args.first().cloned())),
             "files" => {

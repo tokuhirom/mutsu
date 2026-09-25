@@ -1124,26 +1124,21 @@ impl Interpreter {
                 match method {
                     "repo-chain" => {
                         let mut chain = vec![target.clone()];
-                        let mut cursor = attributes.as_map().get("next-repo").cloned();
-                        while let Some(next) = cursor {
-                            if !next.truthy() {
-                                break;
-                            }
-                            if let ValueView::Instance { attributes, .. } = next.view() {
-                                cursor = attributes.as_map().get("next-repo").cloned();
-                            } else {
-                                cursor = None;
-                            }
+                        let mut next = self.repo_next_link(&target, &attributes.as_map());
+                        while next.truthy() {
+                            let following = match next.view() {
+                                ValueView::Instance { attributes, .. } => {
+                                    self.repo_next_link(&next, &attributes.as_map())
+                                }
+                                _ => Value::NIL,
+                            };
                             chain.push(next);
+                            next = following;
                         }
                         return Ok(Value::array(chain));
                     }
                     "next-repo" => {
-                        return Ok(attributes
-                            .as_map()
-                            .get("next-repo")
-                            .cloned()
-                            .unwrap_or(Value::NIL));
+                        return Ok(self.repo_next_link(&target, &attributes.as_map()));
                     }
                     _ => {}
                 }
