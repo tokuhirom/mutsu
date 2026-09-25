@@ -3064,6 +3064,13 @@ pub struct Interpreter {
     /// hides MOD's *own* exports and never a symbol MOD imported from a
     /// transitively-`use`d module (which MOD's methods must still resolve).
     module_owned_exports: std::sync::Arc<HashMap<String, HashMap<String, HashSet<String>>>>,
+    /// Qualified classes and roles declared by each module's own body. A
+    /// module without a `unit` declarator may still declare a type in an
+    /// unrelated package (for example `class Test::Handle`); that package is
+    /// visible to a direct importer, but declarations from the module's
+    /// dependencies are not. The load stack lets registration attribute the
+    /// type to the correct compunit while nested modules are loading.
+    pub(crate) module_owned_types: std::sync::Arc<HashMap<String, HashSet<String>>>,
     /// When true, `is export` trait is ignored (used by `need` to load without importing).
     pub(crate) suppress_exports: bool,
     /// When true, rw routine calls should not auto-FETCH Proxy return values.
@@ -3952,7 +3959,7 @@ pub struct Interpreter {
     /// `topic_source_var`, which a `for @a` element loop also sets but where `$_`
     /// is a single element (handled by the per-element writeback, not this).
     pub(crate) topic_container_source: Option<String>,
-    pub(crate) element_source: Option<(String, Value, bool)>,
+    pub(crate) element_source: Option<(String, Vec<(Value, bool)>)>,
     pub(crate) quanthash_bind_params: Vec<String>,
     /// Deferred restore of a single named for-loop param's prior binding, applied
     /// by `RestoreForParam` after the loop's LAST/post phasers. Tuple is

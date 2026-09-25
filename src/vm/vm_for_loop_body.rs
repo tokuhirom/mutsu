@@ -610,11 +610,59 @@ impl Interpreter {
         // read.
         let mut writes_back_loop_var;
         'for_loop: for (idx, item) in chunked_items.into_iter().enumerate().skip(resume_index) {
-            let item = if param_is_copy {
+            let mut item = if param_is_copy {
                 item.detach_shared_container()
             } else {
                 item
             };
+            // An `@` loop parameter with `is copy` has the same mutable-Array
+            // semantics as an ordinary `@` sub parameter. The loop source may
+            // be a List (notably a `%hash.kv` pair), but detaching preserves
+            // that immutable kind; reify it before binding so `shift` and
+            // element assignment work on the copy.
+            if param_is_copy
+                && param_name
+                    .as_deref()
+                    .is_some_and(|name| name.starts_with('@'))
+                && let ValueView::Array(
+                    gc,
+                    crate::value::ArrayKind::List | crate::value::ArrayKind::ItemList,
+                ) = item.view()
+            {
+                item = Value::array_with_kind(
+                    crate::gc::Gc::new((**gc).clone()),
+                    crate::value::ArrayKind::Array,
+                );
+            }
+            if param_is_copy
+                && !spec.multi_param_names.is_empty()
+                && let ValueView::Array(gc, kind) = item.view()
+            {
+                let mut data = (**gc).clone();
+                let mut changed = false;
+                for (index, is_copy) in spec.multi_param_is_copy.iter().enumerate() {
+                    if !*is_copy {
+                        continue;
+                    }
+                    let Some(value) = data.items_mut().get(index).cloned() else {
+                        continue;
+                    };
+                    if let ValueView::Array(
+                        inner,
+                        crate::value::ArrayKind::List | crate::value::ArrayKind::ItemList,
+                    ) = value.view()
+                    {
+                        data.items_mut()[index] = Value::array_with_kind(
+                            crate::gc::Gc::new((**inner).clone()),
+                            crate::value::ArrayKind::Array,
+                        );
+                        changed = true;
+                    }
+                }
+                if changed {
+                    item = Value::array_with_kind(crate::gc::Gc::new(data), kind);
+                }
+            }
             // A Proxy element FETCHes on iteration in value context (raku:
             // `for $proxy-list.list { }` yields the values). An rw loop
             // (`<->`) keeps the Proxy so writes go through STORE.

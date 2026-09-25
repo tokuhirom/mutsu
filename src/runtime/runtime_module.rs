@@ -1,6 +1,19 @@
 use super::*;
 
 impl Interpreter {
+    /// Attribute a type declaration to the module whose body is currently
+    /// running. Nested module loads push their own name, so the outer module
+    /// does not accidentally claim a dependency's declarations.
+    pub(crate) fn record_module_owned_type(&mut self, name: &str) {
+        let Some(module) = self.module_load_stack.last().cloned() else {
+            return;
+        };
+        crate::runtime::cow_table_mut(&mut self.module_owned_types)
+            .entry(module)
+            .or_default()
+            .insert(name.to_string());
+    }
+
     pub(crate) fn module_load_in_progress(&self) -> bool {
         !self.module_load_stack.is_empty()
     }

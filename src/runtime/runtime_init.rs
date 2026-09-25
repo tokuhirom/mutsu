@@ -3253,6 +3253,7 @@ impl Interpreter {
             import_target_package: None,
             module_loading_unit_stack: Vec::new(),
             module_owned_exports: Default::default(),
+            module_owned_types: Default::default(),
             suppress_exports: false,
             in_lvalue_assignment: false,
             in_does_rhs: false,

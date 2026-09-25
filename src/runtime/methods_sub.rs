@@ -788,6 +788,26 @@ impl Interpreter {
             return Some(Ok(Value::array(vec![target.clone()])));
         }
         if method == "cando" && args.len() == 1 {
+            if let (Some(class_name), Some(method_name)) = (
+                data.env
+                    .get("__mutsu_lookup_class")
+                    .map(Value::to_string_value),
+                data.env
+                    .get("__mutsu_lookup_method")
+                    .map(Value::to_string_value),
+            ) {
+                let call_args = Self::capture_to_call_args(&args[0]);
+                let method_args = call_args.get(1..).unwrap_or(&[]);
+                return Some(Ok(Value::array(
+                    self.collect_can_methods(
+                        &Value::package(Symbol::intern(&class_name)),
+                        &method_name,
+                    )
+                    .into_iter()
+                    .filter(|candidate| self.candidate_matches_call_args(candidate, method_args))
+                    .collect(),
+                )));
+            }
             // Multi-dispatch dispatcher: try name-based lookup first
             if let Some(ValueView::Str(disp_name)) =
                 data.env.get("__mutsu_multi_dispatch_name").map(Value::view)

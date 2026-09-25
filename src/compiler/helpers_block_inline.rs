@@ -100,6 +100,28 @@ impl Compiler {
             // yields Nil (surfaced by a two-phase `pull-one { with $!k {...} else
             // { $!k := ... } }` iterator whose `else` value was dropped).
             Stmt::Assign { name, expr, op } => {
+                // Keep the full statement compiler for `:=`.  A binding is not
+                // an assignment with a different spelling: it needs the
+                // scalar/container bind markers and the lvalue-preserving
+                // index path that makes `$v := %h<key>` share the element's
+                // cell.  The old tail fast path emitted only `SetLocal`, so a
+                // binding used as the last statement of a `when` body was
+                // silently downgraded to a value copy.  That is observable
+                // when a later loop iteration mutates the bound value (the
+                // HTTP::Tiny header-continuation parser is one example).
+                if matches!(op, AssignOp::Bind) {
+                    self.compile_stmt(stmt);
+                    let effective_name = self.resolve_self_lexical(name);
+                    if let Some(&slot) = self.local_map.get(effective_name) {
+                        self.code.emit(OpCode::GetLocal(slot));
+                    } else {
+                        let name_idx = self
+                            .code
+                            .add_constant(Value::str(self.qualify_variable_name(effective_name)));
+                        self.code.emit(OpCode::GetGlobal(name_idx));
+                    }
+                    return true;
+                }
                 self.compile_expr(expr);
                 self.code.emit(OpCode::Dup);
                 // Mirror the readonly check the general `Stmt::Assign` compile
@@ -455,7 +477,27 @@ impl Compiler {
                         self.pop_dynamic_scope_lexical(saved);
                         return;
                     }
-                    Stmt::Assign { name, expr, .. } => {
+                    Stmt::Assign { name, expr, op } => {
+                        // As in `compile_when_tail_stmt_inner`, retain the
+                        // complete bind lowering for a tail `:=`.  In
+                        // particular, the two branches of an `if` inside a
+                        // `when` commonly end in `$value := %hash<key>`; the
+                        // bind markers must survive this value-position
+                        // inlining or the alias becomes a detached snapshot.
+                        if matches!(op, AssignOp::Bind) {
+                            self.compile_stmt(stmt);
+                            let effective_name = self.resolve_self_lexical(name);
+                            if let Some(&slot) = self.local_map.get(effective_name) {
+                                self.code.emit(OpCode::GetLocal(slot));
+                            } else {
+                                let name_idx = self.code.add_constant(Value::str(
+                                    self.qualify_variable_name(effective_name),
+                                ));
+                                self.code.emit(OpCode::GetGlobal(name_idx));
+                            }
+                            self.pop_dynamic_scope_lexical(saved);
+                            return;
+                        }
                         // $x = expr in block-final position: assign and return value
                         self.compile_expr(expr);
                         self.code.emit(OpCode::Dup);

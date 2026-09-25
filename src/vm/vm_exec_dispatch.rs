@@ -4942,7 +4942,38 @@ impl Interpreter {
                 self.stack.push(cval);
                 self.stack.push(index.clone());
                 self.exec_index_op_with_positional(positional)?;
-                self.element_source = Some((container, index, positional));
+                self.element_source = Some((container, vec![(index, positional)]));
+                *ip += 1;
+            }
+            OpCode::TagElementSourcePath {
+                container_idx,
+                positionals,
+            } => {
+                let container = Self::const_str(code, *container_idx).to_string();
+                let mut indices = Vec::with_capacity(positionals.len());
+                for _ in positionals {
+                    indices.push(self.stack.pop().unwrap_or(Value::NIL));
+                }
+                indices.reverse();
+
+                let mut current = self
+                    .gate_local_slot_value(code, &container)
+                    .or_else(|| self.get_env_with_main_alias(&container))
+                    .unwrap_or(Value::NIL);
+                for (index, positional) in indices.iter().zip(positionals.iter().copied()) {
+                    self.stack.push(current);
+                    self.stack.push(index.clone());
+                    self.exec_index_op_with_positional(positional)?;
+                    current = self.stack.pop().unwrap_or(Value::NIL);
+                }
+                self.stack.push(current);
+                self.element_source = Some((
+                    container,
+                    indices
+                        .into_iter()
+                        .zip(positionals.iter().copied())
+                        .collect(),
+                ));
                 *ip += 1;
             }
             // Cost: O(1).

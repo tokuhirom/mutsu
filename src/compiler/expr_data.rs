@@ -3,6 +3,27 @@ use crate::compiler::helpers_dynamic::OuterStash;
 use crate::value::ValueView;
 
 impl Compiler {
+    /// Collect a chained subscript's index expressions in source order and
+    /// return its root expression. Used by `with`/`without` so a nested lvalue
+    /// can be evaluated once while retaining the complete writeback path.
+    fn collect_index_path<'a>(
+        target: &'a Expr,
+        index: &'a Expr,
+        is_positional: bool,
+        path: &mut Vec<(&'a Expr, bool)>,
+    ) -> &'a Expr {
+        let root = match target {
+            Expr::Index {
+                target,
+                index,
+                is_positional,
+            } => Self::collect_index_path(target, index, *is_positional, path),
+            _ => target,
+        };
+        path.push((index, is_positional));
+        root
+    }
+
     /// A `$.attr` twigil naming a SCALAR attribute -- the only sigil whose
     /// public non-`rw` accessor hands back a bare value rather than a container,
     /// and therefore the only one whose read-modify-write raku sends to a
@@ -517,21 +538,51 @@ impl Compiler {
         // element's index. Reuse that evaluation's value and record the
         // source for the following topicalizing `given`; compiling the normal
         // target/index/read sequence here would run an effectful index twice.
-        if let Some((container, positional)) = self.with_element_source_capture.take() {
-            if matches!(target, Expr::Var(_) | Expr::ArrayVar(_) | Expr::HashVar(_))
-                && positional == is_positional
-            {
-                self.compile_subscript_index(index);
+        if let Some((container, positionals)) = self.with_element_source_capture.take() {
+            let mut path = Vec::new();
+            let root = Self::collect_index_path(target, index, is_positional, &mut path);
+            let root_name = match root {
+                Expr::Var(name) if !name.starts_with(['!', '.']) => Some(name.clone()),
+                Expr::ArrayVar(name) if !name.starts_with(['!', '.']) => Some(format!("@{name}")),
+                Expr::HashVar(name) if !name.starts_with(['!', '.', '?']) => {
+                    Some(format!("%{name}"))
+                }
+                _ => None,
+            };
+            let path_matches = root_name.as_deref() == Some(container.as_str())
+                && path
+                    .iter()
+                    .map(|(_, positional)| *positional)
+                    .eq(positionals.iter().copied());
+            if path_matches && path.len() > 1 {
+                // The root variable is resolved by the VM from the captured
+                // name. Compile only the indices here, preserving their normal
+                // left-to-right evaluation order; the path opcode performs the
+                // chained read and records all of them for writeback.
+                for (path_index, _) in &path {
+                    self.compile_subscript_index(path_index);
+                }
                 let container_idx = self.code.add_constant(Value::str(container));
-                self.code.emit(OpCode::TagElementSource {
+                self.code.emit(OpCode::TagElementSourcePath {
                     container_idx,
-                    positional,
+                    positionals,
                 });
                 self.bind_terminal = saved_terminal;
                 self.raw_list_elem_terminal = saved_raw_list_elem_terminal;
                 return;
             }
-            self.with_element_source_capture = Some((container, positional));
+            if path_matches {
+                self.compile_subscript_index(index);
+                let container_idx = self.code.add_constant(Value::str(container));
+                self.code.emit(OpCode::TagElementSource {
+                    container_idx,
+                    positional: is_positional,
+                });
+                self.bind_terminal = saved_terminal;
+                self.raw_list_elem_terminal = saved_raw_list_elem_terminal;
+                return;
+            }
+            self.with_element_source_capture = Some((container, positionals));
         }
 
         // Special case: CALLERS::<$*x> stash-subscript access — the "any caller

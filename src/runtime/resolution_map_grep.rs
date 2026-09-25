@@ -2,6 +2,20 @@ use super::*;
 use crate::env::Env;
 use crate::value::SubData;
 
+/// A matcher callback runs in a nested register scope, but a regex match is
+/// visible through the caller's routine-scoped `$/.`  The shared env mirror is
+/// not enough when that variable has a compiled local slot, so refresh the
+/// current bytecode frame's match slots after publishing the value.
+fn writeback_current_match_locals(vm: &mut Interpreter) {
+    if vm.current_code == 0 {
+        return;
+    }
+    // SAFETY: current_code is maintained by the VM as the address of the live
+    // ancestor CompiledCode for the synchronous call tree.
+    let code = unsafe { &*(vm.current_code as *const CompiledCode) };
+    vm.writeback_match_locals(code, &std::collections::HashSet::new());
+}
+
 /// The set a frame vouches for so a closure created inside it inherits
 /// authoritative (overwrite) capture (runtime transitive vouching — see
 /// `Interpreter::frame_authoritative`): the block's own `authoritative_free_vars`
@@ -1066,6 +1080,10 @@ impl Interpreter {
                 .is_some_and(|cc| cc.immutable_topic);
 
         let mut found: Option<(usize, Value)> = None;
+        // A matcher closure may execute a regex.  Keep the resulting Match
+        // outside the nested matcher scope so the caller's dynamic `$/` can be
+        // restored after the eager scan completes.
+        let mut matched_regex: Option<Value> = None;
         let loop_result: Result<(), RuntimeError> = self.with_nested_registers(|vm| {
             // Scope `state` variables to the closure instance (see
             // `eval_map_over_items`).
@@ -1109,6 +1127,26 @@ impl Interpreter {
                                 .cloned()
                                 .or_else(|| vm.env().get("_").cloned())
                                 .unwrap_or(Value::NIL);
+                            // A regex used as the predicate leaves its match
+                            // in the dynamically scoped `$/`, even though
+                            // `.first` returns the original element.  The
+                            // callback runs in a nested VM scope; propagate
+                            // that match to the caller before the scope is
+                            // restored.  HTTP::Tiny uses this to extract the
+                            // multipart boundary from a header with
+                            // `.first: { /.../ }`.
+                            if pred.is_match_instance() {
+                                matched_regex = Some(pred.clone());
+                                vm.env_mut()
+                                    .insert_sym(crate::symbol::wk::match_var(), pred.clone());
+                                // The caller may have a compiled local slot for
+                                // $/.  The ordinary match opcode writes that slot
+                                // directly; this nested matcher only updates the
+                                // shared env, so leave the same pending marker
+                                // used by call-boundary local reconciliation.
+                                vm.pending_local_updates
+                                    .push(("/".to_string(), pred.clone()));
+                            }
                             if vm.eval_predicate_truthy(&pred) {
                                 found = Some((idx, item.clone()));
                             }
@@ -1129,6 +1167,13 @@ impl Interpreter {
                         Err(e) if e.is_succeed() => {
                             vm.set_when_matched(saved_when_matched);
                             let pred = e.return_value.unwrap_or(Value::NIL);
+                            if pred.is_match_instance() {
+                                matched_regex = Some(pred.clone());
+                                vm.env_mut()
+                                    .insert_sym(crate::symbol::wk::match_var(), pred.clone());
+                                vm.pending_local_updates
+                                    .push(("/".to_string(), pred.clone()));
+                            }
                             if vm.eval_predicate_truthy(&pred) {
                                 found = Some((idx, item.clone()));
                             }
@@ -1184,6 +1229,11 @@ impl Interpreter {
                 }
             }
         }
+        if let Some(matched) = matched_regex {
+            self.env_mut()
+                .insert_sym(crate::symbol::wk::match_var(), matched);
+            writeback_current_match_locals(self);
+        }
         // The matcher block may mutate a captured-outer lexical (`.first({
         // $count++; ... })` — S32-list/first-kv.t "matcher got only executed
         // once"). Its `$count++` landed in the shared `env` during the loop,
@@ -1224,6 +1274,15 @@ impl FirstMatcher for InterpFirstMatcher<'_> {
             let pred = self
                 .0
                 .call_sub_value(pattern.clone(), vec![call_item], true)?;
+            if pred.is_match_instance() {
+                self.0
+                    .env_mut()
+                    .insert_sym(crate::symbol::wk::match_var(), pred.clone());
+                self.0
+                    .pending_local_updates
+                    .push(("/".to_string(), pred.clone()));
+                writeback_current_match_locals(self.0);
+            }
             Ok(self.0.eval_predicate_truthy(&pred))
         } else {
             Ok(self.0.smart_match(item, pattern))

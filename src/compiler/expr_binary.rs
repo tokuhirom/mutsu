@@ -378,7 +378,20 @@ impl Compiler {
                 self.code.emit(OpCode::Dup);
                 let jump_end = self.code.emit(OpCode::JumpIfFalse(0));
                 self.code.emit(OpCode::Pop);
-                self.compile_expr(right);
+                // A bare regex in an `&&` predicate is an implicit smartmatch
+                // against the current topic (`.defined && /pattern/`).
+                // Loading the Regex object itself leaves `$/.` unset and is
+                // observably wrong for callers that consume the match after
+                // the predicate (for example `Str.first: { ... }`).
+                match right {
+                    Expr::Literal(value) if matches!(value.view(), ValueView::Regex(_)) => {
+                        self.compile_match_regex(value)
+                    }
+                    Expr::RegexLiteral { value, .. } | Expr::MatchRegex(value) => {
+                        self.compile_match_regex(value)
+                    }
+                    _ => self.compile_expr(right),
+                }
                 self.code.patch_jump(jump_end);
                 return;
             }

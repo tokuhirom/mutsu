@@ -162,7 +162,7 @@ pub(crate) fn with_stmt(input: &str) -> PResult<'_, Stmt> {
                 crate::param_destructure::destructure_binds(pname, sub_params, &mut with_body);
             } else {
                 // Simple parameter with possible traits from parse_for_params
-                with_body.push(simple_pointy_bind(pname, &tmp_var, pdef.sigilless));
+                with_body.push(pointy_param_bind_decl(pdef, &tmp_var));
             }
         } else {
             with_body.push(simple_pointy_bind(pname, &tmp_var, false));

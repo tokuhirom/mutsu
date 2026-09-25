@@ -94,7 +94,12 @@ impl Interpreter {
                 _ => crate::runtime::utils::coerce_to_array(val),
             },
             '%' => match val.view() {
-                ValueView::Hash(_) => val.clone(),
+                // A `%` attribute owns a Hash container.  If the value came
+                // from a nested element of another Hash (JSON decoding is a
+                // common example), it may still carry that scalar holder's
+                // itemization flag; retain the Hash data but make the
+                // attribute itself iterable as `%attr`, not as `$attr`.
+                ValueView::Hash(_) => val.clone().with_hash_itemized(false),
                 ValueView::Pair(k, v) => {
                     // A single Pair coerces to a one-element hash
                     let mut map = ValueMap::default();

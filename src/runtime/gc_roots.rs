@@ -78,8 +78,10 @@ impl Interpreter {
         }
         visit_opt(visitor, &self.last_topic_value);
         visit_slice(visitor, &self.topic_save_stack);
-        if let Some((_, v, _)) = &self.element_source {
-            visitor.visit_value(v);
+        if let Some((_, path)) = &self.element_source {
+            for (v, _) in path {
+                visitor.visit_value(v);
+            }
         }
         for (_, v, _) in &self.for_param_restore_stack {
             visit_opt(visitor, v);

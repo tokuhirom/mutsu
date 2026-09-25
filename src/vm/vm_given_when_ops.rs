@@ -184,6 +184,7 @@ impl Interpreter {
                         &pointy_param,
                         element_orig.as_ref(),
                         captured,
+                        (src.0 == "_").then_some(saved_topic.as_ref()).flatten(),
                     );
                 } else {
                     this.write_back_given_topic(
@@ -385,7 +386,14 @@ impl Interpreter {
         }
 
         if let Some(src) = &element_source {
-            self.write_back_element_source(code, src, &None, element_orig.as_ref(), None);
+            self.write_back_element_source(
+                code,
+                src,
+                &None,
+                element_orig.as_ref(),
+                None,
+                (src.0 == "_").then_some(saved_topic.as_ref()).flatten(),
+            );
         }
         loan_env!(self, set_when_matched(saved_when));
         if let Some(v) = saved_topic {

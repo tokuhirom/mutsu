@@ -400,6 +400,13 @@ pub(crate) fn to_int(v: &Value) -> i64 {
         // is 5) — without this a CStruct field write of an enum stored 0.
         ValueView::Enum { value, .. } => value.as_i64(),
         ValueView::Str(s) => s.parse().unwrap_or(0),
+        // A regex capture is a Match object, but numeric context uses the
+        // captured text.  This is especially important for named captures
+        // passed through a slurpy argument list (for example DateTime.new
+        // receiving `%/.hash`).
+        ValueView::Instance { .. } if v.is_match_instance() => {
+            v.match_str_value().as_ref().map_or(0, to_int)
+        }
         ValueView::Array(items, ..) => items.len() as i64,
         ValueView::Hash(items) => items.len() as i64,
         ValueView::Seq(items) | ValueView::HyperSeq(items) | ValueView::RaceSeq(items) => {
