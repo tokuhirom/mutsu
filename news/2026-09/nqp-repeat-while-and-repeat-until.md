@@ -24,5 +24,5 @@ With the loop in place, `are` got 3 of its 4 assertions. The fourth,
 built-in role seeds (`src/runtime/runtime_init.rs`) did not record that
 `Date` and `DateTime` compose `Dateish`: `.^roles` answered `()` and
 `.^mro(:roles)` skipped the role, so `are`'s MRO walk settled on `Any`.
-Both are seeded now (pinned by `t/oo/role/dateish-builtin-roles.t`), and the
+Both are seeded now (pinned by `t/types/temporal/dateish-builtin-roles.t`), and the
 `are` ledger record is green (4/4).
