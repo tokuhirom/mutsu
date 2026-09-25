@@ -3554,8 +3554,7 @@ impl Interpreter {
             OpCode::Label(_) => {
                 *ip += 1;
             }
-            // Cost: O(c), c = ops of the current code block (find_label_target
-            // scans for the Label linearly).
+            // Cost: O(1) amortized (the chunk's label table), plus O(n), n = chars of the label.
             OpCode::Goto => {
                 let target = self.stack.pop().unwrap_or(Value::NIL).to_string_value();
                 if let Some(target_ip) = self.find_label_target(code, &target) {
@@ -6192,7 +6191,7 @@ impl Interpreter {
                 self.sync_source_line(code, *ip);
                 self.exec_succeed_barrier_op(code, *body_end, ip, compiled_fns)?;
             }
-            // Cost: O(t * b), t = state locals of the chunk, b = ops in the range (one StateVarInit scan per state). Rakudo: O(t) -- see #9173.
+            // Cost: O(t), t = state locals of the chunk (indexed StateVarInit lookup per state).
             OpCode::ResetStateLocals { body_end } => {
                 self.reset_state_locals_in_range(code, *ip + 1, *body_end as usize);
                 *ip += 1;
@@ -6809,14 +6808,15 @@ impl Interpreter {
             }
 
             // -- Let scope management --
-            // Cost: O(1) for a scalar; O(t) for an Array/Hash, t = total nodes (recursive deep copy). Rakudo: O(e) (shallow clone) -- see #9173.
+            // Cost: O(1) for a `$` variable; O(e) for an `@`/`%` variable or element temp, e = its elements (one-level copy); O(t) for the `deep` save of a multi-level element temp, t = total nodes. Rakudo: O(1) (element container) -- see #9434.
             OpCode::LetSave {
                 name_idx,
                 index_mode,
                 is_temp,
+                deep,
                 slot,
             } => {
-                self.exec_let_save_op(code, *name_idx, *index_mode, *is_temp, *slot);
+                self.exec_let_save_op(code, *name_idx, *index_mode, *is_temp, *deep, *slot);
                 *ip += 1;
             }
             // Cost: O(k) plus the body, k = let/temp saves resolved at block exit.

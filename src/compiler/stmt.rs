@@ -4653,6 +4653,7 @@ impl Compiler {
                 value,
                 is_temp,
                 undefine_first,
+                nested_lvalue,
             } => {
                 // Temporizing a never-declared dynamic variable (`temp $*foo`)
                 // throws X::Dynamic::NotFound — you can only `temp`/`let` a variable
@@ -4699,6 +4700,7 @@ impl Compiler {
                     name_idx,
                     index_mode: has_index,
                     is_temp: *is_temp,
+                    deep: *nested_lvalue,
                     slot,
                 });
                 // Compile the assignment if value is provided
@@ -4739,6 +4741,7 @@ impl Compiler {
                     name_idx,
                     index_mode: false,
                     is_temp: true,
+                    deep: false,
                     slot,
                 });
                 let assign_expr = Expr::Call {

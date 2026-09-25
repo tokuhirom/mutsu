@@ -13,6 +13,7 @@
 #   NN      the size
 #   LOCALS  NN generated `my $lvI = I;` declarations (a big frame)
 #   CLASSES a linear chain of NN classes C0..C<NN> (C0 has `method m {1}`)
+#   STMTS   NN copies of `$s++;` (a big block that declares no locals)
 #
 # The cases back the `Rakudo: O(..) -- see #NNNN` annotations on the
 # `exec_one_dispatch` arms (src/vm/vm_exec_dispatch.rs) and their handlers;
@@ -68,11 +69,25 @@ CASES=(
     'method call vs MRO depth|40|1|CLASSES our @objs = C''NN''.new; my $s = 0;|for ^20000 { $s += @objs[0].m }'
     'sub call vs frame locals (control)|500|1|sub f($x) { $x + 1 }; LOCALS my $s = 0;|for ^20000 { $s = f($s) }'
     '@a[5]++ vs array size (control)|100000|1|my @a = ^NN;|for ^20000 { @a[5]++ }'
+    # --- #9173: the minor findings of the VM opcode audit -------------------
+    'temp @a vs nested element size|2000|1|my @a = (^100).map({ [^NN] });|for ^200 { temp @a }'
+    'goto vs code size|500|1|LOCALS my $gi = 0;|GL: $gi++; goto GL if $gi < 20000'
+    # Run this one with MUTSU_JIT=off: with the JIT on, the one-time cranelift
+    # compile of the enlarged chunk lands inside the timed body.
+    'ResetStateLocals vs loop body size|500|1|my $never = 0; my $s = 0;|for ^20000 { for ^1 { state $x = 1; $s += $x; if $never { STMTS } } }'
+    'map callback vs frame locals|1000|1|LOCALS my $s = 0;|for ^20 { $s += (1..2000).map({ $_ + 1 }).elems }'
+    'declaring a chain of NN classes|200|4|use MONKEY-SEE-NO-EVAL; my $src = "class D0 \{ \}; " ~ (1..NN).map({ "class D$_ is D{$_ - 1} \{ \}; " }).join;|EVAL $src'
 )
 
 gen_locals() {
     local n=$1 i out=""
     for ((i = 0; i < n; i++)); do out+="my \$lv$i = $i; "; done
+    printf '%s' "$out"
+}
+
+gen_stmts() {
+    local n=$1 i out=""
+    for ((i = 0; i < n; i++)); do out+="\$s++; "; done
     printf '%s' "$out"
 }
 
@@ -87,6 +102,7 @@ time_case() {
     setup=${setup//LOCALS/$(gen_locals "$n")}
     setup=${setup//CLASSES/$(gen_classes "$n")}
     setup=${setup//NN/$n}
+    body=${body//STMTS/$(gen_stmts "$n")}
     body=${body//NN/$n}
     printf '%s\nmy $cx-t0 = now; %s; note "CXTIME ", now - $cx-t0;\n' "$setup" "$body" >"$f"
     timeout 300 "$BIN" "$f" 2>&1 >/dev/null | awk '/^CXTIME /{print $2}' | tail -1

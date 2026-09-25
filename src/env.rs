@@ -631,7 +631,7 @@ pub struct Env {
     /// `Arc` rather than a plain `Vec` so cloning an env (once per light call,
     /// on the swap path) stays a refcount bump; the log is copy-on-write like
     /// `inner`.
-    frame_writes: Option<Arc<Vec<Symbol>>>,
+    frame_writes: Option<Arc<crate::frame_write_log::FrameWriteLog>>,
     /// Index of the overlay keys that are *code env entries* (`&foo` and their
     /// `__mutsu_callable_id::` markers — see [`Symbol::is_code_env_entry`]),
     /// so a block scope can save/restore them in O(routine bindings) instead of
@@ -1134,13 +1134,13 @@ impl Env {
             "flattened_for_frame is the scoped-env collapse; a flat env has no tier to record"
         );
         let mut flat = self.flattened();
-        let mut writes: Vec<Symbol> = self.inner.keys().copied().collect();
-        if let Some(tomb) = &self.tombstones {
-            // A `remove` in this tier is a write the frame made too: the unwind
-            // has to consider the name even though the flatten already applied
-            // the tombstone and the key is gone from the merged map.
-            writes.extend(tomb.iter().copied());
-        }
+        // A `remove` in this tier is a write the frame made too: the unwind
+        // has to consider the name even though the flatten already applied the
+        // tombstone and the key is gone from the merged map.
+        let tombs = self.tombstones.iter().flat_map(|t| t.iter().copied());
+        let writes = crate::frame_write_log::FrameWriteLog::from_keys(
+            self.inner.keys().copied().chain(tombs),
+        );
         flat.frame_writes = Some(Arc::new(writes));
         flat
     }
@@ -1162,14 +1162,17 @@ impl Env {
     /// call): the *first* write after that share deep-copies the whole log, so
     /// an unbounded log turned every nested call inside a long-lived light-call
     /// frame into an O(log length) copy -- O(n^2) over the frame's lifetime
-    /// (issue #8489). The `contains` scan below is read-only (no `make_mut`,
-    /// so no copy) and stays cheap because the deduplicated log itself stays
-    /// small -- bounded by the frame's distinct write targets, not its write
-    /// count.
+    /// (issue #8489). The `contains` check below is read-only (no `make_mut`,
+    /// so no copy). The log is seeded with the whole collapsed frame tier, so
+    /// it can hold every lexical of a large frame; past a few entries
+    /// [`crate::frame_write_log::FrameWriteLog`] answers it from a hash index
+    /// rather than a scan, which kept a `map` callback inside a frame of L
+    /// lexicals from paying O(L) per iteration (#9173).
+    // Cost: O(1) amortized.
     #[inline(always)]
     fn note_frame_write(&mut self, key: Symbol) {
         if let Some(log) = &self.frame_writes
-            && log.contains(&key)
+            && log.contains(key)
         {
             return;
         }
@@ -1274,7 +1277,7 @@ impl Env {
         let log = Arc::make_mut(&mut writes);
         let mut i = 0;
         while i < log.len() {
-            let k = log[i];
+            let k = log.get(i);
             if keep(k) {
                 i += 1;
             } else {

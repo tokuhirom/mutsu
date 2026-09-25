@@ -2065,6 +2065,11 @@ pub(crate) enum Stmt {
         value: Option<Box<Expr>>,
         is_temp: bool,
         undefine_first: bool,
+        /// The save half of a *multi-level* element `temp`
+        /// (`temp $s[1]<k>[1] = v`), which is lowered to a save of the whole
+        /// base variable plus the nested assignment: the snapshot must then be
+        /// independent at every level, not just the top one.
+        nested_lvalue: bool,
     },
     TempMethodAssign {
         var_name: String,
