@@ -11,11 +11,12 @@ defines its own `times` -- P5times does, as `proto sub times(|)` with a
 
 All three builtins are gone: the `times` term in
 `parser/primary/ident/term_literals.rs`, their entries in the listop/expr-listop
-predicate lists, the EVAL known-routine name, and `builtins/functions/time.rs`
-itself. A user or module definition now dispatches normally, and a bare call
+predicate lists, the EVAL known-routine name, and the `times` /
+`localtime` / `gmtime` implementations. A user or module definition now dispatches normally, and a bare call
 with no declaration is `X::Undeclared::Symbols`, as in rakudo. The local test
 that exercised the builtins (`t/types/temporal/temporal-time.t`) was removed;
 `t/routines/p5-time-routines-not-core.t` pins the new behaviour (issue #9418).
 
-P5times `t/01-basic.t` gets past the shadowing but still stops at test 3 on
-`nqp::getrusage`, which is tracked separately in #9348.
+With `nqp::getrusage` already in place (#9348), P5times `t/01-basic.t` now
+passes all 11 tests. The shared `process_rusage` helper that #9348 introduced
+moved from the deleted `time.rs` into `builtins/functions/rusage.rs`.
