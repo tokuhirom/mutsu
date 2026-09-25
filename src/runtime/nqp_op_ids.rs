@@ -362,4 +362,31 @@ mod tests {
             assert_eq!(nqp_op_id(form), None, "{form} is a control-flow form");
         }
     }
+
+    /// Every registered name reaches an op arm: dispatched by its id, it never
+    /// falls through to the chain's `Unsupported nqp:: op` error. The op is run
+    /// with no arguments, so most arms fail on their arity, and a few panic on
+    /// an unchecked `args[0]`; either still means an arm claimed the name.
+    #[test]
+    fn nqp_op_registry_names_all_dispatch() {
+        let hook = std::panic::take_hook();
+        std::panic::set_hook(Box::new(|_| {}));
+        let mut unclaimed = Vec::new();
+        for (i, (name, _)) in NQP_OPS.iter().enumerate() {
+            let mut interp = crate::runtime::Interpreter::new();
+            let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                interp.dispatch_nqp_op_by_id(i as u16, &[])
+            }));
+            if let Ok(Err(e)) = outcome
+                && e.message.starts_with("Unsupported nqp:: op")
+            {
+                unclaimed.push(*name);
+            }
+        }
+        std::panic::set_hook(hook);
+        assert!(
+            unclaimed.is_empty(),
+            "registered nqp:: ops no dispatch table claims: {unclaimed:?}"
+        );
+    }
 }

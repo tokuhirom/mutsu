@@ -77,11 +77,14 @@ fn str_cmp_leaf<const K: usize>(
                 Interpreter::extract_buf_bytes(&l) == Interpreter::extract_buf_bytes(&r),
             ));
         }
-        return Ok(Value::truth(l.str_context_cow() == r.str_context_cow()));
+        return Ok(Value::truth(crate::builtins::str_prim::str_eq(
+            &l.str_context_cow(),
+            &r.str_context_cow(),
+        )));
     }
     let ord = match Interpreter::blob_ordering(&l, &r)? {
         Some(ord) => ord,
-        None => l.str_context_cow().cmp(&r.str_context_cow()),
+        None => crate::builtins::str_prim::str_order(&l.str_context_cow(), &r.str_context_cow()),
     };
     Ok(Value::truth(kind.holds(ord)))
 }

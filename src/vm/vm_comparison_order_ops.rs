@@ -640,9 +640,10 @@ impl Interpreter {
     pub(crate) fn str_leg(&mut self, left: Value, right: Value) -> Result<Value, RuntimeError> {
         let (left, right) = self.coerce_str_compare_operands(left, right)?;
         self.eval_binary_with_junctions(left, right, |_, l, r| {
-            Ok(runtime::make_order(
-                Self::stringify_compare_operand(&l)?.cmp(&Self::stringify_compare_operand(&r)?),
-            ))
+            Ok(runtime::make_order(crate::builtins::str_prim::str_order(
+                &Self::stringify_compare_operand(&l)?,
+                &Self::stringify_compare_operand(&r)?,
+            )))
         })
     }
 

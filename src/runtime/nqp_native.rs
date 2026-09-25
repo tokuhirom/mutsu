@@ -31,6 +31,30 @@ pub(crate) fn mul_i(a: i64, b: i64) -> i64 {
     a.wrapping_mul(b)
 }
 
+/// Native unsigned `+` (a `uint` register): wraps modulo 2**64. The result
+/// is the register's bits boxed as a signed Int, as Rakudo does; the
+/// destination native store reinterprets a negative value back into the
+/// unsigned range (`uint $x = 0; $x - 1` is -1, `$x -= 1` stores
+/// `uint64.max`). Cost: O(1).
+#[inline]
+pub(crate) fn add_u(a: u64, b: u64) -> i64 {
+    a.wrapping_add(b) as i64
+}
+
+/// Native unsigned `-`; see [`add_u`] for the result's representation.
+/// Cost: O(1).
+#[inline]
+pub(crate) fn sub_u(a: u64, b: u64) -> i64 {
+    a.wrapping_sub(b) as i64
+}
+
+/// Native unsigned `*`; see [`add_u`] for the result's representation.
+/// Cost: O(1).
+#[inline]
+pub(crate) fn mul_u(a: u64, b: u64) -> i64 {
+    a.wrapping_mul(b) as i64
+}
+
 /// `nqp::neg_i`. Cost: O(1).
 #[inline]
 pub(crate) fn neg_i(a: i64) -> i64 {
