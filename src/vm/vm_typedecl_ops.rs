@@ -709,6 +709,7 @@ impl Interpreter {
             // stored under (the qualified/lexical-mangled `storage_name`,
             // NOT the source-level bare `name`) for `PushLastRegisteredClass`
             // to consume — see `Interpreter::last_registered_class_key`.
+            self.record_module_owned_type(&storage_name);
             self.last_registered_class_key = Some(storage_name.clone());
 
             Ok(())
@@ -1138,6 +1139,7 @@ impl Interpreter {
                 type_param_defs,
             );
 
+            self.record_module_owned_type(&qualified_name);
             self.last_registered_role_key = Some(qualified_name.clone());
 
             Ok(())

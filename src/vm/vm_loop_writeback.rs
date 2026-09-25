@@ -68,12 +68,13 @@ impl Interpreter {
     pub(super) fn write_back_element_source(
         &mut self,
         code: &CompiledCode,
-        src: &(String, Value, bool),
+        src: &(String, Vec<(Value, bool)>),
         pointy_param: &Option<String>,
         orig: Option<&Value>,
         captured_pointy_value: Option<Value>,
+        container_override: Option<&Value>,
     ) {
-        let (container, index, _positional) = src;
+        let (container, path) = src;
         // For a pointy block, write back the bound parameter's final value;
         // otherwise the topic `$_`. See `write_back_given_topic`'s matching
         // comment: `captured_pointy_value` is the slot's value, read exactly
@@ -96,12 +97,10 @@ impl Interpreter {
         {
             return;
         }
-        let key = match index.view() {
-            ValueView::Int(i) => i.to_string(),
-            ValueView::Str(s) => String::clone(&s),
-            _ => index.to_string_value(),
-        };
-        let Some(mut cval) = self.get_env_with_main_alias(container) else {
+        let Some(mut cval) = container_override
+            .cloned()
+            .or_else(|| self.get_env_with_main_alias(container))
+        else {
             return;
         };
         // Only a genuine mutable Array/Hash (or a cell wrapping one) is a
@@ -115,12 +114,52 @@ impl Interpreter {
         if !Self::is_writable_element_container(&cval) {
             return;
         }
-        // The element index here is an already-resolved existing slot (loop
-        // aliasing), so the autoviv reservation cannot realistically fail; this
-        // writeback teardown has no error channel, so discard the Result.
-        let _ = Self::assign_into_nested_container(&mut cval, &key, current);
+        // The element indices are already-resolved existing slots, so the
+        // autoviv reservation cannot realistically fail; this writeback
+        // teardown has no error channel, so discard the Result.
+        Self::assign_element_source_path(&mut cval, path, current);
         self.set_env_with_main_alias(container, cval.clone());
         self.update_local_if_exists(code, container, &cval);
+    }
+
+    fn assign_element_source_path(target: &mut Value, path: &[(Value, bool)], value: Value) {
+        let Some((index, _positional)) = path.first() else {
+            return;
+        };
+        let key = Self::element_source_key(index);
+        if path.len() == 1 {
+            let _ = Self::assign_into_nested_container(target, &key, value);
+            return;
+        }
+        let Some(mut child) = Self::read_element_source_child(target, index) else {
+            return;
+        };
+        Self::assign_element_source_path(&mut child, &path[1..], value);
+    }
+
+    fn read_element_source_child(target: &Value, index: &Value) -> Option<Value> {
+        let target = target.deref_container();
+        let key = Self::element_source_key(index);
+        match target.view() {
+            ValueView::Hash(map) => map.get(&key).cloned(),
+            ValueView::Array(items, _) => key
+                .parse::<usize>()
+                .ok()
+                .and_then(|i| items.items().get(i).cloned()),
+            // A container reference should already be dereferenced above,
+            // but treating a residual cell as a missing child keeps an
+            // ill-shaped runtime value from becoming a Rust panic.
+            ValueView::ContainerRef(_) => None,
+            _ => None,
+        }
+    }
+
+    fn element_source_key(index: &Value) -> String {
+        match index.view() {
+            ValueView::Int(i) => i.to_string(),
+            ValueView::Str(s) => String::clone(&s),
+            _ => index.to_string_value(),
+        }
     }
 
     /// Whether `v` is a container whose element can be assigned through the

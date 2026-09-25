@@ -75,7 +75,7 @@ pub(crate) fn defined_condition(negated: bool, tmp_name: &str, cond_expr: Expr) 
 /// `with`/`without` scaffold. The condition evaluates the source once; the
 /// compiler uses this metadata to tag that already-evaluated element for the
 /// topicalizing `given`, instead of compiling the subscript a second time.
-pub(crate) fn condition_element_source(cond: &Expr) -> Option<(String, bool)> {
+pub(crate) fn condition_element_source(cond: &Expr) -> Option<(String, Vec<bool>)> {
     let cond = match cond {
         Expr::Unary { expr, .. } => expr.as_ref(),
         other => other,
@@ -93,21 +93,35 @@ pub(crate) fn condition_element_source(cond: &Expr) -> Option<(String, bool)> {
         Stmt::VarDecl { name, expr, .. } if name.starts_with("__with_tmp_") => expr,
         _ => return None,
     };
-    let Expr::Index {
-        target,
-        is_positional,
-        ..
-    } = decl
-    else {
-        return None;
-    };
-    let container = match target.as_ref() {
+    let mut positionals = Vec::new();
+    let root = flatten_index_source(decl, &mut positionals)?;
+    let container = match root {
         Expr::Var(name) if !name.starts_with(['!', '.']) => name.clone(),
         Expr::ArrayVar(name) if !name.starts_with(['!', '.']) => format!("@{name}"),
         Expr::HashVar(name) if !name.starts_with(['!', '.', '?']) => format!("%{name}"),
         _ => return None,
     };
-    Some((container, *is_positional))
+    Some((container, positionals))
+}
+
+/// Flatten a chained index expression to its root and record the source-order
+/// positional/hash nature of each subscript. The expressions themselves stay
+/// in the AST; the compiler uses this shape to evaluate them once before the
+/// VM records the complete lvalue path.
+fn flatten_index_source<'a>(expr: &'a Expr, positionals: &mut Vec<bool>) -> Option<&'a Expr> {
+    match expr {
+        Expr::Index {
+            target,
+            is_positional,
+            index: _,
+        } => {
+            let root = flatten_index_source(target, positionals)?;
+            positionals.push(*is_positional);
+            Some(root)
+        }
+        _ if positionals.is_empty() => Some(expr),
+        _ => None,
+    }
 }
 
 /// The topic the parameterless block form's scaffold `given` runs on.

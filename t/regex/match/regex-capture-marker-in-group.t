@@ -7,7 +7,7 @@ use Test;
 # folding a sub-pattern's captures into the outer result, so the match kept its
 # outer extent (`"<abc>"` instead of the marked `"abc"`).
 
-plan 7;
+plan 8;
 
 # --- markers directly (regression guard) ----------------------------------
 is ~($_ given ('<abc>' ~~ / '<' <( \w+ )> '>' /)), 'abc',
@@ -40,3 +40,19 @@ is ~($_ given ('<0.0.1>' ~~ / '<' ~ '>' [<( .+? )>] /)), '0.0.1',
     my $m = '<abc>' ~~ / '<' [<( $<w>=(\w+) )>] '>' /;
     is (~$m.<w>), 'abc', 'a named capture inside the marked group is preserved';
 }
+
+# A regex used as the predicate of .first publishes its Match through the
+# enclosing routine, as it does when the same regex is used directly.
+sub multipart-boundary(@headers) {
+    with @headers.first: {
+        .defined
+        && /
+            ^ 'multipart/' .* 'boundary=' '"' ? <( <-[">]>+ )>
+        /
+    } {
+        ~$/
+    }
+}
+is multipart-boundary(['multipart/byteranges; boundary=3d6b6a416f9b5']),
+    '3d6b6a416f9b5',
+    'a regex predicate in .first publishes its Match to the enclosing routine';

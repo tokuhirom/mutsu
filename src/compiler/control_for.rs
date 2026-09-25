@@ -215,7 +215,10 @@ impl Compiler {
         // `is copy` also makes the param writable (but without writeback).
         let has_copy = param_def
             .as_ref()
-            .is_some_and(|def| def.traits.iter().any(|t| t == "copy"));
+            .is_some_and(|def| def.traits.iter().any(|t| t == "copy"))
+            || params_def
+                .iter()
+                .any(|def| def.traits.iter().any(|t| t == "copy"));
 
         // Statements that bind the loop parameters (`-> \a, @b, %c`) and mark
         // them read-only. They must run — and the params must be bound —
@@ -240,11 +243,15 @@ impl Compiler {
             // be allowed. Also skip params whose OWN def is writable (`is copy`
             // / `is rw` / sigilless) — `-> $x is copy, $fn` must leave $x
             // assignable while $fn stays readonly.
-            if !has_rw && !has_copy && !params.is_empty() {
+            // `<->` makes every parameter writable. Per-parameter `is rw`,
+            // `is copy`, and sigilless bindings only make their own slot
+            // writable; a plain sibling must remain readonly.
+            if !rw_block && !params.is_empty() {
                 for (i, p) in params.iter().enumerate() {
                     let per_param_writable = params_def.get(i).is_some_and(|d| {
                         d.sigilless || d.traits.iter().any(|t| t == "rw" || t == "copy")
-                    });
+                    }) || (params_def.get(i).is_none()
+                        && p.starts_with('\\'));
                     if !p.starts_with('@') && !p.starts_with('%') && !per_param_writable {
                         bind_prefix.push(Stmt::MarkReadonly(
                             p.clone(),
@@ -457,6 +464,13 @@ impl Compiler {
                 multi_param_names: params
                     .iter()
                     .map(|p| p.strip_prefix('\\').unwrap_or(p).to_string())
+                    .collect(),
+                multi_param_is_copy: (0..params.len())
+                    .map(|i| {
+                        params_def
+                            .get(i)
+                            .is_some_and(|def| def.traits.iter().any(|t| t == "copy"))
+                    })
                     .collect(),
                 multi_param_locals,
                 param_type_constraint: param_def.as_ref().and_then(|d| d.type_constraint.clone()),

@@ -354,6 +354,34 @@ pub(crate) fn simple_pointy_bind(name: &str, source: &Expr, sigilless: bool) -> 
     }
 }
 
+/// Build the declaration used for a pointy parameter on a non-lvalue topic.
+///
+/// This is the copy-style counterpart of [`pointy_topic_bind`].  The older
+/// helper accepted only the parameter name and sigilless flag, which dropped a
+/// coercion/type constraint when `with`/`if` lowered `-> Int() $value` to a
+/// synthetic `VarDecl`.  Keep the full parameter metadata here so the normal
+/// declaration binder performs the same conversion and checks as an ordinary
+/// lexical initialization.
+pub(crate) fn pointy_param_bind_decl(pd: &ParamDef, source: &Expr) -> Stmt {
+    let decl = Stmt::VarDecl {
+        name: pd.name.clone(),
+        expr: source.clone(),
+        type_constraint: pd.type_constraint.clone(),
+        is_state: false,
+        is_our: false,
+        is_dynamic: false,
+        is_export: false,
+        export_tags: Vec::new(),
+        custom_traits: vec![("__has_initializer".to_string(), None)],
+        where_constraint: pd.where_constraint.clone(),
+    };
+    if pd.sigilless {
+        Stmt::SyntheticBlock(vec![decl, Stmt::MarkSigillessReadonly(pd.name.clone())])
+    } else {
+        decl
+    }
+}
+
 /// Build a zero-argument method call expression (`$expr.NAME`).
 fn method_call(target: Expr, name: &str) -> Expr {
     Expr::MethodCall {

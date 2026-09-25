@@ -1565,7 +1565,7 @@ pub(crate) struct Compiler {
     /// While compiling a `with`/`without` condition, replace the ordinary
     /// index read with `TagElementSource` so the topicalizing `given` can write
     /// back the element without evaluating an effectful index twice.
-    with_element_source_capture: Option<(String, bool)>,
+    with_element_source_capture: Option<(String, Vec<bool>)>,
     /// Set true immediately before compiling a *synthesized* `Stmt::Block`
     /// (an if/while/loop/control branch body the compiler wraps at compile time,
     /// not a genuine source `{ ... }`). The `Stmt::Block` arm consumes it to
@@ -3392,7 +3392,25 @@ impl Compiler {
             // assignment + later MarkReadonly; `%`-sigil is left as plain
             // assignment — `.hash` mis-coerces an itemized hash.)
             let value_expr = if actual_name.starts_with('@') && slurpy_kind.is_none() {
-                Expr::DeitemizeForBind(Box::new(value_expr))
+                if params_def
+                    .get(i)
+                    .is_some_and(|def| def.traits.iter().any(|t| t == "copy"))
+                {
+                    // `is copy` already reifies a List-valued element into a
+                    // mutable Array in the VM. Preserve that kind here;
+                    // `DeitemizeForBind` deliberately calls `.list` for an
+                    // untyped aggregate and would turn the copy back into an
+                    // immutable List before the body sees it.
+                    Expr::MethodCall {
+                        target: Box::new(value_expr),
+                        name: Symbol::intern("Array"),
+                        args: Vec::new(),
+                        modifier: None,
+                        quoted: false,
+                    }
+                } else {
+                    Expr::DeitemizeForBind(Box::new(value_expr))
+                }
             } else {
                 value_expr
             };

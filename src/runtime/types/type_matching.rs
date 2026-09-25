@@ -1102,6 +1102,16 @@ impl Interpreter {
                     return false;
                 }
                 "Buf" | "Blob" => {
+                    if let ValueView::ParametricRole {
+                        base_name,
+                        type_args,
+                    } = value.view()
+                        && base_name.as_str() == base
+                        && type_args.len() == 1
+                    {
+                        let expected = self.type_arg_value_from_name(inner);
+                        return self.parametric_arg_subtypes(&type_args[0], &expected);
+                    }
                     if let ValueView::Instance {
                         class_name,
                         attributes,

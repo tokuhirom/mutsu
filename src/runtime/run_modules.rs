@@ -1387,14 +1387,27 @@ impl Interpreter {
         // to its OWN name look foreign — caught by `battery-testsuite.sh`,
         // not by `make test`/`make roast`.
         let module_unit = self.unit_of_source(Some(&source_path.to_string_lossy()));
-        let mut granted_packages: HashSet<&str> = HashSet::new();
-        granted_packages.insert(module);
+        let mut granted_packages: HashSet<String> = HashSet::new();
+        granted_packages.insert(module.to_string());
         if let Some(name) = unit_name.as_deref() {
-            granted_packages.insert(name);
+            granted_packages.insert(name.to_string());
         }
         for qualified in &new_types {
             if *qualified == module || qualified.starts_with(&format!("{module}::")) {
-                granted_packages.insert(qualified);
+                granted_packages.insert(qualified.clone());
+            }
+        }
+        // A source file without a `unit` declarator can still publish a
+        // qualified type into an existing package, as HTTP::Tiny::Test does
+        // with `class Test::Handle`. Only types recorded while THIS module's
+        // body was running belong here; `new_types` also contains declarations
+        // from nested `use`s and must not make their packages visible through
+        // a transitive dependency.
+        if let Some(owned_types) = self.module_owned_types.get(module).cloned() {
+            for qualified in owned_types {
+                if let Some((package, _)) = qualified.rsplit_once("::") {
+                    granted_packages.insert(package.to_string());
+                }
             }
         }
         {
@@ -1415,7 +1428,10 @@ impl Interpreter {
         let grant: HashSet<String> = granted_packages
             .iter()
             .flat_map(|pkg| {
-                let top = pkg.split_once("::").map_or(*pkg, |(top, _)| top);
+                let top = crate::qualified::package_ancestors(crate::symbol::Symbol::intern(pkg))
+                    .last()
+                    .map(|sym| sym.as_str())
+                    .unwrap_or(pkg.as_str());
                 [pkg.to_string(), top.to_string()]
             })
             .collect();

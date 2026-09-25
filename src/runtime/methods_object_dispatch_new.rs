@@ -453,6 +453,24 @@ impl Interpreter {
             type_args,
         } = target.view()
         {
+            // `Buf[T]`/`Blob[T]` type objects use the same ParametricRole
+            // representation as user roles, but their `.new` is a native byte
+            // buffer constructor. In particular, `Buf[uint8].new` arrives here
+            // as the canonical `Blob[uint8]` role object and must not fall
+            // through to the generic role-punning path.
+            let type_args_name = type_args
+                .iter()
+                .map(|arg| match arg.view() {
+                    ValueView::Package(name) => name.resolve().to_string(),
+                    _ => arg.to_string_value(),
+                })
+                .collect::<Vec<_>>()
+                .join(",");
+            let parametric_name = format!("{}[{}]", base_name.resolve(), type_args_name);
+            if crate::runtime::utils::is_buf_or_blob_class(&parametric_name) {
+                let class_name = Symbol::intern(&parametric_name);
+                return Ok(Self::build_native_buf_value(class_name, &args));
+            }
             let base_name_str = base_name.resolve();
             // Punning a *parameterised* role: build a real class that composes
             // the concrete parameterisation and construct through it, exactly as

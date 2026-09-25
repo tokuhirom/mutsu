@@ -928,9 +928,9 @@ impl Interpreter {
             // would "resolve" the attribute's `Supply` type constraint to the
             // enclosing class itself instead of the real core `Supply` type.
             if !self.compound_name_segment_is_not_a_scope(qualified)
-                && self.has_type_direct(qualified)
+                && let Some(key) = self.resolve_lexical_type_key(qualified)
             {
-                return qualified.to_string();
+                return key;
             }
         }
         if let Some(ValueView::Package(target)) = self

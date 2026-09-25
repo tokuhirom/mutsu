@@ -1994,7 +1994,7 @@ impl Interpreter {
     // Cost: O(m + e), m = match-variable slots of `code` (`$/`, `$0`, ...), e =
     // names in `extra` (one index probe each) -- both from the chunk's slot
     // index, so the frame's other locals are never visited.
-    pub(super) fn writeback_match_locals(
+    pub(crate) fn writeback_match_locals(
         &mut self,
         code: &CompiledCode,
         extra: &std::collections::HashSet<String>,

@@ -850,36 +850,21 @@ impl Interpreter {
                     // as $meth($invocant) — the first argument binds as self.
                     let mut params = vec!["self".to_string()];
                     params.extend(def.params.iter().filter(|p| p.as_str() != "self").cloned());
-                    let mut param_defs = vec![crate::ast::ParamDef {
-                        type_capture: None,
-                        name: "self".to_string(),
-                        default: None,
-                        multi_invocant: true,
-                        required: false,
-                        named: false,
-                        named_alias: false,
-                        slurpy: false,
-                        double_slurpy: false,
-                        onearg: false,
-                        sigilless: false,
-                        type_constraint: None,
-                        literal_value: None,
-                        sub_signature: None,
-                        where_constraint: None,
-                        is_invocant: true,
-                        traits: Vec::new(),
-                        optional_marker: false,
-                        outer_sub_signature: None,
-                        code_signature: None,
-                        shape_constraints: None,
-                        block_param: false,
-                        trait_args: Vec::new(),
-                    }];
+                    let mut param_defs = vec![Self::make_invocant_param(cn)];
                     param_defs.extend(
                         def.param_defs
                             .iter()
                             .filter(|p| p.name.as_str() != "self")
                             .cloned(),
+                    );
+                    let mut env = crate::env::Env::new();
+                    env.insert(
+                        "__mutsu_lookup_class".to_string(),
+                        Value::str(cn.to_string()),
+                    );
+                    env.insert(
+                        "__mutsu_lookup_method".to_string(),
+                        Value::str(method_name.to_string()),
                     );
                     results.push(Value::make_sub(
                         Symbol::intern(cn),
@@ -888,7 +873,7 @@ impl Interpreter {
                         param_defs,
                         (*def.body).clone(),
                         def.is_rw,
-                        crate::env::Env::new(),
+                        env,
                     ));
                 }
             }

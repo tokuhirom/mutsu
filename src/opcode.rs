@@ -279,6 +279,10 @@ pub(crate) struct ForLoopSpec {
     /// Names of multi-param bindings (for `-> $a, \b, $c` loops).
     /// Used to temporarily clear sigilless readonly flags before binding.
     pub(crate) multi_param_names: Vec<String>,
+    /// Whether each multi-param binding carries `is copy`, parallel to
+    /// `multi_param_names`. This lets the VM reify a copied `@` parameter's
+    /// List value into a mutable Array before the bind-prefix assignments run.
+    pub(crate) multi_param_is_copy: Vec<bool>,
     /// Compiler-baked local slot for each `multi_param_names` entry, when the
     /// name already has one in the enclosing scope. A multi-param loop binds
     /// its parameters via a plain `Stmt::Assign` (`build_for_bind_stmts`), not
@@ -2093,6 +2097,14 @@ pub(crate) enum OpCode {
     TagElementSource {
         container_idx: u32,
         positional: bool,
+    },
+    /// Variant of `TagElementSource` for a chained lvalue such as
+    /// `with %h<a><b>`. The compiled indices are on the stack in source
+    /// order; the VM reads the final value and records the whole path so the
+    /// topicalizing `given` can write back to the leaf.
+    TagElementSourcePath {
+        container_idx: u32,
+        positionals: Vec<bool>,
     },
     /// Clear a pending `TagElementSource` when a `with`/`without` condition
     /// takes its false branch without entering the topicalizing `given`.

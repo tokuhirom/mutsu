@@ -24,76 +24,73 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 5.05,
+        "secs": 5.23,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Methods .^name, .raku, .gist, or .say can be used to stringify it to something meaningful.",
         "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 0.22,
+        "ok": 2,
+        "plan": 2,
+        "secs": 0.19,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/cookies.t",
       "raku": {
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 0.64,
+        "secs": 0.54,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Methods .^name, .raku, .gist, or .say can be used to stringify it to something meaningful.",
-        "nok": 2,
-        "ok": 0,
-        "plan": null,
-        "secs": 0.35,
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 0.27,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/errors.t",
       "raku": {
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 1.51,
+        "secs": 1.25,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Methods .^name, .raku, .gist, or .say can be used to stringify it to something meaningful.",
         "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 0.25,
+        "ok": 8,
+        "plan": 8,
+        "secs": 0.31,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/mirror.t",
       "raku": {
         "nok": 0,
         "ok": 8,
         "plan": 8,
-        "secs": 1.63,
+        "secs": 1.21,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -106,7 +103,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.53,
+        "secs": 0.4,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -119,7 +116,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.58,
+        "secs": 0.49,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -132,76 +129,73 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.55,
+        "secs": 0.37,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Type check failed in binding to parameter '$chunk'; expected Blob[uint8] but got Package",
         "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 0.22,
+        "ok": 14,
+        "plan": 14,
+        "secs": 0.4,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/requests.t",
       "raku": {
         "nok": 0,
         "ok": 14,
         "plan": 14,
-        "secs": 1.39,
+        "secs": 0.66,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Methods .^name, .raku, .gist, or .say can be used to stringify it to something meaningful.",
-        "nok": 16,
-        "ok": 0,
-        "plan": null,
-        "secs": 0.71,
+        "nok": 0,
+        "ok": 17,
+        "plan": 17,
+        "secs": 0.51,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/responses.t",
       "raku": {
         "nok": 0,
         "ok": 17,
         "plan": 17,
-        "secs": 1.05,
+        "secs": 0.63,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Cannot call 'shift' on an immutable 'List'",
         "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 0.26,
+        "ok": 10,
+        "plan": 10,
+        "secs": 0.2,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/url-parsing.t",
       "raku": {
         "nok": 0,
         "ok": 10,
         "plan": 10,
-        "secs": 0.79,
+        "secs": 0.55,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -213,10 +207,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-24",
+    "date": "2026-09-25",
     "harness": 2,
-    "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "338f021",
+    "host": "linux-x86_64",
+    "mutsu_commit": "4637000aa",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -227,13 +221,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/H/TT/HTTP_TINY/14fe10999d6aadb61aadd64c61a2b3dd3c90e2cb.tar.gz"
   },
-  "status": "partial",
+  "status": "green",
   "totals": {
     "baseline_assertions": 58,
     "baseline_files": 7,
-    "mutsu_assertions": 4,
-    "parity_files": 1,
-    "regressed_files": 6
+    "mutsu_assertions": 58,
+    "parity_files": 7,
+    "regressed_files": 0
   },
   "version": "0.2.6"
 }
