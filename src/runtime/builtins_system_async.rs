@@ -501,7 +501,11 @@ impl Interpreter {
             .collect();
 
         let supply_id = super::native_methods::next_supply_id();
-        arm_signal_supply(supply_id, &signals);
+        // A refused signal reader thread is a catchable X::AdHoc (#9401).
+        if let Err(e) = arm_signal_supply(supply_id, &signals) {
+            super::native_methods::discard_supply_channel(supply_id);
+            return Err(crate::runtime::builtins_system::refused_thread_error(e));
+        }
 
         let mut attrs = std::collections::HashMap::new();
         attrs.insert("values".to_string(), Value::array(Vec::new()));
@@ -529,7 +533,10 @@ fn signal_number(value: &Value) -> Option<i64> {
 /// watcher retired it (`rearm_signal_supply`), which is how rakudo behaves:
 /// its signal Supply arms the handler while a tap is in force and disarms it
 /// when the last one goes.
-fn arm_signal_supply(supply_id: u64, signals: &[Value]) {
+///
+/// Fails only when the OS refuses the process-wide signal reader thread on its
+/// first use (#9401).
+fn arm_signal_supply(supply_id: u64, signals: &[Value]) -> std::io::Result<()> {
     let (tx, rx) = super::native_methods::supply_channel::supply_event_channel();
 
     // Register the channel in the supply channel map
@@ -540,9 +547,10 @@ fn arm_signal_supply(supply_id: u64, signals: &[Value]) {
     // Set up real signal handling using pipe + sigaction
     for sig_val in signals {
         if let Some(signum) = signal_number(sig_val) {
-            signal_watcher::register_signal(signum as i32, supply_id, tx.clone(), sig_val.clone());
+            signal_watcher::register_signal(signum as i32, supply_id, tx.clone(), sig_val.clone())?;
         }
     }
+    Ok(())
 }
 
 /// Re-arm a `signal()` Supply that is being tapped again after the watcher
@@ -564,5 +572,7 @@ pub(crate) fn rearm_signal_supply(attrs: &crate::value::AttrMap) {
     if super::native_methods::has_supply_channel(supply_id) {
         return;
     }
-    arm_signal_supply(supply_id, &signals.to_vec());
+    // Re-arming only ever follows a `signal()` call that succeeded, and that
+    // call started the reader thread, so this cannot hit a refused spawn.
+    let _ = arm_signal_supply(supply_id, &signals.to_vec());
 }

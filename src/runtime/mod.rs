@@ -778,6 +778,7 @@ pub(crate) use native_io::{io_file_test, path_is_readable};
 mod native_io_special;
 pub(crate) mod native_methods;
 mod native_proc_async;
+mod native_proc_async_refusal;
 mod native_supplier_methods;
 mod native_supply_dispatch;
 mod native_supply_methods;

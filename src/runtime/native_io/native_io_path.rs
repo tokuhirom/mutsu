@@ -267,21 +267,13 @@ impl Interpreter {
                 let watched_path = path_buf.clone();
                 // Registered spawn (emits `Value`s into a supply channel);
                 // the poll sleep is a quiescent safe region — see
-                // `spawn_gc_helper_thread`.
-                crate::runtime::builtins_system::spawn_gc_helper_thread("io-path", move || {
-                    let poll_interval = std::time::Duration::from_millis(10);
-                    let mut last_state = fs::metadata(&watched_path).ok().map(|meta| {
-                        let modified = meta
-                            .modified()
-                            .ok()
-                            .and_then(|ts| ts.duration_since(std::time::UNIX_EPOCH).ok())
-                            .map(|dur| dur.as_nanos())
-                            .unwrap_or(0);
-                        (meta.len(), modified)
-                    });
-
-                    loop {
-                        let state = fs::metadata(&watched_path).ok().map(|meta| {
+                // `try_spawn_gc_helper_thread`. A refused thread is a catchable
+                // X::AdHoc (#9401).
+                let spawned = crate::runtime::builtins_system::try_spawn_gc_helper_thread(
+                    "io-path",
+                    move || {
+                        let poll_interval = std::time::Duration::from_millis(10);
+                        let mut last_state = fs::metadata(&watched_path).ok().map(|meta| {
                             let modified = meta
                                 .modified()
                                 .ok()
@@ -291,22 +283,38 @@ impl Interpreter {
                             (meta.len(), modified)
                         });
 
-                        if state != last_state {
-                            // Emit the watched path on each observable filesystem change.
-                            if tx
-                                .send(super::native_methods::SupplyEvent::Emit(Value::str(
-                                    Self::stringify_path(&watched_path),
-                                )))
-                                .is_err()
-                            {
-                                break;
-                            }
-                            last_state = state;
-                        }
+                        loop {
+                            let state = fs::metadata(&watched_path).ok().map(|meta| {
+                                let modified = meta
+                                    .modified()
+                                    .ok()
+                                    .and_then(|ts| ts.duration_since(std::time::UNIX_EPOCH).ok())
+                                    .map(|dur| dur.as_nanos())
+                                    .unwrap_or(0);
+                                (meta.len(), modified)
+                            });
 
-                        crate::gc::block_quiescent(|| std::thread::sleep(poll_interval));
-                    }
-                });
+                            if state != last_state {
+                                // Emit the watched path on each observable filesystem change.
+                                if tx
+                                    .send(super::native_methods::SupplyEvent::Emit(Value::str(
+                                        Self::stringify_path(&watched_path),
+                                    )))
+                                    .is_err()
+                                {
+                                    break;
+                                }
+                                last_state = state;
+                            }
+
+                            crate::gc::block_quiescent(|| std::thread::sleep(poll_interval));
+                        }
+                    },
+                );
+                if let Err(e) = spawned {
+                    super::native_methods::discard_supply_channel(supply_id);
+                    return Err(crate::runtime::builtins_system::refused_thread_error(e));
+                }
 
                 let mut attrs = HashMap::new();
                 attrs.insert("values".to_string(), Value::array(Vec::new()));

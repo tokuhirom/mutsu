@@ -540,6 +540,7 @@ impl Interpreter {
                 }
 
                 // Store stdin in global registry if piped
+                let mut stdin_spawned: std::io::Result<()> = Ok(());
                 if let Some(stdin) = child.stdin.take() {
                     let stdin_arc = std::sync::Arc::new(std::sync::Mutex::new(Some(stdin)));
                     if w_flag && let Ok(mut map) = proc_stdin_map().lock() {
@@ -552,66 +553,91 @@ impl Interpreter {
                         // never a `Gc` value, and the pipe write can block
                         // indefinitely — registering it would starve the GC's
                         // stop-the-world instead.
-                        std::thread::spawn(move || {
-                            if let Ok(mut guard) = stdin_arc.lock()
-                                && let Some(ref mut stdin) = *guard
-                            {
-                                let _ = stdin.write_all(&bytes);
-                                let _ = stdin.flush();
-                            }
-                            if let Ok(mut guard) = stdin_arc.lock() {
-                                *guard = None;
-                            }
-                        });
+                        stdin_spawned = std::thread::Builder::new()
+                            .name("proc-stdin".to_string())
+                            .spawn(move || {
+                                if let Ok(mut guard) = stdin_arc.lock()
+                                    && let Some(ref mut stdin) = *guard
+                                {
+                                    let _ = stdin.write_all(&bytes);
+                                    let _ = stdin.flush();
+                                }
+                                if let Ok(mut guard) = stdin_arc.lock() {
+                                    *guard = None;
+                                }
+                            })
+                            .map(drop);
                     } else if let Some(source_supply_id) = stdin_supply_id {
                         let stdin_arc = stdin_arc.clone();
                         // Receives `Value`s (Gc nodes) from the supply channel:
                         // must be a registered GC mutator, with the blocking
                         // recv as a quiescent safe region. Runs no user VM
                         // code, so the default stack suffices.
-                        crate::runtime::builtins_system::spawn_gc_helper_thread(
-                            "proc-in",
-                            move || {
-                                if let Some(rx) = take_supply_channel(source_supply_id) {
-                                    while let Ok(event) = crate::gc::block_quiescent(|| rx.recv()) {
-                                        match event {
-                                            SupplyEvent::Emit(value) => {
+                        stdin_spawned =
+                            crate::runtime::builtins_system::try_spawn_gc_helper_thread(
+                                "proc-in",
+                                move || {
+                                    if let Some(rx) = take_supply_channel(source_supply_id) {
+                                        while let Ok(event) =
+                                            crate::gc::block_quiescent(|| rx.recv())
+                                        {
+                                            match event {
+                                                SupplyEvent::Emit(value) => {
+                                                    if let Ok(mut guard) = stdin_arc.lock()
+                                                        && let Some(ref mut stdin) = *guard
+                                                    {
+                                                        let _ = stdin.write_all(
+                                                            value.to_string_value().as_bytes(),
+                                                        );
+                                                        let _ = stdin.flush();
+                                                    }
+                                                }
+                                                SupplyEvent::Done | SupplyEvent::Quit(_) => break,
+                                            }
+                                        }
+                                    } else {
+                                        loop {
+                                            if let Some(collected) =
+                                                get_supply_collected_output(source_supply_id)
+                                            {
                                                 if let Ok(mut guard) = stdin_arc.lock()
                                                     && let Some(ref mut stdin) = *guard
                                                 {
-                                                    let _ = stdin.write_all(
-                                                        value.to_string_value().as_bytes(),
-                                                    );
+                                                    let _ = stdin.write_all(collected.as_bytes());
                                                     let _ = stdin.flush();
                                                 }
+                                                break;
                                             }
-                                            SupplyEvent::Done | SupplyEvent::Quit(_) => break,
+                                            crate::gc::block_quiescent(|| {
+                                                std::thread::sleep(
+                                                    std::time::Duration::from_millis(10),
+                                                )
+                                            });
                                         }
                                     }
-                                } else {
-                                    loop {
-                                        if let Some(collected) =
-                                            get_supply_collected_output(source_supply_id)
-                                        {
-                                            if let Ok(mut guard) = stdin_arc.lock()
-                                                && let Some(ref mut stdin) = *guard
-                                            {
-                                                let _ = stdin.write_all(collected.as_bytes());
-                                                let _ = stdin.flush();
-                                            }
-                                            break;
-                                        }
-                                        crate::gc::block_quiescent(|| {
-                                            std::thread::sleep(std::time::Duration::from_millis(10))
-                                        });
+                                    if let Ok(mut guard) = stdin_arc.lock() {
+                                        *guard = None;
                                     }
-                                }
-                                if let Ok(mut guard) = stdin_arc.lock() {
-                                    *guard = None;
-                                }
-                            },
-                        );
+                                },
+                            )
+                            .map(drop);
                     }
+                }
+                // A refused stdin feeder (#9401): the child would wait for
+                // input that never comes, so end it and break the promise.
+                if let Err(e) = stdin_spawned {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    if let Ok(mut map) = proc_stdin_map().lock() {
+                        map.remove(&pid);
+                    }
+                    let promise = SharedPromise::new();
+                    promise.break_with(
+                        super::native_proc_async_refusal::refused_thread_exception(e),
+                        String::new(),
+                        String::new(),
+                    );
+                    return Ok((Value::promise(promise), attrs));
                 }
 
                 // Create streaming channels for stdout/stderr
@@ -774,221 +800,270 @@ impl Interpreter {
                 // registered GC mutator; its child-wait / joins are quiescent.
                 // Runs no user VM code (`keep` dispatches waiters to a fresh
                 // user thread), so the default stack suffices.
-                crate::runtime::builtins_system::spawn_gc_helper_thread("proc-wait", move || {
-                    // Spawn stdout reader thread — streams raw chunks through channel
-                    let stdout_handle = child_stdout.map(|stdout| {
-                        let sinks = stdout_sinks;
-                        let merged_quit = merged_quit.clone();
-                        let bin_mode = stdout_bin;
-                        let sid = stdout_supply_id;
-                        // Emits Buf `Value`s (Gc nodes): registered mutator,
-                        // pipe reads quiescent. No user VM code — default
-                        // stack.
-                        crate::runtime::builtins_system::spawn_gc_helper_thread(
-                            "proc-out",
-                            move || {
-                                use std::io::Read;
-                                let mut stdout = stdout;
-                                let mut collected = String::new();
-                                let mut raw: Vec<u8> = Vec::new();
-                                let mut buf = [0u8; 4096];
-                                let mut pending: Vec<u8> = Vec::new();
-                                let mut held = String::new();
-                                let mut quit = false;
-                                loop {
-                                    match crate::gc::block_quiescent(|| stdout.read(&mut buf)) {
-                                        Ok(0) => break,
-                                        Ok(n) => {
-                                            raw.extend_from_slice(&buf[..n]);
-                                            if bin_mode {
-                                                if !sinks.is_empty() {
-                                                    sinks.emit(make_buf_value(&buf[..n]));
+                let promise_on_refusal = promise.clone();
+                let spawned = crate::runtime::builtins_system::try_spawn_gc_helper_thread(
+                    "proc-wait",
+                    move || {
+                        // A reader the OS refused (#9401) leaves its stream
+                        // unread; the child is killed below and the promise
+                        // broken instead of kept.
+                        let mut refused: Option<std::io::Error> = None;
+                        // Spawn stdout reader thread — streams raw chunks through channel
+                        let stdout_handle = child_stdout.and_then(|stdout| {
+                            let sinks = stdout_sinks;
+                            let merged_quit = merged_quit.clone();
+                            let bin_mode = stdout_bin;
+                            let sid = stdout_supply_id;
+                            // Emits Buf `Value`s (Gc nodes): registered mutator,
+                            // pipe reads quiescent. No user VM code — default
+                            // stack.
+                            match crate::runtime::builtins_system::try_spawn_gc_helper_thread(
+                                "proc-out",
+                                move || {
+                                    use std::io::Read;
+                                    let mut stdout = stdout;
+                                    let mut collected = String::new();
+                                    let mut raw: Vec<u8> = Vec::new();
+                                    let mut buf = [0u8; 4096];
+                                    let mut pending: Vec<u8> = Vec::new();
+                                    let mut held = String::new();
+                                    let mut quit = false;
+                                    loop {
+                                        match crate::gc::block_quiescent(|| stdout.read(&mut buf)) {
+                                            Ok(0) => break,
+                                            Ok(n) => {
+                                                raw.extend_from_slice(&buf[..n]);
+                                                if bin_mode {
+                                                    if !sinks.is_empty() {
+                                                        sinks.emit(make_buf_value(&buf[..n]));
+                                                    }
+                                                } else if feed_utf8_incremental(
+                                                    &mut pending,
+                                                    &buf[..n],
+                                                    &sinks,
+                                                    &mut collected,
+                                                    true,
+                                                    &mut held,
+                                                ) {
+                                                    sinks.quit(
+                                                        malformed_utf8_quit_value(),
+                                                        &merged_quit,
+                                                    );
+                                                    quit = true;
+                                                    break;
                                                 }
-                                            } else if feed_utf8_incremental(
-                                                &mut pending,
-                                                &buf[..n],
-                                                &sinks,
-                                                &mut collected,
-                                                true,
-                                                &mut held,
-                                            ) {
-                                                sinks.quit(
-                                                    malformed_utf8_quit_value(),
-                                                    &merged_quit,
-                                                );
-                                                quit = true;
-                                                break;
                                             }
+                                            Err(_) => break,
                                         }
-                                        Err(_) => break,
                                     }
+                                    if !quit {
+                                        flush_held(&held, &sinks, &mut collected, true);
+                                        sinks.stream_done();
+                                    }
+                                    // Retain the raw bytes so the await-time replay can
+                                    // decode them with the stream's effective encoding
+                                    // (the channel/`collected` path above only handles the
+                                    // default UTF-8 case).
+                                    if let Some(sid) = sid {
+                                        set_supply_collected_bytes(sid, raw);
+                                    }
+                                    collected
+                                },
+                            ) {
+                                Ok(handle) => Some(handle),
+                                Err(e) => {
+                                    refused.get_or_insert(e);
+                                    None
                                 }
-                                if !quit {
-                                    flush_held(&held, &sinks, &mut collected, true);
-                                    sinks.stream_done();
-                                }
-                                // Retain the raw bytes so the await-time replay can
-                                // decode them with the stream's effective encoding
-                                // (the channel/`collected` path above only handles the
-                                // default UTF-8 case).
-                                if let Some(sid) = sid {
-                                    set_supply_collected_bytes(sid, raw);
-                                }
-                                collected
-                            },
-                        )
-                    });
+                            }
+                        });
 
-                    // Spawn stderr reader thread — streams raw chunks through channel
-                    let stderr_handle = child_stderr.map(|stderr| {
-                        let sinks = stderr_sinks;
-                        let merged_quit = merged_quit.clone();
-                        let bin_mode = stderr_bin;
-                        let sid = stderr_supply_id;
-                        // Same as the stdout reader: registered + quiescent
-                        // reads, no user VM code — default stack.
-                        crate::runtime::builtins_system::spawn_gc_helper_thread(
-                            "proc-err",
-                            move || {
-                                use std::io::Read;
-                                let mut stderr = stderr;
-                                let mut collected = String::new();
-                                let mut raw: Vec<u8> = Vec::new();
-                                let mut buf = [0u8; 4096];
-                                let mut pending: Vec<u8> = Vec::new();
-                                let mut held = String::new();
-                                let mut quit = false;
-                                loop {
-                                    match crate::gc::block_quiescent(|| stderr.read(&mut buf)) {
-                                        Ok(0) => break,
-                                        Ok(n) => {
-                                            raw.extend_from_slice(&buf[..n]);
-                                            if bin_mode {
-                                                if !sinks.is_empty() {
-                                                    sinks.emit(make_buf_value(&buf[..n]));
+                        // Spawn stderr reader thread — streams raw chunks through channel
+                        let stderr_handle = child_stderr.and_then(|stderr| {
+                            let sinks = stderr_sinks;
+                            let merged_quit = merged_quit.clone();
+                            let bin_mode = stderr_bin;
+                            let sid = stderr_supply_id;
+                            // Same as the stdout reader: registered + quiescent
+                            // reads, no user VM code — default stack.
+                            match crate::runtime::builtins_system::try_spawn_gc_helper_thread(
+                                "proc-err",
+                                move || {
+                                    use std::io::Read;
+                                    let mut stderr = stderr;
+                                    let mut collected = String::new();
+                                    let mut raw: Vec<u8> = Vec::new();
+                                    let mut buf = [0u8; 4096];
+                                    let mut pending: Vec<u8> = Vec::new();
+                                    let mut held = String::new();
+                                    let mut quit = false;
+                                    loop {
+                                        match crate::gc::block_quiescent(|| stderr.read(&mut buf)) {
+                                            Ok(0) => break,
+                                            Ok(n) => {
+                                                raw.extend_from_slice(&buf[..n]);
+                                                if bin_mode {
+                                                    if !sinks.is_empty() {
+                                                        sinks.emit(make_buf_value(&buf[..n]));
+                                                    }
+                                                } else if feed_utf8_incremental(
+                                                    &mut pending,
+                                                    &buf[..n],
+                                                    &sinks,
+                                                    &mut collected,
+                                                    false,
+                                                    &mut held,
+                                                ) {
+                                                    sinks.quit(
+                                                        malformed_utf8_quit_value(),
+                                                        &merged_quit,
+                                                    );
+                                                    quit = true;
+                                                    break;
                                                 }
-                                            } else if feed_utf8_incremental(
-                                                &mut pending,
-                                                &buf[..n],
-                                                &sinks,
-                                                &mut collected,
-                                                false,
-                                                &mut held,
-                                            ) {
-                                                sinks.quit(
-                                                    malformed_utf8_quit_value(),
-                                                    &merged_quit,
-                                                );
-                                                quit = true;
-                                                break;
                                             }
+                                            Err(_) => break,
                                         }
-                                        Err(_) => break,
                                     }
+                                    if !quit {
+                                        flush_held(&held, &sinks, &mut collected, false);
+                                        sinks.stream_done();
+                                    }
+                                    if let Some(sid) = sid {
+                                        set_supply_collected_bytes(sid, raw);
+                                    }
+                                    collected
+                                },
+                            ) {
+                                Ok(handle) => Some(handle),
+                                Err(e) => {
+                                    refused.get_or_insert(e);
+                                    None
                                 }
-                                if !quit {
-                                    flush_held(&held, &sinks, &mut collected, false);
-                                    sinks.stream_done();
-                                }
-                                if let Some(sid) = sid {
-                                    set_supply_collected_bytes(sid, raw);
-                                }
-                                collected
-                            },
-                        )
-                    });
+                            }
+                        });
 
-                    // Wait for child to exit (quiescent for the GC's STW)
-                    let status = crate::gc::block_quiescent(|| child.wait());
-                    let (exit_code, signal) = status
-                        .as_ref()
-                        .map(super::builtins_system::exit_status_parts)
-                        .unwrap_or((-1, 0));
+                        if refused.is_some() {
+                            let _ = child.kill();
+                        }
+                        // Wait for child to exit (quiescent for the GC's STW)
+                        let status = crate::gc::block_quiescent(|| child.wait());
+                        let (exit_code, signal) = status
+                            .as_ref()
+                            .map(super::builtins_system::exit_status_parts)
+                            .unwrap_or((-1, 0));
 
-                    // Join reader threads and collect output
-                    let collected_stdout = stdout_handle
-                        .and_then(|h| crate::gc::block_quiescent(|| h.join()).ok())
-                        .unwrap_or_default();
-                    let collected_stderr = stderr_handle
-                        .and_then(|h| crate::gc::block_quiescent(|| h.join()).ok())
-                        .unwrap_or_default();
-                    let collected_stdout = collected_stdout.replace("\r\n", "\n");
+                        // Join reader threads and collect output
+                        let collected_stdout = stdout_handle
+                            .and_then(|h| crate::gc::block_quiescent(|| h.join()).ok())
+                            .unwrap_or_default();
+                        let collected_stderr = stderr_handle
+                            .and_then(|h| crate::gc::block_quiescent(|| h.join()).ok())
+                            .unwrap_or_default();
+                        let collected_stdout = collected_stdout.replace("\r\n", "\n");
 
-                    // The merge ends only once BOTH readers have finished, so
-                    // its `Done` belongs here, after the joins above — never in
-                    // either reader, which would close the merged Supply while
-                    // the other stream was still producing. Skipped when a
-                    // reader already `quit` the merge on an encoding error.
-                    if let Some(tx) = merged_channel
-                        && !merged_quit.load(std::sync::atomic::Ordering::Acquire)
-                    {
-                        let _ = tx.send(SupplyEvent::Done);
-                    }
+                        // The merge ends only once BOTH readers have finished, so
+                        // its `Done` belongs here, after the joins above — never in
+                        // either reader, which would close the merged Supply while
+                        // the other stream was still producing. Skipped when a
+                        // reader already `quit` the merge on an encoding error.
+                        if let Some(tx) = merged_channel
+                            && !merged_quit.load(std::sync::atomic::Ordering::Acquire)
+                        {
+                            let _ = tx.send(SupplyEvent::Done);
+                        }
 
-                    // Join any live tap consumers spawned above: the reader
-                    // threads only guarantee the raw bytes were *read*, not that
-                    // a live-tapped stream's last chunk (and `done =>`) was
-                    // actually delivered to its callback yet.
-                    for handle in live_tap_handles {
-                        let _ = crate::gc::block_quiescent(|| handle.join());
-                    }
+                        // Join any live tap consumers spawned above: the reader
+                        // threads only guarantee the raw bytes were *read*, not that
+                        // a live-tapped stream's last chunk (and `done =>`) was
+                        // actually delivered to its callback yet.
+                        for handle in live_tap_handles {
+                            let _ = crate::gc::block_quiescent(|| handle.join());
+                        }
 
-                    // Clean up stdin registry
+                        // Clean up stdin registry
+                        if let Ok(mut map) = proc_stdin_map().lock() {
+                            map.remove(&pid);
+                        }
+                        if let Some(file) = bound_stdout_file.as_mut() {
+                            let _ = file.write_all(collected_stdout.as_bytes());
+                            let _ = file.flush();
+                        }
+                        if let Some(file) = bound_stderr_file.as_mut() {
+                            let _ = file.write_all(collected_stderr.as_bytes());
+                            let _ = file.flush();
+                        }
+                        if let Some(sid) = stdout_supply_id {
+                            set_supply_collected_output(sid, collected_stdout.clone());
+                        }
+                        if let Some(sid) = stderr_supply_id {
+                            set_supply_collected_output(sid, collected_stderr.clone());
+                        }
+                        let collected_merged = format!("{}{}", collected_stdout, collected_stderr);
+                        if let Some(sid) = merged_supply_id {
+                            set_supply_collected_output(sid, collected_merged.clone());
+                        }
+                        let stdout_taps = stdout_supply_id.map(get_supply_taps).unwrap_or_default();
+                        let stderr_taps = stderr_supply_id.map(get_supply_taps).unwrap_or_default();
+                        let supply_taps = merged_supply_id.map(get_supply_taps).unwrap_or_default();
+
+                        let mut proc_attrs = HashMap::new();
+                        proc_attrs.insert("exitcode".to_string(), Value::int(exit_code));
+                        proc_attrs.insert("signal".to_string(), Value::int(signal));
+                        proc_attrs.insert(
+                            "command".to_string(),
+                            Value::array_with_kind(
+                                crate::gc::Gc::new(crate::value::ArrayData::new(cmd_arr_clone)),
+                                crate::value::ArrayKind::List,
+                            ),
+                        );
+                        proc_attrs.insert("pid".to_string(), Value::int(pid as i64));
+                        if let Some(sid) = stdout_supply_id {
+                            proc_attrs
+                                .insert("stdout_supply_id".to_string(), Value::int(sid as i64));
+                        }
+                        if let Some(sid) = stderr_supply_id {
+                            proc_attrs
+                                .insert("stderr_supply_id".to_string(), Value::int(sid as i64));
+                        }
+                        proc_attrs
+                            .insert("collected_stdout".to_string(), Value::str(collected_stdout));
+                        proc_attrs
+                            .insert("collected_stderr".to_string(), Value::str(collected_stderr));
+                        proc_attrs
+                            .insert("collected_merged".to_string(), Value::str(collected_merged));
+                        proc_attrs.insert("stdout_taps".to_string(), Value::array(stdout_taps));
+                        proc_attrs.insert("stderr_taps".to_string(), Value::array(stderr_taps));
+                        if let Some(sid) = merged_supply_id {
+                            proc_attrs.insert("supply_id".to_string(), Value::int(sid as i64));
+                        }
+                        proc_attrs.insert("supply_taps".to_string(), Value::array(supply_taps));
+                        let proc_val = Value::make_instance(Symbol::intern("Proc"), proc_attrs);
+
+                        match refused {
+                            Some(e) => promise.break_with(
+                                super::native_proc_async_refusal::refused_thread_exception(e),
+                                String::new(),
+                                String::new(),
+                            ),
+                            None => promise.keep(proc_val, String::new(), String::new()),
+                        }
+                    },
+                );
+                // A refused `proc-wait` (#9401): nothing will ever wait for
+                // the child or feed its streams, so end it and break the
+                // promise. Its stream channels close with the dropped closure.
+                if let Err(e) = spawned {
+                    super::native_proc_async_refusal::kill_and_reap(pid);
                     if let Ok(mut map) = proc_stdin_map().lock() {
                         map.remove(&pid);
                     }
-                    if let Some(file) = bound_stdout_file.as_mut() {
-                        let _ = file.write_all(collected_stdout.as_bytes());
-                        let _ = file.flush();
-                    }
-                    if let Some(file) = bound_stderr_file.as_mut() {
-                        let _ = file.write_all(collected_stderr.as_bytes());
-                        let _ = file.flush();
-                    }
-                    if let Some(sid) = stdout_supply_id {
-                        set_supply_collected_output(sid, collected_stdout.clone());
-                    }
-                    if let Some(sid) = stderr_supply_id {
-                        set_supply_collected_output(sid, collected_stderr.clone());
-                    }
-                    let collected_merged = format!("{}{}", collected_stdout, collected_stderr);
-                    if let Some(sid) = merged_supply_id {
-                        set_supply_collected_output(sid, collected_merged.clone());
-                    }
-                    let stdout_taps = stdout_supply_id.map(get_supply_taps).unwrap_or_default();
-                    let stderr_taps = stderr_supply_id.map(get_supply_taps).unwrap_or_default();
-                    let supply_taps = merged_supply_id.map(get_supply_taps).unwrap_or_default();
-
-                    let mut proc_attrs = HashMap::new();
-                    proc_attrs.insert("exitcode".to_string(), Value::int(exit_code));
-                    proc_attrs.insert("signal".to_string(), Value::int(signal));
-                    proc_attrs.insert(
-                        "command".to_string(),
-                        Value::array_with_kind(
-                            crate::gc::Gc::new(crate::value::ArrayData::new(cmd_arr_clone)),
-                            crate::value::ArrayKind::List,
-                        ),
+                    promise_on_refusal.break_with(
+                        super::native_proc_async_refusal::refused_thread_exception(e),
+                        String::new(),
+                        String::new(),
                     );
-                    proc_attrs.insert("pid".to_string(), Value::int(pid as i64));
-                    if let Some(sid) = stdout_supply_id {
-                        proc_attrs.insert("stdout_supply_id".to_string(), Value::int(sid as i64));
-                    }
-                    if let Some(sid) = stderr_supply_id {
-                        proc_attrs.insert("stderr_supply_id".to_string(), Value::int(sid as i64));
-                    }
-                    proc_attrs.insert("collected_stdout".to_string(), Value::str(collected_stdout));
-                    proc_attrs.insert("collected_stderr".to_string(), Value::str(collected_stderr));
-                    proc_attrs.insert("collected_merged".to_string(), Value::str(collected_merged));
-                    proc_attrs.insert("stdout_taps".to_string(), Value::array(stdout_taps));
-                    proc_attrs.insert("stderr_taps".to_string(), Value::array(stderr_taps));
-                    if let Some(sid) = merged_supply_id {
-                        proc_attrs.insert("supply_id".to_string(), Value::int(sid as i64));
-                    }
-                    proc_attrs.insert("supply_taps".to_string(), Value::array(supply_taps));
-                    let proc_val = Value::make_instance(Symbol::intern("Proc"), proc_attrs);
-
-                    promise.keep(proc_val, String::new(), String::new());
-                });
+                }
 
                 Ok((ret, attrs))
             }

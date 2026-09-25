@@ -766,10 +766,10 @@ impl Interpreter {
         // at the coercion site). The helper thread is GC-registered
         // (`spawn_user_thread`) per the Gc-thread registration rule — never a
         // raw `std::thread::spawn`. This must be `spawn_user_thread`, not
-        // `spawn_gc_helper_thread`: `drive_react_subscriptions` below runs the
+        // `try_spawn_gc_helper_thread`: `drive_react_subscriptions` below runs the
         // whenever body as real VM bytecode (method dispatch, grammar/regex
         // recursion, ...), i.e. genuine user code, not GC-helper plumbing —
-        // `spawn_gc_helper_thread`'s default ~2 MiB stack overflows on deep
+        // `try_spawn_gc_helper_thread`'s default ~2 MiB stack overflows on deep
         // recursion there (observed as a SIGSEGV inside grammar-driven regex
         // matching, e.g. `Cro::HTTP::Cookie.from-set-cookie`).
         let seed = static_last_value

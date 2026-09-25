@@ -2197,11 +2197,16 @@ impl Interpreter {
                 // Ticks are driven by the process-wide shared interval timer
                 // (one deadline-heap thread), not a sleep-loop thread per
                 // interval instance. The entry dies when the receiver drops.
-                super::native_methods::interval_timer::register_interval(
+                // A refused timer driver thread is a catchable X::AdHoc
+                // (#9401).
+                if let Err(e) = super::native_methods::interval_timer::register_interval(
                     std::time::Duration::from_secs_f64(period_secs),
                     std::time::Duration::from_secs_f64(initial_delay),
                     tx,
-                );
+                ) {
+                    super::native_methods::discard_supply_channel(supply_id);
+                    return Err(crate::runtime::builtins_system::refused_thread_error(e));
+                }
 
                 let mut attrs = HashMap::new();
                 attrs.insert("values".to_string(), Value::array(Vec::new()));

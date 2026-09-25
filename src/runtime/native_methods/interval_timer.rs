@@ -57,56 +57,75 @@ type TimerState = (Mutex<BinaryHeap<TimerEntry>>, Condvar);
 
 fn timer_state() -> &'static TimerState {
     static STATE: OnceLock<&'static TimerState> = OnceLock::new();
-    STATE.get_or_init(|| {
-        let state: &'static TimerState =
-            Box::leak(Box::new((Mutex::new(BinaryHeap::new()), Condvar::new())));
-        // On wasm there is no driver thread to spawn: the heap is driven by
-        // `wasm_fire_next_timer` from the cooperative scheduler's pump, which
-        // jumps the virtual clock to the earliest deadline rather than
-        // sleeping until it.
-        //
-        // One long-lived driver thread for the whole process. Actions may
-        // clone/drop `Gc` values (a kept promise handle), so the driver is a
-        // registered GC mutator; it parks quiescent while waiting.
-        #[cfg(not(target_arch = "wasm32"))]
-        crate::runtime::builtins_system::spawn_gc_helper_thread("timer", move || {
-            let (heap, cvar) = state;
-            let mut guard = heap.lock().unwrap();
-            loop {
-                let now = thread_compat::mono_now();
-                // Collect every due entry first, then run the actions with
-                // the heap lock released: an action registering a new timer
-                // (or dropping a value whose finalizer does) must not
-                // re-enter the heap mutex.
-                let mut due = Vec::new();
-                while guard.peek().is_some_and(|e| e.next <= now) {
-                    due.push(guard.pop().unwrap());
-                }
-                if due.is_empty() {
-                    let wait = match guard.peek() {
-                        // Nothing scheduled: sleep until a registration pokes
-                        // us. Bounded waits keep the thread responsive to a
-                        // GC stop-the-world (block_quiescent would pin the
-                        // heap lock; short chunks avoid holding anything
-                        // during the actual wait).
-                        None => Duration::from_millis(500),
-                        Some(entry) => Duration::from_secs_f64((entry.next - now).max(0.0)),
-                    };
-                    let (g, _) =
-                        crate::gc::block_quiescent(|| cvar.wait_timeout(guard, wait).unwrap());
-                    guard = g;
-                    continue;
-                }
-                drop(guard);
-                let reschedule = run_due_actions(due);
-                guard = heap.lock().unwrap();
-                for entry in reschedule {
-                    guard.push(entry);
-                }
+    STATE.get_or_init(|| Box::leak(Box::new((Mutex::new(BinaryHeap::new()), Condvar::new()))))
+}
+
+/// Start the process-wide driver thread on first use.
+///
+/// On wasm there is no driver thread to spawn: the heap is driven by
+/// `wasm_fire_next_timer` from the cooperative scheduler's pump, which jumps
+/// the virtual clock to the earliest deadline rather than sleeping until it.
+///
+/// One long-lived driver thread for the whole process. Actions may clone/drop
+/// `Gc` values (a kept promise handle), so the driver is a registered GC
+/// mutator; it parks quiescent while waiting. A refused spawn (#9401) is
+/// reported to the registering caller and leaves the driver unstarted, so the
+/// next registration tries again instead of the whole process panicking.
+#[cfg(not(target_arch = "wasm32"))]
+fn ensure_driver() -> std::io::Result<()> {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    static STARTED: AtomicBool = AtomicBool::new(false);
+    static STARTING: Mutex<()> = Mutex::new(());
+    if STARTED.load(Ordering::Acquire) {
+        return Ok(());
+    }
+    let _guard = STARTING.lock().unwrap_or_else(|e| e.into_inner());
+    if STARTED.load(Ordering::Acquire) {
+        return Ok(());
+    }
+    let state = timer_state();
+    crate::runtime::builtins_system::try_spawn_gc_helper_thread("timer", move || {
+        let (heap, cvar) = state;
+        let mut guard = heap.lock().unwrap();
+        loop {
+            let now = thread_compat::mono_now();
+            // Collect every due entry first, then run the actions with
+            // the heap lock released: an action registering a new timer
+            // (or dropping a value whose finalizer does) must not
+            // re-enter the heap mutex.
+            let mut due = Vec::new();
+            while guard.peek().is_some_and(|e| e.next <= now) {
+                due.push(guard.pop().unwrap());
             }
-        });
-        state
-    })
+            if due.is_empty() {
+                let wait = match guard.peek() {
+                    // Nothing scheduled: sleep until a registration pokes
+                    // us. Bounded waits keep the thread responsive to a
+                    // GC stop-the-world (block_quiescent would pin the
+                    // heap lock; short chunks avoid holding anything
+                    // during the actual wait).
+                    None => Duration::from_millis(500),
+                    Some(entry) => Duration::from_secs_f64((entry.next - now).max(0.0)),
+                };
+                let (g, _) = crate::gc::block_quiescent(|| cvar.wait_timeout(guard, wait).unwrap());
+                guard = g;
+                continue;
+            }
+            drop(guard);
+            let reschedule = run_due_actions(due);
+            guard = heap.lock().unwrap();
+            for entry in reschedule {
+                guard.push(entry);
+            }
+        }
+    })?;
+    STARTED.store(true, Ordering::Release);
+    Ok(())
+}
+
+#[cfg(target_arch = "wasm32")]
+fn ensure_driver() -> std::io::Result<()> {
+    Ok(())
 }
 
 /// Run each due entry's action (with the heap lock RELEASED — see the module
@@ -162,8 +181,10 @@ pub(crate) fn wasm_fire_next_timer() -> bool {
 /// Register a raw timer entry: `action` runs on the driver thread `delay`
 /// from now, then again every `Some(period)` it returns. Driver-thread rules
 /// apply (cheap actions only, never user VM code — enqueue to the worker pool
-/// instead).
-pub(crate) fn register_entry(delay: Duration, action: TimerAction) {
+/// instead). Fails only when the OS refuses the driver thread on first use;
+/// the entry is then not registered.
+pub(crate) fn register_entry(delay: Duration, action: TimerAction) -> std::io::Result<()> {
+    ensure_driver()?;
     let (heap, cvar) = timer_state();
     let mut guard = heap.lock().unwrap();
     guard.push(TimerEntry {
@@ -171,6 +192,7 @@ pub(crate) fn register_entry(delay: Duration, action: TimerAction) {
         action,
     });
     cvar.notify_all();
+    Ok(())
 }
 
 /// Clamp a user-supplied seconds value to a `Duration` that is safe to add to
@@ -193,7 +215,7 @@ pub(crate) fn register_interval(
     period: Duration,
     initial_delay: Duration,
     tx: super::supply_channel::SupplySender,
-) {
+) -> std::io::Result<()> {
     let mut tick: i64 = 0;
     register_entry(
         initial_delay,
@@ -206,13 +228,16 @@ pub(crate) fn register_interval(
                 None
             }
         }),
-    );
+    )
 }
 
 /// Register a one-shot action to run once `delay` from now. The action runs
 /// on the shared driver thread, so it must stay cheap (keep a promise, spawn
 /// a worker) — never run user VM code in it.
-pub(crate) fn register_once(delay: Duration, action: Box<dyn FnOnce() + Send>) {
+pub(crate) fn register_once(
+    delay: Duration,
+    action: Box<dyn FnOnce() + Send>,
+) -> std::io::Result<()> {
     let mut action = Some(action);
     register_entry(
         delay,
@@ -222,5 +247,5 @@ pub(crate) fn register_once(delay: Duration, action: Box<dyn FnOnce() + Send>) {
             }
             None
         }),
-    );
+    )
 }

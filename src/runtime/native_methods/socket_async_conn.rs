@@ -189,68 +189,76 @@ impl Interpreter {
                 // Registered spawn: emits freshly built `Gc` values (Buf
                 // instances) whose drops on a failed send must not race a
                 // cycle scan; the blocking read is a quiescent safe region.
-                crate::runtime::builtins_system::spawn_gc_helper_thread("sock-conn", move || {
-                    use std::io::Read;
-                    let mut buf = [0u8; 4096];
-                    // Text mode carries decoding state across reads: TCP splits
-                    // wherever it likes, so a read can end mid-UTF-8-sequence
-                    // (`pending_bytes`) or mid-grapheme (`pending_text`, e.g. a
-                    // "u" whose COMBINING DOT ABOVE is in the next packet).
-                    // Emitting either half on its own is wrong, so both are held
-                    // back until the next read resolves them or the stream ends.
-                    let mut pending_bytes: Vec<u8> = Vec::new();
-                    let mut pending_text = String::new();
-                    loop {
-                        match crate::gc::block_quiescent(|| reader.read(&mut buf)) {
-                            Ok(0) => {
-                                if !is_bin && !pending_text.is_empty() {
-                                    let _ = tx.send(SupplyEvent::Emit(Value::str(std::mem::take(
-                                        &mut pending_text,
-                                    ))));
-                                }
-                                let _ = tx.send(SupplyEvent::Done);
-                                break;
-                            }
-                            Ok(n) => {
-                                let value = if is_bin {
-                                    Some(Self::make_buf(buf[..n].to_vec()))
-                                } else {
-                                    match Self::decode_socket_chunk(
-                                        &buf[..n],
-                                        &enc,
-                                        &mut pending_bytes,
-                                        &mut pending_text,
-                                    ) {
-                                        Ok(text) => text.map(Value::str),
-                                        // Not UTF-8: Raku quits the Supply with
-                                        // the decode failure rather than
-                                        // substituting replacement characters.
-                                        Err(()) => {
-                                            let _ = tx.send(SupplyEvent::Quit(
-                                                Self::malformed_utf8_exception(),
-                                            ));
-                                            break;
-                                        }
+                let spawned = crate::runtime::builtins_system::try_spawn_gc_helper_thread(
+                    "sock-conn",
+                    move || {
+                        use std::io::Read;
+                        let mut buf = [0u8; 4096];
+                        // Text mode carries decoding state across reads: TCP splits
+                        // wherever it likes, so a read can end mid-UTF-8-sequence
+                        // (`pending_bytes`) or mid-grapheme (`pending_text`, e.g. a
+                        // "u" whose COMBINING DOT ABOVE is in the next packet).
+                        // Emitting either half on its own is wrong, so both are held
+                        // back until the next read resolves them or the stream ends.
+                        let mut pending_bytes: Vec<u8> = Vec::new();
+                        let mut pending_text = String::new();
+                        loop {
+                            match crate::gc::block_quiescent(|| reader.read(&mut buf)) {
+                                Ok(0) => {
+                                    if !is_bin && !pending_text.is_empty() {
+                                        let _ = tx.send(SupplyEvent::Emit(Value::str(
+                                            std::mem::take(&mut pending_text),
+                                        )));
                                     }
-                                };
-                                if let Some(value) = value
-                                    && tx.send(SupplyEvent::Emit(value)).is_err()
-                                {
+                                    let _ = tx.send(SupplyEvent::Done);
+                                    break;
+                                }
+                                Ok(n) => {
+                                    let value = if is_bin {
+                                        Some(Self::make_buf(buf[..n].to_vec()))
+                                    } else {
+                                        match Self::decode_socket_chunk(
+                                            &buf[..n],
+                                            &enc,
+                                            &mut pending_bytes,
+                                            &mut pending_text,
+                                        ) {
+                                            Ok(text) => text.map(Value::str),
+                                            // Not UTF-8: Raku quits the Supply with
+                                            // the decode failure rather than
+                                            // substituting replacement characters.
+                                            Err(()) => {
+                                                let _ = tx.send(SupplyEvent::Quit(
+                                                    Self::malformed_utf8_exception(),
+                                                ));
+                                                break;
+                                            }
+                                        }
+                                    };
+                                    if let Some(value) = value
+                                        && tx.send(SupplyEvent::Emit(value)).is_err()
+                                    {
+                                        break;
+                                    }
+                                }
+                                Err(_) => {
+                                    if !is_bin && !pending_text.is_empty() {
+                                        let _ = tx.send(SupplyEvent::Emit(Value::str(
+                                            std::mem::take(&mut pending_text),
+                                        )));
+                                    }
+                                    let _ = tx.send(SupplyEvent::Done);
                                     break;
                                 }
                             }
-                            Err(_) => {
-                                if !is_bin && !pending_text.is_empty() {
-                                    let _ = tx.send(SupplyEvent::Emit(Value::str(std::mem::take(
-                                        &mut pending_text,
-                                    ))));
-                                }
-                                let _ = tx.send(SupplyEvent::Done);
-                                break;
-                            }
                         }
-                    }
-                });
+                    },
+                );
+                // A refused reader thread (#9401) is a catchable X::AdHoc.
+                if let Err(e) = spawned {
+                    discard_supply_channel(supply_id);
+                    return Err(crate::runtime::builtins_system::refused_thread_error(e));
+                }
             }
         }
         let mut attrs = HashMap::new();

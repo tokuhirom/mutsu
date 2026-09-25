@@ -30,16 +30,19 @@ impl Interpreter {
     /// deadline-heap timer — no per-timer OS thread. `keep` never runs user
     /// code on the resolver (waiters dispatch to their own thread), so it is
     /// safe on the timer driver. `+Inf` means the promise never resolves.
-    fn keep_promise_after(promise: SharedPromise, secs: f64) {
+    /// A refused timer driver thread is a catchable X::AdHoc, as for
+    /// `Promise.allof` (ADR-0123, #9401).
+    fn keep_promise_after(promise: SharedPromise, secs: f64) -> Result<(), RuntimeError> {
         if secs == f64::INFINITY {
-            return;
+            return Ok(());
         }
         super::native_methods::interval_timer::register_once(
             super::native_methods::interval_timer::clamp_delay_secs(secs),
             Box::new(move || {
                 promise.keep(Value::TRUE, String::new(), String::new());
             }),
-        );
+        )
+        .map_err(crate::runtime::builtins_system::refused_thread_error)
     }
 
     /// The `$*SCHEDULER` currently in effect, but only when it is a
@@ -150,7 +153,9 @@ impl Interpreter {
                 }
                 return Some(Ok(ret));
             }
-            Self::keep_promise_after(promise, secs);
+            if let Err(e) = Self::keep_promise_after(promise, secs) {
+                return Some(Err(e));
+            }
             return Some(Ok(ret));
         }
         None
@@ -198,7 +203,9 @@ impl Interpreter {
                 }
                 return Some(Ok(ret));
             }
-            Self::keep_promise_after(promise, delay);
+            if let Err(e) = Self::keep_promise_after(promise, delay) {
+                return Some(Err(e));
+            }
             return Some(Ok(ret));
         }
         None
