@@ -3120,6 +3120,8 @@ impl Interpreter {
         code: &CompiledCode,
         name_idx: u32,
         dynamic: bool,
+        local_slot: Option<u32>,
+        reset_binding: bool,
     ) {
         let name = Self::const_str(code, name_idx);
         // The env is Symbol-keyed and this op runs on *every* `my` declaration
@@ -3292,7 +3294,18 @@ impl Interpreter {
         // `&name = Any` before the RHS runs makes `EVAL(q[sub name() { ... }])`
         // look like a routine redeclaration instead of producing a callable to
         // bind into `my &name = ...`.
-        if !name.starts_with('&') && !self.env().contains_key_sym(name_sym) {
+        if reset_binding && !name.starts_with('&') {
+            let had_binding = self.env().contains_key_sym(name_sym);
+            // The first execution of a body-local declaration must leave an
+            // outer same-named binding visible while the initializer runs.
+            // Once this declaration has run in a loop body, however, its
+            // binding is reused by the next iteration and must be reset before
+            // a failing initializer can leave the prior iteration's value in
+            // place.
+            let reset_for_reused_loop_binding = self
+                .loop_local_vars
+                .last()
+                .is_some_and(|set| set.contains(&name_sym));
             let default = if name.starts_with('@') {
                 Value::real_array(Vec::new())
             } else if name.starts_with('%') {
@@ -3300,8 +3313,20 @@ impl Interpreter {
             } else {
                 Value::package(crate::symbol::wk::any())
             };
-            crate::env::note_env_key(name);
-            self.env_mut().insert_sym(name_sym, default);
+            if (reset_for_reused_loop_binding || !had_binding)
+                && let Some(slot) = local_slot
+                && let Some(local) = self.locals.get_mut(slot as usize)
+            {
+                // A declaration creates a fresh binding before its
+                // initializer runs. If the initializer throws, there is no
+                // SetLocal store to replace the old value, so reset the slot
+                // here instead of leaking a previous loop iteration's value.
+                *local = default.clone();
+            }
+            if reset_for_reused_loop_binding || !had_binding {
+                crate::env::note_env_key(name);
+                self.env_mut().insert_sym(name_sym, default);
+            }
         }
         // Track this variable as declared within the current block scope.
         // BlockScope restoration uses this to avoid propagating block-local

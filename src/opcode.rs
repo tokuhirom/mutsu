@@ -2898,6 +2898,15 @@ pub(crate) enum OpCode {
     SetVarDynamic {
         name_idx: u32,
         dynamic: bool,
+        /// The local slot of an ordinary `my` declaration, when it has one.
+        /// The VM resets this slot before evaluating the initializer so a
+        /// failed initializer cannot leave the previous loop iteration's
+        /// value visible through the fresh declaration.
+        local_slot: Option<u32>,
+        /// Whether this is an ordinary `my` binding that must be reset before
+        /// its initializer. `state`, `our`, and constants preserve their
+        /// existing binding when an initializer fails.
+        reset_binding: bool,
     },
     RegisterVarExport {
         name_idx: u32,

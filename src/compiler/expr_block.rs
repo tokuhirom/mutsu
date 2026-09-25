@@ -249,11 +249,38 @@ impl Compiler {
                     self.code.emit(OpCode::SetVarDynamic {
                         name_idx,
                         dynamic: is_dynamic,
+                        local_slot: decl_slot,
+                        reset_binding: !*is_state
+                            && !*is_our
+                            && !is_constant_decl
+                            && !name.starts_with('@')
+                            && !name.starts_with('%'),
                     });
                 }
                 let mark_explicit_local_init = decl_slot.is_some()
                     && custom_traits.iter().any(|(t, _)| t == "__has_initializer")
                     && !custom_traits.iter().any(|(t, _)| t == "default");
+                // Expression-position scalar declarations normally emit their
+                // `SetVarDynamic` after the initializer so the declaration's
+                // value can be returned through the env-only path. Reset the
+                // ordinary `my` binding before evaluating the initializer too,
+                // otherwise a failed initializer leaves a prior loop
+                // iteration's value in the env.
+                if decl_slot.is_none()
+                    && !*is_state
+                    && !*is_our
+                    && !is_constant_decl
+                    && !name.starts_with('@')
+                    && !name.starts_with('%')
+                {
+                    let name_idx = self.code.add_constant(Value::str(name.clone()));
+                    self.code.emit(OpCode::SetVarDynamic {
+                        name_idx,
+                        dynamic: is_dynamic,
+                        local_slot: None,
+                        reset_binding: true,
+                    });
+                }
                 // my $x = expr in expression context -> declare, assign, return value
                 if *is_state {
                     // Register the declared type constraint BEFORE the init,
@@ -702,6 +729,8 @@ impl Compiler {
                     self.code.emit(OpCode::SetVarDynamic {
                         name_idx,
                         dynamic: is_dynamic,
+                        local_slot: None,
+                        reset_binding: false,
                     });
                 }
                 // Register a scalar type constraint AFTER `SetVarDynamic` (which

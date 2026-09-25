@@ -1436,9 +1436,15 @@ impl Compiler {
                 }
                 let is_dynamic = *is_dynamic || self.var_is_dynamic(name);
                 let name_idx = self.code.add_constant(Value::str(name.clone()));
-                self.code.emit(OpCode::SetVarDynamic {
+                let set_var_dynamic_idx = self.code.emit(OpCode::SetVarDynamic {
                     name_idx,
                     dynamic: is_dynamic,
+                    local_slot: None,
+                    reset_binding: !*is_state
+                        && !*is_our
+                        && !is_constant_decl
+                        && !name.starts_with('@')
+                        && !name.starts_with('%'),
                 });
                 let has_default_trait = custom_traits.iter().any(|(n, _)| n == "default");
                 let has_explicit_initializer =
@@ -1746,6 +1752,14 @@ impl Compiler {
                     }
                 }
                 let slot = self.declare_local(name);
+                if !*is_state
+                    && !*is_our
+                    && !is_constant_decl
+                    && let OpCode::SetVarDynamic { local_slot, .. } =
+                        &mut self.code.ops[set_var_dynamic_idx]
+                {
+                    *local_slot = Some(slot);
+                }
                 if bind_vardecl {
                     // `my $x := EXPR` / `my @a := EXPR` / `my %h := EXPR`:
                     // record the declared slot as a bind target regardless of
