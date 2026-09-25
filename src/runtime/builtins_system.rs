@@ -8,6 +8,8 @@ pub(crate) enum StackPolicy {
     /// Optional growth (the worker pool adding capacity while other workers
     /// are still making progress): only a full-size stack, and only if it fits
     /// the address-space budget. It does not -> [`SpawnError::OverBudget`].
+    /// (wasm32 has no pool, so nothing grows optionally there.)
+    #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
     Budgeted,
     /// A thread that has to exist -- nothing else can run the work, or user
     /// code asked for a `Thread` explicitly. Steps down through the stack
@@ -223,7 +225,7 @@ where
         crate::gc::worker_started();
         let f = body
             .lock()
-            .unwrap()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
             .take()
             .expect("thread body taken twice");
         f()

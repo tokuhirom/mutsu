@@ -41,7 +41,7 @@ mod native {
     use crate::runtime::builtins_system::{SpawnError, StackPolicy};
     use std::cell::Cell;
     use std::collections::VecDeque;
-    use std::sync::{Condvar, Mutex, OnceLock};
+    use std::sync::{Condvar, Mutex, MutexGuard, OnceLock, PoisonError};
     use std::time::{Duration, Instant};
 
     pub(super) struct Task {
@@ -91,6 +91,13 @@ mod native {
             }
             (self.active() < soft_cap).then_some(StackPolicy::Budgeted)
         }
+    }
+
+    /// Lock the pool state. No user code ever runs under this lock, so a
+    /// poisoned lock can only mean a panic in the bookkeeping itself, whose
+    /// counters are still the best information there is: keep going.
+    pub(super) fn lock_pool() -> MutexGuard<'static, PoolState> {
+        pool().0.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
     /// Idle grace period for workers above the keep-alive floor.
@@ -159,10 +166,10 @@ mod native {
     /// on a thread that is free to run a rejecter (it holds no lock the
     /// rejected task's waiter could need).
     pub(super) fn grow_as_needed() {
-        let (lock, cvar) = pool();
+        let cvar = &pool().1;
         loop {
             let policy = {
-                let mut st = lock.lock().unwrap();
+                let mut st = lock_pool();
                 let Some(policy) = st.growth(soft_cap()) else {
                     return;
                 };
@@ -182,7 +189,7 @@ mod native {
                 Err(e) => e,
             };
             let rejected = {
-                let mut st = lock.lock().unwrap();
+                let mut st = lock_pool();
                 st.live -= 1;
                 st.starting -= 1;
                 match (policy, st.growth(soft_cap())) {
@@ -216,7 +223,7 @@ mod native {
 
     fn worker_loop() {
         {
-            let mut st = pool().0.lock().unwrap();
+            let mut st = lock_pool();
             st.starting -= 1;
         }
         while let Some(task) = wait_for_task() {
@@ -241,8 +248,8 @@ mod native {
         // so the whole wait counts quiescent: an idle pool never starves a
         // stop-the-world (ADR-0020 §3.3).
         crate::gc::block_quiescent(|| {
-            let (lock, cvar) = pool();
-            let mut st = lock.lock().unwrap();
+            let cvar = &pool().1;
+            let mut st = lock_pool();
             if let Some(task) = st.queue.pop_front() {
                 return Some(task);
             }
@@ -255,7 +262,7 @@ mod native {
                 }
                 if st.live <= keep_alive_floor() {
                     // At/below the floor: park until woken, no deadline.
-                    st = cvar.wait(st).unwrap();
+                    st = cvar.wait(st).unwrap_or_else(PoisonError::into_inner);
                     continue;
                 }
                 let now = Instant::now();
@@ -264,7 +271,9 @@ mod native {
                     st.live -= 1;
                     return None;
                 }
-                let (g, _) = cvar.wait_timeout(st, deadline - now).unwrap();
+                let (g, _) = cvar
+                    .wait_timeout(st, deadline - now)
+                    .unwrap_or_else(PoisonError::into_inner);
                 st = g;
             }
         })
@@ -282,7 +291,7 @@ mod native {
             }
             BLOCK_DEPTH.with(|d| d.set(d.get() - 1));
             if BLOCK_DEPTH.with(|d| d.get()) == 0 {
-                pool().0.lock().unwrap().blocked -= 1;
+                lock_pool().blocked -= 1;
             }
         }
     }
@@ -297,7 +306,7 @@ mod native {
             n
         });
         if depth == 1 {
-            pool().0.lock().unwrap().blocked += 1;
+            lock_pool().blocked += 1;
             grow_as_needed();
         }
         BlockingGuard { counted: true }
@@ -420,12 +429,11 @@ fn submit_task(run: Box<dyn FnOnce() + Send + 'static>, reject: Option<Rejecter>
         return;
     }
     crate::vm::vm_stats::record_pool_task();
-    let (lock, cvar) = native::pool();
     {
-        let mut st = lock.lock().unwrap();
+        let mut st = native::lock_pool();
         st.queue.push_back(native::Task { run, reject });
     }
-    cvar.notify_one();
+    native::pool().1.notify_one();
     native::grow_as_needed();
 }
 

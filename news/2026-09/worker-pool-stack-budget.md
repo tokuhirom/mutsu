@@ -24,4 +24,4 @@ of address space ([#9377](https://github.com/tokuhirom/mutsu/issues/9377)).
   `Supply.Promise`, slang activation and `Promise.allof` raise it.
 
 A 64-task CPU-bound burst under a 3 GB limit now runs on 8 workers; under
-`MUTSU_STACK_BUDGET_MB=0`, on one. Pinned by `t/concurrency/worker-pool-stack-budget.t`.
+`MUTSU_STACK_BUDGET_MB=0`, on one. Pinned by `t/concurrency/thread-lock/thread-pool-stack-budget.t`.
