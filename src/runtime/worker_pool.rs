@@ -4,7 +4,7 @@
 //! `submit` runs a task on a warm pooled worker when one is idle. Otherwise the
 //! pool decides between growing and queueing:
 //!
-//! - **Grow freely** while fewer than [`soft_cap`] workers are *active* (not
+//! - **Grow freely** while fewer than `8 x cores` workers are *active* (not
 //!   blocked) and a worker stack fits the address-space budget
 //!   (`stack_budget`).
 //! - **Queue** past that point: a worker that is still running will come back
@@ -20,7 +20,7 @@
 //!   `start` promise), never a panic.
 //!
 //! "Blocked" is observed at the GC's blocking choke points: `gc::block_quiescent`
-//! and `gc::wait_until` call [`enter_blocking`], which is also where the "no
+//! and `gc::wait_until` call `enter_blocking`, which is also where the "no
 //! worker is running" case is detected -- the moment the last running worker
 //! blocks, the queue gets a new worker.
 //!
