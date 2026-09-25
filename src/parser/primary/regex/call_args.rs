@@ -58,6 +58,14 @@ fn semicolon_groups_to_args(groups: Vec<Vec<Expr>>, _empty: Vec<Expr>) -> Vec<Ex
         .collect()
 }
 
+/// A list-infix operator (`Z`, `X`, `minmax`, a user infix `is equiv<Z>`) is
+/// looser than the comma separating call arguments, so it owns the whole
+/// comma level: `f(0, 1 Z 2, 3)` is `f((0, 1) Z (2, 3))`, one argument, just as
+/// for a listop call or a parenthesized list (#9405).
+fn finish_call_arg_group(args: Vec<Expr>) -> Vec<Expr> {
+    crate::parser::primary::lift_list_infix_in_arg_list(args)
+}
+
 /// Parse comma-separated call arguments inside parens.
 /// Semicolons act as list-associative separators: each `;`-delimited group
 /// is collected into an `Array` node, producing one arg per group.
@@ -178,7 +186,7 @@ pub(in crate::parser) fn parse_call_arg_list(input: &str) -> PResult<'_, Vec<Exp
                 groups.push(std::mem::take(&mut current_group));
                 return Ok((r, semicolon_groups_to_args(groups, current_group)));
             }
-            return Ok((r, current_group));
+            return Ok((r, finish_call_arg_group(current_group)));
         }
         let (r, _) = parse_char(r, ',')?;
         let (r, _) = ws(r)?;
@@ -187,7 +195,7 @@ pub(in crate::parser) fn parse_call_arg_list(input: &str) -> PResult<'_, Vec<Exp
                 groups.push(std::mem::take(&mut current_group));
                 return Ok((r, semicolon_groups_to_args(groups, current_group)));
             }
-            return Ok((r, current_group));
+            return Ok((r, finish_call_arg_group(current_group)));
         }
         let (r, arg) = parse_call_arg_expr(r)?;
         current_group.push(arg);

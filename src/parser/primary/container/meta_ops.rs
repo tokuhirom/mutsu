@@ -100,8 +100,22 @@ fn operand_curries(e: &Expr) -> bool {
     }
 }
 
+/// Whether an infixed-function node (`Expr::InfixFunc`) is a list-infix
+/// operator -- looser than the comma, so the comma list around it belongs to
+/// its operands: the built-in `minmax`, or a user infix declared at that level
+/// (`is equiv<Z>`, `is equiv(&infix:<...>)`, or looser; #9405).
+fn is_list_infix_func(name: &str) -> bool {
+    name == "minmax"
+        || crate::parser::stmt::simple::lookup_custom_infix_precedence(name)
+            .is_some_and(|level| level <= crate::parser::stmt::simple::PREC_SEQUENCE)
+}
+
+/// Lift a list-infix infixed function (see [`is_list_infix_func`]) across the
+/// comma list it sits in: the elements before it join its left operand and
+/// the ones after it its right operand.
 fn lift_minmax_in_paren_list(items: &[Expr]) -> Option<Expr> {
-    if items.len() < 3 {
+    // One neighbour is enough: `5 minmax 3, 2` is `5 minmax (3, 2)`.
+    if items.len() < 2 {
         return None;
     }
     let idx = items.iter().position(|expr| {
@@ -112,7 +126,7 @@ fn lift_minmax_in_paren_list(items: &[Expr]) -> Option<Expr> {
                 modifier: None,
                 right,
                 ..
-            } if name == "minmax" && right.len() == 1
+            } if right.len() == 1 && is_list_infix_func(name)
         )
     })?;
     let Expr::InfixFunc {
