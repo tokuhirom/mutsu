@@ -27,14 +27,20 @@ The handle is private to the Seq, which raised two problems.
   the `@*ARGS` / `$*IN` lookups now happen only for an `ArgFiles` handle. A full `.lines.elems`
   or `.words.elems` costs what the old slurp did.
 
-Release build, five calls each (the benchmark in the issue):
+Release build, five calls each (the benchmark in the issue), before and after on the same box:
 
 | case | before, 4 MB | before, 8 MB | after, 4 MB | after, 8 MB |
 | --- | ---: | ---: | ---: | ---: |
-| `IO.lines.head(3)` | 0.82 s | 1.41 s | 0.001 s | 0.0003 s |
-| `IO.words.head(3)` | 1.41 s | 3.22 s | 0.0002 s | 0.0002 s |
-| `IO.lines.elems` | 0.53 s | 1.14 s | 0.63 s | 1.22 s |
-| `IO.words.elems` | 0.77 s | 1.79 s | 0.73 s | 1.72 s |
+| `IO.lines.head(3)` | 0.76 s | 1.36 s | 0.0014 s | 0.0003 s |
+| `IO.words.head(3)` | 1.16 s | 2.67 s | 0.0002 s | 0.0002 s |
+| `IO.lines.elems` | 0.48 s | 1.07 s | 0.65 s | 1.18 s |
+| `IO.words.elems` | 0.77 s | 1.74 s | 0.82 s | 1.88 s |
+
+The full reads are within noise of each other: ten `.lines.elems` calls on the 4 MB file,
+repeated three times, took 1.03-1.06 s after against 0.99-1.03 s before.
+
+A BOM-only file has no lines, as before: the private reader drops a UTF-8 BOM before it cuts the
+first record, since each record is decoded on its own (`roast/S16-io/bom.t`).
 
 Pinned by `t/io/io-path-lines-words-lazy.t`, which also checks that 200 rounds of prefix reads
 leave no descriptors open.
