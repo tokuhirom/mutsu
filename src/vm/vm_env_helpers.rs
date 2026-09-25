@@ -1120,6 +1120,22 @@ impl Interpreter {
         false
     }
 
+    /// Rebind companion of [`Self::unit_scope_lexical_write`]: a `:=` of `name`
+    /// to a VALUE (`@b := [9]`, `$D := 0`) from inside a routine whose store
+    /// entry for `name` is a binding cell (see `binding_cell_of`) seats the new
+    /// binding inside that cell and reports `true`, so the caller skips every
+    /// other store. The declaring frame's slot holds the same binding cell, so
+    /// it sees the rebind, while a name `:=`-bound to the old container keeps
+    /// it. A write THROUGH the cell would instead reach that old container
+    /// (#9416). Reports `false`, touching nothing, for any other name.
+    pub(super) fn unit_scope_lexical_rebind(&mut self, name: &str, val: &Value) -> bool {
+        let Some(cell) = self.unit_lexical_slot(name).and_then(Self::binding_cell_of) else {
+            return false;
+        };
+        Self::seat_in_binding_cell(val.clone(), cell);
+        true
+    }
+
     /// Bind companion of [`Self::unit_scope_lexical_write`]: a `:=` installs a
     /// whole new binding for `name`, so it must REPLACE the store's cell rather
     /// than store a value through the existing one. Reports `true` when `name`

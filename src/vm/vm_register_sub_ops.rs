@@ -667,16 +667,27 @@ impl Interpreter {
                 // `compute_free_vars`'s doc comment on the two sets).
                 let mut free_syms: std::collections::HashSet<Symbol> =
                     std::collections::HashSet::new();
+                // The free variables the sub (or a closure inside it) REBINDS
+                // with `:=` (#9416): their store entry must be a binding cell,
+                // the named-sub twin of the one `box_captured_lexicals` gives a
+                // closure's capture (#9307). See the boxing below.
+                let mut rebound_syms: std::collections::HashSet<Symbol> =
+                    std::collections::HashSet::new();
                 if let Some(compiled) = primary_compiled {
                     free_syms.extend(compiled.code.free_var_syms.iter().copied());
                     free_syms.extend(compiled.code.free_var_writes.iter().copied());
+                    rebound_syms.extend(compiled.code.free_var_rebinds.iter().copied());
                 }
                 for slot in 0..signature_alternates.len() {
                     if let Some(alt_compiled) = plan_compiled(slot + 1) {
                         free_syms.extend(alt_compiled.code.free_var_syms.iter().copied());
                         free_syms.extend(alt_compiled.code.free_var_writes.iter().copied());
+                        rebound_syms.extend(alt_compiled.code.free_var_rebinds.iter().copied());
                     }
                 }
+                // A statement-level `$F := 5` neither reads nor writes `$F`, so
+                // a rebind-only free variable is in neither set above.
+                free_syms.extend(rebound_syms.iter().copied());
                 let mut captured_any = false;
                 for sym in free_syms {
                     let name = sym.resolve();
@@ -774,7 +785,7 @@ impl Interpreter {
                         continue;
                     }
                     let cur = self.locals[slot_idx].clone();
-                    let cell = if cur.is_container_ref() {
+                    let mut cell = if cur.is_container_ref() {
                         cur
                     } else if cur.is_nil() {
                         // Hoisted pass (or a `my $x;` whose initializer has not
@@ -788,6 +799,19 @@ impl Interpreter {
                         crate::vm::vm_stats::record_mainline_lexical_box();
                         boxed
                     };
+                    // A name the sub rebinds needs a binding cell (a cell whose
+                    // content is the variable's container), shared by this
+                    // frame's slot and the store. The sub's rebind then seats
+                    // the new binding INSIDE it (`unit_scope_lexical_rebind`),
+                    // so the declaring frame sees it, while a name `:=`-bound to
+                    // the old container keeps that container: with the plain
+                    // cell, `my @b := @a; sub f { @b := [9] }` stored `[9]`
+                    // through the cell `@b` shares with `@a` (#9416).
+                    if rebound_syms.contains(&sym) && Self::binding_cell_of(&cell).is_none() {
+                        cell = Self::wrap_in_binding_cell(cell);
+                        self.locals[slot_idx] = cell.clone();
+                        self.env_mut().insert(name.clone(), cell.clone());
+                    }
                     self.unit_lexicals_cow_mut()
                         .entry(unit_key.clone())
                         .or_default()
