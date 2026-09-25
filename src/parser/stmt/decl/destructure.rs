@@ -34,6 +34,59 @@ struct DestructureVar {
     sigilless: bool,
     /// Literal match value (e.g. `"foo"`)
     literal_value: Option<Expr>,
+    /// Parameter trait written on the element (`$a is rw`): the declarator
+    /// list is a signature, so `is rw` / `is raw` / `is copy` / `is readonly`
+    /// decide how a `:=` bind treats the element.
+    param_trait: Option<ParamTrait>,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ParamTrait {
+    Rw,
+    Raw,
+    Copy,
+    Readonly,
+}
+
+/// Parse the `is rw` / `is raw` / `is copy` / `is readonly` traits a
+/// declarator-list element may carry (`my ($a is rw, $b) := ...`). An unknown
+/// trait is a compile-time error, as in a parameter declaration; `is rw` on an
+/// `@`/`%` element is refused like rakudo does. Returns the input past the
+/// traits (and trailing whitespace) plus the last trait seen.
+fn parse_element_traits<'a>(
+    input: &'a str,
+    name: &str,
+) -> Result<(&'a str, Option<ParamTrait>), PError> {
+    let mut r = input;
+    let mut found = None;
+    while let Some(after_is) = keyword("is", r) {
+        let Ok((after_ws, _)) = ws1(after_is) else {
+            break;
+        };
+        let (after_name, trait_name) = ident(after_ws)?;
+        let t = match trait_name.as_str() {
+            "rw" => ParamTrait::Rw,
+            "raw" => ParamTrait::Raw,
+            "copy" => ParamTrait::Copy,
+            "readonly" => ParamTrait::Readonly,
+            other => {
+                return Err(PError::fatal(format!(
+                    "Can't use unknown trait 'is' -> '{other}' in a parameter declaration."
+                )));
+            }
+        };
+        if t == ParamTrait::Rw && name.starts_with(['@', '%']) {
+            let sigil = &name[..1];
+            return Err(PError::fatal(format!(
+                "For parameter '{name}', '{sigil}' sigil containers don't need 'is rw' to be writable\n\
+Can only use 'is rw' on a scalar ('$' sigil) parameter, not '{name}'"
+            )));
+        }
+        found = Some(t);
+        let (after, _) = ws(after_name)?;
+        r = after;
+    }
+    Ok((r, found))
 }
 
 /// Recursively collect the (flattened) sigilless/sigilled targets of a nested
@@ -65,6 +118,7 @@ fn collect_nested_group_vars<'a>(
                 where_constraint: None,
                 sigilless: true,
                 literal_value: None,
+                param_trait: None,
             });
             r = r2;
         } else {
@@ -87,6 +141,7 @@ fn collect_nested_group_vars<'a>(
                     where_constraint: None,
                     sigilless: false,
                     literal_value: None,
+                    param_trait: None,
                 });
                 r = r2;
             } else {
@@ -228,6 +283,7 @@ pub(in crate::parser::stmt) fn parse_destructuring_decl(
                 where_constraint,
                 sigilless: true,
                 literal_value: None,
+                param_trait: None,
             });
             if r2.starts_with(',') {
                 let (r2, _) = parse_char(r2, ',')?;
@@ -254,6 +310,7 @@ pub(in crate::parser::stmt) fn parse_destructuring_decl(
                 where_constraint: None,
                 sigilless: false,
                 literal_value: Some(lit_expr),
+                param_trait: None,
             });
             if r2.starts_with(',') {
                 let (r2, _) = parse_char(r2, ',')?;
@@ -289,6 +346,12 @@ pub(in crate::parser::stmt) fn parse_destructuring_decl(
                 (r2, false)
             };
             let (r2, _) = ws(r2)?;
+            let display_name = if sigil == b'$' {
+                format!("${n}")
+            } else {
+                full_name.clone()
+            };
+            let (r2, param_trait) = parse_element_traits(r2, &display_name)?;
 
             // Parse optional where constraint: $a where 2
             let (r2, where_constraint) = if keyword("where", r2).is_some() {
@@ -323,6 +386,7 @@ pub(in crate::parser::stmt) fn parse_destructuring_decl(
                 where_constraint,
                 sigilless: false,
                 literal_value: None,
+                param_trait,
             });
 
             if r2.starts_with(',') {
@@ -625,19 +689,6 @@ fn parse_destructuring_with_rhs(
                 read
             }
         };
-        let effective_where = dvar.where_constraint.clone().map(Box::new);
-        let decl = Stmt::VarDecl {
-            name: dvar.name.clone(),
-            expr,
-            type_constraint: effective_tc,
-            is_state,
-            is_our,
-            is_dynamic: false,
-            is_export: false,
-            export_tags: Vec::new(),
-            custom_traits: Vec::new(),
-            where_constraint: effective_where,
-        };
         // In BINDING mode a non-slurpy `@`/`%` target BINDS the staged element
         // rather than assigning it: `my @x = 1, 2; my (@a,) := (@x,);
         // @a.push(3)` writes through to `@x` in raku, so `@a` must be the
@@ -658,10 +709,42 @@ fn parse_destructuring_with_rhs(
         // `MarkSigilless` (see `my_decl_helpers::build_sigilless_bind_stmt`),
         // which leaves writability to the runtime `MarkSigillessBind` check --
         // so a non-container element (`my (\a) := (5,)`) still stays immutable.
+        //
+        // A `$` target carrying `is rw` / `is raw` (`my ($a is rw) := ($x,)`)
+        // is a signature parameter that binds the argument's container too, so
+        // it aliases the staged element like a sigilless target does; the
+        // element's own writability then decides whether `$a = 5` succeeds.
+        // TODO: rakudo refuses `is rw` against a non-container at BIND time
+        // (X::Parameter::RW); here the refusal only comes at the first write.
+        let binds_container_trait =
+            matches!(dvar.param_trait, Some(ParamTrait::Rw | ParamTrait::Raw));
         let binds_element = is_binding
             && !dvar.is_slurpy
             && !is_implicit_slurpy
-            && (dvar.sigilless || dvar.name.starts_with(['@', '%']));
+            && (dvar.sigilless || binds_container_trait || dvar.name.starts_with(['@', '%']));
+        let effective_where = dvar.where_constraint.clone().map(Box::new);
+        // A `$` target that binds its element (`is rw` / `is raw`) is the
+        // same scalar bind `my $a := EXPR` lowers to, and carries the same
+        // `__scalar_bind` marker, so an immutable element (`my ($a is rw) :=
+        // (5,)`) stays immutable instead of getting a fresh container.
+        let custom_traits =
+            if binds_element && !dvar.sigilless && !dvar.name.starts_with(['@', '%']) {
+                vec![("__scalar_bind".to_string(), None)]
+            } else {
+                Vec::new()
+            };
+        let decl = Stmt::VarDecl {
+            name: dvar.name.clone(),
+            expr,
+            type_constraint: effective_tc,
+            is_state,
+            is_our,
+            is_dynamic: false,
+            is_export: false,
+            export_tags: Vec::new(),
+            custom_traits,
+            where_constraint: effective_where,
+        };
         let decl = if binds_element && dvar.sigilless {
             // The same block shape `my \a := $x` uses
             // (`my_decl_helpers::build_sigilless_bind_stmt`): the trailing
@@ -682,6 +765,9 @@ fn parse_destructuring_with_rhs(
         if dvar.sigilless && !binds_element {
             stmts.push(Stmt::MarkSigillessReadonly(dvar.name.clone()));
         }
+        // `is copy` / `is readonly` fall through to the read-only copy: rakudo
+        // does not give an `is copy` element of a `my (...)` bind a writable
+        // container either (`my ($a is copy) := ($x,); $a = 3` dies).
         if is_binding && !binds_element && dvar.name.starts_with(|c: char| c != '@' && c != '%') {
             stmts.push(Stmt::MarkReadonly(
                 dvar.name.clone(),
