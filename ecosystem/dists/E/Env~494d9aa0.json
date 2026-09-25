@@ -9,23 +9,22 @@
   "dist": "Env",
   "files": [
     {
-      "cmp": "partial",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "did we find %*ENV<ACCEPT_EULA> as ACCEPT_EULA",
-        "nok": 120,
-        "ok": 4,
+        "nok": 0,
+        "ok": 124,
         "plan": 124,
-        "secs": 1.93,
+        "secs": 0.24,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "pass"
       },
       "path": "t/01-all.rakutest",
       "raku": {
         "nok": 0,
         "ok": 124,
         "plan": 124,
-        "secs": 1.53,
+        "secs": 1.69,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -34,11 +33,11 @@
     {
       "cmp": "partial",
       "mutsu": {
-        "first_failure": "did we find the user",
-        "nok": 4,
-        "ok": 11,
+        "first_failure": "did the change to Nil propagate",
+        "nok": 3,
+        "ok": 12,
         "plan": 15,
-        "secs": 0.23,
+        "secs": 0.26,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -48,7 +47,7 @@
         "nok": 0,
         "ok": 15,
         "plan": 15,
-        "secs": 1.16,
+        "secs": 1.04,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -60,10 +59,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-24",
+    "date": "2026-09-25",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "338f021",
+    "mutsu_commit": "404ac78",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -74,13 +73,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/E/NV/ENV/960669e9769c391ba07f1d933a058af881b22c90.tar.gz"
   },
-  "status": "red",
+  "status": "partial",
   "totals": {
     "baseline_assertions": 139,
     "baseline_files": 2,
-    "mutsu_assertions": 15,
-    "parity_files": 0,
-    "regressed_files": 2
+    "mutsu_assertions": 136,
+    "parity_files": 1,
+    "regressed_files": 1
   },
   "version": "0.99"
 }

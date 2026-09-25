@@ -10,16 +10,83 @@
     "unresolved": []
   },
   "dist": "WebService::Slack::Webhook",
-  "files": [],
+  "files": [
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.54,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/01-use.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 11.54,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 0.44,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/02-make.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 0.65,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 0.37,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/03-send.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 0.66,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
   "load": {
-    "WebService::Slack::Webhook": "expected statement: expected expected statement: expected expression statement or ')' [at Net/HTTP/POST.rakumod:9]"
+    "WebService::Slack::Webhook": "ok"
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-24",
+    "date": "2026-09-25",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "338f021",
+    "mutsu_commit": "404ac78",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -30,12 +97,12 @@
     "index": "fez",
     "url": "https://360.zef.pm/W/EB/WEBSERVICE_SLACK_WEBHOOK/afeb372b75b7c039632d8a64b451db3c34badb9c.tar.gz"
   },
-  "status": "blocked_load",
+  "status": "green",
   "totals": {
-    "baseline_assertions": 0,
-    "baseline_files": 0,
-    "mutsu_assertions": 0,
-    "parity_files": 0,
+    "baseline_assertions": 7,
+    "baseline_files": 3,
+    "mutsu_assertions": 7,
+    "parity_files": 3,
     "regressed_files": 0
   },
   "version": "0.1.3"

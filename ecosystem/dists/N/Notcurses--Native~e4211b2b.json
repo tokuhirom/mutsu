@@ -12,11 +12,11 @@
       "cmp": "no_baseline",
       "path": "t/10-channel-exhaustive.rakutest",
       "raku": {
-        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-n3zvfwyl/sbxhome/.local/share/Notcurses-Native/binaries-notcurses-3.0.17-r15/lib/libnotcurses-ffi.so': /home/runner/.cach",
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-6nkyjoc7/sbxhome/.local/share/Notcurses-Native/binaries-notcurses-3.0.17-r15/lib/libnotcurses-ffi.so': /home/runner/.cach",
         "nok": 0,
         "ok": 0,
         "plan": 20,
-        "secs": 11.83,
+        "secs": 13.72,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -26,11 +26,11 @@
       "cmp": "no_baseline",
       "path": "t/14-input-exhaustive.rakutest",
       "raku": {
-        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-n3zvfwyl/sbxhome/.local/share/Notcurses-Native/binaries-notcurses-3.0.17-r15/lib/libnotcurses-ffi.so': /home/runner/.cach",
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-6nkyjoc7/sbxhome/.local/share/Notcurses-Native/binaries-notcurses-3.0.17-r15/lib/libnotcurses-ffi.so': /home/runner/.cach",
         "nok": 0,
         "ok": 0,
         "plan": 5,
-        "secs": 2.78,
+        "secs": 3.21,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -42,7 +42,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.36,
+        "secs": 0.47,
         "skip": 1,
         "todo": 0,
         "verdict": "pass"
@@ -52,7 +52,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.86,
+        "secs": 0.95,
         "skip": 1,
         "todo": 0,
         "verdict": "pass"
@@ -64,7 +64,7 @@
         "nok": 0,
         "ok": 21,
         "plan": 21,
-        "secs": 0.28,
+        "secs": 0.22,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -74,7 +74,7 @@
         "nok": 0,
         "ok": 21,
         "plan": 21,
-        "secs": 3.58,
+        "secs": 4.08,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -86,7 +86,7 @@
         "nok": 0,
         "ok": 773,
         "plan": 773,
-        "secs": 0.27,
+        "secs": 0.33,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -96,7 +96,7 @@
         "nok": 0,
         "ok": 773,
         "plan": 773,
-        "secs": 2.06,
+        "secs": 2.27,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -110,7 +110,7 @@
         "nok": 3,
         "ok": 4,
         "plan": 7,
-        "secs": 1.11,
+        "secs": 1.41,
         "skip": 1,
         "todo": 0,
         "verdict": "fail"
@@ -122,7 +122,7 @@
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 0.34,
+        "secs": 0.46,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -132,7 +132,7 @@
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 0.99,
+        "secs": 0.96,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -144,7 +144,7 @@
         "nok": 0,
         "ok": 12,
         "plan": 12,
-        "secs": 0.12,
+        "secs": 0.13,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -154,7 +154,7 @@
         "nok": 0,
         "ok": 12,
         "plan": 12,
-        "secs": 0.84,
+        "secs": 1.09,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -166,7 +166,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 0.26,
+        "secs": 0.34,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -176,7 +176,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 1.17,
+        "secs": 1.16,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -186,11 +186,11 @@
       "cmp": "no_baseline",
       "path": "t/22-windows-load-contract.rakutest",
       "raku": {
-        "first_failure": "Failed to create directory '/tmp/notcurses-load-contract-2-1790287367-53076/Notcurses-Native/binaries-notcurses-3.0.17-r15/lib' with mode '0o777': Failed to mkdir: no such file or directory",
+        "first_failure": "Failed to create directory '/tmp/notcurses-load-contract-2-1790374327-19507/Notcurses-Native/binaries-notcurses-3.0.17-r15/lib' with mode '0o777': Failed to mkdir: no such file or directory",
         "nok": 0,
         "ok": 2,
         "plan": null,
-        "secs": 4.42,
+        "secs": 4.49,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -202,7 +202,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.14,
+        "secs": 0.12,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -212,7 +212,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.9,
+        "secs": 0.69,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -224,7 +224,7 @@
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 0.36,
+        "secs": 0.38,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -234,7 +234,7 @@
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 1.01,
+        "secs": 0.76,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -246,7 +246,7 @@
         "nok": 0,
         "ok": 7,
         "plan": 7,
-        "secs": 0.15,
+        "secs": 0.11,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -256,7 +256,7 @@
         "nok": 0,
         "ok": 7,
         "plan": 7,
-        "secs": 0.78,
+        "secs": 0.59,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -270,7 +270,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 4,
-        "secs": 0.74,
+        "secs": 0.61,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -280,11 +280,11 @@
       "cmp": "no_baseline",
       "path": "t/27-staged-lib-single-image.rakutest",
       "raku": {
-        "first_failure": "staged lib dir not found: /home/runner/.cache/mutsu-ecosystem/run/ecosweep-n3zvfwyl/sbxhome/.local/share/Notcurses-Native/binaries-notcurses-3.0.17-r15/lib",
+        "first_failure": "staged lib dir not found: /home/runner/.cache/mutsu-ecosystem/run/ecosweep-6nkyjoc7/sbxhome/.local/share/Notcurses-Native/binaries-notcurses-3.0.17-r15/lib",
         "nok": 1,
         "ok": 0,
         "plan": 1,
-        "secs": 0.96,
+        "secs": 0.65,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -298,7 +298,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 3,
-        "secs": 2.36,
+        "secs": 2.16,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -320,10 +320,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-24",
+    "date": "2026-09-25",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "338f021",
+    "mutsu_commit": "404ac78",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",

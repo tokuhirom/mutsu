@@ -12,10 +12,10 @@
       "cmp": "partial",
       "mutsu": {
         "first_failure": "-n stroke dotl modifier",
-        "nok": 2,
-        "ok": 10,
+        "nok": 3,
+        "ok": 9,
         "plan": 12,
-        "secs": 89.05,
+        "secs": 87.63,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -37,10 +37,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-24",
+    "date": "2026-09-25",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "338f021",
+    "mutsu_commit": "404ac78",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -55,7 +55,7 @@
   "totals": {
     "baseline_assertions": 12,
     "baseline_files": 1,
-    "mutsu_assertions": 10,
+    "mutsu_assertions": 9,
     "parity_files": 0,
     "regressed_files": 1
   },

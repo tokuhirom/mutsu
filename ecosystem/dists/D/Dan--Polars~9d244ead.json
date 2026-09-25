@@ -11,17 +11,124 @@
     "unresolved": []
   },
   "dist": "Dan::Polars",
-  "files": [],
+  "files": [
+    {
+      "cmp": "no_baseline",
+      "path": "t/01-ser.rakutest",
+      "raku": {
+        "first_failure": "Type check failed in binding to parameter '$library'; expected IO::Path but got Slip (Empty)",
+        "nok": 0,
+        "ok": 0,
+        "plan": 19,
+        "secs": 12.65,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/02-dfr.rakutest",
+      "raku": {
+        "first_failure": "Type check failed in binding to parameter '$library'; expected IO::Path but got Slip (Empty)",
+        "nok": 0,
+        "ok": 0,
+        "plan": 35,
+        "secs": 14.17,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/03-dfo.rakutest",
+      "raku": {
+        "first_failure": "Type check failed in binding to parameter '$library'; expected IO::Path but got Slip (Empty)",
+        "nok": 0,
+        "ok": 0,
+        "plan": 24,
+        "secs": 15.92,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.11,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/04-upd.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.63,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/05-spo.rakutest",
+      "raku": {
+        "first_failure": "Type check failed in binding to parameter '$library'; expected IO::Path but got Slip (Empty)",
+        "nok": 0,
+        "ok": 0,
+        "plan": 10,
+        "secs": 13.96,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/06-dpo.rakutest",
+      "raku": {
+        "first_failure": "Type check failed in binding to parameter '$library'; expected IO::Path but got Slip (Empty)",
+        "nok": 0,
+        "ok": 0,
+        "plan": 8,
+        "secs": 13.9,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/08-poo.rakutest",
+      "raku": {
+        "first_failure": "Type check failed in binding to parameter '$library'; expected IO::Path but got Slip (Empty)",
+        "nok": 0,
+        "ok": 0,
+        "plan": 6,
+        "secs": 13.6,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    }
+  ],
   "load": {
-    "Dan::Polars": "expected statement: expected expected statement: expected expected statement: expected right-hand expression after '=' or '.' or digits or generic radix literal or unicode numeric literal or ... [at lib/Dan/Polars.rakumod:472]",
+    "Dan::Polars": "ok",
     "Dan::Polars::Containers": "ok"
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-24",
+    "date": "2026-09-25",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "338f021",
+    "mutsu_commit": "404ac78",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -32,12 +139,12 @@
     "index": "fez",
     "url": "https://360.zef.pm/D/AN/DAN_POLARS/b5b46670c3cfde19f32765451faa25080fe7472a.tar.gz"
   },
-  "status": "blocked_load",
+  "status": "green",
   "totals": {
-    "baseline_assertions": 0,
-    "baseline_files": 0,
-    "mutsu_assertions": 0,
-    "parity_files": 0,
+    "baseline_assertions": 1,
+    "baseline_files": 1,
+    "mutsu_assertions": 1,
+    "parity_files": 1,
     "regressed_files": 0
   },
   "version": "0.0.3"

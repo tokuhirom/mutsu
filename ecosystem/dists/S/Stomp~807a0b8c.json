@@ -19,7 +19,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.13,
+        "secs": 0.11,
         "skip": 1,
         "todo": 0,
         "verdict": "pass"
@@ -29,7 +29,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.72,
+        "secs": 0.63,
         "skip": 1,
         "todo": 0,
         "verdict": "pass"
@@ -42,7 +42,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 240.1,
+        "secs": 240.08,
         "skip": 0,
         "todo": 0,
         "verdict": "timeout"
@@ -52,7 +52,7 @@
         "nok": 0,
         "ok": 31,
         "plan": 31,
-        "secs": 9.72,
+        "secs": 8.19,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -64,7 +64,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 0.24,
+        "secs": 0.11,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -74,7 +74,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 0.69,
+        "secs": 0.32,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -87,7 +87,7 @@
         "nok": 16,
         "ok": 35,
         "plan": 51,
-        "secs": 0.69,
+        "secs": 0.31,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -97,7 +97,7 @@
         "nok": 0,
         "ok": 51,
         "plan": 51,
-        "secs": 0.83,
+        "secs": 0.38,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -105,26 +105,16 @@
     },
     {
       "cmp": "no_baseline",
-      "flaky": true,
-      "mutsu": {
-        "first_failure": "SWEEP-TIMEOUT",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 240.03,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "timeout"
-      },
       "path": "t/server.rakutest",
       "raku": {
+        "first_failure": "No such method 'subscriptions' for invocant of type 'Any'",
         "nok": 0,
-        "ok": 28,
+        "ok": 14,
         "plan": 28,
-        "secs": 1.37,
+        "secs": 0.58,
         "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "die"
       }
     }
   ],
@@ -138,10 +128,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-24",
+    "date": "2026-09-25",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "338f021",
+    "mutsu_commit": "404ac78",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",

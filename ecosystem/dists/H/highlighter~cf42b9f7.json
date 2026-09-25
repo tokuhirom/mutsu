@@ -18,7 +18,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 81,
-        "secs": 0.32,
+        "secs": 0.42,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -28,7 +28,7 @@
         "nok": 0,
         "ok": 81,
         "plan": 81,
-        "secs": 5.84,
+        "secs": 6.78,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -40,7 +40,7 @@
         "nok": 0,
         "ok": 19,
         "plan": 19,
-        "secs": 0.31,
+        "secs": 0.44,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -50,30 +50,30 @@
         "nok": 0,
         "ok": 19,
         "plan": 19,
-        "secs": 0.78,
+        "secs": 0.81,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "partial",
+      "cmp": "regression",
       "mutsu": {
-        "first_failure": "did \"bar\" produce columns as a word (list first)",
-        "nok": 2,
-        "ok": 1,
+        "first_failure": "No matching candidate found for the parametric role",
+        "nok": 0,
+        "ok": 3,
         "plan": 75,
-        "secs": 0.41,
+        "secs": 0.44,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "die"
       },
       "path": "t/03-columns.rakutest",
       "raku": {
         "nok": 0,
         "ok": 75,
         "plan": 75,
-        "secs": 0.65,
+        "secs": 0.8,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -86,7 +86,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 75,
-        "secs": 0.31,
+        "secs": 0.45,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -109,7 +109,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 9,
-        "secs": 0.22,
+        "secs": 0.31,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -119,7 +119,7 @@
         "nok": 0,
         "ok": 9,
         "plan": 9,
-        "secs": 0.67,
+        "secs": 0.75,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -131,10 +131,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-24",
+    "date": "2026-09-25",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "338f021",
+    "mutsu_commit": "404ac78",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -149,7 +149,7 @@
   "totals": {
     "baseline_assertions": 259,
     "baseline_files": 5,
-    "mutsu_assertions": 25,
+    "mutsu_assertions": 27,
     "parity_files": 1,
     "regressed_files": 4
   },

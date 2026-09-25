@@ -1,63 +1,30 @@
 {
-  "axis": "pure",
-  "deps": {
-    "bundled_would_supply": [],
-    "mode": "flat-closure",
-    "resolved": [],
-    "unresolved": []
-  },
   "dist": "P5-X",
-  "files": [
-    {
-      "cmp": "partial",
-      "mutsu": {
-        "first_failure": "is -e 'r' ok",
-        "nok": 6,
-        "ok": 27,
-        "plan": 33,
-        "secs": 0.15,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "fail"
-      },
-      "path": "t/01-basic.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 33,
-        "plan": 33,
-        "secs": 3.64,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    }
-  ],
-  "load": {
-    "P5-X": "ok"
-  },
+  "files": [],
   "measured": {
     "attempts": 3,
-    "date": "2026-09-24",
+    "date": "2026-09-25",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "338f021",
+    "mutsu_commit": "404ac78",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
     "sandbox": "bwrap"
   },
+  "note": "harness error: FileNotFoundError: [Errno 2] No such file or directory: '/home/runner/.cache/mutsu-ecosystem/tarballs/de3e0aaaee30-P_5X_P5X_a6331e8e8d8a4f3722948a78e86bf9e0bafaa507.tar.gz.part' -> '/home/runner/.cache/mutsu-ecosystem/tarballs/de3e0aaaee30-P_5X_P5X_a6331e8e8d8a4f3722948a78e86bf9e0bafaa507.tar.gz'",
   "schema": 1,
   "source": {
     "index": "fez",
     "url": "https://360.zef.pm/P/5X/P5X/a6331e8e8d8a4f3722948a78e86bf9e0bafaa507.tar.gz"
   },
-  "status": "red",
+  "status": "skipped",
   "totals": {
-    "baseline_assertions": 33,
-    "baseline_files": 1,
-    "mutsu_assertions": 27,
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
     "parity_files": 0,
-    "regressed_files": 1
+    "regressed_files": 0
   },
   "version": "0.0.11"
 }

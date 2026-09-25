@@ -18,7 +18,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.1,
+        "secs": 0.08,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -28,7 +28,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 2.66,
+        "secs": 2.07,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -37,11 +37,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "Odd number of elements found where hash initializer expected: found 1 element(s); last element seen: 8fbb0904-9d0e-4a1e-a23b-be730906d813(3) 943a57d9-34d2-42ed-9504-82da6c79fb08 a59ee953-b1d3-41d2-a0b",
-        "nok": 4,
-        "ok": 21,
+        "first_failure": "Cannot modify an immutable BagHash (BagHash())",
+        "nok": 0,
+        "ok": 18,
         "plan": null,
-        "secs": 0.29,
+        "secs": 0.14,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -51,7 +51,7 @@
         "nok": 0,
         "ok": 38,
         "plan": 38,
-        "secs": 4.43,
+        "secs": 3.45,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -60,11 +60,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "Odd number of elements found where hash initializer expected: found 1 element(s); last element seen: 52fbfd9f-58d0-4ebe-b2b1-d283275ff8c8 731c6f97-6c46-4359-a664-96d919dd1a40(3) 75efe97a-c116-48e3-b95",
-        "nok": 5,
-        "ok": 47,
+        "first_failure": "Cannot modify an immutable BagHash (BagHash())",
+        "nok": 0,
+        "ok": 44,
         "plan": null,
-        "secs": 0.53,
+        "secs": 0.13,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -74,7 +74,7 @@
         "nok": 0,
         "ok": 63,
         "plan": 63,
-        "secs": 5.8,
+        "secs": 2.18,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -83,11 +83,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "Odd number of elements found where hash initializer expected: found 1 element(s); last element seen: a b c d",
-        "nok": 2,
-        "ok": 11,
+        "first_failure": "Cannot modify an immutable SetHash (SetHash())",
+        "nok": 1,
+        "ok": 5,
         "plan": null,
-        "secs": 0.32,
+        "secs": 0.14,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -97,7 +97,7 @@
         "nok": 0,
         "ok": 27,
         "plan": 27,
-        "secs": 2.28,
+        "secs": 0.9,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -106,11 +106,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "Odd number of elements found where hash initializer expected: found 1 element(s); last element seen: a b c",
-        "nok": 5,
-        "ok": 12,
+        "first_failure": "Cannot modify an immutable SetHash (SetHash())",
+        "nok": 2,
+        "ok": 10,
         "plan": null,
-        "secs": 0.38,
+        "secs": 0.18,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -120,7 +120,7 @@
         "nok": 0,
         "ok": 29,
         "plan": 29,
-        "secs": 2.44,
+        "secs": 1.7,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -129,11 +129,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "Odd number of elements found where hash initializer expected: found 1 element(s); last element seen: LWW-Element-Set::Item() LWW-Element-Set::Item() LWW-Element-Set::Item() LWW-Element-Set::Item() LWW",
-        "nok": 8,
-        "ok": 14,
+        "first_failure": "Cannot modify an immutable SetHash (SetHash())",
+        "nok": 2,
+        "ok": 10,
         "plan": null,
-        "secs": 0.65,
+        "secs": 0.17,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -143,7 +143,7 @@
         "nok": 0,
         "ok": 41,
         "plan": 41,
-        "secs": 4.25,
+        "secs": 2.26,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -152,11 +152,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "Odd number of elements found where hash initializer expected: found 1 element(s); last element seen: b45bc178-4bb2-41a3-9df9-744ea0937b0f",
+        "first_failure": "Odd number of elements found where hash initializer expected: found 1 element(s); last element seen: bf8d75d6-82fe-424f-b9a4-c53252b1aca2",
         "nok": 1,
         "ok": 9,
         "plan": null,
-        "secs": 0.28,
+        "secs": 0.15,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -166,7 +166,7 @@
         "nok": 0,
         "ok": 43,
         "plan": 43,
-        "secs": 4.94,
+        "secs": 2.82,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -179,7 +179,7 @@
         "nok": 2,
         "ok": 10,
         "plan": 12,
-        "secs": 24.14,
+        "secs": 17.9,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -189,7 +189,7 @@
         "nok": 0,
         "ok": 12,
         "plan": 12,
-        "secs": 2.05,
+        "secs": 1.56,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -202,7 +202,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.55,
+        "secs": 0.3,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -212,7 +212,7 @@
         "nok": 0,
         "ok": 10,
         "plan": 10,
-        "secs": 9.03,
+        "secs": 6.18,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -221,11 +221,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "No such method 'set' for invocant of type 'Hash'",
-        "nok": 8,
-        "ok": 21,
+        "first_failure": "Cannot modify an immutable SetHash (SetHash())",
+        "nok": 2,
+        "ok": 12,
         "plan": null,
-        "secs": 0.93,
+        "secs": 0.21,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -235,7 +235,7 @@
         "nok": 0,
         "ok": 54,
         "plan": 54,
-        "secs": 3.43,
+        "secs": 1.99,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -257,10 +257,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-24",
+    "date": "2026-09-25",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "338f021",
+    "mutsu_commit": "404ac78",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -275,7 +275,7 @@
   "totals": {
     "baseline_assertions": 318,
     "baseline_files": 10,
-    "mutsu_assertions": 146,
+    "mutsu_assertions": 119,
     "parity_files": 1,
     "regressed_files": 9
   },
