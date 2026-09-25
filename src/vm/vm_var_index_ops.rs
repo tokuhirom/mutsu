@@ -1710,6 +1710,31 @@ impl Interpreter {
                     result
                 }
             }
+            // Associative objects may use arbitrary objects as keys. Preserve
+            // those key values when routing the subscript to AT-KEY; the
+            // string-key arm above cannot represent an object-hash lookup and
+            // previously made an object-keyed inventory read as Nil even though
+            // the equivalent AT-KEY call returned the stored weight.
+            (
+                ValueView::Instance { class_name, .. },
+                ValueView::Package(_) | ValueView::Instance { .. } | ValueView::Mixin(..),
+            ) => {
+                let cn = class_name.resolve();
+                let result = match self.try_compiled_method_or_interpret(
+                    target.clone(),
+                    "AT-KEY",
+                    vec![index.clone()],
+                ) {
+                    Ok(v) => v,
+                    Err(e) if self.has_user_method(&cn, "AT-KEY") => return Err(e),
+                    Err(_) => Value::NIL,
+                };
+                if result.is_nil() {
+                    self.typed_container_default(&target)
+                } else {
+                    result
+                }
+            }
             // A `CArray[T]` *native handle* — what `nativecast(CArray[T], $ptr)`
             // returns — is a C pointer, not a Raku array: read element `i` out of
             // native memory. This is the same trust NativeCall already extends to
@@ -2246,9 +2271,10 @@ impl Interpreter {
             // Only the `Str` arm above dispatched `AT-KEY`, so those subscripts
             // used to read as `Nil`. The delegate hash owns the keying rule, so
             // hand it the key object untouched.
-            (ValueView::Mixin(..), ValueView::Package(_) | ValueView::Instance { .. })
-                if !is_positional =>
-            {
+            (
+                ValueView::Mixin(..),
+                ValueView::Package(_) | ValueView::Instance { .. } | ValueView::Mixin(..),
+            ) if !is_positional => {
                 let default = self.typed_container_default(&target);
                 let result = self
                     .try_compiled_method_or_interpret(target.clone(), "AT-KEY", vec![index.clone()])

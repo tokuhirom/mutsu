@@ -245,6 +245,16 @@ pub(crate) fn coerce_to_numeric(val: Value) -> Value {
                 y, mo, d, h, mi, s, tz,
             ))
         }
+        // A user class inheriting Int carries its native payload in the same
+        // reserved attribute used by `to_int` and display.  Keep arithmetic
+        // on that payload instead of treating the wrapper instance as zero
+        // (`class Amount is Int { }; Amount.new(5) + 1`).
+        ValueView::Instance { attributes, .. } => attributes
+            .as_map()
+            .get("__mutsu_int_value")
+            .cloned()
+            .map(coerce_to_numeric)
+            .unwrap_or_else(|| Value::int(0)),
         ValueView::Uni(u) => Value::int(u.len() as i64),
         ValueView::Capture { positional, .. } => Value::int(positional.len() as i64),
         _ => Value::int(0),

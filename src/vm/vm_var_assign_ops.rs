@@ -197,6 +197,28 @@ impl Interpreter {
                 *attr_value = cur.clone();
             }
         }
+        // A role can delegate ASSIGN-KEY to a user-defined container subclass,
+        // not just to a plain Hash.  EERPG::Inventory's `commodities` attribute
+        // is an AccountableBagHash; treating that instance as an opaque role
+        // attribute here let `%inventory{$commodity} = $weight` fall through
+        // and bypass Accountable's negative-weight check.  Dispatch the
+        // delegated method on the live attribute value so its native
+        // `nextsame` candidate still mutates the shared backing store.
+        if range_slice.is_none()
+            && let Some(attr_key) = self.delegated_mixin_attr_key(&updated_mixins, "ASSIGN-KEY")
+            && let Some(attr_value) = updated_mixins.get(&attr_key)
+            && matches!(
+                attr_value.deref_container().view(),
+                ValueView::Instance { .. } | ValueView::Mixin(..)
+            )
+        {
+            self.try_compiled_method_or_interpret(
+                attr_value.deref_container(),
+                "ASSIGN-KEY",
+                vec![idx.clone(), Self::itemize_value(val.clone())],
+            )?;
+            return Ok(Some(target.clone()));
+        }
         // Which delegation applies is decided by the *delegate container*, not by
         // the index's Rust type: an object-hash key (`$conv{Str} = ...`) is a
         // `Package`, and testing `idx` for `Str` sent it down the ASSIGN-POS

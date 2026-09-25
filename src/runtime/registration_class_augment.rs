@@ -1298,6 +1298,26 @@ impl Interpreter {
                 }
             }
         }
+        // A punned role is a class for construction purposes, so carry its
+        // declared `is Type` container traits onto the generated class as well
+        // as its ordinary type constraints. Without this, a role attribute
+        // such as `has %.commodities is AccountableBagHash` is seeded as a
+        // plain Hash when the role is instantiated directly.
+        let mut attribute_is_types: HashMap<String, String> = HashMap::new();
+        for owner in composed_roles_list.iter().rev() {
+            let base = owner.split_once('[').map(|(b, _)| b).unwrap_or(owner);
+            for ((r, attr), ty) in &self.registry().role_attribute_is_types {
+                if r == base {
+                    attribute_is_types.insert(
+                        attr.clone(),
+                        super::registration_class_compose::substitute_type_param_tokens(
+                            ty,
+                            &default_type_subs,
+                        ),
+                    );
+                }
+            }
+        }
         let punned_class = ClassDef {
             parents: Vec::new(),
             attributes: all_attributes,
@@ -1314,6 +1334,11 @@ impl Interpreter {
         self.registry_mut()
             .classes
             .insert(role_name.to_string(), punned_class);
+        for (attr, ty) in attribute_is_types {
+            self.registry_mut()
+                .class_attribute_is_types
+                .insert((role_name.to_string(), attr), ty);
+        }
         let owner = Symbol::intern(role_name);
         for (name, defs) in all_methods {
             self.registry_mut()

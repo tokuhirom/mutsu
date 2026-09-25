@@ -104,7 +104,14 @@ impl Interpreter {
         method: &str,
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
-        if Self::is_type_identity_method(method) {
+        // Qualified calls must resolve against the wrapper class's MRO.  The
+        // backing scalar is only the implementation target for ordinary
+        // unqualified methods; delegating `self.Rat::new(...)` here would lose
+        // the subclass and bypass qualified-constructor dispatch.
+        if method.starts_with('!')
+            || crate::symbol::Symbol::lookup(method).is_some_and(crate::qualified::is_qualified)
+            || Self::is_type_identity_method(method)
+        {
             return None;
         }
         let ValueView::Instance {
