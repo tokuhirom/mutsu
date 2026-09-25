@@ -86,7 +86,7 @@ pub(crate) enum NqpOpTable {
 /// SORTED BY NAME — [`nqp_op_id`] binary-searches it, and an id IS an index
 /// into it. Ids are therefore not stable across edits to this list; nothing
 /// persists one (bytecode is compiled per run), but do not write one down.
-static NQP_OPS: [(&str, NqpOpTable); 203] = [
+static NQP_OPS: [(&str, NqpOpTable); 204] = [
     ("abs_I", NqpOpTable::Value),
     ("abs_i", NqpOpTable::Value),
     ("abs_n", NqpOpTable::Value),
@@ -190,6 +190,7 @@ static NQP_OPS: [(&str, NqpOpTable); 203] = [
     ("iseq_i", NqpOpTable::Value),
     ("iseq_n", NqpOpTable::Value),
     ("iseq_s", NqpOpTable::Value),
+    ("isfalse", NqpOpTable::Process),
     ("isge_I", NqpOpTable::Value),
     ("isge_i", NqpOpTable::Value),
     ("isge_n", NqpOpTable::Value),
@@ -347,7 +348,15 @@ mod tests {
         assert_eq!(nqp_op_id("no_such_nqp_op"), None);
         // The control-flow forms are compiled as special forms and must never
         // reach the value-op path.
-        for form in ["if", "while", "until", "stmts", "handle"] {
+        for form in [
+            "if",
+            "while",
+            "until",
+            "repeat_while",
+            "repeat_until",
+            "stmts",
+            "handle",
+        ] {
             assert_eq!(nqp_op_id(form), None, "{form} is a control-flow form");
         }
     }

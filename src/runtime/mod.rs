@@ -881,6 +881,8 @@ pub(super) mod sprintf;
 mod sprintf_helpers;
 mod sprintf_hexfloat;
 mod sprintf_validate;
+/// Address-space budget for user-code thread stacks (ADR-0123).
+pub(crate) mod stack_budget;
 pub(crate) mod str_numeric;
 mod supply_classify;
 mod supply_emit_drive;
@@ -910,7 +912,7 @@ pub(crate) mod value_iterator;
 #[cfg(target_arch = "wasm32")]
 pub(crate) mod wasm_sched;
 mod which_identity;
-/// Elastic worker pool for short-lived user tasks (ADR-0020).
+/// Elastic worker pool for short-lived user tasks (ADR-0020, ADR-0123).
 pub(crate) mod worker_pool;
 pub(crate) use self::any_cool_method_gate::cool_method_not_found as cool_method_not_found_on_any;
 pub(crate) use self::locals::Locals;

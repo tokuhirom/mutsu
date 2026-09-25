@@ -231,11 +231,9 @@ impl Interpreter {
             ValueView::Regex(_)
             | ValueView::RegexWithAdverbs { .. }
             | ValueView::Routine { is_regex: true, .. } => {
-                let topic = self.env().get("_").cloned().unwrap_or(Value::NIL);
                 // The IMPLICIT topic of a bare regex coerces quietly -- see
                 // `quiet_topic_for_regex_match`.
-                let topic = self.quiet_topic_for_regex_match(topic);
-                Value::truth(self.vm_smart_match(&topic, &val))
+                Value::truth(self.regex_bool(&val, true))
             }
             _ => {
                 // Boolifying a Failure marks it as handled

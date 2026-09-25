@@ -21,8 +21,8 @@ fn print_error(prefix: &str, err: &RuntimeError, source: Option<&str>, program_n
 }
 
 /// Stack for the `mutsu-main` thread the interpreter actually runs on. Matches
-/// `builtins_system::USER_THREAD_STACK_SIZE`, the stack a `start`/Promise
-/// worker gets, so the ADR-0100 recursion guard fires at a comparable depth
+/// `stack_budget::STACK_TIERS[0]`, the stack a `start`/Promise
+/// worker normally gets, so the ADR-0100 recursion guard fires at a comparable depth
 /// wherever user code runs.
 const MAIN_THREAD_STACK_SIZE: usize = 256 * 1024 * 1024;
 

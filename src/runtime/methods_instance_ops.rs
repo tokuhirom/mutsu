@@ -1124,26 +1124,21 @@ impl Interpreter {
                 match method {
                     "repo-chain" => {
                         let mut chain = vec![target.clone()];
-                        let mut cursor = attributes.as_map().get("next-repo").cloned();
-                        while let Some(next) = cursor {
-                            if !next.truthy() {
-                                break;
-                            }
-                            if let ValueView::Instance { attributes, .. } = next.view() {
-                                cursor = attributes.as_map().get("next-repo").cloned();
-                            } else {
-                                cursor = None;
-                            }
+                        let mut next = self.repo_next_link(&target, &attributes.as_map());
+                        while next.truthy() {
+                            let following = match next.view() {
+                                ValueView::Instance { attributes, .. } => {
+                                    self.repo_next_link(&next, &attributes.as_map())
+                                }
+                                _ => Value::NIL,
+                            };
                             chain.push(next);
+                            next = following;
                         }
                         return Ok(Value::array(chain));
                     }
                     "next-repo" => {
-                        return Ok(attributes
-                            .as_map()
-                            .get("next-repo")
-                            .cloned()
-                            .unwrap_or(Value::NIL));
+                        return Ok(self.repo_next_link(&target, &attributes.as_map()));
                     }
                     _ => {}
                 }
@@ -3514,10 +3509,16 @@ impl Interpreter {
     fn are_specific_candidate_type_names(&mut self, value: &Value) -> Vec<String> {
         match value.view() {
             ValueView::Package(name) => vec![name.resolve()],
+            // The `Any`/`Mu` that close an instance's MRO (as opposed to being
+            // its own type, `Mu.new`) are the LAST resort:
+            // they must not outrank the shared-role fallbacks the caller
+            // appends (`(DateTime.now, Date.today).are` is `Dateish`).
             ValueView::Instance { class_name, .. } => self
                 .class_mro(&class_name.resolve())
                 .iter()
-                .map(|s| s.resolve())
+                .enumerate()
+                .filter(|(i, s)| *i == 0 || (s.as_str() != "Any" && s.as_str() != "Mu"))
+                .map(|(_, s)| s.resolve())
                 .collect(),
             // ADR-0019 E1b: authoritative TypeId classifier owner (was
             // `value_type_name`) — see `Interpreter::dispatch_owner_name`.

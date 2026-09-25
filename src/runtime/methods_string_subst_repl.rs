@@ -35,6 +35,38 @@ impl Interpreter {
             }
             return Ok(cased(replacement_str.to_string()));
         }
+        // A declared sub passed as `&name` is stored as a Sub carrying its
+        // compiled routine, rather than as an anonymous closure body. Invoke
+        // that callable through the ordinary binder so its parameters receive
+        // the current Match. The same applies to Routine values such as a
+        // builtin reference; the manual environment setup below is only for
+        // anonymous replacement blocks.
+        let is_declared_callable = match replacement_val.as_ref().map(Value::view) {
+            Some(ValueView::Routine { .. }) => true,
+            Some(ValueView::Sub(data)) => data.compiled_routine.is_some(),
+            Some(ValueView::WeakSub(weak)) => weak
+                .upgrade()
+                .is_some_and(|data| data.compiled_routine.is_some()),
+            _ => false,
+        };
+        if is_declared_callable {
+            let Some(replacement) = replacement_val.as_ref() else {
+                return Ok(cased(replacement_str.to_string()));
+            };
+            let match_value = if let Some(captures) = captures {
+                Value::make_match_object_full(
+                    captures.from as i64,
+                    captures.to as i64,
+                    &captures.positional,
+                    &captures.named,
+                    captures.target_or_new(orig_text.unwrap_or_default()),
+                )
+            } else {
+                Value::str(matched_text.to_string())
+            };
+            let result = self.call_sub_value(replacement.clone(), vec![match_value], false)?;
+            return Ok(cased(result.to_string_value()));
+        }
         let sub_data = match replacement_val.as_ref().map(Value::view) {
             Some(ValueView::Sub(data)) => data.clone(),
             Some(ValueView::WeakSub(weak)) => weak

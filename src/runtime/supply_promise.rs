@@ -814,15 +814,21 @@ impl Interpreter {
             self.supply_stream_consumers
                 .split_off(stream_consumers_base),
         );
-        crate::runtime::builtins_system::spawn_user_thread("react", move || {
-            // The drive loop keeps/breaks `promise` directly as it runs (see
-            // `drive_react_subscriptions_inner`'s `SupplyDrivePolicy::Promise`
-            // handling); its `Result` here only carries Rust-level plumbing
-            // errors that have nowhere else to go now that the caller has
-            // already returned, so there is nothing to propagate.
-            let _ = thread_interp
-                .drive_react_subscriptions_prewired(react_subs, policy, waker, sink_regs);
-        });
+        // A refused thread (ADR-0123) is a catchable X::AdHoc, not a panic.
+        crate::runtime::builtins_system::try_spawn_user_thread(
+            "react",
+            crate::runtime::builtins_system::StackPolicy::Required,
+            move || {
+                // The drive loop keeps/breaks `promise` directly as it runs (see
+                // `drive_react_subscriptions_inner`'s `SupplyDrivePolicy::Promise`
+                // handling); its `Result` here only carries Rust-level plumbing
+                // errors that have nowhere else to go now that the caller has
+                // already returned, so there is nothing to propagate.
+                let _ = thread_interp
+                    .drive_react_subscriptions_prewired(react_subs, policy, waker, sink_regs);
+            },
+        )
+        .map_err(|e| e.to_runtime_error())?;
         Ok(())
     }
 

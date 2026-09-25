@@ -4266,22 +4266,38 @@ impl Compiler {
                     arg_count: 0,
                 });
             }
-            Stmt::Use { module, arg, .. } if module == "Test::More" => {
-                self.compile_test_more_use(arg);
-            }
-            Stmt::Use { module, tags, .. } if module == "Test" || module.starts_with("Test::") => {
-                let name_idx = self.code.add_constant(Value::str(module.clone()));
-                let tags_idx = if tags.is_empty() {
-                    None
+            Stmt::Use {
+                module, tags, arg, ..
+            } if module == "Test::More" => {
+                if tags.is_empty() && arg.as_ref().is_some_and(Expr::is_empty_import_list) {
+                    // Test::More is backed by mutsu's native Test provider;
+                    // preserve that compatibility mapping while suppressing
+                    // the provider's exports.
+                    let name_idx = self.code.add_constant(Value::str_from("Test"));
+                    self.code.emit(OpCode::NeedModule(name_idx));
                 } else {
-                    let entries = tags.iter().cloned().map(Value::str).collect::<Vec<Value>>();
-                    Some(self.code.add_constant(Value::array(entries)))
-                };
-                self.code.emit(OpCode::UseModule {
-                    name_idx,
-                    tags_idx,
-                    arg_count: 0,
-                });
+                    self.compile_test_more_use(arg);
+                }
+            }
+            Stmt::Use {
+                module, tags, arg, ..
+            } if module == "Test" || module.starts_with("Test::") => {
+                let name_idx = self.code.add_constant(Value::str(module.clone()));
+                if tags.is_empty() && arg.as_ref().is_some_and(Expr::is_empty_import_list) {
+                    self.code.emit(OpCode::NeedModule(name_idx));
+                } else {
+                    let tags_idx = if tags.is_empty() {
+                        None
+                    } else {
+                        let entries = tags.iter().cloned().map(Value::str).collect::<Vec<Value>>();
+                        Some(self.code.add_constant(Value::array(entries)))
+                    };
+                    self.code.emit(OpCode::UseModule {
+                        name_idx,
+                        tags_idx,
+                        arg_count: 0,
+                    });
+                }
             }
             Stmt::Use {
                 module,
@@ -4353,21 +4369,32 @@ impl Compiler {
                     None => vec![],
                 };
                 let arg_count = arg_exprs.len() as u16;
+                let empty_import =
+                    tags.is_empty() && arg.as_ref().is_some_and(Expr::is_empty_import_list);
                 // `use Foo:if(EXPR)` (the `if` pragma): load the module only when
                 // EXPR is true at runtime, evaluated here so platform-conditional
                 // imports (`use Foo:if($*DISTRO.is-win)`) pick the right branch.
                 if let Some(cond) = condition {
                     self.compile_expr(cond);
                     let skip = self.code.emit(OpCode::JumpIfFalse(0));
-                    for e in &arg_exprs {
-                        self.compile_expr(e);
+                    if empty_import {
+                        self.code.emit(OpCode::NeedModule(name_idx));
+                    } else {
+                        for e in &arg_exprs {
+                            self.compile_expr(e);
+                        }
+                        self.code.emit(OpCode::UseModule {
+                            name_idx,
+                            tags_idx,
+                            arg_count,
+                        });
                     }
-                    self.code.emit(OpCode::UseModule {
-                        name_idx,
-                        tags_idx,
-                        arg_count,
-                    });
                     self.code.patch_jump(skip);
+                } else if empty_import {
+                    // An explicit empty import list is a load-only use. Do
+                    // not evaluate the empty AST expression: it is syntax,
+                    // not an argument to the module's EXPORT routine.
+                    self.code.emit(OpCode::NeedModule(name_idx));
                 } else {
                     for e in &arg_exprs {
                         self.compile_expr(e);

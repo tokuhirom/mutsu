@@ -136,12 +136,16 @@ impl Interpreter {
                 if seen.insert(entry.clone()) {
                     result.push(Value::package(Symbol::intern(entry)));
                     // Insert composed roles for this class
+                    // A built-in whose roles are recorded only in the type
+                    // catalog (`Promise`, `Date`, ...) answers from there, as
+                    // `.^roles` already does.
                     let composed = self
                         .registry()
                         .class_composed_roles
                         .get(entry)
                         .cloned()
-                        .unwrap_or_default();
+                        .filter(|roles| !roles.is_empty())
+                        .unwrap_or_else(|| self.catalog_roles(entry));
                     for role_name in &composed {
                         let base_role = role_name
                             .split_once('[')

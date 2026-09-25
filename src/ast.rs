@@ -1,6 +1,6 @@
 use crate::symbol::Symbol;
 use crate::token_kind::TokenKind;
-use crate::value::Value;
+use crate::value::{Value, ValueView};
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 
@@ -2381,6 +2381,25 @@ fn collect_assign_ph_stmt(stmt: &Stmt, out: &mut Vec<String>) {
 }
 
 impl Expr {
+    /// Whether this expression is one of the syntactic empty import lists
+    /// accepted by `use Module Empty` and `use Module ()`.
+    ///
+    /// These forms still load the module, but do not run its export hook or
+    /// import any of its exported symbols. Keep this deliberately narrow:
+    /// an arbitrary expression that happens to evaluate to an empty list may
+    /// still be meaningful input to a module's `EXPORT` routine.
+    pub(crate) fn is_empty_import_list(&self) -> bool {
+        match self {
+            Expr::Literal(value) => {
+                matches!(value.view(), ValueView::Slip(items) if items.is_empty())
+            }
+            Expr::Grouped(inner) => {
+                matches!(inner.as_ref(), Expr::ArrayLiteral(items) if items.is_empty())
+            }
+            _ => false,
+        }
+    }
+
     /// A [`DoBlockOrigin::Desugar`] [`Expr::DoBlock`]: run `body`, yield its
     /// last value, introduce no scope.
     ///

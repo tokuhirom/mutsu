@@ -66,11 +66,11 @@ impl Interpreter {
                 from_meta,
             ));
         }
-        match attributes.get("next-repo") {
-            Some(next) if next.truthy() => {
-                self.call_method_with_values(next.clone(), "resolve", vec![depspec])
-            }
-            _ => Ok(Value::NIL),
+        let next = self.repo_next_link(repo, attributes);
+        if next.truthy() {
+            self.call_method_with_values(next, "resolve", vec![depspec])
+        } else {
+            Ok(Value::NIL)
         }
     }
 

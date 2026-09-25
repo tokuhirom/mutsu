@@ -132,7 +132,13 @@ impl Interpreter {
                             }
                         }
                     }
-                    Stmt::TokenDecl { name, .. } => {
+                    // `token`, `rule` and `regex` share one per-package regex
+                    // namespace, and a `proto token`/`rule`/`regex` claims its
+                    // name in it too (rakudo: `proto rule f {*}; proto rule f
+                    // {*}` and `proto token f {*}; token f {x}` are both refused).
+                    Stmt::TokenDecl { name, .. }
+                    | Stmt::RuleDecl { name, .. }
+                    | Stmt::ProtoToken { name } => {
                         let n = name.resolve().to_string();
                         if n.is_empty() {
                             continue;

@@ -96,8 +96,9 @@ ok ProtoDiamond::RegexGrammar.parse('bg'),
     'proto regex child-role candidate still matches';
 
 # A real duplicate in one body is not a repeated composition and must remain
-# an X::Redeclaration.
-throws-like q:to/ROLE-REDECL/, X::Role::Instantiation,
+# an error. Like rakudo, it is refused when the role body is compiled
+# ("Package '...' already has a regex 'filler'"), not at composition.
+throws-like q:to/ROLE-REDECL/, Exception, message => /"already has a regex 'filler'"/,
     role ProtoDiamond::BadRole {
         proto rule filler {*}
         proto rule filler {*}

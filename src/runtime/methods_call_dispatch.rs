@@ -1189,7 +1189,15 @@ impl Interpreter {
             && let ValueView::Instance { class_name, .. } = target.view()
         {
             let cn = class_name.resolve();
-            if !self.class_has_user_method(&cn, method) && self.class_does_role(&cn, "Dateish") {
+            // The built-in `Date` / `DateTime` (and their subclasses) also do
+            // `Dateish`, but stringify natively and have no `!formatter`.
+            if !self.class_has_user_method(&cn, method)
+                && self.class_does_role(&cn, "Dateish")
+                && !self
+                    .class_mro(&cn)
+                    .iter()
+                    .any(|c| matches!(c.as_str(), "Date" | "DateTime"))
+            {
                 // Simulate calling `self!formatter()` from a method owned by the
                 // instance's own class (mirroring how Rakudo's `Dateish::Str`,
                 // once flattened into the composing class, resolves the private

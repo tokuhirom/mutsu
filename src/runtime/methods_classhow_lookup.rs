@@ -4,6 +4,32 @@ use crate::symbol::Symbol;
 impl Interpreter {
     pub(super) fn classhow_lookup(&mut self, invocant: &Value, method_name: &str) -> Option<Value> {
         self.classhow_lookup_impl(invocant, method_name, true)
+            .or_else(|| self.classhow_native_method_fallback(invocant, method_name))
+    }
+
+    /// What `.^lookup` / `.^find_method` answer for a method with no user
+    /// definition in the MRO: a core class's native method, as the same
+    /// callable Method object `.^method_table` hands out for it (not a bare
+    /// name string -- `Lock.^find_method('new')(Lock)` has to work), and
+    /// otherwise the `Mu.new` every type inherits
+    /// (`Supplier.^find_method('new')` is `Mu`'s).
+    fn classhow_native_method_fallback(
+        &self,
+        invocant: &Value,
+        method_name: &str,
+    ) -> Option<Value> {
+        if let ValueView::Package(class_name) = invocant.view() {
+            let class_name = class_name.resolve();
+            if self
+                .registry()
+                .classes
+                .get(&class_name)
+                .is_some_and(|class_def| class_def.native_methods.contains(method_name))
+            {
+                return Some(self.make_native_method_object(method_name, &class_name));
+            }
+        }
+        (method_name == "new").then(|| self.make_native_method_object("new", "Mu"))
     }
 
     /// Shared implementation for `.^lookup` (`include_ancestor_submethods =
@@ -598,12 +624,6 @@ impl Interpreter {
                 false,
             ));
         }
-        if let ValueView::Package(class_name) = invocant.view()
-            && let Some(class_def) = self.registry().classes.get(&class_name.resolve())
-            && class_def.native_methods.contains(method_name)
-        {
-            return Some(Value::str(method_name.to_string()));
-        }
-        None
+        self.classhow_native_method_fallback(invocant, method_name)
     }
 }

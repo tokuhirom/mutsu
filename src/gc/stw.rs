@@ -199,6 +199,17 @@ pub(crate) fn preregister_worker_quiescent() {
     }
 }
 
+/// Undo `enter_mutator_worker` + [`preregister_worker_quiescent`] for a worker
+/// whose thread the OS refused to create (ADR-0123). The quiescent count goes
+/// first: dropping the worker count first would leave a stale "quiescent"
+/// entry that a collector could count in place of a real, running mutator.
+pub(crate) fn abort_unborn_worker() {
+    if super::gc_ptr::gc_enabled() {
+        QUIESCENT.fetch_sub(1, Ordering::SeqCst);
+    }
+    super::gc_ptr::exit_mutator_worker();
+}
+
 /// The spawned worker's first act (before any user code): become a registered
 /// mutator and leave the parent-granted quiescent state. The checked exit
 /// parks first if a stop-the-world is in progress, so the worker cannot start
@@ -247,6 +258,10 @@ fn park_slow_inner() {
 /// its duration. After `f` returns, the thread leaves quiescence via the
 /// checked protocol, so it cannot resume mutation mid-scan.
 pub(crate) fn block_quiescent<R>(f: impl FnOnce() -> R) -> R {
+    // A pooled worker about to block frees its slot: the pool may start
+    // another worker for queued tasks (ADR-0123). Before anything else, while
+    // this thread is still an ordinary running mutator.
+    let _blocking = crate::runtime::worker_pool::enter_blocking();
     // `block_quiescent` wraps exactly the blocking native calls a profile must
     // not attribute to Raku code -- a `sleep`, a join, an OS read -- so it is
     // also the profiler's "this was not Raku time" boundary.
@@ -310,6 +325,9 @@ pub(crate) fn wait_until<'a, T>(
 ) -> Option<MutexGuard<'a, T>> {
     #[cfg(not(target_arch = "wasm32"))]
     {
+        // See `block_quiescent`: taken before `mutex`, so pool growth (and a
+        // rejected task's promise break) never runs under the caller's lock.
+        let _blocking = crate::runtime::worker_pool::enter_blocking();
         let guard = mutex.lock().unwrap();
         Some(stw_aware_wait(cvar, guard, ready))
     }

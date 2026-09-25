@@ -303,6 +303,19 @@ impl NanBox {
             .as_ref()
     }
 
+    /// The defining scope's `$_` a `RegexCaptured` literal snapshotted.
+    #[inline]
+    pub(in crate::value) fn regex_captured_topic(&self) -> Option<&Value> {
+        let bits = self.0.get();
+        if !matches!(classify(bits), Classified::Kind(Kind::RegexCaptured)) {
+            return None;
+        }
+        // SAFETY: kind-checked above; the word is live for this borrow.
+        unsafe { peek_arc::<crate::value::RegexClosure>(bits) }
+            .topic
+            .as_ref()
+    }
+
     /// The source-level tree carried by a transparent regex provenance value.
     #[inline]
     pub(in crate::value) fn regex_source_tree(&self) -> Option<&crate::regex_tree::RegexTree> {

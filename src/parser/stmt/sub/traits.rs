@@ -15,6 +15,20 @@ fn malformed_trait(err: PError, type_input: &str) -> PError {
     PError::malformed("trait")
 }
 
+/// The name after `is`: a Raku identifier, optionally package-qualified
+/// (`Foo::Bar`). Each `::` must be followed by another identifier segment, so
+/// a trailing `::` is left unconsumed.
+fn parse_qualified_trait_name(input: &str) -> PResult<'_, &str> {
+    let (mut rest, _) = parse_raku_ident(input)?;
+    while let Some(after) = rest.strip_prefix("::") {
+        match parse_raku_ident(after) {
+            Ok((r, _)) => rest = r,
+            Err(_) => break,
+        }
+    }
+    Ok((rest, &input[..input.len() - rest.len()]))
+}
+
 /// Parse the type named by `returns` / `of` / `-->`, including a coercion type's
 /// parenthesized source: `Str`, `Str()`, `Int(Str)`. Without this, `returns Str()`
 /// stopped at the `(` and the trailing `()` was left to be parsed as a sub body.
@@ -160,8 +174,11 @@ pub(crate) fn parse_sub_traits(mut input: &str) -> PResult<'_, SubTraits> {
         }
         if let Some(r) = keyword("is", r) {
             let (r, _) = ws(r)?;
-            // Parse the trait name (Raku identifier: may include hyphens and apostrophes)
-            let (r, trait_name) = parse_raku_ident(r)?;
+            // Parse the trait name (Raku identifier: may include hyphens and
+            // apostrophes). A package-qualified type name (`is Path::Map(...)`)
+            // is a trait too: it dispatches `trait_mod:<is>` with the type
+            // object as a positional, exactly like an unqualified one.
+            let (r, trait_name) = parse_qualified_trait_name(r)?;
             if seen_traits.contains(&trait_name.to_string()) {
                 add_parse_warning(
                     format!(

@@ -418,7 +418,11 @@ impl Interpreter {
             ClassDef {
                 parents: Vec::new(),
                 attributes: Vec::new(),
+                // `new` is Proc::Async's own constructor (`new(*@args)`), so it
+                // is a local method in rakudo's `.^method_table` -- Test::Mock
+                // walks that table to decide what it may override (#9340).
                 native_methods: [
+                    "new",
                     "start",
                     "command",
                     "started",
@@ -710,7 +714,8 @@ impl Interpreter {
             ClassDef {
                 parents: Vec::new(),
                 attributes: Vec::new(),
-                native_methods: ["protect", "lock", "unlock", "condition"]
+                // `new` is Lock's own constructor in rakudo (#9340).
+                native_methods: ["new", "protect", "lock", "unlock", "condition"]
                     .iter()
                     .map(|s| s.to_string())
                     .collect(),
@@ -809,7 +814,9 @@ impl Interpreter {
                 // same way every other class gets its MRO.
                 parents: vec!["Cool".to_string()],
                 attributes: Vec::new(),
+                // `new` is IO::Path's own constructor in rakudo (#9340).
                 native_methods: [
+                    "new",
                     "Str",
                     "gist",
                     "raku",

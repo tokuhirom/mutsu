@@ -45,7 +45,7 @@ The role of an ADR is to preserve the *context of the judgment* — something th
 | [0017](0017-cli-option-errors-follow-rakudo.md) | A command-line *option* error follows rakudo — message, stream, and a zero exit status | Accepted |
 | [0018](0018-slot-addressed-lexical-capture-and-env-sync.md) | Slot-addressed lexical capture and env synchronization | Accepted |
 | [0019](0019-compiled-declarations-and-unified-method-dispatch.md) | Compile declarations and unify method dispatch entries | Accepted/Implemented (all completion gates closed 2026-08-17; non-gating residue tracked separately) |
-| [0020](0020-shared-worker-pool.md) | Shared worker pool — elastic growth, blocking `await` | Accepted (all slices landed; per-task clone slimming tracked separately) |
+| [0020](0020-shared-worker-pool.md) | Shared worker pool — elastic growth, blocking `await` | Accepted (all slices landed; per-task clone slimming tracked separately; §3.2 growth rule superseded by ADR-0123) |
 | [0021](0021-argument-namedness-is-a-call-site-property.md) | Argument named-ness is a call-site property — Pair flavour unification | Accepted (P1-P3a and P3 shipped; P4/P5 remain) |
 | [0022](0022-regex-alternation-ltm-ranking.md) | `\|` alternation ranks branches by declarative-prefix LTM, not by longest actual match | Accepted (all five slices implemented and merged) |
 | [0023](0023-binding-provenance-spawn-capture.md) | Spawn-time capture ownership is decided by binding provenance, not value type | Accepted (implemented) |
@@ -125,7 +125,7 @@ The role of an ADR is to preserve the *context of the judgment* — something th
 | [0097](0097-a-binding-descriptor-addressed-by-slot.md) | A binding's own metadata lives on a slot-addressed descriptor, not under a key derived from its name | Proposed |
 | [0098](0098-if-pragma-actions-slang.md) | mutsu answers `Raku.legacy` with `False`, and a slang's *actions*-role method is an override name (the `if` pragma) | Accepted (implemented 2026-09-13) |
 | [0099](0099-regex-engine-performance-strategy.md) | Regex engine performance — fix the ceremony first; a prefilter above the unchanged walk | Accepted (Stage 0 and Stage 1 filed; Stage 2/3 deferred — see §8) |
-| [0100](0100-deep-recursion-raises-on-native-stack-headroom.md) | Deep recursion raises a catchable error, guarded by native stack headroom | Accepted (implemented) |
+| [0100](0100-deep-recursion-raises-on-native-stack-headroom.md) | Deep recursion raises a catchable error, guarded by native stack headroom | Accepted (implemented; point 7 amended by ADR-0123) |
 | [0101](0101-grammar-rule-dynamic-vars-have-a-match-scoped-stack.md) | Grammar rule dynamic variables have a match-scoped stack | Proposed |
 | [0103](0103-user-key-map-hasher.md) | A map keyed by *runtime data* hashes with a randomly-seeded fast hasher, not SipHash and not `FxHash` | Accepted (implemented) |
 | [0104](0104-compiler-version-is-a-rakudo-release-coordinate.md) | `$*RAKU.compiler.version` is a Rakudo-release coordinate, not mutsu's package version | Accepted (implemented) |
@@ -147,3 +147,4 @@ The role of an ADR is to preserve the *context of the judgment* — something th
 | [0120](0120-str-payload-may-be-a-lazily-flattened-strand-list.md) | A `Str` payload may be a lazily flattened strand list (`x`, shared-operand `~` and interpolation build strands; the first read flattens once) | Proposed |
 | [0121](0121-instance-attributes-live-in-per-class-slots.md) | Instance attributes live in per-class slots, and each access site (`$!x`, accessors, `nqp::getattr`/`bindattr`) resolves its slot once through a layout-keyed inline cache | Accepted (partly implemented) |
 | [0122](0122-repl-compiler-object-and-eval-contexts.md) | `nqp::getcomp("Raku")` is a Raku-level compiler object, and a REPL context is a captured unit environment plus its lexical routines | Accepted (implemented) |
+| [0123](0123-bounded-user-thread-stack-reservations.md) | User-thread stacks are reserved against an address-space budget, and the pool queues rather than grows past it | Accepted (implemented) |
