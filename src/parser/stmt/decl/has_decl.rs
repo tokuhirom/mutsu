@@ -206,6 +206,13 @@ fn coercion_target_type(tc: &str) -> Option<&str> {
     }
 }
 
+/// Raku spells a no-argument coercion type as `Type(Any)` in declaration
+/// metadata, even when the source uses the shorter `Type()` form.
+fn normalize_empty_coercion_type(tc: String) -> String {
+    tc.strip_suffix("()")
+        .map_or(tc.clone(), |target| format!("{target}(Any)"))
+}
+
 /// Whether a `HAS`-scoped attribute of this declared type inlines nothing.
 ///
 /// `HAS` exists to store a member *by value* inside the enclosing struct, which
@@ -351,6 +358,7 @@ pub(in crate::parser::stmt) fn has_decl(input: &str) -> PResult<'_, Stmt> {
             (saved, None, None)
         }
     };
+    let mut hash_key_type: Option<String> = None;
 
     let sigil = rest.as_bytes().first().copied().unwrap_or(0);
     let (rest, _) = if sigil == b'$' || sigil == b'@' || sigil == b'%' || sigil == b'&' {
@@ -406,21 +414,17 @@ pub(in crate::parser::stmt) fn has_decl(input: &str) -> PResult<'_, Stmt> {
         (rest, None)
     };
 
-    // Optional object-hash key-type suffix: has %.a{Str:D}. The key type folds
-    // into the attribute's type constraint as `ValueType{KeyType}`, exactly as a
-    // lexical `my %h{Str:D}` does (see my_decl.rs).
+    // Optional object-hash key-type suffix: has %.a{Str:D}. Keep the key type
+    // separate until all postfix `of` clauses have been parsed, just like a
+    // lexical `my %h{Str:D}` (see my_decl.rs). Otherwise `Any{Str}` makes the
+    // later `of Int` look like a duplicate value type and it is silently lost.
     let rest = if sigil == b'%'
         && rest.starts_with('{')
         && !rest.starts_with("{{")
         && let Some(end) = rest.find('}')
     {
         let key_type = rest[1..end].trim().to_string();
-        let value_tc = type_constraint.take();
-        let combined = match value_tc {
-            Some(v) => format!("{}{{{}}}", v, key_type),
-            None => format!("Any{{{}}}", key_type),
-        };
-        type_constraint = Some(combined);
+        hash_key_type = Some(key_type);
         &rest[end + 1..]
     } else {
         rest
@@ -435,7 +439,7 @@ pub(in crate::parser::stmt) fn has_decl(input: &str) -> PResult<'_, Stmt> {
         && let Some((r, tc)) = parse_type_constraint_expr(r)
     {
         let (r, _) = ws(r)?;
-        type_constraint = Some(tc);
+        type_constraint = Some(normalize_empty_coercion_type(tc));
         rest = r;
     }
 
@@ -824,7 +828,7 @@ pub(in crate::parser::stmt) fn has_decl(input: &str) -> PResult<'_, Stmt> {
             let (r, _) = ws1(r)?;
             let (r, tc) = parse_type_constraint_expr(r).ok_or_else(|| PError::expected("type"))?;
             let (r, _) = ws(r)?;
-            type_constraint = Some(tc);
+            type_constraint = Some(normalize_empty_coercion_type(tc));
             rest = r;
         }
 
@@ -832,6 +836,13 @@ pub(in crate::parser::stmt) fn has_decl(input: &str) -> PResult<'_, Stmt> {
         if std::ptr::eq(rest.as_ptr(), trait_pass_start) {
             break;
         }
+    }
+
+    if let Some(key_type) = hash_key_type {
+        type_constraint = Some(match type_constraint.take() {
+            Some(value_type) => format!("{value_type}{{{key_type}}}"),
+            None => format!("Any{{{key_type}}}"),
+        });
     }
 
     // `is rw` on a private attribute generates no accessor, so the trait does
