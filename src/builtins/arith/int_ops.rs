@@ -190,6 +190,63 @@ pub(crate) fn int_abs(i: i64) -> Value {
         .map_or_else(|| Value::from_bigint(-BigInt::from(i)), Value::int)
 }
 
+/// `+^ $a` (prefix bitwise negation) on the operand's `Int` coercion.
+///
+/// Cost: O(1) for an i64 operand; O(n) in the operand digits for a BigInt.
+pub(crate) fn int_bitneg(v: &Value) -> Value {
+    let v = int_operand(v);
+    match v.view() {
+        ValueView::Int(i) => Value::int(!i),
+        _ => Value::from_bigint(!v.to_bigint()),
+    }
+}
+
+/// `$a.abs` on the operand's `Int` coercion, for any magnitude.
+///
+/// Cost: O(1) for an i64 operand; O(n) in the operand digits for a BigInt.
+pub(crate) fn int_abs_value(v: &Value) -> Value {
+    let v = int_operand(v);
+    match v.view() {
+        ValueView::Int(i) => int_abs(i),
+        _ => Value::from_bigint(num_traits::Signed::abs(&v.to_bigint())),
+    }
+}
+
+/// `$a gcd $b`: the non-negative greatest common divisor of the operands'
+/// `Int` coercions (`0 gcd 0` is 0).
+///
+/// Cost: O(n^2) in the operand digits (Euclid on BigInts).
+pub(crate) fn int_gcd(left: &Value, right: &Value) -> Value {
+    let a = int_operand(left).to_bigint();
+    let b = int_operand(right).to_bigint();
+    Value::from_bigint(num_integer::Integer::gcd(&a, &b))
+}
+
+/// `$a lcm $b`: the non-negative least common multiple of the operands'
+/// `Int` coercions; 0 when either operand is 0.
+///
+/// Cost: O(n^2) in the operand digits.
+pub(crate) fn int_lcm(left: &Value, right: &Value) -> Value {
+    let a = num_traits::Signed::abs(&int_operand(left).to_bigint());
+    let b = num_traits::Signed::abs(&int_operand(right).to_bigint());
+    if a.is_zero() || b.is_zero() {
+        return Value::int(0);
+    }
+    let g = num_integer::Integer::gcd(&a, &b);
+    Value::from_bigint(&a / &g * &b)
+}
+
+/// Three-way comparison of the operands' `Int` coercions, at full precision.
+///
+/// Cost: O(1) for i64 operands; O(n) in the operand digits for BigInts.
+pub(crate) fn int_cmp(left: &Value, right: &Value) -> std::cmp::Ordering {
+    let (l, r) = (int_operand(left), int_operand(right));
+    if let (ValueView::Int(a), ValueView::Int(b)) = (l.view(), r.view()) {
+        return a.cmp(&b);
+    }
+    l.to_bigint().cmp(&r.to_bigint())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

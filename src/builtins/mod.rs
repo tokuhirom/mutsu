@@ -143,7 +143,8 @@ pub(crate) fn chomp_value(v: &Value) -> Value {
 pub(crate) use accepted_nameds::strip_undeclared_nameds;
 pub(crate) use arith::{
     BitOp, arith_add, arith_div, arith_mod, arith_mul, arith_negate, arith_pow, arith_sub, int_abs,
-    int_bitop, int_div, int_shift_left, int_shift_right, value_pred, value_succ,
+    int_abs_value, int_bitneg, int_bitop, int_cmp, int_div, int_gcd, int_lcm, int_operand,
+    int_shift_left, int_shift_right, value_pred, value_succ,
 };
 pub(crate) use functions::build_junction;
 pub(crate) use functions::join_flat;

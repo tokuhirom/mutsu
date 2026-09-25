@@ -321,10 +321,7 @@ impl Interpreter {
             self.stack.push(result);
             return Ok(());
         }
-        let a = left.to_bigint().abs();
-        let b = right.to_bigint().abs();
-        let g = num_integer::Integer::gcd(&a, &b);
-        self.stack.push(Value::from_bigint(g));
+        self.stack.push(crate::builtins::int_gcd(&left, &right));
         Ok(())
     }
 
@@ -336,15 +333,7 @@ impl Interpreter {
             self.stack.push(result);
             return Ok(());
         }
-        let a = left.to_bigint().abs();
-        let b = right.to_bigint().abs();
-        let result = if a.is_zero() && b.is_zero() {
-            Value::int(0)
-        } else {
-            let g = num_integer::Integer::gcd(&a, &b);
-            Value::from_bigint(&a / &g * &b)
-        };
-        self.stack.push(result);
+        self.stack.push(crate::builtins::int_lcm(&left, &right));
         Ok(())
     }
 
