@@ -2,7 +2,9 @@
 
 - Status: **Accepted** (all implementation slices landed 2026-08-05; the companion
   per-task clone slimming is out of scope here — see
-  `todo/perf/digest-ripemd-start-per-block-overhead.md`)
+  `todo/perf/digest-ripemd-start-per-block-overhead.md`). **§3.2's growth rule is superseded
+  by [ADR-0123](0123-bounded-user-thread-stack-reservations.md)** (2026-09-25): growth is now
+  blocked-aware, capped at 8 × cores active workers and by an address-space budget for stacks.
 - Date: 2026-08-05
 - Context: extracted from PLAN.md §5 via `todo/deep/shared-worker-pool-adr.md` (2026-08-02);
   groundwork measured 2026-07-17 on main `159a30cb0` and re-measured 2026-08-05 on main

@@ -44,8 +44,8 @@ pub(crate) use safepoint::{
     startup_collect_if_requested,
 };
 pub(crate) use stw::{
-    DEADLOCK_MESSAGE, block_quiescent, mark_thread_registered, park_at_safepoint as gc_park_point,
-    preregister_worker_quiescent, wait_until, worker_started,
+    DEADLOCK_MESSAGE, abort_unborn_worker, block_quiescent, mark_thread_registered,
+    park_at_safepoint as gc_park_point, preregister_worker_quiescent, wait_until, worker_started,
 };
 
 /// Test-only serialization for every unit test that touches the process-global

@@ -34,8 +34,16 @@ impl<T> JoinHandle<T> {
 /// field can actually identify which subsystem died instead of reading the
 /// unhelpful process name for every thread. See
 /// `todo/deep/procasync-stress-segv.md` §5.
+///
+/// Fails (rather than panicking) when the OS refuses the thread -- `EAGAIN`
+/// under an exhausted `RLIMIT_AS` or `RLIMIT_NPROC` -- so the caller can step
+/// down to a smaller stack or report a catchable Raku error (ADR-0123).
 #[cfg(not(target_arch = "wasm32"))]
-pub(crate) fn spawn_thread<F, T>(name: &str, stack_size: Option<usize>, f: F) -> JoinHandle<T>
+pub(crate) fn spawn_thread<F, T>(
+    name: &str,
+    stack_size: Option<usize>,
+    f: F,
+) -> std::io::Result<JoinHandle<T>>
 where
     F: FnOnce() -> T + Send + 'static,
     T: Send + 'static,
@@ -44,22 +52,26 @@ where
     if let Some(size) = stack_size {
         builder = builder.stack_size(size);
     }
-    JoinHandle {
-        inner: builder.spawn(f).expect("failed to spawn worker thread"),
-    }
+    Ok(JoinHandle {
+        inner: builder.spawn(f)?,
+    })
 }
 
 /// Queue `f` on the single browser thread. The stack size is meaningless here
 /// (there is one stack) and is ignored. There is no OS thread to name.
 #[cfg(target_arch = "wasm32")]
-pub(crate) fn spawn_thread<F, T>(_name: &str, _stack_size: Option<usize>, f: F) -> JoinHandle<T>
+pub(crate) fn spawn_thread<F, T>(
+    _name: &str,
+    _stack_size: Option<usize>,
+    f: F,
+) -> std::io::Result<JoinHandle<T>>
 where
     F: FnOnce() -> T + Send + 'static,
     T: Send + 'static,
 {
-    JoinHandle {
+    Ok(JoinHandle {
         inner: super::wasm_sched::spawn(f),
-    }
+    })
 }
 
 /// Block the current thread for `duration`.
