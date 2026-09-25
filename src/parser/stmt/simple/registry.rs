@@ -91,6 +91,10 @@ fn resolve_infix_symbol_precedence(symbol: &str) -> Option<i32> {
         "**" => Some(PREC_POWER),
         "~" => Some(PREC_CONCAT),
         "but" | "does" => Some(PREC_STRUCTURAL),
+        // The list-infix level: looser than the comma operator, so an operator
+        // declared `is equiv<Z>` takes a whole comma list as its operand
+        // (#9405).
+        "Z" | "X" | "..." | "...^" | "\u{2026}" | "\u{2026}^" | "minmax" => Some(PREC_SEQUENCE),
         _ => {
             // Check if it's a user-defined op with a registered level
             lookup_op_precedence(&format!("infix:<{}>", symbol))
