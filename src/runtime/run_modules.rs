@@ -1387,33 +1387,38 @@ impl Interpreter {
         // to its OWN name look foreign — caught by `battery-testsuite.sh`,
         // not by `make test`/`make roast`.
         let module_unit = self.unit_of_source(Some(&source_path.to_string_lossy()));
-        let mut granted_packages: HashSet<String> = HashSet::new();
-        granted_packages.insert(module.to_string());
+        let mut granted_packages: HashSet<&str> = HashSet::new();
+        // A source file without a `unit` declarator can still publish a
+        // qualified type into an unrelated package, as HTTP::Tiny::Test does
+        // with `class Test::Handle`. Keep those parent packages separate from
+        // declaring packages: a dependency such as HTTP::Header::Field must
+        // not claim HTTP::Header before that sibling module is loaded.
+        let mut owned_granted_packages: HashSet<String> = HashSet::new();
+        granted_packages.insert(module);
         if let Some(name) = unit_name.as_deref() {
-            granted_packages.insert(name.to_string());
+            granted_packages.insert(name);
         }
         for qualified in &new_types {
             if *qualified == module || qualified.starts_with(&format!("{module}::")) {
-                granted_packages.insert(qualified.clone());
+                granted_packages.insert(qualified);
             }
         }
-        // A source file without a `unit` declarator can still publish a
-        // qualified type into an existing package, as HTTP::Tiny::Test does
-        // with `class Test::Handle`. Only types recorded while THIS module's
-        // body was running belong here; `new_types` also contains declarations
-        // from nested `use`s and must not make their packages visible through
-        // a transitive dependency.
         if let Some(owned_types) = self.module_owned_types.get(module).cloned() {
+            let own_prefix = format!("{module}::");
             for qualified in owned_types {
-                if let Some((package, _)) = qualified.rsplit_once("::") {
-                    granted_packages.insert(package.to_string());
+                if let Some((package, _)) = qualified.rsplit_once("::")
+                    && package != module
+                    && !package.starts_with(&own_prefix)
+                {
+                    owned_granted_packages.insert(package.to_string());
                 }
             }
         }
         {
             let declaring = crate::runtime::cow_table_mut(&mut self.package_declaring_units);
             for pkg in &granted_packages {
-                declaring.entry(pkg.to_string()).or_insert(module_unit);
+                let pkg = (*pkg).to_string();
+                declaring.entry(pkg).or_insert(module_unit);
             }
         }
         // The grant side additionally records each package's top-level
@@ -1427,12 +1432,14 @@ impl Interpreter {
         // packages under the same `OpenSSL::` prefix).
         let grant: HashSet<String> = granted_packages
             .iter()
+            .map(|pkg| (*pkg).to_string())
+            .chain(owned_granted_packages.iter().cloned())
             .flat_map(|pkg| {
-                let top = crate::qualified::package_ancestors(crate::symbol::Symbol::intern(pkg))
+                let top = crate::qualified::package_ancestors(crate::symbol::Symbol::intern(&pkg))
                     .last()
-                    .map(|sym| sym.as_str())
-                    .unwrap_or(pkg.as_str());
-                [pkg.to_string(), top.to_string()]
+                    .map(|sym| sym.as_str().to_string())
+                    .unwrap_or_else(|| pkg.clone());
+                [pkg, top]
             })
             .collect();
         let visible_here = crate::runtime::cow_table_mut(&mut self.compunit_visible_packages)
