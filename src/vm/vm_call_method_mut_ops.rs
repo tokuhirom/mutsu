@@ -1010,6 +1010,16 @@ impl Interpreter {
             self.stack.push(frozen);
             return Ok(());
         }
+        // Regex.Bool / Regex.so: match against the regex's topic (see
+        // `vm_regex_bool`), the same answer the `CallMethod` form gives.
+        if let Some(result) = self.try_regex_bool_method(&target, method, &args) {
+            crate::vm::vm_stats::record_dispatch_entry_intercept(
+                "callmethodmut",
+                "regex-bool-topic",
+            );
+            self.stack.push(result);
+            return Ok(());
+        }
         // #8880: the plain-method lane. Everything from here to this opcode's
         // user-method dispatch is a chain of probes speculating that the
         // receiver might be something other than an ordinary object -- a proto,

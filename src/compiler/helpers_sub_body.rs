@@ -259,6 +259,7 @@ impl Compiler {
             .map(|s| Self::is_definite_return_spec(s))
             .unwrap_or(false);
         let mut sub_compiler = Compiler::new();
+        sub_compiler.in_callable_body = true;
         self.inherit_fold_ctx(&mut sub_compiler);
         self.inherit_outer_code_var_names(&mut sub_compiler);
         self.inherit_enclosing_scopes(&mut sub_compiler);
@@ -1203,6 +1204,7 @@ impl Compiler {
         promoted_decls: &[String],
     ) -> CompiledCode {
         let mut sub_compiler = Compiler::new();
+        sub_compiler.in_callable_body = true;
         sub_compiler.rw_tail = rw_tail;
         sub_compiler.promoted_expr_decl_names = promoted_decls.iter().cloned().collect();
         self.inherit_fold_ctx(&mut sub_compiler);

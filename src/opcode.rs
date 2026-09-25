@@ -760,8 +760,15 @@ pub(crate) enum OpCode {
     /// `captures` pairs each capture's env key (`$x` -> `x`, `@x`/`%x`/`&x`
     /// keep their sigil) with its local slot in the creating frame, or
     /// [`NOT_A_LOCAL`] when the name is only reachable through `env`.
+    ///
+    /// `topic` is `Some(slot)` when the literal is the escaping value of a
+    /// callable body (`{ /foo/ }`): the creating frame's `$_` (its local
+    /// `slot`, or `env` when [`NOT_A_LOCAL`]) is snapshotted onto the value so
+    /// `Regex.Bool` matches against the regex's lexical topic
+    /// (`crate::value::RegexClosure::topic`).
     LoadRegexClosure {
         const_idx: u32,
+        topic: Option<u32>,
         captures: Arc<Vec<(Symbol, u32)>>,
     },
     LoadNil,

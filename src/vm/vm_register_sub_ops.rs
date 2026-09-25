@@ -1363,7 +1363,7 @@ impl Interpreter {
                 let mut new_body = plan.raw_body.clone();
                 for stmt in new_body.iter_mut() {
                     if let Stmt::Expr(crate::ast::Expr::Literal(v)) = stmt {
-                        *v = self.capture_regex_closure(code, v, captures);
+                        *v = self.capture_regex_closure(code, v, None, captures);
                     }
                 }
                 captured_body = new_body;
