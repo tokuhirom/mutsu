@@ -216,12 +216,7 @@ impl Interpreter {
                     .map(|v| v.string_value_cow())
                     .unwrap_or_default();
                 let raw = args.get(3).cloned().unwrap_or(Value::NIL);
-                let val = match op {
-                    "bindattr_i" => Value::int(to_int(&raw)),
-                    "bindattr_n" => Value::num(raw.to_f64()),
-                    "bindattr_s" => Value::str(raw.to_string_value()),
-                    _ => raw,
-                };
+                let val = super::nqp_attr::NqpAttrConv::of_op(op).bind(raw);
                 match Self::nqp_bindattr_value(op, &obj, &attr, val.clone()) {
                     Ok(()) => Ok(val),
                     Err(e) => Err(e),
@@ -452,17 +447,7 @@ impl Interpreter {
                     .map(|v| v.string_value_cow())
                     .unwrap_or_default();
                 let value = Self::nqp_attr_value(obj, &name);
-                Ok(match op {
-                    "getattr_i" => Value::int(value.as_ref().map(to_int).unwrap_or(0)),
-                    "getattr_n" => Value::num(value.as_ref().map(|v| v.to_f64()).unwrap_or(0.0)),
-                    "getattr_s" => Value::str(
-                        value
-                            .as_ref()
-                            .map(|v| v.to_string_value())
-                            .unwrap_or_default(),
-                    ),
-                    _ => value.unwrap_or(Value::NIL),
-                })
+                Ok(super::nqp_attr::NqpAttrConv::of_op(op).read(value))
             }
             // nqp::setelems($buf, $n): resize a buffer to `$n` elements, the
             // extra ones zero. `NativeHelpers::Blob`'s `blob-allocate` is
@@ -562,7 +547,7 @@ impl Interpreter {
     /// lookup tries the bare name first and then the operand as written (an
     /// attribute declared `@!items` is asked for as `'@!items'` and stored as
     /// `items`). An operand with no twigil is its own bare name.
-    fn nqp_attr_bare(name: &str) -> &str {
+    pub(super) fn nqp_attr_bare(name: &str) -> &str {
         name.strip_prefix("$!")
             .or_else(|| name.strip_prefix("@!"))
             .or_else(|| name.strip_prefix("%!"))
@@ -570,7 +555,7 @@ impl Interpreter {
             .unwrap_or(name)
     }
 
-    fn nqp_attr_value(obj: &Value, name: &str) -> Option<Value> {
+    pub(super) fn nqp_attr_value(obj: &Value, name: &str) -> Option<Value> {
         // `nqp::getattr($map, Map, '$!storage')` reaches for the hash a Map
         // wraps, so that nqp's bindkey/deletekey can build it in place. In
         // mutsu a Map/Hash IS that storage — there is no wrapper object with a

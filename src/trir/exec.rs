@@ -438,6 +438,25 @@ impl Interpreter {
                         continue;
                     }
                 }
+                TrOp::ClassOperand(site) => {
+                    let v = self.trir_class_operand(site, compiled_fns)?;
+                    self.trir.os.push(v);
+                }
+                TrOp::GetAttrC(site) => {
+                    let _class = self.opop();
+                    let obj = self.opop();
+                    let (name, conv) = **site;
+                    let v = conv.read(Self::nqp_getattr_named(&obj, name));
+                    self.trir.os.push(v);
+                }
+                TrOp::BindAttrC(site) => {
+                    let (name, conv) = **site;
+                    let val = conv.bind(self.opop());
+                    let _class = self.opop();
+                    let obj = self.opop();
+                    Self::nqp_bindattr_named(conv.bind_op(), &obj, name, val.clone())?;
+                    self.trir.os.push(val);
+                }
                 TrOp::NqpOpGen { id, arity } => {
                     let n = *arity as usize;
                     let base = self.trir.os.len().saturating_sub(n);

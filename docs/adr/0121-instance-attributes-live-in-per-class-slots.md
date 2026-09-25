@@ -1,6 +1,6 @@
 # ADR-0121: Instance attributes live in per-class slots, and each access site resolves its slot once
 
-- **Status**: Accepted (user approval 2026-09-24; D1, D2, and the `$!x` and accessor parts of D3 implemented, see §5)
+- **Status**: Accepted (user approval 2026-09-24; D1, D2, and the `$!x`, accessor and TRIR literal-name `getattr`/`bindattr` parts of D3 implemented, see §5)
 - **Deciders**: tokuhirom, Claude
 - **Context**: [#9291](https://github.com/tokuhirom/mutsu/issues/9291) (the measurements),
   [#9134](https://github.com/tokuhirom/mutsu/issues/9134) group 1 and `create` (the `nqp::`
@@ -238,8 +238,23 @@ probe and the lock.
   memoized per `(class, attribute)` on the registry write generation, which
   took a write from 7,466 to 5,833 instructions. See
   `news/2026-09/generated-accessor-reads-its-slot-before-dispatch.md`.
-- **D3, the rest:** not started. That covers constant `getattr` / `bindattr`
-  sites and `Array` / `Hash` `$!descriptor`.
+- **D3, literal-name `getattr` / `bindattr` in TRIR (landed).** A TRIR
+  site whose name operand is a string literal compiles to `GetAttrC` /
+  `BindAttrC`, which carry the name already interned and twigil-stripped
+  (`src/runtime/nqp_attr.rs`), instead of `NqpOpGen`'s name-keyed dispatch.
+  A plain instance is answered straight from its store; every other
+  receiver takes the generic body, so the two cannot disagree. A bareword
+  class operand compiles to `ClassOperand`, which remembers the type object
+  it resolved to for one registry write generation: the attribute ops ignore
+  the operand's value, so only its effect (resolving at all) is owed. The
+  bareword term resolution itself also stopped formatting and interning a
+  `Pkg::name` key per enclosing package on every read. In ns per op in a
+  TRIR routine: `getattr(obj)` ~662 → ~105, `bindattr(obj)` ~670 → ~110,
+  `getattr(@r, List, '$!reified')` ~150 → ~97. See
+  `news/2026-09/literal-attribute-names-resolve-once-per-trir-site.md`.
+- **D3, the rest:** not started. That covers a per-site layout cache for
+  the TRIR attribute ops, the same resolution for the untyped
+  `OpCode::NqpOp` path, and `Array` / `Hash` `$!descriptor`.
 - **D4:** not started.
 
 ## 6. Reproduction

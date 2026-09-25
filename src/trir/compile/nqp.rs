@@ -173,6 +173,9 @@ impl TrirCompiler<'_> {
             self.ops.push(TrOp::ConstI(v));
             return Some(TrKind::Int);
         }
+        if let Some(kind) = self.try_attr_op(op, args) {
+            return kind;
+        }
         // Everything else in the namespace goes through the ordinary
         // implementation with boxed operands. That is not a fallback arm: an
         // `nqp::` op is a primitive either way, and boxing its operands is
@@ -296,7 +299,7 @@ impl TrirCompiler<'_> {
 
     /// Compile one operand of an `nqp::` op. A sigilless parameter is
     /// admitted exactly here (see the `BareWord` arm of `compile_expr`).
-    fn compile_nqp_operand(&mut self, a: &Expr) -> Option<TrKind> {
+    pub(super) fn compile_nqp_operand(&mut self, a: &Expr) -> Option<TrKind> {
         self.nqp_operand = matches!(a, Expr::BareWord(_));
         let got = self.compile_expr(a);
         self.nqp_operand = false;
@@ -413,7 +416,7 @@ fn pure_form(p: crate::runtime::nqp_pure::NqpPure) -> Option<NqpForm> {
 
 /// Whether `nqp::op` returns a native int, by NQP's own naming: the typed
 /// `_i` ops, every `is*` predicate, and the int-valued queries.
-fn nqp_op_returns_int(op: &str) -> bool {
+pub(super) fn nqp_op_returns_int(op: &str) -> bool {
     op.ends_with("_i")
         || op.starts_with("is")
         || matches!(

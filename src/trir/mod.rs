@@ -38,6 +38,7 @@
 use crate::symbol::Symbol;
 use crate::value::Value;
 
+pub(crate) mod class_operand;
 pub(crate) mod compile;
 pub(crate) mod entry;
 mod entry_values;
