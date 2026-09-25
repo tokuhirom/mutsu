@@ -44,6 +44,7 @@ pub(crate) fn make_anon_method(
         body,
         is_rw: false,
         is_raw: false,
+        custom_traits: Vec::new(),
         is_whatever_code: false,
         declarator,
     }
@@ -114,6 +115,7 @@ fn bind_invocant_aliases(expr: Expr, aliases: &[String]) -> Expr {
         body,
         is_rw,
         is_raw,
+        custom_traits,
         is_whatever_code,
         declarator,
     } = expr
@@ -149,6 +151,7 @@ fn bind_invocant_aliases(expr: Expr, aliases: &[String]) -> Expr {
         body: new_body,
         is_rw,
         is_raw,
+        custom_traits,
         is_whatever_code,
         declarator,
     }
@@ -188,6 +191,7 @@ pub(crate) fn parse_anon_sub_rest(
             body,
             is_rw: traits.is_rw,
             is_raw: traits.is_raw,
+            custom_traits: traits.custom_traits,
             is_whatever_code: false,
             declarator,
         },
@@ -228,6 +232,7 @@ pub(crate) fn set_anon_sub_rw(expr: Expr, is_rw: bool) -> Expr {
             return_type,
             body,
             is_raw,
+            custom_traits,
             is_whatever_code,
             declarator,
             ..
@@ -238,6 +243,7 @@ pub(crate) fn set_anon_sub_rw(expr: Expr, is_rw: bool) -> Expr {
             body,
             is_rw,
             is_raw,
+            custom_traits,
             is_whatever_code,
             declarator,
         },

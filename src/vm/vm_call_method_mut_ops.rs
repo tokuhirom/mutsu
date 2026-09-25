@@ -2306,16 +2306,11 @@ impl Interpreter {
                             .as_ref()
                             .and_then(|s| s.get(1))
                             .and_then(|s| s.clone());
-                        let mut new_map = (**map).clone();
                         // An object hash stores `.WHICH` keys and records the
                         // key object.
-                        let key = if new_map.key_type.is_some() {
-                            let which = crate::runtime::utils::value_which_key(&args[0]);
-                            new_map
-                                .original_keys
-                                .get_or_insert_with(ValueMap::default)
-                                .insert(which.clone(), args[0].clone());
-                            which
+                        let object_hash = map.key_type.is_some();
+                        let key = if object_hash {
+                            crate::runtime::utils::value_which_key(&args[0])
                         } else {
                             args[0].to_string_value()
                         };
@@ -2324,18 +2319,71 @@ impl Interpreter {
                         // existing cell binding when present) instead of a
                         // BOUND_HASH_REF_SENTINEL back-reference.
                         let mut bind_source_install: Option<(String, Value)> = None;
-                        if let Some(var_name) = source_var {
-                            let cell = match self.env().get(&var_name).map(Value::view) {
+                        let source_cell = source_var.as_ref().map(|var_name| {
+                            match self.env().get(var_name).map(Value::view) {
                                 Some(ValueView::ContainerRef(cell)) => cell.clone(),
                                 _ => {
                                     let cell = crate::gc::Gc::new(
                                         crate::value::ContainerCell::new(value.clone()),
                                     );
-                                    bind_source_install =
-                                        Some((var_name, Value::container_ref(cell.clone())));
+                                    bind_source_install = Some((
+                                        var_name.clone(),
+                                        Value::container_ref(cell.clone()),
+                                    ));
                                     cell
                                 }
-                            };
+                            }
+                        });
+                        // A mutating method on a captured aggregate must write
+                        // through the shared hash node. Rebuilding a fresh
+                        // HashData here severs the alias held by the caller;
+                        // `Sub::Memoized` relies on BIND-KEY updating its
+                        // caller-supplied cache after the wrapper captures it.
+                        let bound_in_place = self
+                            .env_root_descended_mut(target_name)
+                            .and_then(|root| {
+                                if !matches!(root.view(), ValueView::Hash(..)) {
+                                    return None;
+                                }
+                                root.with_hash_mut(|gc| {
+                                    let data = crate::value::gc_data_mut(gc);
+                                    if object_hash {
+                                        data.original_keys
+                                            .get_or_insert_with(ValueMap::default)
+                                            .insert(key.clone(), args[0].clone());
+                                    }
+                                    if let Some(cell) = &source_cell {
+                                        data.map.insert(
+                                            key.clone(),
+                                            Value::container_ref(cell.clone()),
+                                        );
+                                    } else {
+                                        data.map.insert(key.clone(), value.clone());
+                                    }
+                                });
+                                Some(())
+                            })
+                            .is_some();
+                        if bound_in_place {
+                            if let Some((source_name, cell_val)) = bind_source_install {
+                                self.set_env_with_main_alias(&source_name, cell_val.clone());
+                                self.update_local_if_exists(code, &source_name, &cell_val);
+                            }
+                            crate::vm::vm_stats::record_dispatch_entry_intercept(
+                                "callmethodmut",
+                                "bind-key",
+                            );
+                            self.stack.push(value);
+                            return Ok(());
+                        }
+                        let mut new_map = (**map).clone();
+                        if new_map.key_type.is_some() {
+                            new_map
+                                .original_keys
+                                .get_or_insert_with(ValueMap::default)
+                                .insert(key.clone(), args[0].clone());
+                        }
+                        if let Some(cell) = source_cell {
                             new_map.insert(key, Value::container_ref(cell));
                         } else {
                             new_map.insert(key, value.clone());

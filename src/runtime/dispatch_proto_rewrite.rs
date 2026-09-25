@@ -344,6 +344,7 @@ impl Interpreter {
                 body,
                 is_rw,
                 is_raw,
+                custom_traits,
                 is_whatever_code,
                 declarator,
             } => Expr::AnonSubParams {
@@ -353,6 +354,7 @@ impl Interpreter {
                 body: Self::rewrite_proto_dispatch_stmts(body),
                 is_rw: *is_rw,
                 is_raw: *is_raw,
+                custom_traits: custom_traits.clone(),
                 is_whatever_code: *is_whatever_code,
                 declarator: *declarator,
             },
