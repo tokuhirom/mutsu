@@ -273,7 +273,7 @@ fn literal_attribute_names_use_the_resolved_attr_ops() {
     let chunk = chunk_of("use nqp; my sub f($o, $v) { nqp::bindattr($o, List, '@!xs', $v) }")
         .expect("a literal bindattr must be admitted");
     assert!(
-        matches!(chunk.ops[2], TrOp::BindAttrC(ref site) if site.0.write_key == Some(Symbol::intern("xs"))),
+        matches!(chunk.ops[3], TrOp::BindAttrC(ref site) if site.0.write_key == Some(Symbol::intern("xs"))),
         "{:?}",
         chunk.ops
     );
