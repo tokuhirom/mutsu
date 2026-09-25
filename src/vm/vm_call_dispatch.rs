@@ -298,7 +298,6 @@ impl Interpreter {
         // routine can resolve its nested `RegisterSub` keys (ADR-0019 C6e-3c).
         let (cc, own_compiled_fns) = {
             let mut compiler = crate::compiler::Compiler::new();
-            compiler.in_callable_body = true;
             if !pkg.is_empty() && pkg != "GLOBAL" {
                 compiler.set_current_package(pkg.to_string());
             }
