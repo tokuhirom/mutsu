@@ -255,25 +255,22 @@ pub(crate) fn temp_stmt(input: &str) -> PResult<'_, Stmt> {
         // `expression` parses the whole `lvalue = value` into a nested
         // `IndexAssign` (its `target` is itself an `Index`). The single-level
         // `temp @a[i] = v` / `temp %h<k> = v` forms below cannot represent this
-        // chain, so handle it here: temporize the *whole* base container (saved
-        // and restored at scope exit, mirroring the single-level whole-container
-        // save) and then run the full nested assignment. The two run inline in
-        // the current scope via a `SyntheticBlock` (no fresh let-saves mark).
+        // chain, so the `Let` carries the whole assignment as its value and the
+        // compiler temporizes the element that assignment's target names.
         if let Expr::IndexAssign { target, .. } = &expr
             && matches!(target.as_ref(), Expr::Index { .. })
             && let Some(save_name) = lvalue_base_name(target)
         {
-            let save_stmt = Stmt::Let {
-                name: save_name,
-                index: None,
-                value: None,
-                is_temp: true,
-                undefine_first: false,
-                nested_lvalue: true,
-            };
             return parse_statement_modifier(
                 expr_rest,
-                Stmt::SyntheticBlock(vec![save_stmt, Stmt::Expr(expr)]),
+                Stmt::Let {
+                    name: save_name,
+                    index: None,
+                    value: Some(Box::new(expr)),
+                    is_temp: true,
+                    undefine_first: false,
+                    nested_lvalue: true,
+                },
             );
         }
         // temp on lvalue method call: `temp $obj.method = value`, where the

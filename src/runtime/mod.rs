@@ -3553,11 +3553,8 @@ pub struct Interpreter {
     /// share pays the one deep clone via `Arc::make_mut`. Collapses to a plain
     /// VM field once the Interpreter execution path is removed (PLAN.md ④/⑤).
     instance_type_metadata: Arc<RwLock<Arc<HashMap<u64, ContainerTypeInfo>>>>,
-    /// `let`/`temp` save stack: (name, saved value, is_temp, compiler-baked slot).
-    /// The baked slot (§1.4/§1.5) lets the scope-exit restore write `locals[slot]`
-    /// directly instead of resolving the name to the OUTER slot via
-    /// `find_local_slot`. `None` for a non-local target (by-name fallback).
-    let_saves: Vec<(String, Value, bool, Option<u32>)>,
+    /// `let`/`temp` save stack; see [`LetSaveEntry`].
+    let_saves: Vec<LetSaveEntry>,
     /// `rule name -> its own `:my $*/%*/@*x = …;` declarations`, for the grammar
     /// currently being parsed. `establish_grammar_dynamic_vars` also evaluates
     /// them once into `env` (a parse-wide slot, which is what a non-declaring
@@ -5028,6 +5025,27 @@ pub(crate) const DEFAULT_READ_ELEMS: i64 = 65536;
 /// under in `Interpreter::unit_lexicals` (ADR-0024). Contains `<`/`>`, which
 /// cannot appear in a real Raku package name, so no user `package`/`module`/
 /// `class` can collide with it.
+/// One `let`/`temp` save (`Interpreter::let_saves`).
+#[derive(Clone)]
+pub(crate) struct LetSaveEntry {
+    /// The saved variable (unused for an element save).
+    pub(crate) name: String,
+    /// The value to restore.
+    pub(crate) value: Value,
+    /// `temp` (always restore) rather than `let` (restore on failure only).
+    pub(crate) is_temp: bool,
+    /// Compiler-baked local slot of `name` (§1.4/§1.5): the scope-exit
+    /// restore writes `locals[slot]` directly instead of resolving the name to
+    /// the OUTER slot via `find_local_slot`. `None` for a non-local target
+    /// (by-name fallback).
+    pub(crate) slot: Option<u32>,
+    /// An element save (`temp @a[i]`, `temp $t[1]<k>[1]`): the container the
+    /// element lives in and its key. The restore writes `value` back into that
+    /// element in place, so the rest of the container -- and every other name
+    /// bound to it -- is untouched (#9434).
+    pub(crate) elem: Option<(Value, Value)>,
+}
+
 pub(crate) const MAINLINE_UNIT_KEY: &str = "UNIT<mainline>";
 
 /// Prefix of the reserved pseudo-unit key a named sub declared inside a *bare

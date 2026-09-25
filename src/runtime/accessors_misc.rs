@@ -388,8 +388,48 @@ impl Interpreter {
         // Take an independent snapshot: an instance value must be deep-copied so
         // a later in-place mutation through its shared cell does not corrupt the
         // saved-for-restore value (Phase 3, Stage 1).
-        self.let_saves
-            .push((name, value.into_temp_snapshot(), is_temp, slot));
+        self.let_saves.push(super::LetSaveEntry {
+            name,
+            value: value.into_temp_snapshot(),
+            is_temp,
+            slot,
+            elem: None,
+        });
+    }
+
+    /// Push an element save: `value` is what `container[key]` held, restored
+    /// into that element in place at scope exit (see [`super::LetSaveEntry::elem`]).
+    pub(crate) fn let_saves_push_elem(
+        &mut self,
+        container: Value,
+        key: Value,
+        value: Value,
+        is_temp: bool,
+    ) {
+        self.let_saves.push(super::LetSaveEntry {
+            name: String::new(),
+            value: value.into_temp_snapshot(),
+            is_temp,
+            slot: None,
+            elem: Some((container, key)),
+        });
+    }
+
+    /// Restore one save: an element save writes its element, a variable save
+    /// its variable.
+    fn restore_let_entry(&mut self, save: super::LetSaveEntry) {
+        match save.elem {
+            Some((container, key)) => {
+                // The element existed when it was saved (or was vivified by the
+                // temporizing assignment), so this write cannot need to grow
+                // anything the assignment did not already grow.
+                let _ = self.assign_into_computed_target(&container, &key, save.value);
+            }
+            None => {
+                let restored = self.resolve_restore_value(&save.name, &save.value);
+                self.restore_let_value(save.name, restored, save.slot);
+            }
+        }
     }
 
     /// Restore one `let`/`temp` save. For an instance, write the saved
@@ -512,9 +552,8 @@ impl Interpreter {
     /// Restore all variables from let_saves starting at `mark`, then truncate.
     pub(crate) fn restore_let_saves(&mut self, mark: usize) {
         for i in (mark..self.let_saves.len()).rev() {
-            let (name, old_val, _is_temp, slot) = self.let_saves[i].clone();
-            let restored = self.resolve_restore_value(&name, &old_val);
-            self.restore_let_value(name, restored, slot);
+            let save = self.let_saves[i].clone();
+            self.restore_let_entry(save);
         }
         self.let_saves.truncate(mark);
     }
@@ -537,20 +576,13 @@ impl Interpreter {
     #[inline(never)]
     fn resolve_let_saves_on_success_slow(&mut self, mark: usize, success: bool) {
         // Collect restore actions first to avoid borrow conflicts.
-        let restores: Vec<(String, Value, Option<u32>)> = (mark..self.let_saves.len())
+        let restores: Vec<super::LetSaveEntry> = (mark..self.let_saves.len())
             .rev()
-            .filter_map(|i| {
-                let (ref name, ref old_val, is_temp, slot) = self.let_saves[i];
-                if is_temp || !success {
-                    Some((name.clone(), old_val.clone(), slot))
-                } else {
-                    None
-                }
-            })
+            .filter(|&i| self.let_saves[i].is_temp || !success)
+            .map(|i| self.let_saves[i].clone())
             .collect();
-        for (name, old_val, slot) in restores {
-            let restored = self.resolve_restore_value(&name, &old_val);
-            self.restore_let_value(name, restored, slot);
+        for save in restores {
+            self.restore_let_entry(save);
         }
         self.let_saves.truncate(mark);
     }

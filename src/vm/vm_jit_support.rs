@@ -81,6 +81,8 @@ pub(super) fn step_supported(op: &OpCode) -> bool {
             | OpCode::IndexAssignExprNamed { .. }
             | OpCode::WrapVarRef { .. }
             | OpCode::LetSave { .. }
+            | OpCode::LetSaveElem { .. }
+            | OpCode::LetSaveElemVivified { .. }
             | OpCode::CheckReadOnly(_)
             | OpCode::MarkSigillessBind(_)
             | OpCode::MarkSigillessBindSource(_)

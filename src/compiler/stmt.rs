@@ -4639,15 +4639,51 @@ impl Compiler {
                 undefine_first,
                 nested_lvalue,
             } => {
+                // A multi-level element temp (`temp $t[1]<k>[1] = v`): `value` is
+                // the whole element assignment; temporize the element it targets.
+                if *nested_lvalue
+                    && let Some(assign) = value.as_deref()
+                    && let Expr::IndexAssign {
+                        target,
+                        index: key,
+                        is_positional,
+                        ..
+                    } = assign
+                {
+                    self.compile_let_save_elem(target, key, *is_positional, *is_temp, Some(assign));
+                    return;
+                }
+                // A single-level element temp (`temp @a[i] = v`, `let %h<k>`):
+                // temporize that element, then assign it.
+                if let Some(key) = index {
+                    let target_expr = if let Some(stripped) = name.strip_prefix('@') {
+                        Expr::ArrayVar(stripped.to_string())
+                    } else if let Some(stripped) = name.strip_prefix('%') {
+                        Expr::HashVar(stripped.to_string())
+                    } else {
+                        Expr::Var(name.to_string())
+                    };
+                    let is_positional = !name.starts_with('%');
+                    let assign = value.as_ref().map(|val_expr| Expr::IndexAssign {
+                        target: Box::new(target_expr.clone()),
+                        index: key.clone(),
+                        value: val_expr.clone(),
+                        is_positional,
+                    });
+                    self.compile_let_save_elem(
+                        &target_expr,
+                        key,
+                        is_positional,
+                        *is_temp,
+                        assign.as_ref(),
+                    );
+                    return;
+                }
                 // Temporizing a never-declared dynamic variable (`temp $*foo`)
                 // throws X::Dynamic::NotFound — you can only `temp`/`let` a variable
                 // that is already in scope. Emit the guard before the save (a no-op
-                // for non-dynamic names and for an already-declared dynamic). Skip
-                // it for the element form (`temp $*arr[0]`), which temporizes a
-                // container element rather than the dynamic itself.
-                if index.is_none() {
-                    self.maybe_emit_dynamic_var_check(name);
-                }
+                // for non-dynamic names and for an already-declared dynamic).
+                self.maybe_emit_dynamic_var_check(name);
                 // If undefine_first is set, assign Nil to the variable before saving.
                 // This makes LetSave capture the undefined state, so on scope exit
                 // the variable is restored to undefined (and its default value applies).
@@ -4657,60 +4693,28 @@ impl Compiler {
                 }
                 // Emit LetSave: saves current value of the variable
                 let name_idx = self.code.add_constant(Value::str(name.clone()));
-                let has_index = index.is_some();
                 // Bake the scalar's slot for the scope-exit restore (§1.4/§1.5).
-                // Index mode (`temp @a[$i]`) restores a container ELEMENT, not the
-                // named variable's slot, so keep the by-name path there.
-                let slot = if has_index {
-                    None
-                } else {
-                    self.local_map.get(name).copied().or_else(|| {
-                        // An ATTRIBUTE read or written in a method body lives in a
-                        // local slot of that body (`emit_set_named_var`), and the
-                        // slot is allocated by the FIRST such access. A
-                        // `temp $!x = 2` whose method never touched `$!x` before it
-                        // therefore reached here with no slot baked, so the restore
-                        // fell back to writing `env` by name — which nothing in the
-                        // body reads — and the attribute kept the temporized value
-                        // past the scope. Allocating the slot here is the same slot
-                        // the assignment below would allocate a moment later.
-                        (name.starts_with('!') && name.len() > 1).then(|| self.alloc_local(name))
-                    })
-                };
-                if let Some(idx_expr) = index {
-                    self.compile_expr(idx_expr);
-                }
+                let slot = self.local_map.get(name).copied().or_else(|| {
+                    // An ATTRIBUTE read or written in a method body lives in a
+                    // local slot of that body (`emit_set_named_var`), and the
+                    // slot is allocated by the FIRST such access. A
+                    // `temp $!x = 2` whose method never touched `$!x` before it
+                    // therefore reached here with no slot baked, so the restore
+                    // fell back to writing `env` by name — which nothing in the
+                    // body reads — and the attribute kept the temporized value
+                    // past the scope. Allocating the slot here is the same slot
+                    // the assignment below would allocate a moment later.
+                    (name.starts_with('!') && name.len() > 1).then(|| self.alloc_local(name))
+                });
                 self.code.emit(OpCode::LetSave {
                     name_idx,
-                    index_mode: has_index,
                     is_temp: *is_temp,
-                    deep: *nested_lvalue,
                     slot,
                 });
                 // Compile the assignment if value is provided
                 if let Some(val_expr) = value {
-                    if has_index {
-                        // For array/hash index assignment: compile as Stmt::Expr(IndexAssign)
-                        let is_hash = name.starts_with('%');
-                        let target_expr = if let Some(stripped) = name.strip_prefix('@') {
-                            Expr::ArrayVar(stripped.to_string())
-                        } else if let Some(stripped) = name.strip_prefix('%') {
-                            Expr::HashVar(stripped.to_string())
-                        } else {
-                            Expr::Var(name.to_string())
-                        };
-                        let assign_expr = Expr::IndexAssign {
-                            target: Box::new(target_expr),
-                            index: Box::new(index.as_ref().unwrap().as_ref().clone()),
-                            value: Box::new(val_expr.as_ref().clone()),
-                            is_positional: !is_hash,
-                        };
-                        self.compile_expr(&assign_expr);
-                        self.code.emit(OpCode::Pop);
-                    } else {
-                        self.compile_expr(val_expr);
-                        self.emit_set_named_var(name);
-                    }
+                    self.compile_expr(val_expr);
+                    self.emit_set_named_var(name);
                 }
             }
             Stmt::TempMethodAssign {
@@ -4723,9 +4727,7 @@ impl Compiler {
                 let name_idx = self.code.add_constant(Value::str(var_name.clone()));
                 self.code.emit(OpCode::LetSave {
                     name_idx,
-                    index_mode: false,
                     is_temp: true,
-                    deep: false,
                     slot,
                 });
                 let assign_expr = Expr::Call {

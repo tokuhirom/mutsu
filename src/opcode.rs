@@ -3009,20 +3009,36 @@ pub(crate) enum OpCode {
     IndirectTypeLookupStore,
 
     /// Save current variable value for `let`/`temp` scope management.
-    /// Pops the array index (if index_mode is true) from the stack.
     /// `is_temp`: true for `temp` (always restore), false for `let` (restore on failure only).
     LetSave {
         name_idx: u32,
-        index_mode: bool,
         is_temp: bool,
-        /// Snapshot every nesting level, not only the top one: set for the
-        /// save half of a multi-level element `temp` (`Stmt::Let::nested_lvalue`).
-        deep: bool,
         /// Compiler-baked local slot for the saved variable (§1.4/§1.5): the
         /// scope-exit restore writes `locals[slot]` directly instead of resolving
         /// the name via `find_local_slot` (position = OUTER slot, wrong for a live
         /// inner shadow). `None` for a non-local target (falls back to by-name).
         slot: Option<u32>,
+    },
+
+    /// Save one ELEMENT for `let`/`temp` (`temp @a[i]`, `temp $t[1]<k>[1]`).
+    /// Stack: `[container, key] -> [pending]`. Records what `container[key]`
+    /// holds, to be written back into that element in place at scope exit, and
+    /// pushes `False`. When `container` is not an Array/Hash yet (the
+    /// temporizing assignment is what vivifies the path, `temp $t[1]<k>[1] = 3`
+    /// on an empty `$t`) it records nothing and pushes `True`: the compiler then
+    /// re-evaluates the container after the assignment and saves the element
+    /// with [`OpCode::LetSaveElemVivified`].
+    /// `is_positional`: `[...]` rather than `{...}` / `<...>`.
+    LetSaveElem {
+        is_temp: bool,
+        is_positional: bool,
+    },
+    /// Second half of a [`OpCode::LetSaveElem`] that found no container: the
+    /// assignment has vivified the path, so save the element as holding `Any`.
+    /// Stack: `[container, key] -> []`.
+    LetSaveElemVivified {
+        is_temp: bool,
+        is_positional: bool,
     },
 
     /// Block with `let` scope management. Executes body, then decides from the
