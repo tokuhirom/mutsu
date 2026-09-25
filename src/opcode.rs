@@ -991,6 +991,14 @@ pub(crate) enum OpCode {
         name_idx: u32,
         fallback_idx: u32,
     },
+    /// The run-time half of `Expr::ExportTermOrCall` (#9339): when a
+    /// `sub EXPORT` hook installed a sigilless term under the constant-pool
+    /// name `name_idx`, push it and jump to `end`, skipping the zero-arg call
+    /// compiled right after this op; otherwise fall through into that call.
+    GetExportTermOrJump {
+        name_idx: u32,
+        end: u32,
+    },
     GetPseudoStash(u32),
     /// Build a lexical pseudo-stash from a compiler-baked scope description.
     /// Unlike `GetPseudoStash`, this names exactly one lexical frame, so an

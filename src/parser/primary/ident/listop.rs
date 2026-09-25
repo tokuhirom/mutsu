@@ -51,6 +51,29 @@ pub(crate) fn make_call_expr(name: String, input: &str, args: Vec<Expr>) -> Expr
     }
 }
 
+/// Wrap the zero-arg call a BARE imported-routine name (`t;`, `t.hi`) parsed
+/// to, so a sigilless term a run-time `sub EXPORT` hook installs under the same
+/// name can win over it at run time (#9339) — in Raku a bare `t` names the
+/// term, and only `t()` calls the routine.
+///
+/// Only in a compunit that imported through such a hook (the
+/// `term_keywords_shadowable` taint of #9047), and only for a name the static
+/// scan learned from an import: a routine the importing file declares itself
+/// is its own lexical and is still simply called. Everywhere else the call is
+/// returned untouched.
+pub(crate) fn export_term_or_call(name: &str, call: Expr) -> Expr {
+    if crate::parser::stmt::simple::term_keywords_shadowable()
+        && crate::parser::stmt::simple::is_imported_function(name)
+        && !crate::parser::stmt::simple::is_user_declared_sub(name)
+    {
+        return Expr::ExportTermOrCall {
+            name: Symbol::intern(name),
+            call: Box::new(call),
+        };
+    }
+    call
+}
+
 /// Parse expression listop arguments: comma-separated full expressions.
 /// Stops at statement modifiers, semicolons, and closing brackets.
 pub(crate) fn parse_expr_listop_args(input: &str, name: String) -> PResult<'_, Expr> {

@@ -996,8 +996,13 @@ impl Interpreter {
             invocation_id_block_end: 0,
             pos_light_ic_epoch: 1,
             amp_param_shadowed_names: std::collections::HashSet::new(),
-            export_amp_override_names: std::collections::HashSet::new(),
-            export_term_override_names: std::collections::HashSet::new(),
+            // Which env keys an EXPORT hook installed is load-time knowledge,
+            // not per-thread run state: a routine the parent loaded may run on
+            // the thread and must still see its module's hook-installed names
+            // (`start { ... }` around Terminal::MultiProgress's `t.hide-cursor`,
+            // #9339).
+            export_amp_override_names: self.export_amp_override_names.clone(),
+            export_term_override_names: self.export_term_override_names.clone(),
             empty_sig_proto_names: std::collections::HashSet::new(),
             registered_fn_fingerprints: Default::default(),
             // Stub-site knowledge is declaration-shape knowledge, not run

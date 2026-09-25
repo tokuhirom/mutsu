@@ -13,7 +13,7 @@ use crate::parser::primary::ident::anon_sub::{
 };
 use crate::parser::primary::ident::circumfix::parse_raw_braced_regex_body;
 use crate::parser::primary::ident::listop::{
-    TEST_CALLSITE_LINE_KEY, make_call_expr, make_call_expr_from_listop_args,
+    TEST_CALLSITE_LINE_KEY, export_term_or_call, make_call_expr, make_call_expr_from_listop_args,
     parse_expr_listop_args, parse_listop_arg, try_parse_no_paren_invocant_colon_call,
 };
 use crate::parser::primary::ident::predicates::{
@@ -2383,7 +2383,8 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
             op: crate::token_kind::TokenKind::FatArrow,
             right: Box::new(Expr::Literal(Value::int(current_line_number(input)))),
         }];
-        return Ok((rest, make_call_expr(name, input, args)));
+        let call = make_call_expr(name.clone(), input, args);
+        return Ok((rest, export_term_or_call(&name, call)));
     }
 
     // A core routine whose parameters are ALL optional is a real zero-arg call
