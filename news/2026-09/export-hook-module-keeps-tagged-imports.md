@@ -24,11 +24,16 @@ module's colonpair tags are imported like any other module's.
 A fourth shape came up in the issue thread. A hook module was first loaded
 in a block, and another module then imported it. That module's own
 routines could not see the term the re-run hook installed:
-`ExportHookTermUser.new.go` died with "Unknown function: t". A symbol
-installed by `sub EXPORT` is now recorded in the loading module's
-`module_imported_names`, as `import_module` already does for tag imports, so
-it becomes part of that module's scope. `export_installed_term` consults
-that scope (`module_imported_lexical`) before the caller's env.
+`ExportHookTermUser.new.go` died with "Unknown function: t". Such a
+sigilless term is now recorded in `module_export_terms` and folded into the
+loading module's last-resort `module_scope_lexicals`.
+`export_installed_term` falls back to that scope when the caller's env has
+no binding. The term deliberately does not become an imported alias
+(`module_imported_names`), which would beat the caller's env. Its env key is
+shared with a same-named `$scalar`. A first attempt did make it an alias, and
+it broke the bundled Log::Async battery: `method remove-tap(Tap $t)` read
+Terminal::ANSI::OO's `t` instead of its own parameter. That case is pinned
+too.
 
 `t/modules/import-export/export-hook-term-shadows-tagged-sub.t` had been split
 in two to avoid these bugs. It is back to one file, with `t()` restored and

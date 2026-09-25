@@ -725,6 +725,7 @@ impl Interpreter {
             package_type_aliases: self.package_type_aliases.clone(),
             module_scope_lexicals: self.module_scope_lexicals.clone(),
             module_imported_names: Vec::new(),
+            module_export_terms: Vec::new(),
             module_imported_lexical_names: self.module_imported_lexical_names.clone(),
             module_source_packages: self.module_source_packages.clone(),
             unit_module_packages: self.unit_module_packages.clone(),

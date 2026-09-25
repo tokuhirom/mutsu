@@ -12,7 +12,7 @@ use lib 't/lib';
 # hook only receives the positional `use` arguments -- in a block, when the
 # tagged sub is nested in a class, and across a later re-`use`.
 
-plan 16;
+plan 17;
 
 # The hook's module is first loaded by a block, so every later import below
 # re-runs its EXPORT (`rerun_module_export`).
@@ -30,6 +30,7 @@ plan 16;
     use ExportHookTermUser;
     is ExportHookTermUser.new.go, 'hi', "a module's method sees the term it imported";
     is (await start { ExportHookTermUser.new.go }), 'hi', '... also when run on another thread';
+    is ExportHookTermUser.new.echo(5), 5, 'a $t parameter of that module is not the imported t';
 }
 
 {

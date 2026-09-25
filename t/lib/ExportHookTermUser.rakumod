@@ -4,3 +4,6 @@
 use ExportHookTermVsTaggedSub;
 unit class ExportHookTermUser;
 method go { t.hi }
+# A `$t` parameter shares its env key with the imported sigilless `t`; the
+# parameter must win (Log::Async's `remove-tap(Tap $t)`, #9389).
+method echo($t) { $t }

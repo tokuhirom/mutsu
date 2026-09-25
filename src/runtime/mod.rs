@@ -2989,6 +2989,12 @@ pub struct Interpreter {
     /// DBDish::mysql::Native` looked like a no-op even though `intptr` is part of
     /// its lexical scope. Saved/restored around each nested load.
     pub(crate) module_imported_names: Vec<(String, Value, Option<Value>)>,
+    /// Sigilless terms a `sub EXPORT` hook installed while the module being
+    /// loaded imported it (see `install_export_symbol`). Folded into that
+    /// module's `module_scope_lexicals` when its load finishes, but never into
+    /// `module_imported_lexical_names`, whose entries beat a same-keyed
+    /// `$scalar`. Saved/restored around each nested load (#9389).
+    pub(crate) module_export_terms: Vec<(String, Value)>,
     /// Imported bare names recorded for each module owner. This is narrower
     /// than `module_scope_lexicals`: the latter also contains a module's own
     /// `our`/class-body names, while the VM's env fallback must only redirect

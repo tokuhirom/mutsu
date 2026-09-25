@@ -3249,6 +3249,7 @@ impl Interpreter {
             package_type_aliases: std::sync::Arc::new(PackageKeyed::default()),
             module_scope_lexicals: std::sync::Arc::new(PackageLexicals::default()),
             module_imported_names: Vec::new(),
+            module_export_terms: Vec::new(),
             module_imported_lexical_names: std::sync::Arc::new(PackageKeyed::default()),
             module_source_packages: Default::default(),
             unit_module_packages: Default::default(),

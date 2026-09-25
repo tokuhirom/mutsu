@@ -58,16 +58,13 @@ impl Interpreter {
         {
             return None;
         }
-        // A module routine reads the term its own compunit imported (an
-        // imported alias beats the caller's same-named env entry, as for any
-        // other bareword); anything else reads the importing scope's env.
-        // The module-side record is what survives a re-`use` of an
-        // already-loaded hook module, whose install the load's env restore
-        // drops from `env` (#9389).
-        if let Some(v) = self.module_imported_lexical(name) {
-            return Some(v.clone());
-        }
-        self.env().get(name).cloned()
+        // The importing scope's env first; a module routine whose own compunit
+        // imported the term through a re-run hook finds it in that module's
+        // scope once its load's env is gone (`module_export_terms`, #9389).
+        self.env()
+            .get(name)
+            .or_else(|| self.module_scope_lexical(name))
+            .cloned()
     }
 
     pub(super) fn exec_get_bare_word_op(
