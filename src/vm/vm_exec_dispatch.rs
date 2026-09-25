@@ -944,6 +944,16 @@ impl Interpreter {
                 self.apply_pending_rw_writeback(code);
                 *ip += 1;
             }
+            // Cost: O(1) -- one set probe and one env lookup; the call it falls
+            // through to is costed by its own op.
+            OpCode::GetExportTermOrJump { name_idx, end } => {
+                if let Some(value) = self.export_installed_term(Self::const_str(code, *name_idx)) {
+                    self.stack.push(value);
+                    *ip = *end as usize;
+                } else {
+                    *ip += 1;
+                }
+            }
             // Cost: O(1).
             OpCode::GetShadowableTerm {
                 name_idx,

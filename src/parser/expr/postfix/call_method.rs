@@ -17,10 +17,11 @@ pub(crate) fn auto_invoke_bareword_method_target(expr: Expr) -> Expr {
     if crate::parser::stmt::simple::is_user_declared_sub(&name)
         || crate::parser::stmt::simple::is_imported_function(&name)
     {
-        return Expr::Call {
+        let call = Expr::Call {
             name: Symbol::intern(&name),
             args: Vec::new(),
         };
+        return crate::parser::primary::ident::export_term_or_call(&name, call);
     }
     Expr::BareWord(name)
 }

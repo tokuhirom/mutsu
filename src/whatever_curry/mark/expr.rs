@@ -345,6 +345,7 @@ fn mark_expr_after_plant(expr: &mut Expr) {
         Expr::Literal(_)
         | Expr::LiteralSrc(_, _)
         | Expr::ShadowableTermKeyword { .. }
+        | Expr::ExportTermOrCall { .. }
         | Expr::BareWord(_)
         | Expr::HeredocInterpolation(_, _)
         | Expr::Var(_)

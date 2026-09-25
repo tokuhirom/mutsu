@@ -257,6 +257,20 @@ impl Compiler {
                 let name_idx = self.code.add_constant(Value::str(var_name));
                 self.code.emit(OpCode::GetHashVar(name_idx));
             }
+            Expr::ExportTermOrCall { name, call } => {
+                // A bare imported-routine name in a compunit that imported
+                // through a run-time `sub EXPORT` hook (#9339): prefer a term
+                // the hook installed under this name, else make the call.
+                let name_idx = self.code.add_constant(Value::str(name.resolve()));
+                let op_idx = self
+                    .code
+                    .emit(OpCode::GetExportTermOrJump { name_idx, end: 0 });
+                self.compile_expr(call);
+                let end = self.code.ops.len() as u32;
+                if let OpCode::GetExportTermOrJump { end: e, .. } = &mut self.code.ops[op_idx] {
+                    *e = end;
+                }
+            }
             Expr::ShadowableTermKeyword { name, value } => {
                 // A CORE term keyword in a compunit that imported through a
                 // run-time `sub EXPORT` hook (#9047). The hook's export set is

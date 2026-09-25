@@ -767,6 +767,21 @@ pub(crate) enum Expr {
         name: crate::symbol::Symbol,
         value: Value,
     },
+    /// A bare, paren-less, argument-less use of an imported routine's name
+    /// (`t;`, `t.hi`) parsed in a compunit that `use`d a module exporting
+    /// through a run-time `sub EXPORT` hook (#9339).
+    ///
+    /// The static module scan learns `t` is a routine from a tag-exported
+    /// `sub t is export(:t)` and so parses `t` as a zero-arg call, but the
+    /// hook may install a sigilless TERM of the same name — and in Raku a
+    /// bare `t` names that term (only `t()` calls the routine). Which names
+    /// the hook installs is not knowable at parse time, so the choice is
+    /// deferred to the VM: an `EXPORT`-installed `name` wins, otherwise `call`
+    /// runs. Never emitted outside such a compunit.
+    ExportTermOrCall {
+        name: crate::symbol::Symbol,
+        call: Box<Expr>,
+    },
     /// A parser-created static regex with its source-level tree retained for
     /// RakuAST conversion. Execution still consumes `value` until the shared
     /// tree's lowering covers the whole regex grammar (ADR-0088).
