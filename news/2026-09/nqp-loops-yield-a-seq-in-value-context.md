@@ -29,9 +29,15 @@ frames between the expression being compiled and the nearest statement
 boundary. `compile_stmt` starts a statement at depth 1, and `with_stmt_root`
 resets a `Stmt::Expr` statement root, or a block or routine tail, to 0. So an
 `nqp::` form compiled at depth 1 is sunk, and anything deeper is an operand.
-`nqp::stmts` passes sink position to its non-final operands, and passes its own
-position on to its last operand. The branches of `nqp::if` also take the
-position of the `nqp::if`. A sunk loop body is sunk too.
+Every operand of `nqp::stmts` is in sink position, the last one included. Rakudo
+compiles a loop there as a void loop: `nqp::stmts(nqp::while(...))` runs
+eagerly and yields null. JSON::Fast depends on this. Its `parse-obj` wraps its
+`while (1) { ... return %result ... }` in an extra `nqp::stmts` ("this level is
+needed for some reason"). A first cut that let the last operand inherit the
+position of the enclosing `nqp::stmts` turned that loop into a lazy Seq.
+`return` inside the Seq then could not leave the routine, and every JSON object
+decoded wrong. The branches of `nqp::if` take the position of the `nqp::if`. A
+sunk loop body is sunk too.
 
 A sunk loop keeps the existing jump loop, so the hot path is unchanged. A loop
 in value position is compiled as the AST
@@ -40,9 +46,9 @@ post-test forms. That is the same gather-backed lowering that a `(while ...)`
 expression already used, so laziness and closure capture come from there.
 
 TRIR had the same sink-only model. It now compiles the loop forms only in sink
-position (`compile_expr_sink`) and in tail position (`compile_expr_tail`, where
-the loop is sunk and followed by `Nil`, also as the last operand of a tail
-`nqp::stmts`). In any other position TRIR declines, and the bytecode path builds
+position (`compile_expr_sink`), in tail position and as the last operand of
+`nqp::stmts` (`compile_expr_tail`, where the loop is sunk and followed by
+`Nil`). In any other position TRIR declines, and the bytecode path builds
 the Seq.
 
 ## Known divergences
@@ -50,7 +56,7 @@ the Seq.
 - A tail `nqp::if` whose branch is a loop yields `Nil` in mutsu. Rakudo yields a
   `Seq` there. Treating the branches as sunk keeps the statement-level
   `nqp::if(c, nqp::while(...))` idiom a jump loop.
-- Rakudo yields `Mu` (or `VMNull`) for a tail `nqp::stmts(..., nqp::while(...))`.
+- Rakudo yields null (`Mu` or `VMNull`) for `nqp::stmts(..., nqp::while(...))`.
   mutsu yields `Nil`.
 
 Pinned by `t/vm/nqp-loop-value-context.t`.
