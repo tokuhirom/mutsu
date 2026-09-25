@@ -223,6 +223,19 @@ impl Interpreter {
 
     /// Drive a user/native `Iterator`'s `pull-one` until `IterationEnd`.
     fn pull_iterator_to_vec(&mut self, iterator: Value) -> Result<Vec<Value>, RuntimeError> {
+        self.pull_iterator_prefix_to_vec(&iterator, usize::MAX)
+    }
+
+    /// Drive an `Iterator`'s `pull-one` at most `limit` times, stopping early
+    /// on `IterationEnd`. `.head(n)` on a `Seq.new($iterator)` pulls exactly
+    /// the `n` it needs, as Rakudo's does, so an unbounded iterator that does
+    /// not claim `is-lazy` still answers (#9353).
+    // Cost: O(limit) `pull-one` calls.
+    fn pull_iterator_prefix_to_vec(
+        &mut self,
+        iterator: &Value,
+        limit: usize,
+    ) -> Result<Vec<Value>, RuntimeError> {
         // `Seq.from-loop(&body, :label(...))` with no condition/step
         // (`dispatch_seq_from_loop`'s lazy-infinite branch,
         // `runtime/methods_seq_dispatch.rs`) wraps its body callable in a
@@ -238,10 +251,10 @@ impl Interpreter {
         if let ValueView::Instance { class_name, .. } = iterator.view()
             && class_name == "FromLoopIterator"
         {
-            return self.pull_from_loop_iterator_to_vec(&iterator);
+            return self.pull_from_loop_iterator_to_vec(iterator, limit);
         }
         let mut pulled = Vec::new();
-        loop {
+        while pulled.len() < limit {
             let val = self.call_method_with_values(iterator.clone(), "pull-one", vec![])?;
             if matches!(val.view(), ValueView::Str(s) if s.as_str() == "IterationEnd")
                 || matches!(val.view(), ValueView::Package(name) if name == crate::symbol::Symbol::intern("IterationEnd"))
@@ -261,9 +274,12 @@ impl Interpreter {
     /// Genuinely unbounded if the body never raises a (label-matching)
     /// `last` — same as raku: `.sink`ing an infinite `Seq.from-loop` that
     /// never stops itself hangs there too.
+    // Cost: O(limit) body calls (unbounded when `limit` is `usize::MAX` and
+    // the body never raises `last`).
     fn pull_from_loop_iterator_to_vec(
         &mut self,
         iterator: &Value,
+        limit: usize,
     ) -> Result<Vec<Value>, RuntimeError> {
         let ValueView::Instance { attributes, .. } = iterator.view() else {
             return Ok(Vec::new());
@@ -284,7 +300,7 @@ impl Interpreter {
         // of surfacing as a bare `X::ControlFlow`.
         let _loop_handler = crate::runtime::loop_handler_depth::LoopHandlerGuard::new();
         let mut items = Vec::new();
-        'from_loop: loop {
+        'from_loop: while items.len() < limit {
             'body_redo: loop {
                 match self.call_sub_value(body_callable.clone(), vec![], true) {
                     Ok(value) => {
@@ -1055,7 +1071,8 @@ impl Interpreter {
     /// Returns `None` for forms that need the whole list (e.g. `.head(*-3)`).
     /// `.head(n)` / `.head` / `.first` (no matcher) on a Seq nobody has read
     /// yet whose source can be pulled one element at a time — a `Str.comb` /
-    /// `.lines` / `.words` cursor, or an `IO::Handle.lines` / `.words` read
+    /// `.lines` / `.words` cursor, a `Seq.new($iterator)`, or an
+    /// `IO::Handle.lines` / `.words` read
     /// ([`SeqBody::take_prefix_source`]): pull only the `n` elements the
     /// call needs and hand back a Seq of just those, which the ordinary
     /// dispatch then answers from. The original Seq is consumed, as Rakudo's
@@ -1091,6 +1108,9 @@ impl Interpreter {
                 // now rather than leak its fd. A user's own handle stays open.
                 self.close_if_seq_private_handle(&handle);
                 items?.0
+            }
+            Some(crate::value::PrefixSource::Iterator(iterator)) => {
+                self.pull_iterator_prefix_to_vec(&iterator, n)?
             }
             None => return Ok(None),
         };
