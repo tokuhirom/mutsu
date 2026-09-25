@@ -2740,8 +2740,9 @@ pub struct Interpreter {
     pending_eval_context_routine: Option<EvalContextRoutineState>,
     /// State behind `nqp::getcomp("Raku")`'s compiler object and the
     /// `nqp::ctx` family: the persistent eval contexts a REPL keeps between
-    /// `.eval` calls (ADR-0122, `runtime::repl_compiler`).
-    pub(crate) repl_compiler: repl_compiler::ReplCompilerState,
+    /// `.eval` calls (ADR-0122, `runtime::repl_compiler`). Boxed: it is
+    /// idle in almost every program, and `Interpreter` lives on the stack.
+    pub(crate) repl_compiler: Box<repl_compiler::ReplCompilerState>,
     /// Set right before the interpret path evaluates the body of a `supply { … }`
     /// block, and consumed by the very next `eval_block_value_inner` so the
     /// freshly compiled chunk carries `CompiledCode::is_supply_block_body`.
