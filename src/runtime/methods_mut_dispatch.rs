@@ -851,6 +851,7 @@ impl Interpreter {
                 )
             );
         if (target_var.starts_with('@') || (method == "splice" && scalar_holds_real_array))
+            && matches!(target.view(), ValueView::Array(..))
             && !self.mixin_role_has_method(&target, method)
         {
             // Check for shaped (multidimensional) arrays - these don't support

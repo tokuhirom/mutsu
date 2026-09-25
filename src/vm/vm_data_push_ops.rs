@@ -64,9 +64,41 @@ impl Interpreter {
         &mut self,
         code: &CompiledCode,
         target_name_idx: u32,
+        target_slot: Option<u32>,
         value_source_idx: Option<u32>,
     ) -> Result<(), RuntimeError> {
         let target_name = Self::const_str(code, target_name_idx);
+        // A variable trait replaces the declaration's plain Array with a
+        // custom positional container. Its name-keyed env mirror can still
+        // hold the initializer's Array while the local slot already holds
+        // the custom value. Preserve the env path for reference pushes so an
+        // argument that aliases the target (including `@a.push(@a)`) keeps
+        // its established cell identity.
+        let argument_aliases_target = self
+            .stack
+            .last()
+            .and_then(|source| {
+                let target = self.env().get(target_name)?.clone().into_deref();
+                let source = source.clone().into_deref();
+                Some(Self::same_container_arc(&source, &target))
+            })
+            .unwrap_or(false);
+        let slot_target = (!argument_aliases_target)
+            .then(|| target_slot.and_then(|slot| self.locals.get(slot as usize)))
+            .flatten();
+        let dispatch_target = slot_target
+            .filter(|value| {
+                matches!(
+                    value.view(),
+                    ValueView::Instance { .. }
+                        | ValueView::Mixin(..)
+                        | ValueView::CustomTypeInstance(..)
+                )
+            })
+            .or_else(|| self.env().get(target_name))
+            .or(slot_target)
+            .cloned()
+            .unwrap_or(Value::NIL);
         // ADR-0040's store boundary, Proxy half: the pushed element is a
         // `Scalar` container, so a `Proxy` is FETCHed on the way in exactly as
         // `@a[0] = $p` is. Done before the branches below, each of which pops
@@ -121,7 +153,7 @@ impl Interpreter {
             // relies on that truncation, then produced a silently wrong digest.
             self.check_push_element_type(target_name, &val)?;
             let val = self.wrap_native_int_push_value(target_name, val);
-            let target = self.env().get(target_name).cloned().unwrap_or(Value::NIL);
+            let target = dispatch_target.clone();
             // Track B/Track C: a `state @a` under an active thread context is a
             // shared `ContainerRef` cell. Push INTO the cell under its lock
             // (COW of the inner node keeps escaped snapshots immutable), so
@@ -294,12 +326,25 @@ impl Interpreter {
         // arrays). See ledger §1.
         // Check the target exists as a simple Array in env.
         // If not (e.g., captured closure var, or non-Array), fall back to interpreter.
-        let is_simple_array = self
+        // The reference-push path above may replace a plain env value with a
+        // shared cell. Re-read that live target before choosing the native
+        // array path, while retaining the declaration-slot target when it is
+        // the custom container behind an env mirror.
+        let current_target = self
             .env()
             .get(target_name)
-            .is_some_and(|v| matches!(v.view(), ValueView::Array(..)));
+            .cloned()
+            .unwrap_or_else(|| dispatch_target.clone());
+        let effective_target = if matches!(dispatch_target.view(), ValueView::Array(..))
+            && !matches!(current_target.view(), ValueView::Array(..))
+        {
+            current_target
+        } else {
+            dispatch_target
+        };
+        let is_simple_array = matches!(effective_target.view(), ValueView::Array(..));
         if !is_simple_array {
-            let target = self.env().get(target_name).cloned().unwrap_or(Value::NIL);
+            let target = effective_target;
             // Phase 2 Stage 2: a `:=`-cell-bound variable (`@x[0] := @b` /
             // `%h<k> := @b`) or a Slice 2a `=`-array-shared scalar (`$n = @z`)
             // holds a shared `ContainerRef` cell. Mutate the array INSIDE the
