@@ -381,16 +381,16 @@ impl Interpreter {
 /// `uv_strerror`): the OS description, lower-cased, without Rust's
 /// " (os error N)" suffix -- "no such file or directory", "invalid argument".
 pub(crate) fn libuv_style_reason(e: &std::io::Error) -> String {
-    let text = match e.raw_os_error() {
+    let mut text = match e.raw_os_error() {
         Some(code) => {
             let full = std::io::Error::from_raw_os_error(code).to_string();
             full.split(" (os error").next().unwrap_or(&full).to_string()
         }
         None => e.to_string(),
     };
-    let mut chars = text.chars();
-    match chars.next() {
-        Some(first) => first.to_lowercase().collect::<String>() + chars.as_str(),
-        None => text,
+    // OS error texts are ASCII, so lower-casing the first byte is exact.
+    if let Some(first) = text.get_mut(0..1) {
+        first.make_ascii_lowercase();
     }
+    text
 }
