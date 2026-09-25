@@ -4,11 +4,13 @@
 //! The original monolithic `precedence_meta_ops.rs` has been split into:
 //! - `meta_bracket`: bracket/meta-op utilities (parse_meta_op, BracketInfix, etc.)
 //! - `set_ops`:      set operator parsing + structural_expr
-//! - `hyper_concat`: hyper operator parsing + concat_expr / replication_expr
+//! - `hyper_concat`: hyper expression parsing + concat_expr / replication_expr
+//! - `hyper_spelling`: hyper operator markers / base-op extraction
 //! - `arith`:        additive, multiplicative, power expression parsers
 
 mod arith;
 mod hyper_concat;
+mod hyper_spelling;
 mod infix_term;
 mod meta_bracket;
 mod set_ops;
