@@ -881,7 +881,9 @@ fn postfix_expr_loop_from(
                 // the whitespace being skipped here.
                 let crossed_newline =
                     newline_after_brace || rest[..rest.len() - r_ws.len()].contains('\n');
-                if !(brace_final && crossed_newline) {
+                // A `}` closing a subscript (`%h{...}`) is not a block
+                // boundary, so the chain continues across the newline.
+                if !(brace_final && crossed_newline) || super::helpers::is_subscript_expr(&expr) {
                     rest = r_ws;
                 }
             }

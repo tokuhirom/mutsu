@@ -263,7 +263,8 @@ fn prefix_expr_with_ws_dot(input: &str) -> PResult<'_, Expr> {
             (false, false),
             crate::parser::expr::postfix::brace_newline_state,
         );
-    if brace_final {
+    // A `}` closing a hash subscript is not a block boundary (#9330).
+    if brace_final && !crate::parser::expr::postfix::is_subscript_expr(&expr) {
         let (after_ws, _) = ws(rest)?;
         let crossed_newline = newline_inside || rest[..rest.len() - after_ws.len()].contains('\n');
         if crossed_newline && after_ws.starts_with('.') && !after_ws.starts_with("..") {

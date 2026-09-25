@@ -21,6 +21,7 @@ pub(crate) use call_method::{QuotedMethodName, parse_quoted_method_name};
 pub(crate) use dot_assign::dot_assign_to_name;
 pub(in crate::parser) use helpers::is_angle_subscript_key_char;
 pub(in crate::parser) use helpers::is_conservative_angle_key_char;
+pub(in crate::parser) use helpers::is_subscript_expr;
 pub(in crate::parser) use loop_::parse_superscript_exp;
 pub(crate) use loop_::without_pending_prefix;
 pub(in crate::parser) use loop_::{brace_newline_state, consumed_span};
