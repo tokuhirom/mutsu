@@ -167,6 +167,17 @@ fn nqp_radix(args: &[Value]) -> Result<Value, RuntimeError> {
     ]))
 }
 
+/// The string forms of a native str op's first two operands, borrowed for a
+/// plain `Str` (a missing operand is the empty string).
+fn str_operands(args: &[Value]) -> (std::borrow::Cow<'_, str>, std::borrow::Cow<'_, str>) {
+    let form = |i: usize| {
+        args.get(i)
+            .map(Value::string_value_cow)
+            .unwrap_or(std::borrow::Cow::Borrowed(""))
+    };
+    (form(0), form(1))
+}
+
 fn cmp_result(ordering: std::cmp::Ordering) -> i64 {
     match ordering {
         std::cmp::Ordering::Less => -1,
@@ -394,31 +405,25 @@ impl Interpreter {
             "isnanorinf" => Ok(pure(NqpPure::IsNanOrInf, args)),
 
             // -- native str comparison --
-            // Cost: O(n1+n2), n1/n2 = chars of the operands (both copied).
+            // The comparison core is `str_prim`'s, shared with `eq`/`leg`; a
+            // plain Str operand is borrowed, not copied.
+            // Cost: O(p), p = common prefix (see `str_prim::str_order`).
             "cmp_s" => {
-                let lhs = args
-                    .first()
-                    .map(|v| v.to_string_value())
-                    .unwrap_or_default();
-                let rhs = args.get(1).map(|v| v.to_string_value()).unwrap_or_default();
-                Ok(Value::int(cmp_result(lhs.cmp(&rhs))))
+                let (lhs, rhs) = str_operands(args);
+                Ok(Value::int(cmp_result(
+                    crate::builtins::str_prim::str_order(&lhs, &rhs),
+                )))
             }
-            // Cost: O(n1+n2), n1/n2 = chars of the operands (both copied first). MoarVM: O(1) on
-            // differing lengths, else O(n) -- see #9134.
-            "iseq_s" => Ok(bool_int(
-                args.first()
-                    .map(|v| v.to_string_value())
-                    .unwrap_or_default()
-                    == args.get(1).map(|v| v.to_string_value()).unwrap_or_default(),
-            )),
-            // Cost: O(n1+n2), n1/n2 = chars of the operands (both copied first). MoarVM: O(1) on
-            // differing lengths, else O(n) -- see #9134.
-            "isne_s" => Ok(bool_int(
-                args.first()
-                    .map(|v| v.to_string_value())
-                    .unwrap_or_default()
-                    != args.get(1).map(|v| v.to_string_value()).unwrap_or_default(),
-            )),
+            // Cost: O(1) when the lengths differ, else O(p), p = common prefix.
+            "iseq_s" => {
+                let (lhs, rhs) = str_operands(args);
+                Ok(bool_int(crate::builtins::str_prim::str_eq(&lhs, &rhs)))
+            }
+            // Cost: O(1) when the lengths differ, else O(p), p = common prefix.
+            "isne_s" => {
+                let (lhs, rhs) = str_operands(args);
+                Ok(bool_int(!crate::builtins::str_prim::str_eq(&lhs, &rhs)))
+            }
 
             // `nqp::stat` follows the process cwd (or the interpreter's
             // configured cwd) and reports the basic filesystem predicates

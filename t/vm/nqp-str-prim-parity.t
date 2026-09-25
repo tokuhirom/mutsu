@@ -9,7 +9,7 @@ use Test;
 # agree, so a private copy drifting away from the shared routine fails here
 # even where no literal expectation happens to cover it.
 
-plan 50;
+plan 58;
 
 # a, e + U+301, x, \r\n, Y, a regional-indicator flag, z: 7 graphemes.
 my $mixed = "ae\x[301]x\r\nY\x[1F1EF]\x[1F1F5]z";
@@ -83,3 +83,13 @@ is nqp::flip($mixed).NFD.list, (122, 127471, 127477, 89, 13, 10, 120, 101, 769, 
 is nqp::concat("e", "\x[301]").chars, 1, 'nqp::concat composes across the join, like ~';
 is nqp::x("\x[301]", 2).chars, ("\x[301]" x 2).chars, 'nqp::x agrees with infix:<x>';
 is nqp::elems(nqp::split("", "ae\x[301]\r\nb")), 4, 'nqp::split("") splits graphemes';
+
+# -- string comparison: nqp::iseq_s / isne_s / cmp_s vs eq / ne / leg --
+is nqp::iseq_s("abc", "abc"), 1, 'nqp::iseq_s: equal strings';
+is nqp::iseq_s("ab", "abc"), 0, 'nqp::iseq_s: differing lengths';
+is so(nqp::iseq_s($mixed, $mixed.substr(0))), $mixed eq $mixed.substr(0), 'nqp::iseq_s agrees with eq';
+is nqp::isne_s("abc", "abd"), 1, 'nqp::isne_s';
+is so(nqp::isne_s("abc", "abd")), "abc" ne "abd", 'nqp::isne_s agrees with ne';
+is nqp::cmp_s("b", "abc"), 1, 'nqp::cmp_s orders by codepoint, not length';
+is nqp::cmp_s("a", "\x[E4]"), ("a" leg "\x[E4]").Int, 'nqp::cmp_s agrees with leg';
+is nqp::cmp_s("Z", "a"), ("Z" leg "a").Int, 'nqp::cmp_s: uppercase first, like leg';

@@ -26,8 +26,8 @@
 #         hand-written floored integer division or modulus. Call
 #         `crate::builtins::{int_div, arith_mod, int_mod_i64}` instead.
 #         Opt-out marker: `int-prim: allow`.
-#   native In the nqp:: op tables, the VM's nqp call path and TRIR's runtime,
-#         a hand-written wrapping int op (`.wrapping_add(` ...). Call
+#   native In the nqp:: op tables, the VM's nqp call path, TRIR's runtime and
+#         the VM's arithmetic opcodes, a hand-written wrapping int op (`.wrapping_add(` ...). Call
 #         `crate::runtime::nqp_native` instead: TRIR's own copy of
 #         `bitshiftl_i` once answered differently from the op table's.
 #         Opt-out marker: `native-prim: allow`.
@@ -58,7 +58,10 @@ INT_EXEMPT='^src/builtins/arith/|^src/parser/|^src/compiler/'
 INT_RE='Integer::(div_floor|mod_floor)|[^a-z_](div_floor|mod_floor)\(&'
 
 # -- native (ADR-0118) --
-NATIVE_SCOPE="$STR_SCOPE"
+# The nqp layers plus the VM's arithmetic opcodes (`src/vm/vm_arith*.rs`):
+# `NativeIntArithmetic` once hand-wrote its own `.wrapping_add(` next to
+# `nqp_native::add_i` (#9455).
+NATIVE_SCOPE="$STR_SCOPE"'|^src/vm/vm_arith[a-z_]*\.rs$'
 NATIVE_EXEMPT='^src/runtime/nqp_native\.rs$'
 NATIVE_RE='\.wrapping_(add|sub|mul|neg|abs|shl|shr|rem|div)\('
 
@@ -139,6 +142,9 @@ let v = a.wrapping_shl(b as u32);
 // native-prim: allow
 let r = r.wrapping_mul(10);
 EOF
+    cat >"$dir/src/vm/vm_arith_ops.rs" <<'EOF'
+let r = left.wrapping_mul(right);
+EOF
     cat >"$dir/src/runtime/nqp_native.rs" <<'EOF'
 pub(crate) fn add_i(a: i64, b: i64) -> i64 { a.wrapping_add(b) }
 EOF
@@ -147,9 +153,10 @@ EOF
     # str: nqp_ops_str.rs lines 1-2 and trir/x.rs line 1 (not trir/compile,
     # which is out of scope); int: vm/ops.rs lines 1-2 (not the marked line 4,
     # nor the arith home); native: nqp_ops.rs line 1 (not the marked line 3,
-    # nor nqp_native.rs); names: elsewhere.rs line 2 and vm/ops.rs line 5.
-    [ "$got" = "8" ] || {
-        echo "check-prims: self-test expected 8 hits, got $got:" >&2
+    # nor nqp_native.rs) and vm/vm_arith_ops.rs line 1; names: elsewhere.rs
+    # line 2 and vm/ops.rs line 5.
+    [ "$got" = "9" ] || {
+        echo "check-prims: self-test expected 9 hits, got $got:" >&2
         scan "$dir" >&2
         return 1
     }

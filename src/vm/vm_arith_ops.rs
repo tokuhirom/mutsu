@@ -43,6 +43,8 @@ impl Interpreter {
     /// declarations use machine-width registers for arithmetic: signed values
     /// wrap as `i64`, unsigned values as `u64`; `int8`/`uint8` and the other
     /// narrow declarations are narrowed later by their destination store.
+    /// The arithmetic itself is `runtime::nqp_native`'s, shared with
+    /// `nqp::add_i` and friends, TRIR and the JIT (ADR-0118).
     pub(super) fn exec_native_int_arithmetic_op(
         &mut self,
         op: crate::opcode::CompoundBaseOp,
@@ -71,6 +73,7 @@ impl Interpreter {
             return Ok(());
         }
 
+        use crate::runtime::nqp_native;
         let result = if unsigned {
             let left = match left.view() {
                 ValueView::Int(value) => u64::try_from(value).ok(),
@@ -83,23 +86,12 @@ impl Interpreter {
                 _ => None,
             };
             match (left, right) {
-                (Some(left), Some(right)) => Some(match op {
-                    // Rakudo's native unsigned result is an integer register
-                    // whose bits are boxed as a signed Int. The destination
-                    // native store reinterprets negative values back into the
-                    // unsigned range, so `uint $x = 0; $x - uint(1)` returns
-                    // -1 while `$x -= uint(1)` stores uint64.max.
-                    crate::opcode::CompoundBaseOp::Add => {
-                        Value::int((left.wrapping_add(right)) as i64)
-                    }
-                    crate::opcode::CompoundBaseOp::Sub => {
-                        Value::int((left.wrapping_sub(right)) as i64)
-                    }
-                    crate::opcode::CompoundBaseOp::Mul => {
-                        Value::int((left.wrapping_mul(right)) as i64)
-                    }
+                (Some(left), Some(right)) => Some(Value::int(match op {
+                    crate::opcode::CompoundBaseOp::Add => nqp_native::add_u(left, right),
+                    crate::opcode::CompoundBaseOp::Sub => nqp_native::sub_u(left, right),
+                    crate::opcode::CompoundBaseOp::Mul => nqp_native::mul_u(left, right),
                     _ => unreachable!(),
-                }),
+                })),
                 _ => None,
             }
         } else {
@@ -115,9 +107,9 @@ impl Interpreter {
             };
             match (left_value, right_value) {
                 (Some(left), Some(right)) => Some(Value::int(match op {
-                    crate::opcode::CompoundBaseOp::Add => left.wrapping_add(right),
-                    crate::opcode::CompoundBaseOp::Sub => left.wrapping_sub(right),
-                    crate::opcode::CompoundBaseOp::Mul => left.wrapping_mul(right),
+                    crate::opcode::CompoundBaseOp::Add => nqp_native::add_i(left, right),
+                    crate::opcode::CompoundBaseOp::Sub => nqp_native::sub_i(left, right),
+                    crate::opcode::CompoundBaseOp::Mul => nqp_native::mul_i(left, right),
                     _ => unreachable!(),
                 })),
                 _ => None,

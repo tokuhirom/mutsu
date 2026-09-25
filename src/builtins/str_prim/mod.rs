@@ -32,6 +32,22 @@ pub(crate) use strands::Joiner;
 use crate::builtins::grapheme_index::{GraphemeIndex, Units, with_str_index};
 use crate::value::{RuntimeError, Value};
 
+/// String equality: `infix:<eq>`/`ne` and `nqp::iseq_s`/`isne_s`. The
+/// operators coerce and autothread first; the nqp ops take their operands'
+/// string form as is. Both then compare here.
+///
+/// Cost: O(1) when the lengths differ, else O(p), p = common prefix.
+pub(crate) fn str_eq(a: &str, b: &str) -> bool {
+    a.len() == b.len() && a == b
+}
+
+/// String order: `infix:<leg>`/`lt`/`gt`/... and `nqp::cmp_s`, by codepoint.
+///
+/// Cost: O(p), p = common prefix.
+pub(crate) fn str_order(a: &str, b: &str) -> std::cmp::Ordering {
+    a.cmp(b)
+}
+
 /// The number of graphemes in `v`'s string form (`.chars`, `nqp::chars`).
 ///
 /// Cost: O(1) amortized for a cached `Str` (the index is built once in O(n)
