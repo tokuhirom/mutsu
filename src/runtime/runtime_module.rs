@@ -408,6 +408,19 @@ impl Interpreter {
         }
     }
 
+    /// The ordinary export tags a `use` of a module with a `sub EXPORT` hook
+    /// still imports. The hook receives the positional `use` arguments, but a
+    /// colonpair tag (`use M :u`) keeps selecting the module's `is export(:u)`
+    /// symbols -- and an undeclared one is still `X::Import::NoSuchTag` -- as
+    /// in rakudo (#9389). `:ALL` requests the whole surface.
+    // Cost: O(t), t = tags.
+    fn export_hook_ordinary_tags(tags: &[String]) -> Vec<String> {
+        if tags.iter().any(|tag| tag.eq_ignore_ascii_case("all")) {
+            return vec!["ALL".to_string()];
+        }
+        tags.to_vec()
+    }
+
     pub fn use_module(&mut self, module: &str) -> Result<(), RuntimeError> {
         self.use_module_with_tags(module, &[])
     }
@@ -603,23 +616,13 @@ impl Interpreter {
                 return Ok(());
             }
             self.rerun_module_export(module)?;
-            // A module-defined EXPORT receives the use arguments itself. Its
-            // returned map is combined with ordinary `is export` declarations
-            // (Rakudo's custom EXPORT and default export surfaces coexist),
-            // but the use arguments are not export tags (`use JSON::Fast
-            // <immutable !pretty>` is the canonical example). Preserve an
-            // explicit `:all` tag, though: it requests the module's complete
-            // ordinary export surface in addition to whatever the hook
-            // returns, while positional use arguments must still use the
-            // default tag set so they are not rejected as unknown tags.
+            // A module-defined EXPORT receives the positional use arguments
+            // itself (`use JSON::Fast <immutable !pretty>`); its returned map
+            // is combined with the ordinary `is export` declarations the
+            // colonpair tags select (see `export_hook_ordinary_tags`).
             if self.module_export_defs.contains_key(module) {
-                let all_tag = ["ALL".to_string()];
-                let ordinary_tags = if tags.iter().any(|tag| tag.eq_ignore_ascii_case("all")) {
-                    &all_tag[..]
-                } else {
-                    &[]
-                };
-                return match self.import_module(module, ordinary_tags) {
+                let ordinary_tags = Self::export_hook_ordinary_tags(tags);
+                return match self.import_module(module, &ordinary_tags) {
                     Ok(()) => Ok(()),
                     Err(err) if err.message.starts_with("No exports found for module:") => Ok(()),
                     Err(err) => Err(err),
@@ -1093,18 +1096,13 @@ impl Interpreter {
                     .or_default()
                     .extend(package_globals);
             }
-            let all_tag = ["ALL".to_string()];
             let import_tags = if self.module_export_defs.contains_key(module) {
-                if tags.iter().any(|tag| tag.eq_ignore_ascii_case("all")) {
-                    &all_tag[..]
-                } else {
-                    &[]
-                }
+                Self::export_hook_ordinary_tags(tags)
             } else {
-                tags
+                tags.to_vec()
             };
             if import
-                && let Err(err) = self.import_module(module, import_tags)
+                && let Err(err) = self.import_module(module, &import_tags)
                 && !err.message.starts_with("No exports found for module:")
             {
                 return Err(err);

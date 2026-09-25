@@ -442,6 +442,17 @@ impl Interpreter {
             self.export_term_override_names
                 .insert(crate::symbol::Symbol::intern(&env_key));
         }
+        // Part of the LOADING module's own lexical scope, whether or not it is
+        // new to `env` -- the same record `import_module` keeps. Without it a
+        // re-`use` (`rerun_module_export`) of a hook whose symbol an earlier
+        // scope already put under the same env key added nothing the load's
+        // env diff could see, and the importing module's routines lost the
+        // term once its load finished (#9389).
+        if !self.module_load_stack.is_empty() {
+            let previous = self.env.get(&env_key).cloned();
+            self.module_imported_names
+                .push((env_key.clone(), value.clone(), previous));
+        }
         self.env.insert(env_key.clone(), value.clone());
         if normalized_env_key != env_key {
             self.record_import_env_key(&normalized_env_key);

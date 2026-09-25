@@ -58,6 +58,15 @@ impl Interpreter {
         {
             return None;
         }
+        // A module routine reads the term its own compunit imported (an
+        // imported alias beats the caller's same-named env entry, as for any
+        // other bareword); anything else reads the importing scope's env.
+        // The module-side record is what survives a re-`use` of an
+        // already-loaded hook module, whose install the load's env restore
+        // drops from `env` (#9389).
+        if let Some(v) = self.module_imported_lexical(name) {
+            return Some(v.clone());
+        }
         self.env().get(name).cloned()
     }
 
