@@ -216,16 +216,21 @@ impl Interpreter {
             // Cost: O(k), k = arguments copied into a fresh Vec.
             "list" => Ok(Value::array(args.to_vec())),
 
-            // nqp::unshift(@l, $v) — the positional peer of
-            // `push_s`/`push_i`/`push_n` (nqp_ops_text.rs): insert at the
+            // nqp::unshift(@l, $v) and its typed twins — the positional peers
+            // of `push_s`/`push_i`/`push_n` (nqp_ops_text.rs): insert at the
             // front of an nqp list / native array in place, returning the
-            // list.
-            // Cost: O(1) amortized on a list (ArrayData's head offset doubles as front slack, #9121);
-            // O(e) on a Buf, e = elements (the storage shifted up in place). MoarVM: O(1) amortized
-            // -- see #9191.
-            "unshift" => {
+            // list. The typed forms convert the value first, as `push_*` does.
+            // Cost: O(1) amortized on a list (ArrayData's head offset doubles as front slack, #9121)
+            // and on a Buf (BufBytes keeps front slack the same way, #9191).
+            "unshift" | "unshift_i" | "unshift_n" | "unshift_s" => {
                 let target = args.first().cloned().unwrap_or(Value::NIL);
                 let val = args.get(1).cloned().unwrap_or(Value::NIL);
+                let val = match op {
+                    "unshift_s" => Value::str(val.to_string_value()),
+                    "unshift_n" => Value::num(val.to_f64()),
+                    "unshift_i" => Value::int(crate::runtime::to_int(&val)),
+                    _ => val,
+                };
                 match target.view() {
                     ValueView::Array(items, _) => {
                         // SAFETY: audited aliased in-place container write

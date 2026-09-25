@@ -413,8 +413,10 @@ impl ElemKind {
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct BufData {
     /// `elems * width` bytes. This is the buffer C is handed a pointer into, so
-    /// it is contiguous and never a `Vec<Value>` again.
-    pub bytes: Vec<u8>,
+    /// it is contiguous and never a `Vec<Value>` again. A [`BufBytes`] rather
+    /// than a `Vec<u8>` so that removing or inserting at the front is O(1)
+    /// amortized, as in MoarVM's `VMArray` (#9191).
+    pub bytes: BufBytes,
     /// Bytes per element: 1, 2, 4 or 8.
     pub width: u8,
     /// How those bytes read back — see [`ElemKind`].
@@ -431,7 +433,7 @@ impl BufData {
     /// allocated the first time something asks for the buffer's `.WHERE`.
     pub(crate) fn new(bytes: Vec<u8>, width: u8, kind: ElemKind) -> BufData {
         BufData {
-            bytes,
+            bytes: BufBytes::from(bytes),
             width,
             kind,
             body: value_buf_repr::ReprBody::default(),
@@ -532,6 +534,7 @@ pub(crate) use match_lazy::MatchNode;
 mod nanbox;
 #[cfg(feature = "jit")]
 pub(crate) use nanbox::jit_words;
+pub(crate) mod buf_bytes;
 mod native_backing;
 pub(crate) mod seq_body;
 mod serde_support;
@@ -544,6 +547,7 @@ pub(crate) mod types_eqv;
 pub(crate) mod types_isa;
 pub(crate) mod types_truthy;
 mod value_async;
+pub(crate) use buf_bytes::BufBytes;
 pub(crate) mod value_buf;
 pub(crate) mod value_buf_repr;
 pub(crate) mod value_carray;

@@ -49,6 +49,12 @@ CASES=(
     'readuint|my $b := buf8.new(0 xx NN);|nqp::readuint($b, $i, 0)'
     'slice|my $b := buf8.new(0 xx NN);|nqp::slice($b, $i, $i)'
     'splice (buf8 append)|my $b := buf8.new; my $one := buf8.new(1);|nqp::splice($b, $one, nqp::elems($b), 0)'
+    'writeuint (buf32)|my $b := buf32.new;|nqp::writeuint($b, $i, 7, 0)'
+    'readuint (buf32)|my $b := buf32.new(0 xx NN);|nqp::readuint($b, $i, 0)'
+    'slice (buf32)|my $b := buf32.new(0 xx NN);|nqp::slice($b, $i, $i)'
+    'splice (buf32 append)|my $b := buf32.new; my $one := buf32.new(1);|nqp::splice($b, $one, nqp::elems($b), 0)'
+    'shift_i (buf8)|my $b := buf8.new(0 xx NN);|nqp::shift_i($b)'
+    'unshift_i (buf8)|my $b := buf8.new;|nqp::unshift_i($b, $i)'
     'push_i (buf16)|my $b := buf16.new;|nqp::push_i($b, $i)'
     'pop_i (buf16)|my $b := buf16.new(1 xx NN);|nqp::pop_i($b)'
 )

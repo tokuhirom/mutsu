@@ -81,7 +81,7 @@ fn encoded_bytes(v: &Value) -> Option<Vec<u8>> {
     match v.view() {
         ValueView::Instance { attributes, .. } => {
             let node = crate::value::value_buf::buf_storage_node(&attributes)?;
-            Some(node.bytes.clone())
+            Some(node.bytes.to_vec())
         }
         ValueView::Scalar(inner) => encoded_bytes(inner),
         ValueView::ContainerRef(cell) => cell.lock().ok().and_then(|g| encoded_bytes(&g)),

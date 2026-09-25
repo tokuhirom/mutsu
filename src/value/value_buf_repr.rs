@@ -233,7 +233,7 @@ mod tests {
         let first = node.body.address(&node);
         assert_eq!(node.body.address(&node), first);
 
-        node.bytes = vec![7, 8, 9];
+        node.bytes = vec![7, 8, 9].into();
         let again = node.body.address(&node);
         assert_eq!(again, first, "the block itself must stay put");
         // SAFETY: as above.

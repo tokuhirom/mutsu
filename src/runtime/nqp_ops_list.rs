@@ -333,8 +333,8 @@ impl Interpreter {
             // nqp::shift($list) and its typed twins: remove and return the
             // FIRST element. `JSON::Fast`'s string scanner drives its whole
             // `Uni` of codepoints this way.
-            // Cost: O(1) amortized on a list (ArrayData's head offset, #9121); O(e) on a Buf, e =
-            // elements (the rest shifted down in place). MoarVM: O(1) -- see #9191.
+            // Cost: O(1) amortized on a list (ArrayData's head offset, #9121) and on a Buf
+            // (BufBytes' head offset, #9191).
             "shift" | "shift_s" | "shift_i" | "shift_n" => {
                 Self::nqp_shift(op, &args.first().cloned().unwrap_or(Value::NIL))
             }

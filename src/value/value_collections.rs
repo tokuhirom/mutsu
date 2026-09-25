@@ -254,7 +254,7 @@ impl ArrayData {
             && let Some(node) =
                 crate::value::value_buf::make_native_array_storage(elem_type, &self.items)
         {
-            let snapshot = node.bytes.clone();
+            let snapshot = node.bytes.to_vec();
             self.native = Some(super::NativeBacking::new(node, snapshot));
         }
     }

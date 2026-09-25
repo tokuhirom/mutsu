@@ -97,7 +97,7 @@ impl NativeBacking {
         snapshot: Option<&[u8]>,
         current: &[Value],
     ) -> Option<(Vec<u8>, Vec<Value>)> {
-        if !dirty && snapshot == Some(node.bytes.as_slice()) {
+        if !dirty && snapshot == Some(&node.bytes[..]) {
             return None;
         }
         Some(if dirty {
@@ -107,7 +107,7 @@ impl NativeBacking {
             )
         } else {
             (
-                node.bytes.clone(),
+                node.bytes.to_vec(),
                 crate::value::value_buf::decode_storage(node),
             )
         })
