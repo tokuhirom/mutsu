@@ -1,3 +1,3 @@
 qualify 173
-global-cmp 90
+global-cmp 89
 scan 343
