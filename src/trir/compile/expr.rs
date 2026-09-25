@@ -437,6 +437,9 @@ impl TrirCompiler<'_> {
             "nqp::while" | "nqp::until" if args.len() == 2 => {
                 self.compile_nqp_loop(name == "nqp::while", &args[0], &args[1])
             }
+            "nqp::repeat_while" | "nqp::repeat_until" if args.len() == 2 => {
+                self.compile_nqp_repeat_loop(name == "nqp::repeat_while", &args[0], &args[1])
+            }
             "nqp::if" | "nqp::unless" if args.len() == 2 || args.len() == 3 => {
                 self.compile_nqp_if(name == "nqp::if", args)
             }
