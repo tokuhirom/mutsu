@@ -1006,6 +1006,7 @@ impl Interpreter {
                 .filter_map(|key| self.env.get_sym(*key).map(|value| (*key, value.clone())))
                 .collect();
             let saved_imports = std::mem::take(&mut self.module_imported_names);
+            let saved_export_terms = std::mem::take(&mut self.module_export_terms);
             let saved_imported_routine_aliases = std::mem::take(&mut self.imported_routine_aliases);
             let saved_imported_env_aliases = std::mem::take(&mut self.imported_env_aliases);
             let saved_pending_rw_writeback_len = self.pending_rw_writeback_sources.len();
@@ -1067,6 +1068,10 @@ impl Interpreter {
             self.imported_routine_aliases = saved_imported_routine_aliases;
             self.imported_env_aliases = saved_imported_env_aliases;
             module_scope_names = self.collect_module_scope_names(&before_env_keys);
+            // Hook-installed sigilless terms the env diff may have missed (see
+            // `module_export_terms`).
+            let export_terms = std::mem::replace(&mut self.module_export_terms, saved_export_terms);
+            module_scope_names.extend(export_terms);
             // `module_imported_names` records the ENV KEY the import landed under,
             // because the restore loop below has to undo that exact key. For the
             // two scope tables it feeds, the key wanted is the name the importing

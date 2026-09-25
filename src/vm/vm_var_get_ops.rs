@@ -58,7 +58,13 @@ impl Interpreter {
         {
             return None;
         }
-        self.env().get(name).cloned()
+        // The importing scope's env first; a module routine whose own compunit
+        // imported the term through a re-run hook finds it in that module's
+        // scope once its load's env is gone (`module_export_terms`, #9389).
+        self.env()
+            .get(name)
+            .or_else(|| self.module_scope_lexical(name))
+            .cloned()
     }
 
     pub(super) fn exec_get_bare_word_op(

@@ -4357,26 +4357,7 @@ impl Compiler {
                     self.unit_use_ctx.note_use(name);
                 }
                 let name_idx = self.code.add_constant(Value::str(module.clone()));
-                // The native JSON modules read their import list at run time to
-                // select per-scope defaults (`use JSON::Fast <immutable !pretty>`).
-                // The angle-list words parse into `arg`, not `tags`; ride them in
-                // the same tags constant (unused otherwise for native modules).
-                let mut entries = tags.iter().cloned().map(Value::str).collect::<Vec<Value>>();
-                if matches!(module.as_str(), "JSON::Fast" | "JSON::Tiny")
-                    && let Some(arg) = arg
-                {
-                    let words: &[Expr] = match arg {
-                        Expr::ArrayLiteral(items) => items,
-                        other => std::slice::from_ref(other),
-                    };
-                    for w in words {
-                        if let Expr::Literal(lit) = w
-                            && let ValueView::Str(s) = lit.view()
-                        {
-                            entries.push(Value::str(s.to_string()));
-                        }
-                    }
-                }
+                let entries = tags.iter().cloned().map(Value::str).collect::<Vec<Value>>();
                 let tags_idx = if entries.is_empty() {
                     None
                 } else {

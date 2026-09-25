@@ -442,6 +442,21 @@ impl Interpreter {
             self.export_term_override_names
                 .insert(crate::symbol::Symbol::intern(&env_key));
         }
+        // A sigilless term is also part of the LOADING module's own scope, so
+        // that module's routines still find it once a re-`use` of an
+        // already-loaded hook module (`rerun_module_export`) has installed it
+        // into an env the load then discards (#9389). It is recorded apart from
+        // `module_imported_names`: its env key is shared with a same-named
+        // `$scalar`, and an imported alias there would beat that scalar
+        // (Log::Async's `method remove-tap(Tap $t)` read Terminal::ANSI::OO's
+        // `t`). `module_export_terms` only feeds the last-resort
+        // `module_scope_lexicals`.
+        if sigil.is_none_or(|c| c.is_alphanumeric() || c == '_')
+            && !self.module_load_stack.is_empty()
+        {
+            self.module_export_terms
+                .push((env_key.clone(), value.clone()));
+        }
         self.env.insert(env_key.clone(), value.clone());
         if normalized_env_key != env_key {
             self.record_import_env_key(&normalized_env_key);
