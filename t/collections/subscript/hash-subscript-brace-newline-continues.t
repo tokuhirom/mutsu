@@ -4,7 +4,7 @@ use Test;
 # line-ending-block rule must not end the statement there. `.method` or an
 # infix on the next line continues the expression, as in rakudo.
 
-plan 9;
+plan 12;
 
 my %r = (a => 1);
 
@@ -44,3 +44,13 @@ given 5 {
     .Str;
     is $q, 3, 'a block-final } at end of line still ends the statement';
 }
+
+# The hyper form `>>.{...}` / `»{...}` is a subscript too (taurus chains
+# `>>.{0..4}` newline `.grep(...)`): the method applies to the whole result.
+my @rows = ({ 0 => 'a', 1 => 'bb' }, { 0 => 'c', 1 => 'd' });
+is-deeply @rows>>.{0..1}
+    .grep(*.[1].chars >= 2).List, (('a', 'bb'),), 'hyper >>.{...} newline .method chains';
+is (@rows>>.{0..1}
+    .elems), 2, 'parenthesised hyper >>.{...} newline .method';
+is @rows»{1}
+    .elems, 2, 'hyper »{...} newline .method chains';
