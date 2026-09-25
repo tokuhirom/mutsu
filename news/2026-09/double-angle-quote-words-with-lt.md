@@ -13,7 +13,12 @@ The cause was `find_quote_word_close` in `src/parser/primary/container/angle_wor
 which looks for the closing `>>`. It counted every unquoted `<` as a nested opener and
 matched it with the next `>`, so a word containing `<` without a matching `>` pushed the
 real closer out of reach. Rakudo gives `<` no bracket meaning inside `<< >>`:
-`<< <a b> c >>` is `("<a", "b>", "c")`, not a quote-protected pair. The counter is gone.
+`<< <a b> c >>` is `("<a", "b>", "c")`, not a quote-protected pair. Now only a full copy
+of the list's own opener nests (`<< a <<b>> c >>` is `("a", "<<", "b", ">>", "c")`,
+and `«a «b» c»` likewise), which `« »` never did before. A nested opener also ends the
+word it is glued to and its closer starts a new one (`<< a<<b>>c >>` is
+`("a<<", "b", ">>c")`), matching rakudo. The other pair is plain word text: `<< a «b» >>` is
+`("a", "«b»")`.
 
 Subscripted interpolation still ends where it should. A `>>` that is immediately followed
 by another `>` was already skipped as the closer, so the first `>` of `<<x %h<b>>>` still

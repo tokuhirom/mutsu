@@ -1,6 +1,6 @@
 use Test;
 
-plan 10;
+plan 15;
 
 # A `<` inside `<< >>` is word text, not a nested opener: only the closing
 # `>>` is special. `<< < ≤ <= >>` used to be a parse error ("Confused").
@@ -19,3 +19,11 @@ is <<%h<a> z>>.join('|'), '1|z', 'a subscripted interpolation still works';
 my @w = <<x %h<b>>>;
 is @w.join('|'), 'x|2', 'a subscript right before the closing >> still works';
 is-deeply (:k<< a<b c >>), (k => ('a<b', 'c')), 'the colonpair form';
+
+# Only a full copy of the list's own opener nests, and it splits off from the
+# word it is glued to.
+is-deeply << a <<b>> c >>, ('a', '<<', 'b', '>>', 'c'), 'a nested << >> pair nests';
+is-deeply «a «b» c», ('a', '«', 'b', '»', 'c'), 'a nested « » pair nests';
+is-deeply << a<<b>>c >>, ('a<<', 'b', '>>c'), 'a nested opener ends its word, a nested closer starts one';
+is-deeply << a «b» >>, ('a', '«b»'), '« » is word text inside << >>';
+is-deeply « a <<b>> », ('a', '<<b>>'), '<< >> is word text inside « »';
