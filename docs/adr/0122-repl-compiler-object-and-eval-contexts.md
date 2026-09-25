@@ -1,6 +1,6 @@
 # ADR-0122: `nqp::getcomp("Raku")` is a Raku-level compiler object, and a REPL context is a captured unit environment plus its lexical routines
 
-- **Status**: Proposed (2026-09-25; implemented in the same PR, pending user review of the design)
+- **Status**: Accepted (user approval 2026-09-25; implemented in #9366)
 - **Deciders**: tokuhirom, Claude
 - **Context**: [#9349](https://github.com/tokuhirom/mutsu/issues/9349). Touches
   [ADR-0037](0037-eval-context-frame-owns-the-return-target.md) (how an `EVAL` unit classifies its
