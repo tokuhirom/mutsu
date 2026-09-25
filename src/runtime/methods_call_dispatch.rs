@@ -4403,6 +4403,11 @@ impl Interpreter {
             )));
         }
 
+        // Stream `.skip`/`.rotor`/`.unique`/... over a lazy invocant (#9159).
+        if let Some(pipe) = self.try_lazy_adaptor_method(&target, method, &args)? {
+            return Ok(pipe);
+        }
+
         // `.cache` on a genuinely-lazy list must stay lazy: Rakudo's `.cache`
         // reifies and caches elements on demand, it does not force the list. A
         // `LazyList` already caches pulled elements internally, so `.cache` is a

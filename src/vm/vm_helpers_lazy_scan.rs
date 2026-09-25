@@ -121,6 +121,12 @@ impl Interpreter {
             ValueView::Slip(items) => Ok(items.get(idx).cloned()),
             ValueView::Array(items, _) => Ok(items.get(idx).cloned()),
             ValueView::LazyList(ll) => {
+                // An element already produced is read straight from the cache
+                // (an adaptor re-reads earlier elements: an overlapping
+                // `rotor`, a cross product's inner operand).
+                if let Some(v) = ll.cache.lock().unwrap().as_ref().and_then(|c| c.get(idx)) {
+                    return Ok(Some(v.clone()));
+                }
                 let items = self.force_lazy_list_vm_n(&ll, idx + 1)?;
                 Ok(items.get(idx).cloned())
             }

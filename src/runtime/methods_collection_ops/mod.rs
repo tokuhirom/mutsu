@@ -9,6 +9,7 @@ pub(crate) mod sort;
 mod tail_rotate;
 mod thread_ops;
 mod unique_squish;
+pub(crate) use unique_squish::distinct_adverbs;
 
 use super::*;
 use crate::symbol::Symbol;

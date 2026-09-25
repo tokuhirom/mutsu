@@ -119,10 +119,88 @@ impl Interpreter {
     /// count (which may far exceed the materialized cache, or be infinite), so
     /// `.elems` / `.iterator.count-only` report the true count of `LHS xx N`
     /// without materializing N elements.
-    pub(crate) fn make_repeat_lazy_cache_counted(items: Vec<Value>, count: Value) -> Value {
-        let mut ll = crate::value::LazyList::new_cached(items);
-        ll.elems_count = Some(count);
+    /// The largest `xx` count that is materialized eagerly.
+    pub(crate) const REPEAT_EAGER_LIMIT: usize = 1_000_000;
+
+    /// `LHS xx COUNT` -- the single implementation behind the VM opcode, the
+    /// runtime operator fallback and the `[xx]` reduction.
+    ///
+    /// A finite count is eager in Raku (all N elements are built, `.is-lazy`
+    /// is False), so any count up to `EAGER_LIMIT` is materialized. Above
+    /// that -- an astronomically large count (`42 xx 2**62`) or an infinite
+    /// one (`xx *`) -- the result is a lazy `PipeAdaptor::Repeat` stage that
+    /// builds each repetition only when it is pulled; no prefix is cached up
+    /// front, so `(42 xx *)[10**5]` is `42` rather than `Nil` (#9159).
+    // Cost: O(k * s) for a count k <= 10**6, s = Slip width (every repetition
+    // built eagerly, as in Rakudo); O(1) otherwise, then O(s) per repetition
+    // pulled.
+    pub(crate) fn list_repeat(
+        &mut self,
+        left: &Value,
+        right: &Value,
+    ) -> Result<Value, RuntimeError> {
+        const EAGER_LIMIT: usize = Interpreter::REPEAT_EAGER_LIMIT;
+        // Warn on uninitialized type object used as repeat count
+        if let ValueView::Package(name) = right.view()
+            && name == "Int"
+        {
+            self.warn_uninitialized_repeat_count(&name.resolve())?;
+        }
+        let count = Self::parse_repeat_count(right)?;
+        match count {
+            Some(n) if n <= 0 => Ok(Value::seq(Vec::new())),
+            Some(n) if (n as usize) <= EAGER_LIMIT => {
+                let mut items = Vec::with_capacity(n as usize);
+                for _ in 0..n {
+                    self.repeat_lhs_into(left, &mut items)?;
+                }
+                Ok(Value::seq(items))
+            }
+            _ => Ok(Self::repeat_lazy_value(left, right, count)),
+        }
+    }
+
+    /// The lazy result of `LHS xx COUNT` for a count above the eager limit
+    /// (`count` is the parsed count, `None` for `*`/`Inf`).
+    // Cost: O(1).
+    pub(crate) fn repeat_lazy_value(left: &Value, right: &Value, count: Option<i64>) -> Value {
+        let mut ll = crate::value::LazyList::new_adaptor_pipe(
+            Value::NIL,
+            left.clone(),
+            crate::value::PipeAdaptor::Repeat {
+                remaining: count.map(|n| n as u64),
+            },
+        );
+        // `(42 xx *).is-lazy` is True and `.elems` reports the logical
+        // count; nothing else in the value records it.
+        ll.elems_count = Some(Self::repeat_logical_count(right));
         Value::lazy_list(crate::gc::Gc::new(ll))
+    }
+
+    /// Append one repetition of an `xx` LHS to `out`: a Slip LHS contributes
+    /// its elements (an empty one a single `Nil`), and so does a callable LHS
+    /// whose call yields a Slip (`Slip(1,2) xx *` is 1,2,1,2,...).
+    // Cost: O(s), s = Slip width, plus one call for a callable LHS.
+    pub(crate) fn repeat_lhs_into(
+        &mut self,
+        left: &Value,
+        out: &mut Vec<Value>,
+    ) -> Result<(), RuntimeError> {
+        if let ValueView::Slip(slip_items) = left.view() {
+            if slip_items.is_empty() {
+                out.push(Value::NIL);
+            } else {
+                out.extend(slip_items.iter().cloned());
+            }
+            return Ok(());
+        }
+        let v = self.repeat_lhs_once(left)?;
+        if let ValueView::Slip(sub) = v.view() {
+            out.extend(sub.iter().cloned());
+        } else {
+            out.push(v);
+        }
+        Ok(())
     }
 
     /// The logical element count of `LHS xx right` when the result is lazy
@@ -247,53 +325,7 @@ impl Interpreter {
                     acc = crate::builtins::str_prim::repeat(&acc, n)?;
                 }
                 "xx" => {
-                    // See exec_list_repeat_op for the eager/lazy rationale.
-                    const EAGER_LIMIT: usize = 1_000_000;
-                    const LAZY_CACHE: usize = 4_096;
-                    // Callable LHS is expensive (each iteration calls eval_call_on_value),
-                    // so use a much smaller cache to avoid timeouts on `callable xx *`.
-                    const LAZY_CACHE_CALLABLE: usize = 256;
-                    if let ValueView::Package(name) = rhs.view()
-                        && name == "Int"
-                    {
-                        self.warn_uninitialized_repeat_count(&name.resolve())?;
-                    }
-                    let is_callable = matches!(
-                        acc.view(),
-                        ValueView::Sub(_) | ValueView::WeakSub(_) | ValueView::Routine { .. }
-                    );
-                    let lazy_cache = if is_callable {
-                        LAZY_CACHE_CALLABLE
-                    } else {
-                        LAZY_CACHE
-                    };
-                    let count = Self::parse_repeat_count(rhs)?;
-                    let (repeat, lazy) = match count {
-                        Some(n) if n <= 0 => (0usize, false),
-                        Some(n) if (n as usize) <= EAGER_LIMIT => (n as usize, false),
-                        Some(n) => ((n as usize).min(lazy_cache), true),
-                        None => (lazy_cache, true),
-                    };
-                    let mut items = Vec::with_capacity(repeat);
-                    if let ValueView::Slip(slip_items) = acc.view() {
-                        if slip_items.is_empty() {
-                            items.extend(std::iter::repeat_n(Value::NIL, repeat));
-                        } else {
-                            for _ in 0..repeat {
-                                items.extend(slip_items.iter().cloned());
-                            }
-                        }
-                    } else {
-                        for _ in 0..repeat {
-                            items.push(self.repeat_lhs_once(&acc)?);
-                        }
-                    }
-                    acc = if lazy {
-                        let count = Self::repeat_logical_count(rhs);
-                        Self::make_repeat_lazy_cache_counted(items, count)
-                    } else {
-                        Value::seq(items)
-                    };
+                    acc = self.list_repeat(&acc, rhs)?;
                 }
                 _ => unreachable!(),
             }

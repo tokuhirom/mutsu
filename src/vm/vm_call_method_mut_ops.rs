@@ -1077,6 +1077,14 @@ impl Interpreter {
             self.stack.push(pipe);
             return Ok(());
         }
+        // `.skip`/`.rotor`/`.batch`/`.unique`/`.repeated`/`.squish`/`.produce`/
+        // `.flat` over a lazy invocant: stream through an adaptor stage
+        // instead of forcing the (possibly infinite) source (#9159).
+        if let Some(pipe) = self.try_lazy_adaptor_method(&target, method, &args)? {
+            crate::vm::vm_stats::record_dispatch_entry_intercept("callmethodmut", "lazy-adaptor");
+            self.stack.push(pipe);
+            return Ok(());
+        }
         // `.cache` on a genuinely-lazy list stays lazy (caches on demand); see
         // the matching note in the non-mut dispatch path.
         if let ValueView::LazyList(ll) = target.view()

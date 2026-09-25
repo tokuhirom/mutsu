@@ -379,6 +379,14 @@ impl Interpreter {
                 return Ok(Value::package(Symbol::intern(&format!("{name}({source})"))));
             }
         }
+        // `zip` over an unbounded column (an infinite Range, a lazy list):
+        // pull the rows instead of materializing it (#9159). An all-finite
+        // `zip` keeps the native implementation below.
+        if name == "zip"
+            && let Some(result) = self.builtin_zip_unbounded(args)?
+        {
+            return Ok(result);
+        }
         // Handle zip:with — zip with a custom combining function
         if name == "zip"
             && args

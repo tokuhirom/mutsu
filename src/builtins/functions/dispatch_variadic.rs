@@ -119,53 +119,27 @@ pub(crate) fn native_function_variadic(
             Some(Ok(Value::str(result)))
         }
         // Cost: O(sum e_i + n * min(e_i)), e_i = elements of the i-th of n lists
-        // (each copied whole); rows are capped at 1000 only when a column is lazy.
+        // (each copied whole). A lazy/infinite column never reaches here: the
+        // interpreter streams it (`Interpreter::builtin_zip_unbounded`).
         "zip" => {
             // zip([@a], [@b], ...) — interleave elements from each list
             // zip takes a single list-of-lists argument; each sub-list is a
             // "column" and zip transposes them into rows.
-            let is_lazy_input = |v: &Value| -> bool {
-                matches!(v.view(), ValueView::LazyList(_)) || is_infinite_range(v)
-            };
-            let (raw_inputs, single_arg) = if args.len() == 1 {
-                (runtime::value_to_list(&args[0]), true)
+            let raw_inputs = if args.len() == 1 {
+                runtime::value_to_list(&args[0])
             } else {
-                (args.to_vec(), false)
+                args.to_vec()
             };
-            let columns: &[Value] = if single_arg { &raw_inputs } else { args };
-            let all_lazy = columns.iter().all(is_lazy_input);
-            let any_lazy = columns.iter().any(is_lazy_input);
             let lists: Vec<Vec<Value>> = raw_inputs.iter().map(runtime::value_to_list).collect();
-            if lists.is_empty() {
-                return Some(Ok(Value::seq(vec![])));
-            }
-            // The cap bounds how much of an infinite column is materialized;
-            // an all-finite zip keeps every row (`zip(^5000, ^5000)` has 5000).
-            // TODO: a truly lazy zip would drop the cap altogether; the lazy
-            // columns are still reified to a bounded prefix here.
-            let max_expand: usize = if any_lazy { 1_000 } else { usize::MAX };
-            let min_len = lists
-                .iter()
-                .map(|l| l.len())
-                .min()
-                .unwrap_or(0)
-                .min(max_expand);
+            let min_len = lists.iter().map(|l| l.len()).min().unwrap_or(0);
             let mut result = Vec::with_capacity(min_len);
             for i in 0..min_len {
                 let row: Vec<Value> = lists.iter().map(|l| l[i].clone()).collect();
                 result.push(Value::array(row));
             }
-            if all_lazy {
-                // Every column is infinite, so the zip is too: `result` is only
-                // a bounded prefix and `.is-lazy` must stay True.
-                Some(Ok(Value::lazy_list(crate::gc::Gc::new(
-                    crate::value::LazyList::new_cached_infinite(result),
-                ))))
-            } else {
-                // `zip` returns a Seq (so `.^name` is Seq, `.raku` shows `.Seq`),
-                // matching Rakudo and the `Z` metaop n-ary path.
-                Some(Ok(Value::seq(result)))
-            }
+            // `zip` returns a Seq (so `.^name` is Seq, `.raku` shows `.Seq`),
+            // matching Rakudo and the `Z` metaop n-ary path.
+            Some(Ok(Value::seq(result)))
         }
         "flat" => {
             if args.len() == 1 && is_infinite_range(&args[0]) {

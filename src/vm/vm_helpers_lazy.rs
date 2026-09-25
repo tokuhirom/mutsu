@@ -978,9 +978,9 @@ impl Interpreter {
 
     /// Cost: a method listed here forces the LazyList whole first, O(p) for p
     /// elements the source produces; on an infinite pipe/sequence the caller
-    /// throws X::Cannot::Lazy instead, so `rotor`, `batch`, `unique`, `repeated`,
-    /// `squish`, `flat` and `produce` over `(1..*).map(...)` fail where Rakudo
-    /// streams them at O(1) per element pulled -- see #9159.
+    /// throws X::Cannot::Lazy instead. `skip`, `rotor`, `batch`, `unique`,
+    /// `repeated`, `squish`, `flat` and `produce` over an infinite list never
+    /// get here: `try_lazy_adaptor_method` streams them first (#9159).
     pub(super) fn lazy_list_needs_forcing(method: &str) -> bool {
         matches!(
             method,
@@ -1011,6 +1011,7 @@ impl Interpreter {
                 | "classify"
                 | "categorize"
                 | "produce"
+                | "skip"
                 | "rotor"
                 | "batch"
                 | "reduce"
@@ -1247,8 +1248,15 @@ impl Interpreter {
         // (e.g. `.elems`/`.sort`) raise a more specific message at the dispatch
         // site before reaching here.
         if list.lazy_pipe.is_some() {
+            // A pipe over a provably finite source runs to its end, however
+            // long; only a possibly-infinite one gets the bounded attempt.
             const EAGER_FORCE_CAP: usize = 1_000_000;
-            let forced = self.force_lazy_pipe(list, EAGER_FORCE_CAP)?;
+            let cap = if list.pipe_bottoms_out_finite() {
+                usize::MAX
+            } else {
+                EAGER_FORCE_CAP
+            };
+            let forced = self.force_lazy_pipe(list, cap)?;
             let done = list
                 .lazy_pipe
                 .as_ref()

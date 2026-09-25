@@ -1,6 +1,25 @@
 use super::*;
 use crate::value::AttrMap;
 
+/// How many divisors an infinite `polymod` divisor list can consume for the
+/// invocant `target`: one per bit of its integer magnitude (every divisor
+/// >= 2 at least halves it), plus slack.
+fn polymod_digit_bound(target: &Value) -> usize {
+    let bits = match target.view() {
+        ValueView::Int(i) => 64 - i.unsigned_abs().leading_zeros() as usize,
+        ValueView::BigInt(b) => b.bits() as usize,
+        _ => {
+            let f = target.to_f64().abs();
+            if f.is_finite() && f >= 1.0 {
+                f.log2() as usize + 1
+            } else {
+                0
+            }
+        }
+    };
+    bits + 64
+}
+
 impl Interpreter {
     /// Cost: O(e + i), e = elements of the invocant, i = index of the first match:
     /// the whole receiver is decomposed up front (a container cell per element for
@@ -233,21 +252,22 @@ impl Interpreter {
         for arg in args {
             match arg.view() {
                 ValueView::LazyList(ll) => {
-                    // A lazy divisor source (`gather {...}`, `.map`, a `…∞` sequence)
-                    // must be reified. An infinite sequence keeps a non-empty cache
-                    // of its produced prefix; polymod pulls from it and stops once n
-                    // reaches 0 (the has_infinite path below). A FINITE unforced
-                    // source (a plain `gather` block) has an empty cache, so force it
-                    // fully — otherwise its elements never become divisors and the
-                    // number falls through unchanged (`600.polymod(gather {...})`
-                    // wrongly returned `(600)`).
-                    let cached = ll.cache.lock().unwrap().clone().unwrap_or_default();
-                    if cached.is_empty() {
-                        let items = self.force_lazy_list_bridge(&ll)?;
-                        divisors.extend(items);
-                    } else {
+                    // A lazy divisor source (`gather {...}`, `.map`, `xx *`, a
+                    // `...` sequence). A genuinely infinite one is pulled only as
+                    // far as the decomposition can reach: with every divisor
+                    // >= 2 each step at least halves the number, so its bit
+                    // length (plus slack) bounds the digits (a divisor of 1 or 0
+                    // stops the loop below on its own). A finite source (a
+                    // plain `gather` block) is forced whole -- otherwise its
+                    // elements never become divisors and the number falls
+                    // through unchanged (`600.polymod(gather {...})` wrongly
+                    // returned `(600)`).
+                    if ll.is_genuinely_lazy() || ll.is_infinite_spec() {
                         has_infinite = true;
-                        divisors.extend(cached);
+                        let needed = polymod_digit_bound(target);
+                        divisors.extend(self.force_lazy_list_vm_n(&ll, needed)?);
+                    } else {
+                        divisors.extend(self.force_lazy_list_bridge(&ll)?);
                     }
                 }
                 ValueView::Array(..) | ValueView::Seq(_) => {

@@ -255,6 +255,17 @@ impl Interpreter {
                 return Err(Self::hyperop_infinite_error(side));
             }
         }
+        // The infinite operand is the sole dwim (cycling) side here, so the
+        // finite side fixes the length: pull only that many elements of a lazy
+        // list rather than reading whatever prefix it happens to have cached.
+        let (left, right) = match (left_inf, right_inf) {
+            (true, false) => (self.hyper_lazy_prefix(&left, &right)?, right),
+            (false, true) => {
+                let right = self.hyper_lazy_prefix(&right, &left)?;
+                (left, right)
+            }
+            _ => (left, right),
+        };
         let result = self.hyper_op_pair(op_shape.as_ref(), &left, &right, dwim_left, dwim_right)?;
         // The result inherits the itemization of the operand that donated its
         // structure (the left when listy, else the right): raku renders
@@ -266,6 +277,21 @@ impl Interpreter {
         };
         self.stack.push(result);
         Ok(())
+    }
+
+    /// The first `finite.elems` elements of the infinite hyper operand `inf`
+    /// as a List, when `inf` is a lazy list; any other operand is returned
+    /// unchanged (an infinite Range is walked by `hyper_op_pair` itself).
+    // Cost: O(n) pulls, n = elements of the finite operand.
+    fn hyper_lazy_prefix(&mut self, inf: &Value, finite: &Value) -> Result<Value, RuntimeError> {
+        let ValueView::LazyList(ll) = inf.view() else {
+            return Ok(inf.clone());
+        };
+        let n = match finite.view() {
+            ValueView::LazyList(fl) => self.force_lazy_list_vm(&fl)?.len(),
+            _ => runtime::value_to_list(finite).len(),
+        };
+        Ok(Value::array(self.force_lazy_list_vm_n(&ll, n)?))
     }
 
     /// Is this operand an itemized Array/List (Scalar-held container)?
