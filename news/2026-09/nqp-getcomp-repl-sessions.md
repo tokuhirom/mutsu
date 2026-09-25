@@ -32,4 +32,4 @@ Text::CodeProcessing and the Jupyter sandboxes now get past the compiler and are
 ([#9358](https://github.com/tokuhirom/mutsu/issues/9358)). A rebind bug found on the way
 (`my $z := $y; $z := 5` changes `$y`) is [#9357](https://github.com/tokuhirom/mutsu/issues/9357).
 
-Pinned by `t/vm/nqp-getcomp-repl-context.t`.
+Pinned by `t/tooling/nqp-getcomp-repl-context.t`.

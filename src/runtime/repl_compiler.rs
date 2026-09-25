@@ -59,6 +59,12 @@ pub(crate) struct UnitCapture {
     pub(crate) infix_ops: Vec<(String, HashSet<Symbol>)>,
 }
 
+/// The routine table and the user-operator table, as one unit started.
+type CaptureBase = (
+    Arc<crate::runtime::function_table::FunctionTable>,
+    Arc<HashMap<String, HashSet<Symbol>>>,
+);
+
 #[derive(Default)]
 pub(crate) struct ReplCompilerState {
     // TODO: contexts are never freed. A REPL creates one per line, which is
@@ -75,11 +81,7 @@ pub(crate) struct ReplCompilerState {
     pub(crate) captured: Option<UnitCapture>,
     /// The routine registry and user-operator table as they stood when the
     /// unit started, which the capture diffs against.
-    #[allow(clippy::type_complexity)]
-    capture_base: Option<(
-        Arc<crate::runtime::function_table::FunctionTable>,
-        Arc<HashMap<String, HashSet<Symbol>>>,
-    )>,
+    capture_base: Option<CaptureBase>,
     /// While `$*CTXSAVE.ctxsave` runs: the unit context it should hand back,
     /// and the `caller_env_stack` depth the call was made from.
     ctxsave_unit: Option<(usize, usize)>,
