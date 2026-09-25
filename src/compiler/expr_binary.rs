@@ -617,7 +617,10 @@ impl Compiler {
                             continue_expr.as_deref(),
                         );
                     }
-                    _ => self.compile_expr(right),
+                    // The RHS is consumed by the match, never the value the
+                    // expression yields, so it is not an escaping position
+                    // (a regex literal there needs no `$_` snapshot).
+                    _ => self.with_escape(false, |c| c.compile_expr(right)),
                 }
                 self.code.patch_smart_match_rhs_end(sm_idx);
                 return;

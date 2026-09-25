@@ -2253,6 +2253,7 @@ fn regex_execution_value(tree: &RegexTree) -> Result<Value, RuntimeError> {
         samespace: false,
         source_adverbs: None,
         captured: None,
+        topic: None,
         source_tree: None,
     };
     for adverb in &tree.adverbs {

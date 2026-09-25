@@ -124,16 +124,16 @@ impl Compiler {
                     // A code-bearing regex literal is a closure over the scope
                     // it is written in, so it loads through `LoadRegexClosure`
                     // instead of a plain constant — see that op's doc comment.
-                    match self.regex_literal_closure_captures(v) {
-                        Some(captures) => {
-                            self.code.emit(OpCode::LoadRegexClosure {
-                                const_idx: idx,
-                                captures: std::sync::Arc::new(captures),
-                            });
-                        }
-                        None => {
-                            self.code.emit(OpCode::LoadConst(idx));
-                        }
+                    let captures = self.regex_literal_closure_captures(v);
+                    let topic = self.regex_literal_topic_capture(v);
+                    if captures.is_some() || topic.is_some() {
+                        self.code.emit(OpCode::LoadRegexClosure {
+                            const_idx: idx,
+                            topic,
+                            captures: std::sync::Arc::new(captures.unwrap_or_default()),
+                        });
+                    } else {
+                        self.code.emit(OpCode::LoadConst(idx));
                     }
                 }
             },

@@ -255,6 +255,7 @@ mod vm_raw_invocant_lvalue;
 mod vm_react_loop;
 mod vm_react_subscriptions;
 mod vm_react_supply_helpers;
+mod vm_regex_bool;
 mod vm_register_ops;
 mod vm_register_sub_ops;
 mod vm_routine_capture;

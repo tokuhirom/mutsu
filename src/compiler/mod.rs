@@ -1632,6 +1632,14 @@ pub(crate) struct Compiler {
     /// non-escaping (immediately-invoked) classification, so call arguments and
     /// control-construct blocks never over-box (the #2746 perf guard).
     escaping_position: bool,
+    /// True while compiling the body of a callable (a sub/method/closure
+    /// chunk), false for the mainline. A regex literal in an escaping position
+    /// of such a body snapshots the frame's `$_` onto its value
+    /// (`OpCode::LoadRegexClosure`'s `topic`): once the body returns, its `$_`
+    /// can no longer change, so the snapshot IS the regex's lexical topic. At
+    /// mainline `$_` stays live and mutable, so no snapshot is taken there and
+    /// `Regex.Bool` reads the visible `$_` instead.
+    pub(crate) in_callable_body: bool,
     /// Set by the `Expr::CompoundAssign` arm when the target is a `$.attr`
     /// twigil, and consumed by the very next `compile_expr_assign`. A `$.attr`
     /// read-modify-write writes into an itemized copy of the accessor result,
@@ -1801,6 +1809,7 @@ impl Compiler {
             pending_index_rw_writebacks: Vec::new(),
             current_distribution: None,
             escaping_position: false,
+            in_callable_body: false,
             dot_twigil_rmw_assign: false,
             compiling_our_sub: false,
             is_mainline: false,

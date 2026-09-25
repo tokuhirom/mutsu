@@ -235,11 +235,13 @@ impl Interpreter {
             // Cost: O(c), c = captured names (one scope-map insert, and a name copy, each).
             OpCode::LoadRegexClosure {
                 const_idx,
+                topic,
                 captures,
             } => {
                 let v = self.capture_regex_closure(
                     code,
                     &code.constants[*const_idx as usize],
+                    *topic,
                     captures,
                 );
                 self.stack.push(v);
