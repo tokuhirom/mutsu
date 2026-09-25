@@ -75,7 +75,7 @@ impl Interpreter {
         let code = unsafe { &*(site_code as *const CompiledCode) };
         let name = code.numeric_operand_names_at(ip)[side]?;
         let bare = name.as_str();
-        let bare = bare.strip_prefix('$').unwrap_or(&bare);
+        let bare = bare.strip_prefix('$').unwrap_or(bare);
         if self.readonly_kind(bare).is_some() {
             return None;
         }

@@ -28,7 +28,7 @@ name. Element operands (`@a[0] + 1`, `%h<k> * 2`) are not named. JIT-compiled
 ops, which bypass the interpreter loop, carry no op index.
 
 The regression test is
-`t/exceptions/uninitialized-numeric-context-warning.t`.
+`t/types/string/uninitialized-numeric-context-warning.t`.
 
 CodeUnit's own test still fails after this. Its `CONTROL` block also has a
 `default` clause, and with one, `.resume` of any op-raised warning returns
