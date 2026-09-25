@@ -92,8 +92,9 @@ impl Interpreter {
             self.stack.push(result);
             return Ok(());
         }
-        // A bare `_` term is never a declared name in raku (the topic is `$_`);
-        // rakudo reports it as X::Undeclared::Symbols at compile time.
+        // An in-scope sigilless `_` is canonicalized by the parser to its
+        // private storage name. Keep the topic spelling out of bareword
+        // lookup, since `_` without that declaration is still undeclared.
         if name == "_" {
             return Err(RuntimeError::undeclared_symbols(
                 "Undeclared name:\n    _ used at line 1",

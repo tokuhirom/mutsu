@@ -405,6 +405,15 @@ pub(in crate::parser::stmt) fn parse_destructuring_decl(
     let (rest, _) = parse_char(r, ')')?;
     let (rest, _) = ws(rest)?;
 
+    // Keep the sigilless source spelling available to the parser, but give the
+    // sigilless `_` term the same private storage as a standalone declaration.
+    // Otherwise a grouped `my (\_)` would reintroduce the topic collision.
+    for dvar in &mut vars {
+        if dvar.sigilless {
+            dvar.name = crate::symbol::sigilless_storage_name(&dvar.name).to_string();
+        }
+    }
+
     // Parse optional `is default(expr)` trait on grouped declaration
     let mut rest = rest;
     let mut group_default_expr: Option<Expr> = None;

@@ -325,9 +325,10 @@ pub(crate) fn register_user_term_symbol(name: &str) {
         let current = scopes
             .last_mut()
             .expect("scope stack should never be empty");
-        current
-            .term_symbols
-            .insert(symbol, TermBinding::Value(name.to_string()));
+        current.term_symbols.insert(
+            symbol,
+            TermBinding::Value(crate::symbol::sigilless_storage_name(name).to_string()),
+        );
     });
 }
 
@@ -338,11 +339,16 @@ pub(crate) fn register_user_term_symbol(name: &str) {
 /// head that could gobble the `!!`. Callable term symbols are excluded (they may
 /// take args). Matches on the canonical name, as stored for a `BareWord`.
 pub(crate) fn is_user_declared_value_term(name: &str) -> bool {
+    let lookup_name = if name == crate::symbol::SIGILLESS_UNDERSCORE_STORAGE {
+        "_"
+    } else {
+        name
+    };
     SCOPES.with(|s| {
         s.borrow().iter().rev().any(|scope| {
             scope
                 .term_symbols
-                .get(name)
+                .get(lookup_name)
                 .is_some_and(|b| matches!(b, TermBinding::Value(_)))
         })
     })
