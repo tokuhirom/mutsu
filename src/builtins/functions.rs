@@ -8,6 +8,7 @@ mod junction;
 mod math;
 mod sprintf_fmt;
 mod time;
+pub(crate) use time::process_rusage;
 mod uniparse;
 
 use crate::symbol::Symbol;

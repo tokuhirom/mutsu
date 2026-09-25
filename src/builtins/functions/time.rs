@@ -1,33 +1,71 @@
 use crate::value::{ArrayKind, RuntimeError, Value};
 
-/// Perl 5-compatible `times` builtin: returns `($user, $system)` CPU times in seconds.
-pub(crate) fn builtin_times() -> Result<Value, RuntimeError> {
-    #[cfg(unix)]
+/// The process's own `getrusage(RUSAGE_SELF)` fields, in MoarVM's
+/// `MVM_proc_getrusage` order: user seconds, user microseconds, system
+/// seconds, system microseconds, then maxrss, ixrss, idrss, isrss, minflt,
+/// majflt, nswap, inblock, oublock, msgsnd, msgrcv, nsignals, nvcsw, nivcsw.
+/// `None` where the platform has no `getrusage` (or it failed).
+///
+/// The one reading of rusage, shared by `times` and `nqp::getrusage`.
+///
+/// Cost: O(1) + one syscall.
+pub(crate) fn process_rusage() -> Option<[i64; 18]> {
+    #[cfg(all(unix, feature = "native"))]
     {
         let mut usage = std::mem::MaybeUninit::<libc::rusage>::uninit();
         let ret = unsafe { libc::getrusage(libc::RUSAGE_SELF, usage.as_mut_ptr()) };
-        if ret == 0 {
-            let usage = unsafe { usage.assume_init() };
-            let user = usage.ru_utime.tv_sec as f64 + usage.ru_utime.tv_usec as f64 / 1_000_000.0;
-            let sys = usage.ru_stime.tv_sec as f64 + usage.ru_stime.tv_usec as f64 / 1_000_000.0;
-            Ok(Value::array_with_kind(
-                crate::value::Value::array_arc(vec![Value::num(user), Value::num(sys)]),
-                ArrayKind::List,
-            ))
-        } else {
-            Ok(Value::array_with_kind(
-                crate::value::Value::array_arc(vec![Value::num(0.0), Value::num(0.0)]),
-                ArrayKind::List,
-            ))
+        if ret != 0 {
+            return None;
         }
+        let u = unsafe { usage.assume_init() };
+        Some([
+            widen(u.ru_utime.tv_sec),
+            widen(u.ru_utime.tv_usec),
+            widen(u.ru_stime.tv_sec),
+            widen(u.ru_stime.tv_usec),
+            widen(u.ru_maxrss),
+            widen(u.ru_ixrss),
+            widen(u.ru_idrss),
+            widen(u.ru_isrss),
+            widen(u.ru_minflt),
+            widen(u.ru_majflt),
+            widen(u.ru_nswap),
+            widen(u.ru_inblock),
+            widen(u.ru_oublock),
+            widen(u.ru_msgsnd),
+            widen(u.ru_msgrcv),
+            widen(u.ru_nsignals),
+            widen(u.ru_nvcsw),
+            widen(u.ru_nivcsw),
+        ])
     }
-    #[cfg(not(unix))]
+    #[cfg(not(all(unix, feature = "native")))]
     {
-        Ok(Value::array_with_kind(
-            crate::value::Value::array_arc(vec![Value::num(0.0), Value::num(0.0)]),
-            ArrayKind::List,
-        ))
+        None
     }
+}
+
+/// Widen an rusage field to i64. The fields' C types differ per platform
+/// (`tv_usec` is an `i32` on macOS, the counters are `c_long`), so a plain
+/// `as i64` is an identity cast on 64-bit Linux and a lossless widening
+/// elsewhere; going through `Into` states that without either.
+#[cfg(all(unix, feature = "native"))]
+fn widen<T: Into<i64>>(v: T) -> i64 {
+    v.into()
+}
+
+/// Perl 5-compatible `times` builtin: returns `($user, $system)` CPU times in seconds.
+pub(crate) fn builtin_times() -> Result<Value, RuntimeError> {
+    let (user, sys) = process_rusage().map_or((0.0, 0.0), |r| {
+        (
+            r[0] as f64 + r[1] as f64 / 1_000_000.0,
+            r[2] as f64 + r[3] as f64 / 1_000_000.0,
+        )
+    });
+    Ok(Value::array_with_kind(
+        crate::value::Value::array_arc(vec![Value::num(user), Value::num(sys)]),
+        ArrayKind::List,
+    ))
 }
 
 /// Perl 5-compatible `localtime`/`gmtime` builtins.

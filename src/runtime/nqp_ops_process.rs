@@ -154,6 +154,40 @@ impl Interpreter {
                 Ok(Value::int(i64::from(self.eval_truthy(&v))))
             }
 
+            // nqp::getrusage(@ints) — fill a native int array with this
+            // process's rusage fields, in MoarVM's order (`process_rusage`,
+            // shared with `times`). Answers null, as MoarVM does.
+            // Cost: O(1) + one syscall.
+            "getrusage" => {
+                let target = args.first().cloned().unwrap_or(Value::NIL);
+                let fields = crate::builtins::process_rusage().unwrap_or([0; 18]);
+                for (i, v) in fields.iter().enumerate() {
+                    if let Err(e) = crate::runtime::nqp_backing::bind_elem(
+                        "bindpos_i",
+                        &target,
+                        i as i64,
+                        Value::int(*v),
+                        Value::int(0),
+                    ) {
+                        return Some(Err(e));
+                    }
+                }
+                Ok(Value::NIL)
+            }
+            // nqp::readlink($path) — a symlink's target. Like MoarVM (libuv),
+            // a non-link or a missing path dies with "Failed to readlink
+            // file: <reason>".
+            // Cost: O(n) + one syscall, n = length of the target.
+            "readlink" => {
+                let path = args.first().map(Value::to_string_value).unwrap_or_default();
+                match std::fs::read_link(&path) {
+                    Ok(target) => Ok(Value::str(target.to_string_lossy().into_owned())),
+                    Err(e) => Err(RuntimeError::new(format!(
+                        "Failed to readlink file: {}",
+                        crate::runtime::nqp_ops_process::libuv_style_reason(&e)
+                    ))),
+                }
+            }
             // nqp::iscont($v) — int 0/1: is the operand a container. The
             // compiler hands this op the operand's `.VAR` (see
             // `try_compile_nqp_form`), so what arrives is the container
@@ -341,4 +375,22 @@ impl Interpreter {
             _ => vec![value.to_string_value()],
         }
     }
+}
+
+/// An I/O error's reason as libuv spells it (MoarVM's messages come from
+/// `uv_strerror`): the OS description, lower-cased, without Rust's
+/// " (os error N)" suffix -- "no such file or directory", "invalid argument".
+pub(crate) fn libuv_style_reason(e: &std::io::Error) -> String {
+    let mut text = match e.raw_os_error() {
+        Some(code) => {
+            let full = std::io::Error::from_raw_os_error(code).to_string();
+            full.split(" (os error").next().unwrap_or(&full).to_string()
+        }
+        None => e.to_string(),
+    };
+    // OS error texts are ASCII, so lower-casing the first byte is exact.
+    if let Some(first) = text.get_mut(0..1) {
+        first.make_ascii_lowercase();
+    }
+    text
 }
