@@ -536,8 +536,8 @@ mod d3_8a_byte_parity_tests {
     /// different global table state, landing the *same* string in a
     /// *different* bucket). Normalizing the printed `Symbol(...)` text
     /// alone (`normalize_symbol_ids`) does not fix this: the order was
-    /// already baked in before formatting. Find each `AttrMap({...})`
-    /// block and sort its top-level `Key: Value` entries lexically so the
+    /// already baked in before formatting. Find each `extra: { ... }` block
+    /// and sort its top-level `Key: Value` entries lexically so the
     /// comparison is order-independent, mirroring what a real `AttrMap`
     /// (semantically a set of key/value pairs, not an ordered list) should
     /// be compared as.
@@ -603,27 +603,28 @@ mod d3_8a_byte_parity_tests {
         out
     }
 
+    /// Sort the hash-backed `extra` entries in derived `AttrMap` debug output.
+    /// Their order depends on the process-global symbol ids, so it must not
+    /// affect the byte-parity comparison.
     fn normalize_attr_map_order(s: &str) -> String {
-        let marker = "AttrMap({";
+        let marker = "extra: {";
         let mut out = String::with_capacity(s.len());
         let mut rest = s;
         while let Some(pos) = rest.find(marker) {
             out.push_str(&rest[..pos + marker.len()]);
             rest = &rest[pos + marker.len()..];
-            // Scan to the matching `})`, tracking nesting depth over every
+            // Scan to the matching `}`, tracking nesting depth over every
             // bracket kind that can appear in a Debug-formatted `Value`.
             let mut depth = 0i32;
             let mut end = None;
             for (i, c) in rest.char_indices() {
+                if c == '}' && depth == 0 {
+                    end = Some(i);
+                    break;
+                }
                 match c {
                     '{' | '(' | '[' => depth += 1,
-                    '}' | ')' | ']' => {
-                        if depth == 0 && c == '}' && rest[i + 1..].starts_with(')') {
-                            end = Some(i);
-                            break;
-                        }
-                        depth -= 1;
-                    }
+                    '}' | ')' | ']' => depth -= 1,
                     _ => {}
                 }
             }
@@ -657,10 +658,18 @@ mod d3_8a_byte_parity_tests {
             }
             entries.sort_unstable();
             out.push_str(&entries.join(", "));
-            rest = &rest[end..];
+            out.push('}');
+            rest = &rest[end + 1..];
         }
         out.push_str(rest);
         out
+    }
+
+    #[test]
+    fn attr_map_debug_normalizer_sorts_extra_fields() {
+        let input = r#"AttrMap { extra: {Symbol(2: "placeholder"): Str("@_"), Symbol(1: "message"): Str("error")} }"#;
+        let expected = r#"AttrMap { extra: {Symbol(1: "message"): Str("error"), Symbol(2: "placeholder"): Str("@_")} }"#;
+        assert_eq!(normalize_attr_map_order(input), expected);
     }
 
     /// Compile `source` two ways and return `(Debug of the main-pass

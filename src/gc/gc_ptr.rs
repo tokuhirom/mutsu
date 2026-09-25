@@ -1103,10 +1103,10 @@ fn gc_enabled_slow() -> bool {
 mod tests {
     use super::*;
 
-    /// Serializes tests that touch the process-global candidate buffer, since
-    /// the test harness runs them on multiple threads and a concurrent push
-    /// would leak into another test's `drain_candidates`. Poison-tolerant so a
-    /// panicking test does not cascade into the rest.
+    /// Serializes all `gc_ptr` tests because the harness runs them on multiple
+    /// threads while the collector tests share process-global candidate,
+    /// reclaim-window, and stop-the-world state. Poison-tolerant so a panicking
+    /// test does not cascade into the rest.
     fn lock_buffer_tests() -> std::sync::MutexGuard<'static, ()> {
         crate::gc::test_support::serial_lock()
     }
@@ -1141,6 +1141,7 @@ mod tests {
 
     #[test]
     fn new_node_is_black_with_one_handle() {
+        let _serial = lock_buffer_tests();
         let gc = Gc::new(Leaf);
         assert_eq!(gc.strong_count(), 1);
         assert_eq!(gc.color(), Color::Black);
@@ -1148,6 +1149,7 @@ mod tests {
 
     #[test]
     fn clone_bumps_strong_count_and_drop_lowers_it() {
+        let _serial = lock_buffer_tests();
         let gc = Gc::new(Leaf);
         let clone = gc.clone();
         assert_eq!(gc.strong_count(), 2);
@@ -1157,6 +1159,7 @@ mod tests {
 
     #[test]
     fn trace_visits_the_single_child() {
+        let _serial = lock_buffer_tests();
         let child = Gc::new(Leaf);
         let node = Gc::new(Node {
             child: Mutex::new(Some(child)),
@@ -1168,6 +1171,7 @@ mod tests {
 
     #[test]
     fn trace_of_a_leaf_visits_nothing() {
+        let _serial = lock_buffer_tests();
         let gc = Gc::new(Leaf);
         let mut seen = 0;
         gc.trace_children(&mut |_erased| seen += 1);
@@ -1176,6 +1180,7 @@ mod tests {
 
     #[test]
     fn ptr_eq_distinguishes_shared_from_independent() {
+        let _serial = lock_buffer_tests();
         let a = Gc::new(Cell(1));
         let shared = a.clone();
         let b = Gc::new(Cell(1));
@@ -1185,6 +1190,7 @@ mod tests {
 
     #[test]
     fn make_mut_shares_when_unique_and_cows_when_aliased() {
+        let _serial = lock_buffer_tests();
         // Unique: make_mut writes in place, both this handle and any later
         // clone observe it.
         let mut a = Gc::new(Cell(1));
@@ -1207,6 +1213,7 @@ mod tests {
 
     #[test]
     fn get_mut_is_some_only_when_unique() {
+        let _serial = lock_buffer_tests();
         let mut a = Gc::new(Cell(1));
         assert!(Gc::get_mut(&mut a).is_some());
         let alias = a.clone();
@@ -1220,6 +1227,7 @@ mod tests {
 
     #[test]
     fn gc_contents_mut_writes_through_a_shared_node() {
+        let _serial = lock_buffer_tests();
         // Unlike make_mut, gc_contents_mut mutates the shared node in place, so
         // an alias DOES observe the write (Raku shared-container identity).
         let a = Gc::new(Cell(1));
@@ -1236,6 +1244,7 @@ mod tests {
 
     #[test]
     fn arc_and_gc_strong_counts_stay_in_lockstep() {
+        let _serial = lock_buffer_tests();
         // The invariant that `verify_unique_for_aliased_mut` (Step 4) machine-
         // checks: every live `Gc` handle moves the backing `Arc`'s strong count
         // and the GC-visible `header.strong` together, so `header.strong == 1`
@@ -1276,6 +1285,7 @@ mod tests {
 
     #[test]
     fn erased_clone_makes_arc_exceed_gc_strong() {
+        let _serial = lock_buffer_tests();
         // The exact divergence `verify_unique_for_aliased_mut` flags: an
         // `erased()` strong clone bumps the backing `Arc` but NOT the GC-visible
         // `header.strong`, so while it is held Arc > GC-visible. In production
@@ -1307,6 +1317,7 @@ mod tests {
 
     #[test]
     fn from_and_debug_forward_to_the_value() {
+        let _serial = lock_buffer_tests();
         let gc: Gc<Cell> = Cell(5).into();
         assert_eq!(*gc, Cell(5));
         assert_eq!(format!("{gc:?}"), format!("{:?}", Cell(5)));
@@ -1332,13 +1343,13 @@ mod tests {
 
     #[test]
     fn drop_does_not_buffer_when_gc_disabled() {
+        let _serial = lock_buffer_tests();
         // Default (MUTSU_GC unset) => gc_enabled() is false, so a
         // drop-with-survivors must NOT push a candidate. Under the GC=on CI
         // stress run the opposite is the point (it DOES buffer), so skip.
         if gc_enabled() {
             return;
         }
-        let _serial = lock_buffer_tests();
         drain_candidates();
         let gc = Gc::new(Leaf);
         let clone = gc.clone();
@@ -1349,6 +1360,7 @@ mod tests {
 
     #[test]
     fn gc_is_send_and_sync() {
+        let _serial = lock_buffer_tests();
         fn assert_send_sync<T: Send + Sync>() {}
         assert_send_sync::<Gc<Leaf>>();
         assert_send_sync::<ErasedGc>();
@@ -1363,6 +1375,7 @@ mod tests {
 
     #[test]
     fn get_mut_is_some_when_unique_none_when_shared() {
+        let _serial = lock_buffer_tests();
         let mut gc = Gc::new(IntLeaf(1));
         assert!(gc.get_mut().is_some(), "unique handle is mutable");
         gc.get_mut().unwrap().0 = 42;
@@ -1376,6 +1389,7 @@ mod tests {
 
     #[test]
     fn make_mut_copies_on_write_and_leaves_sharers_untouched() {
+        let _serial = lock_buffer_tests();
         let mut a = Gc::new(IntLeaf(10));
         let b = a.clone(); // shared: a,b same node
         assert!(Gc::ptr_eq(&a, &b));
@@ -1392,6 +1406,7 @@ mod tests {
 
     #[test]
     fn make_mut_is_in_place_for_a_truly_unique_handle() {
+        let _serial = lock_buffer_tests();
         let mut a = Gc::new(IntLeaf(5));
         let ptr_before = a.inner.as_ref() as *const GcBox<IntLeaf>;
         *a.make_mut() = IntLeaf(6);
@@ -1415,12 +1430,14 @@ mod tests {
 
     #[test]
     fn debug_delegates_to_the_pointee() {
+        let _serial = lock_buffer_tests();
         let gc = Gc::new(KeyLeaf(7));
         assert_eq!(format!("{gc:?}"), format!("{:?}", KeyLeaf(7)));
     }
 
     #[test]
     fn eq_compares_values_not_pointers() {
+        let _serial = lock_buffer_tests();
         let a = Gc::new(KeyLeaf(1));
         let b = Gc::new(KeyLeaf(1)); // distinct node, same value
         let c = Gc::new(KeyLeaf(2));
@@ -1437,6 +1454,7 @@ mod tests {
     // used as a hash key — an object hash, e.g. — since `Value` already is.)
     #[allow(clippy::mutable_key_type)]
     fn hash_uses_the_pointee_so_equal_values_collide_in_a_set() {
+        let _serial = lock_buffer_tests();
         use std::collections::HashSet;
         let mut set: HashSet<Gc<KeyLeaf>> = HashSet::new();
         set.insert(Gc::new(KeyLeaf(1)));
@@ -1447,6 +1465,7 @@ mod tests {
 
     #[test]
     fn as_ptr_and_erased_reference_the_same_node() {
+        let _serial = lock_buffer_tests();
         let gc = Gc::new(IntLeaf(9));
         // as_ptr points at the value inside the node.
         let p = Gc::as_ptr(&gc);
@@ -1503,6 +1522,7 @@ mod tests {
 
     #[test]
     fn dangling_weak_upgrades_to_none() {
+        let _serial = lock_buffer_tests();
         let w: WeakGc<Cell> = WeakGc::new();
         assert!(w.upgrade().is_none());
     }
