@@ -21,3 +21,4 @@
 # Keep sorted by name.
 
 Rakudo::Version #8945 -- its own BEGIN checks $*RAKU.compiler.name eq 'rakudo'; ADR-0104 already rejected outright ever spoofing .name, so this can only pass by superseding that decision.
+uniprop -- dispatches on $*VM.name (moar/jvm/js) and dies on anything else; mutsu reports 'mutsu' and, by the same principle as ADR-0104 (never claim to be another implementation), will not report 'moar' (user decision 2026-09-25). Its moar branch also needs nqp::getuniprop_* / nqp::unipropcode.
