@@ -6,8 +6,8 @@ mod dispatch_variadic;
 pub(crate) mod flat;
 mod junction;
 mod math;
-mod sprintf_fmt;
 mod rusage;
+mod sprintf_fmt;
 pub(crate) use rusage::process_rusage;
 mod uniparse;
 
