@@ -1042,9 +1042,9 @@ impl Compiler {
     ///
     /// A call must only emit the writebacks *its own* arguments queued. The
     /// queue is filled by `compile_call_arg_with_escape` and drained by the one
-    /// emitter below, but not every dispatch shape has a drain point:
-    /// `ExecCallPairs` (a listop-style statement call, and the shape `is @q[1],
-    /// 2, "x"` takes) never had one. Draining the whole queue therefore let an
+    /// emitter below, but not every dispatch shape had a drain point: the
+    /// retired statement-call opcode `ExecCallPairs` (the shape `is @q[1], 2,
+    /// "x"` took) never had one. Draining the whole queue therefore let an
     /// older, unrelated call's writeback attach itself to the NEXT call in the
     /// compilation unit — and since the writeback brackets that call's result
     /// with `SetGlobalRaw`/`GetGlobal`, and `GetGlobal` decontainerizes, the

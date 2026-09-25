@@ -59,21 +59,25 @@ plan 14;
 }
 
 # --- X::NoDispatcher ---
+# Not through `dies-ok`: Test's `dies-ok` is itself a `multi sub`, so inside
+# its block a plain sub's `callsame` finds that dispatcher -- raku does not
+# die there either. Probe with a bare `try` instead.
+sub died(&code) { my $died = True; try { code(); $died = False }; $died }
 {
     sub no-dispatch() { callsame }
-    dies-ok { no-dispatch() }, "callsame outside dispatch throws";
+    ok died(&no-dispatch), "callsame outside dispatch throws";
 }
 {
     sub no-dispatch() { nextsame }
-    dies-ok { no-dispatch() }, "nextsame outside dispatch throws";
+    ok died(&no-dispatch), "nextsame outside dispatch throws";
 }
 {
     sub no-dispatch() { callwith(1) }
-    dies-ok { no-dispatch() }, "callwith outside dispatch throws";
+    ok died(&no-dispatch), "callwith outside dispatch throws";
 }
 {
     sub no-dispatch() { nextwith(1) }
-    dies-ok { no-dispatch() }, "nextwith outside dispatch throws";
+    ok died(&no-dispatch), "nextwith outside dispatch throws";
 }
 
 # --- X::NoDispatcher message ---

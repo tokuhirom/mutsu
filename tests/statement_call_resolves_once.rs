@@ -1,21 +1,13 @@
-//! Pins the `OpCode::ExecCallPairs` entry arm (#7574).
+//! Pins how a listop-style statement call with a named argument resolves
+//! (#7574, #9462).
 //!
-//! A listop-style statement call with a named argument -- the shape every
-//! `Test` assertion takes, because the parser injects a
-//! `__mutsu_test_callsite_line` named argument into it -- used to do two things
-//! wrong at the opcode entry:
-//!
-//! 1. it ran its `find_compiled_function` / `try_native_function` probes
-//!    against the *unsanitized* argument list, i.e. one carrying that internal
-//!    marker pair, so the probes asked about a call shape that does not exist;
-//! 2. it then threw away whatever resolution the probe had performed and let
-//!    the carrier arm resolve the very same call a second time inside
-//!    `exec_call`.
-//!
-//! Both are fixed: the entry sanitizes once (as `OpCode::ExecCall` always has)
-//! and hands the type-keyed winner it resolved to the carrier. A regression
-//! shows up as `execcallpairs:carrier` replacing
-//! `execcallpairs:carrier-preresolved` in the vm-stats dispatch-entry line.
+//! Every `Test` assertion takes that shape, because the parser injects a
+//! `__mutsu_test_callsite_line` named argument into it. It used to run through
+//! the dedicated `OpCode::ExecCallPairs`, whose entry once probed with the
+//! marker still in the argument list and then resolved the same call a second
+//! time in its carrier arm. The opcode is gone: the statement now compiles to
+//! the expression form's `CallFuncNamed`, which strips the marker once and
+//! resolves each call at most once (`multi_call_resolves_once.rs`).
 
 use std::process::Command;
 
@@ -34,13 +26,13 @@ fn run(src: &str, real_test: bool) -> (String, String, bool) {
     )
 }
 
-/// The count recorded under `execcallpairs:<outcome>` in the dispatch-entry
-/// vm-stats line, or 0 when the key is absent.
-fn outcome_count(stderr: &str, outcome: &str) -> u64 {
-    let key = format!("execcallpairs:{outcome}=");
+/// The `<name>=N` count in the `function-full-resolve` vm-stats line, or 0 when
+/// the routine never reached a full candidate walk.
+fn full_resolves(stderr: &str, name: &str) -> u64 {
+    let key = format!("{name}=");
     stderr
         .lines()
-        .filter(|l| l.contains("dispatch-entry"))
+        .filter(|l| l.contains("] function-full-resolve total="))
         .find_map(|l| {
             l.split_whitespace()
                 .find_map(|w| w.strip_prefix(key.as_str()))
@@ -50,23 +42,16 @@ fn outcome_count(stderr: &str, outcome: &str) -> u64 {
 }
 
 #[test]
-fn test_assertions_resolve_their_routine_once_per_call() {
-    // Under the real `Test.rakumod` every assertion is a user-declared `multi`,
-    // so the entry's compiled probe resolves the winner and the carrier must
-    // reuse it rather than resolving again.
+fn test_assertions_resolve_their_routine_at_most_once_per_call() {
+    // Under the real `Test.rakumod` every assertion is a user-declared `multi`.
     let src = "use Test; plan 20; for ^20 { ok 1, \"x\" }";
     let (out, err, ok) = run(src, true);
     assert!(ok, "run failed: {err}");
     assert_eq!(out.lines().filter(|l| l.starts_with("ok ")).count(), 20);
-    assert_eq!(
-        outcome_count(&err, "carrier-preresolved"),
-        20,
-        "every assertion should reuse the entry's resolution: {err}"
-    );
-    assert_eq!(
-        outcome_count(&err, "carrier"),
-        0,
-        "an assertion resolved its routine twice: {err}"
+    let n = full_resolves(&err, "ok");
+    assert!(
+        (1..=20).contains(&n),
+        "20 assertions must resolve `ok` between once and 20 times, got {n}: {err}"
     );
 }
 
@@ -91,8 +76,8 @@ fn a_failing_assertion_still_reports_its_own_source_line() {
 
 #[test]
 fn a_listop_statement_call_with_named_args_still_binds_them() {
-    // The generic shape this opcode exists for: an unqualified statement call
-    // whose callee is not statically known, carrying a named argument.
+    // The generic shape: an unqualified statement call carrying a named
+    // argument.
     let src = "sub greet($who, :$loud) { say $loud ?? \"HI $who\" !! \"hi $who\" }; \
                greet 'bob', :loud;";
     let (out, err, ok) = run(src, false);

@@ -2696,8 +2696,8 @@ impl Compiler {
                 // statement-position bare call too — the same shadowing
                 // `compile_expr_call_inner` already applies at expression
                 // position (`self.amp_binding_in_active_scope`). Without this,
-                // the `ExecCallPairs` opcode below dispatches purely by name at
-                // runtime, with no notion of a local Callable binding, so a
+                // the statement-call opcode then used here dispatched purely by
+                // name at runtime, with no notion of a local Callable binding, so a
                 // mid-body (non-final) statement call could reach a builtin or
                 // control-flow implementation of the same name instead of the
                 // lexical — e.g. `emit()`/`done()` followed by more statements,
@@ -2729,7 +2729,7 @@ impl Compiler {
                 // (`Expr::Unary { op: Pipe }`), exactly what the expression
                 // parser produces for the value-position spelling. Without this
                 // `push(@a, 1, |@rest);` as a *statement* fell through to the
-                // generic `ExecCallPairs` dispatch, which has no `push` routine
+                // generic statement-call dispatch, which has no `push` routine
                 // to resolve and died with "Unknown call: push" — while the same
                 // call in value position (`my $r = push(...)`) worked. Limited to
                 // the fixed listop set; an imported routine keeps the stricter
@@ -2772,100 +2772,24 @@ impl Compiler {
                     return;
                 }
 
-                // Statement-level call with positional args only: the same
-                // `CallFunc` the expression form compiles to, then sink its value.
-                // This used to be a dedicated `ExecCall` opcode -- a second copy of
-                // call dispatch that drifted from `CallFunc` repeatedly (NativeCall,
-                // builtin shadowing, EXPORT hooks, sunk Failures) and finally leaked
-                // the wrap-chain / native-call result onto the operand stack, where
-                // it replaced the enclosing block's value (#9448).
-                if positional_only
-                    && rewritten_args
-                        .iter()
-                        .all(|arg| matches!(arg, CallArg::Positional(_)))
-                {
-                    let positional_exprs: Vec<Expr> = rewritten_args
-                        .iter()
-                        .filter_map(|arg| match arg {
-                            CallArg::Positional(expr) => Some(expr.clone()),
-                            _ => None,
-                        })
-                        .collect();
-                    let call_expr = Expr::Call {
-                        name: *name,
-                        args: positional_exprs,
-                    };
-                    self.compile_expr(&call_expr);
-                    // Sink context, exactly as the normalized path above.
-                    self.code.emit(OpCode::SinkPop(false, true));
-                    return;
-                }
-
-                // Statement-level call with named args: compile values and encode
-                // named args as Pair(name => value), then dispatch without stmt_pool.
-                //
-                // A closure literal NAMED-argument value escapes exactly as it
-                // does for a plain call's named-args branch
-                // (`compile_expr_call_inner`, and the identical fix in
-                // `compile_tail_stmt_call_value`): the callee may store it
-                // rather than invoke it immediately, and this stmt-call shape
-                // (a listop-style call whose callee is not statically known,
-                // e.g. an imported routine — see `Stmt::Call`) is otherwise
-                // indistinguishable from a plain call at the syntax level.
-                // Without this, a closure literal's captured-and-mutated free
-                // variables never get boxed into a shared cell, so a
-                // same-named parameter in the callee's own call chain can
-                // shadow the closure's own captured lexical when it is later
-                // invoked from a nested block
-                // (todo/deep/closure-capture-shadowed-by-colliding-callee-parameter.md).
-                //
-                // Positional args here deliberately keep `compile_call_arg`'s
-                // unconditional non-escaping treatment: unlike the named-arg
-                // case, marking a positional closure literal (e.g.
-                // `lives-ok { ... }, $desc` — rewritten to an anon sub before
-                // this loop runs, so it still matches `is_closure_literal_arg`)
-                // escaping here regressed `t/bind-alias-chain.t`, so this
-                // narrower fix only touches the shape the bug report is about.
-                let wb_base = self.index_rw_writeback_base();
-                for arg in &rewritten_args {
-                    match arg {
-                        CallArg::Positional(expr) => self.compile_call_arg(expr),
-                        CallArg::Named {
-                            name,
-                            value: Some(expr),
-                        } => {
-                            self.compile_expr(&Expr::Literal(Value::str(name.clone())));
-                            let escaping = Self::is_closure_literal_arg(expr);
-                            self.with_escape(escaping, |s| s.compile_expr(expr));
-                            self.code.emit(OpCode::MakeNamedArg);
-                        }
-                        CallArg::Named { name, value: None } => {
-                            self.compile_expr(&Expr::Literal(Value::str(name.clone())));
-                            self.compile_expr(&Expr::Literal(Value::TRUE));
-                            self.code.emit(OpCode::MakeNamedArg);
-                        }
-                        // `|EXPR` interpolates into the argument list: MakeSlip
-                        // builds the Slip, which spreads when bound.
-                        CallArg::Slip(expr) => {
-                            self.compile_expr(expr);
-                            self.code.emit(OpCode::MakeSlip);
-                        }
-                        CallArg::Invocant(_) => unreachable!(),
-                    }
-                }
-                let name_idx = self.code.add_constant(Value::str(name.resolve()));
-                let arg_sources_idx = self.add_call_arg_sources_constant(&rewritten_args);
-                self.code.emit(OpCode::ExecCallPairs {
-                    name_idx,
-                    arity: rewritten_args.len() as u32,
-                    arg_sources_idx,
-                    keep_value: false,
-                });
-                // Same as the expression-position `ExecCallPairs` site: no
-                // writeback emit point here, so drop this call's own queued
-                // entries instead of letting the next call emit them around its
-                // result (see `index_rw_writeback_base`).
-                self.pending_index_rw_writebacks.truncate(wb_base);
+                // Every other statement call: the same call the expression form
+                // compiles to (`CallFunc`, or `CallFuncNamed` when it carries named
+                // arguments), then sink its value. These used to be two dedicated
+                // opcodes, `ExecCall` (positional) and `ExecCallPairs` (named or
+                // slip arguments) -- copies of call dispatch that drifted from
+                // `CallFunc` repeatedly: NativeCall, builtin shadowing, EXPORT
+                // hooks, sunk Failures, a value leaked onto the operand stack
+                // (#9448), and a `warn` inside the call that could not be
+                // `.resume`d (#9462).
+                let call_expr = Expr::Call {
+                    name: *name,
+                    args: Self::call_args_to_expr_args(&rewritten_args),
+                };
+                self.stmt_call_positional_closures_nonescaping = !positional_only;
+                self.compile_expr(&call_expr);
+                self.stmt_call_positional_closures_nonescaping = false;
+                // Sink context, exactly as the normalized path above.
+                self.code.emit(OpCode::SinkPop(false, true));
             }
             // Loop control
             Stmt::Goto(expr) => {

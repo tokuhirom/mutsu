@@ -453,6 +453,15 @@ pub(crate) struct VmCallFrame {
     /// The caller frame's `active_loop_rw_param_names` stack — saved and
     /// restored exactly like `saved_active_loop_param_names`.
     pub saved_active_loop_rw_param_names: Option<crate::runtime::scope_stack::ScopeFrame>,
+    /// The caller's pending caller-var writebacks, hidden while this frame
+    /// runs. Each names a caller lexical that some write changed; the first
+    /// frame whose `code` has a local of that name refreshes its slot from
+    /// env. A frame entered after the write cannot own that variable, but it
+    /// can have a local of the same name -- Test's `proclaim($cond, $desc is
+    /// copy)` took the `$desc` a `lives-ok { $desc = ... }` block had just
+    /// written and the caller kept its old value. `pop_call_frame` merges the
+    /// frame's own unclaimed writebacks back over these.
+    pub saved_pending_caller_var_writeback: rustc_hash::FxHashSet<String>,
 }
 
 // CP-3 collapse: the bytecode Interpreter has been fully dissolved into the `Interpreter`

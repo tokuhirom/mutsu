@@ -3140,7 +3140,7 @@ pub(crate) struct LazyList {
     /// discards ITS result — must not force/drain the underlying `gather`
     /// (raku's `sink` never forces an itemized Scalar; only a genuinely
     /// un-itemized bare Seq gets drained for side effects). Mirrors
-    /// `cached_no_sink`'s exemption in `SinkPop`/`ExecCallPairs` sink-forcing,
+    /// `cached_no_sink`'s exemption in `SinkPop` sink-forcing,
     /// but is orthogonal to it (a `.cache` view and an itemized scalar are
     /// different reasons to skip the same forcing).
     pub(crate) itemized: bool,

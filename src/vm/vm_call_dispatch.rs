@@ -442,8 +442,8 @@ impl Interpreter {
         // as the OTF one is — callsite package, `fn_resolve_gen`, and the multi
         // exclusion above — and a hit runs the body under the routine's own
         // nested-sub table, as this function does below.
-        if !self.has_multi_candidates_cached(&name) {
-            let name_sym = Symbol::intern(&name);
+        let name_sym = def.name;
+        if !self.has_multi_candidates_cached_sym(name_sym) {
             // Keyed to the *callsite* package, not `def.package`: the cache
             // answers "what does this bare name mean here", and a module's
             // non-exported sub means nothing outside its own package. The
@@ -462,7 +462,7 @@ impl Interpreter {
         // cache hit enters TRIR; this call enters it the same way.
         if let Some((code, raw)) = caller
             && cf.trir.is_some()
-            && !self.has_multi_candidates_cached(&name)
+            && !self.has_multi_candidates_cached_sym(name_sym)
             && let Some(result) = self.try_call_trir_values(
                 &cf,
                 raw,
@@ -485,7 +485,7 @@ impl Interpreter {
         // cacheable and re-ran user code (#7886).
         let pushed_dispatch = loan_env!(
             self,
-            push_multi_dispatch_frame_with_winner(&name, &args, Some(def))
+            push_multi_dispatch_frame_with_winner_sym(&name, name_sym, &args, Some(def))
         );
 
         // Prefer the routine's own nested-sub table over the caller's: a
@@ -518,7 +518,7 @@ impl Interpreter {
         // general entry's `is_unit_lexical_of` check keeps a module sub's write
         // to one off the loading script's same-named lexical
         // (`t/module-file-scope-lexical.t`).
-        let light_eligible = self.unit_of_source(cf.source_file.as_deref()) == self.current_unit
+        let light_eligible = self.unit_of_source_sym(cf.source_file_sym()) == self.current_unit
             && Self::is_positional_light_call_eligible(
                 &cf,
                 &name,
