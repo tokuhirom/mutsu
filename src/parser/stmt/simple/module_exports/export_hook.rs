@@ -192,3 +192,67 @@ pub(super) fn collect_export_hook_value_terms(stmts: &[Stmt], out: &mut Vec<Stri
         collect_export_body_value_terms(body, out);
     }
 }
+
+/// A fourth idiom: an operator declared as an ordinary LOCAL routine inside the
+/// hook's own body and handed out through the returned `Map` (Understitch's
+/// `sub infix:<_> (...) is equiv(&infix:<~>) { ... }` followed by
+/// `Map.new: '&infix:<_>' => &infix:<_>`). It carries no `is export`, so the
+/// precise walker skips it.
+///
+/// Plain infix use (`"a" _ "b"`) happened to parse anyway, through the
+/// speculative custom-infix-word matcher; but every form that asks whether an
+/// operator is DECLARED — the reduction metaop `[_]` above all — rejected it.
+/// A categorical routine declared in the hook has no purpose other than being
+/// exported (the hook's body is a private lexical scope that ends when it
+/// returns), so it is collected, with the precedence/associativity traits the
+/// importer's parse needs.
+pub(super) fn collect_export_hook_operator_subs(
+    stmts: &[Stmt],
+    exports: &mut HashMap<String, InlineModuleExport>,
+) {
+    if let Some(body) = find_export_sub_body(stmts) {
+        collect_operator_subs_in(body, exports);
+    }
+}
+
+fn collect_operator_subs_in(stmts: &[Stmt], exports: &mut HashMap<String, InlineModuleExport>) {
+    for stmt in stmts {
+        match stmt {
+            Stmt::SubDecl {
+                name,
+                associativity,
+                precedence_trait,
+                ..
+            } => {
+                let resolved = name.resolve();
+                if !is_operator_routine_name(&resolved) {
+                    continue;
+                }
+                exports.entry(resolved.clone()).or_insert_with(|| {
+                    super::sub_export_entry(
+                        resolved,
+                        precedence_trait.as_ref(),
+                        associativity.clone(),
+                        false,
+                    )
+                });
+            }
+            Stmt::SyntheticBlock(inner) | Stmt::Block(inner) => {
+                collect_operator_subs_in(inner, exports);
+            }
+            _ => {}
+        }
+    }
+}
+
+fn is_operator_routine_name(name: &str) -> bool {
+    [
+        "infix:<",
+        "prefix:<",
+        "postfix:<",
+        "circumfix:<",
+        "postcircumfix:<",
+    ]
+    .iter()
+    .any(|category| name.starts_with(category))
+}

@@ -6,8 +6,9 @@ use std::rc::Rc;
 
 mod export_hook;
 use export_hook::{
-    collect_export_hook_value_terms, collect_unit_scope_routines, declares_export_sub,
-    find_export_sub_body, source_declares_export_sub, unit_scope_routine_names_fallback,
+    collect_export_hook_operator_subs, collect_export_hook_value_terms,
+    collect_unit_scope_routines, declares_export_sub, find_export_sub_body,
+    source_declares_export_sub, unit_scope_routine_names_fallback,
 };
 
 /// Everything one module-file scan learns that importers need replayed:
@@ -754,6 +755,10 @@ fn scan_module_source(source: &str, path: &str) -> ModuleScanResult {
         if let Some(body) = find_export_sub_body(&stmts) {
             collect_exported_subs_in(body, &mut exports, false);
         }
+        // A fourth idiom: operators declared locally in the hook WITHOUT
+        // `is export` and handed out through the returned `Map` — see the
+        // function's own doc.
+        collect_export_hook_operator_subs(&stmts, &mut exports);
         // A second idiom's value terms, declared locally inside the hook's own
         // body rather than drawn from `UNIT::` — see the function's own doc
         // for why a value term (unlike a routine) needs this at all.
@@ -1334,6 +1339,30 @@ fn collect_exported_subs(stmts: &[Stmt], exports: &mut HashMap<String, InlineMod
 /// `our sub infix:<< ip== >> (...) { ... }` inside `EXPORT::DEFAULT` is
 /// never `is export`-tagged, yet `use Net::IP::Parse` must still learn the
 /// operator so the importer's file parses at all).
+/// The parser-facing export record of one routine declaration: its name plus
+/// a custom operator's precedence (resolved from an `is tighter/looser/equiv`
+/// trait against the referenced operator) and associativity.
+pub(super) fn sub_export_entry(
+    name: String,
+    precedence_trait: Option<&(String, String)>,
+    associativity: Option<String>,
+    is_test_assertion: bool,
+) -> InlineModuleExport {
+    let precedence = precedence_trait.and_then(|(trait_name, ref_op)| {
+        resolve_op_precedence(ref_op).map(|ref_level| match trait_name.as_str() {
+            "tighter" => ref_level + 5,
+            "looser" => ref_level - 5,
+            _ => ref_level,
+        })
+    });
+    InlineModuleExport {
+        name,
+        precedence,
+        associativity,
+        is_test_assertion,
+    }
+}
+
 fn collect_exported_subs_in(
     stmts: &[Stmt],
     exports: &mut HashMap<String, InlineModuleExport>,
@@ -1367,23 +1396,13 @@ fn collect_exported_subs_in(
                 // fails to resolve; the superset costs a worse diagnostic for
                 // such a name and can never change the meaning of a program
                 // that runs.
-                let precedence = precedence_trait.as_ref().and_then(|(trait_name, ref_op)| {
-                    resolve_op_precedence(ref_op).map(|ref_level| match trait_name.as_str() {
-                        "tighter" => ref_level + 5,
-                        "looser" => ref_level - 5,
-                        _ => ref_level,
-                    })
-                });
-                let resolved = name.resolve();
-                exports.insert(
-                    resolved.clone(),
-                    InlineModuleExport {
-                        name: resolved,
-                        precedence,
-                        associativity: associativity.clone(),
-                        is_test_assertion: *is_test_assertion,
-                    },
+                let entry = sub_export_entry(
+                    name.resolve(),
+                    precedence_trait.as_ref(),
+                    associativity.clone(),
+                    *is_test_assertion,
                 );
+                exports.insert(entry.name.clone(), entry);
             }
             Stmt::ProtoDecl {
                 name, is_export, ..
