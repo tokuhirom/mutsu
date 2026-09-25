@@ -5718,6 +5718,14 @@ pub(crate) struct CompiledCode {
     /// [`Self::note_rebound_name`]. Raw compiler input to
     /// [`Self::free_var_rebinds`].
     pub(crate) rebound_free_names: Vec<Symbol>,
+    /// The source names of the variable operands of each numeric infix op
+    /// (`+ - * / % **`, `== != < <= > >=`), keyed by the op's index in
+    /// [`Self::ops`] and sorted by it (ops are only ever appended). Recorded
+    /// by [`Self::note_numeric_operand_names`] only when an operand is a plain
+    /// variable, so a chunk with no `$x + ...` holds nothing. Read on the cold
+    /// path alone -- the "Use of uninitialized value $x of type Any in numeric
+    /// context" warning names the variable the way rakudo's does (#9359).
+    pub(crate) numeric_operand_names: Vec<(u32, [Option<Symbol>; 2])>,
     /// Free variables this code or a nested closure REBINDS with `:=` (#9307).
     /// Folded up by `compute_free_vars` until it reaches the chunk that
     /// declares the name, where the name's slots join
@@ -6229,6 +6237,7 @@ impl CompiledCode {
             rebind_target_slots: Vec::new(),
             rebound_slots: Vec::new(),
             rebound_free_names: Vec::new(),
+            numeric_operand_names: Vec::new(),
             free_var_rebinds: Vec::new(),
             free_var_sym_set: std::sync::OnceLock::new(),
             local_sym_set: std::sync::OnceLock::new(),
@@ -6312,6 +6321,27 @@ impl CompiledCode {
             && !self.rebound_slots.contains(&slot)
         {
             self.rebound_slots.push(slot);
+        }
+    }
+
+    /// Record the operand variable names of the numeric infix op about to be
+    /// emitted at the next op index -- see [`Self::numeric_operand_names`].
+    pub(crate) fn note_numeric_operand_names(&mut self, names: [Option<Symbol>; 2]) {
+        if names.iter().any(Option::is_some) {
+            self.numeric_operand_names
+                .push((self.ops.len() as u32, names));
+        }
+    }
+
+    /// The operand variable names recorded for the numeric op at `ip`.
+    // Cost: O(log n), n = numeric ops with a variable operand in this chunk.
+    pub(crate) fn numeric_operand_names_at(&self, ip: usize) -> [Option<Symbol>; 2] {
+        match self
+            .numeric_operand_names
+            .binary_search_by_key(&(ip as u32), |(at, _)| *at)
+        {
+            Ok(i) => self.numeric_operand_names[i].1,
+            Err(_) => [None, None],
         }
     }
 

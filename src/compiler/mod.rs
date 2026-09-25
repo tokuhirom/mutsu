@@ -1142,6 +1142,7 @@ mod helpers_sub_body;
 pub(crate) mod lex_scope;
 mod lexsub_aliases;
 pub(crate) mod nqp_forms;
+mod numeric_operand_names;
 mod stmt;
 mod trir_call;
 

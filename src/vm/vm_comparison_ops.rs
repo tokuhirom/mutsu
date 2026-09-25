@@ -334,6 +334,8 @@ impl Interpreter {
                         == crate::runtime::utils::value_to_list(&r).len(),
                 ));
             }
+            let l = vm.warn_uninitialized_numeric_operand(l, 0)?;
+            let r = vm.warn_uninitialized_numeric_operand(r, 1)?;
             let (l, r) = vm.coerce_numeric_bridge_pair(l, r)?;
             // rakudo's last-resort candidate is `multi infix:<==>(Any \a, Any
             // \b) { a.Numeric == b.Numeric }`, so two objects the bridge left
@@ -514,6 +516,8 @@ impl Interpreter {
             }
             check_type_object_in_numeric_context(&l)?;
             check_type_object_in_numeric_context(&r)?;
+            let l = vm.warn_uninitialized_numeric_operand(l, 0)?;
+            let r = vm.warn_uninitialized_numeric_operand(r, 1)?;
             let (l, r) = vm.coerce_numeric_bridge_pair(l, r)?;
             Interpreter::compare(l, r, |o| o < 0)
         })
@@ -544,6 +548,8 @@ impl Interpreter {
             }
             check_type_object_in_numeric_context(&l)?;
             check_type_object_in_numeric_context(&r)?;
+            let l = vm.warn_uninitialized_numeric_operand(l, 0)?;
+            let r = vm.warn_uninitialized_numeric_operand(r, 1)?;
             let (l, r) = vm.coerce_numeric_bridge_pair(l, r)?;
             Interpreter::compare(l, r, |o| o <= 0)
         })
@@ -574,6 +580,8 @@ impl Interpreter {
             }
             check_type_object_in_numeric_context(&l)?;
             check_type_object_in_numeric_context(&r)?;
+            let l = vm.warn_uninitialized_numeric_operand(l, 0)?;
+            let r = vm.warn_uninitialized_numeric_operand(r, 1)?;
             let (l, r) = vm.coerce_numeric_bridge_pair(l, r)?;
             Interpreter::compare(l, r, |o| o > 0)
         })
@@ -604,6 +612,8 @@ impl Interpreter {
             }
             check_type_object_in_numeric_context(&l)?;
             check_type_object_in_numeric_context(&r)?;
+            let l = vm.warn_uninitialized_numeric_operand(l, 0)?;
+            let r = vm.warn_uninitialized_numeric_operand(r, 1)?;
             let (l, r) = vm.coerce_numeric_bridge_pair(l, r)?;
             Interpreter::compare(l, r, |o| o >= 0)
         })

@@ -237,8 +237,10 @@ impl Compiler {
                 self.compile_expr(current);
                 // Operands were collected right-to-left, reverse to emit
                 // left-to-right
+                let mut left_operand = Some(current);
                 for operand in operands.into_iter().rev() {
                     self.compile_expr(operand);
+                    self.note_numeric_operands(&opcode, left_operand.take(), operand);
                     self.code.emit(opcode.clone());
                 }
                 return;
@@ -878,6 +880,7 @@ impl Compiler {
                 };
                 self.code.emit(OpCode::NativeIntArithmetic { op, unsigned });
             } else {
+                self.note_numeric_operands(&opcode, Some(left), right);
                 self.code.emit(opcode);
             }
         } else if let TokenKind::Ident(name) = op
