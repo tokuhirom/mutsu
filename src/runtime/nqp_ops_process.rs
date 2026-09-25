@@ -154,6 +154,15 @@ impl Interpreter {
                 Ok(Value::int(i64::from(self.eval_truthy(&v))))
             }
 
+            // nqp::isfalse($v) — the logical negation of nqp::istrue($v),
+            // using the same VM boolification so user Bool methods and lazy
+            // values follow exactly the same rules as `?` and `if`.
+            // Cost: O(1) for scalars (truthy() of a lazy list may reify its head).
+            "isfalse" => {
+                let v = args.first().cloned().unwrap_or(Value::NIL);
+                Ok(Value::int(i64::from(!self.eval_truthy(&v))))
+            }
+
             // nqp::islist($v) — int 0/1: is this a raw nqp-level list (the
             // `list` op above builds one), as opposed to a boxed Raku Array
             // or other object. AttrX::Mooish::ClassHOW walks its own
