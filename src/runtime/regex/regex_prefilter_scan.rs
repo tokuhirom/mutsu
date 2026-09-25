@@ -9,6 +9,7 @@
 //! [`super::regex_prefilter::regex_scan_positions`] for why that matters.
 
 use super::regex_prefilter::Prefilter;
+use super::regex_prefilter_find::find_literal;
 use std::sync::Arc;
 
 /// Iterator returned by [`super::regex_prefilter::regex_scan_positions`]. See
@@ -62,16 +63,6 @@ pub(crate) enum ScanPositions<'c> {
     },
 }
 
-/// The first index at or after `from` where `needle` occurs in `haystack`.
-///
-/// A plain forward scan, like the `Literal` arm's: the needles here are a
-/// handful of characters and the comparison is over `char`, not bytes, so the
-/// setup a sublinear searcher needs would cost more than it saves at this size.
-fn find_from(haystack: &[char], needle: &[char], from: usize) -> Option<usize> {
-    let last = haystack.len().checked_sub(needle.len())?;
-    (from..=last).find(|&i| haystack[i..i + needle.len()] == *needle)
-}
-
 impl ScanPositions<'_> {
     /// No candidate at all — the subject is shorter than any match could be.
     pub(super) fn empty() -> Self {
@@ -93,15 +84,13 @@ impl Iterator for ScanPositions<'_> {
                 last,
             } => {
                 let needle = prefilter.prefix.as_deref().unwrap_or_default();
-                while *pos <= *last {
-                    let candidate = *pos;
-                    *pos += 1;
-                    if chars[candidate..candidate + needle.len()] == *needle {
-                        crate::vm::vm_stats::record_regex_prefilter_position_hit();
-                        return Some(candidate);
-                    }
-                }
-                None
+                let Some(candidate) = find_literal(chars, needle, *pos, *last) else {
+                    *pos = *last + 1;
+                    return None;
+                };
+                *pos = candidate + 1;
+                crate::vm::vm_stats::record_regex_prefilter_position_hit();
+                Some(candidate)
             }
             ScanPositions::FirstChar {
                 chars,
@@ -152,7 +141,7 @@ impl Iterator for ScanPositions<'_> {
                     if *exhausted {
                         return None;
                     }
-                    let Some(at) = find_from(chars, &inner.literal, *search) else {
+                    let Some(at) = find_literal(chars, &inner.literal, *search, usize::MAX) else {
                         *exhausted = true;
                         return None;
                     };
