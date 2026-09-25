@@ -32,6 +32,7 @@ pub(crate) mod regex_prefilter_analysis;
 mod regex_prefilter_chain;
 mod regex_prefilter_chain_atom;
 mod regex_prefilter_composite;
+mod regex_prefilter_find;
 pub(crate) mod regex_prefilter_firstset;
 pub(crate) mod regex_prefilter_inner;
 mod regex_prefilter_memo;

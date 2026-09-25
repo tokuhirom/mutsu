@@ -648,3 +648,27 @@ differential_case!(
     chain_bounded_length_is_capped,
     r#"say ("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaz" ~~ / a ** 100 /).defined;"#
 );
+
+// #9250: the literal search sweeps the subject 32 characters at a time, so
+// these put occurrences on, just before and just after a block boundary, and
+// mix in non-ASCII and `:i`-folded subjects.
+differential_case!(
+    literal_across_block_boundaries,
+    r#"for 0, 30, 31, 32, 33, 63, 64, 65, 100 -> $n { my $s = "a" x $n ~ "bc" ~ "a" x 40; print ($s ~~ / bc /).from, " ", ($s ~~ m:g/ bc | aab /).elems, " " }; say "";"#
+);
+differential_case!(
+    literal_long_subject_global,
+    r#"my $s = ("xyz" ~ "a" x 37) x 20; say $s.comb(/ 'za' a /).elems, " ", $s.subst(/ 'yz' /, 'Q', :g).chars;"#
+);
+differential_case!(
+    inner_literal_across_block_boundaries,
+    r#"for 1, 31, 32, 33, 64 -> $n { my $s = "." x $n ~ "Xb" ~ "." x 40; print ($s ~~ / \w b /).from, " " }; say "";"#
+);
+differential_case!(
+    literal_non_ascii_long_subject,
+    r#"my $s = "\x[e9]\x[1F600]" x 40 ~ "b\x[1F600]c"; say ($s ~~ / "b\x[1F600]" c /).from, " ", ($s ~~ / "\x[1F600]" b /).from;"#
+);
+differential_case!(
+    literal_ignorecase_long_subject,
+    r#"my $s = "A" x 70 ~ "Bc"; say ($s ~~ m:i/ bc /).from, " ", ($s ~~ m:i/ ab /).from;"#
+);
