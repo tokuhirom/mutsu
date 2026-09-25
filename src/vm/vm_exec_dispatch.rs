@@ -5068,7 +5068,15 @@ impl Interpreter {
             // -- Postfix operators --
             // Cost: O(1).
             OpCode::PostIncrement(name_idx, slot) => {
-                self.exec_post_increment_op(code, *name_idx, *slot)?;
+                self.exec_scalar_incdec_op(
+                    code,
+                    *name_idx,
+                    *slot,
+                    IncDec {
+                        increment: true,
+                        prefix: false,
+                    },
+                )?;
                 if let Some(slot) = slot {
                     self.publish_state_local(code, *slot);
                 }
@@ -5076,7 +5084,15 @@ impl Interpreter {
             }
             // Cost: O(1).
             OpCode::PostDecrement(name_idx, slot) => {
-                self.exec_post_decrement_op(code, *name_idx, *slot)?;
+                self.exec_scalar_incdec_op(
+                    code,
+                    *name_idx,
+                    *slot,
+                    IncDec {
+                        increment: false,
+                        prefix: false,
+                    },
+                )?;
                 if let Some(slot) = slot {
                     self.publish_state_local(code, *slot);
                 }
@@ -5230,7 +5246,15 @@ impl Interpreter {
             // -- Prefix increment/decrement --
             // Cost: O(1).
             OpCode::PreIncrement(name_idx, slot) => {
-                self.exec_pre_increment_op(code, *name_idx, *slot)?;
+                self.exec_scalar_incdec_op(
+                    code,
+                    *name_idx,
+                    *slot,
+                    IncDec {
+                        increment: true,
+                        prefix: true,
+                    },
+                )?;
                 if let Some(slot) = slot {
                     self.publish_state_local(code, *slot);
                 }
@@ -5238,7 +5262,15 @@ impl Interpreter {
             }
             // Cost: O(1).
             OpCode::PreDecrement(name_idx, slot) => {
-                self.exec_pre_decrement_op(code, *name_idx, *slot)?;
+                self.exec_scalar_incdec_op(
+                    code,
+                    *name_idx,
+                    *slot,
+                    IncDec {
+                        increment: false,
+                        prefix: true,
+                    },
+                )?;
                 if let Some(slot) = slot {
                     self.publish_state_local(code, *slot);
                 }
@@ -5246,12 +5278,20 @@ impl Interpreter {
             }
             // Cost: O(1) for a single index/key.
             OpCode::PreIncrementIndex(name_idx, slot) => {
+                // Same attribute-element mirroring as the postfix forms: `++@!a[0]`
+                // must reach the attribute's cell exactly as `@!a[0]++` does.
+                let pre = self.attr_elem_env_snapshot(code, *name_idx);
                 self.exec_pre_increment_index_op(code, *name_idx, *slot)?;
+                self.mirror_attr_elem_env_to_cell(code, *name_idx, pre);
                 *ip += 1;
             }
             // Cost: O(1) for a single index/key.
             OpCode::PreDecrementIndex(name_idx, slot) => {
+                // Same attribute-element mirroring as the postfix forms: `++@!a[0]`
+                // must reach the attribute's cell exactly as `@!a[0]++` does.
+                let pre = self.attr_elem_env_snapshot(code, *name_idx);
                 self.exec_pre_decrement_index_op(code, *name_idx, *slot)?;
+                self.mirror_attr_elem_env_to_cell(code, *name_idx, pre);
                 *ip += 1;
             }
 

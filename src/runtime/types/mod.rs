@@ -595,17 +595,9 @@ impl Interpreter {
     /// non-`is rw`/`is copy` parameter). `op` is the display operator
     /// (`prefix:<++>`, `postfix:<-->`, ...). Raku models `++`/`--` as multi
     /// candidates that all require `is rw`, so a read-only argument yields
-    /// `X::Multi::NoMatch` — mirror that here so `sub f($n){ ++$n }` throws.
-    pub(crate) fn check_readonly_for_incdec(
-        &self,
-        name: &str,
-        op: &str,
-    ) -> Result<(), RuntimeError> {
-        self.check_readonly_for_incdec_for(name, None, op)
-    }
-
-    /// [`Self::check_readonly_for_incdec`] for a caller holding `name`'s
-    /// interned form. See [`Self::name_is_readonly_binding_for`].
+    /// `X::Multi::NoMatch` -- mirror that here so `sub f($n){ ++$n }` throws.
+    /// `name_sym` is `name`'s interned form when the caller has it; see
+    /// [`Self::name_is_readonly_binding_for`].
     pub(crate) fn check_readonly_for_incdec_for(
         &self,
         name: &str,

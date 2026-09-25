@@ -519,7 +519,7 @@ impl Interpreter {
                     self.stack.pop();
                     // An attribute operand (`++$!x`) is read-modify-written
                     // through its backing cell, exactly as the increment
-                    // opcodes do around `exec_pre_increment_op_inner`.
+                    // opcodes do around `exec_scalar_incdec_op`.
                     if let Some((attr, _, _)) = arg.as_varref() {
                         let attr = attr.resolve();
                         self.sync_attr_local_from_cell_by_name(code, &attr);
