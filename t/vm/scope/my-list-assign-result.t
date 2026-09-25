@@ -1,6 +1,6 @@
 use Test;
 
-plan 16;
+plan 20;
 
 # A declaring list assignment `my ($x, $y) = RHS` evaluates to its LHS after
 # the assignment -- the declared targets -- not to the RHS (#9342).
@@ -63,4 +63,19 @@ plan 16;
     my $out = '';
     if my ($a, $b) = 1, 2 { $out = "$a $b" }
     is $out, '1 2', 'destructuring declaration still works as a condition';
+}
+
+# A loose word-logical binds looser than the list assignment: its left
+# operand is the assigned LHS list, not part of the RHS.
+{
+    my $out = 'none';
+    if my ($z) = () and $z.defined { $out = "z" } elsif my ($w) = 99 { $out = "w=$w" }
+    is $out, 'w=99', '`my (...) = () and ...` tests the assigned targets';
+    my $said = '';
+    my ($p, $q) = 1, 2 and $said = "$p $q";
+    is $said, '1 2', 'an `and` tail runs after the assignment';
+    my ($r) = 0 or $said = 'or-tail';
+    is $said, '1 2', 'a non-empty LHS list is true for an `or` tail';
+    if my ($d) = 5 and $d > 3 { $said = "d=$d" }
+    is $said, 'd=5', 'an `and` tail in an if condition keeps the block as the body';
 }
