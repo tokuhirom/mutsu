@@ -4023,6 +4023,15 @@ pub struct Interpreter {
     /// the pointed-to `CompiledCode` is an ancestor stack frame and therefore
     /// alive. `0` before any frame runs. Reset across thread clones.
     pub(crate) current_code: usize,
+    /// `(code, ip)` of the numeric infix op (`+`, `==`, ...) the interpreter
+    /// loop is executing -- `code` in the [`Self::current_code`] encoding --
+    /// or `(0, 0)` outside one. Saved, set and restored around that op by
+    /// `exec_one_dispatch`, so a JIT shim (which bypasses the loop) never sees
+    /// a site of its own. Only read on the cold path, to name the variable in
+    /// the "Use of uninitialized value $x ... in numeric context" warning
+    /// (#9359); the reader checks `code` against `current_code`, so code a
+    /// nested call runs meanwhile cannot misread it.
+    pub(crate) numeric_op_site: (usize, usize),
     /// When `Some`, a *carrier* (EVAL / interpreter fallback) is running and
     /// every by-name env write through `set_env_with_main_alias` logs its name
     /// here. On carrier return, exactly these names are written back into the

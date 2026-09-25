@@ -388,6 +388,10 @@ impl Interpreter {
         crate::vm::vm_comparison_ops::check_type_object_in_numeric_context(&right)?;
         crate::runtime::utils::check_str_numeric(&left)?;
         crate::runtime::utils::check_str_numeric(&right)?;
+        // Any other type object (`Any`, `Str`, `Complex`, ...) warns and
+        // numifies to its zero (#9359).
+        let left = self.warn_uninitialized_numeric_operand(left, 0)?;
+        let right = self.warn_uninitialized_numeric_operand(right, 1)?;
         self.coerce_numeric_bridge_pair(left, right)
     }
 

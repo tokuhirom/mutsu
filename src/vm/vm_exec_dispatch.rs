@@ -2624,17 +2624,26 @@ impl Interpreter {
             // Cost: O(1) on Int/Num/Rat operands; O(d) on BigInt, d = digits (a Str operand is
             // numified first, O(n)).
             OpCode::Add => {
-                self.exec_add_op()?;
+                let saved_site = self.enter_numeric_op_site(code, *ip);
+                let r = self.exec_add_op();
+                self.numeric_op_site = saved_site;
+                r?;
                 *ip += 1;
             }
             // Cost: O(1) on Int/Num/Rat operands; O(d) on BigInt, d = digits.
             OpCode::Sub => {
-                self.exec_sub_op()?;
+                let saved_site = self.enter_numeric_op_site(code, *ip);
+                let r = self.exec_sub_op();
+                self.numeric_op_site = saved_site;
+                r?;
                 *ip += 1;
             }
             // Cost: O(1) on Int/Num/Rat operands; O(d1*d2) on BigInt, d = digits of each operand.
             OpCode::Mul => {
-                self.exec_mul_op()?;
+                let saved_site = self.enter_numeric_op_site(code, *ip);
+                let r = self.exec_mul_op();
+                self.numeric_op_site = saved_site;
+                r?;
                 *ip += 1;
             }
             // Cost: O(1).
@@ -2644,18 +2653,27 @@ impl Interpreter {
             }
             // Cost: O(1) on Int/Num/Rat operands (plus a gcd); O(d1*d2) on BigInt operands.
             OpCode::Div => {
-                self.exec_div_op()?;
+                let saved_site = self.enter_numeric_op_site(code, *ip);
+                let r = self.exec_div_op();
+                self.numeric_op_site = saved_site;
+                r?;
                 *ip += 1;
             }
             // Cost: O(1) on Int/Num/Rat operands; O(d1*d2) on BigInt operands.
             OpCode::Mod => {
-                self.exec_mod_op()?;
+                let saved_site = self.enter_numeric_op_site(code, *ip);
+                let r = self.exec_mod_op();
+                self.numeric_op_site = saved_site;
+                r?;
                 *ip += 1;
             }
             // Cost: O(1) for Int ** Int with exponent <= 30 (fast path); otherwise bigint
             // exponentiation by squaring, O(M(d) log k) (measured on par with Rakudo).
             OpCode::Pow => {
-                self.exec_pow_op()?;
+                let saved_site = self.enter_numeric_op_site(code, *ip);
+                let r = self.exec_pow_op();
+                self.numeric_op_site = saved_site;
+                r?;
                 *ip += 1;
             }
             // Cost: O(1) (O(n) to numify a Str operand, O(d) on BigInt).
@@ -3039,13 +3057,19 @@ impl Interpreter {
             // Cost: O(1) on scalars; O(e_l + e_r) for two list operands (see num_eq_values).
             // Rakudo: O(1) for reified arrays -- see #9162.
             OpCode::NumEq => {
-                self.exec_num_eq_op()?;
+                let saved_site = self.enter_numeric_op_site(code, *ip);
+                let r = self.exec_num_eq_op();
+                self.numeric_op_site = saved_site;
+                r?;
                 *ip += 1;
             }
             // Cost: as NumEq: O(1) on scalars, O(e_l + e_r) for two list operands. Rakudo: O(1)
             // for reified arrays -- see #9162.
             OpCode::NumNe => {
-                self.exec_num_ne_op()?;
+                let saved_site = self.enter_numeric_op_site(code, *ip);
+                let r = self.exec_num_ne_op();
+                self.numeric_op_site = saved_site;
+                r?;
                 *ip += 1;
             }
             // Cost: O(1) (native operands).
@@ -3056,22 +3080,34 @@ impl Interpreter {
             }
             // Cost: O(1) (a list operand numifies to its element count).
             OpCode::NumLt => {
-                self.exec_num_lt_op()?;
+                let saved_site = self.enter_numeric_op_site(code, *ip);
+                let r = self.exec_num_lt_op();
+                self.numeric_op_site = saved_site;
+                r?;
                 *ip += 1;
             }
             // Cost: O(1) (a list operand numifies to its element count).
             OpCode::NumLe => {
-                self.exec_num_le_op()?;
+                let saved_site = self.enter_numeric_op_site(code, *ip);
+                let r = self.exec_num_le_op();
+                self.numeric_op_site = saved_site;
+                r?;
                 *ip += 1;
             }
             // Cost: O(1) (a list operand numifies to its element count).
             OpCode::NumGt => {
-                self.exec_num_gt_op()?;
+                let saved_site = self.enter_numeric_op_site(code, *ip);
+                let r = self.exec_num_gt_op();
+                self.numeric_op_site = saved_site;
+                r?;
                 *ip += 1;
             }
             // Cost: O(1) (a list operand numifies to its element count).
             OpCode::NumGe => {
-                self.exec_num_ge_op()?;
+                let saved_site = self.enter_numeric_op_site(code, *ip);
+                let r = self.exec_num_ge_op();
+                self.numeric_op_site = saved_site;
+                r?;
                 *ip += 1;
             }
             // Cost: O(1) (plus one `$*TOLERANCE` dynamic lookup).

@@ -3415,6 +3415,7 @@ impl Interpreter {
             catch_handlers: Vec::new(),
             catch_handler_seq: 0,
             current_code: 0,
+            numeric_op_site: (0, 0),
             carrier_writes: None,
             method_dispatch_pure: false,
             in_regex_code_block: false,
