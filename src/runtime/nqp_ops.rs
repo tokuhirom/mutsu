@@ -326,18 +326,15 @@ impl Interpreter {
             "bitshiftl_i" => Ok(pure(NqpPure::ShlI, args)),
             // Cost: O(1).
             "bitshiftr_i" => Ok(pure(NqpPure::ShrI, args)),
-            // Arbitrary-precision add: nqp::add_I($a, $b, Int) — the third
-            // argument is the boxing target type and is ignored here.
-            // Cost: O(d), d = digits of the larger operand (both converted to BigInt).
-            "add_I" => Ok(Value::from_bigint(
-                args.first().map(|v| v.to_bigint()).unwrap_or_default()
-                    + args.get(1).map(|v| v.to_bigint()).unwrap_or_default(),
-            )),
-            // Cost: O(d), d = digits of the larger operand (both converted to BigInt).
-            "sub_I" => Ok(Value::from_bigint(
-                args.first().map(|v| v.to_bigint()).unwrap_or_default()
-                    - args.get(1).map(|v| v.to_bigint()).unwrap_or_default(),
-            )),
+            // The big-integer `*_I` family (`add_I`, `div_I`, `islt_I`, ...)
+            // lives in its own module; each op there is a call into the shared
+            // Int home (ADR-0118). An unknown `_I` name falls through the chain.
+            // Cost: O(d^2) at worst, d = operand digits (each op states its own).
+            _ if op.ends_with("_I")
+                && let Some(result) = super::nqp_ops_bigint::call_nqp_bigint_op(op, args) =>
+            {
+                result
+            }
 
             // -- native int comparisons (yield int 0/1, as in nqp) --
             // Cost: O(1).

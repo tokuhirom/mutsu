@@ -612,6 +612,7 @@ pub(crate) mod nqp_backing;
 pub(crate) mod nqp_native;
 pub(crate) mod nqp_op_ids;
 pub(crate) mod nqp_ops;
+mod nqp_ops_bigint;
 mod nqp_ops_builtin;
 mod nqp_ops_list;
 mod nqp_ops_process;
