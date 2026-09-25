@@ -21,6 +21,36 @@ use crate::runtime::Interpreter;
 use crate::value::{RuntimeError, Value, ValueView};
 
 impl Interpreter {
+    /// `use fatal`: explode an unhandled Failure among a call site's object
+    /// arguments before the callee runs, as every interpreter call arm does
+    /// (`explode_if_fatal_failure_in_call_args`). The arguments are read in
+    /// place -- a by-variable one from the frame's slot, an evaluated one from
+    /// the top of the object stack -- so nothing is popped. Native arguments
+    /// are machine integers and can never be a Failure.
+    fn trir_explode_fatal_args(
+        &self,
+        call: &super::TrInnerCall,
+        frame: TrFrame,
+    ) -> Result<(), RuntimeError> {
+        if !self.fatal_mode {
+            return Ok(());
+        }
+        let n_obj = call
+            .args
+            .iter()
+            .filter(|a| matches!(a, TrArg::Value(TrKind::Obj)))
+            .count();
+        let os_base = self.trir.os.len().saturating_sub(n_obj);
+        let obase = frame.obase as usize;
+        let mut args: Vec<Value> = self.trir.os[os_base..].to_vec();
+        for arg in &call.args {
+            if let TrArg::Obj(s) = arg {
+                args.push(self.trir.ol[obase + *s as usize].clone());
+            }
+        }
+        self.explode_if_fatal_failure_in_arg_values(&call.name.resolve(), &args)
+    }
+
     /// Execute a `CallTr` site. `Ok(None)` means the callee could not be
     /// served after all (it has been replaced, or wrapped), which bails the
     /// whole chunk.
@@ -35,6 +65,7 @@ impl Interpreter {
         let TrCallee::Trir(link) = &call.callee else {
             return Ok(None);
         };
+        self.trir_explode_fatal_args(call, frame)?;
         // ADR-0110 §3.3's run-time guard, as on the outermost door.
         if self.any_routine_wrapped() && self.routine_is_wrapped(&call.name.resolve()) {
             return Ok(None);
@@ -149,6 +180,7 @@ impl Interpreter {
         compiled_fns: &CompiledFns,
     ) -> Result<Option<()>, RuntimeError> {
         let call = &chunk.calls[site as usize];
+        self.trir_explode_fatal_args(call, frame)?;
         match self.try_trir_gen_link(chunk, site, call, frame, compiled_fns)? {
             super::gen_link::GenOutcome::Done => return Ok(Some(())),
             super::gen_link::GenOutcome::Bail => return Ok(None),
@@ -266,6 +298,9 @@ impl Interpreter {
         let m = &chunk.methods[site as usize];
         let n = m.arity as usize;
         let base = self.trir.os.len().saturating_sub(n);
+        // `use fatal`: the method-call arms' argument check (the receiver
+        // sits below the arguments and is not one of them).
+        self.explode_if_fatal_failure_in_arg_values("", &self.trir.os[base..])?;
         let args: Vec<Value> = self.trir.os.drain(base..).collect();
         let target = self.opop();
         let name = m.name.resolve();

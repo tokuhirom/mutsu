@@ -329,11 +329,27 @@ impl Interpreter {
         name: &str,
         arity: usize,
     ) -> Result<(), RuntimeError> {
-        if !self.fatal_mode || matches!(name, "require" | "defined") {
+        if !self.fatal_mode {
             return Ok(());
         }
         let start = self.stack.len().saturating_sub(arity);
-        self.explode_if_fatal_failure_in_composite(&self.stack[start..])
+        self.explode_if_fatal_failure_in_arg_values(name, &self.stack[start..])
+    }
+
+    /// [`Self::explode_if_fatal_failure_in_call_args`] for arguments that are
+    /// not on the VM stack: the call sites of a TRIR body (`CallTr`,
+    /// `CallGen`, `MethodGen`) hold theirs in TRIR's own banks. Every call
+    /// form runs this one check, so `use fatal` does not depend on which
+    /// executor happens to run the calling routine (#9453).
+    pub(crate) fn explode_if_fatal_failure_in_arg_values(
+        &self,
+        name: &str,
+        args: &[Value],
+    ) -> Result<(), RuntimeError> {
+        if !self.fatal_mode || matches!(name, "require" | "defined") {
+            return Ok(());
+        }
+        self.explode_if_fatal_failure_in_composite(args)
     }
 
     pub(crate) fn fail_error_to_failure_value(&self, err: &RuntimeError) -> Value {
