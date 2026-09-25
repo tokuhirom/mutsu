@@ -335,7 +335,7 @@ impl Interpreter {
         let replacement_val = positional.get(1).cloned();
         let is_closure = matches!(
             replacement_val.as_ref().map(Value::view),
-            Some(ValueView::Sub(_)) | Some(ValueView::WeakSub(_))
+            Some(ValueView::Sub(_)) | Some(ValueView::WeakSub(_)) | Some(ValueView::Routine { .. })
         );
         let replacement_str = if is_closure {
             String::new()
