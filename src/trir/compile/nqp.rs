@@ -20,15 +20,18 @@ impl TrirCompiler<'_> {
         for a in &args[..args.len() - 1] {
             self.compile_expr_sink(a)?;
         }
-        self.compile_expr(&args[args.len() - 1])
+        self.compile_expr_tail(&args[args.len() - 1])
     }
 
+    /// A sunk `nqp::while` / `nqp::until`: the loop leaves nothing. In value
+    /// position rakudo yields a lazy Seq of the body values, which TRIR does
+    /// not build, so only sink and tail positions reach here (#9415).
     pub(super) fn compile_nqp_loop(
         &mut self,
         while_form: bool,
         cond: &Expr,
         body: &Expr,
-    ) -> Option<TrKind> {
+    ) -> Option<()> {
         let start = self.ops.len() as u32;
         let ck = self.compile_expr(cond)?;
         self.truthy(ck)?;
@@ -48,20 +51,18 @@ impl TrirCompiler<'_> {
             TrOp::JumpIfFalseI(t) | TrOp::JumpIfTrueI(t) => *t = end,
             _ => return None,
         }
-        let idx = self.add_const(Value::NIL);
-        self.ops.push(TrOp::ConstObj(idx));
-        Some(TrKind::Obj)
+        Some(())
     }
 
-    /// `nqp::repeat_while` / `nqp::repeat_until`: the body runs before the
-    /// first test, so the loop is entered at the body and the condition
+    /// `nqp::repeat_while` / `nqp::repeat_until`, sunk: the body runs before
+    /// the first test, so the loop is entered at the body and the condition
     /// jumps back to it.
     pub(super) fn compile_nqp_repeat_loop(
         &mut self,
         while_form: bool,
         cond: &Expr,
         body: &Expr,
-    ) -> Option<TrKind> {
+    ) -> Option<()> {
         let start = self.ops.len() as u32;
         self.compile_expr_sink(body)?;
         let ck = self.compile_expr(cond)?;
@@ -71,9 +72,37 @@ impl TrirCompiler<'_> {
         } else {
             TrOp::JumpIfFalseI(start)
         });
-        let idx = self.add_const(Value::NIL);
-        self.ops.push(TrOp::ConstObj(idx));
-        Some(TrKind::Obj)
+        Some(())
+    }
+
+    /// Compile a sunk `nqp::` loop form; `None` when `e` is not one.
+    pub(super) fn compile_nqp_loop_sink(&mut self, e: &Expr) -> Option<Option<()>> {
+        let Expr::Call { name, args } = e else {
+            return None;
+        };
+        if args.len() != 2 {
+            return None;
+        }
+        Some(match name.resolve().as_str() {
+            "nqp::while" => self.compile_nqp_loop(true, &args[0], &args[1]),
+            "nqp::until" => self.compile_nqp_loop(false, &args[0], &args[1]),
+            "nqp::repeat_while" => self.compile_nqp_repeat_loop(true, &args[0], &args[1]),
+            "nqp::repeat_until" => self.compile_nqp_repeat_loop(false, &args[0], &args[1]),
+            _ => return None,
+        })
+    }
+
+    /// Compile an expression whose loop form, if it is one, yields Nil: a
+    /// body's tail, or an `nqp::stmts` operand (a void loop in rakudo). The
+    /// bytecode compiler's `with_stmt_root` draws the same line.
+    pub(super) fn compile_expr_tail(&mut self, e: &Expr) -> Option<TrKind> {
+        if let Some(done) = self.compile_nqp_loop_sink(e) {
+            done?;
+            let idx = self.add_const(Value::NIL);
+            self.ops.push(TrOp::ConstObj(idx));
+            return Some(TrKind::Obj);
+        }
+        self.compile_expr(e)
     }
 
     pub(super) fn compile_nqp_if(&mut self, if_form: bool, args: &[Expr]) -> Option<TrKind> {

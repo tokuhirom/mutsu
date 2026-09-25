@@ -81,6 +81,11 @@ impl Compiler {
     /// call path (the VALUE ops — `nqp::add_i` etc. — stay ordinary calls,
     /// dispatched in `runtime/nqp_ops.rs`).
     pub(super) fn try_compile_nqp_form(&mut self, name: &str, args: &[Expr]) -> bool {
+        // Whether this form's value is discarded: it is a statement root (or a
+        // block's tail), or a sunk operand of an enclosing form. Only the loop
+        // forms' lowering depends on it; `nqp::if` passes it on to its
+        // branches. See `Compiler::expr_depth`.
+        let sunk = self.expr_depth <= 1;
         match name {
             // nqp::stmts(a, b, ..., z) — evaluate in order, yield the last.
             // Cost: O(1) (compiles to sequenced code + Pop; no runtime op).
@@ -90,8 +95,13 @@ impl Compiler {
                     self.code.emit(OpCode::LoadConst(nil_idx));
                     return true;
                 }
+                // Every operand is in sink position as far as a loop form is
+                // concerned, the last one included: rakudo compiles a loop
+                // there as a void loop (`nqp::stmts(nqp::while(...))` runs
+                // eagerly and yields null), which JSON::Fast relies on to
+                // `return` from inside the loop of its parse-obj.
                 for (i, arg) in args.iter().enumerate() {
-                    self.compile_expr(arg);
+                    self.compile_nqp_operand(arg, true);
                     if i + 1 < args.len() {
                         self.code.emit(OpCode::Pop);
                     }
@@ -107,11 +117,11 @@ impl Compiler {
                 } else {
                     self.code.emit(OpCode::JumpIfTrue(0))
                 };
-                self.compile_expr(&args[1]);
+                self.compile_nqp_operand(&args[1], sunk);
                 let jump_end = self.code.emit(OpCode::Jump(0));
                 self.code.patch_jump(jump_else);
                 match args.get(2) {
-                    Some(e) => self.compile_expr(e),
+                    Some(e) => self.compile_nqp_operand(e, sunk),
                     None => {
                         let nil_idx = self.code.add_constant(Value::NIL);
                         self.code.emit(OpCode::LoadConst(nil_idx));
@@ -183,50 +193,121 @@ impl Compiler {
                 self.compile_try_with_catch_value(&body, &catch);
                 true
             }
-            // nqp::while(c, body) / nqp::until(c, body) — re-evaluate the
-            // condition each iteration; yields Nil.
-            // Cost: O(1) per iteration (compiles to jumps; no runtime op).
-            "nqp::while" | "nqp::until" if args.len() == 2 => {
-                let loop_start = self.code.ops.len();
-                self.compile_expr(&args[0]);
-                let jump_end = if name == "nqp::while" {
-                    self.code.emit(OpCode::JumpIfFalse(0))
+            // The four loop forms. Sunk (a statement, a block's tail, an
+            // `nqp::stmts` operand, the body of a sunk loop), each is a plain
+            // jump loop that discards the body values and yields Nil -- the
+            // hot path of nqp-style ecosystem code. Anywhere else the loop's
+            // value is used, and rakudo yields a lazy Seq of the body values
+            // (`nqp::while(c, $i++)` in an argument is `(0, 1, 2).Seq`, and
+            // binding it runs nothing until it is pulled); that is exactly
+            // the `gather`-backed lowering of a `(while ...)` / `do repeat`
+            // expression, so it is built here as that AST.
+            // Cost: O(1) per iteration sunk (compiles to jumps; no runtime
+            // op); O(1) per pulled element in value position (a gather).
+            "nqp::while" | "nqp::until" | "nqp::repeat_while" | "nqp::repeat_until"
+                if args.len() == 2 =>
+            {
+                let is_until = name.ends_with("until");
+                let repeat = name.starts_with("nqp::repeat_");
+                if sunk {
+                    self.compile_nqp_sunk_loop(&args[0], &args[1], is_until, repeat);
                 } else {
-                    self.code.emit(OpCode::JumpIfTrue(0))
-                };
-                self.compile_expr(&args[1]);
-                self.code.emit(OpCode::Pop);
-                self.code.emit(OpCode::Jump(loop_start as i32));
-                self.code.patch_jump(jump_end);
-                let nil_idx = self.code.add_constant(Value::NIL);
-                self.code.emit(OpCode::LoadConst(nil_idx));
-                true
-            }
-            // nqp::repeat_while(c, body) / nqp::repeat_until(c, body) — the
-            // post-test loops: the body runs once before the condition is
-            // first evaluated. Yields Nil, like `nqp::while`.
-            // TODO: in value context rakudo yields a Seq of the body values
-            // (for all four loop forms); mutsu yields Nil.
-            // Cost: O(1) per iteration (compiles to jumps; no runtime op).
-            "nqp::repeat_while" | "nqp::repeat_until" if args.len() == 2 => {
-                let loop_start = self.code.ops.len();
-                self.compile_expr(&args[1]);
-                self.code.emit(OpCode::Pop);
-                self.compile_expr(&args[0]);
-                if name == "nqp::repeat_until" {
-                    // `JumpIfFalse` pops the condition on both paths.
-                    self.code.emit(OpCode::JumpIfFalse(loop_start as i32));
-                } else {
-                    let jump_end = self.code.emit(OpCode::JumpIfFalse(0));
-                    self.code.emit(OpCode::Jump(loop_start as i32));
-                    self.code.patch_jump(jump_end);
+                    self.compile_nqp_value_loop(&args[0], &args[1], is_until, repeat);
                 }
-                let nil_idx = self.code.add_constant(Value::NIL);
-                self.code.emit(OpCode::LoadConst(nil_idx));
                 true
             }
             _ => false,
         }
+    }
+
+    /// Run `f` as the compilation of a statement-root expression: a
+    /// `Stmt::Expr` compiled as a statement, or as the tail of a block or
+    /// routine (whose value rakudo takes from the loop forms as `Nil`, as it
+    /// does for a statement). See `Compiler::expr_depth`.
+    pub(super) fn with_stmt_root<R>(&mut self, f: impl FnOnce(&mut Self) -> R) -> R {
+        let saved = std::mem::replace(&mut self.expr_depth, 0);
+        let r = f(self);
+        self.expr_depth = saved;
+        r
+    }
+
+    /// Compile an operand of an `nqp::` control form, in sink position when
+    /// `sunk` (so a loop form there stays a plain jump loop).
+    fn compile_nqp_operand(&mut self, e: &Expr, sunk: bool) {
+        if sunk {
+            self.with_stmt_root(|c| c.compile_expr(e));
+        } else {
+            self.compile_expr(e);
+        }
+    }
+
+    /// A sunk `nqp::` loop: jumps, each body value popped, Nil at the exit.
+    fn compile_nqp_sunk_loop(&mut self, cond: &Expr, body: &Expr, is_until: bool, repeat: bool) {
+        let loop_start = self.code.ops.len();
+        if repeat {
+            // The post-test loops: the body runs once before the condition
+            // is first evaluated.
+            self.compile_nqp_operand(body, true);
+            self.code.emit(OpCode::Pop);
+            self.compile_expr(cond);
+            if is_until {
+                // `JumpIfFalse` pops the condition on both paths.
+                self.code.emit(OpCode::JumpIfFalse(loop_start as i32));
+            } else {
+                let jump_end = self.code.emit(OpCode::JumpIfFalse(0));
+                self.code.emit(OpCode::Jump(loop_start as i32));
+                self.code.patch_jump(jump_end);
+            }
+        } else {
+            self.compile_expr(cond);
+            let jump_end = if is_until {
+                self.code.emit(OpCode::JumpIfTrue(0))
+            } else {
+                self.code.emit(OpCode::JumpIfFalse(0))
+            };
+            self.compile_nqp_operand(body, true);
+            self.code.emit(OpCode::Pop);
+            self.code.emit(OpCode::Jump(loop_start as i32));
+            self.code.patch_jump(jump_end);
+        }
+        let nil_idx = self.code.add_constant(Value::NIL);
+        self.code.emit(OpCode::LoadConst(nil_idx));
+    }
+
+    /// An `nqp::` loop whose value is used: `gather { LOOP { take BODY } }`,
+    /// the same lazy Seq a `(while ...)` expression compiles to.
+    fn compile_nqp_value_loop(&mut self, cond: &Expr, body: &Expr, is_until: bool, repeat: bool) {
+        let body = vec![Stmt::Take(body.clone(), false)];
+        // `is_until` on the loop statements is only a marker: the parser has
+        // already negated an `until` condition, so the negation is built here.
+        let cond = if is_until {
+            Expr::Unary {
+                op: TokenKind::Bang,
+                expr: Box::new(cond.clone()),
+            }
+        } else {
+            cond.clone()
+        };
+        let inner = if repeat {
+            Stmt::Loop {
+                init: None,
+                cond: Some(cond),
+                step: None,
+                body,
+                repeat: true,
+                label: None,
+                is_until,
+            }
+        } else {
+            Stmt::While {
+                cond,
+                body,
+                label: None,
+                is_statement_modifier: false,
+                is_until,
+            }
+        };
+        self.compile_expr(&Expr::Gather(vec![inner]));
     }
 
     /// Compile an `nqp::` VALUE op (`nqp::add_i`, `nqp::ordat`, ...) to the

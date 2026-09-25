@@ -271,7 +271,7 @@ impl<'a> TrirCompiler<'a> {
                 Stmt::SetLine(_) => continue,
                 Stmt::Expr(e) => {
                     if !sink_all && Some(i) == final_idx {
-                        last = Some(self.compile_expr(e)?);
+                        last = Some(self.compile_expr_tail(e)?);
                     } else {
                         self.compile_expr_sink(e)?;
                     }

@@ -193,6 +193,9 @@ impl TrirCompiler<'_> {
                 _ => {}
             }
         }
+        if let Some(done) = self.compile_nqp_loop_sink(e) {
+            return done;
+        }
         let kind = self.compile_expr(e)?;
         self.drop_top(kind);
         Some(())
@@ -434,11 +437,12 @@ impl TrirCompiler<'_> {
             // Lexotic, not a call: see `ret.rs`.
             "return" => self.compile_return(args),
             "nqp::stmts" => self.compile_nqp_stmts(args),
-            "nqp::while" | "nqp::until" if args.len() == 2 => {
-                self.compile_nqp_loop(name == "nqp::while", &args[0], &args[1])
-            }
-            "nqp::repeat_while" | "nqp::repeat_until" if args.len() == 2 => {
-                self.compile_nqp_repeat_loop(name == "nqp::repeat_while", &args[0], &args[1])
+            // A loop form whose value is used is a lazy Seq in rakudo (#9415);
+            // sink and tail positions are compiled by `compile_expr_sink` /
+            // `compile_expr_tail` instead.
+            "nqp::while" | "nqp::until" | "nqp::repeat_while" | "nqp::repeat_until" => {
+                self.note_decline(|| format!("{name} in value position"));
+                None
             }
             "nqp::if" | "nqp::unless" if args.len() == 2 || args.len() == 3 => {
                 self.compile_nqp_if(name == "nqp::if", args)

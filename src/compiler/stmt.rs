@@ -970,6 +970,15 @@ impl Compiler {
     }
 
     pub(super) fn compile_stmt(&mut self, stmt: &Stmt) {
+        // A statement is an expression-depth boundary: its own operands are
+        // one frame below it, and a `Stmt::Expr` root is reset to depth 0
+        // below (see `Compiler::expr_depth`).
+        let saved = std::mem::replace(&mut self.expr_depth, 1);
+        self.compile_stmt_inner(stmt);
+        self.expr_depth = saved;
+    }
+
+    fn compile_stmt_inner(&mut self, stmt: &Stmt) {
         // See `Compiler::compile_expr` — the declaration side of a BEGIN-time
         // interpolated extended identifier (`my $a:foo«$c» = 1`).
         if adverb_interp::stmt_needs_interp(stmt) {
@@ -989,7 +998,7 @@ impl Compiler {
                 if Self::is_list_assign_call(expr) {
                     self.sunk_list_assign_result = true;
                 }
-                self.compile_condition_expr(expr);
+                self.with_stmt_root(|c| c.compile_condition_expr(expr));
                 self.sunk_list_assign_result = false;
                 if Self::is_start_call(expr) {
                     self.code.emit(OpCode::MarkPromiseSink);
@@ -3769,7 +3778,7 @@ impl Compiler {
                 for (i, inner) in body.iter().enumerate() {
                     if i == body.len() - 1 {
                         match inner {
-                            Stmt::Expr(expr) => self.compile_expr(expr),
+                            Stmt::Expr(expr) => self.with_stmt_root(|c| c.compile_expr(expr)),
                             _ => {
                                 self.compile_stmt(inner);
                                 self.compile_expr(&Expr::Literal(Value::TRUE));
@@ -3795,7 +3804,7 @@ impl Compiler {
                 for (i, inner) in body.iter().enumerate() {
                     if i == body.len() - 1 {
                         match inner {
-                            Stmt::Expr(expr) => self.compile_expr(expr),
+                            Stmt::Expr(expr) => self.with_stmt_root(|c| c.compile_expr(expr)),
                             _ => {
                                 self.compile_stmt(inner);
                                 self.compile_expr(&Expr::Literal(Value::TRUE));
@@ -4781,7 +4790,7 @@ impl Compiler {
         match stmt {
             Stmt::Expr(expr) => {
                 // Tail expression escapes the frame (implicit result).
-                self.with_escape(true, |c| c.compile_expr(expr));
+                self.with_escape(true, |c| c.with_stmt_root(|c| c.compile_expr(expr)));
             }
             Stmt::Call { name, args } => {
                 self.compile_tail_stmt_call_value(*name, args);
@@ -4892,7 +4901,7 @@ impl Compiler {
                     if i == body.len() - 1 {
                         // Last statement: compile as expression to leave value on stack
                         match inner {
-                            Stmt::Expr(expr) => compiler.compile_expr(expr),
+                            Stmt::Expr(expr) => compiler.with_stmt_root(|c| c.compile_expr(expr)),
                             _ => {
                                 compiler.compile_stmt(inner);
                                 compiler.compile_expr(&Expr::Literal(Value::TRUE));
@@ -4930,7 +4939,7 @@ impl Compiler {
                 for (i, inner) in body.iter().enumerate() {
                     if i == body.len() - 1 {
                         match inner {
-                            Stmt::Expr(expr) => compiler.compile_expr(expr),
+                            Stmt::Expr(expr) => compiler.with_stmt_root(|c| c.compile_expr(expr)),
                             _ => {
                                 compiler.compile_stmt(inner);
                                 compiler.compile_expr(&Expr::Literal(Value::TRUE));

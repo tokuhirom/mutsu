@@ -443,7 +443,9 @@ impl Compiler {
                         for (j, inner) in enter_body.iter().enumerate() {
                             if j == enter_body.len() - 1 {
                                 match inner {
-                                    Stmt::Expr(expr) => sub_compiler.compile_expr(expr),
+                                    Stmt::Expr(expr) => {
+                                        sub_compiler.with_stmt_root(|c| c.compile_expr(expr))
+                                    }
                                     _ => {
                                         sub_compiler.compile_stmt(inner);
                                         sub_compiler.compile_expr(&Expr::Literal(Value::TRUE));
@@ -799,7 +801,7 @@ impl Compiler {
         if self.rw_tail {
             self.compile_return_rw_arg(expr);
         } else {
-            self.compile_expr(expr);
+            self.with_stmt_root(|c| c.compile_expr(expr));
         }
     }
 
@@ -1386,9 +1388,9 @@ impl Compiler {
                             for (j, inner) in ph_body.iter().enumerate() {
                                 if j == ph_body.len() - 1 {
                                     match inner {
-                                        Stmt::Expr(expr) => {
-                                            sub_compiler.with_escape(true, |c| c.compile_expr(expr))
-                                        }
+                                        Stmt::Expr(expr) => sub_compiler.with_escape(true, |c| {
+                                            c.with_stmt_root(|c| c.compile_expr(expr))
+                                        }),
                                         _ => {
                                             sub_compiler.compile_stmt(inner);
                                             sub_compiler.compile_expr(&Expr::Literal(Value::TRUE));
