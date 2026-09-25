@@ -90,15 +90,7 @@ impl Interpreter {
                 class_name,
                 attributes,
                 ..
-            } if class_name == "Buf"
-                || class_name == "Blob"
-                || class_name == "utf8"
-                || class_name == "utf16"
-                || class_name.resolve().starts_with("Buf[")
-                || class_name.resolve().starts_with("Blob[")
-                || class_name.resolve().starts_with("buf")
-                || class_name.resolve().starts_with("blob") =>
-            {
+            } if crate::runtime::utils::is_buf_or_blob_class(&class_name.resolve()) => {
                 for item in buf_elems_or_empty(&attributes) {
                     Self::flatten_native_buf_arg(&item, out);
                 }

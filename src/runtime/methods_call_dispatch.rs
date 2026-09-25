@@ -1587,7 +1587,10 @@ impl Interpreter {
                     _ => (false, None, Vec::new(), None, None, None),
                 };
             if let Some(cn) = cn_opt {
-                if is_inst && (cn == "Blob" || cn.starts_with("Blob[") || cn.starts_with("blob")) {
+                if is_inst
+                    && crate::runtime::utils::is_blob_like_class(&cn)
+                    && !cn.starts_with("utf")
+                {
                     return Err(RuntimeError::new(format!(
                         "Cannot modify immutable {} with {}",
                         cn, method
@@ -1677,7 +1680,10 @@ impl Interpreter {
                     _ => (false, None, Vec::new(), None, None, None),
                 };
             if let Some(cn) = cn_opt {
-                if is_inst && (cn == "Blob" || cn.starts_with("Blob[") || cn.starts_with("blob")) {
+                if is_inst
+                    && crate::runtime::utils::is_blob_like_class(&cn)
+                    && !cn.starts_with("utf")
+                {
                     return Err(RuntimeError::new(format!(
                         "Cannot modify immutable {} with {}",
                         cn, method
@@ -2659,15 +2665,7 @@ impl Interpreter {
             && let ValueView::Package(name) = target.view()
         {
             let cn = name.resolve();
-            if cn == "Buf"
-                || cn == "Blob"
-                || cn == "utf8"
-                || cn == "utf16"
-                || cn.starts_with("buf")
-                || cn.starts_with("blob")
-                || cn.starts_with("Buf[")
-                || cn.starts_with("Blob[")
-            {
+            if crate::runtime::utils::is_buf_or_blob_class(&cn) {
                 return self.buf_allocate(name, &args);
             }
         }

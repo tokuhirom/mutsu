@@ -150,6 +150,26 @@ impl Interpreter {
                 non_inheritance_parents.insert(parent.clone());
                 continue;
             }
+            // `class B does Blob[uint8] is repr('VMArray')`: a buffer role over
+            // a VMArray body makes the class's instances buffers (#9438). Blob
+            // and Buf are native value types here, not registered roles, so the
+            // role is recorded as the class's buffer type rather than composed.
+            if does_parents.contains(parent)
+                && matches!(resolved_parent, "Blob" | "Buf")
+                && self
+                    .registry()
+                    .vmarray_classes
+                    .contains(short_of(storage_name))
+            {
+                let buffer_type = if resolved_parent_name.contains('[') {
+                    resolved_parent_name.clone()
+                } else {
+                    format!("{resolved_parent}[uint8]")
+                };
+                crate::value::value_buf::register_buffer_class(storage_name, buffer_type);
+                non_inheritance_parents.insert(parent.clone());
+                continue;
+            }
             let lexical_class_shadows_package_type = storage_name.contains('\u{0}')
                 && (self.registry().classes.contains_key(name.as_ref())
                     || self.registry().roles.contains_key(name.as_ref())

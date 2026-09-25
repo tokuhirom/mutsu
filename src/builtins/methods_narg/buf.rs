@@ -7,14 +7,7 @@ use num_traits::ToPrimitive;
 pub(crate) fn is_buf_like(val: &Value) -> bool {
     if let ValueView::Instance { class_name, .. } = val.view() {
         let cn = class_name.resolve();
-        cn == "Buf"
-            || cn == "Blob"
-            || cn == "utf8"
-            || cn == "utf16"
-            || cn.starts_with("Buf[")
-            || cn.starts_with("Blob[")
-            || cn.starts_with("buf")
-            || cn.starts_with("blob")
+        crate::runtime::utils::is_buf_or_blob_class(&cn)
     } else {
         false
     }

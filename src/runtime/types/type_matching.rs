@@ -1012,12 +1012,8 @@ impl Interpreter {
                 "buf8" | "blob8" | "buf16" | "buf32" | "buf64" | "blob16" | "blob32" | "blob64" => {
                     if let ValueView::Instance { class_name, .. } = value.view() {
                         let cn = class_name.resolve();
-                        if cn == "Buf"
-                            || cn == "Blob"
-                            || cn.starts_with("Buf[")
-                            || cn.starts_with("Blob[")
-                            || cn.starts_with("buf")
-                            || cn.starts_with("blob")
+                        if crate::runtime::utils::is_buf_or_blob_class(&cn)
+                            && !cn.starts_with("utf")
                         {
                             return true;
                         }

@@ -1869,16 +1869,7 @@ impl Interpreter {
             ) if {
                 let a = cn_a.resolve();
                 let b = cn_b.resolve();
-                let is_buf = |cn: &str| {
-                    cn == "Buf"
-                        || cn == "Blob"
-                        || cn == "utf8"
-                        || cn == "utf16"
-                        || cn.starts_with("Buf[")
-                        || cn.starts_with("Blob[")
-                        || cn.starts_with("buf")
-                        || cn.starts_with("blob")
-                };
+                let is_buf = |cn: &str| crate::runtime::utils::is_buf_or_blob_class(cn);
                 is_buf(&a) && is_buf(&b)
             } =>
             {

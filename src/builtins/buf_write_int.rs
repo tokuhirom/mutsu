@@ -252,7 +252,7 @@ pub(crate) fn try_native_buf_write(
     }
     // Blob has no write methods (type object) and is immutable (instance) — let the
     // interpreter own those semantics so current behavior is byte-identical.
-    if cn == "Blob" || cn.starts_with("Blob[") || cn.starts_with("blob") {
+    if crate::runtime::utils::is_blob_like_class(&cn) && !cn.starts_with("utf") {
         return None;
     }
     if args.len() < 2 || args.len() > 3 {
