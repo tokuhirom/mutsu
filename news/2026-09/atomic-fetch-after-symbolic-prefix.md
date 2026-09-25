@@ -17,4 +17,4 @@ why `!⚛$x` already worked.
 
 The "another prefix follows" lookahead now also accepts `⚛`. The operand is
 still parsed by `prefix_expr`, so `+⚛$!attr` reaches the same atomic fetch as
-a bare `⚛$!attr`. Pinned by `t/lang/operators/atomic-fetch-after-prefix.t`.
+a bare `⚛$!attr`. Pinned by `t/concurrency/thread-lock/atomic-fetch-after-prefix.t`.
