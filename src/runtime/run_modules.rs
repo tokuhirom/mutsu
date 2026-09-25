@@ -1390,10 +1390,11 @@ impl Interpreter {
         let mut granted_packages: HashSet<&str> = HashSet::new();
         // A source file without a `unit` declarator can still publish a
         // qualified type into an unrelated package, as HTTP::Tiny::Test does
-        // with `class Test::Handle`. Keep those parent packages separate from
-        // declaring packages: a dependency such as HTTP::Header::Field must
-        // not claim HTTP::Header before that sibling module is loaded.
+        // with `class Test::Handle`. Keep unrelated parent packages separate
+        // from declaring packages: a dependency such as HTTP::Header::Field
+        // must not claim HTTP::Header before that sibling module is loaded.
         let mut owned_granted_packages: HashSet<String> = HashSet::new();
+        let mut owned_declared_packages: HashSet<String> = HashSet::new();
         granted_packages.insert(module);
         if let Some(name) = unit_name.as_deref() {
             granted_packages.insert(name);
@@ -1406,18 +1407,21 @@ impl Interpreter {
         if let Some(owned_types) = self.module_owned_types.get(module).cloned() {
             let own_prefix = format!("{module}::");
             for qualified in owned_types {
-                if let Some((package, _)) = qualified.rsplit_once("::")
-                    && package != module
-                    && !package.starts_with(&own_prefix)
-                {
-                    owned_granted_packages.insert(package.to_string());
+                if let Some((package, _)) = qualified.rsplit_once("::") {
+                    let package = package.to_string();
+                    owned_granted_packages.insert(package.clone());
+                    if package == module || package.starts_with(&own_prefix) {
+                        owned_declared_packages.insert(package);
+                    }
                 }
             }
         }
         {
             let declaring = crate::runtime::cow_table_mut(&mut self.package_declaring_units);
             for pkg in &granted_packages {
-                let pkg = (*pkg).to_string();
+                declaring.entry((*pkg).to_string()).or_insert(module_unit);
+            }
+            for pkg in owned_declared_packages {
                 declaring.entry(pkg).or_insert(module_unit);
             }
         }
