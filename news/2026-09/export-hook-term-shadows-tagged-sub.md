@@ -23,6 +23,14 @@ the opcode pushes the term when the hook installed one under that name
 skips the call; otherwise execution falls through into the call. Compunits that
 imported nothing through a hook, and `t()` with parentheses, are unchanged.
 
+A second gap showed up when Terminal::MultiProgress was re-measured: its
+renderer runs inside `start { ... }`, and the thread clone of the interpreter
+started with an empty `export_term_override_names` (and
+`export_amp_override_names`), so on the thread no name counted as
+hook-installed. Both sets are load-time knowledge and are now carried into the
+thread. Syntax::Highlighters is green (2/2 files); Terminal::MultiProgress no
+longer dies with "Unknown function: t" (its remaining failures are unrelated).
+
 Pinned by `t/modules/import-export/export-hook-term-shadows-tagged-sub.t` and
 `...-imported.t`. While writing them, three shapes where a tag-exported sub of
 an `EXPORT`-hook module is not imported at all turned up (a block-scoped
