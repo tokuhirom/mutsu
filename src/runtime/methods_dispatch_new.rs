@@ -765,7 +765,7 @@ impl Interpreter {
             );
             if !is_set {
                 return Err(RuntimeError::attribute_required(
-                    &format!("$!{}", attr.name),
+                    &format!("{}!{}", attr.sigil, attr.name),
                     reason.as_deref(),
                 ));
             }

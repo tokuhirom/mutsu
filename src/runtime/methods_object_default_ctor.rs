@@ -125,7 +125,7 @@ impl Interpreter {
                 if let Some(reason) = &attr.is_required
                     && !attrs.contains_key(attr_name)
                 {
-                    let attr_full_name = format!("$!{}", attr_name);
+                    let attr_full_name = format!("{}!{}", attr.sigil, attr_name);
                     return Some(Err(RuntimeError::attribute_required(
                         &attr_full_name,
                         reason.as_deref(),
@@ -438,7 +438,7 @@ impl Interpreter {
                         Some(ValueView::Package(n)) if n == "Any"
                     );
                     if !is_set {
-                        let attr_full_name = format!("$!{}", attr_name);
+                        let attr_full_name = format!("{}!{}", attr.sigil, attr_name);
                         return Some(Err(RuntimeError::attribute_required(
                             &attr_full_name,
                             reason.as_deref(),

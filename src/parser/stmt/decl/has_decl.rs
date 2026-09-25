@@ -451,9 +451,9 @@ pub(in crate::parser::stmt) fn has_decl(input: &str) -> PResult<'_, Stmt> {
     let mut is_built: Option<bool> = None;
     let mut unknown_traits: Vec<(String, String, Option<Expr>)> = Vec::new();
     let mut handles = Vec::new();
-    // Attribute traits (`is`, `will`, `does`, `handles`) may appear in any order
+    // Attribute traits (`is`, `will`, `does`, `handles`, `of`) may appear in any order
     // and any number, e.g. `has $.x handles <a b> is required` (TAP). Loop over
-    // all four trait kinds until a full pass consumes nothing more.
+    // all the trait kinds until a full pass consumes nothing more.
     loop {
         let trait_pass_start = rest.as_ptr();
         while let Some(r) = keyword("is", rest) {
@@ -815,7 +815,20 @@ pub(in crate::parser::stmt) fn has_decl(input: &str) -> PResult<'_, Stmt> {
             rest = r;
         }
 
-        // A full pass over all four trait kinds consumed nothing more: done.
+        // Postfix container typing (`has @.a of Int`) is one more trait in
+        // the same any-order list: `has @.p is required of Int handles<elems>`
+        // puts it between two others.
+        if type_constraint.is_none()
+            && let Some(r) = keyword("of", rest)
+        {
+            let (r, _) = ws1(r)?;
+            let (r, tc) = parse_type_constraint_expr(r).ok_or_else(|| PError::expected("type"))?;
+            let (r, _) = ws(r)?;
+            type_constraint = Some(tc);
+            rest = r;
+        }
+
+        // A full pass over all the trait kinds consumed nothing more: done.
         if std::ptr::eq(rest.as_ptr(), trait_pass_start) {
             break;
         }
@@ -831,17 +844,6 @@ pub(in crate::parser::stmt) fn has_decl(input: &str) -> PResult<'_, Stmt> {
             ),
             crate::parser::primary::current_line_number(traits_start),
         );
-    }
-
-    // Postfix container typing: has $.a of Int; has @.a of Int; has %.h of Str;
-    if type_constraint.is_none()
-        && let Some(r) = keyword("of", rest)
-    {
-        let (r, _) = ws1(r)?;
-        let (r, tc) = parse_type_constraint_expr(r).ok_or_else(|| PError::expected("type"))?;
-        let (r, _) = ws(r)?;
-        type_constraint = Some(tc);
-        rest = r;
     }
 
     // Optional `where` constraint
