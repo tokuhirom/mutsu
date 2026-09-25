@@ -1161,7 +1161,10 @@ fn collect_module_constant_names(stmts: &[Stmt], out: &mut Vec<String>) {
             }
             Stmt::ClassDecl { body, .. }
             | Stmt::RoleDecl { body, .. }
-            | Stmt::Package { body, .. } => collect_module_constant_names(body, out),
+            | Stmt::Package { body, .. }
+            // The metadata wrapper of an adverbed declarator (`module
+            // Foo:auth<x> { ... }`) -- see `collect_exported_subs_in`.
+            | Stmt::SyntheticBlock(body) => collect_module_constant_names(body, out),
             _ => {}
         }
     }
@@ -1421,6 +1424,23 @@ fn collect_exported_subs_in(
                         is_test_assertion: false,
                     });
             }
+            // `our &infix:<op> is export = &[other];` (PatternMatching's
+            // `┇` alias) exports a routine under the same `&name` a
+            // `sub name is export` would, so the importer's parse must learn
+            // the name -- for an operator, that it is an operator at all.
+            Stmt::VarDecl {
+                name, is_export, ..
+            } if *is_export && name.len() > 1 && name.starts_with('&') => {
+                let resolved = name[1..].to_string();
+                exports
+                    .entry(resolved.clone())
+                    .or_insert(InlineModuleExport {
+                        name: resolved,
+                        precedence: None,
+                        associativity: None,
+                        is_test_assertion: false,
+                    });
+            }
             // `my token foo is export { ... }` exports a Regex under `&foo`,
             // the same namespace a `sub foo is export` uses, so a plain
             // `use Module` must learn the name too.
@@ -1460,6 +1480,17 @@ fn collect_exported_subs_in(
                 // `our`-scoped subs are package-qualified methods/routines
                 // of the type, not implicit exports of the enclosing module.
                 collect_exported_subs_in(body, exports, false);
+            }
+            // A declarator carrying adverbs or traits (`module Foo:auth<x> {
+            // ... }`, `class Foo is export { ... }`) is wrapped in a
+            // `SyntheticBlock` / bare `Block` together with its metadata
+            // statements. The wrapper opens no package, so it is walked with
+            // the same stash state -- without this every `is export` routine
+            // of an adverbed `module Foo:auth<...> { }` block was invisible to
+            // the importer's parse, and an exported symbol operator failed to
+            // parse at its use site (PatternMatching).
+            Stmt::Block(body) | Stmt::SyntheticBlock(body) => {
+                collect_exported_subs_in(body, exports, in_export_stash);
             }
             _ => {}
         }
