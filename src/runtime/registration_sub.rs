@@ -1840,6 +1840,19 @@ impl Interpreter {
                 let call_result = if let Some(type_val) = type_obj {
                     args.push(type_val);
                     if let Some(arg_val) = trait_arg_val {
+                        // `is Foo(:a<b>)`: the parenthesized argument is ONE
+                        // positional value after the type object (raku binds
+                        // it to `Pair $p`), never a named argument. The decl
+                        // chunk mints a colonpair as the named flavour (the
+                        // `role R[:a(1)]` case needs that), so turn it back
+                        // into the data flavour here -- the anonymous-sub
+                        // path (`vm_register_ops.rs`) already passes data.
+                        let arg_val = match arg_val.view() {
+                            ValueView::Pair(k, v) => {
+                                Value::value_pair(Value::str(k.clone()), v.clone())
+                            }
+                            _ => arg_val,
+                        };
                         args.push(arg_val);
                     }
                     self.call_function("trait_mod:<is>", args)
