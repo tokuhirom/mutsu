@@ -364,7 +364,7 @@ impl Interpreter {
     }
 
     // Cost: O(1) for a `$` variable; O(e) for an `@`/`%` variable,
-    // e = the container's elements (one-level `shallow_copy_value`).
+    // e = the container's elements (one-level `snapshot_container_for_temp`).
     pub(super) fn exec_let_save_op(
         &mut self,
         code: &CompiledCode,
@@ -430,21 +430,26 @@ impl Interpreter {
         // `@`/`%` container itself is snapshot as a fresh node. An element temp
         // saves just that element (`exec_let_save_elem_op`).
         let save_val = if name.starts_with(['@', '%']) {
-            Self::shallow_copy_value(&old_val)
+            Self::snapshot_container_for_temp(&old_val)
         } else {
             old_val
         };
         self.let_saves_push(name, save_val, is_temp, slot);
     }
 
-    /// Snapshot an Array/Hash the way Rakudo's `.clone` does for `temp`/`let`:
-    /// a fresh backing node holding the element VALUES. Nested containers are
-    /// shared, not copied (`temp @a; @a[0][0] = 99` survives the restore in
-    /// raku too), and a bound element (`@a[0] := $x`) is decontainerized, so a
-    /// write inside the scope does not reach `$x`. Preserves the container's
+    /// Snapshot an Array/Hash for `temp`/`let`: a fresh backing node holding
+    /// the container's element CONTAINERS as they are, and preserving its
     /// embedded metadata (type parameters, defaults, shape, object-hash keys)
     /// so a restored `my %h{Pair}` / `my @a is default(...)` keeps its identity.
-    fn shallow_copy_value(val: &Value) -> Value {
+    /// Nested containers are shared, not copied (`temp @a; @a[0][0] = 99`
+    /// survives the restore in raku too).
+    ///
+    /// A bound element (`@a[0] := $x`) stays bound in the snapshot, while the
+    /// LIVE container is decontainerized in place: inside the scope `@a[0] = 5`
+    /// must not reach `$x`, and after it the restore puts the bound element
+    /// back, so `$x` and `@a[0]` are one container again -- both as in raku
+    /// (#9435).
+    fn snapshot_container_for_temp(val: &Value) -> Value {
         fn decont(v: &mut Value) {
             let inner = match v.view() {
                 ValueView::ContainerRef(arc) => match arc.lock() {
@@ -457,14 +462,24 @@ impl Interpreter {
         }
         match val.view() {
             ValueView::Array(arc_vec, kind) => {
-                let mut data = (**arc_vec).clone();
-                data.items_mut().iter_mut().for_each(decont);
-                Value::array_with_kind(crate::gc::Gc::new(data), kind)
+                let snapshot =
+                    Value::array_with_kind(crate::gc::Gc::new((**arc_vec).clone()), kind);
+                // SAFETY: aliased in-place element edit of the live array (see
+                // `gc_contents_mut`); `decont` never re-enters the interpreter.
+                unsafe { crate::value::gc_contents_mut(&arc_vec) }
+                    .items_mut()
+                    .iter_mut()
+                    .for_each(decont);
+                snapshot
             }
             ValueView::Hash(arc_map) => {
-                let mut data = (**arc_map).clone();
-                data.map.values_mut().for_each(decont);
-                Value::hash_with_data(crate::gc::Gc::new(data))
+                let snapshot = Value::hash_with_data(crate::gc::Gc::new((**arc_map).clone()));
+                // SAFETY: as above, for the live hash's values.
+                unsafe { crate::value::gc_contents_mut(&arc_map) }
+                    .map
+                    .values_mut()
+                    .for_each(decont);
+                snapshot
             }
             _ => val.clone(),
         }
