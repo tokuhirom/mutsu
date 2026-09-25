@@ -5,13 +5,14 @@ use crate::compiled_operator::MetaKind;
 impl Interpreter {
     /// How a `Z`/`X` with infix `op` combines one row (`is_zip` picks the
     /// `Z=>` Pair form, which keeps a List key intact).
-    pub(super) fn meta_row_combine(op: &str, is_zip: bool) -> crate::value::RowCombine {
+    /// Takes the compiler-interned `op` so nothing is interned per execution.
+    pub(super) fn meta_row_combine(op: Symbol, is_zip: bool) -> crate::value::RowCombine {
         use crate::value::RowCombine;
-        match op {
+        match op.as_str() {
             "" | "," => RowCombine::List,
             "=>" if is_zip => RowCombine::Pair,
             "~~" => RowCombine::SmartMatch,
-            _ => RowCombine::Infix(Symbol::intern(op)),
+            _ => RowCombine::Infix(op),
         }
     }
 
@@ -41,6 +42,7 @@ impl Interpreter {
         // interned by the compiler, so `as_str` hands back the interner's own
         // `&'static str` and nothing here allocates. Its structure is decoded
         // once here rather than once per cross/zip pair.
+        let op_sym = op;
         let op = op.as_str();
         let op_shape = crate::compiled_operator::InfixShape::lower(op);
         let result = match meta {
@@ -79,7 +81,7 @@ impl Interpreter {
             // pair produced, as in Rakudo (#9159).
             MetaKind::Cross => {
                 let columns = [left, right];
-                match Self::lazy_cross_pipe(&columns, Self::meta_row_combine(op, false)) {
+                match Self::lazy_cross_pipe(&columns, Self::meta_row_combine(op_sym, false)) {
                     Some(pipe) => pipe,
                     None => {
                         let [left, right] = columns;
@@ -117,7 +119,7 @@ impl Interpreter {
             // produced, as in Rakudo (#9159).
             MetaKind::Zip => {
                 let columns = [left, right];
-                match Self::lazy_zip_pipe(&columns, Self::meta_row_combine(op, true)) {
+                match Self::lazy_zip_pipe(&columns, Self::meta_row_combine(op_sym, true)) {
                     Some(pipe) => pipe,
                     None => {
                         let rows = self.zip_rows_bounded(&columns)?;
@@ -285,11 +287,11 @@ impl Interpreter {
             operands.push(self.stack.pop().unwrap_or(Value::NIL));
         }
         operands.reverse();
-        let op = op.as_str();
+        let op_sym = op;
 
         let result = match meta {
             MetaKind::Cross => {
-                let combine = Self::meta_row_combine(op, false);
+                let combine = Self::meta_row_combine(op_sym, false);
                 match Self::lazy_cross_pipe(&operands, combine.clone()) {
                     Some(pipe) => pipe,
                     None => {
@@ -328,7 +330,7 @@ impl Interpreter {
             MetaKind::Zip => {
                 // `=>` is not list-associative, so an n-ary zip folds it
                 // like any other infix.
-                let combine = Self::meta_row_combine(op, n == 2);
+                let combine = Self::meta_row_combine(op_sym, n == 2);
                 match Self::lazy_zip_pipe(&operands, combine.clone()) {
                     Some(pipe) => pipe,
                     None => {
