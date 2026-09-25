@@ -26,7 +26,6 @@ before starting one of these tasks:
 | [`install-raku`](.agents/skills/install-raku/SKILL.md) | `raku` is missing and the Rakudo oracle needs installing |
 | [`roast-triage`](.agents/skills/roast-triage/SKILL.md) | Choosing the next roast target, or investigating one failing `roast/*.t` |
 | [`perf-tuning`](.agents/skills/perf-tuning/SKILL.md) | Profiling, A/B-measuring and landing a perf change — working a `todo:perf` issue, or before quoting any performance number |
-| [`test-util-workout`](.agents/skills/test-util-workout/SKILL.md) | A "Test::Util workout" request |
 | [`clippy-clone-sweep`](.agents/skills/clippy-clone-sweep/SKILL.md) | A "clone sweep" / `clippy::nursery` pass to find wasted `.clone()` calls (periodic hygiene, not a bug hunt) |
 | [`reclaim-disk`](.agents/skills/reclaim-disk/SKILL.md) | Disk is filling up: stale agent worktrees, `target/` caches |
 | [`mutsu-ticket-flow`](.agents/skills/mutsu-ticket-flow/SKILL.md) | Working `todo:ticket` issues end-to-end through merge |
@@ -541,10 +540,6 @@ fails with `E0658`, the hook did not run (check for its `session-start: environm
 `.claude/skills/rustc-too-old/SKILL.md` applies. Whenever a version pin moves, the hook follows it
 with no edit; only the *sources* of the pins are hardcoded, so add a new one there if the repo ever
 grows a `rust-toolchain.toml`.
-
-## Test::Util function workout
-
-When the user says **"Test::Util workout"** (or similar), follow **`.agents/skills/test-util-workout/SKILL.md`**: pick one function from `roast/packages/Test-Helpers/lib/Test/Util.rakumod`, write `t/<function-name>.t`, fix the interpreter (in `src/runtime/test_functions.rs`, never as a core builtin) until it passes, and land it as a PR.
 
 ## Debugging guidelines
 

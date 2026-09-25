@@ -28,3 +28,9 @@ References to `CLAUDE.md` outside the frozen records were repointed to
 `AGENTS.md` (skills, docs, scripts, workflow comments, source comments, the
 site's internals page). `news/` and `docs/adr/` were left untouched: they
 describe what was true when they were written.
+
+The same change retired the "Test::Util workout" procedure: its section, its
+row in the skills table and `.agents/skills/test-util-workout/` are gone, as
+that request is no longer in use. The standing rule it relied on — `Test::Util`
+helpers such as `is_run` are module functions, never core builtins — stays in
+the working agreements.
