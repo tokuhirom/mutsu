@@ -21,5 +21,5 @@ Fix: `Value::iteration_end()` hands out one process-wide allocation, and every
 producer, including the bareword `IterationEnd`, uses it. Object identity now
 holds wherever the sentinel came from, while a plain `"IterationEnd"` string is
 still not the sentinel under `eqaddr`. Pinned by
-`t/vm/nqp-eqaddr-iteration-end.t`, which also runs the loop inside a statically
+`t/collections/lazy-seq/nqp-eqaddr-iteration-end.t`, which also runs the loop inside a statically
 typed (TRIR) routine.
