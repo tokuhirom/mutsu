@@ -334,7 +334,9 @@ impl Interpreter {
                     self.split_by_regex_list(text, &items, limit)
                 } else {
                     let strings: Vec<String> = items.iter().map(|v| v.to_string_value()).collect();
-                    Ok(split_by_strings_static(text, &strings, limit))
+                    Ok(crate::builtins::split::split_by_strings(
+                        text, &strings, limit,
+                    ))
                 }
             }
             _ => {
@@ -444,9 +446,13 @@ impl Interpreter {
     }
 
     /// Split by a list of splitters (mix of string and regex).
-    // Cost: O(s*n*k) worst, n = chars of the invocant, s = splitters, k = pieces:
-    // each piece re-runs every splitter from the piece start, so a rare or absent
-    // splitter scans to the end once per piece. Rakudo: O(s*n + k) -- see #9145.
+    ///
+    /// Each splitter's next match is cached and re-searched only once the
+    /// cursor has moved past its start, so a rare or absent splitter is not
+    /// rescanned to the end once per piece (#9145).
+    // Cost: O(s*n + k) searches, n = chars of the invocant, s = splitters,
+    // k = pieces: each splitter's searches start at strictly increasing
+    // cursors beyond its previous match, a k-way merge of the find streams.
     fn split_by_regex_list(
         &mut self,
         text: &str,
@@ -472,6 +478,13 @@ impl Interpreter {
         let max_splits = limit.map(|l| if l > 0 { l - 1 } else { 0 });
         let mut splits_done = 0;
         let mut pos = 0;
+        // Per splitter: `None` = not searched yet, `Some(None)` = no match at
+        // or after the last search start (so none ever again), `Some(Some(m))`
+        // = its first match at or after an earlier cursor, still valid while
+        // `m.from >= pos` (matching runs against the one full-text target, so
+        // a match's extent does not depend on where the search began).
+        let mut next: Vec<Option<Option<CachedSplitMatch>>> =
+            splitters.iter().map(|_| None).collect();
 
         loop {
             if let Some(max) = max_splits
@@ -482,68 +495,45 @@ impl Interpreter {
                 return Ok(result);
             }
 
-            // (abs_from, abs_to, idx, matched, captures) — positions in full text.
-            // `captures` is `Some` exactly when the winning splitter was a regex.
-            let mut best: Option<(usize, usize, usize, String, Option<RegexCaptures>)> = None;
+            // (abs_from, abs_to, idx) of the winning splitter's cached match.
+            let mut best: Option<(usize, usize, usize)> = None;
 
             for (idx, splitter) in splitters.iter().enumerate() {
-                match splitter.view() {
-                    ValueView::Regex(_) | ValueView::RegexWithAdverbs(_) => {
-                        let found = match splitter.view() {
-                            ValueView::Regex(p) => {
-                                self.regex_match_with_captures_from_target(&p, &target, pos)
-                            }
-                            ValueView::RegexWithAdverbs(a) => {
-                                self.regex_match_with_captures_from_target(&a.pattern, &target, pos)
-                            }
-                            _ => unreachable!(),
-                        };
-                        if let Some(caps) = found {
-                            let (from, to) = (caps.from, caps.to);
-                            let matched: String = chars[from..to].iter().collect();
-                            let is_better = match &best {
-                                None => true,
-                                Some((bf, bt, _, _, _)) => {
-                                    from < *bf || (from == *bf && (to - from) > (*bt - *bf))
-                                }
-                            };
-                            if is_better {
-                                best = Some((from, to, idx, matched, Some(caps)));
-                            }
-                        }
+                let stale = match &next[idx] {
+                    Some(Some(m)) => m.from < pos,
+                    Some(None) => false,
+                    None => true,
+                };
+                if stale {
+                    next[idx] = Some(self.split_list_find(splitter, &target, &chars, pos));
+                }
+                let Some(Some(m)) = &next[idx] else { continue };
+                let is_better = match best {
+                    None => true,
+                    // A regex splitter wins a tie on length; a string splitter
+                    // only by starting strictly earlier.
+                    Some((bf, bt, _)) => {
+                        m.from < bf
+                            || (m.caps.is_some() && m.from == bf && (m.to - m.from) > (bt - bf))
                     }
-                    _ => {
-                        let sep = splitter.to_string_value();
-                        if sep.is_empty() {
-                            continue;
-                        }
-                        let sep_chars: Vec<char> = sep.chars().collect();
-                        if pos + sep_chars.len() <= chars.len() {
-                            for start in pos..=(chars.len() - sep_chars.len()) {
-                                if chars[start..start + sep_chars.len()] == sep_chars[..] {
-                                    let is_better = match &best {
-                                        None => true,
-                                        Some((bf, _, _, _, _)) => start < *bf,
-                                    };
-                                    if is_better {
-                                        best = Some((
-                                            start,
-                                            start + sep_chars.len(),
-                                            idx,
-                                            sep.clone(),
-                                            None,
-                                        ));
-                                    }
-                                    break;
-                                }
-                            }
-                        }
-                    }
+                };
+                if is_better {
+                    best = Some((m.from, m.to, idx));
                 }
             }
 
-            match best {
-                Some((from, to, idx, matched, caps)) => {
+            // The winner is consumed: the cursor moves past its start, so its
+            // cache slot would be stale anyway.
+            match best.and_then(|(_, _, idx)| next[idx].take().flatten().map(|m| (idx, m))) {
+                Some((
+                    idx,
+                    CachedSplitMatch {
+                        from,
+                        to,
+                        matched,
+                        caps,
+                    },
+                )) => {
                     let segment: String = chars[pos..from].iter().collect();
                     let is_regex = caps.is_some();
                     let match_obj = caps.map(|c| self.split_separator_match(c, text));
@@ -572,6 +562,55 @@ impl Interpreter {
                 }
             }
         }
+    }
+}
+
+/// One splitter's next match in [`Interpreter::split_by_regex_list`].
+struct CachedSplitMatch {
+    from: usize,
+    to: usize,
+    matched: String,
+    /// `Some` exactly when the splitter is a regex.
+    caps: Option<RegexCaptures>,
+}
+
+impl Interpreter {
+    /// First match of one list-form splitter at or after char `pos`.
+    // Cost: O(n - pos) regex attempts, or O((n - pos) * m) for a string
+    // splitter of m chars, n = chars of the invocant.
+    fn split_list_find(
+        &mut self,
+        splitter: &Value,
+        target: &MatchTarget,
+        chars: &[char],
+        pos: usize,
+    ) -> Option<CachedSplitMatch> {
+        let caps = match splitter.view() {
+            ValueView::Regex(p) => self.regex_match_with_captures_from_target(&p, target, pos),
+            ValueView::RegexWithAdverbs(a) => {
+                self.regex_match_with_captures_from_target(&a.pattern, target, pos)
+            }
+            _ => {
+                let sep = splitter.to_string_value();
+                if sep.is_empty() {
+                    return None;
+                }
+                let sep_chars: Vec<char> = sep.chars().collect();
+                let from = crate::builtins::split::find_chars(chars, &sep_chars, pos)?;
+                return Some(CachedSplitMatch {
+                    from,
+                    to: from + sep_chars.len(),
+                    matched: sep,
+                    caps: None,
+                });
+            }
+        }?;
+        Some(CachedSplitMatch {
+            from: caps.from,
+            to: caps.to,
+            matched: chars[caps.from..caps.to].iter().collect(),
+            caps: Some(caps),
+        })
     }
 }
 
@@ -670,92 +709,6 @@ fn split_by_string_static(
                     }),
                 ));
                 pos = match_pos + sep_len;
-                splits_done += 1;
-            }
-            None => {
-                let remaining: String = chars[pos..].iter().collect();
-                result.push((remaining, None));
-                return result;
-            }
-        }
-    }
-}
-
-/// Static multi-string split (no interpreter needed).
-// Cost: O(s*n*k) worst, n = chars of the invocant, s = separators, k = pieces:
-// every piece re-scans each separator from the piece start.
-// Rakudo: O(s*n + k) -- see #9145.
-fn split_by_strings_static(
-    text: &str,
-    splitters: &[String],
-    limit: Option<usize>,
-) -> Vec<(String, Option<SplitMatch>)> {
-    if limit == Some(0) {
-        return Vec::new();
-    }
-    let mut result = Vec::new();
-    let chars: Vec<char> = text.chars().collect();
-
-    if text.is_empty() {
-        result.push((String::new(), None));
-        return result;
-    }
-
-    let splitter_chars: Vec<Vec<char>> = splitters.iter().map(|s| s.chars().collect()).collect();
-    let max_splits = limit.map(|l| if l > 0 { l - 1 } else { 0 });
-    let mut splits_done = 0;
-    let mut pos = 0;
-
-    loop {
-        if let Some(max) = max_splits
-            && splits_done >= max
-        {
-            let remaining: String = chars[pos..].iter().collect();
-            result.push((remaining, None));
-            return result;
-        }
-
-        let mut best: Option<(usize, usize, usize)> = None;
-        for (idx, sep_chars) in splitter_chars.iter().enumerate() {
-            let sep_len = sep_chars.len();
-            if sep_len == 0 {
-                continue;
-            }
-            if pos + sep_len <= chars.len() {
-                for start in pos..=(chars.len() - sep_len) {
-                    if chars[start..start + sep_len] == sep_chars[..] {
-                        match best {
-                            None => {
-                                best = Some((start, sep_len, idx));
-                            }
-                            Some((best_pos, best_len, _)) => {
-                                if start < best_pos || (start == best_pos && sep_len > best_len) {
-                                    best = Some((start, sep_len, idx));
-                                }
-                            }
-                        }
-                        break;
-                    }
-                }
-            }
-        }
-
-        match best {
-            Some((match_pos, match_len, splitter_idx)) => {
-                let segment: String = chars[pos..match_pos].iter().collect();
-                let matched: String = chars[match_pos..match_pos + match_len].iter().collect();
-                result.push((
-                    segment,
-                    Some(SplitMatch {
-                        from: match_pos,
-                        to: match_pos + match_len,
-                        matched,
-                        splitter_index: splitter_idx,
-                        is_regex: false,
-                        match_obj: None,
-                    }),
-                ));
-                pos = match_pos + match_len;
                 splits_done += 1;
             }
             None => {
