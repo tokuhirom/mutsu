@@ -20,4 +20,4 @@ sink-warning pass now recognises the whole destructuring block and walks only
 its statement prefix, instead of special-casing the temp's name, so neither the
 new target list nor the binding-mode temp triggers a spurious "Useless use".
 
-Pinned by `t/collections/my-list-assign-result.t`. Closes #9342.
+Pinned by `t/vm/scope/my-list-assign-result.t`. Closes #9342.
