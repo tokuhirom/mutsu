@@ -33,4 +33,4 @@ nothing, as in rakudo.
 One gap remains, marked with a `TODO` at the site: rakudo refuses `is rw` against a
 non-container at bind time (`X::Parameter::RW`), while mutsu only refuses the first write.
 
-Pinned by `t/collections/list-destructuring-param-traits.t`.
+Pinned by `t/routines/signature/list-destructuring-param-traits.t`.
