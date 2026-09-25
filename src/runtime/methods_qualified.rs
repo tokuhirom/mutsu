@@ -3,6 +3,7 @@ use super::methods_signature_errors::{
 };
 use super::*;
 use crate::runtime::meta_ns::MetaNs;
+use crate::runtime::types::NATIVE_BACKING_ATTR;
 use crate::symbol::Symbol;
 
 /// Byte offset of the first extended-name adverb in a method name (`:sym<…>`,
@@ -53,6 +54,40 @@ fn split_method_qualifier_first(method: &str) -> Option<(&str, &str)> {
 }
 
 impl Interpreter {
+    /// Rebless a native scalar produced by a qualified ancestor constructor.
+    ///
+    /// Builtin scalar constructors return a value-level `Rat`/`Int`/etc., not
+    /// an `Instance`, but `self.Rat::new(...)` must still return an instance of
+    /// the subclass that supplied `self`.  Store the native result in the same
+    /// backing slot used by the coercion path for native-scalar subclasses.
+    fn rebless_native_scalar_constructor_result(
+        &mut self,
+        receiver: &Value,
+        qualifier: &str,
+        built: &Value,
+    ) -> Option<Result<Value, RuntimeError>> {
+        let class_name = match receiver.view() {
+            ValueView::Package(name)
+            | ValueView::Instance {
+                class_name: name, ..
+            } => name.resolve(),
+            _ => return None,
+        };
+        let backing = self.native_scalar_backing_parent(&class_name)?;
+        if backing != qualifier {
+            return None;
+        }
+        let instance = match self.dispatch_bless(receiver, Vec::new()) {
+            Ok(instance) => instance,
+            Err(error) => return Some(Err(error)),
+        };
+        let ValueView::Instance { attributes, .. } = instance.view() else {
+            return None;
+        };
+        attributes.insert(NATIVE_BACKING_ATTR, built.clone());
+        Some(Ok(instance))
+    }
+
     /// Handle private method calls on non-Instance, non-Package values.
     /// Returns Some(err) if handled, None to continue.
     pub(super) fn dispatch_private_method_on_non_instance(
@@ -420,7 +455,21 @@ impl Interpreter {
         } else {
             None
         };
-        let resolved = self.resolve_method_with_owner(qualifier, actual_method, &args);
+        // `new` is a universal object method, so resolving it against a
+        // builtin ancestor such as Rat would find Mu.new before the native
+        // constructor fallback below.  That re-enters the receiver's own
+        // overriding `new`; only a user-defined constructor on the qualifier
+        // should take the ordinary qualified-method path.
+        let qualifier_has_user_new = {
+            let registry = self.registry();
+            registry.user_method_overloads(qualifier, "new").is_some()
+        };
+        let resolved =
+            if actual_method == "new" && qualifier != inst_cn_str && !qualifier_has_user_new {
+                None
+            } else {
+                self.resolve_method_with_owner(qualifier, actual_method, &args)
+            };
         // ADR-0019 Phase E box E7 (second consumer family, qualified dispatch —
         // see `todo/deep/adr0019-e5-e7-entry-routing.md` "E7 step 2"):
         // shadow-check this ad-hoc `resolve_method_with_owner` MRO walk
@@ -599,6 +648,11 @@ impl Interpreter {
                             )),
                             id,
                         )));
+                    }
+                    if let Some(result) =
+                        self.rebless_native_scalar_constructor_result(target, qualifier, &built_val)
+                    {
+                        return Some(result);
                     }
                 }
                 Err(e) => return Some(Err(e)),
@@ -904,9 +958,17 @@ impl Interpreter {
                     &inst_cn_str,
                 )));
             }
-            if let Some((_owner, def)) =
-                self.resolve_method_with_owner(qualifier, actual_method, &args)
-            {
+            let qualifier_has_user_new = {
+                let registry = self.registry();
+                registry.user_method_overloads(qualifier, "new").is_some()
+            };
+            let resolved =
+                if actual_method == "new" && qualifier != inst_cn_str && !qualifier_has_user_new {
+                    None
+                } else {
+                    self.resolve_method_with_owner(qualifier, actual_method, &args)
+                };
+            if let Some((_owner, def)) = resolved {
                 // Use the inner instance's attributes so the method body can read
                 // attributes, but run with the Mixin target as the invocant.
                 let attrs_map =
@@ -1014,9 +1076,17 @@ impl Interpreter {
                     &pkg_name,
                 )));
             }
-            if let Some((_owner, def)) =
-                self.resolve_method_with_owner(qualifier, actual_method, &args)
-            {
+            let qualifier_has_user_new = {
+                let registry = self.registry();
+                registry.user_method_overloads(qualifier, "new").is_some()
+            };
+            let resolved =
+                if actual_method == "new" && qualifier != pkg_name && !qualifier_has_user_new {
+                    None
+                } else {
+                    self.resolve_method_with_owner(qualifier, actual_method, &args)
+                };
+            if let Some((_owner, def)) = resolved {
                 let res = self.run_resolved_method_compiled_or_treewalk(
                     &pkg_name,
                     qualifier,
@@ -1056,6 +1126,11 @@ impl Interpreter {
                                 )),
                                 id,
                             )));
+                        }
+                        if let Some(result) = self
+                            .rebless_native_scalar_constructor_result(target, qualifier, &built_val)
+                        {
+                            return Some(result);
                         }
                         // Not an instance (e.g. the ancestor constructs some
                         // other kind of value) — no rebless target, fall

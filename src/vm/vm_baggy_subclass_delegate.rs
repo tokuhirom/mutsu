@@ -135,6 +135,19 @@ impl Interpreter {
             } => (class_name, attributes, id),
             _ => return None,
         };
+        // The Proxy returned by a user-defined AT-KEY reaches this internal
+        // store hook on assignment. Give an overridden ASSIGN-KEY candidate
+        // first refusal so validation roles such as Accountable can reject a
+        // negative weight before the native backing store is changed.
+        if method == "__mutsu_container_assign_key"
+            && self.has_user_method_including_role(&class_name.resolve(), "ASSIGN-KEY")
+        {
+            return Some(self.try_compiled_method_or_interpret(
+                target.clone(),
+                "ASSIGN-KEY",
+                args.to_vec(),
+            ));
+        }
         // The mutating half of the Associative protocol has no native
         // counterpart to delegate to: a named `%b<k> = v` on a plain QuantHash
         // is handled inline by the element-assign opcode, not by an

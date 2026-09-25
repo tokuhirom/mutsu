@@ -194,6 +194,13 @@ OVERRIDES: dict[str, str] = {
     # nor a routine keyword), and spelling it with "dispatch" in the basename
     # would route it to routines/dispatch, which is multi-candidate selection.
     "fast-0arg-table": "vm",
+    # Qualified native scalar construction is a coercion/construction
+    # compatibility test; the basename does not otherwise identify its type
+    # category.
+    "qualified-rat-new": "types/coercion",
+    # The object-hash key identity regression belongs with associative
+    # collection behavior, despite the basename's stringification wording.
+    "object-hash-distinct-stringification": "collections/hash",
 }
 
 
