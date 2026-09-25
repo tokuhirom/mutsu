@@ -830,27 +830,11 @@ impl Interpreter {
                 }
                 Ok(Value::array(items))
             }
-            // Set operators take their result mutability from the first operand.
-            "(|)" | "∪" => Self::apply_set_union(left, right)
-                .map(|r| with_set_mutability(r, set_result_mutability(left))),
-            "(+)" | "⊎" => Self::apply_set_addition(left, right)
-                .map(|r| with_set_mutability(r, set_result_mutability(left))),
-            "(.)" | "⊍" => Self::apply_set_multiply(left, right)
-                .map(|r| with_set_mutability(r, set_result_mutability(left))),
-            "(-)" | "∖" => Ok(with_set_mutability(
-                set_diff_values(left, right),
-                set_result_mutability(left),
-            )),
-            "(&)" | "∩" => Ok(with_set_mutability(
-                set_intersect_values(left, right),
-                set_result_mutability(left),
-            )),
-            // Symmetric difference demotes to an immutable Set when the right
-            // operand is not a QuantHash, but only at the Set level.
-            "(^)" | "⊖" => Ok(with_set_mutability(
-                set_sym_diff_values(left, right),
-                set_sym_diff_mutability(left, right),
-            )),
+            // The six binary set operators have one body, shared with their
+            // opcodes (#9451).
+            "(|)" | "∪" | "(&)" | "∩" | "(+)" | "⊎" | "(.)" | "⊍" | "(-)" | "∖" | "(^)" | "⊖" => {
+                set_op_values(SetOp::from_op(op).expect("a set operator"), left, right)
+            }
             "(==)" | "≡" => Ok(Value::truth(Self::apply_set_equality(left, right)?)),
             "≢" => Ok(Value::truth(!Self::apply_set_equality(left, right)?)),
             _ if op.ends_with('=') && op.len() > 1 && op != "=~=" && op != "=:=" => {

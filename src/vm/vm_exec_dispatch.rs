@@ -3485,32 +3485,32 @@ impl Interpreter {
             }
             // Cost: O(e1 + e2), e = elements of each operand.
             OpCode::SetUnion => {
-                self.exec_set_union_op()?;
+                self.exec_set_binary_op(crate::runtime::SetOp::Union)?;
                 *ip += 1;
             }
             // Cost: O(e1 + e2), e = elements of each operand.
             OpCode::SetAddition => {
-                self.exec_set_addition_op()?;
+                self.exec_set_binary_op(crate::runtime::SetOp::Addition)?;
                 *ip += 1;
             }
             // Cost: O(e1 + e2), e = elements of each operand (both coerced).
             OpCode::SetIntersect => {
-                self.exec_set_intersect_op()?;
+                self.exec_set_binary_op(crate::runtime::SetOp::Intersect)?;
                 *ip += 1;
             }
             // Cost: O(e1 + e2), e = elements of each operand.
             OpCode::SetMultiply => {
-                self.exec_set_multiply_op()?;
+                self.exec_set_binary_op(crate::runtime::SetOp::Multiply)?;
                 *ip += 1;
             }
             // Cost: O(e1 + e2), e = elements of each operand.
             OpCode::SetDiff => {
-                self.exec_set_diff_op();
+                self.exec_set_binary_op(crate::runtime::SetOp::Diff)?;
                 *ip += 1;
             }
             // Cost: O(e1 + e2), e = elements of each operand.
             OpCode::SetSymDiff => {
-                self.exec_set_sym_diff_op();
+                self.exec_set_binary_op(crate::runtime::SetOp::SymDiff)?;
                 *ip += 1;
             }
             // Cost: O(e1 + e2), e = elements of each operand.

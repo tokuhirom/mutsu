@@ -173,7 +173,10 @@ pub(crate) fn coerce_to_set(val: &Value, originals: &mut ValueMap) -> HashSet<St
             _ => {
                 // Preserve the historical "empty stringification contributes
                 // no element" rule (an undefined scalar operand unions from
-                // the empty set).
+                // the empty set), and its `Any` type object form.
+                if value.is_any_type_object() {
+                    return;
+                }
                 let (key, elem) = quanthash_elem_entry(value);
                 if !elem.to_string_value().is_empty() {
                     record_quanthash_original(originals, &key, &elem);
@@ -183,7 +186,7 @@ pub(crate) fn coerce_to_set(val: &Value, originals: &mut ValueMap) -> HashSet<St
         }
     }
 
-    let val = quanthash_operand(val);
+    let val = &set_operand(val);
     match val.view() {
         ValueView::Set(s, _) => {
             extend_quanthash_originals(originals, &s.original_keys);
@@ -230,7 +233,9 @@ pub(crate) fn coerce_to_set(val: &Value, originals: &mut ValueMap) -> HashSet<St
         _ => {
             let mut s = HashSet::new();
             let (key, elem) = quanthash_elem_entry(val);
-            if !elem.to_string_value().is_empty() {
+            // The `Any` type object is the uninitialized-scalar seed
+            // (`my $s; $s ∪= 0` unions from the empty set).
+            if !val.is_any_type_object() && !elem.to_string_value().is_empty() {
                 record_quanthash_original(originals, &key, &elem);
                 s.insert(key);
             }
@@ -355,86 +360,6 @@ pub(crate) fn coerce_value_to_quanthash(val: &Value) -> Value {
     }
 }
 
-/// Determine the promotion level for set operations: 0=Set, 1=Bag, 2=Mix
-pub(crate) fn set_type_level(v: &Value) -> u8 {
-    match strip_quanthash_mixin(v).view() {
-        ValueView::Mix(_, _) => 2,
-        ValueView::Bag(_, _) => 1,
-        _ => 0,
-    }
-}
-
-/// Convert a value to a Mix-level HashMap (key → f64 count)
-pub(crate) fn to_mix_map(v: &Value, originals: &mut ValueMap) -> HashMap<String, f64> {
-    let v = strip_quanthash_mixin(v);
-    match v.view() {
-        ValueView::Mix(m, _) => {
-            extend_quanthash_originals(originals, &m.original_keys);
-            m.weights.clone()
-        }
-        ValueView::Bag(b, _) => {
-            extend_quanthash_originals(originals, &b.original_keys);
-            let resolved = resolve_bag_tab_keys(&b);
-            resolved
-                .iter()
-                .map(|(k, v)| (k.clone(), bigint_to_f64_sat(v)))
-                .collect()
-        }
-        ValueView::Set(s, _) => {
-            extend_quanthash_originals(originals, &s.original_keys);
-            s.iter().map(|k| (k.clone(), 1.0)).collect()
-        }
-        ValueView::Hash(h) => {
-            let mut result = HashMap::new();
-            for (k, v) in h.iter() {
-                // A hash element may be its own `Scalar` container: ADR-0036
-                // slice 3's producers promote elements IN PLACE, so any hash a
-                // `.pairs`/`.values` has run over holds cells from then on, and
-                // bulk iteration like this `h.iter()` does not go through the
-                // element read chokepoint. Without the deref every weight fell
-                // to the truthy `_` arm below and became 1.0
-                // (roast/S03-metaops/infix.t's `%a = %reset.pairs` reset lines).
-                let v = v.deref_container().deitemize_element();
-                let w = match v.view() {
-                    ValueView::Int(i) => i as f64,
-                    ValueView::Num(n) => n,
-                    ValueView::Rat(n, d) if d != 0 => n as f64 / d as f64,
-                    ValueView::Bool(b) => {
-                        if b {
-                            1.0
-                        } else {
-                            0.0
-                        }
-                    }
-                    _ => {
-                        if v.truthy() {
-                            1.0
-                        } else {
-                            0.0
-                        }
-                    }
-                };
-                if w != 0.0 {
-                    let key = hash_elem_key(&h, k, originals);
-                    result.insert(key, w);
-                }
-            }
-            result
-        }
-        _ => {
-            // Count occurrences for list-like values (e.g. (a, a, b) → {a: 2.0, b: 1.0})
-            let items = quanthash_operand_list(v);
-            let mut result = HashMap::new();
-            for item in &items {
-                let (key, elem) = quanthash_elem_entry(item);
-                record_quanthash_original(originals, &key, &elem);
-                *result.entry(key).or_insert(0.0f64) += 1.0;
-            }
-            result
-        }
-    }
-}
-
 /// Resolve Bag entries that use the internal "key\tweight" tab format
 /// into plain key→weight entries.
 ///
@@ -462,50 +387,4 @@ pub(crate) fn resolve_bag_tab_keys(bag: &HashMap<String, BigInt>) -> HashMap<Str
     // Remove zero/negative entries for Bag semantics
     result.retain(|_, v| v.is_positive());
     result
-}
-
-/// Convert a value to a Bag-level HashMap (key → arbitrary-precision count)
-pub(crate) fn to_bag_map(v: &Value, originals: &mut ValueMap) -> HashMap<String, BigInt> {
-    let v = strip_quanthash_mixin(v);
-    match v.view() {
-        ValueView::Bag(b, _) => {
-            extend_quanthash_originals(originals, &b.original_keys);
-            resolve_bag_tab_keys(&b)
-        }
-        ValueView::Set(s, _) => {
-            extend_quanthash_originals(originals, &s.original_keys);
-            s.iter().map(|k| (k.clone(), BigInt::from(1))).collect()
-        }
-        ValueView::Hash(h) => {
-            let mut result = HashMap::new();
-            for (k, v) in h.iter() {
-                // See the matching deref in `to_mix_map`: a hash element may be
-                // its own `Scalar` container after an ADR-0036 slice 3 producer
-                // promoted it in place, and this bulk iteration bypasses the
-                // element read chokepoint.
-                let v = v.deref_container().deitemize_element();
-                let count = match v.view() {
-                    ValueView::Bool(b) => BigInt::from(i64::from(b)),
-                    ValueView::Int(_) | ValueView::BigInt(_) | ValueView::Num(_) => v.to_bigint(),
-                    _ => BigInt::from(i64::from(v.truthy())),
-                };
-                if count.is_positive() {
-                    let key = hash_elem_key(&h, k, originals);
-                    result.insert(key, count);
-                }
-            }
-            result
-        }
-        _ => {
-            // Count occurrences for list-like values (e.g. (a, a, b) → {a: 2, b: 1})
-            let items = quanthash_operand_list(v);
-            let mut result: HashMap<String, BigInt> = HashMap::new();
-            for item in &items {
-                let (key, elem) = quanthash_elem_entry(item);
-                record_quanthash_original(originals, &key, &elem);
-                *result.entry(key).or_default() += 1;
-            }
-            result
-        }
-    }
 }
