@@ -25,6 +25,10 @@ pub(crate) struct NqpAttrName {
     /// `nqp_bindattr_value`). `None` for a name that strips to nothing, which
     /// the bind reports as an error.
     pub(crate) write_key: Option<Symbol>,
+    /// The name is `$!storage` / `$!reified` (any sigil): a container's
+    /// element store, which a Map/List subclass instance keeps outside its
+    /// attribute store, so only the generic body answers it.
+    pub(crate) container_storage: bool,
 }
 
 impl NqpAttrName {
@@ -37,6 +41,7 @@ impl NqpAttrName {
             name: Symbol::intern(name),
             read_key: Symbol::intern(Interpreter::nqp_attr_bare(name)),
             write_key: (!write.is_empty()).then(|| Symbol::intern(write)),
+            container_storage: matches!(write, "storage" | "reified"),
         }
     }
 }
@@ -106,6 +111,109 @@ impl NqpAttrConv {
     }
 }
 
+/// What an untyped `OpCode::NqpAttrC` site does with its resolved name.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum NqpAttrSiteKind {
+    /// `getattr` / `getattr_{i,n,s}`: push the attribute.
+    Get,
+    /// `bindattr` / `bindattr_{i,n,s}`: push the stored value.
+    Bind,
+    /// `p6bindattrinvres`: push the invocant.
+    BindInvres,
+}
+
+/// An untyped-VM attribute-op site whose name operand is a string literal
+/// (ADR-0121 D3): everything the generic op re-derives from its operands on
+/// each call, settled when the site is compiled. The TRIR twin is
+/// `TrOp::GetAttrC` / `TrOp::BindAttrC`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct NqpAttrSite {
+    pub(crate) name: NqpAttrName,
+    pub(crate) conv: NqpAttrConv,
+    pub(crate) kind: NqpAttrSiteKind,
+}
+
+impl NqpAttrSite {
+    /// The site for op `op` called with `argc` operands whose third is the
+    /// literal `name`. `None`: not an attribute op, or the operand count is
+    /// not the op's, and the site keeps the generic dispatch.
+    // Cost: O(n), n = chars of the name; paid once per compiled site.
+    pub(crate) fn of_op(op: &str, argc: usize, name: &str) -> Option<Self> {
+        let kind = match (op, argc) {
+            ("getattr" | "getattr_i" | "getattr_n" | "getattr_s", 3) => NqpAttrSiteKind::Get,
+            ("bindattr" | "bindattr_i" | "bindattr_n" | "bindattr_s", 4) => NqpAttrSiteKind::Bind,
+            ("p6bindattrinvres", 4) => NqpAttrSiteKind::BindInvres,
+            _ => return None,
+        };
+        Some(Self {
+            name: NqpAttrName::new(name),
+            // `p6bindattrinvres` stores its value as given, like `bindattr`.
+            conv: NqpAttrConv::of_op(op),
+            kind,
+        })
+    }
+
+    /// Operands the site leaves on the stack: the literal name is not one.
+    pub(crate) fn operands(self) -> usize {
+        match self.kind {
+            NqpAttrSiteKind::Get => 2,
+            NqpAttrSiteKind::Bind | NqpAttrSiteKind::BindInvres => 3,
+        }
+    }
+
+    /// The op's name, as `use fatal` and error messages spell it.
+    pub(crate) fn op_name(self) -> &'static str {
+        match self.kind {
+            NqpAttrSiteKind::Get => match self.conv {
+                NqpAttrConv::Obj => "getattr",
+                NqpAttrConv::Int => "getattr_i",
+                NqpAttrConv::Num => "getattr_n",
+                NqpAttrConv::Str => "getattr_s",
+            },
+            NqpAttrSiteKind::Bind => self.conv.bind_op(),
+            NqpAttrSiteKind::BindInvres => "p6bindattrinvres",
+        }
+    }
+
+    /// Run the site on its operands (the literal name excluded): the answer of
+    /// the generic op for every receiver.
+    // Cost: O(1) for a plain instance; other receivers cost what the generic op does.
+    pub(crate) fn run(self, obj: Value, val: Option<Value>) -> Result<Value, RuntimeError> {
+        match self.kind {
+            NqpAttrSiteKind::Get => Ok(self
+                .conv
+                .read(Interpreter::nqp_getattr_named(&obj, self.name))),
+            NqpAttrSiteKind::Bind => {
+                let val = self.conv.bind(val.unwrap_or(Value::NIL));
+                Interpreter::nqp_bindattr_named(self.op_name(), &obj, self.name, val.clone())?;
+                Ok(val)
+            }
+            NqpAttrSiteKind::BindInvres => {
+                let val = val.unwrap_or(Value::NIL);
+                Interpreter::nqp_bindattr_named(self.op_name(), &obj, self.name, val)?;
+                Ok(obj)
+            }
+        }
+    }
+}
+
+/// The payload of `OpCode::NqpAttrC`: the resolved site, and its class
+/// operand when that was a plain bareword (folded off the stack and
+/// remembered per registry write generation, see
+/// [`ClassOperandSite`](crate::trir::class_operand::ClassOperandSite)).
+#[derive(Debug, Clone)]
+pub(crate) struct NqpAttrCSite {
+    pub(crate) site: NqpAttrSite,
+    pub(crate) class: Option<crate::trir::class_operand::ClassOperandSite>,
+}
+
+impl NqpAttrCSite {
+    /// Operands on the stack when the op runs.
+    pub(crate) fn stack_operands(&self) -> usize {
+        self.site.operands() - usize::from(self.class.is_some())
+    }
+}
+
 impl Interpreter {
     /// `nqp::getattr` (and the typed reads, which convert the result) with a
     /// pre-resolved name. Same answer as the generic op for every receiver.
@@ -115,7 +223,8 @@ impl Interpreter {
         // A plain instance only: a Match (lazy, a `Match` instance, or a
         // grammar cursor) has NQP-level attribute names that are not the keys
         // mutsu stores, so it takes the generic body.
-        if !obj.is_lazy_match_value()
+        if !name.container_storage
+            && !obj.is_lazy_match_value()
             && let ValueView::Instance {
                 class_name,
                 attributes,
@@ -150,7 +259,7 @@ impl Interpreter {
         val: Value,
     ) -> Result<(), RuntimeError> {
         if let Some(key) = name.write_key
-            && !matches!(key.as_str(), "reified" | "storage")
+            && !name.container_storage
             && let ValueView::Instance { attributes, .. } = obj.view()
         {
             attributes.bind_attr_through(key, val);
@@ -174,6 +283,10 @@ mod tests {
         assert_eq!(n.read_key, n.name);
         // A name that strips to nothing has no key to bind.
         assert_eq!(NqpAttrName::new("$!").write_key, None);
+        // A container's element store is answered by the generic body.
+        assert!(NqpAttrName::new("$!storage").container_storage);
+        assert!(NqpAttrName::new("$!reified").container_storage);
+        assert!(!NqpAttrName::new("$!items").container_storage);
         // A public twigil is not stripped for a read (see `nqp_attr_bare`),
         // but is for a bind.
         let n = NqpAttrName::new("$.x");

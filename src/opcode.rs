@@ -2389,6 +2389,16 @@ pub(crate) enum OpCode {
         /// Operand count on the stack. `u8` because the widest nqp op takes 5.
         arity: u8,
     },
+    /// `nqp::getattr` / `bindattr` (and their `_i`/`_n`/`_s` forms, and
+    /// `p6bindattrinvres`) whose attribute-name operand is a string literal
+    /// (ADR-0121 D3). The name was interned and twigil-stripped when the site
+    /// was compiled, so no operand of the stack is the name: a read pops the
+    /// class operand and the object, a bind pops the value, the class operand
+    /// and the object. The class operand is evaluated for its effects and
+    /// ignored, as the generic op ignores it; a bareword class operand is not
+    /// on the stack at all but resolved by the site, which remembers it. Otherwise the same work as
+    /// [`OpCode::NqpOp`], which is what every other attribute-op site keeps.
+    NqpAttrC(Box<crate::runtime::nqp_attr::NqpAttrCSite>),
     /// Expression-level function call whose literal named args travel
     /// out-of-band: `arity` values on the stack, of which the positions
     /// listed in `CompiledCode::named_arg_specs[spec_idx]` are named-arg

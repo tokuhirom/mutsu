@@ -355,6 +355,9 @@ impl Compiler {
         let Some(id) = crate::runtime::nqp_op_ids::nqp_op_id(op) else {
             return false;
         };
+        if self.try_compile_nqp_attr_op(op, args) {
+            return true;
+        }
         for arg in args {
             self.compile_expr(arg);
         }
@@ -362,6 +365,55 @@ impl Compiler {
             id,
             arity: args.len() as u8,
         });
+        true
+    }
+
+    /// An attribute op whose name operand is a string literal compiles to
+    /// [`OpCode::NqpAttrC`], carrying the name resolved (ADR-0121 D3). The
+    /// literal itself is not compiled: evaluating it has no effect to keep.
+    /// The object and class operands still compile in source order.
+    ///
+    /// A class operand that compiled to a lone `GetBareWord` is folded into
+    /// the site as a [`ClassOperandSite`](crate::trir::class_operand::ClassOperandSite),
+    /// which remembers its resolution for one registry write generation, as
+    /// TRIR's `ClassOperand` does: the attribute ops ignore the operand's
+    /// value, so only its effect (resolving at all) is owed.
+    fn try_compile_nqp_attr_op(&mut self, op: &str, args: &[Expr]) -> bool {
+        let Some(Expr::Literal(lit)) = args.get(2) else {
+            return false;
+        };
+        let crate::value::ValueView::Str(name) = lit.view() else {
+            return false;
+        };
+        let Some(site) = crate::runtime::nqp_attr::NqpAttrSite::of_op(op, args.len(), &name) else {
+            return false;
+        };
+        self.compile_expr(&args[0]);
+        let before = self.code.ops.len();
+        self.compile_expr(&args[1]);
+        let bareword = match self.code.ops.get(before..) {
+            Some([OpCode::GetBareWord(idx)]) => match self.code.constants[*idx as usize].view() {
+                // A no-paren `nqp::` term is an op call, not a name to resolve.
+                crate::value::ValueView::Str(s) if !s.starts_with("nqp::") => {
+                    Some(crate::symbol::Symbol::intern(&s))
+                }
+                _ => None,
+            },
+            _ => None,
+        };
+        let class = bareword.map(|sym| {
+            // `op_lines` runs parallel to `ops`. Nothing jumps to the popped
+            // op: it was the whole of the operand, emitted just now.
+            self.code.ops.pop();
+            self.code.op_lines.pop();
+            crate::trir::class_operand::ClassOperandSite::new(sym)
+        });
+        if let Some(val) = args.get(3) {
+            self.compile_expr(val);
+        }
+        self.code.emit(OpCode::NqpAttrC(Box::new(
+            crate::runtime::nqp_attr::NqpAttrCSite { site, class },
+        )));
         true
     }
 }

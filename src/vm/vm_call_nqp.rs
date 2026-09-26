@@ -164,6 +164,54 @@ impl Interpreter {
         true
     }
 
+    /// `OpCode::NqpAttrC` — an attribute op whose name the compiler already
+    /// resolved. The operands are normalized as [`Self::exec_nqp_op`]
+    /// normalizes them (`VarRef` unwrap, `Proxy` FETCH, the one-shot
+    /// callsite-line clear, the dispatch tally); only the name operand and the
+    /// op-table walk are gone. A bareword class operand is resolved here,
+    /// through its site's memo — after a bind's value operand rather than
+    /// before it. Only its effect is owed, and resolving a bareword runs no
+    /// user code, so the order is not observable.
+    pub(super) fn exec_nqp_attr_op(
+        &mut self,
+        code: &CompiledCode,
+        csite: &crate::runtime::nqp_attr::NqpAttrCSite,
+        compiled_fns: &CompiledFns,
+    ) -> Result<(), RuntimeError> {
+        let site = csite.site;
+        let on_stack = csite.stack_operands();
+        if self.stack.len() < on_stack {
+            return Err(RuntimeError::new("Interpreter stack underflow in NqpAttrC"));
+        }
+        let start = self.stack.len() - on_stack;
+        let mut ops = [Value::NIL, Value::NIL, Value::NIL];
+        // With a folded class operand the stack holds `obj [val]`; slot 1 is
+        // left for the class either way.
+        let slots: &[usize] = if csite.class.is_some() {
+            &[0, 2]
+        } else {
+            &[0, 1, 2]
+        };
+        for (&slot, v) in slots.iter().zip(self.stack.drain(start..)) {
+            ops[slot] = Self::unwrap_var_ref_value(v);
+        }
+        if let Some(class) = &csite.class {
+            // Only its effect is owed: a name that resolves to nothing fails.
+            self.trir_class_operand(class, compiled_fns)?;
+            self.apply_pending_rw_writeback(code);
+        }
+        loan_env!(self, set_pending_callsite_line(None));
+        crate::vm::vm_stats::record_function_dispatch();
+        self.fetch_nqp_proxy_operands(&mut ops[..site.operands()])?;
+        let [obj, _class, val] = ops;
+        let val = (site.operands() == 3).then_some(val);
+        let saved_literals = std::mem::replace(&mut self.literal_native_args, 0);
+        let result = site.run(obj, val);
+        self.literal_native_args = saved_literals;
+        self.stack.push(result?);
+        Ok(())
+    }
+
     /// FETCH any `Proxy` operand in place. The general call path rebuilt the
     /// whole argument list to do this (`auto_fetch_proxy_args`); an nqp op's
     /// operands are almost never `Proxy`, so probe and only write back the
