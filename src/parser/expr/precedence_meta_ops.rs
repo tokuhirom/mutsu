@@ -20,9 +20,9 @@ pub(super) use arith::{additive_expr, multiplicative_expr, power_expr, power_exp
 pub(super) use hyper_concat::concat_expr;
 pub(super) use infix_term::{InfixTermOp, infix_term_call, parse_infix_term_op};
 pub(super) use meta_bracket::{
-    BracketInfix, cannot_meta_loose_bracket_assign_error, cannot_meta_ternary_error,
-    op_str_to_token_kind, parse_bracket_infix_op, parse_infix_func_op, parse_meta_op,
-    strip_sequence_op,
+    BracketInfix, block_newline_terminates, cannot_meta_loose_bracket_assign_error,
+    cannot_meta_ternary_error, op_str_to_token_kind, parse_bracket_infix_op, parse_infix_func_op,
+    parse_meta_op, strip_sequence_op,
 };
 pub(crate) use set_ops::starts_with_set_infix_op;
 pub(super) use set_ops::structural_expr;

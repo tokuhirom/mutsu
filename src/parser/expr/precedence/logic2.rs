@@ -253,6 +253,13 @@ pub(crate) fn junctive_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Exp
     let mut last_junction: Option<JunctionInfixOp> = None;
     loop {
         let (r, _) = ws(rest)?;
+        // A `}` that ends its line ends the statement, so a next line opening
+        // with `&`/`|`/`^` is a new statement (`&OUR::b := ...`, #9552), exactly
+        // as the tighter infix levels already stop for `+`/`~`/...
+        if crate::parser::expr::precedence_meta_ops::block_newline_terminates(input, rest, r, &left)
+        {
+            break;
+        }
         // Whether the operator is written glued to the left operand — the one
         // thing that settles `&` between an infix and a `&name` sigil term; see
         // `parse_junction_infix_op_after`.
