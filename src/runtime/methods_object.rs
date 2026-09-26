@@ -603,8 +603,8 @@ impl Interpreter {
         if plan.is_cunion {
             return Some(self.construct_cunion_instance(class_name.as_str(), args));
         }
-        if !plan.eligible
-            && !(plan.eligible_when_user_new_declines && self.user_new_declines(class_name, args))
+        if !(plan.eligible
+            || plan.eligible_when_user_new_declines && self.user_new_declines(class_name, args))
         {
             return None;
         }

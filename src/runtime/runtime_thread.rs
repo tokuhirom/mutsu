@@ -842,6 +842,8 @@ impl Interpreter {
             atomic_var_seen: self.atomic_var_seen,
             sigilless_alias_seen: self.sigilless_alias_seen,
             var_defaults: self.var_defaults.clone(),
+            var_defaults_epoch: self.var_defaults_epoch,
+            attr_var_defaults_current: Default::default(),
             // Per-thread snapshot (not a shared-handle clone), but an O(1) share
             // of the inner `Arc` (docs/per-task-clone-slimming.md slice 4): a
             // fresh outer `Arc<RwLock<...>>` keeps the child thread's instance

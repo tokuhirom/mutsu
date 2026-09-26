@@ -656,6 +656,43 @@ impl Interpreter {
     /// Set the default value for a variable declared with `is default(...)`.
     pub(crate) fn set_var_default(&mut self, name: &str, value: Value) {
         self.var_defaults.insert(name.to_string(), value);
+        self.var_defaults_epoch += 1;
+    }
+
+    /// Whether method dispatch's attribute-default registration for
+    /// `(owner_class, receiver_class)` is still in effect: nothing has
+    /// changed `var_defaults` or the class tables since it last ran. The
+    /// registration re-derives the same values on every call otherwise —
+    /// two table probes per attribute plus the six-name check per defaulted
+    /// one, on each of the dozens of calls a Text::CSV field makes (#9494).
+    // Cost: O(1) expected.
+    pub(crate) fn attr_var_defaults_are_current(
+        &self,
+        owner_class: &str,
+        receiver_class: &str,
+    ) -> bool {
+        let key = (
+            crate::symbol::Symbol::intern(owner_class),
+            crate::symbol::Symbol::intern(receiver_class),
+        );
+        self.attr_var_defaults_current.get(&key)
+            == Some(&(self.var_defaults_epoch, self.registry().method_generation))
+    }
+
+    /// Record that `(owner_class, receiver_class)`'s attribute defaults were
+    /// just registered (see [`Self::attr_var_defaults_are_current`]).
+    // Cost: O(1) expected.
+    pub(crate) fn note_attr_var_defaults_current(
+        &mut self,
+        owner_class: &str,
+        receiver_class: &str,
+    ) {
+        let key = (
+            crate::symbol::Symbol::intern(owner_class),
+            crate::symbol::Symbol::intern(receiver_class),
+        );
+        let stamp = (self.var_defaults_epoch, self.registry().method_generation);
+        self.attr_var_defaults_current.insert(key, stamp);
     }
 
     /// Register `value` as the `is default(...)` of attribute `attr_name` under
@@ -681,6 +718,7 @@ impl Interpreter {
                 continue;
             }
             self.var_defaults.insert(name.to_string(), value.clone());
+            self.var_defaults_epoch += 1;
         }
     }
 
@@ -710,7 +748,9 @@ impl Interpreter {
         if self.var_defaults.is_empty() {
             return;
         }
-        self.var_defaults.remove(name);
+        if self.var_defaults.remove(name).is_some() {
+            self.var_defaults_epoch += 1;
+        }
     }
 
     /// Get the evaluated `is default(...)` value for a class attribute.

@@ -16,8 +16,9 @@ that grew with things unrelated to the call itself.
   attribute keys. The per-call `is default(...)` registration asked two
   `(String, String)`-keyed tables about every attribute. Those tables are
   now keyed class-first (`ClassAttrTable`), so a class with no defaults is
-  one probe. Where defaults do exist, the six variable names come from a
-  memo and an unchanged entry is left alone.
+  one probe. Where defaults do exist, the registration is skipped while
+  nothing has changed since it last ran for the same class pair, and the
+  six variable names come from a memo.
 - **Caller's locals.** After every call, `apply_pending_caller_var_writeback`
   hashed each of the caller's locals against a pending set that usually
   holds two or three names. It now searches from whichever side is smaller.
@@ -48,7 +49,8 @@ that grew with things unrelated to the call itself.
   name. It now probes the exact key and scans only for names that have
   lexically scoped registrations.
 
-Parsing 100 rows of the IANA port list went from 38.7M to 19.6M
-instructions per row (callgrind, warm cache). Locally, loading the module
-went from over 120 seconds to about 60. The issue closes when the
-ecosystem sweep's own ledger record stops reporting `SWEEP-TIMEOUT`.
+Parsing 100 rows of the IANA port list went from 38.7M to 15.6M
+instructions per row (callgrind, warm cache, a 2.5x cut). Locally, a
+cold-cache `use Services::PortMapping` went from past the 120-second sweep
+timeout to about 54 seconds; rakudo takes about 6. The issue closes when
+the ecosystem sweep's own ledger record stops reporting `SWEEP-TIMEOUT`.

@@ -3346,6 +3346,8 @@ impl Interpreter {
             atomic_var_seen: false,
             sigilless_alias_seen: false,
             var_defaults: ValueMap::default(),
+            var_defaults_epoch: 0,
+            attr_var_defaults_current: Default::default(),
             instance_type_metadata: Arc::new(RwLock::new(Arc::new(HashMap::new()))),
             let_saves: Vec::new(),
             grammar_rule_dynvar_decls: HashMap::new(),

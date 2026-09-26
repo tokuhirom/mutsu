@@ -3561,6 +3561,14 @@ pub struct Interpreter {
     sigilless_alias_seen: bool,
     /// Variable default values set by `is default(...)` trait.
     var_defaults: ValueMap,
+    /// Bumped on every change to `var_defaults`; see
+    /// `Interpreter::attr_var_defaults_are_current`.
+    var_defaults_epoch: u64,
+    /// `(owner class, receiver class)` -> the `(var_defaults_epoch, method
+    /// generation)` at which method dispatch last registered that pair's
+    /// attribute defaults. See `Interpreter::attr_var_defaults_are_current`.
+    attr_var_defaults_current:
+        rustc_hash::FxHashMap<(crate::symbol::Symbol, crate::symbol::Symbol), (u64, u64)>,
     // Array/Hash element defaults are embedded in `ArrayData.default` /
     // `HashData.default`.
     // An object hash's key type (`%h{Str}`) is carried by `HashData::key_type`

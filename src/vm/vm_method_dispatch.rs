@@ -2208,9 +2208,12 @@ impl Interpreter {
         // Register `is default(...)` values for attribute variables. Gated on
         // the owner or receiver class declaring ANY attribute default (see the
         // slow path).
+        // ...and skipped outright while the last registration for this class
+        // pair is still in effect.
         let has_defaults = self.attr_default_classes(owner_class, receiver_class_name);
         if (has_defaults.0 || has_defaults.1)
             && let Some(cell) = &attrs_cell
+            && !self.attr_var_defaults_are_current(owner_class, receiver_class_name)
         {
             let attr_names: Vec<&'static str> = cell
                 .as_map()
@@ -2229,6 +2232,7 @@ impl Interpreter {
                     self.set_attr_var_defaults(attr_name, def);
                 }
             }
+            self.note_attr_var_defaults_current(owner_class, receiver_class_name);
         }
 
         crate::alloc_scope_end!(_sc_loc_state);
