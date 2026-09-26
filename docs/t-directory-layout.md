@@ -6,7 +6,7 @@ nor an agent can answer "is there already a test for this?" without a full-text 
 document defines the nested layout that replaces the flat one, and the rules for placing a new
 file in it.
 
-It is the authority for placement. `CLAUDE.md` and `AGENTS.md` point here rather than repeating
+It is the authority for placement. `AGENTS.md` points here rather than repeating
 the category list.
 
 ## 1. Shape

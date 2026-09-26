@@ -1,152 +1,700 @@
-# Repository Guidelines for Codex
+# AGENTS.md
 
-`mutsu` is a Rust implementation of a Raku compatibility interpreter. Repository
-artifacts (code, tests, documentation, commits, and PR text) must be in English.
+This file provides guidance to coding agents (Claude Code, Codex, ...) working in this repository.
+It is the **single** instruction file: there is deliberately no `CLAUDE.md` — Claude Code reads
+`AGENTS.md` when a project has no `CLAUDE.md` (since v2.1.277), so adding one back would make this
+file invisible to it. Tool names below (`run_in_background`, `Agent`, `subscribe_pr_activity`,
+the GitHub MCP tools) are Claude Code's; another harness uses its own equivalent.
 
-## Start Here
+This repo is a Rust implementation of a minimal Raku (Perl 6) compatible interpreter called **mutsu**.
 
-Before planning or changing code, read this file in full and then read the
-task-relevant primary material: the selected issue, its linked ADRs and design
-documents, and the affected code/tests. Re-check ADR status lines rather than
-relying on an old issue's description.
+## Start here
 
-The open-findings backlog is **GitHub issues on `tokuhirom/mutsu`**, labelled
-`todo:ticket` / `todo:deep` / `todo:perf`; `docs/issue-workflow.md` is the
-operating manual, and the issues' own `tier:*` labels rank the backlog. Only ever file, label,
-comment on or close issues in `tokuhirom/mutsu` — never in any other
-repository. Agents run in parallel, so **claim an issue before starting it**:
-post `Claiming: <your-branch-name>`, re-read the comments and yield if an older
-live claim is there, then start; post `Releasing: <your-branch-name>` when you
-finish. Keep the keyword on the comment's **first line** and the branch name
-identical in both: `.github/workflows/claim-label.yml` reads them to add and
-remove the `working` label, so never set it by hand. Skip any issue that already
-carries `working` or a live claim.
+Read this file in full before planning or changing code, then read the task-relevant primary
+material: the selected issue, its linked ADRs and design documents, and the affected code/tests.
+Re-check ADR status lines rather than relying on an old issue's description of them.
 
-For a request to implement a `todo:ticket` issue, use the `mutsu-ticket-flow`
-skill. It defines the required lifecycle through a verified merge and selection
-of the next ticket.
+## Skills (`.agents/skills/`)
 
-A request to work a *slice* of that queue ("the `tier:N` tickets", "the ones
-with no tier yet", "one after another, open the PRs") is a complete standing
-instruction, not the start of a negotiation. The mechanics are already settled
-— one issue per PR, oldest-first within the named slice, claim before starting,
-a regression test and a `news/` entry per fix, auto-merge enabled, straight on
-to the next after each verified merge — so do not ask them back. Raise only a
-decision that is genuinely the user's, and raise it in the final report while
-the rest of the batch continues.
+This file holds the rules that apply to *every* session. Self-contained **procedures** live as
+skills instead, so they are read only when the task calls for them. Read the relevant `SKILL.md`
+before starting one of these tasks:
 
-Self-contained procedures live under `.agents/skills/<name>/SKILL.md` rather
-than in this file; read the matching one before starting such a task. Currently:
-`cut-release` (releasing), `install-raku` (installing the Rakudo oracle when
-`raku` is missing), `roast-triage` (choosing and investigating roast work),
-`test-util-workout`, `reclaim-disk` (stale worktrees and cargo caches),
-`mutsu-ticket-flow`, `rakuast-implementation`, `ecosystem-dist-fix`
-(taking one zef distribution's own test suite from red to green), and
-`ecosystem-dist-roulette` (drawing a *random* distribution and locking it on
-issue #8977 first, so parallel agents never work the same one).
+| Skill | Read it when |
+| --- | --- |
+| [`cut-release`](.agents/skills/cut-release/SKILL.md) | Releasing: picking the version, firing `tag-release.yml`, verifying tarballs/npm/Release |
+| [`install-raku`](.agents/skills/install-raku/SKILL.md) | `raku` is missing and the Rakudo oracle needs installing |
+| [`roast-triage`](.agents/skills/roast-triage/SKILL.md) | Choosing the next roast target, or investigating one failing `roast/*.t` |
+| [`perf-tuning`](.agents/skills/perf-tuning/SKILL.md) | Profiling, A/B-measuring and landing a perf change — working a `todo:perf` issue, or before quoting any performance number |
+| [`clippy-clone-sweep`](.agents/skills/clippy-clone-sweep/SKILL.md) | A "clone sweep" / `clippy::nursery` pass to find wasted `.clone()` calls (periodic hygiene, not a bug hunt) |
+| [`reclaim-disk`](.agents/skills/reclaim-disk/SKILL.md) | Disk is filling up: stale agent worktrees, `target/` caches |
+| [`mutsu-ticket-flow`](.agents/skills/mutsu-ticket-flow/SKILL.md) | Working `todo:ticket` issues end-to-end through merge |
+| [`rakuast-implementation`](.agents/skills/rakuast-implementation/SKILL.md) | A RakuAST compatibility slice (`src/rakuast/`, `t/rakuast/`) |
+| [`ecosystem-dist-fix`](.agents/skills/ecosystem-dist-fix/SKILL.md) | Making one zef distribution's own test suite pass ("make `String::Utils`'s tests pass"), or working a red/`blocked_load` `ecosystem/` record |
+| [`ecosystem-dist-roulette`](.agents/skills/ecosystem-dist-roulette/SKILL.md) | Picking a *random* distribution instead of a named one, and locking it on the board so parallel agents do not collide |
+
+## Where this session is running — check before following any shell recipe
+
+Sessions run in **two different environments**, and the recipes in this file are written for the
+first one:
+
+- the maintainer's **local dev box** (an LXC container): `gh` is installed and authenticated, 12
+  cores, a warm `target/`;
+- an **ephemeral remote container** (a session started from the Claude app or Claude Code on the
+  web): **no `gh` at all**, direct `api.github.com` calls rejected by the session proxy, ~4 cores, a
+  fixed disk allowance, reclaimed when the session ends.
+
+`command -v gh || echo remote` settles which one you are in — **check, don't assume**, and don't
+conclude a task is impossible just because the command this file names is missing.
+
+**[docs/agent-environments.md](docs/agent-environments.md) is the single place the differences are
+recorded**: the `gh` → GitHub-MCP-tool mapping table (`create_pull_request`, `pull_request_read`,
+`enable_pr_auto_merge`, `issue_write`, ...; all with `owner: tokuhirom`, `repo: mutsu`), how rust and
+raku get provisioned, how to scale the parallel-agent caps to the box you actually have, and what
+stays identical in both (every `cargo`/`make`/`prove` command, all `git` operations, and the whole PR
+policy). Read it when a recipe below does not fit your environment; the rest of this file names the
+`gh` form only for brevity.
+
+## Build & run
+
+- Build: `cargo build`
+- Run: `cargo run -- <file.p6>` or `./target/debug/mutsu <file>`
+- Run inline code: `cargo run -- -e 'say 42'`
+- Test (cargo + prove): `make test`
+- Run a single prove test: `cargo build && prove -e 'target/debug/mutsu' t/<file>.t`
+- Roast (official spec tests): `make roast`
+- Run a single roast test: `cargo build && MUTSU_FUDGE=1 prove -e 'target/debug/mutsu' roast/<path>.t` (or `MUTSU_BIN=target/debug/mutsu prove -e 'scripts/run-roast-test.sh' roast/<path>.t`). **`MUTSU_FUDGE=1` is required for roast tests** — fudge directives (`#?rakudo skip/todo`, `#?DOES`, `#?v6`) are only preprocessed when it is set. Without it, fudge-dependent tests fail or produce wrong counts. `make roast` sets it automatically via `scripts/run-roast-test.sh`. Never set `MUTSU_FUDGE` when running ordinary (non-roast) scripts — it would let a stray `#?rakudo skip` comment drop the next statement.
+- Pre-commit hooks (lefthook): `cargo fmt` and `cargo clippy --all-targets -- -D warnings` run automatically on commit. That is the *default* configuration only — see `make lint` below and the Conventions section; a green hook does not mean a green CI.
+- Lint every shipped configuration: `make lint` — the four things CI's `lint-configs` job gates on: default clippy, clippy with `jit` off (`--no-default-features --features native`), clippy for the wasm32 lib, and rustdoc (`RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --document-private-items`). A warning only exists in the configuration you compile. Needs `rustup target add wasm32-unknown-unknown`. Warm-incremental it costs about 5 minutes on a 12-core box (roughly 113s / 83s / 71s / 49s); see "Conventions" for when you owe it.
+- Temporary test scripts: write to `tmp/` (gitignored) using the Write tool (not cat/heredoc). Build first, then run with `./target/debug/mutsu ./tmp/<file>`.
+- Module search paths: use `-I <path>` to add a module search path, or set the `MUTSULIB` environment variable (colon-separated paths). Precedence, highest first: `use lib` (most recent first) → `-I` (in order) → `MUTSULIB` → installed modules (the `mzef` site repo) → bundled batteries. `-I` therefore shadows an installed module of the same name regardless of its version (pinned by `t/lib-path-precedence.t`).
+  - Example: `cargo run -- -I lib script.raku`
+  - Example: `MUTSULIB=/path/to/lib1:/path/to/lib2 cargo run -- script.raku`
+- Help: `cargo run -- --help`
+- GitHub operations: on the local box use the `gh` CLI (already authenticated via `~/.config/gh/hosts.yml`; never wrap it in `dotenvx run --` — the `GH_TOKEN` in `.env` is stale and would override the working token). In a remote container `gh` does not exist and the GitHub MCP tools are the only path — see the mapping table in [docs/agent-environments.md](docs/agent-environments.md). `git` itself is identical in both.
 
 ## Architecture
 
-The execution pipeline is Parser -> Compiler -> VM. Implement language features
-as parser/compiler/VM behavior. Do not add a new interpreter or runtime
-slow-path fallback from VM code (including calls such as
-`call_method_with_values`, `run_instance_method`, or `eval_block`); existing
-fallbacks are debt, not a precedent. Prefer an opcode plus compiler and VM
-support when an operation needs new execution behavior.
+### Execution pipeline
 
-Key directories:
+Source → **Parser** (`parser/`) → **Compiler** (`compiler/`) → **VM** (`vm/`) → Output
 
-- `src/parser/`, `src/compiler/`, `src/vm/`: execution pipeline.
-- `src/builtins/`, `src/value/`: native behavior and values.
-- `src/runtime/`: remaining dispatch/runtime machinery.
-- `t/`: local TAP integration tests, nested by subject. `docs/t-directory-layout.md`
-  decides which category a new file goes in; `make check-t-layout` enforces it.
-- `tests/`: Rust-driven TAP tests.
-- `roast/`: read-only upstream specification tests.
-- `docs/adr/`: architectural decisions; read applicable ADRs before changing
-  their area.
-- `docs/issue-workflow.md`: how the GitHub-issue work queue is run.
-  `docs/todo-issue-map.md` resolves the `todo/...md` paths older records cite.
+The parser is in `src/parser/` and is used unconditionally.
 
-Do not implement ecosystem modules as native replacements. Grow the interpreter
-so vendored upstream modules run unchanged, unless the user explicitly approves
-an exception. Do not confuse helpers supplied by a test module with Raku core
-builtins; verify core routines against both a bare `raku` invocation and the
-Raku documentation.
+`parse_dispatch.rs` provides `parse_source()` used by parsing call sites and currently delegates directly to `parser::parse_program()`.
 
-## Development and Tests
+Parser implementation details (dispatch order, precedence, extension checklist) are documented in `docs/parser-overview.md`.
 
-- `cargo build`: build `target/debug/mutsu`.
-- `cargo test`: Rust tests.
-- `make test`: Rust tests, build, and local TAP tests; its log is
-  `tmp/make-test.log`.
-- `make roast`: whitelisted roast tests; its log is `tmp/make-roast.log`.
-  Both targets exit non-zero when their suite fails, so the exit status is the
-  verdict; the log is where you find which file failed.
-- `cargo fmt --all`: format Rust.
-- `cargo clippy -- -D warnings`: lint with warnings denied.
+This is a **bytecode VM** architecture. The VM handles ALL operations natively via compiled bytecode. The standalone tree-walking interpreter has been eliminated (CP-1/CP-2/CP-3, #3075–#3104): there is now a single `struct Interpreter` that *is* the bytecode VM. `eval_block_value()` survives only as a carrier for re-entrant source evaluation (`EVAL`, embedded `{...}` blocks in regexes), delegating to the same native implementations — it is not a separate execution engine. The `runtime/methods.rs` slow path (see below) and the `env_dirty` dual store are the remaining tree-walk-era mechanisms still being paid down.
 
-Add a focused regression test for each behavior change, normally under `t/` — in
-the category `docs/t-directory-layout.md` names for it, never at `t/` top level.
-Run a targeted test while iterating. Before publishing a code PR, run
-`cargo fmt --all`, `cargo clippy -- -D warnings`, `make test`, and `make roast`
-once each, and do not publish unless each exits zero. After either full command
-runs, inspect its saved log for the detail rather than re-running it. A failing
-full test belongs to the branch: diagnose it and use targeted checks as needed
-for further evidence. Keep `roast-whitelist.txt` sorted when changing it.
+**IMPORTANT: Do NOT add new slow-path / tree-walk fallbacks.** When implementing a new feature:
+- Implement it in the compiler (`compiler/`) to emit bytecode, and in the VM (`vm/`) to execute it.
+- Do NOT route new features through `call_method_with_values()` → `run_instance_method()` or the other `runtime/methods.rs` slow-path handlers.
+- Existing slow-path fallbacks are technical debt to be eliminated, not a pattern to follow.
+- If you must use the slow path as a temporary measure, leave a `// TODO: compile to bytecode` comment.
 
-Documentation-only PRs do not require Rust formatting, linting, or either full
-test suite. Re-triaging an issue (relabelling `todo:ticket` to `todo:deep`,
-adding an investigation comment) touches no files at all and needs neither.
-Verify a documentation patch with `git diff --check` and run a focused check
-only when it affects generated output, executable scripts, or test
-configuration.
+### Core data types
 
-Full-suite reruns are allowed when evidence requires them, but never run the
-same full suite concurrently. The suites share Cargo build locks, temporary
-logs, and test-harness state, so overlapping invocations can create spurious
-failures and invalid logs.
+- **Value** (`value.rs`): Single enum with ~25 variants covering all Raku runtime types (Int, Num, Str, Bool, Rat, Complex, Array, Hash, Set, Bag, Mix, Pair, Range variants, Sub, Instance, Junction, etc.)
+- **AST** (`ast.rs`): `Expr` (~50 variants) and `Stmt` (~30 variants)
+- **TokenKind** (`token_kind.rs`): Shared operator/token enum used by parser/AST/compiler/runtime expression handling
+- **RuntimeError** (`value.rs`): Runtime/parse error carrier; parse failures now use structured metadata (`code`, `line`, `column`) in addition to `message`
+- **OpCode** (`opcode.rs`): ~340 bytecode instructions, including compound loop ops. Keep `size_of::<OpCode>()` <= 48 bytes (pinned by the `opcode_size_guard` test) — box any fat variant payload (see `docs/opcode-design-review.md`). Every `OpCode::` arm in `exec_one_dispatch` carries a `// Cost:` line (see Conventions)
 
-For an individual roast test, use `MUTSU_FUDGE=1`; do not set that variable for
-ordinary Raku programs. Do not modify `roast/`, `raku-doc/`, or other upstream
-submodules. Initialize missing submodules with
-`git submodule update --init --recursive`.
+### Method dispatch (two-tier)
 
-Use rustfmt defaults and standard Rust naming (`snake_case` functions/modules,
-`CamelCase` types, `SCREAMING_SNAKE_CASE` constants). Avoid unrelated rewrites,
-hardcoded outputs, stubs, and early-return test workarounds. Use ephemeral test
-files only under the gitignored `tmp/` directory.
+1. **Fast path** — `builtins/methods_0arg/`, `builtins/methods_narg.rs`: Pure Rust native methods dispatched by arity. No AST execution needed.
+2. **Slow path** — `runtime/methods.rs`: Falls through from builtins for methods needing `&mut self` (say, match, map, sort with comparator, grep, new), enum dispatch, instance dispatch, and user-defined class methods.
 
-## Git and Pull Requests
+Flow: `call_method_with_values()` tries `native_method_*arg()` first; if `None`, falls through to runtime handlers.
 
-Never commit to `main`; create a focused feature branch. Preserve unrelated
-working-tree changes. Do not use destructive Git operations to discard work.
-Use conventional PR titles such as `fix: ...` or `parser: ...`.
+### Compiler (`src/compiler/`)
 
-After validation, proactively commit, push, and open a ready-for-review PR.
-Enable auto-merge using merge or rebase (not squash). Immediately verify that it
-is ready and auto-merge is enabled, then check its merge state:
+Compiles AST into bytecode (`OpCode` instructions):
 
-```sh
-gh pr view <number> --json isDraft,autoMergeRequest,mergeStateStatus,state
-gh pr view <number> --json mergeStateStatus,state -q '.state + " / " + .mergeStateStatus'
+- `mod.rs`: Entry point — `compile()` function, `Compiler` struct
+- `stmt.rs`: Statement compilation (`compile_stmt()`)
+- `expr.rs`: Expression compilation (`compile_expr()`)
+- `helpers.rs`: Shared helpers — constant pool management, local variable slots, operator mapping
+
+### VM (`src/vm/`)
+
+Executes compiled bytecode. `vm.rs` holds the (unified `Interpreter`) struct, `run()`, and a thin `exec_one()` dispatch match that delegates to submodules:
+
+- `vm_arith_ops.rs`: Arithmetic, logic, bitwise, repetition, mixin, pair ops
+- `vm_comparison_ops.rs`: Numeric/string comparison, three-way, identity, divisibility
+- `vm_set_ops.rs`: Set/Bag/Mix operations, junctions
+- `vm_call_ops.rs`: Function calls, method calls, hyper method calls
+- `vm_control_ops.rs`: Loops (while, for, C-style, repeat), given/when, try/catch
+- `vm_data_ops.rs`: Array/hash construction, say/print/note I/O
+- `vm_var_ops.rs`: Variable access (global, array, hash, bare word), indexing, post-increment/decrement
+- `vm_register_ops.rs`: Closures, sub/class/role/enum registration, module loading
+- `vm_string_regex_ops.rs`: Substitution, transliteration, hyper/meta/infix ops
+- `vm_misc_ops.rs`: Range creation, coercion, reduction, magic vars, block scope, let
+- `vm_helpers.rs`: Shared helpers — env lookup, type checking, junction threading, compiled function dispatch
+
+### Other key modules
+
+- `runtime/` (~35 submodules): Main interpreter engine — function dispatch (`calls.rs`, `dispatch.rs`), method dispatch (`methods.rs`, `methods_mut.rs`), built-in functions (`builtins_*.rs`), class system (`class.rs`), regex engine (`regex.rs`, `regex_parse.rs`), TAP test functions (`test_functions.rs`)
+- `builtins/`: Pure value operations — arithmetic (`arith.rs`), native functions (`functions.rs`), native methods (`methods_0arg/`, `methods_narg.rs`), RNG (`rng.rs`), unicode (`unicode.rs`)
+
+### Test infrastructure
+
+- `t/<category>/**/*.t`: Local tests in Raku syntax, run via prove. `t/` is a **nested tree, not a flat directory** — a new test goes in one of the sixteen categories, and **[docs/t-directory-layout.md](docs/t-directory-layout.md) is the authority on which one**. Read it before adding a file. In short: place by what the test would catch if it broke (not by the syntax it uses), keep basenames globally unique, never nest more than two levels below `t/`, and never put a `.t` at `t/` top level or under `t/lib` / `t/fixtures` / `t/packages`. `make check-t-layout` (also a `make test` prerequisite and a CI step) enforces all of that.
+- Every invocation of the suite passes `prove -r` — prove does not descend into subdirectories without it.
+- `roast/`: Official Raku spec test suite (vendored, read-only)
+- `roast-whitelist.txt`: Tests that pass completely; `make roast` runs only these
+- `TODO_roast/BLOCKERS.md`: the single ledger of all non-whitelisted roast tests, tracked per file and by root cause, with a raku-baseline column. Use this to decide which feature to implement next for maximum roast progress. (The per-synopsis `TODO_roast/S*.md` checklists were retired 2026-07-15 and merged into it.)
+- `TODO_roast/raku-baseline.md` / `.tsv`: the roast × raku reference-run baseline (generated by `scripts/roast-raku-baseline.sh`).
+- TAP protocol implemented in `runtime/test_functions.rs`
+
+### Parser error metadata
+
+- `parser::parse_program()` maps parse failures to `RuntimeError` with structured metadata:
+  - `code`: `RuntimeErrorCode::{ParseUnparsed, ParseExpected, ParseGeneric}`
+  - `line`, `column`: 1-based source location where available
+- CLI output (`main.rs`) prints this metadata as a separate line (`metadata: code=..., line=..., column=...`) to make failures easier to inspect and machine-process.
+
+## Working agreements
+
+- **Do NOT confuse `Test::Util` functions with builtins.** Functions like `is_run`, `doesn't-hang`, `make-temp-dir`, `make-temp-file` come from `roast/packages/Test-Helpers/lib/Test/Util.rakumod`, NOT from the Raku core. Before implementing a function as a builtin, always check what module the test `use`s and where the function is actually defined.
+- **Verify a function is a core routine before implementing it as a builtin.** A function belongs in core only if **both**: (1) `raku -e '<call>'` resolves it with no `use` statement — a `use v6.X` version pragma still counts as core; and (2) it is documented under `raku-doc/doc/Type/`, or in `raku-doc/doc/Type/independent-routines.rakudoc` (the index of routines not tied to one type). If either check fails, the function comes from a module (e.g. `Test`, `Test::Util`) and belongs in that module handler, not in core. Note that `Language/perl-func.rakudoc` is a **Perl 5 → Raku migration table**, not an index of Raku builtins — a Raku routine with no Perl 5 counterpart (e.g. `rotor`) is absent from it by construction, so do not use it as the membership test.
+- **Providing an ecosystem module "natively" (BATTERIES.md rung 3) is BANNED going forward (user decision, 2026-08-01; recorded as [ADR-0096](docs/adr/0096-batteries-adoption-policy.md)).** When a module needs deep machinery (Metamodel, EXPORTHOW, slangs, NQP guts), the answer is rung 2: grow the interpreter until the real, vendored upstream module runs verbatim. "The implementation is large" is not a reason to fall back to a native reimplementation — that is exactly the private-dialect risk BATTERIES.md §1 warns about. **Neither is "the real module is slow"**: a measured gap justifies a transparent, semantics-preserving optimization, never a substitution under the real module's name (ADR-0096 §D3). If you believe native provision is genuinely unavoidable, STOP and ask the user; never ship it unilaterally. The exception list is now two entries and is enumerated in ADR-0096 §D4 — `NativeCall` (justified) and the JSON `to-json`/`from-json` interception (scheduled for retirement, [#8183](https://github.com/tokuhirom/mutsu/issues/8183)); the native `Test` provider was deleted on 2026-09-10 (~3,300 lines, 0 regressions). Retire one the way `Pod::To::Text` was retired — it was a native `pod2text` builtin until the real rakudo core module was vendored to `modules/Rakudo-Core/` and three general interpreter bugs were fixed to run it (`docs/batteries/pod-to-text.md`) — or the way the native `monitor` declarator stopgap (#5640) was retired: the EXPORTHOW::DECLARE campaign grew the MOP until OO::Monitors ran verbatim as a bundled battery (`news/2026-08/exporthow-declare-mop.md`). But **measure before assuming a provider is retirable**: `NativeCall` was measured on 2026-08-01 and is not (it needs `use QAST:from<NQP>`, MoarVM dispatch programs, and 61 missing `nqp::` ops; see [#7560](https://github.com/tokuhirom/mutsu/issues/7560)), so it stays a justified rung-3 provider.
+- Perl 6 (Raku) regex is not compatible with Perl 5 regex; never assume Perl 5 compatibility.
+- Prefer ASCII in source files unless a specific Unicode feature is required.
+- Do not rewrite or reformat unrelated code.
+- Do not use stubs, hardcoded outputs, or early returns to make tests pass.
+- Do NOT commit directly to the main branch. Always create a feature branch and open a pull request.
+- Preserve unrelated working-tree changes, and never use a destructive Git operation (`reset --hard`, `checkout -- .`, `clean -f`) to discard work you did not create.
+- Do not create PRs or Issues against Raku org repositories (including `roast` and `raku-doc`) from this workspace.
+- PR workflow:
+  1. Create a feature branch from main: `git checkout -b <branch-name>`
+  2. Commit changes to the feature branch.
+  3. Push (`git push -u origin <branch>` — identical in both environments) and open a PR: `gh pr create`, or the `create_pull_request` MCP tool where there is no `gh`. No version-bump label is needed — the release version is chosen by hand at release time (see "Cutting a release" below), not aggregated from PR labels.
+  4. Enable auto-merge: `gh pr merge --auto --merge <pr-number>`, or the `enable_pr_auto_merge` MCP tool with `mergeMethod: "MERGE"`. **Use merge, not squash** — squash merging is disabled on this repository, and `--squash` / `mergeMethod: "SQUASH"` fails with `GraphQL: Merge method squash merging is not allowed on this repository (enablePullRequestAutoMerge)`, silently leaving auto-merge off. (Rebase is also allowed if you prefer it.)
+  5. **Immediately after opening the PR, verify it is mergeable — do NOT assume it is.** Run `gh pr view <pr-number> --json mergeStateStatus,state -q '.state + " / " + .mergeStateStatus'` (remote: `pull_request_read` method `get`, whose payload carries the same `mergeable`/`mergeable_state`). If it is `DIRTY` (merge conflict) or CI never registers (no workflow runs appear within ~1 min via `gh run list --branch <branch>`, or `actions_list` method `list_workflow_runs` filtered to the branch), the branch has conflicted with `main` — a sibling PR almost certainly touched the same file (docs/ledger files are the usual culprit, since slices update the same survey table). **Rebase onto `main` and resolve the conflict before relying on auto-merge:** `git fetch origin main && git rebase origin/main`, resolve, `git rebase --continue`, then `git push --force-with-lease`. A `DIRTY` PR will sit unmerged forever and CI will not run — catching it at open time (not hours later) is the rule. This conflict is frequent when landing many small slices in sequence; expect it.
+  6. CI (GitHub Actions) runs `make test` and `make roast`. The PR merges automatically when CI passes.
+     - **A documentation-only PR skips the build jobs on purpose.** `ci.yml`'s `changes` job classifies the diff (`scripts/ci-docs-only.sh`); when every changed path is on that script's allowlist, the build jobs (`build`, `test-check`, `test-suites`, `lint-configs`, `wasm-e2e`, `gc-stress-tap`, `gc-stress-roast`, `jit-stress-tap`, `jit-stress-roast`) report `skipped`, which counts as success for branch protection, and the three aggregator jobs that carry the required check names (`test`, `gc-stress`, `jit-stress`) pass on seeing that classification. So a checks listing showing those as skipped on a docs PR is **correct**, not a stuck CI — the PR is mergeable. The allowlist is not only prose: it is everything **no build job reads** — `docs/`, `news/`, `TODO_roast/`, `old-design-docs/`, `raku-doc/`, `.claude/`, `.agents/`, `ecosystem/` (the zef parity ledger), `.github/**` *except* `ci.yml`, `scripts/*.py` *except* `migrate-t-layout.py`, and top-level `*.md` / `*.tsv` / `*.svg`. Anything else runs the full suite, including any nested `README.md`, all of `site/` (the wasm-e2e job loads `site/ecosystem.html` and checks it against `site/content/ecosystem.json`), every shell/`.mjs` script under `scripts/`, and `.github/workflows/ci.yml` itself — that file *defines* those jobs, so skipping them would merge an edit to the test pipeline that never ran once.
+       If you add a new documentation directory, add it to the allowlist in that script, extend its `--self-test` cases, and add it to `bench.yml`'s `paths-ignore`. The reverse direction is enforced for you: `scripts/ci-docs-only.sh --check-inputs` (a `changes`-job step) scans the Makefile and `ci.yml` for every repository path they name and fails if any of them is on the allowlist, so wiring an allowlisted file into the build can no longer make an untested change look like documentation.
+  7. **Watch the new PR's CI by being WOKEN, never by polling it.** Locally: one `run_in_background` bash command that blocks until no check is `pending` and then exits (the harness notifies you when it does) — a single call, not a loop you drive. Do NOT use foreground `gh pr checks --watch`: it blocks ~13 min and wastes the session (a harness with no background-completion notification at all may block on `gh pr checks <n> --watch --fail-fast` instead — once, not in a loop). In a remote container there is no command to block on, so `subscribe_pr_activity` instead and let CI results and review comments wake the session; never `sleep` to wait for CI, and never re-call `pull_request_read` to see how far along it is. Checking on an unfinished CI run is subject to the **30-minute polling floor** above: a run that is still going tells you nothing you can act on. Auto-merge lands the PR on its own once CI is green, and the wake surfaces a red one so you can fix forward. If you have genuinely-independent, non-conflicting work, do it while you wait; if you do not, end the turn.
+  8. **A PR is done when it is merged, not when checks passed or auto-merge was requested.** Before reporting completion or taking the next ticket, verify GitHub reports the PR as `MERGED` and that its merge commit is reachable from `origin/main`.
+  9. **Before going idle, decide the next slice.** Don't wait on the merge with nothing queued. Re-read the relevant ledger/PLAN (`PLAN.md`, `TODO_roast/BLOCKERS.md`) and pick the next concrete unit of work — start it on a fresh branch off `main` if it's independent of the open PR, or lay out options and confirm with the user when the next step is a strategic fork.
+- **Do NOT use stacked PRs (`gh stack`).** Even when the change spans several ordered slices, use the single-branch flow above (one PR, or a sequence of PRs off `main`).
+- If CI fails, fix on the same branch and push again (the wake tells you; re-arm the watch after pushing).
+  - **Flaky-looking CI failures:** consult the "Known flaky tests" section below before re-triggering. (`roast/S02-names-vars/perl.t`'s historical `Failed: 0` abort no longer reproduces as of 2026-07-05 and was re-whitelisted — treat a new failure there as real first, per the triage protocol.)
+- **Never close a PR without preserving its knowledge.** If a PR has rebase conflicts, rebase it (manually or with an agent that reads the PR diff via `gh pr diff <number>`, or `pull_request_read` method `get_diff`). The PR diff itself is the best documentation of the change — do not just close it and write a summary. Reopen and fix it, or have a new agent read the diff and re-implement on a fresh branch.
+- Write all documents, code comments, and commit messages in English. This explicitly includes ADRs (`docs/adr/`), everything under `news/` (`news/*.md` and `news/YYYY-MM/*.md`), `PLAN.md`, `TODO_roast/*.md`, design docs under `docs/`, and PR titles/descriptions. Conversing with the user in Japanese does NOT change this — repository artifacts are always English.
+- Create and edit files with the Write/Edit tools, not shell redirection or heredocs.
+- Temporary test scripts must be written to `./tmp/` (project-local, gitignored) using the Write tool. Never write to `/tmp/` or `/tmp/claude-1000/`.
+- Read files with the Read tool. For searching, use a dedicated search tool when the harness provides one; otherwise `git grep` / `rg` are fine.
+
+## Cutting a release
+
+Releases are cut by **one manual trigger** — `gh workflow run tag-release.yml -f version=X.Y.Z` (no `v` prefix; remotely, `actions_run_trigger` method `run_workflow` with `workflow_id: "tag-release.yml"`, `ref: "main"`, `inputs: {version: "X.Y.Z"}`). tagpr was removed (2026-07-25): there is no release PR, no `CHANGELOG.md`, and no version-bump label on ordinary PRs. **Keep the `type:` / `type(scope):` PR title convention** — it drives the auto-applied category label and hence the release-note section.
+
+Full procedure — version choice, what the two workflows do, how to verify the tarballs/npm/Release actually landed, and the one-time infra prerequisites — is in **`.agents/skills/cut-release/SKILL.md`**. Read it before releasing.
+
+## mzef package manager and distribution
+
+- **Two binaries ship, not one.** `src/main.rs` builds `mutsu` (the interpreter); `src/bin/mzef.rs`
+  builds `mzef` (the bundled package manager). When you add a `[[bin]]`/test or touch CLI wiring,
+  remember both — `cargo build` and `make test` build/exercise both, and `tests/mzef_shim.rs` pins
+  the shim's path resolution.
+- **`vendor/zef/` is vendored upstream Zef (Artistic-2.0) — do NOT hand-edit it.** It is a runtime
+  dependency shipped with mutsu (zef is also the compat north star: fix mutsu, not zef). To bump it,
+  re-vendor per `vendor/README.md` (an `rsync` recipe), not by editing files in place.
+- **`mzef` is a thin re-exec shim** (`mutsu -I vendor/zef/lib vendor/zef/bin/zef <args>`). To run zef
+  under mutsu locally, prefer `target/release/mzef <args>`; it resolves the vendored tree
+  exe-relative (or `$MZEF_ZEF_HOME`) and the sibling `mutsu` (`$MZEF_MUTSU_BIN`). The full pipeline
+  tracker is `docs/mzef-install-pipeline.md`.
+- **Distribution** (`.github/workflows/release.yml` on `v*` tags, `docker.yml` to GHCR): the release
+  tarball and the container both place `bin/mutsu`, `bin/mzef`, and the zef tree at
+  `share/mutsu/zef` so `mzef` finds it via `../share/mutsu/zef` with zero config (mise installs both
+  onto PATH). **All four targets (Linux x64/arm64, macOS x64/arm64) are required.** macOS arm64 was
+  `continue-on-error` until the vendored-libffi bump (ADR-0012) fixed its Mach-O CFI build; that was
+  verified green via a `workflow_dispatch` run, so `optional` was dropped and a macOS regression now
+  fails the release loudly. Do not "fix" macOS by weakening the Linux path.
+
+## Reference implementation
+
+- `raku` is available on this system. Use `raku -e '<code>'` to check expected behavior when the spec is unclear.
+- **If `raku` is missing** (a fresh remote/ephemeral container often has no
+  rakudo, and Ubuntu's `apt` package is 2022.12 — far too old for RakuAST), run
+  `.agents/skills/install-raku/install-raku.sh` (the `install-raku` skill)
+  instead of doing without an oracle. It picks the newest `backend: moar`,
+  `type: archive` prebuilt for this platform out of the `https://rakudo.org/dl/rakudo`
+  JSON index, verifies its SHA256, unpacks it to `~/.local/rakudo/` and symlinks
+  `bin/*` into `~/.local/bin/`. It is a self-contained tree, needs no build, and
+  takes a few seconds; rerunning it when `raku` already works is a no-op.
+  Without it, any work that has to *measure* rakudo's behavior (RakuAST node
+  shapes above all) is blocked — see `docs/rakuast/README.md`, whose whole slice
+  checklist starts with "measure the Rakudo `.AST` shape".
+- When investigating a roast test, always run it with `raku` first to see the expected output before comparing with mutsu.
+- Design docs: `./old-design-docs/`
+- Raku language documentation: `./raku-doc/` — consult these docs when the language spec or behavior is unclear. See the section below for a detailed guide to the most useful files.
+
+## Raku documentation guide (`raku-doc/`)
+
+All documentation is under `raku-doc/doc/` in `.rakudoc` format (Pod6 markup, readable as plain text).
+
+### Language reference (`raku-doc/doc/Language/`)
+
+Core syntax and semantics — consult these when implementing or debugging language features:
+
+- **`syntax.rakudoc`** — General syntax: literals, identifiers, statements, comments, special variables
+- **`operators.rakudoc`** (135 KB) — **All operators with precedence levels**, associativity, and examples. Essential reference for parser precedence implementation.
+- **`control.rakudoc`** — Control flow: if/unless/with/without, for, while, loop, given/when, repeat, gather/take, supply/react/whenever
+- **`functions.rakudoc`** — Function definition, calling conventions, return handling
+- **`signatures.rakudoc`** — Parameter syntax, types, constraints, slurpy params, destructuring
+- **`variables.rakudoc`** — Sigils (`$`, `@`, `%`, `&`), twigils, special variables, dynamic scope
+- **`regexes.rakudoc`** (120 KB) — **Complete Raku regex syntax**. Anchors, quantifiers, captures, lookahead/lookbehind, character classes, alternation, conjunction, etc.
+- **`grammars.rakudoc`** — Grammar, token, rule, regex declarators; actions; `TOP` method; inheritance
+- **`grammar_tutorial.rakudoc`** — Step-by-step grammar tutorial with practical examples
+- **`quoting.rakudoc`** — Quoting constructs: `q//`, `qq//`, heredocs, word quoting (`<...>`, `qw`), interpolation rules
+- **`objects.rakudoc`** — OOP: classes, roles, attributes, methods, inheritance, composition, MRO
+- **`classtut.rakudoc`** — Class tutorial with practical examples
+- **`typesystem.rakudoc`** — Type system: type objects, coercions, subsets, where clauses
+- **`subscripts.rakudoc`** — Positional and associative subscript syntax (postcircumfix `[]`, `{}`, `<>`)
+- **`list.rakudoc`** — Lists, arrays, sequences, flattening, itemization
+- **`containers.rakudoc`** — Scalars, arrays, hashes as containers; binding vs assignment
+- **`contexts.rakudoc`** — Sink, boolean, string, numeric, list context coercion
+- **`terms.rakudoc`** — Term syntax: self, now, time, rand, empty, etc.
+- **`brackets.rakudoc`** — Bracket pairs and nesting rules
+- **`phasers.rakudoc`** — BEGIN, CHECK, INIT, END, ENTER, LEAVE, KEEP, UNDO, FIRST, NEXT, LAST, PRE, POST, QUIT, CLOSE, COMPOSE
+- **`statement-prefixes.rakudoc`** — `do`, `try`, `quietly`, `gather`, `lazy`, `eager`, `hyper`, `race`, `sink`, `react`, `supply`
+- **`traits.rakudoc`** — `is`, `does`, `handles`, `of`, `returns`, `will` trait modifiers
+- **`slangs.rakudoc`** — Slang mechanism details (sub-language switching)
+- **`setbagmix.rakudoc`** — Set, Bag, Mix types and operations
+- **`numerics.rakudoc`** — Numeric types: Int, Num, Rat, FatRat, Complex; coercion rules
+- **`exceptions.rakudoc`** — Exception handling: try, CATCH, die, fail, X:: types
+- **`packages.rakudoc`** — Packages, modules, classes, roles as package types
+- **`traps.rakudoc`** — Common pitfalls and gotchas (useful for understanding edge cases)
+
+### Type reference (`raku-doc/doc/Type/`)
+
+Per-type method documentation — consult when implementing methods on specific types:
+
+- **`Test.rakudoc`** — **Test module specification**: `plan`, `ok`, `nok`, `is`, `isnt`, `is-deeply`, `is-approx`, `like`, `unlike`, `cmp-ok`, `isa-ok`, `does-ok`, `can-ok`, `dies-ok`, `lives-ok`, `eval-dies-ok`, `eval-lives-ok`, `throws-like`, `subtest`, `skip`, `todo`, `pass`, `flunk`, `bail-out`, `done-testing`, `diag`
+- **`Grammar.rakudoc`** — Grammar type methods: `parse`, `parsefile`, `subparse`
+- **`Match.rakudoc`** — Match object methods and structure
+- **`Regex.rakudoc`** — Regex type documentation
+- **`Str.rakudoc`** (57 KB) — String methods (comprehensive)
+- **`List.rakudoc`** (54 KB) — List methods
+- **`Any.rakudoc`** (57 KB) — Any type methods (inherited by most types)
+- **`Cool.rakudoc`** (52 KB) — Cool type coercion methods
+- **`Hash.rakudoc`** — Hash methods
+- **`Array.rakudoc`** — Array methods
+- **`Int.rakudoc`**, **`Num.rakudoc`**, **`Rat.rakudoc`**, **`Complex.rakudoc`** — Numeric type methods
+- **`Range.rakudoc`** — Range type methods
+- **`Junction.rakudoc`** — Junction type (any, all, one, none)
+- **`IO/Path.rakudoc`** and related `IO/` types — File I/O methods
+- **`independent-routines.rakudoc`** (57 KB) — Built-in functions not tied to a specific type (e.g., `say`, `print`, `put`, `note`, `dd`, `exit`, `sleep`, `elems`, `keys`, `values`, etc.)
+
+### How to use
+
+- When implementing a new operator or fixing precedence: read `Language/operators.rakudoc`
+- When implementing regex features: read `Language/regexes.rakudoc`
+- When implementing grammar support: read `Language/grammars.rakudoc` and `Type/Grammar.rakudoc`
+- When implementing Test module functions: read `Type/Test.rakudoc`
+- When implementing methods on a type: read the corresponding `Type/<TypeName>.rakudoc`
+- When parser behavior is unclear: read `Language/syntax.rakudoc` and `Language/traps.rakudoc`
+
+## Roast (official Raku test suite)
+
+- The ultimate goal is to pass ALL roast tests.
+- **Task selection is PLAN.md → BLOCKERS.md driven, not random** — see the "Roast test prioritization" section below for the full procedure.
+- `roast/` is read-only; never modify files under `roast/`. It is a vendored copy of upstream Raku/roast, pinned in `vendor.lock`; update it only via `scripts/update-vendor.sh` (see `docs/vendoring.md`). `raku-doc/` and `old-design-docs/` are vendored the same way.
+- `TODO_roast/BLOCKERS.md` is the single ledger of non-whitelisted tests. When a test reaches the whitelist, remove its row (details move to `news/`).
+- When a test file has known partial failures, describe the blockers in its BLOCKERS.md row (or the "Investigation notes" section for longer findings).
+- Do not add a roast test to the whitelist unless `prove -e 'target/debug/mutsu' <file>` exits cleanly.
+- Keep `roast-whitelist.txt` sorted (`LC_ALL=C sort -c roast-whitelist.txt`); CI fails if it is not sorted.
+- Never add special-case logic, hardcoded results, or test-specific hacks just to pass a roast test. Every fix must be a genuine, general-purpose improvement.
+- When the expected behavior is unclear, consult `./old-design-docs/` for the original Raku language specification.
+- When investigating a roast test and deciding to defer it, always record the reason for failure in the test's row (or the investigation notes) in `TODO_roast/BLOCKERS.md`.
+- Roast is the authoritative spec. If passing a roast test requires changing a local test under `t/`, update the local test.
+- When `make roast` shows failures in whitelisted tests, investigate each failure — do NOT dismiss them as "pre-existing".
+- Never remove a previously passing test from the whitelist due to a regression. If a change causes a whitelisted test to fail, fix the regression so the test passes again.
+- When a roast test requires solving multiple unrelated prerequisites: fix what you can, update its entry in `TODO_roast/BLOCKERS.md`, and move on.
+
+## Working on complex features
+
+- Do NOT fear complex cases. Every feature must eventually be implemented fully.
+- Deferring hard work does not make it go away — tackle difficult features head-on.
+- When a roast test requires a complex feature (e.g., attribute traits, arbitrary regex delimiters, module precompilation), implement it rather than skipping to easier tests.
+- When a single test requires implementing multiple unrelated features, implement them all in the same PR. Large PRs are acceptable when the test demands it.
+
+## Roast test prioritization
+
+**Primary: PLAN.md → BLOCKERS.md → then individual tests.** Work is driven by strategic priorities, not random test selection, and **not** by cherry-picking easy tests to game the pass count. The task-selection procedure, the `scripts/roast-history.sh` diagnostic categories, and the order in which to investigate one failing test are in **`.agents/skills/roast-triage/SKILL.md`**.
+
+## Trust the main branch
+
+The `main` branch is protected by GitHub branch protection rules — only PRs that pass CI (`make test` + `make roast`) can be merged. **Do NOT waste time checking whether a failing test also fails on `main`.** If a test fails on your feature branch, the problem is in your changes, not in `main`. Checking out `main` or running tests against it to "verify" is pointless and wastes AI resources.
+
+## Refactor boldly — CI + roast are the safety net
+
+CI (`make test` + the extensive `make roast` spec suite) gates every merge, and the roast suite is comprehensive. **Do NOT hide behind "this is too risky, I'll ship a tiny slice / just document the design."** Over-caution that avoids the actual architectural change is a worse failure than a bold change that CI catches. When the right fix is a substantial, high-blast-radius refactor (e.g. collapsing the `locals`↔`env` dual store, reworking dispatch, changing core data structures), **do the real change**:
+
+- Make the architectural change in full, not as a string of timid micro-gates that never reach the goal.
+- Iterate on targeted tests, then run the full pre-publication gate (see "Run both full suites yourself before publishing a PR") and push; CI's roast is the net for what you could not foresee.
+- If CI fails, fix forward on the same branch and re-run. A red CI on a feature branch is cheap and expected during a big refactor — it cannot reach `main`.
+- Prefer one coherent architectural PR over ten micro-PRs that collectively dance around the real problem.
+
+The goal is essential architectural improvement, not the appearance of progress through small safe diffs.
+
+### What "gain" and "risk" actually mean (read before weighing any change)
+
+When deciding whether a change is worth it, use these definitions — NOT a vague sense of "effort vs payoff", and NOT micro-perf:
+
+- **Gain (利得)** = moving toward the *correct architecture*: a maintainable, fast interpreter with **no flaky tests** and **better Raku compatibility**. A change that removes a band-aid/fallback, unifies a dual mechanism, or makes a subsystem sound is a gain even if its immediate speedup is modest.
+- **Risk (リスク)** = making the codebase *worse*: introducing **flaky tests**, **reducing Raku compatibility**, **lowering maintainability**, or adding **ad-hoc / band-aid changes**.
+- **A temporary CI/roast failure is NOT a risk.** roast detects it deterministically and you fix it forward. Do not down-weight an architecturally-correct change because it will "break tests for a while" — that is the safety net working, not a cost.
+
+Consequences for design choices:
+
+- Prefer **sound mechanisms that cannot go flaky** over clever optimizations that are correct only under an *incomplete* static analysis. Example: capturing a closure's mutable lexical as a **shared cell** always tracks later mutations, so it never flakes; snapshotting it **by value** is only correct if you can prove the variable is never mutated — and mutsu's compile-time mutation analysis is incomplete (it does not see writes from separately-registered role/class methods, nor rw-arg sinks like `cas`), so a missed case turns into a *flaky* failure (see the `S12-construction/roles-6e.t` regression). The by-value route is therefore the **risky** one and the cell route is the **gain**, even though by-value reads are faster.
+- A known-hard prerequisite (e.g. making `ContainerRef` deref universal, §2.1 / Track B) is itself a **gain** to pursue, not a reason to stop — surfacing its gaps as deterministic roast failures and fixing them *is* the architectural progress.
+
+## Architecture decisions are recorded as ADRs (`docs/adr/`)
+
+Large architectural decisions — method/order choices that are costly to reverse — are recorded as ADRs under `docs/adr/` (one decision per file, `NNNN-title.md`; conventions in `docs/adr/README.md`). Before starting work that touches such a decision, **read the relevant ADR first**. If you are about to make a new large architectural call, write a `Proposed` ADR for it rather than baking the decision silently into code; supersede (don't rewrite) an ADR when the decision changes.
+
+### GC / JIT status (ADR-0001 — SHIPPED; read the ADR before touching GC/JIT internals)
+
+The strategy was fixed in [docs/adr/0001-gc-strategy-and-phasing.md](docs/adr/0001-gc-strategy-and-phasing.md) and **has been executed**: ADR-0001 §7 (2026-08-02) records layers 3a (Bacon-Rajan cycle collector on the container-kind `Gc<T>` variants, scalar variants GC-free), 3b (NaN-boxing), and 4 (JIT) as **all shipped and default on** (GC's default-on trigger was decided by [ADR-0003](docs/adr/0003-default-on-gc-trigger.md); CI exercises them via the `gc-stress` and `jit-stress` jobs). What agents need to know now:
+
+- **Do NOT treat GC/JIT as pending work.** mutsu collects cycles; JIT is the default configuration (the bench history's plain rows pin `MUTSU_JIT=off` as the interpreter baseline).
+- **The old "Track B is fused with GC, do not start it standalone" rule is superseded** by [ADR-0013](docs/adr/0013-container-interior-mutability-cellvalue.md) §7: the `GcBox`/`UnsafeCell` interior-mutability refinement made the `gc_contents_mut` sites sound at the primitive, with no Value-layer element-cell migration. Work that ADR-0001 once deferred onto "the GC campaign" (e.g. store-side element itemization, `news/2026-09/element-itemization-lost-in-scalar-binding.md`) is now unblocked and stands on its own.
+- **Still open from ADR-0001:** §4.3 (Phase A' root-consolidation scope) and layer 3c (biased reference counting — a perf option, not a prerequisite for anything).
+- **Level-2 (full VM redesign for MoarVM-style precise moving/tracing GC) remains rejected** unless level-1 JIT hits a *measured* refcount ceiling — do NOT start it without a new/updated ADR.
+
+## Known flaky tests
+
+**Mechanism (read first): `flaky-tests.txt` + `scripts/flaky-retry.sh`.** Quarantined tests are re-run automatically by both test runners (up to 3 attempts), so a single unlucky roll no longer blocks a merge — but only for files explicitly listed in `flaky-tests.txt`, and only when they *pass on retry* (a deterministic failure fails all attempts and still blocks). Entries carry a review date that `make check-flaky-list` enforces, so a quarantine cannot become permanent. The full policy, the evidence standard, and the tooling (`scripts/ci-flake-survey.sh` to mine CI history, `scripts/flake-repro.sh` to measure a repro rate under load) are in **`docs/flaky-test-policy.md`**. Before adding an entry there or trusting a "flaky" claim, follow the triage protocol below — most historical "flaky" labels turned out to be deterministic bugs.
+
+The prose list here is *context* (why each historical flake happened, and the de-flaked ones), NOT the thing CI consults — that is `flaky-tests.txt`. Some tests are genuinely non-deterministic (concurrency/timing/CI-load sensitive) and fail intermittently. When a `make roast` / `make test` failure is **only** in the list below and your change is unrelated (e.g. an operator/parser fix), treat it as flaky: re-run the single file a few times before assuming a regression. Do **not** remove it from the whitelist.
+
+- `S17-*` concurrency tests — may fail occasionally under heavy parallel load, pass on retry. (A 2026-07-05 audit ran all 97 whitelisted S17 files ×7 `-j4` release sweeps: the only repeat offender was `batch.t`, root-caused and fixed — see below.)
+
+**De-flaked (do NOT treat a failure here as flaky — it's a regression):**
+
+- `roast/S02-types/bag.t`, `roast/S02-types/baghash.t`, `roast/S02-types/mixhash.t` — the Binomial(100, 1/3) `.roll` bounds that made these three statistically flaky by design were **fixed upstream**: the 2026-09-11 roast re-vendor (commit `85a8790`, upstream "Make more statistical tests less likely to fail") raises every sample from 100 to 100000 rolls and scales the bounds with it, putting the assertions ~100 standard deviations from the mean. All three were dropped from `flaky-tests.txt` in that PR (3/3 green locally, ~1-2s each on release). A failure here is real again.
+- `roast/S04-exceptions/exceptions-alternatives.t` — the 2026-07-15 "occasional jit-stress timeout" (exit 124, "planned 3 ran 2") was NOT load noise: subtest 3's `JSON::Tiny::Grammar.parse` of the subprocess's JSON stderr took ~12.6s (raku: 2ms) because ratcheted separated quantifiers (`rule pairlist { <pair> * % \, }`) backtracked exponentially, leaving only a slim margin under the 30s budget. Fixed the same day: ratcheted `* %` is possessive now (Rakudo semantics) and the whole file runs in ~1s. Pin: `t/regex-sep-quantifier-ratchet.t`. A timeout here is real again.
+- `t/lock.t` "Lock::Async protects shared array pushes" — was a real lost-update race (listop `push` inside `protect` wrote the base shared_vars key, which a parent-thread stale env sync clobbered wholesale). Fixed in #4167 by routing all plain-lexical shared-array pushes through the `__mutsu_atomic_arr::` store.
+- `roast/S17-supply/batch.t` "we can batch by time and elems" — was a deterministic logic bug, not load flakiness: `batch(:seconds)` anchored its time window to tap-registration `Instant` instead of absolute `time div $seconds` periods, firing a spurious 1-element flush when the tap was registered just after a period boundary. Pin: `t/supply-batch-period.t` (forces the boundary alignment).
+- `roast/S02-names-vars/perl.t` — the historical "typed-container alloc/hash-order" mid-run abort no longer reproduces (2026-07-05: 72 clean runs, debug+release, under 12× CPU contention); re-whitelisted.
+- `roast/S02-types/hash.t`, `roast/S09-typed-arrays/hashes.t` — the "CI-load-sensitive timeout" label is stale: both complete in ~0.3s on a release build now. A failure here is real — see triage below.
+- `t/io-socket-recv-limit.t` — the "fails under `-j4` load" label was wrong: it was a deterministic **port collision**. `IO::Socket::Async.listen(host, 0)` did not let the OS assign an ephemeral port; it substituted one from a process-local counter seeded identically in every process, so concurrent mutsu processes all asked for the same port and whichever bound second died. On top of that, this file and `t/io-socket-async-bin.t` both hardcoded 19995 (serial: 5/5 PASS, `-j2`: 5/5 FAIL). Fixed in #4512 — port 0 now reaches `bind()`, and the test asks the tap for the port it got. **Never hardcode a port in a new test**: listen on 0 and read `.socket-port`.
+
+`make roast` removes `temp-file-RT-126006-test` before starting: a stale copy
+left by an interrupted `roast/S32-io/spurt.t` would otherwise make that test
+abort with "cannot run test while file ... exists".
+
+### Triaging a suspected-flaky failure — don't mislabel a real bug
+
+"Flaky" is a claim about *non-determinism*; verify it before trusting it. A failure that reproduces every run is a real bug to fix, not noise to skip. `t/wrap.t`, `t/placeholder.t`, and `t/tail-function.t` sat here for months labeled "flaky / pre-existing" when all three were **deterministic correctness bugs** (closure-capture env writeback, scope-lost Seq iterator, missing `%_` placeholder capture — fixed in #2629 / #2630 / #2632). Before adding or trusting a flaky label:
+
+1. **Re-run the single file ~5× in a release build** (`cargo build --release && prove -e target/release/mutsu <file>`). Fails every time → deterministic → fix it, don't skip it.
+2. **Read the failure shape.** A *timeout* / `exit 255` with `Failed: 0` (bad plan, ran fewer than planned) is plausibly load/timing. A *concrete subtest* failure (`Failed: N`, a real `not ok` assertion) is almost always a logic bug — even on a "known flaky" file. Investigate the subtest.
+   - **BUT `exit 255` + `Failed: 0` is NOT automatically flaky.** "Ran N of M, Failed: 0" also happens when your *own* change throws an unexpected exception **mid-file** (e.g. a false-positive `X::Redeclaration` / `X::Assignment::RO`), which aborts the rest of the file with `Runtime error: Test failures` — looking exactly like a timeout. **The tell:** it reproduces *deterministically* on your branch but NOT on `main`, and the `(N+1)`th test is precisely the construct your change touches. Before declaring flaky, run the exact file on your branch vs `main` (`prove -e target/debug/mutsu <file>`); if your branch aborts and `main` completes, it is a real regression you introduced — fix it, do not re-trigger CI. (Seen in Tier-2: a sigil-blind `constant` redeclaration check aborted `S06-operator-overloading/sub.t`; a literal-LHS `s///` RO check aborted `S05-metasyntax/regex.t` on `TR///`.)
+3. **debug vs release.** A debug-only timeout on a heavy test can be load; a failure that reproduces in *release* is real (CI uses release).
+4. Only label flaky if it actually **passes on retry**; note the pass/fail ratio when you do.
+
+The `t/` TAP suite is **fatal** in CI (`prove ... t/`, no `|| echo` fallback) — a deterministic `t/` failure fails the CI job, same as roast.
+
+## Run both full suites yourself before publishing a PR — do NOT delegate that to CI
+
+**Before opening a PR, run `cargo fmt --all`, `make lint`, `make test` and `make roast` once each,
+and do not publish until both suites are green.** CI is the safety net for what you could not
+foresee, not the thing that tells you whether your change works. Discovering a regression from a red
+CI costs a wake, a fix-up commit and a reviewer's attention; discovering it locally costs one run.
+
+Each of these runs for many minutes. Start it in the background and **wait for the completion
+notification** — see "Waiting for a long job — the 30-minute polling floor" below. Watching it inch
+along costs tokens and tells you nothing: only the exit status does.
+
+**While you are iterating**, still run only the specific tests relevant to your change — the full
+suites are a pre-publication gate, not an inner loop:
+
+- Run individual roast tests with `MUTSU_FUDGE=1 prove -e 'target/debug/mutsu' roast/<path>.t` (the `MUTSU_FUDGE=1` is required — see the build/run section above), or the exact files you touched / suspect regressed.
+- Both suites report failure in their **exit status** (`bash -o pipefail`, guarded by the `check-pipefail` target; see "Checking `make test` / `make roast` results" below). Search the saved logs (`tmp/make-test.log`, `tmp/make-roast.log`) to find out *which* file failed — never to find out *whether* something failed, and never by re-running a suite to see its output.
+- **Some `make roast` failures are the container, not your change** — running as `uid 0` makes the
+  `chmod`-based file tests meaningless, and the sandboxed network breaks one socket test. The exact
+  files, the discriminator for each, and how to tell them from a real failure are in
+  [docs/agent-environments.md](docs/agent-environments.md). That list is the ONLY licence to ship
+  with a red `make roast`; anything else failing is yours, per "do NOT dismiss them as pre-existing"
+  above.
+- CI does not invoke `make test`; it runs the steps individually, and **one `build` job compiles the release binary once for the whole workflow** — `test-suites`, `gc-stress-roast` and `jit-stress-roast` download that artifact instead of each compiling their own (they install no toolchain at all). `test-suites` runs **both** the TAP suite (`prove t/`) and `make roast` on it (`MUTSU_BIN=target/release/mutsu`); local `make test` matches (see `docs/adr/0075-make-test-runs-tap-on-release-binary.md`, superseding ADR-0014). The **`gc-stress-tap` and `jit-stress-tap` jobs still run `prove t/` on their own debug binary** — that is where the 75 `debug_assert!`s in `src/` get their suite-wide pass, so do not "align" those jobs onto release. `test`, `gc-stress` and `jit-stress` are now **aggregator jobs**: they run nothing and exist only to keep the required-status-check names branch protection asks for, failing when any half of theirs did. They run it at `-j4` like every other prove step (since 2026-09-11; running it serially was costing those jobs 12m12s and 11m47s of pure wall clock and nothing else — `gc-stress` went 27m06s -> 11m17s and `jit-stress` 28m30s -> 15m49s, see `news/2026-09/ci-stress-jobs-stop-paying-for-a-serial-tap-run.md`; the halves and the shared build landed on top of that, see `news/2026-09/ci-builds-the-release-binary-once.md`). `cargo test` is debug everywhere. A *debug* run of a heavy file is ~3.3x slower than release, so a local timeout on one does not by itself indicate a real failure — confirm on `target/release/mutsu` before assuming a regression.
+- The one exception is a **documentation-only** change, where CI skips the build jobs too
+  (`scripts/ci-docs-only.sh`) and there is nothing for the suites to catch. Verify such a patch with
+  `git diff --check`, plus a focused check only when it affects generated output, an executable
+  script or test configuration. Re-triaging an issue (relabelling, an investigation comment) touches
+  no files and needs neither.
+- Re-running a full suite is fine when the evidence calls for it, but **never run the same full
+  suite twice concurrently**: the runs share Cargo build locks, the `tmp/make-*.log` files and
+  test-harness state, so overlapping invocations produce spurious failures and invalid logs.
+- To pick roast work, or to investigate why one file fails, read `.agents/skills/roast-triage/SKILL.md`.
+
+## Build profiles and benchmark numbers
+
+**Read [`.agents/skills/perf-tuning/SKILL.md`](.agents/skills/perf-tuning/SKILL.md) before
+measuring anything.** It carries which build to use for which metric (debug for
+`MUTSU_VM_STATS` / `alloc-stats` counters, `--profile profiling` for callgrind line
+attribution), the callgrind recipe and its caller-count aggregator, the `alloc_scope!`
+recipe, where document-facing numbers come from (the bench CI, not local runs), and the
+measurement contract — above all the warm/cold precompilation trap, worth 650M instructions
+(34% of `bench_json`) if a first run is compared against a later one.
+
+## Checking `make test` / `make roast` results
+
+**The exit status is the verdict; the log is the detail.** Both recipes end in `| tee tmp/make-*.log`
+but run under `bash -o pipefail` (`SHELL` / `.SHELLFLAGS` at the top of the Makefile), so a failing
+`cargo build`, `cargo test` or `prove` makes `make` exit non-zero. That was **not** true before
+[#8221](https://github.com/tokuhirom/mutsu/issues/8221): plain `sh` reported `tee`'s status, always
+0, so every red suite looked green and the only thing catching it was reading the log by eye. That is
+why the older rule here amounted to "grep the log to find out whether it passed" — **do not go back
+to judging green that way.** A zero exit now means the suite passed; a non-zero one is a real failure
+and not something to interpret away (the only licensed exception is a `make roast` red whose failing
+files are a subset **by name** of the container-only list in
+[docs/agent-environments.md](docs/agent-environments.md)). The `check-pipefail` target — a
+prerequisite of both suites, costing milliseconds — fails loudly if that masking ever returns.
+
+Both targets also save their complete output, so you never need to re-run one to see it:
+- `make test` → `tmp/make-test.log`
+- `make roast` → `tmp/make-roast.log`
+
+**When a suite exits non-zero, search its log to find which file failed.** Do NOT
+re-run `make test` or `make roast` just to get the output again — it is already on disk.
+
+## Waiting for a long job — the 30-minute polling floor
+
+`cargo build` (a release build above all), `make test` and `make roast` run for many minutes. **Start
+them with `run_in_background: true` and then WAIT for the completion notification.** The harness wakes
+you when the command exits; that notification is the signal, and it costs nothing.
+
+**Polling a running job more often than every 30 minutes is forbidden.** Re-reading the task output
+file, tailing `tmp/make-*.log`, `grep -c ' ok$'`, `pgrep rustc`, `ls target/release/mutsu`, a
+`sleep`-then-check loop, "is it done yet" — every one of those is a tool call plus a reply, and a
+progress number you cannot act on is worth nothing. A single session has burned tens of thousands of
+tokens this way, re-checking an empty output file every few seconds for an hour and emitting a line of
+filler text each time. Two rules follow:
+
+- **Never poll to watch progress.** A count of files passed so far does not change what you do next.
+  Only a *finished* run does. Wait for the notification.
+- **If you genuinely must check on a job** — you suspect it hung, or you need to decide something that
+  cannot wait — the minimum interval between checks is **30 minutes**, and each check must be one
+  command that answers a real question, not a running commentary.
+
+The exception is a job you can *block* on cheaply: one background command that runs the whole chain
+and exits when it is done (`make test`, then read its exit status) is right. What is wrong is you
+looping on the outside of it.
+
+While a long job runs, either do genuinely independent work (reading code, drafting the news entry or
+the PR body, filing an issue) or say nothing and wait. Do NOT emit a "waiting…" message per check —
+if there is nothing to report, end the turn and let the notification wake you.
+
+## Running mutsu safely
+
+mutsu is under active development — parsing or execution can hang. **Always use `timeout`** when running mutsu:
+
+```
+timeout 30 target/debug/mutsu <file>
+timeout 30 target/debug/mutsu -e '<code>'
+timeout 30 target/debug/mutsu --dump-ast <file>
 ```
 
-If it is `DIRTY`, rebase onto `origin/main`, resolve it, and force-push with
-lease. Monitor required checks with `gh pr checks <number> --watch --fail-fast`.
-Fix failures forward on the same branch, push, and monitor again. A PR is not
-complete merely because checks passed or auto-merge was requested: verify GitHub
-reports `state == MERGED`, and verify its merge commit is reachable from
-`origin/main` before reporting completion or taking the next ticket.
+## Disk cleanup (worktrees and build caches)
 
-Do not create stacked PRs or close a PR simply to discard its work. Do not open
-PRs or issues against any repository other than `tokuhirom/mutsu` — above all
-not a Raku organization one (`roast`, `raku-doc`, `rakudo`), where an AI has
-actually mis-filed a mutsu issue before.
+Agent worktrees under `.claude/worktrees/` and cargo caches under `target/` are the two disk hogs; both are disposable. **Clean up worktrees at least once per hour** during long sessions and between agent batches. The commands — worktree removal, `cargo sweep`, nuking `target/*/incremental` (the dominant offender), and the optional mold + sccache setup — are in **`.agents/skills/reclaim-disk/SKILL.md`**.
 
-Some sessions have no `gh` (ephemeral remote containers generally do not, and
-direct `api.github.com` calls from them are rejected by the session proxy).
-There, use the GitHub MCP tools with `owner: tokuhirom`, `repo: mutsu` for the
-same steps; `docs/agent-environments.md` maps each `gh` command above to its
-tool, and records the other differences between the two environments (cores,
-disk, provisioning) — `git` itself and every build/test command are identical.
+In a remote container the writable disk is a **fixed per-session allowance**, so `df` misleads: a
+near-zero "Avail" with a low "Used" means the allowance is spent, not that the machine is broken.
+Deletes still succeed while writes fail, so free space with the same commands and keep going.
+
+## Container environments — both are disposable
+
+Whichever of the two environments you are in (see "Where this session is running" at the top), the
+container may be destroyed at any time: the local LXC container can be rebuilt, and a remote
+container is reclaimed when the session ends. **Always commit important changes and push promptly** —
+anything not on `origin` is not saved.
+
+### Remote containers self-provision via a SessionStart hook
+
+Sessions started from the Claude app / Claude Code on the web get a **fresh container** whose base
+image usually ships a rustc older than this repo compiles under, no `raku` at all, none of the
+C shared libraries the bundled batteries `dlopen`, and no `bwrap`. All four are fixed automatically
+by `.claude/hooks/session-start.sh`, registered as a `SessionStart` hook in
+`.claude/settings.json`: it installs the highest Rust version declared by the repo (the `ci.yml`
+toolchain pin, `Cargo.toml`'s `rust-version`, `.mise.toml`) via rustup, runs
+`.agents/skills/install-raku/install-raku.sh` when `raku` is missing, apt-installs the native
+libraries listed in its `NATIVE_LIBS` array (currently just `libmysqlclient21`, which DBIish's mysql
+driver needs), installs `bubblewrap` and probes that its sandbox actually works (the ecosystem
+sweep confines every measured run in it), and warms the crate cache with `cargo fetch`. It is
+idempotent (~0.14s when everything is already in place) and does nothing on a local checkout unless
+`MUTSU_SETUP_FORCE=1` is set — a developer machine is pinned by `.mise.toml` and owns its own
+toolchain.
+
+So **do not hand-install rustc, rakudo, `libmysqlclient` or `bubblewrap` at the start of a remote
+session** — it has already happened, and the `raku` oracle is available there too. If a build still
+fails with `E0658`, the hook did not run (check for its `session-start: environment ready` line) and
+`.claude/skills/rustc-too-old/SKILL.md` applies. Whenever a version pin moves, the hook follows it
+with no edit; only the *sources* of the pins are hardcoded, so add a new one there if the repo ever
+grows a `rust-toolchain.toml`.
+
+## Debugging guidelines
+
+- Do NOT use printf debugging (eprintln! → build → check → repeat). Rust builds are slow.
+- Preferred approaches in order:
+  1. **AST dump**: `timeout 30 ./target/debug/mutsu --dump-ast <file>` or `--dump-ast -e '<code>'`
+  2. **Trace logs**: `timeout 30 env MUTSU_TRACE=1 ./target/debug/mutsu <file>` (filter: `MUTSU_TRACE=eval` or `MUTSU_TRACE=parse,vm`)
+  3. **`rust-gdb -batch` breakpoints** — see below. This is the first thing to reach for when the
+     question is "which code path actually ran / who wrote this value", because a wrong guess costs
+     seconds instead of a rebuild.
+  4. **Focused unit tests**: `#[test]` in the relevant module, run with `cargo test <name>`
+  5. **Read the code**: Trace logic by reading, not running
+- If you must add debug prints, add ALL of them in one pass. Always remove before committing.
+
+### Use `rust-gdb -batch` before you add any `eprintln!`
+
+A breakpoint is a *hypothesis test that costs no rebuild*. An `eprintln!` is a hypothesis test that
+costs a full `cargo build` — and you pay it again for every wrong guess. Since most debugging is a
+sequence of wrong guesses, default to the debugger:
+
+```bash
+cargo build   # once; the VM runs on a spawned thread, gdb handles that transparently
+rust-gdb -batch \
+  -ex 'break src/vm/vm_exec_dispatch.rs:1650' \
+  -ex 'run' \
+  -ex 'bt 15' -ex 'continue' \
+  --args ./target/debug/mutsu ./tmp/repro.p6
+```
+
+- `-batch` + `-ex` scripts the whole session, so it is a single non-interactive Bash call.
+- **`break <file>:<line>` is usually the right form here**: most VM behaviour lives in `match` arms
+  inside `exec_one()` (e.g. `OpCode::SetTopic` in `vm/vm_exec_dispatch.rs`), not in a named function
+  you can break on. For real functions, `info functions <pattern>` finds the mangled path.
+- `bt`/`bt 15` at the breakpoint answers "who called this" directly — that is the question an
+  `eprintln!` at the callee can never answer.
+- Use `break <loc> if <cond>` to filter instead of rebuilding with a narrower print.
+- **Caveat: `print` on a `Value` is not readable** — values are NaN-boxed, so you get
+  `mutsu::value::Value (NanBox (18445055223849287686))`, and calling Rust methods from gdb
+  (`call val.to_display_string()`) does not work (inlined / not emitted). `&str`/`String`/integer
+  locals print fine. So use the debugger for **control flow and backtraces**; when you genuinely
+  need a decoded `Value`, fall back to the env-gated instrumented build below.
+
+(The line number above is illustrative — `git grep` the opcode arm you care about and use its current
+line.)
+
+**The trap that motivated this rule (2026-07-29, the role-parameterisation topic leak):** an
+`eprintln!` was added to `Env::insert` filtered on the key `"$_"` to find who clobbered the topic. It
+never fired — the topic's env key is `"_"`, with no sigil — so a whole rebuild bought nothing.
+Breaking on the `SetTopic` / `RestoreTopic` arms proved "only `SetTopic` writes it" with zero
+rebuilds, and needed no guess about the key name at all. **Do not guess a magic string, a key name,
+or a variant name and then spend a build on the guess; break on the site and read the real value.**
+
+**When a temporary instrumented build is still justified:** you need the *caller* of a site that
+fires thousands of times and the interesting call is selected by data the breakpoint condition can't
+easily express. Then gate a `std::backtrace::Backtrace` print behind an env var (e.g.
+`if std::env::var("MUTSU_DEBUG_WRITEBACK").is_ok() { eprintln!("{}", std::backtrace::Backtrace::force_capture()); }`),
+so a single build serves many runs. Still remove it before committing.
+
+## Raku's context-dependent parsing (slangs)
+
+Raku's grammar is not a single monolithic grammar — it switches between sub-languages ("slangs") depending on context:
+- **Main** slang: statements, expressions, operators
+- **Regex** slang: inside `/ /`, `rx/ /`, `m/ /`, grammar tokens/rules
+- **Quote** slang: inside `" "`, `' '`, `q/ /`, `qq/ /`, heredocs
+- **Pod** slang: documentation blocks (`=begin`, `=for`, `=head`, etc.)
+
+Each slang has its own grammar rules (e.g., `+` means repetition in Regex slang but addition in Main slang). Raku's official grammar (`Raku::Grammar`) handles this via slang switching at parse time.
+
+**Implication for mutsu**: The parser does not natively support slang switching. As we add `grammar`/`token`/`rule` support (which let users define custom grammars), we may need an architecture that can switch parsing modes contextually. Keep the parser modular so that individual sub-parsers (regex, quote, etc.) can be extracted and reused in a future architecture.
+
+## Conventions
+
+- **Always run `cargo fmt` and `make lint` before committing.** Never commit unformatted code.
+  - The lefthook pre-commit hook runs `cargo fmt` and the **default** `cargo clippy --all-targets -- -D warnings` only (`--all-targets`, or a warning in a `#[cfg(test)]` module reaches CI unseen). **Passing the hook is NOT enough to keep CI green** — treating it as sufficient has cost a follow-up fix-up commit roughly monthly.
+  - `make lint` adds the three configurations the hook cannot cover, and each fails CI on a warning the default clippy is structurally blind to:
+    - **rustdoc.** clippy never resolves intra-doc links, so *any* ``[`Foo`]`` in a doc comment that does not resolve **from its module** fails `lint-configs` with nothing local warning you. Note that rustdoc resolves a link against the enclosing *module*, not the `impl` block, so inside `impl Compiler` write ``[`Compiler::method`]``, never ``[`method`]``.
+    - **clippy with `jit` off** and **clippy for wasm32.** Do NOT assume these matter only when you touch `#[cfg(feature)]` code: a type whose shape differs per feature (e.g. `ValueView::Mixin` handing out `&Gc<_>` in one configuration) makes perfectly ordinary code lint differently, so any file can fail a configuration you did not compile.
+  - The ~5 minutes is still cheaper than a red `lint-configs`, the wake it triggers, and a second commit. The one case you may skip it is a **documentation-only** change, where CI skips those jobs too (`scripts/ci-docs-only.sh` — see the PR workflow section).
+- **Every built-in method / routine / `nqp::` op / VM opcode implementation states its complexity in a `// Cost:` comment** (user decision, 2026-09-23). When you add — or change what it costs — a method arm, a native method, a runtime method handler, a builtin routine, an `nqp::` op, or a VM opcode (its `OpCode::` arm in `exec_one_dispatch`, `src/vm/vm_exec_dispatch.rs`, plus the `exec_*_op` handler it calls), put one `// Cost: O(..), <var> = <meaning>.` line directly above it, in the format [docs/complexity-annotations.md](docs/complexity-annotations.md) defines. For an opcode, state the per-execution cost and name what it scales with — an opcode must not scale with something unrelated to its operands (frame locals, env size, registry size, MRO or call depth); if it does, that is a deficit. If its bound is worse than Rakudo's (`Rakudo: O(..)`) or MoarVM's (`MoarVM: O(..)`), add that suffix **and file a `todo:perf` issue** for it (`-- see #NNNN` with the real number; never leave a literal `#NNNN`). A fix that removes a deficit drops the suffix in the same PR and re-runs the family's `scripts/*-complexity-check.sh` case (`nqp-`, `str-`, `array-`, `vm-`). The `nqp::`, `Str` and `Array`/`List` families and every VM opcode arm are fully annotated; other families (Hash, numeric, IO, ...) are annotated as they are touched, and a whole-family audit follows the same recipe as those four (see `news/2026-09/*-complexity-audit.md`).
+- **A name derived from other names is built once, not per execution.** `format!("{pkg}::{name}")`, `pkg == "GLOBAL"` and `name.contains("::")` do at run time what the source text decided once, and the profile keeps finding them: `resolve_type_in_current_package` alone was **5.11% of a `JSON::Fast` decode**, 0.48% of the whole program in `format!`, and `StrSearcher::new` was constructed 1.39 M times in a ten-decode run. Use [`src/qualified.rs`](src/qualified.rs) — `qualified(pkg, name)` memoizes the pair, `package_ancestors(pkg)` walks the enclosing chain without allocating, `is_qualified` / `is_global_package` classify once per symbol. The same rule for `__mutsu_*` metadata keys is `MetaNs` (`src/runtime/meta_ns.rs`). Both are enforced: `make check-name-scans` is a **shrinking ratchet** (three counts, down only, re-cut with `scripts/check-name-scans.sh --update`) and `make check-magic-keys` is now a plain ban. `src/parser/` and `src/compiler/` are exempt — deciding what a name *is* from its text is their job, and doing it there rather than per execution is the whole point.
+- **A primitive has exactly one implementation, shared by every layer that exposes it** — the method, the routine/operator form, the `nqp::` op, the VM opcode, the reduction/metaop fold and the TRIR op (user decision 2026-09-23; [ADR-0117](docs/adr/0117-str-methods-and-nqp-ops-share-one-routine.md) for `Str`, [ADR-0118](docs/adr/0118-int-operators-share-one-routine.md) for `Int`). In Rakudo `.substr`/`.index(:i)`/`x` *are* `nqp::substr`/`indexic`/`x`, and `[div]`/`»div«`/`&infix:<div>` are the one `infix:<div>`. mutsu kept per-layer copies that drifted: codepoint-indexed nqp string ops against grapheme-indexed methods; `[div] 7, -2` Euclidean against `7 div -2` floored; `$min div -1` panicking in the one copy that forgot the guard. The single homes are [`src/builtins/str_prim/`](src/builtins/str_prim/mod.rs) (positions are graphemes, `:i`/`:m` go through its `Fold`) and [`src/builtins/arith/`](src/builtins/arith.rs) (`int_div`, `arith_mod`, `int_bitop`, `int_shift_*`, `int_negate`/`int_abs`, `value_succ`/`value_pred`); callers differ only in how they report an edge case (`Nil`/`Failure` vs. `-1` vs. a native int — and nqp's `_i` ops wrap by contract, so they stay in `runtime::nqp_pure`). When you add or fix such a primitive, put the logic in its home and call it from every layer — never a private search, fold, slice, char cache or floored division. `make check-prims` (a `make test` prerequisite and a CI step) fails on a hand-rolled copy, and `t/vm/nqp-str-prim-parity.t` / `t/types/numeric/int-operator-forms-parity.t` pin that every form agrees.
+- Use rustfmt defaults and standard Rust naming (`snake_case` functions/modules, `CamelCase` types, `SCREAMING_SNAKE_CASE` constants).
+- Aim for Rust source files under 500 lines. Do not grow a file past 500 lines; if your change pushes one over, split it in the same PR. (Many existing files already exceed this; splitting them is not required for unrelated work.)
+- Write feature tests using prove, under the right `t/` category — see [docs/t-directory-layout.md](docs/t-directory-layout.md).
+- Use Rust unit tests (`#[test]`) for internal components like parser and runtime helpers.
+- Every feature addition must include tests.
+- When implementing a temporary workaround or shortcut instead of the correct solution, always leave a `// TODO:` comment explaining what the correct approach would be and why the current implementation is insufficient. This ensures technical debt is visible and trackable.
+
+## Project planning and news
+
+- **PLAN.md** contains only **future tasks**. Keep it slim — no completed items. When a task is done, remove it from PLAN.md.
+- **`news/YYYY-MM/` is a directory, one file per accomplishment.** Record each completed task as a **new** file `news/YYYY-MM/<kebab-slug>.md` in the current month's directory, with an H1 title and a prose body — see `news/2026-07/nil-string-context-warning.md` for the shape. When completing a PLAN.md task, move its description and results into a new such file.
+- **One file per entry — never append to a shared monthly file. This is deliberate: it exists to avoid merge conflicts.** Many small PRs land in parallel; a monolithic monthly file made every PR edit the same lines and conflict on merge. A brand-new per-entry file conflicts with nothing. For the same reason there is **no index or README inside the month directory** — the file listing *is* the index, so keep slugs descriptive.
+- Create the month directory lazily: just `Write` the file at `news/YYYY-MM/<slug>.md`; the directory is created with it. Do not check whether the directory exists first, and do not add a placeholder/index file.
+- **Past months are frozen monolithic archives — do not touch them.** `news/2026-06.md` and earlier stay as single `.md` files. `news/2026-07.md` is the July archive of entries written *before* this switch (still linked from PLAN.md, so it must not be renamed or moved); all **new** July entries go in `news/2026-07/`. From August 2026 on, only the directory form is used (no monolithic `news/YYYY-MM.md`).
+- PLAN.md links to `news/` for historical context. Do not duplicate completed work in both files.
+- **When you discover a bug or missing feature that is too large to fix in the current or the next session, file it as a GitHub issue on `tokuhirom/mutsu` — one issue per finding — NOT by appending to PLAN.md.** This replaced the in-repo `todo/` directory on 2026-09-08; the full operating manual is **[docs/issue-workflow.md](docs/issue-workflow.md)**, and the frozen slug-to-issue map for the 57 migrated files is [docs/todo-issue-map.md](docs/todo-issue-map.md). In short:
+  - **Label it by the nature of the work:** `todo:ticket` for small, self-contained, no-design-needed slices; `todo:deep` for high-blast-radius problems that need design/an ADR; `todo:perf` when mutsu is *correct but slow* and the next step is profiling — a `todo:perf` issue **must state its goal (close condition)**: a ratio against rakudo, a return to the pre-regression speed, or the correct complexity order; announce that goal to the user when you start on it (no confirmation needed), and close the issue exactly when it is met (user decision, 2026-09-24; full rule in [docs/issue-workflow.md](docs/issue-workflow.md)). A perf-flavoured finding that also fixes a genuinely wrong answer is `todo:ticket`/`todo:deep` — do not bury a real bug behind a benchmark. `tier:*` labels are assigned by the triage regen, not by the filer.
+  - **Body:** root cause, affected files, why it is large, and a minimal repro with mutsu's and `raku`'s output side by side. Templates live in `.github/ISSUE_TEMPLATE/`. Write it so a session that has never seen the problem can pick it up cold — the body is the handoff, and there is no other record. Do not let a hard finding evaporate at the end of a session; filing costs one tool call.
+  - **Why an issue and not a file:** a `todo/...md` path stops resolving the moment the finding is fixed and `git mv`d into `news/`. At migration time **108 of the 122 distinct `todo/` paths cited from `src/` were already dangling**. An issue number survives being closed, so an issue reference in a code comment keeps resolving forever.
+  - **Claim an issue before working it — agents run in parallel.** Post a comment whose first line is `Claiming: <your-branch-name>`, **re-read the comments**, and yield if a live claim with a lower comment id is already there; only then start. **Do not add the `working` label yourself** — `.github/workflows/claim-label.yml` derives it from your claim comment and drops it again on your release, so the two can no longer disagree (they routinely did: #8033 was claimed and worked for six hours reading as free). That makes the comment *format* load-bearing: the keyword must be the comment's **first line**, as `Claiming: <branch>` / `Releasing: <branch>`, with the branch name identical in both; everything after the branch on that line and every line below it is free. Comments are an append-only ordered log, so every agent sees the same winner, whereas the label alone is a read-then-write two agents can both win. **Then re-read the comments twice more: before the expensive phase (the pre-publication full-suite run) and immediately before opening the PR** — the claim-time re-read settles only the claims that exist in the first few seconds, so it cannot see an agent who claims later and declines to yield, nor a sibling PR that lands while your suites are running. One `get_comments` call each; skipping them means discovering the collision from a merge conflict on a finished PR. **The lowest comment id is the whole tiebreaker** — "the earlier branch has nothing pushed yet", "the user pointed me at this issue" and "I am further along" do NOT override an earlier claim (got wrong on [#7569](https://github.com/tokuhirom/mutsu/issues/7569): two agents each ran the full suites and opened a PR for the same work). Post `Releasing: <your-branch-name>` when you finish (merged, stopped, or blocked); the label comes off with it, and a claim whose session died is expired after 24h with no such branch on `origin`. Never pick up an issue that already carries `working` or a live claim. Full protocol, including what to salvage when you lose a claim late: [docs/issue-workflow.md](docs/issue-workflow.md).
+  - **When the finding is resolved**, close the issue via `Closes #NNNN` in the PR body and still write the accomplishment up as `news/YYYY-MM/<slug>.md`. `news/` remains the narrative record; the issue is the tracking record.
+  - **Only ever touch issues in `tokuhirom/mutsu`.** Never file, label, comment on or close an issue in any other repository — above all not a Raku-org one (`roast`, `raku-doc`, `rakudo`), where an AI has actually mis-filed a mutsu issue before. If a task seems to want an issue elsewhere, stop and ask the user.
+
+## Agent workflow
+
+- **Sub-agents are allowed (policy updated 2026-06-15).** Use them where they help — read-only fan-out searches (Explore), independent non-conflicting implementation slices, or sweeping across many files where you only need the conclusion. Be deliberate, not reflexive: Rust builds are expensive and each parallel worktree agent multiplies `cargo build`/`clippy`/`make test` cost and accumulates large `target/` worktrees, so reach for a sub-agent when the task genuinely fans out, not for trivial single-file work you can do inline. Read-only Explore/research agents are cheap; worktree-isolated build agents are not.
+- **Keep at most 3 concurrent agents that build** (user decision, 2026-08-22, tightening the previous cap of 4). This caps agents actually *doing work*, not agents idling on a CI run: an agent whose PR is open and waiting on GitHub Actions uses no local CPU, so it is fine to launch a fresh agent past the nominal cap while others are purely CI-pending (user-confirmed 2026-08-20). **Even so, never exceed 10 agents in total (working + CI-idle combined)** (user-confirmed 2026-08-20) — check `ListAgents` before launching a new one when the count is already high. Read-only Explore/research agents do not count against the build cap. Clean up worktrees per the "Disk cleanup" section.
+  - **That cap is a 12-core number — scale it to the box you actually have.** A remote container has roughly 4 cores, where one building agent is the equivalent and running the work inline (no worktree copy of `target/`) is usually better; see [docs/agent-environments.md](docs/agent-environments.md). The same goes for every wall-clock figure quoted in this file (`make lint` "about 5 minutes", roast timings): budget more on a smaller box. A slower box makes the pre-publication full-suite gate cost more, not make it optional.
+  - **Why 3 and not more:** on this 12-core box, five worktree agents drove the load average to 70 with 17 concurrent `rustc` processes, and builds stopped completing. That does not merely slow the batch down — it makes agents *unable to verify their own work*: the `residual-try-cell-eager-seq-reification-divergences` agent had to revert a measured prototype and downgrade to a `Proposed` ADR because its from-scratch `cargo build` never finished under load. Over-parallelising costs correctness, not just wall-clock. When in doubt, check `uptime` and `pgrep -c -x rustc` before launching (a two-digit `rustc` count on 12 cores is already oversubscribed).
+- **Task selection order:**
+  1. PLAN.md current quarter priorities
+  2. BLOCKERS.md highest-impact missing features
+  3. Roast tests related to in-progress features
+  4. `todo:deep` and `todo:ticket` issues, oldest-first (see "The issue-backlog parallel-agent pipeline" below) — both queues get worked in parallel, not one after the other, so neither backlog grows unchecked while the other drains. **`todo:perf` is NOT part of that pipeline**: perf work is batched into its own profiling-heavy session and its implementation agent runs solo (see below). The issues' own `tier:*` labels rank the open backlog (`tier:S` > `tier:B` > `tier:N`; `tier:icebox` is out of the queue), so a session can pick without re-reading every issue.
+
+### A queue request is a standing instruction — do not re-ask what is already settled
+
+"Work the `todo:ticket` issues that have no `tier:*` label yet, one after another, and open the
+PRs", "process the `tier:N` tickets, keep the PRs coming", "drain the queue" and the like are
+**complete instructions**, not the opening of a negotiation. How such a run is executed is already
+decided — here and in `.agents/skills/mutsu-ticket-flow/SKILL.md` — so stopping to confirm any of it
+is itself the failure. In particular, these are settled; **never ask them**:
+
+- **One issue, one PR.** Never bundle several issues into one PR, never stack PRs.
+- **Selection** is the filter the user named (a label, a tier, "no tier yet", "the queue"),
+  oldest-first within it, skipping anything carrying `working` or a live claim. A missing `tier:*`
+  is a normal workable state — do not stop to triage tiers first, and do not ask which issues count.
+- **Claim and release every issue** by the `Claiming:` / re-read / `Releasing:` protocol above.
+- **Every code fix carries a focused regression test**, a `news/YYYY-MM/<slug>.md` entry, and
+  `Closes #NNNN` in the PR body.
+- **Open the PR, enable auto-merge (merge method), watch CI, fix forward.** "PR を出して" *is* the
+  permission; asking for it again is asking twice.
+- **Go straight on to the next issue after each verified merge**, up to the run cap in the skill —
+  no "shall I continue?" between tickets.
+- **Re-triaging a ticket to `todo:deep`, or closing it as already fixed, is a legitimate outcome**
+  of the run, not something to seek approval for.
+
+Stop and ask only when the answer is genuinely the user's: the fix would need a decision this file
+reserves for them (a rung-3 native provider, a new or superseding ADR, weakening a CI gate, dropping
+a whitelisted test), or two readings of the issue lead to materially different implementations and
+its own evidence cannot settle it. Even then, prefer to park that one issue, carry on with the rest
+of the batch, and put the question in the run's final report rather than idling the whole queue on
+it.
+
+### The issue-backlog parallel-agent pipeline
+
+When working through the issue backlog (as opposed to a single focused task), run it as a batch pipeline of disposable, fully-independent worktree agents rather than one long serial session:
+
+- **One fresh agent per ticket, never reused.** Every `todo:deep` / `todo:ticket` issue gets its own `Agent` call with `isolation: "worktree"` and a fully self-contained prompt (the ticket's own content summarized + exact task steps + the PR workflow instructions) — a subagent starts with zero context, so the prompt must stand alone. Once an agent's PR is merged, it is done; do not send it a new, unrelated ticket. The next ticket always gets a brand-new `Agent` call, not a `SendMessage` to a "graduated" one.
+- **Oldest-first, `todo:deep` and `todo:ticket` interleaved, skipping anything labelled `working`.** Pick a small batch (3, per the build-agent cap above) from the oldest open issues each round (**not** `todo:perf` — see the perf rule below), read each issue first to write an informed prompt (don't dispatch blind) — a ticket's stated blast radius/priority often changes what the right prompt asks for (e.g. "check whether this is worth it before implementing" needs a corpus-grep triage step, not a straight implementation).
+- **Every agent claims its issue before it starts**, by the `Claiming:` / re-read / `Releasing:` protocol above. The orchestrator must not hand two agents the same issue; the claim comment is how a *different* session finds that out, and the `working` label is the cheap filter that keeps it out of the next round's listing.
+- **Every agent prompt must include the full PR workflow**, not just "fix the bug": branch off `main`, commit (English, explain root cause, ending with the attribution trailer the session's harness specifies), push, open the PR, immediately verify `mergeStateStatus` isn't `DIRTY`, enable auto-merge (merge method, never squash), and watch its own CI until green or red — a subagent inherits this environment, so tell it to use `gh` or the GitHub MCP tools per [docs/agent-environments.md](docs/agent-environments.md) rather than hardcoding one. The agent should land its own PR end-to-end, not hand back a diff for the orchestrator to land.
+- **A ticket does not always end in a code fix.** A large fraction of investigations correctly conclude one of: the ticket is stale (already fixed by something else) — verify, close the issue, write it up in `news/`, and pin a regression test so it can't silently regress; the ticket needs a priority/scope judgment call before any code (e.g. "is deep MOP machinery worth it for one dist?") — grep the available corpus for other consumers of the same gap and let that evidence decide implement-vs-defer; or the real fix is genuinely bigger than the ticket assumed — file a narrower, better-scoped issue (or write an ADR) recording exactly what was learned, rather than forcing an undersized fix through. All of these are legitimate, valuable outcomes — do not treat "closed the ticket without shipping code" as a failure.
+- **The orchestrator monitors PRs itself (via `gh` or the MCP tools), not by trusting an agent's self-report of "still waiting."** A known harness quirk: a worktree-subagent's own `run_in_background` jobs (its `cargo build`/`prove t/` chains) don't reliably notify it back, so it can report "completed" while stuck re-polling its own build with no new information, burning tokens each cycle. When a `<task-notification>` says "still waiting" with no new evidence, check the PR's checks (`gh pr checks <n>`, or `pull_request_read` method `get_check_runs`) and `git log`/`ps` in that agent's worktree yourself first. If genuinely still building, just wait — schedule the next check no sooner than 30 minutes out (the polling floor), and don't nudge. If the agent seems to have lost track of a job that's actually done, `SendMessage` it a nudge with what you observed. If CI has actually finished (merged or clearly green/red) and the agent is *still* polling redundantly, `SendMessage` it to stand down — you're handling it directly.
+- **Rebase-on-`DIRTY` is common and expected** when several of these agents land PRs in the same rough time window, especially when two tickets touch overlapping files (e.g. two slices of the same ADR). Handle it by messaging the specific agent whose PR went `DIRTY` — it understands its own diff best — asking it to rebase onto `main`, resolve conflicts by composing both changes (not blindly picking one side), re-verify, force-push, and re-arm its CI watch.
+- **`todo:perf` is worked separately, and its implementation agent runs SOLO**, and it reads [`.agents/skills/perf-tuning/SKILL.md`](.agents/skills/perf-tuning/SKILL.md) first. Never put a perf finding into the parallel batch above: two perf agents on one box produce measurements that drift and never converge, and the whole point of a perf finding is a trustworthy number. Batch several `todo:perf` issues into one profiling-heavy session instead, so the profiler setup is amortized. Numbers that end up in a document must come from the bench CI (see the perf-tuning skill), not from that session's local runs.
+- **Clean up worktrees between batches**, once every agent in the round has either merged or been confirmed stopped — `git worktree remove --force` each `.claude/worktrees/agent-*`, then `git worktree prune`.

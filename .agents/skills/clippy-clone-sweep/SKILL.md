@@ -25,7 +25,7 @@ cargo clippy --all-targets --message-format=json \
 This alone is the useful command for routine sweeps. Warm-incremental it is a normal `clippy`
 run (well under a minute); a cold one pays a full `cargo build`-equivalent compile, so start it
 `run_in_background: true` and wait for the notification per the 30-minute-polling-floor rule in
-CLAUDE.md — do not tail the log.
+AGENTS.md — do not tail the log.
 
 **Do not default to adding `-W clippy::nursery -W clippy::pedantic -W clippy::str_to_string
 -W clippy::string_to_string`.** A run with all of those on this codebase (2026-09-20 baseline)
@@ -122,7 +122,7 @@ move the original expression directly). After a batch in one file:
   signal, not a false positive in the lint, and means that specific hit should be left alone).
 - Re-run the clippy command scoped to that file to confirm the warnings are gone:
   `cargo clippy --all-targets -- -W clippy::redundant_clone 2>&1 | grep -A2 '<path>'`.
-- `cargo fmt` and `make lint` before committing, per CLAUDE.md's Conventions section — a
+- `cargo fmt` and `make lint` before committing, per AGENTS.md's Conventions section — a
   mechanical clone removal can still touch formatting/import warnings across the four lint
   configurations `make lint` gates on.
 - This is Rust-internal code quality work, not a Raku-compat change, so it does not need a new

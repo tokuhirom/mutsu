@@ -80,7 +80,7 @@ phase all work end to end.
 ### B3. Distribution and tooling
 
 Release tarballs (4 targets), the GHCR container image, and `mise use -g github:tokuhirom/mutsu` all
-work; see the CLAUDE.md "mzef package manager and distribution" section. The **REPL** (`--repl`,
+work; see the AGENTS.md "mzef package manager and distribution" section. The **REPL** (`--repl`,
 `src/repl.rs`, plus the in-browser one at `site/repl.html`) and the **public WASM playground**
 (`site/playground.html`, deployed to GitHub Pages by `.github/workflows/pages.yml`) both ship.
 

@@ -3,7 +3,7 @@ use Test;
 
 # A `sub` declared inside a class body is hoisted to the top of the class
 # body's own scope at compile time, exactly like a top-level `sub` is hoisted
-# to the top of the compilation unit (CLAUDE.md's `hoist_sub_decls`) -- so a
+# to the top of the compilation unit (AGENTS.md's `hoist_sub_decls`) -- so a
 # class-body statement written *above* the `sub`'s textual position can still
 # call it. Regression for the `Date::Calendar::Hijri` zef distribution, whose
 # module computes two closures from a helper declared later in the same class

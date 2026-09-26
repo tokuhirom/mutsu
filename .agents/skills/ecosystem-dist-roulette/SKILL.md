@@ -19,7 +19,7 @@ before your first run; this page assumes it.
 **Random, because the parity number has to mean something.** The ledger's KPI is a claim about the
 ecosystem, and it only holds if the distributions worked are a fair sample of it. An agent that
 picks whichever record looks cheapest moves the count without moving the language — the same way
-cherry-picking easy roast tests games the roast count, which `CLAUDE.md` already bans. A uniform
+cherry-picking easy roast tests games the roast count, which `AGENTS.md` already bans. A uniform
 draw also surfaces the gaps nobody would have volunteered for, which is where the interesting
 interpreter bugs live.
 

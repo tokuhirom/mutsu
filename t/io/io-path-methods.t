@@ -17,7 +17,7 @@ is $parts<basename>, "bar.txt", "parts basename matches";
 # (`t/native-io-path-*.t`, `t/compunit-need-protocol.t`). This one used a FIXED
 # name, so two processes running it at once raced on the same `mkdir`/`symlink`
 # and whichever lost saw a half-built tree ("planned 8, ran 6") -- the directory
-# twin of the hardcoded-port collision CLAUDE.md records for
+# twin of the hardcoded-port collision AGENTS.md records for
 # `t/io-socket-recv-limit.t`. A unique name also means a leftover from an
 # interrupted run can never be mistaken for this run's tree.
 my $base = "tmp/io-path-methods-regression-$*PID".IO;

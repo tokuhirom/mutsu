@@ -486,7 +486,7 @@ impl Compiler {
     /// HTTP::HPACK's literal-header reader). Only a provably pure value
     /// expression may skip the thunk and repeat its value — a whitelist of
     /// "known side-effecting calls" is exactly the incomplete static analysis
-    /// CLAUDE.md warns about (any user sub call has to re-run).
+    /// AGENTS.md warns about (any user sub call has to re-run).
     pub(super) fn xx_lhs_needs_reeval(expr: &Expr) -> bool {
         !Self::xx_lhs_is_pure_value(expr)
     }

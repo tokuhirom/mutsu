@@ -20,7 +20,7 @@ git submodules. With a submodule, the upstream repo is checked out *with its
 `.git` and remote intact* underneath this workspace, which makes it far too easy
 to accidentally `git push` a branch, open a pull request, or file an issue
 against the upstream **Raku org** repositories from here. Project policy forbids
-that (see `CLAUDE.md`: "Do not create PRs or Issues against Raku org repositories
+that (see `AGENTS.md`: "Do not create PRs or Issues against Raku org repositories
 … from this workspace"). A vendored copy has no upstream remote, so the mistake
 is impossible.
 

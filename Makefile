@@ -4,7 +4,7 @@
 # into `tee` and POSIX sh reports only the *last* command's status -- `tee`'s,
 # which is always 0. Without this, a failing `cargo build`, `cargo test` or
 # `prove` made `make test` / `make roast` exit 0, i.e. the pre-publication gate
-# CLAUDE.md relies on reported success on a red suite (#8221). `check-pipefail`
+# AGENTS.md relies on reported success on a red suite (#8221). `check-pipefail`
 # below is the guard that this stays true; it is a prerequisite of both targets.
 SHELL := /bin/bash
 .SHELLFLAGS := -o pipefail -c

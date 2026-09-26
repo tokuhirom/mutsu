@@ -37,7 +37,7 @@ nothing. The settled defaults:
 | Shall I continue to the next ticket? | Yes, straight on, up to the five-ticket run cap below. |
 | This one turns out to be deep / already fixed — is that OK? | Yes. Re-triage to `todo:deep` or close it with the evidence; both are legitimate outcomes. |
 
-Ask only when the answer is genuinely the user's — a decision `CLAUDE.md` reserves for them (a
+Ask only when the answer is genuinely the user's — a decision `AGENTS.md` reserves for them (a
 rung-3 native provider, a new or superseding ADR, weakening a CI gate, dropping a whitelisted test),
 or two readings of the issue that give materially different implementations and cannot be settled
 from its own evidence. Even then: park that one issue, finish the rest of the batch, and raise the
@@ -125,7 +125,7 @@ Do not special-case one method or test where the ticket establishes a general me
 ## Working an issue that is ALREADY `todo:deep`
 
 The step above treats `todo:deep` as a *destination* — a label you move a ticket to. But
-`CLAUDE.md`'s task-selection order works the two queues in parallel, so you will also be handed an
+`AGENTS.md`'s task-selection order works the two queues in parallel, so you will also be handed an
 issue that already carries it. Two shapes hide under the one label and they want different first
 moves:
 
@@ -135,7 +135,7 @@ moves:
   **the unit of work is one named remainder, not the issue.**
 - **A single deep problem** has no design yet — one bug or feature too big for a PR. Here the first
   deliverable is usually a `Proposed` ADR, or a narrower issue recording what you learned, **not
-  code**. Shipping an undersized fix to look productive is the failure mode; `CLAUDE.md`'s "Working
+  code**. Shipping an undersized fix to look productive is the failure mode; `AGENTS.md`'s "Working
   on complex features" governs once a design exists.
 
 ### The slice loop for a campaign issue
@@ -237,7 +237,7 @@ Two rules that go with the loop:
   and commit onto the fresh branch. Do not open a second PR from the same branch.
 - **Do not spend that wait re-checking the PR.** CI, `cargo build`, `make test` and `make roast` all
   wake you when they finish; a progress reading from one that has not is worth nothing and costs a
-  tool call plus a reply every time. `CLAUDE.md`'s 30-minute polling floor applies to this run as
+  tool call plus a reply every time. `AGENTS.md`'s 30-minute polling floor applies to this run as
   much as to any other: either do the next ticket's reading, or end the turn and be woken.
 
 If a ticket genuinely needs two branches in flight, stop and ask the user rather than pushing

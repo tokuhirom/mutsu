@@ -36,7 +36,7 @@ It was written "the same pattern as JSON::Fast" — but that pattern was never
 transferable. `JSON::Fast` genuinely cannot run here (the real distribution
 needs ~50 nqp ops mutsu lacks); `Pod::To::Text` is **168 lines of plain Raku
 with no `use` statements and no nqp dependency at all**. It only ever needed
-rung 2 work, and only a little of it. See BATTERIES.md §1 and CLAUDE.md's ban on
+rung 2 work, and only a little of it. See BATTERIES.md §1 and AGENTS.md's ban on
 native provision.
 
 ## What it took to run the real module (rung 2)

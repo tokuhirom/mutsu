@@ -45,8 +45,8 @@ set -u
 #
 # Deliberately NOT `**/*.md`: a README under modules/ or site/ sits next
 # to files the build reads, and the blast radius of guessing wrong there is a
-# silently-untested merge. Top-level *.md (PLAN, README, CLAUDE, ANALYSIS,
-# PERFORMANCE, BATTERIES, AGENTS) is safe and covers the common case. Top-level
+# silently-untested merge. Top-level *.md (PLAN, README, AGENTS, ANALYSIS,
+# PERFORMANCE, BATTERIES) is safe and covers the common case. Top-level
 # *.tsv / *.svg is the same case in a different extension: HISTORY.tsv and
 # HISTORY-pass.svg are the roast-history record and its chart, appended by
 # scripts/roast-history.sh and read by nothing that builds or tests.
@@ -59,7 +59,7 @@ set -u
 # just their `skills/**` subtrees because the same argument covers everything
 # CI ignores.
 # (`.agents/` is where this repo's own skills live -- the table at the top of
-# CLAUDE.md points at `.agents/skills/` -- so leaving it off meant every
+# AGENTS.md points at `.agents/skills/` -- so leaving it off meant every
 # SKILL.md edit paid the full suite. It was an oversight, not a distinction.)
 #
 # `ecosystem/**` is the zef-distribution parity ledger (one JSON record per

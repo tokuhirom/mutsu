@@ -35,7 +35,7 @@ the only HPACK implementation in the ecosystem.
 - **`xx` thunks its left side** — the expression is re-evaluated for every
   repetition, where mutsu evaluated once and repeated the value. The old
   behavior was gated on a whitelist of "known side-effecting calls"
-  (`rand`, `.push`, …), exactly the incomplete static analysis CLAUDE.md
+  (`rand`, `.push`, …), exactly the incomplete static analysis AGENTS.md
   warns about — HPACK's `decode-str($packed, $idx) xx 2` (read a header's
   name, then its value, advancing the rw offset) is a plain user sub call
   the whitelist could never enumerate. Now any non-pure-value lhs

@@ -26,7 +26,7 @@ stretch; work is driven by strategic priorities, not random test selection.
 
 **Do NOT cherry-pick easy tests to game the pass count.** The goal is implementing missing
 features with broad impact — and do not skip a task because it looks hard (see "Working on
-complex features" in `CLAUDE.md`: a test needing several unrelated features gets them all, in
+complex features" in `AGENTS.md`: a test needing several unrelated features gets them all, in
 one PR if that is what it takes).
 
 When you defer a test, record *why* in its `TODO_roast/BLOCKERS.md` row (or the "Investigation
@@ -80,5 +80,5 @@ comment would drop the next statement.
   not.
 - **Never remove a previously passing test from the whitelist** because of a regression; fix the
   regression. When `make roast` shows failures in whitelisted tests, investigate each one — do
-  not dismiss them as "pre-existing" (check "Known flaky tests" in `CLAUDE.md` first, and follow
+  not dismiss them as "pre-existing" (check "Known flaky tests" in `AGENTS.md` first, and follow
   its triage protocol before trusting any "flaky" label).

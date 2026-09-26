@@ -632,7 +632,7 @@ def load_exclude(path: str) -> dict[str, str]:
 
     An entry belongs here only when the distribution was investigated and
     found permanently unfixable without a decision the project has already
-    made and does not intend to revisit (a decision `CLAUDE.md` reserves for
+    made and does not intend to revisit (a decision `AGENTS.md` reserves for
     the user, or a superseding ADR) -- never because it "looks hard", and
     never for `no_baseline` (rakudo failing it too already excludes it from
     the KPI on its own).

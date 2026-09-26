@@ -83,7 +83,7 @@ spawns=3 warm_reuses=3997`.
 
 Write the tmp benchmark file with the Write tool (never heredoc), run with
 `timeout 30`. Numbers quoted in the eventual news entry must come from bench CI,
-not local runs (CLAUDE.md rule) — local A/B is for development decisions only.
+not local runs (AGENTS.md rule) — local A/B is for development decisions only.
 
 ## 3. Facts you must know before touching the code
 
@@ -364,7 +364,7 @@ implementing):** give `Env` a monotonically increasing `write_gen: u64`
 seeding; skip the seeding loop (NOT the rest of the function) when both are
 unchanged AND `state_vars` is unchanged AND `thread_redeclared_vars`-related
 bookkeeping is provably a no-op for the unchanged env. The risk here is exactly
-the CLAUDE.md "incomplete static analysis" trap: a missed invalidation source
+the AGENTS.md "incomplete static analysis" trap: a missed invalidation source
 becomes a *flaky* cross-thread bug, the worst outcome class in this codebase.
 That is why step B is gated on explicit review — do not implement it in the
 same PR as step A, and do not implement it at all without sign-off recorded in
@@ -426,7 +426,7 @@ ordering breaks, stop and record findings in the ticket.
 ## 5. Per-PR protocol
 
 Standard repo rules apply (feature branch, `gh pr create`, auto-merge with
-`--merge`, verify mergeable immediately, background CI watch — see CLAUDE.md).
+`--merge`, verify mergeable immediately, background CI watch — see AGENTS.md).
 Additionally for every slice in this campaign:
 
 1. Quote the before/after bench numbers (median of 5, release) and the

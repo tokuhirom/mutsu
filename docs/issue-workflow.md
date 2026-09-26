@@ -43,7 +43,7 @@ applies to *pull requests* for release-note categorization.
 | --- | --- |
 | `todo:ticket` | Small, self-contained, well-scoped. Pick it up and finish it in a session (a missing method, a parser slice, a narrow compat gap). Low risk, no design needed. |
 | `todo:deep` | Deep and hard. High blast radius, multi-session, needs design or an ADR before touching (dual-store decoupling, GC, large refactors, gnarly semantics). The body must capture enough analysis that a future session can pick it up cold. |
-| `todo:perf` | mutsu is *correct but slow*. Split out because the **process** differs, not the size: it needs profiling rather than a guessed change, its numbers must come from the bench CI (see "Benchmark numbers in documents" in `CLAUDE.md`), and its implementation agent must run **solo** — parallel perf agents produce measurements that drift and never converge. |
+| `todo:perf` | mutsu is *correct but slow*. Split out because the **process** differs, not the size: it needs profiling rather than a guessed change, its numbers must come from the bench CI (see "Benchmark numbers in documents" in `AGENTS.md`), and its implementation agent must run **solo** — parallel perf agents produce measurements that drift and never converge. |
 
 **Which kind a finding gets.** `todo:perf` is decided by the *next step*, not by
 the flavour: a finding is `todo:perf` only if its own next step is
@@ -122,7 +122,7 @@ by a single question: *what would make this actionable?*
 
 | Label | Meaning | What makes it actionable |
 | --- | --- | --- |
-| `icebox:decision` | A design or product call has to be made before any code. The shape of the fix is genuinely open — typically the body says it "wants an ADR paragraph", or names a measurement whose result decides the design. | Somebody deciding: an ADR, an amendment to one, or a user call on a question CLAUDE.md reserves for them. |
+| `icebox:decision` | A design or product call has to be made before any code. The shape of the fix is genuinely open — typically the body says it "wants an ADR paragraph", or names a measurement whose result decides the design. | Somebody deciding: an ADR, an amendment to one, or a user call on a question AGENTS.md reserves for them. |
 | `icebox:blocked` | The design is settled; it waits on *other* work landing — another issue, or a slice of an ADR that already exists. **The body must name the blocker** as an issue number or an ADR slice. A blocker named only as a `todo/...md` path is stale: add a comment giving the issue number. | That work merging. The issue then becomes ordinary queue work. |
 | `icebox:opportunistic` | Real, understood, and measured as not worth a session of its own — a corpus scan found no consumers, or what remains is a non-gating cleanup. Not blocked on anything and not waiting for a decision. | Somebody being in that code for another reason. Land it as a rider on the next change that touches the same plumbing. |
 | `icebox:record` | No actionable next step at all. The issue exists so a settled decision or an expensive measurement is not re-derived, and it states its own reopen conditions. | Only those reopen conditions coming true — and then a re-measurement, never the recorded numbers. |
@@ -305,7 +305,7 @@ to bin yours silently. Before closing anything:
    message.
 3. **Close your PR with the comparison written down** — what superseded it, what
    of yours was already covered, and what was not. The knowledge preservation
-   rule in CLAUDE.md applies to a PR closed as duplicate exactly as it does to
+   rule in AGENTS.md applies to a PR closed as duplicate exactly as it does to
    one closed for conflicts.
 4. **Offer the delta, do not push it unprompted.** A gap the landed work left —
    an unpinned regression, a case it does not cover — is worth a small follow-up,
