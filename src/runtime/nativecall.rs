@@ -1082,7 +1082,7 @@ fn marshal_arg(ps: &ParamSpec, raw: &Value) -> Result<(libffi::middle::Type, Arg
     // how `True` reaches a C `_Bool`/`int` parameter. Without this it went
     // through `to_int`'s catch-all and every `Bool` argument arrived as 0.
     let int = || {
-        crate::runtime::to_int(&crate::runtime::native_types::unbox_bool_to_native_int(
+        crate::runtime::to_int(&crate::runtime::native_types::unbox_enum_to_native_int(
             v.clone(),
         ))
     };

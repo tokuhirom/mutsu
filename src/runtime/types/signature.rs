@@ -144,9 +144,13 @@ pub(crate) fn wrap_native_int_for_binding(
     if !native_types::is_native_int_type(base) {
         return Ok(val);
     }
-    // Bool `does Int`: unbox it to 1/0 before native-int wrapping, so
-    // `sub f(int $x); f(True)` binds 1 like raku.
-    let val = native_types::unbox_bool_to_native_int(val);
+    // A native parameter binds the bare value, never an item: an anonymous
+    // `my $ = 200` argument arrives itemized. (A container cell passes
+    // through untouched below -- an `int $pos is rw` parameter binds it.)
+    // An Int-valued enum (Bool included) unboxes to its integer before
+    // native-int wrapping, so `sub f(int $x); f(True)` binds 1 and
+    // `f(E::B)` binds B's value, like raku (#9533).
+    let val = native_types::unbox_enum_to_native_int(val.into_descalarized());
     // Type objects cannot be unboxed to native types
     if let ValueView::Package(pkg_name) = val.view() {
         return Err(crate::value::RuntimeError::new(format!(

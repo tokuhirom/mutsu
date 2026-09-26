@@ -1853,7 +1853,23 @@ impl Interpreter {
                 }
                 if let Some(constraint) = pd.and_then(|pd| pd.type_constraint.as_ref()) {
                     let resolved_constraint = self.resolved_type_capture_name(constraint);
-                    if self.type_matches_value(&resolved_constraint, &val) {
+                    // A native-int parameter binds the coerced value -- the
+                    // same unbox/wrap the sub binders apply (#9533): an
+                    // `int8` param wraps `200` to `-56`, and an Int-valued
+                    // enum or a Bool binds its integer.
+                    let mut native_err = None;
+                    if crate::runtime::native_types::is_native_int_type(
+                        crate::runtime::types::strip_type_smiley(&resolved_constraint).0,
+                    ) {
+                        match crate::runtime::types::wrap_native_int_for_binding(
+                            &resolved_constraint,
+                            val.clone(),
+                        ) {
+                            Ok(coerced) => val = coerced,
+                            Err(e) => native_err = Some(e),
+                        }
+                    }
+                    if native_err.is_none() && self.type_matches_value(&resolved_constraint, &val) {
                         param_values.push((binding_name, val));
                         arg_idx += 1;
                         continue;
@@ -1887,6 +1903,9 @@ impl Interpreter {
                     }
                     let frame = self.pop_call_frame();
                     self.set_env(frame.saved_env);
+                    if let Some(e) = native_err {
+                        return Err(e);
+                    }
                     if invalid_concreteness {
                         return Err(RuntimeError::parameter_invalid_concreteness(
                             base_type,
