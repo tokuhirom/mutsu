@@ -71,6 +71,8 @@ pub(super) fn step_supported(op: &OpCode) -> bool {
             // Variable writes / declarations
             | OpCode::SetGlobal(_)
             | OpCode::SetGlobalRaw(_)
+            | OpCode::SetCallTemp(_)
+            | OpCode::GetCallTemp(_)
             | OpCode::SetVarDynamic { .. }
             | OpCode::SetVarType { .. }
             | OpCode::SetVarTypeScoped { .. }

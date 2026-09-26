@@ -1060,6 +1060,29 @@ impl Interpreter {
                 }
                 *ip += 1;
             }
+            // Cost: O(1) amortized, one env insert under the pre-interned temp name.
+            OpCode::SetCallTemp(name_idx) => {
+                let val = self.stack.pop().unwrap_or(Value::NIL);
+                self.env_mut().insert_sym(code.const_sym(*name_idx), val);
+                *ip += 1;
+            }
+            // Cost: O(1) amortized, one env lookup under the pre-interned temp name.
+            OpCode::GetCallTemp(name_idx) => {
+                let val = self
+                    .env()
+                    .get_sym(code.const_sym(*name_idx))
+                    .cloned()
+                    .unwrap_or(Value::NIL);
+                let val = if val.is_lazy_thunk_value()
+                    && let ValueView::LazyThunk(thunk_data) = val.view()
+                {
+                    self.force_lazy_thunk(&thunk_data)?
+                } else {
+                    val
+                };
+                self.stack.push(val.into_deref());
+                *ip += 1;
+            }
             // Cost: O(1) + O(a) per store, a = aliases recorded for this variable (the
             // reverse-alias propagation probes each candidate from
             // `sigilless_alias_index`; 0 in a program that never binds one); plus O(e)

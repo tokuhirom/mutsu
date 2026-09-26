@@ -717,10 +717,16 @@ impl Compiler {
             // (corrupting that element in its source hash/array — the
             // `%args{$k} := f(%j{$k})` loop clobbered `%j` at the first key
             // with each later iteration's value) instead of replacing the temp.
+            //
+            // `SetCallTemp`, not `SetGlobalRaw`: both replace rather than write
+            // through, but the latter runs the whole user-variable store
+            // (readonly/type/strict checks, `our`/shared-store mirroring) for a
+            // name no user code can see — ~19k instructions per subscript
+            // argument per call (#9505).
             self.code.emit(OpCode::Dup);
-            self.code.emit(OpCode::SetGlobalRaw(tmp_idx));
+            self.code.emit(OpCode::SetCallTemp(tmp_idx));
             self.code.emit(OpCode::Dup);
-            self.code.emit(OpCode::SetGlobalRaw(orig_idx));
+            self.code.emit(OpCode::SetCallTemp(orig_idx));
             self.pending_index_rw_writebacks
                 .push((arg.clone(), tmp.clone(), orig));
             let name_idx = self.code.add_constant(Value::str(tmp));
@@ -1083,14 +1089,14 @@ impl Compiler {
                 // must replace the temp, not write through a stale cell.
                 let result_tmp = format!("__mutsu_call_result_{}", self.code.constants.len());
                 let result_idx = self.code.add_constant(Value::str(result_tmp));
-                self.code.emit(OpCode::SetGlobalRaw(result_idx));
+                self.code.emit(OpCode::SetCallTemp(result_idx));
 
                 // Compare current temp value with original value.
                 // If they're identical (===), skip writeback.
                 let tmp_idx = self.code.add_constant(Value::str(tmp_name.clone()));
                 let orig_idx = self.code.add_constant(Value::str(orig_name));
-                self.code.emit(OpCode::GetGlobal(tmp_idx));
-                self.code.emit(OpCode::GetGlobal(orig_idx));
+                self.code.emit(OpCode::GetCallTemp(tmp_idx));
+                self.code.emit(OpCode::GetCallTemp(orig_idx));
                 self.code.emit(OpCode::StrictEq);
                 // If equal (True), skip writeback
                 let skip_idx = self.code.emit(OpCode::JumpIfTrue(0));
@@ -1107,7 +1113,7 @@ impl Compiler {
                 // 99problems-21-to-30.t P26). A genuine `is rw` mutation leaves
                 // tmp differing from the (not-yet-updated) slot, so it still
                 // writes back.
-                self.code.emit(OpCode::GetGlobal(tmp_idx));
+                self.code.emit(OpCode::GetCallTemp(tmp_idx));
                 self.compile_expr(&Expr::Index {
                     target: target.clone(),
                     index: index.clone(),
@@ -1131,7 +1137,7 @@ impl Compiler {
                 self.code.emit(OpCode::Pop); // pop True
                 // Restore point
                 self.code.patch_jump(jump_to_restore);
-                self.code.emit(OpCode::GetGlobal(result_idx));
+                self.code.emit(OpCode::GetCallTemp(result_idx));
             }
         }
     }
