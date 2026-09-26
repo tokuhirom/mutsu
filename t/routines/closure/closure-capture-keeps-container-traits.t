@@ -7,7 +7,7 @@ use Test;
 # types, shapes, QuantHash semantics. Each case below runs through an
 # escaping closure (a few also through the statement call form).
 
-plan 35;
+plan 37;
 
 sub run(&c) { c() }
 
@@ -136,4 +136,19 @@ sub run(&c) { c() }
         my $n = "inner";
         is $n, "inner", 'an inner untyped my of the same name takes a Str';
     }
+}
+
+# A `$`-held Associative object keeps dispatching its element stores to
+# ASSIGN-KEY in the owning frame once a closure has captured it.
+{
+    my class Bag2 does Associative {
+        has %!h;
+        method AT-KEY($k) { %!h{$k} }
+        method ASSIGN-KEY($k, $v) { %!h{$k} = "stored:$v" }
+    }
+    my $o = Bag2.new;
+    run { $o<a> = 1 };
+    is $o<a>, 'stored:1', 'a store through the cell goes through ASSIGN-KEY';
+    $o<b> = 2;
+    is $o<b>, 'stored:2', 'the owner store still goes through ASSIGN-KEY';
 }

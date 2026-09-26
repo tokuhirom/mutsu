@@ -877,19 +877,36 @@ impl Interpreter {
         // slot-based handling: its slot holds the same cell, and the store
         // paths that know about slots already write through it.
         let var_name_for_cell = Self::const_str(code, name_idx);
+        let mut owner_slots: Vec<(usize, Value)> = Vec::new();
         let unit_cell = self
             .unit_lexical_container_cell(var_name_for_cell)
-            .or_else(|| self.free_var_capture_cell(code, var_sym));
-        let saved_env_entry = unit_cell.as_ref().map(|cell| {
+            .or_else(|| self.capture_cell_for_element_store(code, var_sym, &mut owner_slots));
+        let seeded_inner = unit_cell.as_ref().map(|cell| cell.lock().unwrap().clone());
+        let saved_env_entry = seeded_inner.as_ref().map(|inner| {
             let saved = self.env().get_sym(var_sym).cloned();
-            let inner = cell.lock().unwrap().clone();
-            self.env_mut().insert(var_name_for_cell.to_string(), inner);
+            self.env_mut()
+                .insert(var_name_for_cell.to_string(), inner.clone());
+            for (slot, _) in &owner_slots {
+                self.locals[*slot] = inner.clone();
+            }
             saved
         });
         let result =
             self.exec_index_assign_expr_named_op_seeded(code, name_idx, is_positional, target_slot);
         if let Some(cell) = unit_cell {
-            if let Some(mutated) = self.env().get_sym(var_sym).cloned() {
+            // The owning frame's slot may have been resynced with the seeded
+            // (or re-built) container by a slot-aware store path: that value
+            // is then the newest, and the slot goes back to holding the cell.
+            let mut slot_mutated = None;
+            for (slot, original) in owner_slots {
+                let current = std::mem::replace(&mut self.locals[slot], original);
+                if let Some(inner) = seeded_inner.as_ref()
+                    && !crate::vm::vm_method_dispatch::cheaply_unchanged(inner, &current)
+                {
+                    slot_mutated = Some(current);
+                }
+            }
+            if let Some(mutated) = slot_mutated.or_else(|| self.env().get_sym(var_sym).cloned()) {
                 *cell.lock().unwrap() = mutated;
             }
             // `saved_env_entry` is `Some(_)` whenever `unit_cell` is (both
@@ -909,22 +926,47 @@ impl Interpreter {
         result
     }
 
-    /// The shared cell behind `var_sym` when this frame reaches the variable
-    /// by name only (no local slot of its own), i.e. a free variable of an
-    /// escaping closure that the owning frame promoted to a `ContainerRef`.
+    /// The shared cell an escaping closure's capture promoted `var_sym` to,
+    /// when an element store should run against the container inside it.
+    ///
+    /// A frame with no slot for the name reaches it as a free variable, so the
+    /// env's cell is the variable. The owning frame qualifies too for a
+    /// `$`-scalar (`my $q = URI::Query.new(...)`) whose every slot holds that
+    /// same cell; those slots are recorded in `owner_slots` (with their
+    /// values) for the caller to restore once the store is done. An `@`/`%`
+    /// owner keeps the slot-aware cell handling its store paths already have
+    /// (the `:=`-bound container lane).
     // Cost: O(s + d), s = the chunk's slots for the name, d = one env probe.
-    fn free_var_capture_cell(
+    fn capture_cell_for_element_store(
         &self,
         code: &CompiledCode,
         var_sym: Symbol,
+        owner_slots: &mut Vec<(usize, Value)>,
     ) -> Option<crate::gc::Gc<crate::value::ContainerCell>> {
-        if !code.local_slots_of(var_sym).is_empty() {
+        let cell = match self.env().get_sym(var_sym).map(Value::view) {
+            Some(ValueView::ContainerRef(cell)) => cell.clone(),
+            _ => return None,
+        };
+        let slots = code.local_slots_of(var_sym);
+        if slots.is_empty() {
+            return Some(cell);
+        }
+        if var_sym.with_str(|n| n.starts_with(['@', '%', '&'])) {
             return None;
         }
-        match self.env().get_sym(var_sym).map(Value::view) {
-            Some(ValueView::ContainerRef(cell)) => Some(cell.clone()),
-            _ => None,
+        for &slot in slots {
+            let slot = slot as usize;
+            match self.locals.get(slot).map(Value::view) {
+                Some(ValueView::ContainerRef(c)) if crate::gc::Gc::ptr_eq(&c, &cell) => {
+                    owner_slots.push((slot, self.locals[slot].clone()));
+                }
+                _ => {
+                    owner_slots.clear();
+                    return None;
+                }
+            }
         }
+        Some(cell)
     }
 
     /// Thin wrapper around [`Self::exec_index_assign_expr_named_op_seeded_inner`]:
