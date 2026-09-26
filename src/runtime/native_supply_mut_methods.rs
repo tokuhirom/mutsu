@@ -273,7 +273,9 @@ impl Interpreter {
                     let close_flag = rx.close_flag();
                     let close_id = register_act_loop_close(close_flag.clone());
                     // Pooled (ADR-0020 slice 3): supply-lifetime act driver.
-                    crate::runtime::worker_pool::submit(move || {
+                    // Held while the declaration the callback captures from
+                    // its own initializer is in flight (`decl_gate`).
+                    crate::runtime::decl_gate::submit_after_declaration(&tap_cb, move || {
                         Self::run_supply_act_loop(
                             &mut thread_interp,
                             &rx,
@@ -751,26 +753,31 @@ impl Interpreter {
                                     .unwrap_or(true);
                                 // Pooled (ADR-0020 slice 3): whenever-source
                                 // reader, lives until the channel closes (or
-                                // the Tap is closed via the flag).
-                                crate::runtime::worker_pool::submit(move || {
-                                    Self::run_supply_act_loop(
-                                        &mut driver,
-                                        &rx,
-                                        &body_cb,
-                                        0.0,
-                                        chain_done_cb,
-                                        None,
-                                        Some((close_id, close_flag)),
-                                        is_lines,
-                                        line_chomp,
-                                        None,
-                                        // `body_cb` is the enclosing `supply { }`
-                                        // block's own `whenever` body: producer
-                                        // code, so a failure in it quits this
-                                        // supply through its emitter (#8185).
-                                        Some(emitter_supplier_id),
-                                    );
-                                });
+                                // the Tap is closed via the flag). Held while
+                                // a declaration the tap callback captures is
+                                // in flight (`decl_gate`).
+                                crate::runtime::decl_gate::submit_after_declaration(
+                                    &tap_cb,
+                                    move || {
+                                        Self::run_supply_act_loop(
+                                            &mut driver,
+                                            &rx,
+                                            &body_cb,
+                                            0.0,
+                                            chain_done_cb,
+                                            None,
+                                            Some((close_id, close_flag)),
+                                            is_lines,
+                                            line_chomp,
+                                            None,
+                                            // `body_cb` is the enclosing `supply { }`
+                                            // block's own `whenever` body: producer
+                                            // code, so a failure in it quits this
+                                            // supply through its emitter (#8185).
+                                            Some(emitter_supplier_id),
+                                        );
+                                    },
+                                );
                             } else if let ValueView::Instance {
                                 attributes: inner_attrs,
                                 ..
@@ -1534,7 +1541,9 @@ impl Interpreter {
                     // for a `.lines` tap is already the *split* per-line
                     // values (`register_supplier_lines_tap` splits before
                     // calling the shim); re-splitting here would be wrong.
-                    crate::runtime::worker_pool::submit(move || {
+                    // Held while a declaration the tap callback captures is
+                    // in flight (`decl_gate`).
+                    crate::runtime::decl_gate::submit_after_declaration(&real_tap, move || {
                         Self::run_supply_act_loop(
                             &mut thread_interp,
                             &rx,

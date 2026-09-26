@@ -748,6 +748,15 @@ impl Interpreter {
         {
             self.reseat_binding_cell(code, idx as usize, cell);
         }
+        // A self-captured declaration's store: a background consumer of a
+        // closure its initializer created was held until now (#9590).
+        if is_vardecl
+            && !code.self_capture_decl_locals.is_empty()
+            && let Some(sym) = code.locals_sym.get(idx as usize)
+            && code.self_capture_decl_locals.contains(sym)
+        {
+            crate::runtime::decl_gate::declared(*sym);
+        }
         // The store that ends a declaration's in-flight window: from here the
         // slot holds the new binding, so a spawn may unmask the name again (see
         // `thread_decl_in_flight`). Only ever non-empty in threaded programs.
