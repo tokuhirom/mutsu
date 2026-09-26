@@ -940,6 +940,7 @@ impl Interpreter {
             in_smartmatch_rhs: false,
             transliterate_in_smartmatch: false,
             substitution_in_smartmatch: false,
+            regex_topic_pinned: 0,
             last_topic_value: None,
             topic_save_stack: Vec::new(),
             topic_source_save_stack: Vec::new(),

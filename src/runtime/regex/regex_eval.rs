@@ -149,7 +149,13 @@ impl Interpreter {
         }
         // Set $_ to the match target string. After `make_regex_eval_env`, which
         // installs the `:my`/`:let` lexicals — the topic must win over them.
-        env.insert("_".to_string(), Value::str(target.to_string()));
+        // A regex that captured its defining scope's `$_` keeps that one
+        // instead (`install_regex_closure_scope` pinned it, #9610).
+        if self.regex_topic_pinned == 0 {
+            env.insert("_".to_string(), Value::str(target.to_string()));
+        } else if let Some(topic) = self.env.get("_") {
+            env.insert("_".to_string(), topic.clone());
+        }
         let stmts = if let Some(body) = parsed_body {
             std::sync::Arc::clone(body)
         } else {

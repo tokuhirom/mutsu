@@ -4008,6 +4008,10 @@ pub struct Interpreter {
     pub(crate) in_smartmatch_rhs: bool,
     pub(crate) transliterate_in_smartmatch: bool,
     pub(crate) substitution_in_smartmatch: bool,
+    /// How many regexes with a captured `$_` are being matched right now
+    /// (`install_regex_closure_scope`). While non-zero, `$_` inside the regex
+    /// is that captured topic, not the match subject.
+    pub(crate) regex_topic_pinned: u32,
     pub(crate) last_topic_value: Option<Value>,
     pub(crate) topic_save_stack: Vec<Value>,
     /// Saved `$_` + `topic_source_var` for a pointy-topic scope (`if COND -> $_`,

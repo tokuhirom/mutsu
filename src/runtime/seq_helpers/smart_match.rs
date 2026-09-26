@@ -13,6 +13,10 @@ pub(crate) struct RegexClosureBinding {
     name: String,
     shadowed: Option<Value>,
     installed: Value,
+    /// This binding is the regex's captured `$_` (see
+    /// [`crate::value::RegexClosure::topic`]), counted in
+    /// `Interpreter::regex_topic_pinned` while it is installed.
+    pins_topic: bool,
 }
 
 impl Interpreter {
@@ -137,8 +141,32 @@ impl Interpreter {
         &mut self,
         regex: &Value,
     ) -> Option<Vec<RegexClosureBinding>> {
-        let scope = regex.regex_closure_scope()?;
-        Some(self.install_env_scope(&scope))
+        let scope = regex.regex_closure_scope();
+        let topic = regex.regex_captured_topic();
+        if scope.is_none() && topic.is_none() {
+            return None;
+        }
+        let mut saved = scope
+            .map(|scope| self.install_env_scope(&scope))
+            .unwrap_or_default();
+        // An escaping literal's `$_` is the `$_` of the scope it was written
+        // in, not the subject it is matched against: `<ab cd>.map({ rx{ <$_> }
+        // })` builds one regex per word (#9610). Install it like any other
+        // captured lexical, and pin it so the match-time sites that would set
+        // `$_` to the subject leave it alone (`regex_topic_pinned`).
+        if let Some(topic) = topic {
+            crate::runtime::regex::regex_ltm_memo::note_env_scope_change();
+            let topic = topic.deref_container();
+            saved.push(RegexClosureBinding {
+                name: "_".to_string(),
+                shadowed: self.env.get("_").cloned(),
+                installed: topic.clone(),
+                pins_topic: true,
+            });
+            self.env.insert("_".to_string(), topic);
+            self.regex_topic_pinned += 1;
+        }
+        Some(saved)
     }
 
     /// The bare mechanism [`Self::install_regex_closure_scope`] wraps: splice
@@ -155,6 +183,7 @@ impl Interpreter {
                 name: k.clone(),
                 shadowed: self.env.get(k.as_str()).cloned(),
                 installed: v.clone(),
+                pins_topic: false,
             })
             .collect();
         for (k, v) in scope.iter() {
@@ -175,6 +204,9 @@ impl Interpreter {
         let Some(saved) = saved else { return };
         crate::runtime::regex::regex_ltm_memo::note_env_scope_change();
         for b in saved {
+            if b.pins_topic {
+                self.regex_topic_pinned = self.regex_topic_pinned.saturating_sub(1);
+            }
             let rebound = self
                 .env
                 .get(b.name.as_str())
@@ -1034,7 +1066,13 @@ impl Interpreter {
                 // match cost more than running the matcher did (#8269).
                 let topic = crate::symbol::wk::topic();
                 let saved_topic = self.env.get_sym(topic).cloned();
-                self.env.insert_sym(topic, text_val.clone());
+                // A regex that captured its defining scope's `$_` keeps it
+                // (installed by `install_regex_closure_scope`).
+                let subject_topic = right
+                    .regex_captured_topic()
+                    .map(|t| t.deref_container())
+                    .unwrap_or_else(|| text_val.clone());
+                self.env.insert_sym(topic, subject_topic);
                 let match_result = self.regex_match_with_captures_value(right, text);
                 if let Some(v) = &saved_topic {
                     self.env.insert_sym(topic, v.clone());
