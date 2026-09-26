@@ -725,6 +725,26 @@ pub(crate) enum WhenMatcherKind {
     Computed,
 }
 
+/// How [`OpCode::SetVarDynamic`] prepares a declaration's binding before its
+/// initializer runs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum DeclReset {
+    /// Leave the binding alone: `state`, `our`, constants, and `@`/`%`
+    /// declarations preserve their existing binding when an initializer fails.
+    Keep,
+    /// Seed a fresh `Any` only when the name has no binding yet, so closures
+    /// created by the initializer can capture it. A loop body's steady state
+    /// keeps the previous iteration's value until the initializer's store
+    /// replaces it -- chosen by the compiler only where no code in the
+    /// declaring block can run after a failed initializer (no CATCH, CONTROL
+    /// or phaser there), so that value is never observable (#9537).
+    SeedIfUnbound,
+    /// As `SeedIfUnbound`, and also reset a binding the previous iteration of
+    /// the enclosing loop left behind, so a failed initializer leaves `Any`
+    /// for a CATCH/phaser (or a `try` expression) to observe.
+    Fresh,
+}
+
 /// Bytecode operations for the VM.
 #[derive(Debug, Clone)]
 pub(crate) enum OpCode {
@@ -4139,10 +4159,8 @@ pub(crate) enum OpCode {
         /// failed initializer cannot leave the previous loop iteration's
         /// value visible through the fresh declaration.
         local_slot: Option<u32>,
-        /// Whether this is an ordinary `my` binding that must be reset before
-        /// its initializer. `state`, `our`, and constants preserve their
-        /// existing binding when an initializer fails.
-        reset_binding: bool,
+        /// How the binding is prepared before its initializer runs.
+        reset: DeclReset,
     },
     /// Register a variable declared `is export`, after its value has been
     /// stored. Stack: `[] → []`. `name_idx` is the constant-pool index of the

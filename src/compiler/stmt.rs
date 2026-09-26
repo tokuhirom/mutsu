@@ -1447,15 +1447,21 @@ impl Compiler {
                 }
                 let is_dynamic = *is_dynamic || self.var_is_dynamic(name);
                 let name_idx = self.code.add_constant(Value::str(name.clone()));
+                let reset = if !*is_state
+                    && !*is_our
+                    && !is_constant_decl
+                    && !name.starts_with('@')
+                    && !name.starts_with('%')
+                {
+                    DeclReset::Fresh
+                } else {
+                    DeclReset::Keep
+                };
                 let set_var_dynamic_idx = self.code.emit(OpCode::SetVarDynamic {
                     name_idx,
                     dynamic: is_dynamic,
                     local_slot: None,
-                    reset_binding: !*is_state
-                        && !*is_our
-                        && !is_constant_decl
-                        && !name.starts_with('@')
-                        && !name.starts_with('%'),
+                    reset,
                 });
                 let has_default_trait = custom_traits.iter().any(|(n, _)| n == "default");
                 let has_explicit_initializer =
@@ -2532,7 +2538,7 @@ impl Compiler {
                             ArgSupply::Condition,
                         );
                     }
-                    self.compile_scope_restored_loop_body(&loop_body);
+                    self.compile_scope_restored_loop_body(&loop_body, body);
                 }
                 self.code.patch_loop_end(loop_idx);
                 for s in &post_stmts {
@@ -2665,7 +2671,7 @@ impl Compiler {
                 // Compile body. A sole `{ ... }` here is a nested bare block
                 // (C-style `loop` has no statement-modifier form), so its
                 // `state` restarts per iteration — no reset suppression.
-                self.compile_scope_restored_loop_body(&loop_body);
+                self.compile_scope_restored_loop_body(&loop_body, body);
                 self.code.patch_cstyle_step_start(loop_idx);
                 // Compile step (if any)
                 if let Some(step_expr) = step {
@@ -3279,7 +3285,7 @@ impl Compiler {
                 // statements directly into `body`, so a sole `{ ... }` here is
                 // a NESTED bare block that re-clones per iteration — its
                 // `state` restarts (raku: 1 1 1), no reset suppression.
-                self.compile_scope_restored_loop_body(&loop_body);
+                self.compile_scope_restored_loop_body(&loop_body, body);
                 self.code.patch_repeat_cond_end(loop_idx);
                 // Compile condition (or push True if none)
                 if let Some(cond_expr) = cond {

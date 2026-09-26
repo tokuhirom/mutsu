@@ -3141,7 +3141,7 @@ impl Interpreter {
         name_idx: u32,
         dynamic: bool,
         local_slot: Option<u32>,
-        reset_binding: bool,
+        reset: crate::opcode::DeclReset,
     ) {
         let name = Self::const_str(code, name_idx);
         // The env is Symbol-keyed and this op runs on *every* `my` declaration
@@ -3314,18 +3314,22 @@ impl Interpreter {
         // `&name = Any` before the RHS runs makes `EVAL(q[sub name() { ... }])`
         // look like a routine redeclaration instead of producing a callable to
         // bind into `my &name = ...`.
-        if reset_binding && !name.starts_with('&') {
+        if reset != crate::opcode::DeclReset::Keep && !name.starts_with('&') {
             let had_binding = self.env().contains_key_sym(name_sym);
             // The first execution of a body-local declaration must leave an
             // outer same-named binding visible while the initializer runs.
             // Once this declaration has run in a loop body, however, its
             // binding is reused by the next iteration and must be reset before
             // a failing initializer can leave the prior iteration's value in
-            // place.
-            let reset_for_reused_loop_binding = self
-                .loop_local_vars
-                .last()
-                .is_some_and(|set| set.contains(&name_sym));
+            // place -- unless the compiler proved nothing can observe that
+            // (`DeclReset::SeedIfUnbound`), which spares a hot loop body an env
+            // write per declaration per iteration (#9537).
+            let reset_for_reused_loop_binding = reset == crate::opcode::DeclReset::Fresh
+                && had_binding
+                && self
+                    .loop_local_vars
+                    .last()
+                    .is_some_and(|set| set.contains(&name_sym));
             let default = if name.starts_with('@') {
                 Value::real_array(Vec::new())
             } else if name.starts_with('%') {

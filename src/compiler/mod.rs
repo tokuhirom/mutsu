@@ -2,7 +2,9 @@ use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use crate::ast::{ArgSupply, AssignOp, CallArg, Expr, PhaserKind, Stmt, make_anon_sub};
-use crate::opcode::{CompiledCode, CompiledFns, CompiledFunction, OpCode, WhenMatcherKind};
+use crate::opcode::{
+    CompiledCode, CompiledFns, CompiledFunction, DeclReset, OpCode, WhenMatcherKind,
+};
 use crate::symbol::Symbol;
 use crate::token_kind::TokenKind;
 use crate::value::Value;
@@ -1111,6 +1113,7 @@ mod control_block_scope;
 mod control_for;
 mod control_if;
 mod decl_plan;
+mod decl_reset;
 mod expr;
 mod expr_binary;
 mod expr_block;
@@ -1742,6 +1745,7 @@ pub(super) enum PhaserBlockResult {
 
 impl Compiler {
     pub(crate) fn new() -> Self {
+        decl_reset::note_compiler_created();
         Self {
             code: CompiledCode::new(),
             local_map: HashMap::new(),

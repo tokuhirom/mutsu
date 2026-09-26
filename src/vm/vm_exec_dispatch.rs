@@ -6292,15 +6292,9 @@ impl Interpreter {
                 name_idx,
                 dynamic,
                 local_slot,
-                reset_binding,
+                reset,
             } => {
-                self.exec_set_var_dynamic_op(
-                    code,
-                    *name_idx,
-                    *dynamic,
-                    *local_slot,
-                    *reset_binding,
-                );
+                self.exec_set_var_dynamic_op(code, *name_idx, *dynamic, *local_slot, *reset);
                 *ip += 1;
             }
             // Cost: O(t), t = export tags.
