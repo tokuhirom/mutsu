@@ -294,7 +294,7 @@ fn encode_word_result(ret: CType, v: &Value) -> u64 {
             crate::runtime::nativecall::value_c_address(v) as u64
         }
         _ => {
-            let unboxed = crate::runtime::native_types::unbox_bool_to_native_int(v.clone());
+            let unboxed = crate::runtime::native_types::unbox_enum_to_native_int(v.clone());
             crate::runtime::to_int(&unboxed) as u64
         }
     }

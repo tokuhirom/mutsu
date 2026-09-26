@@ -183,17 +183,11 @@ impl Interpreter {
                 "Set" => self.dispatch_to_set_with_what(target.clone(), "Set"),
                 "SetHash" => self
                     .dispatch_to_set_with_what(target.clone(), "SetHash")
-                    .map(|mut r| {
-                        r.with_set_mut(|_, is_mut| *is_mut = true);
-                        r
-                    }),
+                    .map(|r| r.quanthash_with_mutability(true)),
                 "Bag" => self.dispatch_to_bag_with_what(target.clone(), "Bag"),
                 "BagHash" => self
                     .dispatch_to_bag_with_what(target.clone(), "BagHash")
-                    .map(|mut r| {
-                        r.with_bag_mut(|_, is_mut| *is_mut = true);
-                        r
-                    }),
+                    .map(|r| r.quanthash_with_mutability(true)),
                 "Mix" => self.dispatch_to_mix_with_what(target.clone(), "Mix"),
                 _ => crate::builtins::quanthash_coerce::to_mixhash(target.clone()),
             };

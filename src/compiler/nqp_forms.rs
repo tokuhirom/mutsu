@@ -45,6 +45,22 @@ pub(crate) fn nqp_const_value(name: &str) -> Option<i64> {
         "STAT_FILESIZE" => 1,
         "STAT_ISDIR" => 2,
         "STAT_ISREG" => 3,
+        "STAT_ISDEV" => 4,
+        "STAT_CREATETIME" => 5,
+        "STAT_ACCESSTIME" => 6,
+        "STAT_MODIFYTIME" => 7,
+        "STAT_CHANGETIME" => 8,
+        "STAT_BACKUPTIME" => 9,
+        "STAT_UID" => 10,
+        "STAT_GID" => 11,
+        "STAT_ISLNK" => 12,
+        "STAT_PLATFORM_DEV" => -1,
+        "STAT_PLATFORM_INODE" => -2,
+        "STAT_PLATFORM_MODE" => -3,
+        "STAT_PLATFORM_NLINKS" => -4,
+        "STAT_PLATFORM_DEVTYPE" => -5,
+        "STAT_PLATFORM_BLOCKSIZE" => -6,
+        "STAT_PLATFORM_BLOCKS" => -7,
         // Field indices of the array `nqp::getrusage` fills (MoarVM's
         // `MVM_RUSAGE_*`, the order `builtins::process_rusage` produces).
         "RUSAGE_UTIME_SEC" => 0,
@@ -355,6 +371,9 @@ impl Compiler {
         let Some(id) = crate::runtime::nqp_op_ids::nqp_op_id(op) else {
             return false;
         };
+        if self.try_compile_nqp_attr_op(op, args) || self.try_compile_nqp_create(op, args) {
+            return true;
+        }
         for arg in args {
             self.compile_expr(arg);
         }
@@ -363,5 +382,83 @@ impl Compiler {
             arity: args.len() as u8,
         });
         true
+    }
+
+    /// An attribute op whose name operand is a string literal compiles to
+    /// [`OpCode::NqpAttrC`], carrying the name resolved (ADR-0121 D3). The
+    /// literal itself is not compiled: evaluating it has no effect to keep.
+    /// The object and class operands still compile in source order.
+    ///
+    /// A class operand that compiled to a lone `GetBareWord` is folded into
+    /// the site as a [`ClassOperandSite`](crate::trir::class_operand::ClassOperandSite),
+    /// which remembers its resolution for one registry write generation, as
+    /// TRIR's `ClassOperand` does: the attribute ops ignore the operand's
+    /// value, so only its effect (resolving at all) is owed.
+    fn try_compile_nqp_attr_op(&mut self, op: &str, args: &[Expr]) -> bool {
+        let Some(Expr::Literal(lit)) = args.get(2) else {
+            return false;
+        };
+        let crate::value::ValueView::Str(name) = lit.view() else {
+            return false;
+        };
+        let Some(site) = crate::runtime::nqp_attr::NqpAttrSite::of_op(op, args.len(), &name) else {
+            return false;
+        };
+        self.compile_expr(&args[0]);
+        let before = self.code.ops.len();
+        self.compile_expr(&args[1]);
+        let class = self
+            .take_lone_bareword(before)
+            .map(crate::trir::class_operand::ClassOperandSite::new);
+        if let Some(val) = args.get(3) {
+            self.compile_expr(val);
+        }
+        self.code.emit(OpCode::NqpAttrC(Box::new(
+            crate::runtime::nqp_attr::NqpAttrCSite { site, class },
+        )));
+        true
+    }
+
+    /// `nqp::create(Bareword)` compiles to [`OpCode::NqpCreateC`]: the
+    /// bareword is resolved by the site, which remembers a type object named
+    /// by its own spelling for one registry write generation, as TRIR's
+    /// `ClassOperand` term does. Any other operand compiles to the generic
+    /// [`OpCode::NqpOp`].
+    fn try_compile_nqp_create(&mut self, op: &str, args: &[Expr]) -> bool {
+        if op != "create" || args.len() != 1 {
+            return false;
+        }
+        let before = self.code.ops.len();
+        self.compile_expr(&args[0]);
+        match self.take_lone_bareword(before) {
+            Some(sym) => self.code.emit(OpCode::NqpCreateC(Box::new(
+                crate::trir::class_operand::ClassOperandSite::term(sym),
+            ))),
+            None => self.code.emit(OpCode::NqpOp {
+                id: crate::runtime::nqp_op_ids::nqp_op_id(op).expect("create is an nqp op"),
+                arity: 1,
+            }),
+        };
+        true
+    }
+
+    /// When the ops emitted since `before` are exactly one `GetBareWord` of a
+    /// name (not a no-paren `nqp::` term, which is an op call), pop it and
+    /// answer the name.
+    fn take_lone_bareword(&mut self, before: usize) -> Option<crate::symbol::Symbol> {
+        let sym = match self.code.ops.get(before..) {
+            Some([OpCode::GetBareWord(idx)]) => match self.code.constants[*idx as usize].view() {
+                crate::value::ValueView::Str(s) if !s.starts_with("nqp::") => {
+                    crate::symbol::Symbol::intern(&s)
+                }
+                _ => return None,
+            },
+            _ => return None,
+        };
+        // `op_lines` runs parallel to `ops`. Nothing jumps to the popped op:
+        // it was the whole of the operand, emitted just now.
+        self.code.ops.pop();
+        self.code.op_lines.pop();
+        Some(sym)
     }
 }

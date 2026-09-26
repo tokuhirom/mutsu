@@ -333,10 +333,13 @@ impl Interpreter {
                 right
             }
         } else if was_substitution {
-            // s/// returns Match on success, False on failure.
-            // For !~~, negate the boolean result.
+            // s/// returns Match on success; a failed non-list s/// is `Nil`,
+            // which `~~` reports as `False` (Rakudo). For !~~, negate the
+            // boolean result.
             if negate {
                 Value::truth(!right.truthy())
+            } else if right.is_nil() {
+                Value::FALSE
             } else {
                 right
             }

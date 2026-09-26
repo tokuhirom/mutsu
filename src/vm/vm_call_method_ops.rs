@@ -2249,6 +2249,30 @@ impl Interpreter {
                     self.stack.push(result);
                     return Ok(());
                 }
+                // `SetHash.set`/`.unset` and the QuantHash `.grab`/`.grabpairs`
+                // on an invocant with no variable name (`$obj.q.grab`,
+                // `@sets[0].unset('x')`): the mutation goes through the shared
+                // node (`builtins::quanthash_mutators`), so the holder sees it.
+                if let Some(receiver) =
+                    crate::builtins::quanthash_mutators::quanthash_mutator_receiver(&target, method)
+                {
+                    let receiver = receiver.clone();
+                    let args = crate::builtins::quanthash_mutators::resolve_callable_count(
+                        &receiver,
+                        method,
+                        args.clone(),
+                        |f, a| self.vm_call_sub_value(f, a, false),
+                    )?;
+                    let result = crate::builtins::quanthash_mutators::apply_quanthash_mutator(
+                        &receiver, method, &args,
+                    )?;
+                    crate::vm::vm_stats::record_dispatch_entry_intercept(
+                        "callmethod",
+                        "quanthash-mutator",
+                    );
+                    self.stack.push(result);
+                    return Ok(());
+                }
                 // Fast path for shift/pop on array values in the non-mutating
                 // (CallMethod) path. Handles value invocants with no simple
                 // variable name to write back through: literals ([1,2,3].shift),

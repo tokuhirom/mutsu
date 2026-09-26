@@ -1205,30 +1205,23 @@ impl Interpreter {
                         )
                         .filter(|defs| defs.iter().any(|d| d.is_multi))
                 })();
-                // A plain block -- or a `sub` -- passed to `^add_method`
-                // receives the invocant as its first positional argument.
-                // Unlike a `method` literal, that parameter is visible in the
-                // code's signature (`A.^add_method('m', -> $x {...})` and
-                // `sub ($x) {...}` have `($x)`, not an implicit `self` plus
-                // `$x`). PDF::COS::Tie installs every entry accessor as
-                // `sub (\obj) is rw {...}` (#9479). Turn that first block parameter
-                // into the same body-local alias as a named method invocant:
-                // the method binder owns the receiver, while `$x` remains
-                // available to the recompiled body. Keeping it in
-                // `param_defs` and marking it as an invocant would make the
-                // binder consume it without installing the block's `$x`
-                // binding. Ordinary method literals retain the existing
-                // implicit-invocant filtering.
+                // A plain block -- or a `sub`, anonymous or DECLARED
+                // (`&named-sub`) -- passed to `^add_method` receives the
+                // invocant as its first positional argument. Unlike a `method`
+                // literal, that parameter is visible in the code's signature
+                // (`A.^add_method('m', -> $x {...})` and `sub ($x) {...}` have
+                // `($x)`, not an implicit `self` plus `$x`). PDF::COS::Tie
+                // installs every entry accessor as `sub (\obj) is rw {...}`
+                // (#9479). Mark that parameter as the method's invocant, so the
+                // method binder binds it to the receiver by name at dispatch
+                // (`call_compiled_method`'s invocant arm), exactly like
+                // `method ($inv: ...)`. The code itself is not rewritten, so
+                // this works the same for a declared routine, whose bytecode
+                // lives in `compiled_routine` with no AST, and for a parameter
+                // literally named `$self` (#9549).
                 // A method -- a `method`/`submethod` literal, a `^find_method`
                 // carrier, or any code declaring an invocant parameter -- keeps
-                // the implicit-invocant handling; every other code object takes
-                // the invocant positionally. The positional form works by
-                // prepending an alias to the code's AST body (below), so a
-                // DECLARED routine (`&named-sub`, whose bytecode lives in
-                // `compiled_routine` with no AST) cannot take it yet.
-                // TODO: bind a declared routine's first parameter to the
-                // invocant at dispatch instead of rewriting the body, so
-                // `^add_method('m', &named-sub)` works too (#9549).
+                // the implicit-invocant handling.
                 let is_method_code = matches!(
                     sub_data
                         .env
@@ -1237,20 +1230,31 @@ impl Interpreter {
                     Some(ValueView::Str(kind)) if matches!(kind.as_str(), "Method" | "Submethod")
                 ) || sub_data.env.get("__mutsu_lookup_class").is_some()
                     || sub_data.param_defs.iter().any(|pd| pd.is_invocant);
-                let is_plain_block = !is_method_code && sub_data.compiled_routine.is_none();
-                let block_invocant: Option<String> = is_plain_block
-                    .then(|| {
-                        sub_data
-                            .param_defs
-                            .first()
-                            .map(|pd| pd.name.clone())
-                            .or_else(|| sub_data.params.first().cloned())
-                    })
-                    .flatten()
-                    .map(|name| name.trim_start_matches(['$', '\\']).to_string())
-                    .filter(|name| !name.is_empty());
-                let mut filtered_param_defs: Vec<ParamDef> = if is_plain_block {
-                    sub_data.param_defs.iter().cloned().collect()
+                let takes_positional_invocant = !is_method_code;
+                let filtered_param_defs: Vec<ParamDef> = if takes_positional_invocant {
+                    let mut defs: Vec<ParamDef> = sub_data.param_defs.to_vec();
+                    // Code with a names-only signature (a one-parameter pointy
+                    // block `-> $r {...}`, a builtin routine like `&[cmp]`)
+                    // carries its parameter NAMES (`params`) but no `ParamDef`s.
+                    // Give the first one a def so there is something to mark as
+                    // the invocant; the binder pairs `params[i]` with
+                    // `param_defs[i]`, so the rest keep binding by name alone.
+                    if defs.is_empty()
+                        && let Some(name) = sub_data.params.first()
+                    {
+                        defs.push(super::methods_format::positional_param(&format!(
+                            "${}",
+                            name.trim_start_matches('$')
+                        )));
+                    }
+                    if let Some(first) = defs.first_mut()
+                        && !first.named
+                        && !first.slurpy
+                        && !first.double_slurpy
+                    {
+                        first.is_invocant = true;
+                    }
+                    defs
                 } else {
                     sub_data
                         .param_defs
@@ -1259,15 +1263,12 @@ impl Interpreter {
                         .cloned()
                         .collect()
                 };
-                if is_plain_block && block_invocant.is_some() && !filtered_param_defs.is_empty() {
-                    filtered_param_defs.remove(0);
-                }
                 // A NAMED invocant other than `self` (`anon method (Mu \SELF:
                 // |) {...}` — OO::Monitors' POPULATE hook) is dropped from the
                 // params like any invocant, but the body refers to it by name,
                 // so prepend a `SELF := self` binding and let the dispatch
                 // recompile the adjusted body on demand.
-                let named_invocant: Option<String> = (!is_plain_block)
+                let named_invocant: Option<String> = (!takes_positional_invocant)
                     .then(|| {
                         sub_data
                             .param_defs
@@ -1277,8 +1278,7 @@ impl Interpreter {
                             .filter(|n| !n.is_empty() && n != "self")
                     })
                     .flatten();
-                let body_invocant = block_invocant.clone().or(named_invocant);
-                let (method_body, method_compiled) = match body_invocant {
+                let (method_body, method_compiled) = match named_invocant {
                     Some(inv_name) => {
                         let mut body = vec![
                             crate::ast::Stmt::VarDecl {
@@ -1329,12 +1329,8 @@ impl Interpreter {
                     .filter(|pd| pd.is_invocant)
                     .map(|pd| pd.name.as_str())
                     .collect();
-                let filtered_params: Vec<String> = if is_plain_block {
-                    if block_invocant.is_some() {
-                        sub_data.params.iter().skip(1).cloned().collect()
-                    } else {
-                        sub_data.params.to_vec()
-                    }
+                let filtered_params: Vec<String> = if takes_positional_invocant {
+                    sub_data.params.to_vec()
                 } else {
                     sub_data
                         .params

@@ -340,6 +340,11 @@ to unify onto.
      (`token TOP { <v> 'd' }` over `v:sym<long> { 'abcd' }` / `v:sym<short> { 'abc' }`
      on `"abcd"` answers no-match in `raku`), so "rank, then commit to the first
      candidate that matches" is the correct shape, not a compromise.
+     **Amended by [ADR-0125](0125-ltm-declarative-prefix-nfa.md) §3 (#9643) for
+     measurement only:** under `LTM_DECLARATIVE_MODE` a proto call is not ranked and has
+     no `take(1)`; it yields the union of every candidate's every end, as Rakudo's NFA
+     inlines a proto. The real match above (rank, commit to the first candidate that
+     matches, its greedy end) is unchanged.
    - **Three corrections Slice 4 forced, each validated against `raku` first:**
      (a) `<sym>` is a *named capture* of the literal in Rakudo, not a bare literal
      splice. `instantiate_token_pattern` spliced the escaped text directly, which both

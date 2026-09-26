@@ -5,7 +5,7 @@ use Test;
 # otherwise -- not with the operator's identity. Like rakudo, the hash hyper
 # is quiet: the `Any` operand prints no "uninitialized value" warning.
 
-plan 11;
+plan 12;
 
 my $warned = 0;
 CONTROL { when CX::Warn { $warned++; .resume } }
@@ -31,3 +31,8 @@ is $warned, 0, 'no warnings from the hash hyper';
 
 sub infix:<warner>($, $) { warn 'inside'; 1 }
 is-deeply { a => 1 } »warner« { a => 2 }, { a => 1 }, 'a user op in a hash hyper runs';
+
+# GH-9607: the hash hyper suppresses warnings the same way "quietly" does
+# (`push_warn_suppression`), so a `warn` a user op raises inside it must not
+# reach the outer CONTROL installed above either.
+is $warned, 0, 'a user op\'s warn inside a hash hyper does not reach an outer CONTROL';

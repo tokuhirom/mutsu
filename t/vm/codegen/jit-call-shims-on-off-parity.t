@@ -23,11 +23,12 @@ sub run-both(Str $code) {
     @out
 }
 
-# `f`/`h` are declared outside the `use fatal` block, so their bodies carry no
-# `ThrowIfFailure` and are JIT candidates; the Failure argument reaches the
-# call opcode's own argument check. (That mutsu applies `use fatal` inside a
-# callee declared outside the fatal scope at all is a separate divergence from
-# Rakudo, where the pragma is lexical -- #9521; this file pins JIT parity only.)
+# `f`/`h`/`k` are declared outside the `use fatal` block, so their bodies
+# carry no `ThrowIfFailure` and are JIT candidates. `use fatal` is lexical in
+# real Raku (and, since #9521, in mutsu too): a callee declared outside the
+# fatal scope never explodes merely because its caller is inside one, so
+# `g`/`C.m`/`C.mm` each run to completion and return their literal string,
+# ignoring the (possibly-Failure) argument -- for both "12" and "abc".
 my $fatal-args = q:to/CODE/;
     sub g($x) { "g-ran" }
     class C { method m($x) { "m-ran" }; method mm($x) { "mm-ran" } }
@@ -48,7 +49,8 @@ my $fatal-args = q:to/CODE/;
     CODE
 my ($off, $on) = run-both($fatal-args);
 is $on, $off, 'use fatal Failure arguments explode identically with the JIT on and off';
-like $off, /died/, 'and the interpreted run does explode them';
+like $off, /^ "g-ran,m-ran,mm-ran,g-ran,m-ran,mm-ran,g-ran,m-ran,mm-ran,g-ran,m-ran,mm-ran,g-ran,m-ran,mm-ran,g-ran,m-ran,mm-ran"/,
+    'and the interpreted run matches Rakudo: a callee declared outside use fatal never explodes merely because its caller is inside it';
 
 # A call-heavy program touching every shared site: named-argument calls,
 # mutating method calls, `return`, `&&`/`||`/`//` jumps and `state` guards.

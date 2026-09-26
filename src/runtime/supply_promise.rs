@@ -876,7 +876,9 @@ impl Interpreter {
     /// materializing `values` in the first place) runs the whenever's QUIT
     /// phasers if any are registered, otherwise its reason is returned as
     /// the second tuple element for the caller to deliver (quit callback or
-    /// hard error). LAST phasers run on normal completion.
+    /// hard error). LAST phasers run on normal completion. A `return` from
+    /// the body is not a quit: it is the `Err`, unwinding to the routine that
+    /// encloses the `whenever`.
     pub(crate) fn drive_whenever_body_over_values(
         &mut self,
         values: Vec<Value>,
@@ -884,7 +886,7 @@ impl Interpreter {
         callback: &Value,
         last_cbs: &[Value],
         quit_cbs: &[Value],
-    ) -> (Vec<Value>, Option<Value>) {
+    ) -> Result<(Vec<Value>, Option<Value>), RuntimeError> {
         // This construct handles `next`/`last`/`redo`, so a loop-control
         // statement raised anywhere in its dynamic extent has somewhere to go
         // (`runtime/loop_handler_depth.rs`). Without the guard the raise site
@@ -905,7 +907,10 @@ impl Interpreter {
             // `runtime::react_done_handler_depth`.
             let _react_done_handler =
                 crate::runtime::react_done_handler_depth::ReactDoneHandlerGuard::new();
-            let res = this.call_sub_value(cb, args, true);
+            // The react loop's `whenever` dispatch: the body is a block, so a
+            // `return` in it unwinds to the enclosing routine instead of being
+            // caught at the callback boundary.
+            let res = this.call_react_callback(&cb, args);
             drop(_react_done_handler);
             let mut emitted = this.supply_emit_buffer.pop().unwrap_or_default();
             captured.append(&mut emitted);
@@ -941,6 +946,11 @@ impl Interpreter {
                     if err.is_react_done() || err.is_last() || err.is_supply_body_done() {
                         break 'replay;
                     }
+                    // A `return` leaves the routine enclosing the `whenever`
+                    // (which tapped this supply), not the supply: unwind.
+                    if err.is_return() {
+                        return Err(err);
+                    }
                     if err.is_next() || err.is_redo() {
                         continue;
                     }
@@ -952,7 +962,7 @@ impl Interpreter {
 
         if let Some(reason) = quit_reason {
             if quit_cbs.is_empty() {
-                return (captured, Some(reason));
+                return Ok((captured, Some(reason)));
             }
             for q in quit_cbs {
                 let _ = run_capture(self, q.clone(), vec![reason.clone()], &mut captured);
@@ -962,7 +972,7 @@ impl Interpreter {
                 let _ = run_capture(self, l.clone(), Vec::new(), &mut captured);
             }
         }
-        (captured, None)
+        Ok((captured, None))
     }
 
     /// Drive a `whenever` body over an already-materialized list of source

@@ -1153,6 +1153,17 @@ mod trir_call;
 pub(crate) struct Compiler {
     code: CompiledCode,
     local_map: HashMap<String, u32>,
+    /// Whether `use fatal` is textually active at the point currently being
+    /// compiled (#9521) — a compile-time mirror of the runtime `fatal_mode`
+    /// flag `use fatal;`'s own statement sets. `use fatal` is lexical in real
+    /// Raku: a named routine's own body must run under the pragma state of
+    /// ITS OWN declaration site, not whatever a caller's dynamic `fatal_mode`
+    /// happens to be at the call. Set when compiling a `use fatal;` statement,
+    /// saved/restored around a block that owns an import scope (mirroring the
+    /// runtime `PushImportScope`/`PopImportScope` pair), and read into
+    /// `CompiledFunction::captured_fatal_mode` at each sub/method body's own
+    /// compile site.
+    fatal_pragma_active: bool,
     /// ADR-0110 §3.3: routines this compile registered with a TRIR chunk,
     /// keyed by (name, positional arity), so a later call site in the same
     /// compile can resolve the callee without a name. Populated by the single
@@ -1182,6 +1193,12 @@ pub(crate) struct Compiler {
     /// it learns its target name too late to be answered any other way. Empty for a
     /// compilation unit's own compiler. See [`lex_scope::LexScopeChain`].
     enclosing_scopes: Vec<lex_scope::ScopeFrame>,
+    /// The lexical frame a role's parameter list (`role R[&f, $x]`) opens
+    /// around its body, set only while that role's method bodies compile.
+    /// Method bodies compile on a fresh compiler with no enclosing scopes, so
+    /// without this a bare `f()` in `method g { f() }` would not know `&f` is
+    /// a lexical and would dispatch to an outer `sub f` instead.
+    role_param_scope: Option<lex_scope::ScopeFrame>,
     /// Index (within `local_scopes`) of this compilation UNIT's outermost scope —
     /// the scope `UNIT::` names. 0 for a file's own compiler; an `EVAL`'d unit
     /// (`mark_as_eval_unit`) pushes an empty wrapper frame first so that
@@ -1761,10 +1778,12 @@ impl Compiler {
         Self {
             code: CompiledCode::new(),
             local_map: HashMap::new(),
+            fatal_pragma_active: false,
             trir_routines: HashMap::new(),
             // Frame 0 = compilation-unit / routine top level; never popped.
             local_scopes: vec![HashMap::new()],
             enclosing_scopes: Vec::new(),
+            role_param_scope: None,
             unit_root_scope: 0,
             in_lexical_scope: false,
             lexical_dup_routines: HashSet::new(),

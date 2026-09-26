@@ -692,6 +692,15 @@ pub(crate) struct RuntimeHasDeclSpec {
 /// name has no local slot in the creating frame and must be read from `env`.
 pub(crate) const NOT_A_LOCAL: u32 = u32::MAX;
 
+/// Slot marker in [`OpCode::LoadRegexClosure`]'s capture list: a kebab-case
+/// interpolated name (`$current-decimal`) that is not a local of the creating
+/// frame. It is captured only when it resolves through a routine's persisted
+/// outer-scope stores (an escaped `our sub`'s block lexical, a package-block
+/// or compunit file-scope `my`) — never from `env`, whose same-named binding
+/// the match must keep reading live (the prefix-only name scan in
+/// `CompiledCode::regex_interpolated_var_names` exists for that reason).
+pub(crate) const OUTER_STORE_ONLY: u32 = u32::MAX - 1;
+
 /// How a `when` clause's matcher was *written* at the call site.
 ///
 /// A non-matching `when` evaluates to its failed comparison's falsy result
@@ -2389,6 +2398,22 @@ pub(crate) enum OpCode {
         /// Operand count on the stack. `u8` because the widest nqp op takes 5.
         arity: u8,
     },
+    /// `nqp::getattr` / `bindattr` (and their `_i`/`_n`/`_s` forms, and
+    /// `p6bindattrinvres`) whose attribute-name operand is a string literal
+    /// (ADR-0121 D3). The name was interned and twigil-stripped when the site
+    /// was compiled, so no operand of the stack is the name: a read pops the
+    /// class operand and the object, a bind pops the value, the class operand
+    /// and the object. The class operand is evaluated for its effects and
+    /// ignored, as the generic op ignores it; a bareword class operand is not
+    /// on the stack at all but resolved by the site, which remembers it. Otherwise the same work as
+    /// [`OpCode::NqpOp`], which is what every other attribute-op site keeps.
+    NqpAttrC(Box<crate::runtime::nqp_attr::NqpAttrCSite>),
+    /// `nqp::create(Bareword)` (ADR-0121 D3): the class operand compiled to a
+    /// lone `GetBareWord` and is resolved by the site, which remembers a type
+    /// object named by the bareword's own spelling for one registry write
+    /// generation. Nothing is on the stack. Otherwise the same work as
+    /// [`OpCode::NqpOp`], which every other `create` site keeps.
+    NqpCreateC(Box<crate::trir::class_operand::ClassOperandSite>),
     /// Expression-level function call whose literal named args travel
     /// out-of-band: `arity` values on the stack, of which the positions
     /// listed in `CompiledCode::named_arg_specs[spec_idx]` are named-arg
@@ -3474,7 +3499,8 @@ pub(crate) enum OpCode {
     /// topic writes through to its element). `$/` and the capture variables
     /// are set. The result is the `Match`; under `:g`, `:x` or a multi-value
     /// `:nth` it is a `List` of Matches (possibly empty); a non-list form
-    /// that matched nothing pushes `False` (Rakudo: `Nil`; see #9515).
+    /// that matched nothing pushes `Nil`, as in Rakudo (`$x ~~ s///` reports
+    /// that failure as `False`).
     /// Runs `exec_subst_op` → `run_subst`, shared with
     /// [`Self::NonDestructiveSubst`].
     Subst {
@@ -6536,6 +6562,13 @@ pub(crate) struct CompiledCode {
     /// Empty for almost every chunk, so the call handlers' probe is one
     /// `is_empty` test.
     pub(crate) lexical_routines: Vec<FrameLexicalRef>,
+    /// Bare call names (`f(...)`) this chunk compiled as a call on the code
+    /// variable `&f` because a `my &f` binding (or `&f` parameter) in scope
+    /// shadows any routine of that name. A runtime path that compiles this
+    /// chunk's AST again on a fresh compiler (the inline `map`/`grep` path, a
+    /// sequence generator) has no scope chain, so it re-seeds these names to
+    /// reach the same binding instead of the outer routine.
+    pub(crate) amp_shadowed_calls: Vec<Symbol>,
     /// True when this chunk or one of its nested closures has
     /// `lexical_routines`. A closure created from such a chunk registers its
     /// body with the interpreter, so a runtime recompile of that body (the
@@ -7495,6 +7528,7 @@ impl CompiledCode {
             free_var_container_writes: Vec::new(),
             named_sub_captures: Vec::new(),
             lexical_routines: Vec::new(),
+            amp_shadowed_calls: Vec::new(),
             lexical_subtree: false,
             nested_routine_free_reads: Vec::new(),
             needs_cell_named_sub: Vec::new(),
@@ -9035,6 +9069,48 @@ impl CompiledCode {
                     i = j;
                     continue;
                 }
+            }
+            i += 1;
+        }
+        names
+    }
+
+    /// Kebab-case scalar names (`$current-decimal`) a regex pattern
+    /// interpolates, spelled in full: an identifier continues over `-`/`'`
+    /// followed by a letter or `_`, as in Raku's identifier grammar. Only the
+    /// names that actually contain such a joiner are returned — the plain ones
+    /// are [`Self::regex_interpolated_var_names`]'s. Over-approximates like it.
+    // Cost: O(p), p = pattern length.
+    pub(crate) fn regex_kebab_var_names(pattern: &str) -> Vec<String> {
+        let bytes = pattern.as_bytes();
+        let is_word = |b: u8| b.is_ascii_alphanumeric() || b == b'_';
+        let is_start = |b: u8| b.is_ascii_alphabetic() || b == b'_';
+        let mut names = Vec::new();
+        let mut i = 0;
+        while i < bytes.len() {
+            if bytes[i] == b'$' && bytes.get(i + 1).copied().is_some_and(is_start) {
+                let start = i + 1;
+                let mut j = start;
+                let mut joined = false;
+                loop {
+                    while j < bytes.len() && is_word(bytes[j]) {
+                        j += 1;
+                    }
+                    if j + 1 < bytes.len()
+                        && matches!(bytes[j], b'-' | b'\'')
+                        && is_start(bytes[j + 1])
+                    {
+                        joined = true;
+                        j += 1;
+                        continue;
+                    }
+                    break;
+                }
+                if joined {
+                    names.push(pattern[start..j].to_string());
+                }
+                i = j;
+                continue;
             }
             i += 1;
         }
@@ -11799,6 +11875,15 @@ pub(crate) struct CompiledFunction {
     /// returns. A `my sub` nested inside a `{ }` block within the body is not
     /// counted here: `BlockScope` already restores the registry for it.
     pub(crate) declares_inner_routines: bool,
+    /// The interpreter's `fatal_mode` at the moment this routine was
+    /// registered (mirroring `SubData::captured_fatal_mode` for closures).
+    /// `use fatal` is lexically scoped in real Raku: a named sub's own body
+    /// must run under the pragma state of ITS OWN declaration site, not
+    /// whatever the caller's dynamic `fatal_mode` happens to be at the call
+    /// (#9521). Always `false` on a freshly compiled chunk — populated at
+    /// registration time by `adapt_compiled_to_def`, which runs while the
+    /// declaring statement executes and so sees the correct ambient state.
+    pub(crate) captured_fatal_mode: bool,
     /// Pre-computed bind plan for the light named-call path
     /// (`call_compiled_function_light`): per-parameter match keys, locals
     /// slots, and env-mirror gates that the binding loop would otherwise
@@ -12436,6 +12521,7 @@ mod compiled_fns_identity {
             params_fill_frame: false,
             has_inner_subs: false,
             declares_inner_routines: false,
+            captured_fatal_mode: false,
             named_call_plan: None,
             deprecated_info: None,
             trir: None,

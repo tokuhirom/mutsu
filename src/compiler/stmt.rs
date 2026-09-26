@@ -2259,9 +2259,13 @@ impl Compiler {
                     self.code.emit(OpCode::Pop);
                     return;
                 }
+                // `&foo = ...` on a routine name is read-only, but a `my &k`
+                // declared in an enclosing frame is an ordinary Callable
+                // container that a closure may assign through.
                 if name.starts_with('&')
                     && !name.contains("::")
                     && !self.local_map.contains_key(name.as_str())
+                    && !self.enclosing_local_names.contains(name.as_str())
                     && !self.class_body_static_code_vars.contains(name)
                     && !name.starts_with("&!")
                 {
@@ -3944,11 +3948,10 @@ impl Compiler {
                 // cannot tell one declaring scope's `$a` from another's.
                 let free_var_decl_slots = self.bake_sub_decl_free_var_slots(&compiled_routine_keys);
                 // mutsu#9111: a sub declared inside a routine binds its free
-                // variables per activation of the routine.
-                let lexsub_free_aliases = if name_expr.is_none()
-                    && !*multi
-                    && !custom_traits.iter().any(|(t, _)| t == "__our_scoped")
-                {
+                // variables per activation of the routine. That holds for an
+                // `our` sub and a `multi` candidate too: both are one static
+                // code object whose outer is the latest activation.
+                let lexsub_free_aliases = if name_expr.is_none() {
                     let fp = self.code.sub_decl_plan_fingerprint(idx);
                     self.alloc_lexsub_free_aliases(&name_str, fp, &compiled_routine_keys)
                 } else {
@@ -4281,10 +4284,14 @@ impl Compiler {
                         let entries = tags.iter().cloned().map(Value::str).collect::<Vec<Value>>();
                         Some(self.code.add_constant(Value::array(entries)))
                     };
+                    // A `Test::*` module is still an ordinary compunit when one
+                    // is on the search path (`use Test::When <smoke>`), so its
+                    // `sub EXPORT` must see the `use` arguments.
+                    let arg_count = self.compile_use_export_args(arg.as_ref());
                     self.code.emit(OpCode::UseModule {
                         name_idx,
                         tags_idx,
-                        arg_count: 0,
+                        arg_count,
                     });
                 }
             }
@@ -4294,6 +4301,15 @@ impl Compiler {
                 condition,
                 arg,
             } => {
+                // #9521: mirror `use fatal`'s effect at compile time, so a
+                // sub/method compiled from this point on in the same lexical
+                // scope can record that it was declared under it (see
+                // `Compiler::fatal_pragma_active`'s doc comment). Restoring
+                // this on block exit is `compile_block_construct`'s job,
+                // matching the runtime `PushImportScope`/`PopImportScope` pair.
+                if module == "fatal" {
+                    self.fatal_pragma_active = true;
+                }
                 // A module `use`d here may export operators
                 // (`multi infix:<...> is export`). Because mutsu loads modules
                 // at *runtime*, the compiler cannot see those exports while
@@ -4329,16 +4345,6 @@ impl Compiler {
                 } else {
                     Some(self.code.add_constant(Value::array(entries)))
                 };
-                // `use`-arguments (`use Foo "a", "b"` / `use Foo <a b c>`) are
-                // evaluated here and pushed on the stack for the module's
-                // `sub EXPORT`. A `<a b c>` word list flattens into positional
-                // args, matching `sub EXPORT(*@args) { ... }` seeing three items.
-                let arg_exprs: Vec<&Expr> = match arg {
-                    Some(Expr::ArrayLiteral(items)) => items.iter().collect(),
-                    Some(other) => vec![other],
-                    None => vec![],
-                };
-                let arg_count = arg_exprs.len() as u16;
                 let empty_import =
                     tags.is_empty() && arg.as_ref().is_some_and(Expr::is_empty_import_list);
                 // `use Foo:if(EXPR)` (the `if` pragma): load the module only when
@@ -4350,9 +4356,7 @@ impl Compiler {
                     if empty_import {
                         self.code.emit(OpCode::NeedModule(name_idx));
                     } else {
-                        for e in &arg_exprs {
-                            self.compile_expr(e);
-                        }
+                        let arg_count = self.compile_use_export_args(arg.as_ref());
                         self.code.emit(OpCode::UseModule {
                             name_idx,
                             tags_idx,
@@ -4366,9 +4370,7 @@ impl Compiler {
                     // not an argument to the module's EXPORT routine.
                     self.code.emit(OpCode::NeedModule(name_idx));
                 } else {
-                    for e in &arg_exprs {
-                        self.compile_expr(e);
-                    }
+                    let arg_count = self.compile_use_export_args(arg.as_ref());
                     self.code.emit(OpCode::UseModule {
                         name_idx,
                         tags_idx,

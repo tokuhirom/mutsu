@@ -269,14 +269,31 @@ impl Interpreter {
 
     pub(crate) fn push_warn_suppression(&mut self) {
         self.warn_suppression_depth += 1;
+        self.warn_suppression_boundaries
+            .push(self.control_handlers.len());
     }
 
     pub(crate) fn pop_warn_suppression(&mut self) {
         self.warn_suppression_depth = self.warn_suppression_depth.saturating_sub(1);
+        self.warn_suppression_boundaries.pop();
     }
 
     pub(crate) fn warning_suppressed(&self) -> bool {
         self.warn_suppression_depth > 0
+    }
+
+    /// How far `try_control_inline` may search `control_handlers` for a `warn`
+    /// raised right now: every handler, when nothing is suppressed, or only
+    /// those registered since the innermost active suppression began.
+    pub(crate) fn warn_control_handler_floor(&self) -> usize {
+        if self.warning_suppressed() {
+            self.warn_suppression_boundaries
+                .last()
+                .copied()
+                .unwrap_or(0)
+        } else {
+            0
+        }
     }
 
     pub fn flush_all_handles(&mut self) {

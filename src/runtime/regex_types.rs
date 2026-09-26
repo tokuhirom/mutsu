@@ -87,6 +87,11 @@ pub(crate) struct PatternDerived {
     /// on every group match otherwise — same #8510 backtrack-retry cost shape
     /// as `contains_backref` above.
     pub(crate) capture_group_count: std::sync::OnceLock<usize>,
+    /// The declarative-prefix NFA of this pattern as a `|` branch (ADR-0125),
+    /// one entry per package it was ranked from. Building one resolves rule
+    /// names, so, like `prefilter_in_pkg`, the entries are keyed by package
+    /// and `TOKEN_DEFS_GEN`.
+    pub(crate) ltm_nfa: std::sync::Mutex<Vec<crate::runtime::regex::regex_ltm_nfa::LtmNfaSlot>>,
 }
 
 /// One package's entry in [`PatternDerived::prefilter_in_pkg`].

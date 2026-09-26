@@ -74,19 +74,11 @@ impl Interpreter {
         let target = target.clone();
         let result = match method {
             "Set" => crate::builtins::quanthash_coerce::to_set(target, "Set"),
-            "SetHash" => crate::builtins::quanthash_coerce::to_set(target, "SetHash").map(|r| {
-                match r.view() {
-                    ValueView::Set(items, _) => Value::set_parts(items.clone(), true),
-                    _ => r,
-                }
-            }),
+            "SetHash" => crate::builtins::quanthash_coerce::to_set(target, "SetHash")
+                .map(|r| r.quanthash_with_mutability(true)),
             "Bag" => crate::builtins::quanthash_coerce::to_bag(target, "Bag"),
-            "BagHash" => crate::builtins::quanthash_coerce::to_bag(target, "BagHash").map(|r| {
-                match r.view() {
-                    ValueView::Bag(items, _) => Value::bag_parts(items.clone(), true),
-                    _ => r,
-                }
-            }),
+            "BagHash" => crate::builtins::quanthash_coerce::to_bag(target, "BagHash")
+                .map(|r| r.quanthash_with_mutability(true)),
             "Mix" => crate::builtins::quanthash_coerce::to_mix(target, "Mix"),
             "MixHash" => crate::builtins::quanthash_coerce::to_mixhash(target),
             _ => unreachable!(),

@@ -29,9 +29,22 @@ impl Interpreter {
     ///   whose suspended coroutine resumes on the next pull — so
     ///   `(1,).map({ gather loop { take 1 } }).head.head` still answers `1`.
     ///
-    /// Cost: O(k) for a pipe or gather producing k elements (k ≤
-    /// MAP_RESULT_GATHER_FORCE_CAP for a gather); O(1) for any other value.
+    /// A not-yet-run `.map`/`.grep` `Seq` over a materialized source
+    /// (`SeqSource::MapGrep`, docs/adr/0058 — `(1..*).map({ (1..$_).map(* * 2) })`,
+    /// #9619) is reified in place instead: its `items` were materialized at
+    /// the `.map` call, so it always ends, and the reify marks the body
+    /// retained so a later render is not a second consumption. A `.map` over
+    /// an infinite source is a `LazyList` pipe, not a `MapGrep` Seq, and is
+    /// handled (left lazy) by the first rule above.
+    ///
+    /// Cost: O(k) for a pipe, gather or `.map`/`.grep` Seq producing k
+    /// elements (k ≤ MAP_RESULT_GATHER_FORCE_CAP for a gather); O(1) for any
+    /// other value.
     pub(crate) fn reify_finite_pipe_value(&mut self, val: Value) -> Result<Value, RuntimeError> {
+        if val.is_seq_value() {
+            self.reify_map_grep_seq(&val)?;
+            return Ok(val);
+        }
         if let ValueView::LazyList(ll) = val.view() {
             if ll.lazy_pipe.is_some() && ll.pipe_bottoms_out_finite() {
                 let items = self.force_lazy_list_vm(&ll)?;

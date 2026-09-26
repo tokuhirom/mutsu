@@ -524,6 +524,33 @@ impl Value {
         Value::Mix(m, is_mut)
     }
 
+    /// Re-flag a `Set`/`Bag`/`Mix` as mutable (`SetHash`, ...) or immutable.
+    /// An unchanged flag keeps the same node (container identity: a
+    /// `SetHash.SetHash` is the same object). A flip hands back a node no
+    /// other holder shares — the mutable kinds mutate in place
+    /// (`builtins::quanthash_mutators`), so a `SetHash` sharing its node with
+    /// a `Set` would change that `Set` too. A node only this value holds (a
+    /// freshly coerced result) is reused rather than copied. Any other value
+    /// is returned unchanged.
+    // Cost: O(1) when the flag is unchanged or the node is unshared; O(n),
+    // n = keys, for the copy of a shared node.
+    pub(crate) fn quanthash_with_mutability(self, mutable: bool) -> Self {
+        fn owned<T: crate::gc::Trace + Clone + 'static>(gc: Gc<T>) -> Gc<T> {
+            // The source value was consumed: 1 means nobody else holds it.
+            if Gc::strong_count(&gc) == 1 {
+                gc
+            } else {
+                Gc::new((*gc).clone())
+            }
+        }
+        match self.into_repr() {
+            ValueRepr::Set(gc, m) if m != mutable => Value::set_parts(owned(gc), mutable),
+            ValueRepr::Bag(gc, m) if m != mutable => Value::bag_parts(owned(gc), mutable),
+            ValueRepr::Mix(gc, m) if m != mutable => Value::mix_parts(owned(gc), mutable),
+            repr => Value::from_repr(repr),
+        }
+    }
+
     /// Construct an `Instance` from its parts (an existing identity: reuses
     /// `id`; use `make_instance`/`new_with_class` to mint a fresh object).
     #[inline]

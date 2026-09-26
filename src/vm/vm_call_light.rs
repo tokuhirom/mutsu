@@ -494,7 +494,14 @@ impl Interpreter {
                             | crate::opcode::FastParamType::NativeIntSized
                     );
                     let val = arg_binding_value(&self.stack[args_base + param_idx]);
-                    Self::fast_type_check_tagged(&val, kind, name_sym)
+                    // A native parameter binds the bare value: an itemized
+                    // argument (`my $ = 200`) is checked as what it holds (#9533).
+                    let val = if is_native_int {
+                        val.descalarize()
+                    } else {
+                        &*val
+                    };
+                    Self::fast_type_check_tagged(val, kind, name_sym)
                 }
                 None => {
                     let Some(tc) = cf.param_defs[param_idx].type_constraint.as_ref() else {
@@ -502,7 +509,12 @@ impl Interpreter {
                     };
                     is_native_int = crate::runtime::native_types::is_native_int_type(tc);
                     let val = arg_binding_value(&self.stack[args_base + param_idx]);
-                    Self::fast_type_check(&val, tc)
+                    let val = if is_native_int {
+                        val.descalarize()
+                    } else {
+                        &*val
+                    };
+                    Self::fast_type_check(val, tc)
                 }
             };
             if ok && is_native_int {
@@ -770,6 +782,9 @@ impl Interpreter {
         // `use newline`) are scoped to the compilation unit where they appear.
         // Save and restore around the body so callee's `use fatal` never leaks.
         let saved_pragmas = self.save_pragma_state();
+        // #9521: initialise from the callee's OWN declaration-site pragma
+        // state -- see `call_compiled_function_fast`'s identical comment.
+        self.lexical_fatal_mode = cf.captured_fatal_mode;
 
         // Push a routine frame for the body's duration so `routine_stack`
         // consumers (`enclosing_routine_exists()`, `CALLER::`,

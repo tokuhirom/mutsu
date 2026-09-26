@@ -425,39 +425,23 @@ impl Interpreter {
                 Ok(bool_int(!crate::builtins::str_prim::str_eq(&lhs, &rhs)))
             }
 
-            // `nqp::stat` follows the process cwd (or the interpreter's
-            // configured cwd) and reports the basic filesystem predicates
-            // needed by the standard `paths` module. `metadata` follows
-            // symlinks, matching the POSIX stat operation rather than lstat.
+            // `nqp::stat` / `nqp::lstat` follow the process cwd (or the
+            // interpreter's configured cwd); the field selection lives in
+            // `runtime::nqp_stat`. `stat` follows symlinks, `lstat` does not.
             // Cost: O(p) + one syscall, p = length of $path.
-            "stat" => {
+            "stat" | "lstat" => {
                 let path = args
                     .first()
                     .map(|v| v.to_string_value())
                     .unwrap_or_default();
-                let code = iarg(args, 1);
                 let path_buf = self.resolve_path(&path);
-                let result = match code {
-                    0 => i64::from(path_buf.exists()), // STAT_EXISTS
-                    1..=3 => {
-                        let metadata = match fs::metadata(&path_buf) {
-                            Ok(metadata) => metadata,
-                            Err(_) => {
-                                return Some(Err(RuntimeError::new(format!(
-                                    "Failed to stat file: {path}"
-                                ))));
-                            }
-                        };
-                        match code {
-                            1 => metadata.len() as i64,         // STAT_FILESIZE
-                            2 => i64::from(metadata.is_dir()),  // STAT_ISDIR
-                            3 => i64::from(metadata.is_file()), // STAT_ISREG
-                            _ => -1,
-                        }
-                    }
-                    _ => -1,
-                };
-                Ok(Value::int(result))
+                crate::runtime::nqp_stat::nqp_stat_field(
+                    &path_buf,
+                    &path,
+                    iarg(args, 1),
+                    op == "lstat",
+                )
+                .map(Value::int)
             }
 
             // Directory handles are represented as ordinary opaque instance

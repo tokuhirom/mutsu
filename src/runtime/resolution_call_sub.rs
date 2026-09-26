@@ -884,6 +884,13 @@ impl Interpreter {
                 data.id,
             );
             self.env = new_env;
+            if data.is_bare_block || data.compiled_code.as_ref().is_some_and(|cc| !cc.is_routine) {
+                crate::runtime::return_target::record_block_return_target(
+                    &mut self.env,
+                    &data.env,
+                    data.id,
+                );
+            }
             self.env.insert(
                 "__mutsu_callable_id".to_string(),
                 Value::int(data.id as i64),
@@ -1366,10 +1373,10 @@ impl Interpreter {
                 if has_target {
                     let mut e = result.unwrap_err();
                     if e.return_target_callable_id().is_none()
-                        && let Some(ValueView::Int(id)) =
-                            data.env.get("__mutsu_callable_id").map(Value::view)
+                        && let Some(id) =
+                            crate::runtime::return_target::return_target_in_env(&data.env)
                     {
-                        e.set_return_target_callable_id(Some(id as u64));
+                        e.set_return_target_callable_id(Some(id));
                     }
                     return Err(e);
                 }

@@ -73,6 +73,11 @@ impl Compiler {
         method_compiler.set_current_package(package_name.to_string());
         method_compiler.current_distribution = self.current_distribution.clone();
         method_compiler.lexically_in_method = true;
+        // A role method's body sits inside the role's parameter scope, so a
+        // role parameter `&f` shadows any outer `sub f` for a bare `f()`.
+        if let Some(frame) = &self.role_param_scope {
+            method_compiler.enclosing_scopes.push(frame.clone());
+        }
         // `method m($self: $n)` names its invocant param `self`, so it binds the
         // plain `"self"` key; a `$self` read in the body must resolve to it
         // rather than to the reserved lexical key (ADR-0061). An *anonymous*
@@ -215,6 +220,7 @@ impl Compiler {
             params_fill_frame: false,
             has_inner_subs: false,
             declares_inner_routines: false,
+            captured_fatal_mode: self.fatal_pragma_active,
             named_call_plan: None,
             deprecated_info: None,
             trir: None,

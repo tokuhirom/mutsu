@@ -55,10 +55,17 @@ impl Compiler {
         {
             return true;
         }
+        // The CORE terms are definite returns whatever types are loaded: a
+        // user class `Red::AST::Empty` registers the short name `Empty` too,
+        // but `--> Empty` still means the Empty value (#9530). Same order as
+        // the runtime twin `Interpreter::is_definite_return_spec`.
+        if matches!(s, "Nil" | "True" | "False" | "Empty" | "pi") {
+            return true;
+        }
         if crate::parser::is_user_declared_type(s) {
             return false;
         }
-        matches!(s, "Nil" | "True" | "False" | "Empty" | "pi" | "e" | "tau")
+        matches!(s, "e" | "tau")
             || (s.chars().next().is_some_and(|c| c.is_ascii_lowercase())
                 && !crate::runtime::utils::is_known_type_constraint(s))
     }

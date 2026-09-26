@@ -681,6 +681,10 @@ impl Interpreter {
         // otherwise a return such as `PinterestURL:D` is checked from GLOBAL
         // and is compared as an unknown type name.
         let effective_return_spec = return_spec.as_deref().map(|spec| {
+            // A definite return names a value, never a type (#9530).
+            if self.is_definite_return_spec(spec) {
+                return spec.to_string();
+            }
             let resolved = self.resolve_method_type_name(def_package, spec);
             loan_env!(self, resolved_type_capture_name(&resolved))
         });

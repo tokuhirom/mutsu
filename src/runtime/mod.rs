@@ -611,6 +611,7 @@ mod container_element_proxy;
 mod ctor_phase_plan;
 pub(crate) mod nqp_attr;
 pub(crate) mod nqp_backing;
+mod nqp_create;
 pub(crate) mod nqp_native;
 pub(crate) mod nqp_op_ids;
 pub(crate) mod nqp_ops;
@@ -794,6 +795,7 @@ pub(crate) mod nativecall_callback;
 pub(crate) mod nativecall_cast;
 pub(crate) mod nativecall_global;
 pub(crate) mod nativecall_manage;
+pub(crate) mod nqp_stat;
 mod numeric_bridge_probe;
 pub(crate) mod once_store;
 mod ops_bits;
@@ -857,6 +859,7 @@ mod resolution_map_grep_rw;
 mod resolution_method;
 mod resolution_private_method;
 mod resolution_sequence;
+pub(crate) mod return_target;
 pub(crate) mod routine_stack;
 mod run;
 mod run_dist;
@@ -865,6 +868,7 @@ mod run_modules;
 mod run_modules_bundled_repo;
 mod run_prelude;
 mod run_prelude_iterator;
+mod run_prelude_trait_export;
 mod run_roast_preprocess;
 mod runtime_caller_env;
 mod runtime_class_query;
@@ -2114,6 +2118,15 @@ pub struct Interpreter {
     output_sink: Arc<RwLock<OutputSink>>,
     warn_output: String,
     warn_suppression_depth: usize,
+    /// `control_handlers.len()` recorded at each active `push_warn_suppression`
+    /// call (`quietly`, the Hash hyper). A `warn` raised while suppressed must
+    /// resume in place rather than reach a CONTROL handler registered outside
+    /// the suppressed region -- rakudo's `quietly` installs its own
+    /// resume-everything CONTROL, so an outer handler never sees the warning
+    /// at all (#9607). The innermost entry bounds how far `try_control_inline`
+    /// searches; a CONTROL declared *inside* the suppressed region is still
+    /// above the boundary and gets first look, matching rakudo's nesting order.
+    warn_suppression_boundaries: Vec<usize>,
     /// Parse warnings (e.g. "Duplicate 'is export' trait") already surfaced
     /// during the current top-level `run()` invocation, keyed by (origin
     /// file, message text). A module's source can be parsed more than once
@@ -3184,6 +3197,27 @@ pub struct Interpreter {
     pub(crate) imported_env_aliases: HashMap<Symbol, Symbol>,
     pub(crate) strict_mode: bool,
     pub(crate) fatal_mode: bool,
+    /// Whether the EXPLICIT `use fatal` pragma is lexically active for the
+    /// call site currently executing (#9521) — separate from `fatal_mode`,
+    /// which ALSO carries `try`'s own implicit, genuinely dynamic-scope
+    /// "fatal" marking (`vm_try_catch_ops.rs`) used by a deferred `.map`/
+    /// `.grep` `Seq`'s `SeqSource::MapGrep::fatal` capture
+    /// (`resolution_map_grep.rs`, `vm_closure_build.rs`) to decide whether a
+    /// later force explodes hard. `use fatal` itself is lexical: a routine
+    /// declared outside a `use fatal` block must not have its own
+    /// `explode_if_fatal_failure_in_*` checks fire merely because its caller
+    /// is dynamically inside one, while `try`'s marking legitimately DOES
+    /// reach into a called routine's own deferred-Seq construction
+    /// (`t/collections/transform/map-callback-runs-at-consumption.t`,
+    /// verified against `raku`). Driven by exactly the same statements that
+    /// set `fatal_mode` for `use fatal`/`no fatal` and import-scope save/
+    /// restore (`save_pragma_state`/`restore_pragma_state`,
+    /// `push_import_scope`/`pop_import_scope`) — but, unlike `fatal_mode`,
+    /// ALSO reset at every routine-call entry to the callee's own
+    /// `CompiledFunction::captured_fatal_mode` (baked at compile time from
+    /// `Compiler::fatal_pragma_active`), and never touched by `try`'s own
+    /// implicit marking or by the deferred-`Seq`-consumption pull.
+    pub(crate) lexical_fatal_mode: bool,
     /// True only on the throwaway nested `Interpreter` `eval-lives-ok`/
     /// `eval-dies-ok` construct to run their code string.
     /// Real raku's own `Test.rakumod` implements both via a helper (`sub
@@ -3326,6 +3360,9 @@ pub struct Interpreter {
     /// first (see `vm/vm_lexsub_aliases.rs`). Empty unless a routine declared
     /// a `my sub` with free variables.
     pub(crate) lexsub_free_aliases: std::sync::Arc<crate::vm::LexSubAliasTable>,
+    /// The latest activation's cell per routine-nested sub free variable
+    /// (see `vm::LexSubLatestCells`).
+    pub(crate) lexsub_latest_cells: std::sync::Arc<crate::vm::LexSubLatestCells>,
     /// Shared cells for block lexicals captured by an `our`-scoped named sub
     /// declared inside a *bare* block (not a package block). Unlike a `my sub`, an
     /// `our sub` is installed into the package registry and stays callable after
@@ -4519,6 +4556,9 @@ pub struct Interpreter {
     /// `grammar_has_user_method_sym` answers per `(class, method)`, valid for
     /// one registry write generation (see `user_method_probe_memo.rs`).
     pub(crate) user_method_probe_memo: user_method_probe_memo::UserMethodProbeMemo,
+    /// `nqp::create` / `CREATE` answers per type, valid for one registry
+    /// write generation (see `nqp_create.rs`).
+    pub(crate) create_memo: nqp_create::CreateMemo,
     /// Sound multi-method resolution cache (§B): for a multi whose dispatch is
     /// purely type+arity based (no `where` / literal / subset / `:D`/`:U` smiley /
     /// coercion candidate), the resolved candidate is a function of the receiver
@@ -5018,6 +5058,7 @@ pub(crate) struct ImportScopeSnapshot {
     pub(crate) newline_mode: NewlineMode,
     pub(crate) strict_mode: bool,
     pub(crate) fatal_mode: bool,
+    pub(crate) lexical_fatal_mode: bool,
     pub(crate) monkey_typing: bool,
     /// Whether the pop also rolls the class registry back to `classes`.
     ///

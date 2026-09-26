@@ -754,7 +754,10 @@ impl Interpreter {
         // every top-level and nested (Group/Alternation/subrule) token walk
         // funnels through this one function, so one check covers all of
         // them regardless of nesting depth.
-        if token.from_runtime_interpolation
+        // A `** {code}` count is a fate too, separated or not: the separated
+        // path below would otherwise evaluate the count (verified against
+        // `raku`: `'a' ** {3} % ','` measures 0).
+        if (token.from_runtime_interpolation || matches!(token.quant, RegexQuant::RepeatCode(_)))
             && super::regex_helpers::LTM_DECLARATIVE_MODE.with(std::cell::Cell::get)
         {
             super::regex_ltm_fate::ltm_record_fate(pos);
