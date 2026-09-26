@@ -71,6 +71,7 @@ impl Interpreter {
         &mut self,
         op: &SubstOp,
         text: &str,
+        target: &crate::runtime::MatchTarget,
     ) -> Vec<(usize, usize, SubstMatchCaps)> {
         let first_only = op.nth_spec.is_none() && op.x_spec.is_none() && !op.global;
         if op.perl5 {
@@ -97,10 +98,9 @@ impl Interpreter {
         let mut pos = 0usize;
         // One target for the whole scan — see the note in `native_subst_regex`:
         // rebuilding it per match is what made `s:g///` quadratic (#8247).
-        let target = crate::runtime::MatchTarget::new(text);
         while let Some((start, end, positional, named)) = loan_env!(
             self,
-            regex_find_first_from_with_all_captures_in(&op.pattern, &target, pos)
+            regex_find_first_from_with_all_captures_in(&op.pattern, target, pos)
         ) {
             out.push((start, end, SubstMatchCaps { positional, named }));
             if first_only {
@@ -113,36 +113,43 @@ impl Interpreter {
 
     /// Run a substitution against the topic and report what it produced. Shared
     /// by `s///` (which then writes the topic) and `S///` (which does not).
-    // Cost: O(n*r + r^2), n = chars of the subject, r = matches, for `s:g///` /
-    // `S:g///`: `caps` is rebuilt by a linear `find` over all matches per selected
-    // match (r^2), `apply_substitutions` maps each span char->byte from the start,
-    // and `make_subst_match` builds a fresh MatchTarget (string + char copy) per
-    // Match, so `$/` also holds r full copies of the subject (O(n*r) memory).
-    // Rakudo: O(n + r) -- see #9143.
+    // Cost: O(n + r) plus per-match engine and replacement work, n = chars of
+    // the subject, r = matches: one MatchTarget shared by the scan and every
+    // `$/` Match, one forward pass pairs selected matches with their captures,
+    // and the output is built with one forward char->byte cursor.
     fn run_subst(&mut self, op: &SubstOp) -> Result<SubstOutcome, RuntimeError> {
-        let target = self.env().get("_").cloned().unwrap_or(Value::NIL);
-        let text = target.to_string_value();
+        let topic = self.env().get("_").cloned().unwrap_or(Value::NIL);
+        let text = topic.to_string_value();
         self.reset_capture_env_vars();
 
-        let all = self.subst_collect_matches(op, &text);
-        let all_ranges: Vec<(usize, usize)> = all.iter().map(|(s, e, _)| (*s, *e)).collect();
-        let selected = if op.global && op.nth_spec.is_none() && op.x_spec.is_none() {
-            all_ranges
+        let target = crate::runtime::MatchTarget::new(&text);
+        let all = self.subst_collect_matches(op, &text, &target);
+        let take_all = op.global && op.nth_spec.is_none() && op.x_spec.is_none();
+        let (selected, caps): (Vec<(usize, usize)>, Vec<SubstMatchCaps>) = if take_all {
+            all.into_iter().map(|(s, e, c)| ((s, e), c)).unzip()
         } else {
-            Self::select_substitution_ranges(
+            let all_ranges: Vec<(usize, usize)> = all.iter().map(|(s, e, _)| (*s, *e)).collect();
+            let selected = Self::select_substitution_ranges(
                 &all_ranges,
                 op.nth_spec.as_deref(),
                 op.x_spec.as_deref(),
-            )?
+            )?;
+            // `select_substitution_ranges` keeps matches in scan order (`:nth`
+            // is validated ascending, `:x` takes a prefix), so one forward
+            // pointer over `all` pairs every selected range with its captures.
+            let mut j = 0usize;
+            let mut caps = Vec::with_capacity(selected.len());
+            for r in &selected {
+                while j < all.len() && (all[j].0, all[j].1) != *r {
+                    j += 1;
+                }
+                if let Some((_, _, c)) = all.get(j) {
+                    caps.push(c.clone());
+                    j += 1;
+                }
+            }
+            (selected, caps)
         };
-        let caps: Vec<SubstMatchCaps> = selected
-            .iter()
-            .filter_map(|r| {
-                all.iter()
-                    .find(|(s, e, _)| *s == r.0 && *e == r.1)
-                    .map(|(_, _, c)| c.clone())
-            })
-            .collect();
 
         // With :g, :x, or a multi-value :nth the result (and `$/`) is a List of
         // Match objects; a bare substitution yields a single Match. A *single*
@@ -183,6 +190,7 @@ impl Interpreter {
                 let parts = capture_parts.clone();
                 self.apply_substitutions_dynamic(
                     &text,
+                    &target,
                     &selected,
                     &body,
                     *cache_id,
@@ -198,7 +206,7 @@ impl Interpreter {
                 .enumerate()
                 .map(|(i, (s, e))| {
                     Self::make_subst_match(
-                        &text,
+                        &target,
                         *s,
                         *e,
                         caps.get(i).unwrap_or(&Default::default()),
@@ -208,7 +216,7 @@ impl Interpreter {
             Value::array(matches)
         } else {
             let (s, e) = selected[0];
-            Self::make_subst_match(&text, s, e, caps.first().unwrap_or(&Default::default()))
+            Self::make_subst_match(&target, s, e, caps.first().unwrap_or(&Default::default()))
         };
         Ok(SubstOutcome {
             text: out,

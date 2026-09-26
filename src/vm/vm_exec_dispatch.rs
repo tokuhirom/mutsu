@@ -5705,8 +5705,8 @@ impl Interpreter {
             }
 
             // -- Substitution --
-            // Cost: O(n + r) plus engine work; `s:g///` is O(n*r + r^2) (see run_subst). Rakudo:
-            // O(n + r) -- see #9143.
+            // Cost: O(n + r) plus engine work, n = chars of the topic, r = matches (see
+            // run_subst).
             OpCode::Subst {
                 pattern_idx,
                 replacement_idx,
@@ -5735,7 +5735,7 @@ impl Interpreter {
                 )?;
                 *ip += 1;
             }
-            // Cost: as Subst, O(n*r + r^2) for `S:g///`. Rakudo: O(n + r) -- see #9143.
+            // Cost: as Subst, O(n + r) plus engine work.
             OpCode::NonDestructiveSubst {
                 pattern_idx,
                 replacement_idx,

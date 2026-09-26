@@ -376,11 +376,10 @@ impl Interpreter {
         };
 
         match pattern.view() {
-            // Cost: O(n*L) matches collected before selection, n = chars of the
-            // invocant, L = distinct match ends per start: `regex_match_all_with_captures`
-            // enumerates EVERY end at EVERY start (then keeps the longest), even for a
-            // non-`:g` subst, so `("a" x n).subst(/a+/, {...})` is O(n^2). Rakudo: O(n + r)
-            // -- see #9143.
+            // Cost: O(n + r) plus per-match engine and replacement work, n = chars of
+            // the invocant, r = matches: one leftmost scan over a shared MatchTarget
+            // (`subst_scan_matches`), stopped as soon as the adverbs have what they
+            // need. A `:P5` pattern still enumerates through the PCRE path.
             ValueView::Regex(_) | ValueView::RegexWithAdverbs(_) => {
                 let pat: String = match pattern.view() {
                     ValueView::Regex(p) => p.to_string(),
@@ -395,18 +394,6 @@ impl Interpreter {
                 };
                 let pat_global =
                     matches!(pattern.view(), ValueView::RegexWithAdverbs(a) if a.global) || global;
-                let all_captures = if is_p5 {
-                    #[cfg(feature = "pcre2")]
-                    {
-                        self.regex_match_all_with_captures_p5(&pat, &text)
-                    }
-                    #[cfg(not(feature = "pcre2"))]
-                    {
-                        self.regex_match_all_with_captures(&pat, &text)
-                    }
-                } else {
-                    self.regex_match_all_with_captures(&pat, &text)
-                };
                 // After a multi-match substitution `$/` is a List of Match objects
                 // for `:g`/`:x`/multi-`:nth`, but a single Match for a single-index
                 // `:nth` (even when combined with `:g`, e.g. `s:2nd:g/./Z/`).
@@ -430,10 +417,6 @@ impl Interpreter {
                     me.env.insert("/".to_string(), v);
                 };
 
-                if all_captures.is_empty() {
-                    empty_match_var(self);
-                    return Ok(Value::str(text));
-                }
                 let chars: Vec<char> = text.chars().collect();
 
                 let has_adverbs = nth.is_some()
@@ -442,23 +425,53 @@ impl Interpreter {
                     || continue_from.is_some();
 
                 if has_adverbs || pat_global {
-                    let mut selected = self.select_non_overlapping_matches(all_captures);
+                    let mut selected = if is_p5 {
+                        #[cfg(feature = "pcre2")]
+                        let all_captures = self.regex_match_all_with_captures_p5(&pat, &text);
+                        #[cfg(not(feature = "pcre2"))]
+                        let all_captures = self.regex_match_all_with_captures(&pat, &text);
+                        let mut selected = self.select_non_overlapping_matches(all_captures);
+                        // Apply :p(N) - the first match must start exactly at N.
+                        if let Some(p) = pos_start {
+                            selected.retain(|cap| cap.from >= p);
+                            if selected.is_empty() || selected[0].from != p {
+                                empty_match_var(self);
+                                return Ok(Value::str(text));
+                            }
+                        }
+                        selected
+                    } else {
+                        // How many matches the adverbs can possibly use, so the
+                        // scan stops there instead of running the pattern (and
+                        // any `{ ... }` block in it) over the rest of the text.
+                        let limit: Option<usize> = if !nth_deferred.is_empty() {
+                            None
+                        } else if let Some(list) = &nth {
+                            Some(list.iter().copied().max().unwrap_or(0).max(0) as usize)
+                        } else if let Some((_, hi)) = resolve_x_count(&x_count) {
+                            Some(hi)
+                        } else if !pat_global {
+                            Some(1)
+                        } else {
+                            None
+                        };
+                        let Some(selected) = self.subst_scan_matches(
+                            &pat,
+                            &text,
+                            pos_start.or(continue_from).unwrap_or(0),
+                            pos_start,
+                            limit,
+                        ) else {
+                            // :p(N) with no match starting exactly at N.
+                            empty_match_var(self);
+                            return Ok(Value::str(text));
+                        };
+                        selected
+                    };
 
                     // Apply :c(N) - filter matches starting from character position N
                     if let Some(c) = continue_from {
                         selected.retain(|cap| cap.from >= c);
-                    }
-
-                    // Apply :p(N) - first match must start at exactly position N
-                    // If it doesn't, return original string (failure)
-                    if let Some(p) = pos_start {
-                        // Filter to matches at or after position p
-                        selected.retain(|cap| cap.from >= p);
-                        // The first remaining match must be exactly at p
-                        if selected.is_empty() || selected[0].from != p {
-                            empty_match_var(self);
-                            return Ok(Value::str(text));
-                        }
                     }
 
                     // If no :g, :x, :nth - single match mode
@@ -485,7 +498,8 @@ impl Interpreter {
                         let total = selected.len();
                         let mut indices: Vec<usize> = Vec::new();
                         for &n in nth_list {
-                            if (n as usize) <= total && !indices.contains(&(n as usize - 1)) {
+                            // `nth_list` is validated ascending, so a repeat is adjacent.
+                            if (n as usize) <= total && indices.last() != Some(&(n as usize - 1)) {
                                 indices.push(n as usize - 1);
                             }
                         }
@@ -574,14 +588,14 @@ impl Interpreter {
                     )?;
                     Ok(Value::str(format!("{}{}{}", prefix, repl, suffix)))
                 } else {
+                    empty_match_var(self);
                     Ok(Value::str(text))
                 }
             }
-            // Cost: with `:g`/`:nth`/`:x`/`:c`/`:p`, O(n*r), n = bytes of the invocant,
-            // r = matches: each match's char offsets are recounted from the start
-            // (`text[..start].chars().count()`), and a closure replacement additionally
-            // builds a fresh MatchTarget (O(n)) per match. Rakudo: O(n + r) -- see #9143.
-            // Without adverbs: O(n) (one `find`).
+            // Cost: O(n + r) plus per-match replacement work, n = bytes of the invocant,
+            // r = matches: char offsets are counted with one running cursor, and a
+            // closure replacement's `$/` shares one MatchTarget. Without adverbs: O(n)
+            // (one `find`).
             ValueView::Str(pat) => {
                 let has_adverbs = nth.is_some()
                     || x_count.is_some()
@@ -597,13 +611,17 @@ impl Interpreter {
                         search_start = abs_pos + pat_str.len().max(1);
                     }
 
+                    // Matches are ascending, so one running count converts every
+                    // byte offset to a char offset.
+                    let mut counted = (0usize, 0usize); // (byte, char)
+                    let mut char_of = |b: usize| {
+                        counted.1 += text[counted.0..b].chars().count();
+                        counted.0 = b;
+                        counted.1
+                    };
                     let char_indices: Vec<(usize, usize)> = str_matches
                         .iter()
-                        .map(|&(start, end)| {
-                            let cs = text[..start].chars().count();
-                            let ce = text[..end].chars().count();
-                            (cs, ce)
-                        })
+                        .map(|&(start, end)| (char_of(start), char_of(end)))
                         .collect();
 
                     let mut keep: Vec<usize> = (0..str_matches.len()).collect();
@@ -638,7 +656,8 @@ impl Interpreter {
                         for &n in nth_list {
                             if (n as usize) <= total {
                                 let chosen = keep[n as usize - 1];
-                                if !selected.contains(&chosen) {
+                                // `nth_list` is validated ascending: a repeat is adjacent.
+                                if selected.last() != Some(&chosen) {
                                     selected.push(chosen);
                                 }
                             }
@@ -655,16 +674,23 @@ impl Interpreter {
                         }
                     }
 
-                    let mut result = String::new();
+                    // A closure replacement sees each match as `$/`; every one of
+                    // them shares this subject instead of copying it per match.
+                    let target = is_closure.then(|| crate::runtime::MatchTarget::new(&text));
+                    let mut result = String::with_capacity(text.len());
                     let mut last_end = 0;
                     for &idx in &keep {
                         let (start, end) = str_matches[idx];
                         result.push_str(&text[last_end..start]);
                         let matched_text = &text[start..end];
-                        let caps = is_closure.then(|| RegexCaptures {
-                            from: char_indices[idx].0,
-                            to: char_indices[idx].1,
-                            ..Default::default()
+                        let caps = target.as_ref().map(|target| {
+                            let mut caps = RegexCaptures {
+                                from: char_indices[idx].0,
+                                to: char_indices[idx].1,
+                                ..Default::default()
+                            };
+                            caps.set_target(Some(target.clone()));
+                            caps
                         });
                         let repl = self.eval_subst_replacement_cased(
                             &replacement_val,

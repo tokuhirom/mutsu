@@ -2,15 +2,63 @@ use super::methods_string::SubstCaseTransforms;
 use super::*;
 
 impl Interpreter {
+    /// The leftmost, non-overlapping matches of `pattern` in `text` from char
+    /// position `from`, the way `m:g` and the `.subst(:g)` fast path find them:
+    /// one search per match over a single shared [`MatchTarget`], resuming after
+    /// each match (one char further after an empty one). Stops after `limit`
+    /// matches. With `anchor` (`:p(N)`) the first match must start exactly
+    /// there; `None` means it does not.
+    ///
+    /// This replaced enumerating every possible end at every start and then
+    /// keeping the longest per start, which was O(n^2) for `/a+/` even when
+    /// only one match was wanted, and forced a frugal `.*?` to its greedy
+    /// length (#9143).
+    // Cost: O(n + r) plus per-match engine work, n = chars of `text`, r = matches.
+    pub(super) fn subst_scan_matches(
+        &mut self,
+        pattern: &str,
+        text: &str,
+        from: usize,
+        anchor: Option<usize>,
+        limit: Option<usize>,
+    ) -> Option<Vec<RegexCaptures>> {
+        let target = crate::runtime::MatchTarget::new(text);
+        let mut out: Vec<RegexCaptures> = Vec::new();
+        let mut pos = from;
+        while limit.is_none_or(|l| out.len() < l) {
+            let Some(caps) = self.regex_match_with_captures_from_target(pattern, &target, pos)
+            else {
+                break;
+            };
+            if out.is_empty()
+                && let Some(p) = anchor
+                && caps.from != p
+            {
+                return None;
+            }
+            let next = if caps.to > caps.from {
+                caps.to
+            } else {
+                caps.from + 1
+            };
+            pos = next.max(pos + 1);
+            out.push(caps);
+        }
+        if out.is_empty() && anchor.is_some() {
+            return None;
+        }
+        Some(out)
+    }
+
     /// Evaluate a subst replacement — either a static string or a closure call.
     /// Evaluate a subst replacement — either a static string or a closure call —
     /// and apply the `:samecase`/`:samemark`/`:samespace` transforms (against
     /// `matched_text`) to the result, matching the `s///` operator.
     #[allow(clippy::too_many_arguments)]
     // Cost: string replacement O(|repl| + captures). Closure replacement: one
-    // closure call plus an env clone, plus O(n) to build a MatchTarget when
-    // `captures` carries none (the literal-Str pattern path), n = chars of
-    // `orig_text`. Rakudo: O(1) Match setup -- see #9143.
+    // closure call plus an env clone; the `$/` Match reuses the MatchTarget the
+    // caller attached to `captures` (every caller attaches one, so the
+    // `target_or_new` O(n) fallback does not run per match).
     pub(super) fn eval_subst_replacement_cased(
         &mut self,
         replacement_val: &Option<Value>,

@@ -1,19 +1,6 @@
 use super::*;
 use crate::value::ValueView;
 
-// Cost: O(idx), idx = the char index (scans from the start; no ASCII shortcut).
-pub(crate) fn char_idx_to_byte(text: &str, idx: usize) -> usize {
-    if idx == 0 {
-        return 0;
-    }
-    for (count, (b, _)) in text.char_indices().enumerate() {
-        if count == idx {
-            return b;
-        }
-    }
-    text.len()
-}
-
 /// Coerce a list element to a form that binds *positionally* when passed as the
 /// topic/argument of a matcher or comparator block.
 ///
