@@ -48,7 +48,7 @@ impl Interpreter {
         ) {
             // Restore the chained inner state (a loop nested in this body)
             // into the slot so the next loop op encountered resumes too.
-            if let Some(crate::value::ForLoopResumeState::CStyleLoop { inner }) =
+            if let Some(crate::value::ForLoopResumeState::CStyleLoop { inner, .. }) =
                 self.gather_for_loop_resume.take()
             {
                 self.gather_for_loop_resume = inner.map(|b| *b);
@@ -73,6 +73,7 @@ impl Interpreter {
                 let nested = self.gather_for_loop_resume.take();
                 self.gather_for_loop_resume = Some(crate::value::ForLoopResumeState::CStyleLoop {
                     inner: nested.map(Box::new),
+                    site: (code.ops.as_ptr() as usize, cond_start - 1),
                 });
                 self.pop_loop_local_scope(code);
                 return Err(RuntimeError::new(
@@ -171,6 +172,7 @@ impl Interpreter {
                         self.gather_for_loop_resume =
                             Some(crate::value::ForLoopResumeState::CStyleLoop {
                                 inner: nested.map(Box::new),
+                                site: (code.ops.as_ptr() as usize, cond_start - 1),
                             });
                         self.pop_loop_local_scope(code);
                         return Err(e);

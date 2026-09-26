@@ -2951,6 +2951,22 @@ pub(crate) enum ForLoopResumeState {
     /// parked on the loop opcode across a gather coroutine suspend.
     CStyleLoop {
         inner: Option<Box<ForLoopResumeState>>,
+        /// `(code_id, ip)` of the loop opcode itself. Not used to match the
+        /// marker to its loop (any `loop`/`while` op consumes one); only an
+        /// enclosing `TryCatch` region reads it to know which op to re-enter.
+        site: (usize, usize),
+    },
+    /// Resume a `try`/CATCH/CONTROL region (`OpCode::TryCatch`) whose protected
+    /// body suspended. The take-limit signal is a coroutine suspension, not an
+    /// exception, so the region neither runs its handlers nor ends: re-entering
+    /// the `TryCatch` op at `loop_ip` re-registers the handlers and continues
+    /// the body at `resume_ip` (right after the take, or at the nested loop op
+    /// whose state is chained in `inner`).
+    TryCatch {
+        code_id: usize,
+        loop_ip: usize,
+        resume_ip: usize,
+        inner: Option<Box<ForLoopResumeState>>,
     },
 }
 
@@ -2961,7 +2977,8 @@ impl ForLoopResumeState {
             ForLoopResumeState::IntRange { inner, .. }
             | ForLoopResumeState::List { inner, .. }
             | ForLoopResumeState::LazyGather { inner, .. }
-            | ForLoopResumeState::CStyleLoop { inner } => inner.as_deref(),
+            | ForLoopResumeState::CStyleLoop { inner, .. }
+            | ForLoopResumeState::TryCatch { inner, .. } => inner.as_deref(),
         }
     }
 
@@ -2973,7 +2990,8 @@ impl ForLoopResumeState {
         match self {
             ForLoopResumeState::IntRange { loop_ip, .. }
             | ForLoopResumeState::List { loop_ip, .. }
-            | ForLoopResumeState::LazyGather { loop_ip, .. } => Some(*loop_ip),
+            | ForLoopResumeState::LazyGather { loop_ip, .. }
+            | ForLoopResumeState::TryCatch { loop_ip, .. } => Some(*loop_ip),
             ForLoopResumeState::CStyleLoop { .. } => None,
         }
     }
@@ -2984,8 +3002,30 @@ impl ForLoopResumeState {
         match self {
             ForLoopResumeState::IntRange { code_id, .. }
             | ForLoopResumeState::List { code_id, .. }
-            | ForLoopResumeState::LazyGather { code_id, .. } => Some(*code_id),
+            | ForLoopResumeState::LazyGather { code_id, .. }
+            | ForLoopResumeState::TryCatch { code_id, .. } => Some(*code_id),
             ForLoopResumeState::CStyleLoop { .. } => None,
+        }
+    }
+
+    /// `(code_id, ip)` of the opcode that must be re-entered to resume this
+    /// state — positional loops and `TryCatch` regions report their own op,
+    /// and a `CStyleLoop` marker its recorded `site`.
+    pub(crate) fn resume_op_site(&self) -> (usize, usize) {
+        match self {
+            ForLoopResumeState::CStyleLoop { site, .. } => *site,
+            ForLoopResumeState::IntRange {
+                code_id, loop_ip, ..
+            }
+            | ForLoopResumeState::List {
+                code_id, loop_ip, ..
+            }
+            | ForLoopResumeState::LazyGather {
+                code_id, loop_ip, ..
+            }
+            | ForLoopResumeState::TryCatch {
+                code_id, loop_ip, ..
+            } => (*code_id, *loop_ip),
         }
     }
 
