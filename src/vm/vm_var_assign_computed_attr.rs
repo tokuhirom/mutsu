@@ -743,6 +743,30 @@ impl Interpreter {
         let Some((bare, is_private, sigil)) = code.local_attr_key(idx) else {
             return;
         };
+        // `$!x := $y` leaves `$y`'s container in the slot: the attribute is now
+        // that container, so seat the same cell in `self` (not a copy of what
+        // it holds) -- otherwise `self.x` inside this method still reads the
+        // old container until the method returns.
+        if matches!(self.locals[idx].view(), ValueView::ContainerRef(_))
+            && sigil == '$'
+            && let Some(self_val) = self.attr_access_self(code)
+            && let Some((attributes, key)) = self.with_self_attr(
+                &self_val,
+                Some((code, idx)),
+                bare,
+                is_private,
+                sigil,
+                |attributes, _, key| (attributes.clone(), key),
+            )
+        {
+            let cell = self.locals[idx].clone();
+            attributes.with_attr_mut(key, |slot| {
+                if !slot.same_binding(&cell) {
+                    *slot = cell;
+                }
+            });
+            return;
+        }
         if Self::is_non_mirrorable_attr_value(&self.locals[idx]) {
             return;
         }
