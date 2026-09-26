@@ -58,12 +58,15 @@ impl Interpreter {
         {
             let val = self.stack.pop().unwrap_or(Value::NIL);
             let proxy_val = self.locals[idx].clone();
-            loan_env!(self, assign_proxy_lvalue(proxy_val, val))?;
+            loan_env!(self, assign_proxy_lvalue(proxy_val, val.clone()))?;
             // A Proxy STORE wrote the referent caller lexical by name. For
             // substr-rw/subbuf-rw/undefine the STORE recorded the referent precisely
             // (`record_caller_var_writeback`); drain it here so the slot refreshes
             // (see the other Proxy-STORE assign site).
             self.apply_pending_rw_writeback(code);
+            // Assignment is an expression: `($p = 42)` yields the assigned
+            // value, whatever the STORE block itself returned.
+            self.stack.push(val);
             return Ok(());
         }
 
