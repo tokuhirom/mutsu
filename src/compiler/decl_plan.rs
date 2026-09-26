@@ -676,6 +676,7 @@ impl Compiler {
             name,
             custom_traits,
             body,
+            type_param_defs,
             ..
         } = stmt
         else {
@@ -705,6 +706,15 @@ impl Compiler {
         } else {
             Some(self.qualified_role_decl_name(&name.resolve()))
         };
+        let role_param_scope: crate::compiler::lex_scope::ScopeFrame = type_param_defs
+            .iter()
+            .filter(|p| p.name.starts_with('&'))
+            .map(|p| (p.name.clone(), None))
+            .collect();
+        let saved_role_param_scope = std::mem::replace(
+            &mut self.role_param_scope,
+            (!role_param_scope.is_empty()).then_some(role_param_scope),
+        );
         let method_compiled_keys = self.compile_method_body_keys(
             body,
             package_name.as_deref(),
@@ -712,6 +722,7 @@ impl Compiler {
             false,
             is_hoisted_shell,
         );
+        self.role_param_scope = saved_role_param_scope;
         // ADR-0019 D8-2: unlike `method_compiled_keys` above (whose
         // `package_name`-gated skip is harmless — the shell registration
         // installs uncompiled `MethodDef`s that the real declaration

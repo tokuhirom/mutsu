@@ -6536,6 +6536,13 @@ pub(crate) struct CompiledCode {
     /// Empty for almost every chunk, so the call handlers' probe is one
     /// `is_empty` test.
     pub(crate) lexical_routines: Vec<FrameLexicalRef>,
+    /// Bare call names (`f(...)`) this chunk compiled as a call on the code
+    /// variable `&f` because a `my &f` binding (or `&f` parameter) in scope
+    /// shadows any routine of that name. A runtime path that compiles this
+    /// chunk's AST again on a fresh compiler (the inline `map`/`grep` path, a
+    /// sequence generator) has no scope chain, so it re-seeds these names to
+    /// reach the same binding instead of the outer routine.
+    pub(crate) amp_shadowed_calls: Vec<Symbol>,
     /// True when this chunk or one of its nested closures has
     /// `lexical_routines`. A closure created from such a chunk registers its
     /// body with the interpreter, so a runtime recompile of that body (the
@@ -7495,6 +7502,7 @@ impl CompiledCode {
             free_var_container_writes: Vec::new(),
             named_sub_captures: Vec::new(),
             lexical_routines: Vec::new(),
+            amp_shadowed_calls: Vec::new(),
             lexical_subtree: false,
             nested_routine_free_reads: Vec::new(),
             needs_cell_named_sub: Vec::new(),

@@ -296,6 +296,9 @@ impl Interpreter {
         }
         let mut compiler = crate::compiler::Compiler::new();
         compiler.lexically_in_routine = lexically_in_routine;
+        if let Some(origin) = data.compiled_code.as_deref() {
+            compiler.seed_amp_shadowed_calls_from(origin);
+        }
         let (mut code, mut fns) = compiler.compile(normalized_body);
         if let Some(origin) = data.compiled_code.as_deref() {
             crate::compiler::frame_lexical_inherit::inherit_frame_lexical_routines(

@@ -1243,6 +1243,9 @@ impl Interpreter {
                                 self.current_package()
                             };
                             compiler.set_current_package(scope);
+                            if let Some(origin) = data.compiled_code.as_deref() {
+                                compiler.seed_amp_shadowed_calls_from(origin);
+                            }
                             let (mut code, mut fns) = compiler.compile(&data.body);
                             if let Some(origin) = data.compiled_code.as_deref() {
                                 crate::compiler::frame_lexical_inherit::inherit_frame_lexical_routines(
