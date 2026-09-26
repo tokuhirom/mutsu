@@ -36,5 +36,6 @@ class Numifiable {
 is Numifiable.new(value => 2) + Numifiable.new(value => 3), 5,
     'a user Numeric method still supplies numeric operands';
 
-is 'Broken' == 'Broken', True,
-    'non-numeric strings remain lenient for bare-string enum compatibility';
+# PromiseStatus is a real enum, so its values compare numerically; a
+# non-numeric Str operand makes `==` a Failure, as in rakudo.
+is Broken == Broken, True, 'enum values compare numerically';
