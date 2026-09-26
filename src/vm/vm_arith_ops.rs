@@ -244,7 +244,10 @@ impl Interpreter {
             {
                 return crate::builtins::arith_add(l, r);
             }
-            let (l, r) = vm.coerce_numeric_bridge_pair_strict(l, r)?;
+            let (l, r) = match vm.coerce_numeric_bridge_pair_strict(l, r)? {
+                Ok(pair) => pair,
+                Err(failure) => return Ok(failure),
+            };
             crate::builtins::arith_add(l, r)
         })?;
         self.stack.push(result);
@@ -290,7 +293,10 @@ impl Interpreter {
             {
                 return Ok(crate::builtins::arith_sub(l, r));
             }
-            let (l, r) = vm.coerce_numeric_bridge_pair_strict(l, r)?;
+            let (l, r) = match vm.coerce_numeric_bridge_pair_strict(l, r)? {
+                Ok(pair) => pair,
+                Err(failure) => return Ok(failure),
+            };
             Ok(crate::builtins::arith_sub(l, r))
         })?;
         self.stack.push(result);
@@ -457,7 +463,10 @@ impl Interpreter {
             if let Some(result) = vm.range_instance_arithmetic("*", &l, &r)? {
                 return Ok(result);
             }
-            let (l, r) = vm.coerce_numeric_bridge_pair_strict(l, r)?;
+            let (l, r) = match vm.coerce_numeric_bridge_pair_strict(l, r)? {
+                Ok(pair) => pair,
+                Err(failure) => return Ok(failure),
+            };
             Ok(crate::builtins::arith_mul(l, r))
         })?;
         self.stack.push(result);
@@ -474,7 +483,10 @@ impl Interpreter {
             if let Some(result) = vm.range_instance_arithmetic("/", &l, &r)? {
                 return Ok(result);
             }
-            let (l, r) = vm.coerce_numeric_bridge_pair_strict(l, r)?;
+            let (l, r) = match vm.coerce_numeric_bridge_pair_strict(l, r)? {
+                Ok(pair) => pair,
+                Err(failure) => return Ok(failure),
+            };
             crate::builtins::arith_div(l, r)
         })?;
         self.stack.push(result);
@@ -497,7 +509,10 @@ impl Interpreter {
             if crate::builtins::arith::is_temporal_operand(&l) {
                 return crate::builtins::arith_mod(l, r);
             }
-            let (l, r) = vm.coerce_numeric_bridge_pair_strict(l, r)?;
+            let (l, r) = match vm.coerce_numeric_bridge_pair_strict(l, r)? {
+                Ok(pair) => pair,
+                Err(failure) => return Ok(failure),
+            };
             crate::builtins::arith_mod(l, r)
         })?;
         self.stack.push(result);
@@ -534,7 +549,10 @@ impl Interpreter {
             if let Some(result) = vm.try_user_infix("infix:<**>", &l, &r)? {
                 return Ok(result);
             }
-            let (l, r) = vm.coerce_numeric_bridge_pair_strict(l, r)?;
+            let (l, r) = match vm.coerce_numeric_bridge_pair_strict(l, r)? {
+                Ok(pair) => pair,
+                Err(failure) => return Ok(failure),
+            };
             Ok(crate::builtins::arith_pow(l, r))
         })?;
         self.stack.push(result);

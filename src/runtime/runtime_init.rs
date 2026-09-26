@@ -611,6 +611,33 @@ impl Interpreter {
             },
         );
         classes.insert(
+            "__SupplyDerive".to_string(),
+            ClassDef {
+                parents: Vec::new(),
+                attributes: Vec::new(),
+                // The producer and forwarders of a `Supply.grep`/`.map` over an
+                // on-demand source — see `native_methods::supply_derive`.
+                native_methods: [
+                    "__mutsu_derive_start",
+                    "__mutsu_derive_emit",
+                    "__mutsu_derive_done",
+                    "__mutsu_derive_quit",
+                    "__mutsu_derive_close",
+                ]
+                .iter()
+                .map(|s| s.to_string())
+                .collect(),
+                mro: sym_mro(&["__SupplyDerive"]),
+                attribute_types: HashMap::new(),
+                attribute_smileys: HashMap::new(),
+                attribute_built: HashMap::new(),
+                embedded_attributes: HashSet::new(),
+                wildcard_handles: Vec::new(),
+                alias_attributes: HashSet::new(),
+                class_level_attrs: ValueMap::default(),
+            },
+        );
+        classes.insert(
             "Scheduler".to_string(),
             ClassDef {
                 parents: Vec::new(),

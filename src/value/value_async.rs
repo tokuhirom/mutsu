@@ -1,7 +1,5 @@
 use super::*;
 
-use crate::runtime::native_methods::SupplyTicket;
-
 impl std::fmt::Debug for PromiseState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("PromiseState")
@@ -87,6 +85,10 @@ impl SharedPromise {
                     class_name,
                     thread_payload: None,
                     waiters: Vec::new(),
+                    wake_next: 0,
+                    wake_granted: 0,
+                    wake_resumed: 0,
+                    wake_rendezvous: false,
                     vow_taken: false,
                     report_unhandled: false,
                     observed: false,
@@ -112,6 +114,10 @@ impl SharedPromise {
                     class_name: Symbol::intern("Promise"),
                     thread_payload: None,
                     waiters: Vec::new(),
+                    wake_next: 0,
+                    wake_granted: 0,
+                    wake_resumed: 0,
+                    wake_rendezvous: false,
                     vow_taken: false,
                     report_unhandled: false,
                     observed: false,
@@ -205,229 +211,6 @@ impl SharedPromise {
         let (lock, _) = &*self.inner;
         let mut state = lock.lock().unwrap();
         state.thread_payload.take()
-    }
-
-    pub(crate) fn keep(&self, result: Value, output: String, stderr: String) {
-        let (lock, cvar) = &*self.inner;
-        let mut state = lock.lock().unwrap();
-        state.status = "Kept".to_string();
-        state.result = result.clone();
-        state.output = output.clone();
-        state.stderr_output = stderr.clone();
-        let waiters = std::mem::take(&mut state.waiters);
-        cvar.notify_all();
-        drop(state);
-        Self::dispatch_waiters(waiters, "Kept".to_string(), result, output, stderr);
-    }
-
-    /// Try to keep; returns Err(current_status) if already kept/broken.
-    pub(crate) fn try_keep(&self, result: Value) -> Result<(), String> {
-        let (lock, cvar) = &*self.inner;
-        let mut state = lock.lock().unwrap();
-        if state.status != "Planned" {
-            return Err(state.status.clone());
-        }
-        state.status = "Kept".to_string();
-        state.result = result.clone();
-        let waiters = std::mem::take(&mut state.waiters);
-        cvar.notify_all();
-        drop(state);
-        Self::dispatch_waiters(
-            waiters,
-            "Kept".to_string(),
-            result,
-            String::new(),
-            String::new(),
-        );
-        Ok(())
-    }
-
-    pub(crate) fn break_with(&self, error: Value, output: String, stderr: String) {
-        let (lock, cvar) = &*self.inner;
-        let mut state = lock.lock().unwrap();
-        state.status = "Broken".to_string();
-        state.result = error.clone();
-        state.output = output.clone();
-        state.stderr_output = stderr.clone();
-        let waiters = std::mem::take(&mut state.waiters);
-        cvar.notify_all();
-        drop(state);
-        Self::dispatch_waiters(waiters, "Broken".to_string(), error, output, stderr);
-    }
-
-    /// Try to break; returns Err(current_status) if already kept/broken.
-    pub(crate) fn try_break(&self, error: Value) -> Result<(), String> {
-        let (lock, cvar) = &*self.inner;
-        let mut state = lock.lock().unwrap();
-        if state.status != "Planned" {
-            return Err(state.status.clone());
-        }
-        state.status = "Broken".to_string();
-        state.result = error.clone();
-        let waiters = std::mem::take(&mut state.waiters);
-        cvar.notify_all();
-        drop(state);
-        Self::dispatch_waiters(
-            waiters,
-            "Broken".to_string(),
-            error,
-            String::new(),
-            String::new(),
-        );
-        Ok(())
-    }
-
-    /// Register a callback to run once this promise resolves. If it is
-    /// already resolved, the callback runs synchronously on the caller's
-    /// thread (matching the existing `.then`/`.andthen`/`.orelse` fast path
-    /// for an already-kept/broken promise) and this returns `true`.
-    /// (A supply-block reaction is the exception — see
-    /// [`Self::on_resolve_in_supply_group`].)
-    /// Otherwise the callback is queued and this returns `false`: some
-    /// future `keep`/`try_keep`/`break_with`/`try_break` call will run every
-    /// queued waiter, **in registration order**, on a single dedicated
-    /// thread. Registering into this shared, ordered queue (rather than
-    /// having each caller spawn its own thread that blocks on `wait()`)
-    /// is what makes sibling callbacks on the same promise (e.g. an
-    /// independent `.then` alongside an `.andthen` chain) deterministically
-    /// ordered instead of racing each other's OS thread wake-up latency.
-    pub(crate) fn on_resolve(&self, waiter: PromiseWaiter) -> bool {
-        self.on_resolve_in_supply_group(waiter, None)
-    }
-
-    /// [`Self::on_resolve`], for a waiter whose effect is a reaction of the
-    /// supply block whose serialize group is `group`.
-    ///
-    /// Resolving the promise then reserves this reaction's place in that group
-    /// **on the resolving thread**, before the pooled worker that will run it
-    /// has been woken. Two promises resolved one after another therefore reach
-    /// the supply block in that order, instead of in whichever order their two
-    /// workers happened to wake up in. See [`SupplyTicket`].
-    ///
-    /// An **already-resolved** promise takes its ticket here instead, on the
-    /// registering thread, and its reaction is handed to a pooled worker just
-    /// like a queued one. Both paths therefore enter the block through the one
-    /// sequencer, in the order the reactions were created. Running the reaction
-    /// inline, as [`Self::on_resolve`] does for a plain waiter, would let it
-    /// jump ahead of every reaction already ticketed and waiting for a worker
-    /// (#7831); redeeming the ticket inline instead is not an option either,
-    /// because this thread is typically running the enclosing supply block's
-    /// own reaction and so already holds the group lock, so parking it behind
-    /// an earlier ticket — whose worker is itself blocked on that lock — would
-    /// deadlock. So this returns `false` (the reaction has not run yet) even
-    /// when the promise was already resolved.
-    ///
-    /// [`SupplyTicket`]: crate::runtime::native_methods::SupplyTicket
-    pub(crate) fn on_resolve_in_supply_group(
-        &self,
-        waiter: PromiseWaiter,
-        group: Option<u64>,
-    ) -> bool {
-        let (lock, _) = &*self.inner;
-        let mut state = lock.lock().unwrap();
-        if state.status == "Planned" {
-            state.waiters.push((waiter, group));
-            false
-        } else {
-            let status = state.status.clone();
-            let result = state.result.clone();
-            let output = state.output.clone();
-            let stderr = state.stderr_output.clone();
-            drop(state);
-            let Some(group) = group else {
-                waiter(status, result, output, stderr);
-                return true;
-            };
-            let ticket = crate::runtime::native_methods::reserve_supply_serialize(group);
-            crate::runtime::worker_pool::submit(move || {
-                // Held across the callback, exactly as in `dispatch_waiters`.
-                let _serialize_guard = ticket.redeem();
-                waiter(status, result, output, stderr);
-            });
-            false
-        }
-    }
-
-    /// Run every queued waiter, in order, on a single dedicated thread (so
-    /// resolving a promise never blocks the resolver on arbitrary user
-    /// callback code). No-op when there is nothing queued.
-    fn dispatch_waiters(
-        waiters: Vec<(PromiseWaiter, Option<u64>)>,
-        status: String,
-        result: Value,
-        output: String,
-        stderr: String,
-    ) {
-        if waiters.is_empty() {
-            return;
-        }
-        // Supply-block reactions take their place in the block's queue here,
-        // on the resolving thread and in resolution order, so the pooled task
-        // below cannot reorder them by winning a wake-up race (#7811).
-        let waiters: Vec<(PromiseWaiter, Option<SupplyTicket>)> = waiters
-            .into_iter()
-            .map(|(waiter, group)| {
-                (
-                    waiter,
-                    group.map(crate::runtime::native_methods::reserve_supply_serialize),
-                )
-            })
-            .collect();
-        // Pooled (ADR-0020 slice 3): fires on every promise resolution that
-        // has queued waiters. Ordering is preserved — all of this promise's
-        // waiters run in registration order inside the single pooled task.
-        crate::runtime::worker_pool::submit(move || {
-            for (waiter, ticket) in waiters {
-                // Held across the callback; the `emit` inside it re-enters the
-                // same group on this thread, which the lock allows.
-                let _serialize_guard = ticket.map(|t| t.redeem());
-                waiter(
-                    status.clone(),
-                    result.clone(),
-                    output.clone(),
-                    stderr.clone(),
-                );
-            }
-        });
-    }
-
-    /// Check if promise is resolved (Kept or Broken).
-    pub(crate) fn is_resolved(&self) -> bool {
-        let (lock, _) = &*self.inner;
-        lock.lock().unwrap().status != "Planned"
-    }
-
-    pub(crate) fn status(&self) -> String {
-        let (lock, _) = &*self.inner;
-        lock.lock().unwrap().status.clone()
-    }
-
-    pub(crate) fn wait(&self) -> (Value, String, String) {
-        self.mark_observed();
-        // GC safepoint (§9.2a `await`): the await entry boundary, before the
-        // state lock is taken (a collect here can run finalizers that touch
-        // other promises/channels, so it must not hold this mutex).
-        crate::vm::vm_poll::poll(crate::gc::SafepointKind::Await, 0);
-        let (lock, cvar) = &*self.inner;
-        // STW-aware: the waiting thread counts as quiescent for the GC's
-        // cooperative stop-the-world, and never resumes (cloning `Value`s
-        // below mutates Gc refcounts) while a cycle scan is in progress.
-        // On wasm this pumps the cooperative scheduler instead of parking —
-        // the `start` block we are waiting for only runs because of it.
-        let state = match crate::gc::wait_until(lock, cvar, |s| s.status != "Planned") {
-            Some(state) => state,
-            None => {
-                // Single-threaded build with nothing left to run: break the
-                // promise so `await` reports a deadlock instead of hanging.
-                let _ = self.try_break(Value::str(crate::gc::DEADLOCK_MESSAGE.to_string()));
-                lock.lock().unwrap()
-            }
-        };
-        (
-            state.result.clone(),
-            state.output.clone(),
-            state.stderr_output.clone(),
-        )
     }
 
     pub(crate) fn result_blocking(&self) -> Value {

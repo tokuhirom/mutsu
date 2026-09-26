@@ -5,12 +5,10 @@ use Test;
 # `.cue` dispatch. Rakudo (per ADR-0105 Appendix A, measured against raku
 # 2026.07) routes an awaited promise's wake-up, a `.then` callback, a bound
 # `Promise.new(scheduler => ...)`, and a `start` block under a user
-# `$*SCHEDULER` all through that scheduler's own `.cue`; mutsu's blocking
-# `await` and pool-direct dispatch never call it. Every `todo`'d assertion
-# below is expected to start passing, in order, as ADR-0105's slices S1-S4
-# land — see docs/adr/0105-promise-resolution-dispatches-through-the-promise-scheduler.md
-# §8. Do not remove a `todo` here without the matching slice actually
-# landing; do not add a fix to make one pass without updating that plan.
+# `$*SCHEDULER` all through that scheduler's own `.cue`, and a thread woken by
+# a keeper running on a pool worker observes the keeper's straight-line code
+# (experiment 3). Every assertion here was `todo` until ADR-0105's slices
+# landed — see docs/adr/0105-promise-resolution-dispatches-through-the-promise-scheduler.md.
 
 plan 6;
 
@@ -46,7 +44,6 @@ class LogSched does Scheduler {
     sleep 0.05;
     $p.keep(1);
     await $t;
-    todo 'ADR-0105 S2 (D2): await-wake does not dispatch through the bound scheduler yet';
     ok $s.log.elems >= 1, 'keep cues the awaiter wake-up through the promise scheduler (F1)';
 }
 
@@ -58,7 +55,6 @@ class LogSched does Scheduler {
     $p.then({ $done.keep(1) });
     $p.keep(1);
     await $done;
-    todo 'ADR-0105 S2 (D2): .then dispatch does not go through the bound scheduler yet';
     ok $s.log.elems >= 1, '.then callback dispatch cues through the promise scheduler (F1)';
 }
 
@@ -74,10 +70,8 @@ class LogSched does Scheduler {
 }
 
 # Experiment 3: a keeper's own continuation (setting $flag before parking on
-# `sleep`) is observed by the thread it woke, before that thread's dispatch
-# has a chance to overtake it. Rakudo: 30/30. mutsu (ADR-0105 Appendix A):
-# 28/30 — real but rare, so this assertion may occasionally pass today by
-# chance; that is harmless under `todo`.
+# `sleep`) is observed by the thread it woke: the wake-up of `await $init` is
+# delivered at the keeper's next yield (ADR-0105 D2). Rakudo: 30/30.
 {
     my $init = Promise.new;
     my $flag = 0;
@@ -85,7 +79,6 @@ class LogSched does Scheduler {
     await $init;
     my $observed = $flag;
     await $p;
-    todo 'ADR-0105 S4 (D4): a worker-submitted task may still overtake its still-running submitter';
     is $observed, 1, 'the awaiter observes the keeper continuation before dispatch overtakes it (experiment 3)';
 }
 

@@ -265,6 +265,12 @@ impl NanBox {
                 Kind::CustomTypeInstance => unique::<CustomTypeInstanceData>(bits),
                 Kind::Mixin => unique::<MixinBox>(bits),
                 Kind::RegexCaptured => unique::<crate::value::RegexClosure>(bits),
+                // A deferred entry ref's root `Gc` handle lives in ONE shared
+                // box however many holders cloned the word; tracing it through
+                // each holder drove the root hash's trial-deletion count below
+                // zero (a `%h.map({ $_ => %other{$_} })` pair value copied into
+                // a merged hash).
+                Kind::HashEntryRef => unique::<HashEntryRefBox>(bits),
                 // Seq/Slip/Junction/LazyThunk payloads are the shared Arc
                 // itself (not a box) — their existing `uniquely_owned` gates
                 // in `value_gc` read the same count. Node kinds (Array, Hash,

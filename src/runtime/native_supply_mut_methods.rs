@@ -334,6 +334,9 @@ impl Interpreter {
                     Some(ValueView::Bool(true))
                 );
                 let mut on_demand_quit: Option<Value> = None;
+                // Set when an explicit `Supply.on-demand` producer returned
+                // without completing: `done` then waits on its emitter.
+                let mut producer_done_supplier: Option<u64> = None;
                 let mut done_group_marker: Option<Value> = None;
                 // Every subscription this tap creates upstream, so closing the
                 // returned Tap tears the whole chain down (raku: closing a tap
@@ -395,6 +398,7 @@ impl Interpreter {
                     } else {
                         None
                     };
+                    let is_block_body = Self::is_supply_block_producer(&on_demand_cb);
                     let (callback_result, emitted, body_ran_done) =
                         self.run_on_demand_body(on_demand_cb, Some(emitter_supplier_id));
                     if let Err(err) = callback_result {
@@ -978,6 +982,38 @@ impl Interpreter {
                             register_supplier_done_callback(emitter_supplier_id, complete_marker);
                         }
                     }
+                    // `Supply.on-demand(&producer)` completes only when the
+                    // producer calls `done` (or quits), unlike a `supply { }`
+                    // block, which is done once its body and its `whenever`s
+                    // finish. A producer that returned without either emits
+                    // later (from a timer tap, a `start` block, ...): subscribe
+                    // this tap to its emitter and defer `done` to it.
+                    let (_, emitter_done, emitter_quit) = supplier_snapshot(emitter_supplier_id);
+                    if !is_block_body
+                        && !shared_on_demand
+                        && whenever_supplier_count == 0
+                        && !body_done
+                        && !emitter_done
+                        && emitter_quit.is_none()
+                        && on_demand_quit.is_none()
+                    {
+                        if !outer_tap_registered && Self::supply_has_active_callback(&tap_cb) {
+                            Self::register_outer_tap_with_do_callbacks(
+                                &attrs,
+                                emitter_supplier_id,
+                                &tap_cb,
+                                delay_seconds,
+                            );
+                            outer_tap_registered = true;
+                            if let Some(tid) = last_supplier_tap_id(emitter_supplier_id) {
+                                upstream_taps.push(Value::array(vec![
+                                    Value::int(emitter_supplier_id as i64),
+                                    Value::int(tid as i64),
+                                ]));
+                            }
+                        }
+                        producer_done_supplier = Some(emitter_supplier_id);
+                    }
                     // The tapped on-demand supply's own `closing => { ... }`
                     // callbacks (stored on the Supply as `on_close_callbacks`) fire
                     // when it closes. A synchronous body that already ran `done`
@@ -1277,7 +1313,9 @@ impl Interpreter {
 
                 // Call done callback after all values emitted
                 if let Some(done_fn) = done_cb {
-                    if let Some(ValueView::Int(supplier_id)) =
+                    if let Some(sid) = producer_done_supplier {
+                        register_supplier_done_callback(sid, done_fn);
+                    } else if let Some(ValueView::Int(supplier_id)) =
                         attrs.get("supplier_id").map(Value::view)
                     {
                         // Check both the attribute and the global supplier state
@@ -1647,75 +1685,10 @@ impl Interpreter {
     /// `"emit"`/`"quit"` shims take one (the emitted value / quit exception)
     /// and forward it verbatim, so a single template covers both.
     fn build_scheduled_shim_sub(instance: Value, method_name: &'static str) -> Value {
-        let has_param = method_name != "__mutsu_scheduled_done";
-        let (params, param_defs, call_args) = if has_param {
-            (
-                vec!["v".to_string()],
-                vec![crate::ast::ParamDef {
-                    type_capture: None,
-                    name: "v".to_string(),
-                    default: None,
-                    multi_invocant: true,
-                    required: false,
-                    named: false,
-                    named_alias: false,
-                    slurpy: false,
-                    double_slurpy: false,
-                    onearg: false,
-                    sigilless: false,
-                    type_constraint: None,
-                    literal_value: None,
-                    sub_signature: None,
-                    where_constraint: None,
-                    traits: Vec::new(),
-                    optional_marker: false,
-                    outer_sub_signature: None,
-                    code_signature: None,
-                    is_invocant: false,
-                    shape_constraints: None,
-                    block_param: false,
-                    trait_args: Vec::new(),
-                }],
-                vec![crate::ast::Expr::Var("v".to_string())],
-            )
-        } else {
-            (Vec::new(), Vec::new(), Vec::new())
-        };
-        let body = vec![crate::ast::Stmt::Expr(crate::ast::Expr::MethodCall {
-            target: Box::new(crate::ast::Expr::Literal(instance)),
-            name: Symbol::intern(method_name),
-            args: call_args,
-            modifier: None,
-            quoted: false,
-        })];
-        Value::sub_value(crate::gc::Gc::new(crate::value::SubData {
-            package: Symbol::intern("GLOBAL"),
-            name: Symbol::intern(""),
-            params: std::sync::Arc::new(params),
-            param_defs: std::sync::Arc::new(param_defs),
-            body: std::sync::Arc::new(body),
-            is_rw: false,
-            is_raw: false,
-            env: crate::runtime::Env::new(),
-            assumed_positional: Vec::new(),
-            assumed_named: ValueMap::default(),
-            id: crate::value::next_instance_id(),
-            empty_sig: false,
-            is_bare_block: true,
-            compiled_code: None,
-            compiled_fns: None,
-            compiled_routine: None,
-            is_decl_expr_thunk: false,
-            deprecated_message: None,
-            source_line: None,
-            source_file: None,
-            owned_captures: Vec::new(),
-            authoritative_captures: Vec::new(),
-            upvalues: Vec::new(),
-            captured_fatal_mode: false,
-            param_name_syms_cache: std::sync::OnceLock::new(),
-            source_file_sym_cache: std::sync::OnceLock::new(),
-            state_scope_guard: None,
-        }))
+        crate::runtime::native_methods::native_method_shim(
+            instance,
+            method_name,
+            method_name != "__mutsu_scheduled_done",
+        )
     }
 }
