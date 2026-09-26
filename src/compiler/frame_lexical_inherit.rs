@@ -85,3 +85,31 @@ pub(crate) fn inherit_frame_lexical_routines(
         }
     }
 }
+
+impl super::Compiler {
+    /// Record that a bare call to `name` was compiled as a call on the `&name`
+    /// binding that shadows it (see [`CompiledCode::amp_shadowed_calls`]).
+    pub(super) fn note_amp_shadowed_call(&mut self, name: Symbol) {
+        if !self.code.amp_shadowed_calls.contains(&name) {
+            self.code.amp_shadowed_calls.push(name);
+        }
+    }
+
+    /// Prepare a fresh compiler that is about to compile `origin`'s AST again
+    /// (the inline `map`/`grep` path, a sequence generator): every bare call
+    /// `origin` (or a closure nested in it) resolved to a shadowing `&name`
+    /// binding must resolve the same way here, so declare those bindings in an
+    /// enclosing scope. Without this the recompiled `h()` in
+    /// `{ my &h = {10}; (1..2).map({ h() }) }` dispatched to an outer `sub h`.
+    pub(crate) fn seed_amp_shadowed_calls_from(&mut self, origin: &CompiledCode) {
+        let mut frame = super::lex_scope::ScopeFrame::new();
+        visit_code(origin, &mut |c| {
+            for name in &c.amp_shadowed_calls {
+                frame.insert(format!("&{}", name.resolve()), None);
+            }
+        });
+        if !frame.is_empty() {
+            self.enclosing_scopes.push(frame);
+        }
+    }
+}
