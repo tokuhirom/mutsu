@@ -226,7 +226,28 @@ impl Interpreter {
                     Self::coerce_attr_value_by_sigil(value, decl.sigil).detach_shared_container()
                 }
             } else {
-                Value::NIL
+                // Class-level aggregate attributes are real containers from
+                // their declaration onward.  Besides matching the ordinary
+                // `my @a`/`my %h` default, this gives a typed declaration an
+                // object on which its element constraint can be carried.
+                match decl.sigil {
+                    '@' => Value::real_array(Vec::new()),
+                    '%' => Value::hash(ValueMap::default()),
+                    _ => Value::NIL,
+                }
+            };
+            let initial_value = if let Some(type_constraint) = &decl.type_constraint
+                && matches!(decl.sigil, '@' | '%')
+            {
+                let type_constraint = type_constraint.replace("::?CLASS", cx.name);
+                self.finalize_typed_container_attr(
+                    &attr_name_str,
+                    decl.sigil,
+                    &type_constraint,
+                    initial_value,
+                )?
+            } else {
+                initial_value
             };
             cx.class_def
                 .class_level_attrs
