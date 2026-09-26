@@ -197,13 +197,28 @@ fn token_defs_gen() -> u64 {
 }
 
 impl Interpreter {
-    /// The reachability walk itself: is a call to `name` reachable from
-    /// `(pkg, name)`? `None` when it is proven unreachable; otherwise the
-    /// reason the walk gave up, which is not the same question -- a real cycle
-    /// and an unresolvable edge both mean "may re-enter" but cost entirely
-    /// different work to clear.
+    /// May a `<name>` call in `pkg` be streamed as far as its call cone is
+    /// concerned? `None` when it may; otherwise the reason it may not.
+    ///
+    /// A rule whose cone never calls `name` again trivially qualifies. So does
+    /// a recursive one whose calls to `name` all sit after something that
+    /// consumes input (`regex A { '{' [ <A> | . ]*? '}' }`,
+    /// `regex_left_call_graph`): each nested call runs under a different
+    /// left-recursion key (the key carries the position), so the growing-seed
+    /// loop is as much of a formality for it as for a non-recursive rule, and
+    /// the streamed path's own runtime escapes (`LrKeyActive`,
+    /// `SeedConsulted`) still cover user code re-entering the key by hand.
+    /// Declining it instead made every nested call enumerate its whole end set
+    /// before the caller could try the first, which is exponential in the
+    /// nesting depth (#9596).
     fn reenter_decline(&mut self, name: &str, pkg: Symbol) -> Option<StreamDecline> {
-        self.cone_walk(name, pkg).0
+        let mut reaches_own_name = false;
+        let (decline, _) = self.cone_walk(name, pkg, Some(&mut reaches_own_name));
+        if decline.is_some() {
+            return decline;
+        }
+        (reaches_own_name && !self.subrule_cannot_left_reenter(Symbol::intern(name), pkg))
+            .then_some(StreamDecline::ReentersOwnName)
     }
 
     /// The walk itself, reporting both facts it can establish about the cone:
@@ -211,7 +226,17 @@ impl Interpreter {
     /// no rule in the cone runs user code. The second is only meaningful
     /// alongside a `None` first — an aborted walk answers `false` rather than
     /// guessing at the part it never reached.
-    fn cone_walk(&mut self, name: &str, pkg: Symbol) -> (Option<StreamDecline>, bool) {
+    ///
+    /// With `own_name` unset, reaching a rule named `name` again ends the walk
+    /// with `ReentersOwnName`. With it set, that is recorded there instead and
+    /// the walk goes on checking the rest of the cone, for a caller that can
+    /// clear the cycle with a sharper question.
+    fn cone_walk(
+        &mut self,
+        name: &str,
+        pkg: Symbol,
+        mut own_name: Option<&mut bool>,
+    ) -> (Option<StreamDecline>, bool) {
         let name_sym = Symbol::intern(name);
         let start: RuleNode = (pkg, name_sym);
         let mut seen: HashSet<RuleNode> = HashSet::from_iter([start]);
@@ -227,7 +252,10 @@ impl Interpreter {
                 // Reaching the starting NAME again closes the loop the
                 // growing-seed algorithm exists for.
                 if callee.1 == name_sym {
-                    return (Some(StreamDecline::ReentersOwnName), false);
+                    match own_name.as_deref_mut() {
+                        Some(reached) => *reached = true,
+                        None => return (Some(StreamDecline::ReentersOwnName), false),
+                    }
                 }
                 if seen.len() >= MAX_REACHABLE_RULES {
                     return (Some(StreamDecline::ReachableSetTooLarge), false);
@@ -419,7 +447,7 @@ impl Interpreter {
         pkg: Symbol,
         generation: u64,
     ) -> bool {
-        let (decline, code_free) = self.cone_walk(name.as_str(), pkg);
+        let (decline, code_free) = self.cone_walk(name.as_str(), pkg, None);
         let verdict = decline.is_none() && code_free;
         super::regex_lr_state::lr_record_skip_verdict(name, pkg, generation, verdict);
         verdict
