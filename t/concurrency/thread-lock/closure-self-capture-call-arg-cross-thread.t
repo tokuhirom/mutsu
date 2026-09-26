@@ -8,48 +8,58 @@ use Test;
 
 plan 5;
 
-sub keep-and-run-later(&c) { start { sleep 0.2; c() } }
+sub keep-and-run-later(&c, Promise:D $gate) { start { await $gate; c() } }
 
 {
     my @saved;
+    my $ready = Promise.new;
     sub keep(&c) { @saved.push(&c); 42 }
-    my $th = start { sleep 0.2; @saved[0]() };
+    my $th = start { await $ready; @saved[0]() };
     my $t = keep({ $t });
+    $ready.keep;
     is (await $th), 42, 'a call-argument closure run on an earlier-started thread sees its own declaration';
 }
 
 sub in-a-routine() {
     my @saved;
+    my $ready = Promise.new;
     my sub keep(&c) { @saved.push(&c); 'stored' }
-    my $th = start { sleep 0.2; @saved[0]() };
+    my $th = start { await $ready; @saved[0]() };
     my $t = keep({ $t });
+    $ready.keep;
     await $th
 }
 is in-a-routine(), 'stored', '... also inside a routine body';
 
 {
-    my $p = keep-and-run-later({ $p.^name });
+    my $gate = Promise.new;
+    my $p = keep-and-run-later({ $p.^name }, $gate);
+    $gate.keep;
     is (await $p), 'Promise', 'a closure passed to a routine that runs it later sees the declaration';
 }
 
 {
     my $seen = Promise.new;
     my $v = $seen.vow;
-    my $tap = Supply.interval(0.05).tap({
+    my $s = Supplier.new;
+    my $tap = $s.Supply.tap({
         $v.keep($tap.^name) if $seen.status ~~ Planned;
         $tap.close;
     });
+    start { $s.emit(True) };
     await Promise.anyof($seen, Promise.in(10));
-    is $seen.result, 'Tap', 'an interval tap callback sees the Tap it is assigned to';
+    is $seen.result, 'Tap', 'an asynchronous tap callback sees the Tap it is assigned to';
 }
 
 class Waiter {
-    method wait-for(Supply $s) {
+    method wait-for(Supplier $s) {
         my $p = Promise.new;
         my $v = $p.vow;
-        my $tap = $s.tap({ $tap.close; $v.keep($_) });
+        my $tap = $s.Supply.tap({ $tap.close; $v.keep($_) });
+        start { $s.emit(True) };
         $p
     }
 }
-is (await Promise.anyof(Waiter.wait-for(Supply.interval(0.05)), Promise.in(10))), True,
+my $s = Supplier.new;
+is (await Promise.anyof(Waiter.wait-for($s), Promise.in(10))), True,
     'a method body closing its own tap from the callback completes';
