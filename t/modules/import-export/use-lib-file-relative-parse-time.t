@@ -5,7 +5,7 @@ use Test;
 # later signature, and an exported constant is a term (not a listop that
 # would swallow a following `!!`). Found via App::Moneymoor's
 # `use lib $?FILE.IO.parent.add('lib').Str; use BudgetFixtures;` suites.
-use lib $?FILE.IO.parent(2).add('lib').Str;
+use lib $?FILE.IO.parent(3).add('lib').Str;
 use UseLibFileRelative;
 
 plan 2;

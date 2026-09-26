@@ -1,4 +1,4 @@
-# Fixture for t/modules/use-lib-file-relative-parse-time.t.
+# Fixture for t/modules/import-export/use-lib-file-relative-parse-time.t.
 unit module UseLibFileRelative;
 
 constant ALPHA  is export = 1;
