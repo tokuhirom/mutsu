@@ -1141,6 +1141,32 @@ impl Interpreter {
                         .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                     return Ok(Value::NIL);
                 }
+                // A builtin/operator code value is a name-only Routine rather
+                // than a Sub with an AST body. Materialize it as a plain
+                // forwarding block once, so the existing add_method path can
+                // bind the invocant and compile the method normally. This is
+                // the shape used by Version::Raku's `&[cmp]`/`&[eqv]` aliases.
+                let method_value = if let ValueView::Routine {
+                    package,
+                    name,
+                    is_regex: false,
+                    ..
+                } = method_value.view()
+                {
+                    let (params, param_defs) = self.callable_signature(&method_value);
+                    let call_name = if crate::qualified::is_global_package(package) {
+                        name
+                    } else {
+                        crate::qualified::qualified(package, name)
+                    };
+                    let body = vec![Stmt::Expr(Expr::Call {
+                        name: call_name,
+                        args: params.iter().cloned().map(Expr::Var).collect(),
+                    })];
+                    Value::make_sub(package, name, params, param_defs, body, false, Env::new())
+                } else {
+                    method_value
+                };
                 let ValueView::Sub(sub_data) = method_value.view() else {
                     return Ok(Value::NIL);
                 };

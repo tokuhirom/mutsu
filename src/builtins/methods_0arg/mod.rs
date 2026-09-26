@@ -464,6 +464,8 @@ pub(crate) fn native_method_0arg(
         return native_method_0arg(inner, method_sym);
     }
 
+    // Cost: O(p), p = number of parts in the Version; `.plus` is O(1), while
+    // `.parts` allocates O(p) result storage and `.whatever` scans O(p).
     // Version introspection: `.parts` (list of Int/Str/Whatever parts),
     // `.plus` (trailing `+`), `.whatever` (any `*` part). Used by zef's
     // DependencySpecification version matching.
