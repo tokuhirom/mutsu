@@ -451,7 +451,49 @@ impl Interpreter {
             *cell.lock().unwrap_or_else(|e| e.into_inner()) = value;
             return;
         }
-        self.state_vars.insert(key, value);
+        if self.state_vars.insert(key, value).is_none() {
+            self.note_unmigrated_state_key(key);
+        }
+    }
+
+    /// Record a key newly inserted into `state_vars` for the next spawn's
+    /// migration pass. The list is bounded by the store it indexes: once it
+    /// outgrows `state_vars` (a long spawn-free stretch that also removed
+    /// entries), it is rebuilt from the store's live keys.
+    fn note_unmigrated_state_key(&mut self, key: (Symbol, Option<u64>)) {
+        self.state_vars_unmigrated.push(key);
+        if self.state_vars_unmigrated.len() > 2 * self.state_vars.len() + 16 {
+            self.state_vars_unmigrated = self.state_vars.keys().copied().collect();
+        }
+    }
+
+    /// Track C: migrate the `state` variables created since the previous spawn
+    /// into shared cells (keyed by their normalized cross-compilation key), so
+    /// a routine whose `state` was already mutated before a thread spawned
+    /// (`f(); f(); start { f() }`) carries that value into the threads instead
+    /// of re-initializing from the declaration. Only seeds cells that don't
+    /// exist yet; the value becomes the cell's initial content.
+    ///
+    /// Only the keys inserted since the last pass need visiting: an older key
+    /// was seeded by an earlier pass, and seeding is `seed_if_absent`, so
+    /// revisiting it could only ever be a no-op. A key that was removed
+    /// (`remove_state_var`, which drops its cell too) and re-created is
+    /// re-recorded by `set_state_var`.
+    // Cost: O(k), k = state keys inserted since the previous spawn.
+    pub(crate) fn seed_unmigrated_state_vars(
+        &mut self,
+        shared: &crate::runtime::shared_store::SharedStore,
+    ) {
+        for skey in std::mem::take(&mut self.state_vars_unmigrated) {
+            let Some(sval) = self.state_vars.get(&skey) else {
+                continue;
+            };
+            if matches!(sval.view(), ValueView::ContainerRef(_)) {
+                continue;
+            }
+            let shared_key = Self::shared_state_cell_key(skey);
+            shared.seed_if_absent(&shared_key, || sval.clone().into_container_ref());
+        }
     }
 
     /// Track C: get-or-create a shared `ContainerRef` cell for a `state` variable

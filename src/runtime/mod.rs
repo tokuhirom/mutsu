@@ -3353,6 +3353,13 @@ pub struct Interpreter {
     /// distinguishes an un-scoped (named-sub/module-level) `state` var from one
     /// scoped to a specific closure clone.
     state_vars: HashMap<(Symbol, Option<u64>), Value>,
+    /// Keys inserted into `state_vars` since the last `start` spawn migrated
+    /// them into the cross-thread store (see `seed_unmigrated_state_vars`).
+    /// Every key whose entry existed at an earlier spawn was already seeded
+    /// then (`seed_if_absent`, so a second seed is a no-op), so the spawn only
+    /// has to visit what was inserted since: O(new keys) per spawn instead of
+    /// O(every state entry the program ever created) (#9504).
+    state_vars_unmigrated: Vec<(Symbol, Option<u64>)>,
     /// Names re-declared (`my $x` / `if ... -> $x`) in THIS thread while the
     /// cross-thread shared store is active. A re-declaration is a fresh
     /// binding shadowing the captured outer lexical, so subsequent writes to
