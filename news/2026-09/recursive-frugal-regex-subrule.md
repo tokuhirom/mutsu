@@ -32,6 +32,6 @@ causes of its own:
 `n = 8` now takes 0.1 s instead of not finishing, and `n = 32` about 2 s in a
 release build. That growth is polynomial, not exponential, but it is still
 far from Rakudo, whose declarative prefix is a precompiled NFA. Pinned by
-`t/regex/syntax/recursive-frugal-regex-subrule.t`.
+`t/regex/recursive-frugal-regex-subrule.t`.
 
 Closes #9596.
