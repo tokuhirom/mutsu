@@ -32,7 +32,11 @@ general interpreter fixes:
 - **A code object never inherits the caller's return type.** `$x.&f` built
   inside `sub g(--> Supply)` enforced `--> Supply` on `f`'s own `return`.
 
-The distribution's only test file, `t/file-change.t`, is `no_baseline`:
+`App::Prove6` 0.0.18 validates its options through the same Getopt::Long
+code, and died at load with "Invalid name(s): l". It went from
+`blocked_load` to green (1/1) with no further work.
+
+App::Lorea's only test file, `t/file-change.t`, is `no_baseline`:
 rakudo also fails its third assertion. Under mutsu the file still cannot see
 the file change it provokes, because `IO::Notification.watch-path` is missing
 (#9586). Two other findings were filed along the way: a `gather` returned from
