@@ -529,9 +529,30 @@ pub(super) fn dispatch(
             | ValueView::GenericRange { .. } => Some(Ok(Value::truth(is_infinite_range(target)))),
             _ => None,
         }),
+        // Cost: O(1) (a type-name match; a Buf answers its element type).
         "of" => Some(match target.view() {
             ValueView::Hash(_) | ValueView::Array(..) => None,
-            ValueView::Package(name) if name.resolve() == "Hash" || name.resolve() == "Array" => {
+            // An unparameterized container or code type object has no element
+            // (or return) constraint: `Positional.of`, `Callable.of`, `Map.of`
+            // are all `Mu` (Getopt::Long reads `$param.type.of` off an
+            // untyped `:@list` parameter, whose `.type` is `Positional`).
+            ValueView::Package(name)
+                if matches!(
+                    name.resolve().as_ref(),
+                    "Hash"
+                        | "Array"
+                        | "List"
+                        | "Map"
+                        | "Positional"
+                        | "Associative"
+                        | "Callable"
+                        | "Code"
+                        | "Block"
+                        | "Routine"
+                        | "Sub"
+                        | "Method"
+                ) =>
+            {
                 Some(Ok(Value::package(Symbol::intern("Mu"))))
             }
             // A `Buf`/`Blob`-shaped instance answers its element type

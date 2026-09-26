@@ -205,6 +205,14 @@ impl Interpreter {
         // Filtered like a closure capture, not the whole live env: sharing the
         // running frame's tier made its next write copy the tier (#9169).
         let mut captured_env = self.routine_code_object_env(def.compiled.as_ref());
+        // The routine's return type is its own, never the running frame's: a
+        // capture taken inside `sub f(--> Supply)` (whole-env when the callee
+        // has no compiled code, or reflective) carries f's
+        // `__mutsu_return_type`, which `&g` would then enforce on g's own
+        // `return` (App::Lorea's `$path.&normalise` inside a gather pulled
+        // from `watch-recursive(--> Supply)`). Same rule as closure creation
+        // in `vm_closure_build`.
+        captured_env.remove_sym(crate::symbol::well_known::return_type());
         if let Some(ref return_type) = def.return_type {
             captured_env.insert(
                 "__mutsu_return_type".to_string(),

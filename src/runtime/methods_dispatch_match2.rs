@@ -233,6 +233,9 @@ impl Interpreter {
             "reduce" => Some(self.dispatch_reduce_method(target, args)),
             "elems" => self.dispatch_elems_method(target, args),
             "map" => Some(self.dispatch_map_method(target, args)),
+            // Cost: O(e + r), e = invocant elements (one mapper call each), r =
+            // elements the mapper results flatten to (a returned gather is run
+            // to completion here).
             "flatmap" => {
                 // flatmap is equivalent to .map(...).flat
                 Some(self.dispatch_map_method(target, args).and_then(|mapped| {
@@ -260,6 +263,15 @@ impl Interpreter {
                             | ValueView::RangeExclBoth(..)
                             | ValueView::GenericRange { .. } => {
                                 flat_items.extend(crate::runtime::utils::value_to_list(&item));
+                            }
+                            // A mapper returning a `gather` (Getopt::Long's
+                            // `make-receivers` for a Bool option) hands back an
+                            // unforced coroutine; flattening means iterating it,
+                            // which only the interpreter can do. A `lazy`-marked
+                            // or infinite list stays a single element rather
+                            // than hanging the eager flatten.
+                            ValueView::LazyList(ll) if !ll.is_genuinely_lazy() => {
+                                flat_items.extend(self.force_lazy_list_vm(&ll)?);
                             }
                             _ => flat_items.push(item.clone()),
                         }

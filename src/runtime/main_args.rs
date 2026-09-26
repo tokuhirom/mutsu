@@ -75,6 +75,19 @@ impl Interpreter {
         if all_candidates.is_empty() {
             return Ok(());
         }
+        // Rakudo's implicit MAIN handling *is* `RUN-MAIN(&MAIN, ...)`, which
+        // builds the dispatch capture with an `ARGS-TO-CAPTURE` (and reports a
+        // failed dispatch with a `GENERATE-USAGE`) found in scope — a module
+        // exporting one (Getopt::Long, re-exported by App::Lorea) replaces the
+        // default command-line parser. Take the same path when either is
+        // present; the plain parser below is the no-hook case.
+        if self.resolve_function("ARGS-TO-CAPTURE").is_some()
+            || self.resolve_function("GENERATE-USAGE").is_some()
+        {
+            let main = self.resolve_code_var("MAIN");
+            self.builtin_run_main(&[main, Value::NIL])?;
+            return Ok(());
+        }
         let main_def = all_candidates[0].clone();
         let sub_main_opts = self.read_sub_main_opts();
 
