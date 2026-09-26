@@ -913,6 +913,18 @@ mod tests {
     }
 
     #[test]
+    fn parse_pseudo_package_bare_symbol_lookup_term() {
+        let (rest, expr) = primary("MY::<Foo>").unwrap();
+        assert_eq!(rest, "");
+        assert!(matches!(
+            expr,
+            Expr::Index { target, index, .. }
+                if matches!(target.as_ref(), Expr::PseudoStash(s) if s.as_str() == "MY::")
+                    && matches!(index.as_ref(), Expr::Literal(lit) if matches!(lit.view(), ValueView::Str(s) if s.as_str() == "Foo"))
+        ));
+    }
+
+    #[test]
     fn parse_scalar_var_root_stash_symbol_lookup() {
         let (rest, expr) = primary("$::<bear>").unwrap();
         assert_eq!(rest, "");
