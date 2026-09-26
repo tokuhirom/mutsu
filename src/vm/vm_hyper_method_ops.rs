@@ -700,8 +700,15 @@ impl Interpreter {
         // warns propagating as before.
         let collect_warns = hash_keys.is_none() && quant_kind.is_none();
         let mut pending_warn: Option<RuntimeError> = None;
+        // One spelling for the whole target: rewrite and intern it once, not
+        // per element (#8998).
+        let method = Self::rewrite_method_name(method_raw, modifier);
+        let method_sym = if method == method_raw {
+            name.sym
+        } else {
+            Symbol::intern(&method)
+        };
         for (idx, item) in items.iter_mut().enumerate() {
-            let method = Self::rewrite_method_name(method_raw, modifier);
             // Special case: CALL-ME on callable items (from >>.(args) syntax).
             // Instead of method dispatch, invoke the item directly as a callable.
             if method == "CALL-ME"
@@ -774,18 +781,17 @@ impl Interpreter {
             } else {
                 None
             };
-            let mut skip_native = method == "VAR"
-                || (quoted
-                    && matches!(
-                        method.as_str(),
-                        "DEFINITE" | "WHAT" | "WHO" | "HOW" | "WHY" | "WHICH" | "WHERE" | "VAR"
-                    ));
-            if !skip_native
-                && !matches!(
-                    method.as_str(),
-                    "DEFINITE" | "WHAT" | "WHO" | "HOW" | "WHY" | "WHICH" | "WHERE" | "VAR"
-                )
-            {
+            // A user method of the element's class shadows the native one --
+            // but a MOP pseudo-method name (`WHAT`, `DEFINITE`, ...) only when
+            // it was spelled as a string (quoted or run-time): unquoted, it is
+            // the reflection macro. Without such a user method a quoted
+            // pseudo-method is the ordinary built-in.
+            let pseudo = matches!(
+                method.as_str(),
+                "DEFINITE" | "WHAT" | "WHO" | "HOW" | "WHY" | "WHICH" | "WHERE" | "VAR"
+            );
+            let mut skip_native = method == "VAR";
+            if !skip_native && (quoted || !pseudo) {
                 let class_name = if item.is_lazy_match_value() {
                     // Lazy Match: read the cursor class off the node (a grammar
                     // cursor reports the grammar's own type) — no materialization.
@@ -803,12 +809,17 @@ impl Interpreter {
                     skip_native = true;
                 }
             }
+            // As on the scalar `CallMethod` path: tell the by-name dispatch to
+            // resolve the user method instead of the pseudo-method macro.
+            if skip_native && quoted && pseudo {
+                self.skip_pseudo_method_native = Some(method.clone());
+            }
             let item_args = args.clone();
             match modifier {
                 Some("?") => {
                     let val = if !skip_native {
                         if let Some(native_result) =
-                            self.try_native_method(item, Symbol::intern(&method), &item_args)
+                            self.try_native_method(item, method_sym, &item_args)
                         {
                             crate::vm::vm_stats::record_dispatch_entry_outcome(
                                 "hypermethodcall",
@@ -848,7 +859,7 @@ impl Interpreter {
                 Some("+") => {
                     let vals = if !skip_native {
                         if let Some(native_result) =
-                            self.try_native_method(item, Symbol::intern(&method), &item_args)
+                            self.try_native_method(item, method_sym, &item_args)
                         {
                             crate::vm::vm_stats::record_dispatch_entry_outcome(
                                 "hypermethodcall",
@@ -885,7 +896,7 @@ impl Interpreter {
                 Some("*") => {
                     if !skip_native
                         && let Some(native_result) =
-                            self.try_native_method(item, Symbol::intern(&method), &item_args)
+                            self.try_native_method(item, method_sym, &item_args)
                     {
                         crate::vm::vm_stats::record_dispatch_entry_outcome(
                             "hypermethodcall",
@@ -970,6 +981,7 @@ impl Interpreter {
                         let (sub_result, sub_mutated) = self.hyper_method_apply_recursive(
                             item,
                             &method,
+                            method_sym,
                             &item_args,
                             skip_native,
                         )?;
@@ -994,7 +1006,7 @@ impl Interpreter {
                     } else {
                         let val = if !skip_native {
                             if let Some(native_result) =
-                                self.try_native_method(item, Symbol::intern(&method), &item_args)
+                                self.try_native_method(item, method_sym, &item_args)
                             {
                                 crate::vm::vm_stats::record_dispatch_entry_outcome(
                                     "hypermethodcall",
@@ -1190,6 +1202,7 @@ impl Interpreter {
         &mut self,
         item: &Value,
         method: &str,
+        method_sym: Symbol,
         args: &[Value],
         skip_native: bool,
     ) -> Result<(Value, Value), RuntimeError> {
@@ -1198,8 +1211,13 @@ impl Interpreter {
                 let mut results = Vec::with_capacity(elems.len());
                 let mut mutated = Vec::with_capacity(elems.len());
                 for sub in elems.iter() {
-                    let (r, m) =
-                        self.hyper_method_apply_recursive(sub, method, args, skip_native)?;
+                    let (r, m) = self.hyper_method_apply_recursive(
+                        sub,
+                        method,
+                        method_sym,
+                        args,
+                        skip_native,
+                    )?;
                     push_hyper_result(&mut results, itemize_if_descended(sub, r));
                     mutated.push(m);
                 }
@@ -1218,8 +1236,13 @@ impl Interpreter {
                 let mut results = Vec::with_capacity(elems.len());
                 let mut mutated = Vec::with_capacity(elems.len());
                 for sub in elems.iter() {
-                    let (r, m) =
-                        self.hyper_method_apply_recursive(sub, method, args, skip_native)?;
+                    let (r, m) = self.hyper_method_apply_recursive(
+                        sub,
+                        method,
+                        method_sym,
+                        args,
+                        skip_native,
+                    )?;
                     push_hyper_result(&mut results, itemize_if_descended(sub, r));
                     mutated.push(m);
                 }
@@ -1238,8 +1261,13 @@ impl Interpreter {
                 let mut results = Vec::with_capacity(elems.len());
                 let mut mutated = Vec::with_capacity(elems.len());
                 for sub in elems.iter() {
-                    let (r, m) =
-                        self.hyper_method_apply_recursive(sub, method, args, skip_native)?;
+                    let (r, m) = self.hyper_method_apply_recursive(
+                        sub,
+                        method,
+                        method_sym,
+                        args,
+                        skip_native,
+                    )?;
                     push_hyper_result(&mut results, itemize_if_descended(sub, r));
                     mutated.push(m);
                 }
@@ -1260,8 +1288,13 @@ impl Interpreter {
                 let mut mut_map = crate::value::user_key_map::with_capacity(keys.len());
                 for k in keys {
                     let v = map.get(&k).cloned().unwrap_or(Value::NIL);
-                    let (r, m) =
-                        self.hyper_method_apply_recursive(&v, method, args, skip_native)?;
+                    let (r, m) = self.hyper_method_apply_recursive(
+                        &v,
+                        method,
+                        method_sym,
+                        args,
+                        skip_native,
+                    )?;
                     res_map.insert(k.clone(), itemize_if_descended(&v, r));
                     mut_map.insert(k, m);
                 }
@@ -1284,8 +1317,7 @@ impl Interpreter {
                     return Ok((Value::NIL, item.clone()));
                 }
                 if !skip_native
-                    && let Some(native_result) =
-                        self.try_native_method(item, Symbol::intern(method), args)
+                    && let Some(native_result) = self.try_native_method(item, method_sym, args)
                 {
                     let v = native_result?;
                     // Native methods do not mutate the receiver: the mutated

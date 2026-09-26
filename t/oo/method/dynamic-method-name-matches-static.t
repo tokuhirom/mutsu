@@ -8,7 +8,7 @@ use Test;
 # and delegate to the static body, so every scenario here must give the same
 # answer through `$obj.meth`, `$obj."meth"` and `$obj."$name"`.
 
-plan 17;
+plan 20;
 
 class A { method WHAT { "mine" }; method foo($x = 1) { "Af$x" } }
 class B is A { method foo($x = 1) { "Bf$x" } }
@@ -64,3 +64,8 @@ my %h = a => 1, b => 2;
 my $succ = "succ";
 is-deeply %h>>."$succ"(), %h>>.succ, 'a Hash hyper keeps its keys through a run-time name';
 is-deeply set(1, 2)>>."$succ"(), set(1, 2)>>.succ, 'a QuantHash hyper through a run-time name';
+
+# A pseudo-method name spelled as a string, per element.
+is-deeply (A.new, A.new)>>."$what"(), ('mine', 'mine'), 'hyper run-time "WHAT" calls the user method';
+is-deeply (A.new, A.new)>>."WHAT"(), ('mine', 'mine'), 'as does a quoted hyper "WHAT"';
+is-deeply (1, 2)>>."$what"(), (Int, Int), 'and without a user method it is the built-in per element';

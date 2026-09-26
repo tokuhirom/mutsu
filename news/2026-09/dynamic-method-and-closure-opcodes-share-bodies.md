@@ -19,7 +19,8 @@ name: `A.new."$m"()` with `$m = "WHAT"` now calls a user `WHAT` method, as
 Rakudo does. Fixing that exposed a bug in the quoted form itself:
 `42."WHAT"()` died with "No such method" because a quoted pseudo-method always
 skipped the built-in. It now skips it only when the receiver has a user method
-of that name.
+of that name. The hyper form had the same defect per element, and now
+interns its method name once per call instead of once per element.
 
 **Closure literals.** `MakeAnonSub`, `MakeAnonSubParams`, `MakeLambda` and
 `MakeBlockClosure` were four copies of the capture pipeline and the `SubData`
