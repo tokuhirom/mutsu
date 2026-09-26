@@ -994,9 +994,13 @@ impl Interpreter {
         };
         // Itemized arrays ($[...]) used as indices should be numified (for
         // positional access) or stringified (for associative access) rather
-        // than treated as slices.
+        // than treated as slices. A role's `[...]` is parameterisation, not
+        // subscripting: `R[$v]` passes the array itself as one argument.
+        let parameterises_role = matches!(target.view(), ValueView::Package(name)
+            if self.is_role(&name.resolve()));
         let index = if let ValueView::Array(items, kind) = index.view()
             && kind.is_itemized()
+            && !parameterises_role
         {
             if is_positional {
                 // Numify: elems count
