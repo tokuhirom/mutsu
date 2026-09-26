@@ -40,6 +40,9 @@ use super::parse_comma_or_expr;
 ///
 /// This does NOT depend on whether a type constraint was written — `my Mu
 /// \a := $a` and `my \a := $a` behave the same way in raku.
+static ANON_SIGILLESS_SRC_COUNTER: std::sync::atomic::AtomicUsize =
+    std::sync::atomic::AtomicUsize::new(0);
+
 fn build_sigilless_bind_stmt(
     name: String,
     expr: Expr,
@@ -47,6 +50,42 @@ fn build_sigilless_bind_stmt(
     is_state: bool,
     is_our: bool,
 ) -> Stmt {
+    // `my \foo = my $x = 3` / `my \foo = my $ = -3`: the RHS declaration
+    // evaluates to its new Scalar container, and `foo` binds THAT (raku: `foo
+    // = 5` writes `$x`). Split it into the inner declaration followed by an
+    // ordinary bind of `foo` to the declared variable, which takes the
+    // container path below. An anonymous `$` is renamed first: every `my $`
+    // parses to the same name, so a second one in the scope would otherwise
+    // re-declare the container the first alias points at. The fresh name is
+    // not a valid Raku identifier (a hyphen followed by a digit), so it cannot
+    // collide with a user variable; it must not start with `__` either, since
+    // such compiler-internal names do not take the container-alias path.
+    if let Expr::DoStmt(inner) = &expr
+        && let Stmt::VarDecl {
+            name: inner_name,
+            is_our: false,
+            is_dynamic: false,
+            ..
+        } = inner.as_ref()
+        && !inner_name.starts_with(['@', '%', '&', '*'])
+    {
+        let mut inner_decl = inner.as_ref().clone();
+        let var_name = if inner_name == "__ANON_STATE__" {
+            let fresh = format!(
+                "anon-sigilless-src-{}",
+                ANON_SIGILLESS_SRC_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+            );
+            if let Stmt::VarDecl { name, .. } = &mut inner_decl {
+                *name = fresh.clone();
+            }
+            fresh
+        } else {
+            inner_name.clone()
+        };
+        let bind =
+            build_sigilless_bind_stmt(name, Expr::Var(var_name), type_constraint, is_state, is_our);
+        return Stmt::SyntheticBlock(vec![inner_decl, bind]);
+    }
     let binds_a_container = match &expr {
         Expr::Var(_) | Expr::Index { .. } | Expr::MethodCall { .. } => true,
         Expr::Grouped(inner) => matches!(
