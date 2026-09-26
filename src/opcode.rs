@@ -9511,6 +9511,13 @@ impl CompiledCode {
                     }
                 }
             }
+            // A declaration's `SetVarDynamic` is emitted before its initializer,
+            // so it opens that initializer's window: a closure created by an
+            // EARLIER statement (`throws-like { Int = 5 }, ...; constant Int =
+            // 5`) is not this declaration's self-capture.
+            if matches!(op, OpCode::SetVarDynamic { .. }) {
+                captured_in_decl.clear();
+            }
             // Self-capturing declaration: `my $f = -> $n { ... $f($n-1) ... }`.
             // The initializer's closure-creation op snapshots the env BEFORE the
             // declaration's store runs, so the closure captures `$f` while it is
