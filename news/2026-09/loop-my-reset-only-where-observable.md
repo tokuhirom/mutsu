@@ -22,6 +22,6 @@ behavior. Anything the check cannot prove keeps the reset, so a missed case
 costs speed, never correctness.
 
 `SetVarDynamic`'s `reset_binding: bool` became the three-way `DeclReset`
-(`Keep` / `SeedIfUnbound` / `Fresh`). `t/exceptions/loop-declaration-reset-observers.t`
+(`Keep` / `SeedIfUnbound` / `Fresh`). `t/control/loop-declaration-reset-observers.t`
 pins the observers that must still see a fresh binding, and unit tests in
 `src/compiler/decl_reset.rs` pin which bodies qualify.
