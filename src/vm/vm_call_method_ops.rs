@@ -547,10 +547,9 @@ impl Interpreter {
     ) -> Result<(), RuntimeError> {
         self.exec_call_method_named_op(
             code,
-            MethodName::from_const(code, name_idx),
+            MethodName::from_const(code, name_idx, quoted),
             arity,
             modifier_idx,
-            quoted,
             arg_sources_idx,
         )
     }
@@ -565,9 +564,9 @@ impl Interpreter {
         name: MethodName<'_>,
         arity: u32,
         modifier_idx: Option<u32>,
-        quoted: bool,
         arg_sources_idx: Option<u32>,
     ) -> Result<(), RuntimeError> {
+        let quoted = name.quoted;
         // ADR-0067's subscript-receiver producer: when the receiver on the stack
         // is already a container (`IndexInvocantRef` put it there), arm slice
         // 3b's arrival channel around this dispatch so a callee that binds its
@@ -2479,14 +2478,29 @@ impl Interpreter {
 pub(super) struct MethodName<'a> {
     pub(super) raw: &'a str,
     pub(super) sym: crate::symbol::Symbol,
+    /// Spelled as a string (`."name"()`, or any run-time name), so a MOP
+    /// pseudo-method name (`WHAT`, `DEFINITE`, ...) is an ordinary method
+    /// rather than a macro.
+    pub(super) quoted: bool,
 }
 
 impl<'a> MethodName<'a> {
     #[inline]
-    pub(super) fn from_const(code: &'a CompiledCode, idx: u32) -> Self {
+    pub(super) fn from_const(code: &'a CompiledCode, idx: u32, quoted: bool) -> Self {
         Self {
             raw: Interpreter::const_str(code, idx),
             sym: code.const_sym(idx),
+            quoted,
+        }
+    }
+
+    /// A method name only known at run time (`$obj."$name"()`); never a
+    /// compile-time macro, so it dispatches as a quoted name.
+    pub(super) fn dynamic(raw: &'a str) -> Self {
+        Self {
+            raw,
+            sym: crate::symbol::Symbol::intern(raw),
+            quoted: true,
         }
     }
 }

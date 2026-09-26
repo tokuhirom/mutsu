@@ -1,3 +1,4 @@
+use super::vm_call_method_ops::MethodName;
 use super::*;
 use crate::symbol::Symbol;
 use crate::value::ValueMap;
@@ -532,10 +533,9 @@ impl Interpreter {
     ) -> Result<(), RuntimeError> {
         self.exec_hyper_method_call_named_op(
             code,
-            Self::const_str(code, name_idx),
+            MethodName::from_const(code, name_idx, quoted),
             arity,
             modifier_idx,
-            quoted,
             target_name_idx,
             arg_sources_idx,
         )
@@ -544,17 +544,17 @@ impl Interpreter {
     /// The `HyperMethodCall` body for an already-resolved method name;
     /// `HyperMethodCallDynamic` delegates a run-time method name here and owns
     /// only the Callable form (#9454). Stack: `[.., target, args...]`.
-    #[allow(clippy::too_many_arguments)]
     pub(super) fn exec_hyper_method_call_named_op(
         &mut self,
         code: &CompiledCode,
-        method_raw: &str,
+        name: MethodName<'_>,
         arity: u32,
         modifier_idx: Option<u32>,
-        quoted: bool,
         target_name_idx: Option<u32>,
         arg_sources_idx: Option<u32>,
     ) -> Result<(), RuntimeError> {
+        let method_raw = name.raw;
+        let quoted = name.quoted;
         let target_var: Option<String> =
             target_name_idx.map(|idx| Self::const_str(code, idx).to_string());
         let modifier = modifier_idx.map(|idx| Self::const_str(code, idx));
@@ -1432,10 +1432,9 @@ impl Interpreter {
         let method = name_val.to_string_value();
         self.exec_hyper_method_call_named_op(
             code,
-            &method,
+            MethodName::dynamic(&method),
             arity,
             modifier_idx,
-            true,
             None,
             arg_sources_idx,
         )

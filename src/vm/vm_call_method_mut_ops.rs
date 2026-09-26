@@ -114,20 +114,13 @@ impl Interpreter {
                 modifier_idx,
                 arg_sources_idx,
             ),
-            Ok(method) => {
-                let name = MethodName {
-                    raw: &method,
-                    sym: Symbol::intern(&method),
-                };
-                self.exec_call_method_named_op(
-                    code,
-                    name,
-                    arity,
-                    modifier_idx,
-                    true,
-                    arg_sources_idx,
-                )
-            }
+            Ok(method) => self.exec_call_method_named_op(
+                code,
+                MethodName::dynamic(&method),
+                arity,
+                modifier_idx,
+                arg_sources_idx,
+            ),
         }
     }
 
@@ -151,21 +144,14 @@ impl Interpreter {
                 modifier_idx,
                 arg_sources_idx,
             ),
-            Ok(method) => {
-                let name = MethodName {
-                    raw: &method,
-                    sym: Symbol::intern(&method),
-                };
-                self.exec_call_method_mut_named_op(
-                    code,
-                    name,
-                    arity,
-                    target_name_idx,
-                    modifier_idx,
-                    true,
-                    arg_sources_idx,
-                )
-            }
+            Ok(method) => self.exec_call_method_mut_named_op(
+                code,
+                MethodName::dynamic(&method),
+                arity,
+                target_name_idx,
+                modifier_idx,
+                arg_sources_idx,
+            ),
         }
     }
 
@@ -182,11 +168,10 @@ impl Interpreter {
     ) -> Result<(), RuntimeError> {
         self.exec_call_method_mut_named_op(
             code,
-            MethodName::from_const(code, name_idx),
+            MethodName::from_const(code, name_idx, quoted),
             arity,
             target_name_idx,
             modifier_idx,
-            quoted,
             arg_sources_idx,
         )
     }
@@ -194,7 +179,6 @@ impl Interpreter {
     /// The `CallMethodMut` body for an already-resolved method name (see
     /// `exec_call_method_named_op`; `CallMethodDynamicMut` owns only the name
     /// resolution). Stack: `[.., target, args...]`.
-    #[allow(clippy::too_many_arguments)]
     pub(super) fn exec_call_method_mut_named_op(
         &mut self,
         code: &CompiledCode,
@@ -202,9 +186,9 @@ impl Interpreter {
         arity: u32,
         target_name_idx: u32,
         modifier_idx: Option<u32>,
-        quoted: bool,
         arg_sources_idx: Option<u32>,
     ) -> Result<(), RuntimeError> {
+        let quoted = name.quoted;
         // Whether the receiver is `Nil`, read before the impl consumes the
         // operands (the stack is `[.., target, args...]` here, so the target is
         // `arity` slots below the top). Used for the Nil-absorb fallback below.
