@@ -257,6 +257,19 @@ impl Interpreter {
                 }
                 true
             }
+            ValueView::Instance { attributes, .. }
+                if attributes.as_map().contains_key("__mutsu_hash_storage") =>
+            {
+                let ValueView::Hash(_) = storage.view() else {
+                    return false;
+                };
+                // `nqp::create` allocates the typed instance without running
+                // its constructor. Installing `'$!storage'` must therefore
+                // replace the reserved backing value directly, just as the
+                // ordinary Map/Hash wrapper path installs into its store.
+                attributes.bind_attr_through("__mutsu_hash_storage", storage.clone());
+                true
+            }
             _ => false,
         }
     }

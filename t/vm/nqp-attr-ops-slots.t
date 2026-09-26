@@ -5,7 +5,7 @@ use nqp;
 # attribute in place, and `nqp::create` starts from a per-class slot template
 # (ADR-0121 D1). These pin what that must not change.
 
-plan 21;
+plan 23;
 
 class P {
     has int $!n;
@@ -63,6 +63,21 @@ is R.new.bump, 2, 'bindattr from a method on self';
     is %h<b>, 2, "a Map's \$!storage is the hash itself";
     my @l = 1, 2;
     is nqp::getattr(@l, List, '$!reified').elems, 2, "a List's \$!reified is the array itself";
+}
+
+# `nqp::create` is also used to allocate a Map subclass before
+# `p6bindattrinvres` installs the JSON parser's hash storage. This is the
+# shape used by RepositoryEvent's `bless-hash-as` helper.
+class NqpMapSubclass is Map { }
+{
+    my %source = a => 1;
+    my $map := nqp::p6bindattrinvres(
+        nqp::create(NqpMapSubclass), NqpMapSubclass, '$!storage',
+        nqp::getattr(%source, Map, '$!storage')
+    );
+    is $map<a>, 1, 'p6bindattrinvres installs storage into a Map subclass';
+    is nqp::getattr($map, Map, '$!storage')<a>, 1,
+        'getattr exposes a Map subclass backing store';
 }
 
 # Pair's core slots are reachable through the same NQP attribute operations as
