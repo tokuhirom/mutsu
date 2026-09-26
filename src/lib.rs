@@ -173,14 +173,39 @@ pub fn dump_bytecode(input: &str, source_file: Option<&str>) -> Result<String, R
             let _ = writeln!(out, "  locals: {:?}", code.locals);
         }
     };
-    let _ = writeln!(out, "== mainline ==");
-    disasm(&mut out, &code);
+    // A chunk's closure bodies are listed after it, labelled by their path
+    // (`mainline / closure 0 / closure 1`) and whether they escape the frame
+    // that creates them.
+    fn disasm_tree(
+        out: &mut String,
+        code: &opcode::CompiledCode,
+        label: &str,
+        disasm: &dyn Fn(&mut String, &opcode::CompiledCode),
+    ) {
+        let _ = writeln!(out, "== {} ==", label);
+        disasm(out, code);
+        for (i, cc) in code.closure_compiled_codes.iter().enumerate() {
+            let escapes = code.closure_escapes.get(i).copied().unwrap_or(false);
+            let child = format!(
+                "{} / closure {}{}",
+                label,
+                i,
+                if escapes { " (escaping)" } else { "" }
+            );
+            disasm_tree(out, cc, &child, disasm);
+        }
+    }
+    disasm_tree(&mut out, &code, "mainline", &disasm);
     let mut names: Vec<crate::symbol::Symbol> = compiled_fns.keys().copied().collect();
     names.sort_by_key(|s| s.resolve());
     for name in names {
         let cf = &compiled_fns[&name];
-        let _ = writeln!(out, "== sub {} ==", name.as_str());
-        disasm(&mut out, &cf.code);
+        disasm_tree(
+            &mut out,
+            &cf.code,
+            &format!("sub {}", name.as_str()),
+            &disasm,
+        );
     }
     Ok(out)
 }

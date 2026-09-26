@@ -111,7 +111,14 @@ impl Interpreter {
         {
             raw_indices = items.to_vec();
         }
-        let target_val = self.env.get(&var_name).cloned().unwrap_or(Value::NIL);
+        let raw_target = self.env.get(&var_name).cloned().unwrap_or(Value::NIL);
+        // A variable an escaping closure captured is a shared `ContainerRef`
+        // cell (#9488): classify and delete from the container inside it.
+        let capture_cell = match raw_target.view() {
+            ValueView::ContainerRef(cell) => Some(cell.clone()),
+            _ => None,
+        };
+        let target_val = raw_target.deref_container();
         let indices = self.resolve_multidim_indices(&target_val, &raw_indices)?;
         // A shaped array (`my @a[2;2]`) has fixed dimensions; an out-of-range
         // index in any dimension is an error (raku throws X::AdHoc), not a
@@ -122,7 +129,11 @@ impl Interpreter {
         if has_multi_indices(&indices) {
             let mut leaves = Vec::new();
             multidim_collect_leaves(&target_val, &indices, &[], &mut leaves);
-            if let Some(t) = self.env.get_mut(&var_name) {
+            if let Some(cell) = capture_cell {
+                let mut inner = cell.lock().unwrap().clone();
+                multidim_delete(&mut inner, &indices);
+                *cell.lock().unwrap() = inner;
+            } else if let Some(t) = self.env.get_mut(&var_name) {
                 multidim_delete(t, &indices);
                 self.writeback_multidim_var_to_local(&var_name);
             }
@@ -136,6 +147,12 @@ impl Interpreter {
         // hole-value that `multidim_delete` returns for a missing slot.
         if multidim_index(&target_val, &indices).is_nil() {
             return Ok(Value::NIL);
+        }
+        if let Some(cell) = capture_cell {
+            let mut inner = cell.lock().unwrap().clone();
+            let result = multidim_delete(&mut inner, &indices);
+            *cell.lock().unwrap() = inner;
+            return Ok(array_to_list(result));
         }
         let Some(target) = self.env.get_mut(&var_name) else {
             return Ok(Value::NIL);

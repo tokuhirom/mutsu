@@ -1394,8 +1394,10 @@ impl Interpreter {
                 // an immutable value.
                 if let Some(constraint) = loan_env!(self, var_type_constraint_sym(name_sym)) {
                     let base = constraint.split('[').next().unwrap_or(&constraint);
+                    // Read through a capture cell: an escaping closure's
+                    // `%h is Bag` is a shared `ContainerRef` (#9488).
                     if matches!(base, "Mix" | "Set" | "Bag")
-                        && let Some(existing) = self.env().get(&name)
+                        && let Some(existing) = self.env().get(&name).map(|v| v.deref_container())
                         && matches!(
                             existing.view(),
                             ValueView::Mix(_, false)
@@ -1759,6 +1761,20 @@ impl Interpreter {
                         *ip += 1;
                         return Ok(());
                     }
+                }
+                // A Nil ASSIGNED to an `is default(...)` scalar stores the
+                // default, as `exec_set_local_op`'s STORE does. A write from a
+                // closure (or named sub) that captured the variable lands here
+                // with no local slot, so without this the raw Nil went into the
+                // shared cell (#9488: `lives-ok { $a = Nil }`).
+                if val.is_nil()
+                    && !raw_mode
+                    && !is_bind_ctx
+                    && !is_rebind
+                    && !name.starts_with(['@', '%', '&'])
+                    && let Some(def) = self.var_default(&name)
+                {
+                    val = def.clone();
                 }
                 if let Some(constraint) = loan_env!(self, var_type_constraint_sym(name_sym))
                     && !name.starts_with('%')
@@ -2190,6 +2206,21 @@ impl Interpreter {
                         && let Some(cell_val) = self.env().get(&name).cloned()
                         && let ValueView::ContainerRef(arc) = cell_val.view()
                     {
+                        // The cell an escaping closure's capture promoted the
+                        // variable to may still hold a deferred `HashEntryRef`
+                        // token (`my $r := @a[2]`): the first write
+                        // materializes the element -- type-checked against the
+                        // container -- and the cell then aliases it (#9488).
+                        let inner = arc.lock().unwrap().clone();
+                        if !name.starts_with(['@', '%'])
+                            && matches!(inner.view(), ValueView::HashEntryRef { .. })
+                            && let Some(terminal) = inner.hash_entry_terminal()
+                        {
+                            let cell = self.materialize_entry_cell(&terminal, val.clone())?;
+                            *arc.lock().unwrap() = Value::container_ref(cell);
+                            *ip += 1;
+                            return Ok(());
+                        }
                         self.check_container_cell_constraint(&arc, &val)?;
                         // Preserve the inner container's identity (§3): a boxed
                         // captured `@a`/`%h` whole-reassigned here must keep its

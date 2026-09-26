@@ -9710,7 +9710,7 @@ impl CompiledCode {
             std::collections::HashSet::new();
         for (i, nested) in self.closure_compiled_codes.iter().enumerate() {
             let escapes = self.closure_escapes.get(i).copied().unwrap_or(false);
-            for sym in &nested.free_var_syms {
+            for (fv_i, sym) in nested.free_var_syms.iter().enumerate() {
                 // A name that closure declares in EXPRESSION position is its own
                 // binding, however the env-only store spells it, so it must not
                 // earn OUR same-named local a shared cell — an unrelated later
@@ -9730,12 +9730,24 @@ impl CompiledCode {
                     continue;
                 }
                 let is_own = sym.with_str(|s| own.contains(s));
-                if is_own && escapes {
+                // Our same-named local that was NOT yet declared where the
+                // closure was created (`free_var_parent_slots` baked `None`:
+                // a later sibling block's `constant Int`, `my $b`, ...) is a
+                // different lexical from the one the closure names, so the
+                // closure's escape must not promote it to a cell -- the cell
+                // would then catch the closure's writes (`{ Int = 5 }` stored
+                // into it instead of dying). Unbaked chunks keep the old
+                // name-only answer.
+                let declared_at_emit = nested
+                    .free_var_parent_slots
+                    .get(fv_i)
+                    .is_none_or(Option::is_some);
+                if is_own && escapes && declared_at_emit {
                     escaping_captured_own.insert(*sym);
                 }
                 if is_own && self_mutated.contains(sym) {
                     captured_mutated.insert(*sym);
-                    if escapes {
+                    if escapes && declared_at_emit {
                         needs_cell.insert(*sym);
                     }
                 }

@@ -4885,6 +4885,14 @@ pub(crate) fn container_type_metadata_with(
         ValueView::Hash(items) => Interpreter::hashdata_type_info(&items),
         ValueView::Instance { id, .. } => instance_meta.read().unwrap().get(&id).cloned(),
         ValueView::Mixin(inner, _) => container_type_metadata_with(inner, instance_meta),
+        // A captured variable promoted to a shared cell (escape analysis)
+        // holds the very container the variable's own store path consults, so
+        // its descriptor (`is Map`, element type, ...) is read through the
+        // cell rather than lost behind it (#9488).
+        ValueView::ContainerRef(cell) => {
+            let inner = cell.lock().unwrap().clone();
+            container_type_metadata_with(&inner, instance_meta)
+        }
         _ => None,
     }
 }

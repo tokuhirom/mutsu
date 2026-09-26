@@ -1145,11 +1145,14 @@ impl Interpreter {
                 crate::runtime::meta_ns::MetaNs::ShapedArrayDims.key_for_str(&var_name);
             self.env().contains_key_sym(declared_shape_key)
         };
+        // Read through a capture cell: an escaping closure's `@a[3;3]` is a
+        // shared `ContainerRef`, which `mutate_named_container` below writes
+        // through -- the bounds check has to see the same array (#9488).
         let is_shaped = has_declared_shape
             || self
                 .env()
                 .get(&var_name)
-                .is_some_and(crate::runtime::utils::is_shaped_array);
+                .is_some_and(|v| crate::runtime::utils::is_shaped_array(&v.deref_container()));
 
         let assign_value = value.clone();
         self.mutate_named_container(code, &var_name, !is_shaped, move |slf, container| {
