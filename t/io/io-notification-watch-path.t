@@ -7,7 +7,7 @@ use Test;
 # or removing an entry is `FileRenamed`, changing one is `FileChanged`
 # (rakudo's libuv mapping).
 
-plan 21;
+plan 24;
 
 # The enum and the event class.
 is FileChangeEvent.enums, Map.new((FileChanged => 1, FileRenamed => 2)), 'FileChangeEvent values';
@@ -75,6 +75,42 @@ sub drive(Supply $supply, IO::Path $entry) {
     my ($kinds, $paths) = drive($dir.watch, $entry);
     is-deeply $kinds.List, (FileRenamed, FileChanged, FileRenamed), 'IO::Path.watch: create, write, remove';
     is-deeply $paths.List, ($dir.absolute ~ '/y',), '... reported under the absolute path';
+}
+
+# Creating a file and writing to it between two polls is reported the way
+# libuv reports it: the new entry (FileRenamed), then its write (FileChanged).
+# A file moved in by `rename` is only FileRenamed.
+{
+    my @seen;
+    my $timeout = Promise.in(10);
+    react {
+        whenever IO::Notification.watch-path($dir.Str) -> $change {
+            @seen.push: $change.event;
+            done if @seen >= 2;
+        }
+        whenever Promise.in(0.2) { $dir.add('fresh').spurt('content') }
+        whenever $timeout { done }
+    }
+    is-deeply @seen.List, (FileRenamed, FileChanged), 'a created-and-written file is Renamed then Changed';
+    $dir.add('fresh').unlink;
+}
+
+# An IO::Path argument is reported under its absolute path (rakudo); a Str
+# argument as written.
+{
+    my @paths;
+    my $timeout = Promise.in(10);
+    react {
+        whenever IO::Notification.watch-path($dir) -> $change {
+            @paths.push: $change.path;
+            done;
+        }
+        whenever Promise.in(0.2) { $dir.add('as-io').spurt('') }
+        whenever $timeout { done }
+    }
+    is @paths.elems, 1, 'watch-path(IO::Path) reports';
+    is @paths[0], $dir.absolute ~ '/as-io', '... under the absolute path';
+    $dir.add('as-io').unlink;
 }
 
 # A trailing slash does not double up.

@@ -1378,7 +1378,19 @@ impl Interpreter {
                         },
                     );
                 }
-                let defs = multi_family.unwrap_or_else(|| vec![def]);
+                let mut defs = multi_family.unwrap_or_else(|| vec![def]);
+                // `add_method` adds a *public* method. A private `method !name`
+                // is a separate namespace in Raku, but mutsu keys it under the
+                // same name, so replacing the name's candidate list would drop
+                // it: a monitor (OO::Monitors re-adds every declared method)
+                // with both `method stop` and `method !stop` lost `self!stop`
+                // (Timer::Stopwatch).
+                if let Some(existing) = self
+                    .registry()
+                    .user_method_overloads(&class_name, &method_name)
+                {
+                    defs.extend(existing.into_iter().filter(|def| def.is_private));
+                }
                 self.registry_mut().set_user_methods(
                     Symbol::intern(&class_name),
                     Symbol::intern(&method_name),

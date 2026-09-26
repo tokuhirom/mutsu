@@ -236,15 +236,15 @@ impl Interpreter {
                 "Too few positionals passed; expected 2 arguments but got 1",
             )));
         };
-        // `Str()` coercion: an IO::Path contributes its path string.
-        let p = match path.view() {
-            ValueView::Instance { attributes, .. } if Self::is_io_path_value(path) => attributes
-                .as_map()
-                .get("path")
-                .map(|v| v.to_string_value())
-                .unwrap_or_default(),
-            _ => path.to_string_value(),
-        };
+        // Rakudo turns an `IO::Path` argument into its absolute path (so the
+        // events are reported under it, exactly as `IO::Path.watch` does);
+        // anything else is `Str()`-coerced and reported as written.
+        if let ValueView::Instance { attributes, .. } = path.view()
+            && Self::is_io_path_value(path)
+        {
+            return self.try_io_path_watch(&attributes.as_map(), "watch");
+        }
+        let p = path.to_string_value();
         let watched = self.resolve_path(&p);
         Some(Self::watch_path_supply(watched, p))
     }
