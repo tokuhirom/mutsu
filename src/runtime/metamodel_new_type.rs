@@ -41,6 +41,9 @@ impl Interpreter {
                 .classes
                 .insert(name.clone(), Default::default());
         }
+        // A run-time-minted type is not a lexical import: it must outlive a
+        // `use`-containing routine that created it (#9532).
+        crate::runtime::cow_table_mut(&mut self.persistent_classes).insert(name.clone());
         // The builtin metamodel class this call ultimately goes through: the
         // receiver itself when it is one, else the first one on its MRO.
         let native_how = if how_class.starts_with("Metamodel::") {
