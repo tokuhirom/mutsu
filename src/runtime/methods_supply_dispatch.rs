@@ -502,6 +502,7 @@ impl Interpreter {
     /// Handle Supply.map method
     pub(super) fn dispatch_supply_map(
         &mut self,
+        target: &Value,
         attributes: &AttrMap,
         args: &[Value],
     ) -> Result<Value, RuntimeError> {
@@ -515,19 +516,16 @@ impl Interpreter {
         ) {
             return Ok(live);
         }
-        let source_values = if let Some(on_demand_cb) = attributes.get("on_demand_callback") {
-            let emitter = Value::make_instance(Symbol::intern("Supplier"), {
-                let mut a = HashMap::new();
-                a.insert("emitted".to_string(), Value::array(Vec::new()));
-                a.insert("done".to_string(), Value::FALSE);
-                a
-            });
-            self.supply_emit_buffer.push(Vec::new());
-            let _ = self.call_sub_value(on_demand_cb.clone(), vec![emitter], false);
-            self.supply_emit_buffer.pop().unwrap_or_default()
-        } else {
-            self.supply_list_values(attributes, true)?
-        };
+        // On-demand source: the mapped supply taps it per tap of its own
+        // (see `native_methods::supply_derive`).
+        if attributes.contains_key("on_demand_callback") {
+            return Ok(Self::make_on_demand_derived_supply(
+                target.clone(),
+                crate::runtime::native_methods::TransformMode::Map,
+                mapper,
+            ));
+        }
+        let source_values = self.supply_list_values(attributes, true)?;
 
         let mut mapped_values = Vec::with_capacity(source_values.len());
         for value in source_values {

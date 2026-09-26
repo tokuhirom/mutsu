@@ -577,7 +577,7 @@ impl Interpreter {
         } = target.view()
             && class_name == "Supply"
         {
-            return self.dispatch_supply_map(&(attributes).as_map(), &args);
+            return self.dispatch_supply_map(&target, &(attributes).as_map(), &args);
         }
         // Validate that the map argument is callable (X::Cannot::Map)
         if let Some(func) = args.first() {

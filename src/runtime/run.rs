@@ -319,8 +319,8 @@ role GLOBAL::Enumeration {
 /// fidelity given nothing in scope calls this overload with such an
 /// argument; `apply_trait_mod_does` just performs a plain value mixin for it.
 pub(super) const TRAIT_MOD_DOES_PRELUDE: &str = r#"
-multi sub trait_mod:<does>(Variable:D \v, Mu:U $role) is export {
-    __mutsu_trait_mod_does_apply(v, $role);
+multi sub trait_mod:<does>(Variable:D $v, Mu:U $role) is export {
+    __mutsu_trait_mod_does_apply($v, $role);
 }
 multi sub trait_mod:<does>(Attribute:D $a, Mu:U $role) is export {
     __mutsu_trait_mod_does_apply($a, $role);

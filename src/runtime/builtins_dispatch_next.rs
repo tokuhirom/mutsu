@@ -615,6 +615,29 @@ impl Interpreter {
             }
             return Some(Ok(value));
         }
+        if matches!(inner.view(), ValueView::Array(..))
+            && matches!(
+                method_name.as_str(),
+                "push"
+                    | "append"
+                    | "prepend"
+                    | "unshift"
+                    | "pop"
+                    | "shift"
+                    | "splice"
+                    | "ASSIGN-POS"
+                    | "BIND-POS"
+                    | "DELETE-POS"
+                    | "ASSIGN-KEY"
+                    | "BIND-KEY"
+                    | "DELETE-KEY"
+                    | "STORE"
+            )
+            && let Some(result) =
+                Self::native_mixin_array_mutation(&invocant, inner.as_ref(), &method_name, &args)
+        {
+            return Some(result);
+        }
         self.try_native_method(inner, Symbol::intern(&method_name), &args)
     }
 

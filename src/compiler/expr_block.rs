@@ -424,7 +424,8 @@ impl Compiler {
                         .find_map(|(t, a)| if t == "default" { Some(a) } else { None })
                     {
                         if let Some(arg) = trait_arg {
-                            self.compile_expr(arg);
+                            let escaping = Self::is_closure_literal_arg(arg);
+                            self.with_escape(escaping, |s| s.compile_expr(arg));
                         }
                         let trait_name_idx =
                             self.code.add_constant(Value::str("default".to_string()));
@@ -797,7 +798,8 @@ impl Compiler {
                         continue;
                     }
                     if let Some(arg) = trait_arg {
-                        self.compile_expr(arg);
+                        let escaping = Self::is_closure_literal_arg(arg);
+                        self.with_escape(escaping, |s| s.compile_expr(arg));
                     }
                     let trait_name_idx = self.code.add_constant(Value::str(trait_name.clone()));
                     // Bake the same slot `emit_set_named_var` stored to (None

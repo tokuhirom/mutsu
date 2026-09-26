@@ -216,10 +216,12 @@ pub(crate) fn inject_implicit_rule_ws(pattern: &str) -> String {
         // Raku sigspace (`rule r { [ <w> ]**3 }` matches "a b c", not "abc" — the
         // space before `]` becomes a required `<.ws>`). Whitespace right after an
         // opening `[`/`(` is NOT significant, so those stay suppressed.
+        // Whitespace BEFORE a `|`/`||` is significant too (rakudo:
+        // `rule e { a | b }` requires whitespace after `a`, `rule e { a| b }`
+        // does not), so only the whitespace AFTER a pipe is suppressed.
         !matches!(
             (prev, next),
             ('|', _)
-                | (_, '|')
                 | ('(', _)
                 | ('[', _)
                 | ('{', _)

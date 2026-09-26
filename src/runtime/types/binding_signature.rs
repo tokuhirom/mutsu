@@ -2499,10 +2499,13 @@ impl Interpreter {
                                     &param_display_name(pd),
                                     &bound_value,
                                 ));
+                            } else if named_is_raw {
+                                // A raw named parameter receiving a literal is
+                                // bound directly to that value, not to a fresh
+                                // Scalar container. Keep the binding kind so
+                                // `.VAR` reports the value's type.
+                                raw_nonlvalue_params.push(pd.name.clone());
                             }
-                            // is raw with a non-lvalue: binds readonly (the
-                            // trait pass below keeps raw params writable, which
-                            // matches the positional arm's behavior for now).
                         }
                         // A named alias param `:min(:$minutes)` names a caller key
                         // only; its OWN name (`min`) is NOT a body variable
@@ -3766,7 +3769,9 @@ impl Interpreter {
                 } else {
                     Symbol::intern(binding_name)
                 };
-                if !has_mutable_trait || raw_nonlvalue_params.contains(&pd.name) {
+                if raw_nonlvalue_params.contains(&pd.name) {
+                    self.mark_readonly_sym_with(pd_name_sym, ReadonlyKind::Immutable);
+                } else if !has_mutable_trait {
                     self.mark_readonly_sym(pd_name_sym);
                 } else {
                     // Writable `is copy`/`is rw`/`is raw` scalar param: the

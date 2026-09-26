@@ -305,19 +305,23 @@ impl Interpreter {
             );
             let mut resolved = Vec::with_capacity(selected.type_params.len());
             for (i, param_name) in selected.type_params.iter().enumerate() {
-                // `type_params` are sigil-less (`f`), but `bind_function_args_values`
-                // stores a callable param under its full name (`&f`) — only `$`/`@`/`%`
-                // sigils are stripped. Fall back to the ParamDef's own name so a
-                // `role R[&f]` param resolves to its bound Callable, not `Nil`.
+                // `type_params` are sigil-less (`f`), but the surrounding lexical
+                // scope may already contain a same-named scalar (`$f`). Read the
+                // binder's exact parameter spelling first: a callable parameter
+                // is stored under `&f`, while a scalar parameter is stored under
+                // `f`. Only then fall back to the normalized role type-param name.
+                // Otherwise `role R[&f]` can accidentally capture an outer `$f`
+                // while resolving its own callable argument.
                 let value = self
                     .env
-                    .get(param_name)
-                    .or_else(|| {
+                    .get(
                         selected
                             .type_param_defs
                             .get(i)
-                            .and_then(|pd| self.env.get(&pd.name))
-                    })
+                            .map(|pd| pd.name.as_str())
+                            .unwrap_or(param_name),
+                    )
+                    .or_else(|| self.env.get(param_name))
                     .cloned()
                     .unwrap_or(Value::NIL);
                 resolved.push(value);

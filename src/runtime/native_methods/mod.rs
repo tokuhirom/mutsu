@@ -4,6 +4,7 @@ mod compiler_config;
 mod concurrency;
 mod encoding;
 pub(crate) mod interval_timer;
+mod native_shim;
 mod proc;
 mod scheduled_tap_pump;
 mod scheduler;
@@ -20,6 +21,7 @@ pub(crate) mod state_supplier_merge;
 mod state_supply_collector;
 pub(crate) mod supply_channel;
 mod supply_collector;
+mod supply_derive;
 mod supply_quit_forwarder;
 mod system;
 
@@ -34,6 +36,7 @@ pub(crate) use state::{
 pub(crate) use state_lock::{acquire_lock, current_thread_id, lock_runtime_by_id, release_lock};
 
 pub(in crate::runtime) use attr_publish::AttrPublisher;
+pub(in crate::runtime) use native_shim::native_method_shim;
 
 // Re-export items accessed from sibling `runtime` modules. A handful are also
 // re-exported `pub(crate)` below for the VM-side react/supply drive loop
@@ -456,6 +459,7 @@ impl Interpreter {
                 | "__ScheduledTapPump"
                 | "__SupplyCollector"
                 | "__SupplyQuitForwarder"
+                | "__SupplyDerive"
                 | "ThreadPoolScheduler"
                 | "CurrentThreadScheduler"
                 | "FakeScheduler"
@@ -501,6 +505,7 @@ impl Interpreter {
                             | "__ScheduledTapPump"
                             | "__SupplyCollector"
                             | "__SupplyQuitForwarder"
+                            | "__SupplyDerive"
                             | "ThreadPoolScheduler"
                             | "CurrentThreadScheduler"
                             | "FakeScheduler"
@@ -556,6 +561,7 @@ impl Interpreter {
             "__ScheduledTapPump" => self.native_scheduled_tap_pump(attributes, method, args),
             "__SupplyCollector" => self.native_supply_collector(attributes, method, args),
             "__SupplyQuitForwarder" => self.native_supply_quit_forwarder(attributes, method, args),
+            "__SupplyDerive" => self.native_supply_derive(attributes, method, args),
             "ThreadPoolScheduler" => self.native_scheduler(attributes, method, args, false),
             "CurrentThreadScheduler" => self.native_scheduler(attributes, method, args, true),
             "FakeScheduler" => self.native_fake_scheduler(attributes, method, args),

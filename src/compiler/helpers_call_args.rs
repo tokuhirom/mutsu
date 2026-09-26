@@ -705,7 +705,7 @@ impl Compiler {
             // is `roast/integration/99problems-21-to-30.t`'s P26 `group` under
             // the vendored `Test` module ("Cannot modify an immutable List").
             // Compile the argument as the plain value read it is.
-        } else if matches!(arg, Expr::Index { .. }) {
+        } else if matches!(arg, Expr::Index { .. }) && !self.index_arg_is_non_lvalue_bareword(arg) {
             let tmp = format!("__mutsu_index_rw_arg_{}", self.code.constants.len());
             let orig = format!("__mutsu_index_rw_orig_{}", self.code.constants.len());
             let tmp_idx = self.code.add_constant(Value::str(tmp.clone()));
@@ -765,6 +765,23 @@ impl Compiler {
             // flag and the bind degrades to today's bind-by-value.
             self.mark_trailing_method_call_as_accessor_ref();
         }
+    }
+
+    /// A bareword subscript can be a parameterized type or role (`R[Int]`),
+    /// whose argument is a value, not a writable element. It must not enter
+    /// the generic index-argument writeback path: that path is for an lvalue
+    /// such as `@a[$i]`, and would append a store back into `R[Int]` after the
+    /// call. Only a sigilless lexical is a bareword lvalue here; all other
+    /// bareword targets are resolved by the VM as types, packages or ordinary
+    /// values.
+    fn index_arg_is_non_lvalue_bareword(&self, arg: &Expr) -> bool {
+        let Expr::Index { target, .. } = arg else {
+            return false;
+        };
+        let Expr::BareWord(name) = target.as_ref() else {
+            return false;
+        };
+        !self.sigilless_locals.contains(name) && !self.enclosing_sigilless.contains(name)
     }
 
     /// Insert a `MarkAccessorRefContext` immediately before the trailing

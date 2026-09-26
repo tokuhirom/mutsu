@@ -380,6 +380,11 @@ impl Interpreter {
                 }
             } else if self.has_type(name) || Self::is_builtin_type(name) {
                 Value::package(Symbol::intern(&self.type_object_name_for_bareword(name)))
+            } else if let Some(qualified) = self.resolve_type_in_current_package(name) {
+                // A local parameter can share a name with a role declared in
+                // the current package. In type-parameterization syntax the
+                // bareword is the role, not the same-named parameter value.
+                Value::package(Symbol::intern(&qualified))
             } else if crate::runtime::utils::has_double_colon(name)
                 && !name.starts_with('$')
                 && !name.starts_with('@')

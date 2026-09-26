@@ -268,30 +268,26 @@ impl Interpreter {
                 attributes,
                 ..
             } if class_name == "Supply" => {
-                let source_values =
-                    if let Some(on_demand_cb) = attributes.as_map().get("on_demand_callback") {
-                        let emitter = Value::make_instance(Symbol::intern("Supplier"), {
-                            let mut a = HashMap::new();
-                            a.insert("emitted".to_string(), Value::array(Vec::new()));
-                            a.insert("done".to_string(), Value::FALSE);
-                            a
-                        });
-                        self.supply_emit_buffer.push(Vec::new());
-                        let _ = self.call_sub_value(on_demand_cb.clone(), vec![emitter], false);
-                        self.supply_emit_buffer.pop().unwrap_or_default()
-                    } else {
-                        attributes
-                            .as_map()
-                            .get("values")
-                            .and_then(|v| {
-                                if let ValueView::Array(items, ..) = v.view() {
-                                    Some(items.to_vec())
-                                } else {
-                                    None
-                                }
-                            })
-                            .unwrap_or_default()
-                    };
+                // On-demand source: the filtered supply taps it per tap of its
+                // own (see `native_methods::supply_derive`).
+                if attributes.as_map().contains_key("on_demand_callback") {
+                    return Ok(Self::make_on_demand_derived_supply(
+                        target.clone(),
+                        crate::runtime::native_methods::TransformMode::Grep,
+                        args.first().cloned().unwrap_or(Value::NIL),
+                    ));
+                }
+                let source_values = attributes
+                    .as_map()
+                    .get("values")
+                    .and_then(|v| {
+                        if let ValueView::Array(items, ..) = v.view() {
+                            Some(items.to_vec())
+                        } else {
+                            None
+                        }
+                    })
+                    .unwrap_or_default();
                 let filtered = self.eval_grep_over_items(args.first().cloned(), source_values)?;
                 let filtered_values = Self::value_to_list(&filtered);
                 let mut attrs = HashMap::new();

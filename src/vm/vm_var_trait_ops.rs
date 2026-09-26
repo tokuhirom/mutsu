@@ -850,13 +850,28 @@ impl Interpreter {
         let init_source_for_store = self
             .read_var_trait_target(code, slot, name)
             .or_else(|| self.get_env_with_main_alias(name));
-        let target = self.env().get(name).cloned().unwrap_or(Value::NIL);
+        let target = self
+            .read_var_trait_target(code, slot, name)
+            .or_else(|| self.get_env_with_main_alias(name))
+            .unwrap_or(Value::NIL);
         // CARRIER: `.VAR` pseudo-method + `trait_mod:<is>` metaprogramming hook
         // (reflective container object + user trait handler). See ledger §C.
         let var_obj = loan_env!(
             self,
             call_method_mut_with_values(name, target, "VAR", vec![])
         )?;
+        // A variable trait handler receives the reflective `Variable` object,
+        // not the ordinary `Array`/`Hash` descriptor returned by `.VAR` for
+        // user code. Keep the descriptor's live target metadata, but give it
+        // the type that selects `trait_mod:<does>(Variable:D, ...)` and makes
+        // `v.^name` agree with Rakudo. The existing `var` dispatch uses
+        // `__mutsu_var_target` to turn this object back into a live VarRef.
+        let var_obj = match var_obj.view() {
+            ValueView::Instance { attributes, .. } => {
+                Value::make_instance(Symbol::intern("Variable"), attributes.as_map().clone())
+            }
+            _ => var_obj,
+        };
         let named_arg = Value::pair(trait_name.clone(), trait_value);
         // Arm the trait_mod writeback relay (`runtime::mod`'s
         // `trait_mod_writeback_key`/`value`) so that a mixin performed via

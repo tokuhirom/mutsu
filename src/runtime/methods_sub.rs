@@ -444,6 +444,7 @@ impl Interpreter {
                 || self.has_multi_candidates(name);
             return Some(Ok(Value::truth(is_multi && method == "is_dispatcher")));
         }
+        // Cost: O(n), n = requested method-name length.
         if method == "can" {
             let method_name = args
                 .first()
@@ -475,7 +476,16 @@ impl Interpreter {
                     | "rw"
                     | "readonly"
             );
-            return Some(Ok(Value::truth(can)));
+            let methods = if can {
+                vec![Value::routine_parts(
+                    Symbol::intern("Code"),
+                    Symbol::intern(&method_name),
+                    false,
+                )]
+            } else {
+                Vec::new()
+            };
+            return Some(Ok(Value::array(methods)));
         }
         if matches!(method, "arity" | "count") && args.is_empty() {
             let candidates = self.routine_candidate_subs(package, name);
@@ -1300,6 +1310,7 @@ impl Interpreter {
             // &sub.callwith(args) — call the sub directly with provided args
             return Some(self.call_sub_value(target.clone(), args, false));
         }
+        // Cost: O(n), n = requested method-name length.
         if method == "can" {
             let method_name = args
                 .first()
@@ -1329,7 +1340,16 @@ impl Interpreter {
                     | "line"
                     | "file"
             );
-            return Some(Ok(Value::truth(can)));
+            let methods = if can {
+                vec![Value::routine_parts(
+                    Symbol::intern("Code"),
+                    Symbol::intern(&method_name),
+                    false,
+                )]
+            } else {
+                Vec::new()
+            };
+            return Some(Ok(Value::array(methods)));
         }
         None
     }

@@ -2089,7 +2089,12 @@ impl Compiler {
                         return;
                     }
                     if let Some(arg) = trait_arg {
-                        self.compile_expr(arg);
+                        // A custom variable trait may retain its argument (for
+                        // example a callable used to parameterize a role), so a
+                        // closure literal in the trait argument must capture
+                        // mutated outer lexicals by shared cell.
+                        let escaping = Self::is_closure_literal_arg(arg);
+                        self.with_escape(escaping, |s| s.compile_expr(arg));
                     }
                     let trait_name_idx = self.code.add_constant(Value::str(trait_name.clone()));
                     self.code.poison_declared_constraint(name);

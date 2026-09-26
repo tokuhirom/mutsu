@@ -3,6 +3,30 @@ use crate::runtime::meta_ns::MetaNs;
 use crate::symbol::Symbol;
 
 impl Interpreter {
+    /// Apply a native array mutator to the value wrapped by a native `Mixin`.
+    /// The mixin stores its inner value behind an `Arc`, so dispatching through
+    /// the name-keyed mutable-call path would lose the receiver when there is
+    /// no lexical target name. Mutate the shared array node directly instead.
+    ///
+    /// Cost: O(k * e) worst case, k = inserted elements and e = existing
+    /// elements; push, append, pop and shift are O(k) amortized or O(1).
+    pub(crate) fn native_mixin_array_mutation(
+        invocant: &Value,
+        inner: &Value,
+        method: &str,
+        args: &[Value],
+    ) -> Option<Result<Value, RuntimeError>> {
+        let mut storage = inner.clone();
+        let result = Self::native_array_storage_mut(&mut storage, method, args)?;
+        Some(result.map(|value| {
+            if matches!(method, "push" | "append" | "prepend" | "unshift") {
+                invocant.clone()
+            } else {
+                value
+            }
+        }))
+    }
+
     /// Return the value type supplied by a parameterized container role mixed
     /// onto a value, if any. Unlike native Hash/Array metadata, this lives in
     /// the Mixin marker map and must not be copied onto the shared inner
@@ -350,10 +374,57 @@ impl Interpreter {
                         .map(|name| (name.to_string(), value.clone()))
                 })
                 .collect();
+            let callable_role_params: rustc_hash::FxHashSet<String> = self
+                .registry()
+                .role_candidates
+                .get(&role_name)
+                .and_then(|candidates| {
+                    candidates
+                        .iter()
+                        .find(|candidate| candidate.role_def.role_id == role.role_id)
+                })
+                .map(|candidate| {
+                    candidate
+                        .type_param_defs
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, param)| param.name.starts_with('&'))
+                        .flat_map(|(i, param)| {
+                            [
+                                param.name.clone(),
+                                param.name.trim_start_matches('&').to_string(),
+                                candidate.type_params.get(i).cloned().unwrap_or_default(),
+                            ]
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
             let mut saved_role_params: Vec<(String, Option<Value>)> = Vec::new();
             for (name, value) in &role_param_bindings {
+                // The role declaration stores callable parameters under their
+                // sigilless body name (`role R[&f]` reads `f`), where a bare
+                // read invokes the callable, while an explicit `&f` read
+                // returns the callable itself. Only a sigilless binding is
+                // that callable form: a typed scalar such as `Callable $block`
+                // must remain under `$block` even when its value is callable.
+                // The ordinary signature binder installs the `&f` entry and
+                // leaves the bare name absent; role parameters are injected
+                // directly at dispatch time, so keep the same contract here.
+                let is_callable = callable_role_params.contains(name)
+                    && matches!(
+                        value.view(),
+                        ValueView::Sub(_) | ValueView::WeakSub(_) | ValueView::Routine { .. }
+                    );
                 saved_role_params.push((name.clone(), self.env.get(name).cloned()));
-                self.env.insert(name.clone(), value.clone());
+                if is_callable {
+                    self.env.remove(name);
+                    let callable_name = format!("&{name}");
+                    saved_role_params
+                        .push((callable_name.clone(), self.env.get(&callable_name).cloned()));
+                    self.env.insert(callable_name, value.clone());
+                } else {
+                    self.env.insert(name.clone(), value.clone());
+                }
             }
             let matching: Vec<(Symbol, MethodDef)> = overloads
                 .into_iter()
@@ -391,6 +462,25 @@ impl Interpreter {
                 }
                 continue;
             };
+            // Match ordinary signature binding: a callable parameter is
+            // installed under `&name`, while the bare `name` entry is absent
+            // so a bare read follows the compiler's implicit zero-arg call
+            // path instead of returning the callable object.
+            let mut method_role_bindings = Vec::new();
+            for (name, value) in &role_param_bindings {
+                let is_callable = callable_role_params.contains(name)
+                    && matches!(
+                        value.view(),
+                        ValueView::Sub(_) | ValueView::WeakSub(_) | ValueView::Routine { .. }
+                    );
+                if is_callable && !name.starts_with('&') {
+                    method_role_bindings.push((format!("&{name}"), value.clone()));
+                } else {
+                    method_role_bindings.push((name.clone(), value.clone()));
+                }
+            }
+            let mut def = def;
+            def.role_param_bindings = Some(std::sync::Arc::new(method_role_bindings));
             // Role-body lexicals are persisted with the concrete punned role
             // class during parameterized composition, while the role method's
             // lexical package remains the enclosing declaration package.
@@ -449,6 +539,7 @@ impl Interpreter {
                 ValueView::Instance { class_name, .. } => Some(class_name.resolve()),
                 _ => None,
             };
+            let native_base = base_class.is_none();
             let base_remaining: Vec<super::DeferralEntry> = if let Some(bc) = &base_class {
                 self.resolve_all_methods_with_owner(bc, lookup_name, &args)
                     .into_iter()
@@ -462,7 +553,7 @@ impl Interpreter {
             } else {
                 Vec::new()
             };
-            let pushed_base_dispatch = !base_remaining.is_empty();
+            let pushed_base_dispatch = !base_remaining.is_empty() || native_base;
             if pushed_base_dispatch {
                 let rw_params =
                     super::builtins_dispatch_next::rw_scalar_positional_params(&def.param_defs);
@@ -674,6 +765,30 @@ impl Interpreter {
                 _ => inner.isa_check(&target_name),
             };
             return Some(Ok(Value::truth(result)));
+        }
+
+        if matches!(inner.as_ref().view(), ValueView::Array(..))
+            && matches!(
+                method,
+                "push"
+                    | "append"
+                    | "prepend"
+                    | "unshift"
+                    | "pop"
+                    | "shift"
+                    | "splice"
+                    | "ASSIGN-POS"
+                    | "BIND-POS"
+                    | "DELETE-POS"
+                    | "ASSIGN-KEY"
+                    | "BIND-KEY"
+                    | "DELETE-KEY"
+                    | "STORE"
+            )
+            && let Some(result) =
+                Self::native_mixin_array_mutation(target, inner.as_ref(), method, &args)
+        {
+            return Some(result);
         }
 
         None
