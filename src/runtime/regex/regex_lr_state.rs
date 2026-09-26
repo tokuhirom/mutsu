@@ -173,6 +173,23 @@ fn note_lr_consult() {
     LR_CONSULTS.with(|c| c.set(c.get().wrapping_add(1)));
 }
 
+/// `true` when an argument-less call of `name` with `remaining` characters
+/// left is under evaluation, i.e. a call there would read its seed. Unlike
+/// [`lr_key_is_active`] this is not a consultation: the LTM NFA (ADR-0125)
+/// asks it only to decide whether to leave the measurement to the walker.
+// Cost: O(1) expected (an array index, then one hash probe for a live name).
+pub(super) fn lr_call_is_live(name: Symbol, remaining: usize) -> bool {
+    LR_STATE.with(|s| {
+        let s = s.borrow();
+        if s.active.get(name.id() as usize).is_none_or(|&n| n == 0) {
+            return false;
+        }
+        s.keys
+            .get(&LrKey::new(name, None, remaining))
+            .is_some_and(|e| e.seed.is_some())
+    })
+}
+
 /// `true` when this key is already being evaluated further up the stack, i.e.
 /// entering it again would be a left-recursive re-entry.
 pub(super) fn lr_key_is_active(key: &LrKey) -> bool {
