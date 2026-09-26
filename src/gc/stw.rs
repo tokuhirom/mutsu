@@ -258,9 +258,6 @@ fn park_slow_inner() {
 /// its duration. After `f` returns, the thread leaves quiescence via the
 /// checked protocol, so it cannot resume mutation mid-scan.
 pub(crate) fn block_quiescent<R>(f: impl FnOnce() -> R) -> R {
-    // A consumer held for an in-flight declaration on this thread must not
-    // wait on what this thread is about to wait for (#9590).
-    crate::runtime::decl_gate::release_all();
     // A pooled worker about to block frees its slot: the pool may start
     // another worker for queued tasks (ADR-0123). Before anything else, while
     // this thread is still an ordinary running mutator.
