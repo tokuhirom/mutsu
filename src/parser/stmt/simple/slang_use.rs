@@ -74,7 +74,10 @@ pub(crate) fn apply_slang_overrides(
 /// fails (module load error, or an override of a grammar rule mutsu does not
 /// support) — the `use` statement must then fail to parse, never silently
 /// continue in the wrong grammar.
-pub(in crate::parser) fn maybe_activate_slang_use(module: &str) -> Result<(), String> {
+pub(in crate::parser) fn maybe_activate_slang_use(
+    module: &str,
+    arg: Option<&Expr>,
+) -> Result<(), String> {
     if !super::module_exports::module_activates_slang(module) {
         return Ok(());
     }
@@ -88,6 +91,7 @@ pub(in crate::parser) fn maybe_activate_slang_use(module: &str) -> Result<(), St
     let activation = crate::runtime::slang_activation::run_slang_activation(
         module.to_string(),
         parser_lib_paths(),
+        arg.and_then(literal_use_args),
     )
     .map_err(|e| format!("slang activation for '{module}' failed: {e}"))?;
     // Package declarators the slang added (ADR-0091): each keyword parses
@@ -105,4 +109,22 @@ pub(in crate::parser) fn maybe_activate_slang_use(module: &str) -> Result<(), St
     // only re-reports if the two maps ever drift apart.
     apply_slang_overrides(&activation.rules)
         .map_err(|e| format!("slang activation for '{module}': {e}"))
+}
+
+/// The literal arguments of a `use` statement (`use Foo 'a', 42`), in the form
+/// the activation thread carries them. `None` when any argument is not a plain
+/// string/number/boolean literal: such a `use` activates with no arguments, as
+/// it did before arguments were passed at all.
+fn literal_use_args(arg: &Expr) -> Option<Vec<crate::runtime::slang_activation::SlangUseArg>> {
+    let items: &[Expr] = match arg {
+        Expr::ArrayLiteral(items) => items,
+        single => std::slice::from_ref(single),
+    };
+    items
+        .iter()
+        .map(|item| match item {
+            Expr::Literal(v) => crate::runtime::slang_activation::SlangUseArg::from_literal(v),
+            _ => None,
+        })
+        .collect()
 }
