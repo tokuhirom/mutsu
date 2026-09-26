@@ -5,15 +5,25 @@
 //! `SubData` construction, and the copies drifted (#9454): only the AnonSub
 //! pair froze read-only `:=` loop captures, only `MakeLambda` boxed Supply
 //! container captures, and `MakeBlockClosure` never stripped an inherited
-//! `__mutsu_return_type`. None of those differences was intentional:
+//! `__mutsu_return_type`. Only the first difference is intentional, and it is
+//! now an explicit [`ClosureSpec`] field rather than an accident of which copy
+//! ran:
 //!
-//! - **Read-only capture freeze.** A closure that only *reads* a lexical the
-//!   enclosing loop re-binds with `:=` must see its own iteration's binding.
-//!   That is a property of closures, not of `sub {}` literals, so every kind
-//!   runs `freeze_readonly_owned_captures`.
-//! - **Supply container boxing.** Gated on the body's `is_supply_block_body`
-//!   flag, so it is a no-op for every body that is not a supply block, whatever
-//!   opcode built it.
+//! - **Read-only capture freeze** ([`ClosureSpec::freeze_readonly_captures`]).
+//!   `freeze_readonly_owned_captures` snapshots a read-only `:=` loop alias so
+//!   each iteration's closure keeps its own binding. It is a snapshot, correct
+//!   only when `captured_mutated_locals` saw every write -- and that analysis
+//!   misses writes made through a method call. A pointy callback such as
+//!   `-> $v { @got.push($v) }` is exactly that shape: frozen, it pushed into a
+//!   copy (t/concurrency/supply/supply-done-detection-is-per-supplier.t). So
+//!   the freeze stays on the `{ ... }` / `sub { ... }` literals that have
+//!   always run it and off pointy blocks.
+//!
+//! The other two were not intentional, so every kind now runs them:
+//!
+//! - **Supply container boxing.** Keyed on the body's `is_supply_block_body`
+//!   flag, not on the opcode, so it is a no-op for every body that is not a
+//!   supply block, whatever opcode built it.
 //! - **Return type.** A return type belongs to the routine that declares it and
 //!   is never inherited lexically, so every kind strips the enclosing
 //!   routine's `__mutsu_return_type` and only a declared `--> T` sets it again.
@@ -44,6 +54,9 @@ pub(super) struct ClosureSpec<'a> {
     /// A bare block is not a routine boundary: when it performs a regex match,
     /// its `$/` is the enclosing scope's, so the block captures that cell.
     pub(super) capture_match_var: bool,
+    /// Snapshot read-only `:=` loop aliases (see the module doc for why this is
+    /// not every kind).
+    pub(super) freeze_readonly_captures: bool,
 }
 
 impl Interpreter {
@@ -77,13 +90,15 @@ impl Interpreter {
         let mut upvalues = self.capture_upvalues(code, &compiled_code);
         // Upvalue snapshot (single-store Slice E); see `capture_closure_env`.
         let mut env = self.capture_closure_env(code, &compiled_code);
-        self.freeze_readonly_owned_captures(
-            code,
-            &compiled_code,
-            &owned_captures,
-            &mut env,
-            &mut upvalues,
-        );
+        if spec.freeze_readonly_captures {
+            self.freeze_readonly_owned_captures(
+                code,
+                &compiled_code,
+                &owned_captures,
+                &mut env,
+                &mut upvalues,
+            );
+        }
         // A return type is never inherited lexically: the captured env may
         // carry the *enclosing* routine's `__mutsu_return_type`, which would
         // then be enforced on this closure's own return (`sub f(--> blob32) {

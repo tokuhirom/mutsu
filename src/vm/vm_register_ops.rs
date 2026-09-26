@@ -655,6 +655,7 @@ impl Interpreter {
             return_type: None,
             callable_type: None,
             capture_match_var: is_block,
+            freeze_readonly_captures: true,
         };
         let val = self.build_closure(code, idx, cc_idx, spec);
         self.stack.push(val);
@@ -714,6 +715,7 @@ impl Interpreter {
                 return_type: return_type.as_deref(),
                 callable_type,
                 capture_match_var: false,
+                freeze_readonly_captures: true,
             };
             let mut val = self.build_closure(code, idx, cc_idx, spec);
             // Anonymous routine literals carry their custom `is` traits in the

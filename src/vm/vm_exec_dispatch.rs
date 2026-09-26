@@ -4364,37 +4364,8 @@ impl Interpreter {
             }
             // Cost: as CallMethodDynamic, O(a + d) plus the body; the attribute snapshot/mirror is
             // O(1) for a non-attribute receiver. Rakudo: O(a) -- see #9172.
-            OpCode::CallMethodDynamicMut {
-                arity,
-                target_name_idx,
-                modifier_idx,
-                quoted,
-                arg_sources_idx,
-            } => {
-                self.sync_source_line(code, *ip);
-                // `use fatal`: see the comment on the `CallFunc` arm above. A
-                // method can never be `require` (a bareword sub), so pass "".
-                self.explode_if_fatal_failure_in_call_args("", *arity as usize)?;
-                let pre = self.attr_env_snapshot(code, *target_name_idx);
-                match self.exec_call_method_dynamic_mut_op(
-                    code,
-                    *arity,
-                    *target_name_idx,
-                    *modifier_idx,
-                    *quoted,
-                    *arg_sources_idx,
-                ) {
-                    Ok(()) => {}
-                    Err(e) => {
-                        if !e.is_resume() && self.resume_ip.is_none() {
-                            self.resume_ip = Some((Self::resume_code_fp(code), *ip + 1));
-                        }
-                        return Err(e);
-                    }
-                }
-                self.apply_pending_rw_writeback(code);
-                self.drain_pending_local_updates_after_call(code);
-                self.mirror_attr_env_to_cell(code, *target_name_idx, pre);
+            OpCode::CallMethodDynamicMut { .. } => {
+                self.exec_call_method_mut_site(code, *ip)?;
                 *ip += 1;
             }
             // Cost: O(1) amortized, O(e) after a shift/unshift left a head offset (see

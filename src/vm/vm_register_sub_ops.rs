@@ -126,6 +126,9 @@ impl Interpreter {
             return_type: return_type.as_deref(),
             callable_type: is_whatever_code.then_some("WhateverCode"),
             capture_match_var: false,
+            // A pointy callback's captures are commonly mutated through method
+            // calls the freeze cannot see; see `vm_closure_build`.
+            freeze_readonly_captures: false,
         };
         let val = self.build_closure(code, idx, cc_idx, spec);
         self.stack.push(val);
@@ -158,6 +161,7 @@ impl Interpreter {
             return_type: None,
             callable_type: None,
             capture_match_var: true,
+            freeze_readonly_captures: false,
         };
         let val = self.build_closure(code, idx, cc_idx, spec);
         self.stack.push(val);

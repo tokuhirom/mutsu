@@ -27,11 +27,20 @@ interns its method name once per call instead of once per element.
 construction. They differed in which steps they ran. Only the AnonSub pair
 froze read-only `:=` loop captures, only `MakeLambda` boxed Supply container
 captures, and `MakeBlockClosure` never stripped an inherited
-`__mutsu_return_type`. None of those differences was intentional, so every kind
-now runs every step through one `build_closure` (`src/vm/vm_closure_build.rs`).
-The per-kind differences (name, signature, `Block` vs `Sub`, a declared return
-type, `WhateverCode`/`Method`, the bare block's `$/` capture) are explicit
-fields of a `ClosureSpec`.
+`__mutsu_return_type`. All four now build through one `build_closure`
+(`src/vm/vm_closure_build.rs`), and the per-kind differences are explicit
+fields of a `ClosureSpec`: the name, the signature, `Block` vs `Sub`, a
+declared return type, `WhateverCode`/`Method`, the bare block's `$/` capture,
+and whether read-only loop captures are frozen. Every kind now runs the Supply
+boxing (keyed on the body, not the opcode) and the return-type strip. The
+freeze deliberately stays off pointy blocks. It is a snapshot that relies on a
+mutation analysis that cannot see writes made through method calls, and a
+pointy callback like `-> $v { @got.push($v) }` is exactly that shape.
+
+A dynamic mutating call (`$var."$name"(...)`) now also shares the
+`CallMethodMut` site body, including its write-back of a rebound receiver.
+Without that, a run-time-named `push` on an `is Array` instance never reached
+the caller's variable.
 
 Tests: `t/oo/method/dynamic-method-name-matches-static.t` and
 `t/routines/closure/closure-literal-forms-share-capture.t`.
