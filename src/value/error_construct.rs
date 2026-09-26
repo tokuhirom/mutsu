@@ -203,7 +203,7 @@ impl RuntimeError {
     /// then the `"X::Type: text"` message convention, and finally the untyped
     /// fallback class above.
     pub(crate) fn exception_value(&self) -> Value {
-        self.exception_value_with_backtrace(None)
+        self.exception_value_with_backtrace(|| None)
     }
 
     /// `exception_value`, plus a `backtrace` attribute for an error that only
@@ -212,12 +212,19 @@ impl RuntimeError {
     /// does not — a compile-time diagnosis, which is raised before there is a
     /// runtime stack to capture — is given the supplied one so `.backtrace`
     /// answers a real `Backtrace` instead of the empty-string placeholder.
-    pub(crate) fn exception_value_with_backtrace(&self, backtrace: Option<Value>) -> Value {
+    ///
+    /// `backtrace` is only called when the answer needs one: rendering it
+    /// costs the whole captured stack, which an exception that already carries
+    /// its own `Backtrace` must not pay (#9172).
+    pub(crate) fn exception_value_with_backtrace(
+        &self,
+        backtrace: impl FnOnce() -> Option<Value>,
+    ) -> Value {
         if let Some(ex) = self.exception.as_ref() {
             let ex = (**ex).clone();
-            if let Some(bt) = backtrace
-                && let super::ValueView::Instance { attributes, .. } = ex.view()
+            if let super::ValueView::Instance { attributes, .. } = ex.view()
                 && !attributes.as_map().contains_key("backtrace")
+                && let Some(bt) = backtrace()
             {
                 attributes.insert("backtrace".to_string(), bt);
             }
@@ -324,7 +331,7 @@ impl RuntimeError {
         if let Some(line) = self.line() {
             attrs.insert("line".to_string(), Value::int(line as i64));
         }
-        if let Some(bt) = backtrace {
+        if let Some(bt) = backtrace() {
             attrs.insert("backtrace".to_string(), bt);
         }
         Value::make_instance(Symbol::intern(class_name), attrs)

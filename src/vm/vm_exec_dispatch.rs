@@ -165,7 +165,7 @@ impl Interpreter {
             // gets the same backtrace an ordinary runtime error does — rakudo
             // reports the frames for those too.
             && (e.control.is_none() || e.is_illegal_control())
-            && e.backtrace().is_none()
+            && !e.has_backtrace()
             && !e.code().is_some_and(|c| c.is_parse())
         {
             self.attach_backtrace_to_error(e);
@@ -5310,9 +5310,9 @@ impl Interpreter {
                     return Err(err);
                 }
             }
-            // Cost: O(s), s = routine-stack depth: the backtrace string and structured Backtrace
-            // are built eagerly at the throw site (attach_backtrace_to_error_with_leading). Rakudo:
-            // O(1) (lazy backtrace) -- see #9172.
+            // Cost: O(1) amortized at the throw: the backtrace string and structured Backtrace
+            // are captured as a shared stack snapshot and rendered only when read
+            // (attach_lazy_backtrace_to_error).
             OpCode::Die { user_throw } => {
                 let user_throw = *user_throw;
                 self.sync_source_line(code, *ip);
@@ -5334,7 +5334,7 @@ impl Interpreter {
                     val
                 };
                 let mut err = self.runtime_error_from_exception_value(val, "Died", false);
-                self.attach_backtrace_to_error_with_leading(&mut err, &["throw", "die"]);
+                self.attach_lazy_backtrace_to_error(&mut err, &["throw", "die"]);
                 // ADR-0072: a resume-capable CATCH several frames up handles this
                 // INLINE, here, with every Rust frame between still live — so a
                 // `.resume` continues with the next statement of THIS body. A

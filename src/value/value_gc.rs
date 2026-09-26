@@ -383,7 +383,9 @@ impl Trace for SubData {
 /// write. Second-wave migration (§11 step 9).
 impl Trace for InstanceAttrs {
     fn trace(&self, visit: &mut dyn FnMut(&ErasedGc)) {
-        for v in self.as_map().values() {
+        // Raw: tracing must not materialize (allocate) lazy attributes, and a
+        // pending lazy source holds no edges (see `lazy_attrs.rs`).
+        for v in self.as_map_raw().values() {
             v.gc_trace(visit);
         }
     }

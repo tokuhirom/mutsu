@@ -103,6 +103,28 @@ pub enum CatchInlineVerdict {
     Rethrown,
 }
 
+/// Renders a captured call stack as backtrace text, on demand.
+pub(crate) trait LazyBacktraceText: Send + Sync + std::fmt::Debug {
+    fn render(&self) -> String;
+}
+
+/// A backtrace string rendered on its first read: a `die` caught by a `try`
+/// that never looks at the backtrace must not pay for rendering the whole
+/// stack (#9172).
+#[derive(Debug)]
+pub struct BacktraceText {
+    source: std::sync::Arc<dyn LazyBacktraceText>,
+    rendered: std::sync::OnceLock<String>,
+}
+
+impl BacktraceText {
+    /// The text, rendering it on the first call.
+    // Cost: O(1) once rendered; the first call costs the render.
+    pub fn as_str(&self) -> &str {
+        self.rendered.get_or_init(|| self.source.render())
+    }
+}
+
 #[derive(Debug, Default)]
 pub struct RuntimeErrorCold {
     /// Parse-error classification (set only for parse failures).
@@ -122,8 +144,9 @@ pub struct RuntimeErrorCold {
     pub return_target_callable_id: Option<u64>,
     /// Container name for Scalar container binding (e.g. when/default returning $a)
     pub container_name: Option<String>,
-    /// Formatted backtrace string from the call stack at the point of error.
-    pub backtrace: Option<String>,
+    /// Formatted backtrace string from the call stack at the point of error,
+    /// possibly still to be rendered (see [`BacktraceText`]).
+    pub backtrace: Option<BacktraceText>,
     /// For an error raised by USING an unhandled Failure: the backtrace
     /// captured when `fail` originally ran. The throw-site attach combines it
     /// with the current stack as rakudo's dual-backtrace form
@@ -268,8 +291,20 @@ impl RuntimeError {
     pub fn container_name(&self) -> Option<&str> {
         self.cold.as_ref().and_then(|c| c.container_name.as_deref())
     }
+    /// The backtrace text, rendering a lazily captured one on first read.
+    /// To ask only whether there is one, use [`Self::has_backtrace`].
     pub fn backtrace(&self) -> Option<&str> {
-        self.cold.as_ref().and_then(|c| c.backtrace.as_deref())
+        self.cold
+            .as_ref()
+            .and_then(|c| c.backtrace.as_ref())
+            .map(BacktraceText::as_str)
+            // A capture whose every frame is omitted from the concise text
+            // renders empty, which reads as no backtrace at all.
+            .filter(|text| !text.is_empty())
+    }
+    /// Whether a backtrace is attached, without rendering it.
+    pub fn has_backtrace(&self) -> bool {
+        self.cold.as_ref().is_some_and(|c| c.backtrace.is_some())
     }
     /// See `RuntimeErrorCold::source_file`.
     pub fn source_file(&self) -> Option<&str> {
@@ -327,8 +362,12 @@ impl RuntimeError {
     pub(crate) fn set_container_name(&mut self, v: Option<String>) {
         self.cold_mut().container_name = v;
     }
-    pub(crate) fn set_backtrace(&mut self, v: Option<String>) {
-        self.cold_mut().backtrace = v;
+    /// Attach a backtrace that is rendered only when first read.
+    pub(crate) fn set_backtrace_lazy(&mut self, source: std::sync::Arc<dyn LazyBacktraceText>) {
+        self.cold_mut().backtrace = Some(BacktraceText {
+            source,
+            rendered: std::sync::OnceLock::new(),
+        });
     }
     /// Record which file (and its full source) actually failed to parse, for
     /// a failure inside a `use`d module rather than the entry-point script.
