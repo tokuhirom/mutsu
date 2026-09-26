@@ -753,7 +753,7 @@ fn scan_module_source(source: &str, path: &str) -> ModuleScanResult {
         // (which also captures a custom operator's precedence/associativity,
         // unlike the coarse unit-scope approximation) on that body too.
         if let Some(body) = find_export_sub_body(&stmts) {
-            collect_exported_subs_in(body, &mut exports, false);
+            collect_exported_subs_in(body, &mut exports, "");
         }
         // A fourth idiom: operators declared locally in the hook WITHOUT
         // `is export` and handed out through the returned `Map` — see the
@@ -1331,7 +1331,7 @@ fn is_our_scoped(custom_traits: &[(String, Option<Expr>)]) -> bool {
 /// `multi route(&route-definition) is export`). The regex fallback misses the
 /// bare-`multi` form (no `sub` keyword), so the AST walk must see them.
 fn collect_exported_subs(stmts: &[Stmt], exports: &mut HashMap<String, InlineModuleExport>) {
-    collect_exported_subs_in(stmts, exports, false);
+    collect_exported_subs_in(stmts, exports, "");
 }
 
 /// `in_export_stash` is true while walking directly inside a module's own
@@ -1366,11 +1366,15 @@ pub(super) fn sub_export_entry(
     }
 }
 
+/// `package` is the full name of the package being walked (`""` outside
+/// any), so a nested `package EXPORT { package DEFAULT { ... } }` is
+/// recognised as the `EXPORT::DEFAULT` stash just like the one-line spelling.
 fn collect_exported_subs_in(
     stmts: &[Stmt],
     exports: &mut HashMap<String, InlineModuleExport>,
-    in_export_stash: bool,
+    package: &str,
 ) {
+    let in_export_stash = is_export_stash_package(package);
     for stmt in stmts {
         match stmt {
             Stmt::SubDecl {
@@ -1471,15 +1475,45 @@ fn collect_exported_subs_in(
                         });
                 }
             }
+            // `OUR::{'&infix:<@~~>'} := ...` (or `OUR::«'...'»`) directly in
+            // an export stash binds that routine into the tag's export list,
+            // exactly like an `our sub` declared there (Data::Record's
+            // `&infix:<@~~>`). Only a literal key is knowable here; a key
+            // computed at run time needs the module run at parse time (#9500).
+            Stmt::Expr(Expr::IndexAssign { target, index, .. })
+                if in_export_stash
+                    && matches!(target.as_ref(), Expr::PseudoStash(s) if s == "OUR::") =>
+            {
+                if let Expr::Literal(key) = index.as_ref()
+                    && let crate::value::ValueView::Str(key) = key.view()
+                    && let Some(routine) = key.strip_prefix('&')
+                    && !routine.is_empty()
+                {
+                    let resolved = routine.to_string();
+                    exports
+                        .entry(resolved.clone())
+                        .or_insert(InlineModuleExport {
+                            name: resolved,
+                            precedence: None,
+                            associativity: None,
+                            is_test_assertion: false,
+                        });
+                }
+            }
             Stmt::Package { name, body, .. } => {
-                let is_stash = is_export_stash_package(&name.resolve());
-                collect_exported_subs_in(body, exports, is_stash);
+                let name = name.resolve();
+                let nested = if package.is_empty() || name.contains("::") {
+                    name
+                } else {
+                    format!("{package}::{name}")
+                };
+                collect_exported_subs_in(body, exports, &nested);
             }
             Stmt::ClassDecl { body, .. } | Stmt::RoleDecl { body, .. } => {
                 // A class/role body is never itself an export stash — its
                 // `our`-scoped subs are package-qualified methods/routines
                 // of the type, not implicit exports of the enclosing module.
-                collect_exported_subs_in(body, exports, false);
+                collect_exported_subs_in(body, exports, "");
             }
             // A declarator carrying adverbs or traits (`module Foo:auth<x> {
             // ... }`, `class Foo is export { ... }`) is wrapped in a
@@ -1490,7 +1524,7 @@ fn collect_exported_subs_in(
             // the importer's parse, and an exported symbol operator failed to
             // parse at its use site (PatternMatching).
             Stmt::Block(body) | Stmt::SyntheticBlock(body) => {
-                collect_exported_subs_in(body, exports, in_export_stash);
+                collect_exported_subs_in(body, exports, package);
             }
             _ => {}
         }
