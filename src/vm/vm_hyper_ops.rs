@@ -1,4 +1,3 @@
-use super::vm_string_regex_ops::*;
 use super::*;
 use crate::value::ValueMap;
 
@@ -313,7 +312,7 @@ impl Interpreter {
     /// Apply a hyper binary op to a pair of values, recursing into nested
     /// Iterables so that e.g. `(1, {a=>2}, 4) <<~>> <a b c>` distributes the
     /// op into the hash element, yielding `("1a", {a=>"2b"}, "4c")`.
-    fn hyper_op_pair(
+    pub(super) fn hyper_op_pair(
         &mut self,
         op: crate::compiled_operator::InfixRef<'_>,
         left: &Value,
@@ -326,67 +325,24 @@ impl Interpreter {
             &Self::deitemize_hyper_operand(left),
             &Self::deitemize_hyper_operand(right),
         );
+        // A Set/Bag/Mix operand is hypered as the Associative it is, at any
+        // depth (`(set(1),) «∪» (set(3),)`), not walked as a list of Pairs.
+        if let Some(v) = self.hyper_quanthash_pair(op, left, right, dwim_left, dwim_right)? {
+            return Ok(v);
+        }
         // Hyper op on two hashes: combine values key-by-key, with the dwim arrows
         // selecting the resulting key set. A missing value on either side uses the
         // operator's identity element (e.g. 0 for `+`).
         if let (ValueView::Hash(la), ValueView::Hash(ra)) = (left.view(), right.view()) {
-            let la = la.clone();
-            let ra = ra.clone();
-            // Key set by dwim direction:
-            //   >>op<<  (neither dwims)  -> union
-            //   <<op>>  (both dwim)      -> intersection
-            //   >>op>>  (right dwims)    -> left's keys
-            //   <<op<<  (left dwims)     -> right's keys
-            let keys: Vec<String> = match (dwim_left, dwim_right) {
-                (false, false) => {
-                    let mut ks: Vec<String> = la.keys().cloned().collect();
-                    for k in ra.keys() {
-                        if !la.contains_key(k) {
-                            ks.push(k.clone());
-                        }
-                    }
-                    ks
-                }
-                (true, true) => la.keys().filter(|k| ra.contains_key(*k)).cloned().collect(),
-                (false, true) => la.keys().cloned().collect(),
-                (true, false) => ra.keys().cloned().collect(),
-            };
             let identity = runtime::reduction_identity(op.leaf());
-            let mut result = crate::value::user_key_map::with_capacity(keys.len());
-            // Object-hash identity (`{Any}`-keyed, `.WHICH`-stored) is per-key
-            // metadata carried in `original_keys`, not derivable from the
-            // `.WHICH`-string key alone — merge it from whichever side(s)
-            // actually have it for each key surviving into the result.
-            let mut original_keys: ValueMap = ValueMap::default();
-            for key in keys {
-                let l = la.get(&key).unwrap_or(&identity).clone();
-                let r = ra.get(&key).unwrap_or(&identity).clone();
-                let v = self.hyper_op_pair(op, &l, &r, dwim_left, dwim_right)?;
-                if let Some(ok) = la
-                    .original_keys
-                    .as_ref()
-                    .and_then(|m| m.get(&key))
-                    .or_else(|| ra.original_keys.as_ref().and_then(|m| m.get(&key)))
-                {
-                    original_keys.insert(key.clone(), ok.clone());
-                }
-                result.insert(key, v);
-            }
-            // Inherit object-hash / typed-value identity from whichever
-            // operand carries it (`%a{Any} >>op<< %b` and `%a >>op<< %b{Any}`
-            // must both come out an object hash), left preferred to match the
-            // key-set precedence above.
-            let mut data = crate::value::HashData::new(result);
-            data.key_type = la.key_type.clone().or_else(|| ra.key_type.clone());
-            data.value_type = la.value_type.clone().or_else(|| ra.value_type.clone());
-            data.declared_type = la
-                .declared_type
-                .clone()
-                .or_else(|| ra.declared_type.clone());
-            if !original_keys.is_empty() {
-                data.original_keys = Some(original_keys);
-            }
-            return Ok(Value::hash_with_data(Value::hash_arc(data)));
+            return self.hyper_hash_pair(
+                op,
+                &la,
+                &ra,
+                dwim_left,
+                dwim_right,
+                [&identity, &identity],
+            );
         }
         // Hyper op between a hash and a scalar: apply the op to each value with
         // the scalar broadcast over every key (`%h >>*>> 4`, `2 <<**<< %h`).
@@ -588,89 +544,76 @@ impl Interpreter {
         self.eval_infix_shape(op, left, right)
     }
 
-    /// The QuantHash kind and mutability of a value, if it is a Set/Bag/Mix.
-    pub(super) fn quanthash_kind(v: &Value) -> Option<(QuantKind, bool)> {
-        match v.view() {
-            ValueView::Set(_, m) => Some((QuantKind::Set, m)),
-            ValueView::Bag(_, m) => Some((QuantKind::Bag, m)),
-            ValueView::Mix(_, m) => Some((QuantKind::Mix, m)),
-            _ => None,
-        }
-    }
-
-    /// Project a QuantHash to a plain `key => weight` Hash so the existing hash
-    /// hyper logic applies. Set membership becomes `True`, Bag/Mix weights become
-    /// Int/Num. Non-QuantHash values pass through unchanged (scalar broadcast).
-    pub(crate) fn quanthash_to_hash(v: &Value) -> Value {
-        let map: ValueMap = match v.view() {
-            ValueView::Set(d, _) => d
-                .elements
-                .iter()
-                .map(|k| (k.clone(), Value::TRUE))
-                .collect(),
-            ValueView::Bag(d, _) => d
-                .counts
-                .iter()
-                .map(|(k, c)| (k.clone(), Value::from_bigint(c.clone())))
-                .collect(),
-            ValueView::Mix(d, _) => d
-                .weights
-                .iter()
-                .map(|(k, w)| (k.clone(), Value::num(*w)))
-                .collect(),
-            _ => return v.clone(),
+    /// Hyper `op` over two hashes, key by key, with the dwim arrows selecting
+    /// the result's key set:
+    ///   `>>op<<` (neither dwims) -> union; `<<op>>` (both) -> intersection;
+    ///   `>>op>>` (right dwims) -> left's keys; `<<op<<` (left) -> right's keys.
+    /// A key one side lacks reads that side's `missing` value (the operator's
+    /// identity for a plain Hash; a QuantHash's own absent weight, see
+    /// `hyper_quanthash_pair`).
+    // Cost: O(k_l + k_r) operator applications, k = keys of each hash.
+    pub(super) fn hyper_hash_pair(
+        &mut self,
+        op: crate::compiled_operator::InfixRef<'_>,
+        la: &crate::value::HashData,
+        ra: &crate::value::HashData,
+        dwim_left: bool,
+        dwim_right: bool,
+        missing: [&Value; 2],
+    ) -> Result<Value, RuntimeError> {
+        // Key set by dwim direction:
+        //   >>op<<  (neither dwims)  -> union
+        //   <<op>>  (both dwim)      -> intersection
+        //   >>op>>  (right dwims)    -> left's keys
+        //   <<op<<  (left dwims)     -> right's keys
+        let keys: Vec<String> = match (dwim_left, dwim_right) {
+            (false, false) => {
+                let mut ks: Vec<String> = la.keys().cloned().collect();
+                for k in ra.keys() {
+                    if !la.contains_key(k) {
+                        ks.push(k.clone());
+                    }
+                }
+                ks
+            }
+            (true, true) => la.keys().filter(|k| ra.contains_key(*k)).cloned().collect(),
+            (false, true) => la.keys().cloned().collect(),
+            (true, false) => ra.keys().cloned().collect(),
         };
-        Value::hash_with_data(Value::hash_arc(map))
-    }
-
-    /// Rebuild a QuantHash of the given kind/mutability from a result Hash,
-    /// applying Rakudo's QuantHash coercion: Set keeps truthy keys, Bag keeps
-    /// strictly-positive integer weights, Mix keeps non-zero weights.
-    pub(super) fn hash_to_quanthash(v: Value, kind: QuantKind, mutable: bool) -> Value {
-        let map = match v.view() {
-            ValueView::Hash(map) => map.clone(),
-            _ => return v,
-        };
-        match kind {
-            QuantKind::Set => {
-                let elems: std::collections::HashSet<String> = map
-                    .iter()
-                    .filter(|(_, val)| val.truthy())
-                    .map(|(k, _)| k.clone())
-                    .collect();
-                if mutable {
-                    Value::set_hash(elems)
-                } else {
-                    Value::set(elems)
-                }
+        let mut result = crate::value::user_key_map::with_capacity(keys.len());
+        // Object-hash identity (`{Any}`-keyed, `.WHICH`-stored) is per-key
+        // metadata carried in `original_keys`, not derivable from the
+        // `.WHICH`-string key alone — merge it from whichever side(s)
+        // actually have it for each key surviving into the result.
+        let mut original_keys: ValueMap = ValueMap::default();
+        for key in keys {
+            let l = la.get(&key).unwrap_or(missing[0]).clone();
+            let r = ra.get(&key).unwrap_or(missing[1]).clone();
+            let v = self.hyper_op_pair(op, &l, &r, dwim_left, dwim_right)?;
+            if let Some(ok) = la
+                .original_keys
+                .as_ref()
+                .and_then(|m| m.get(&key))
+                .or_else(|| ra.original_keys.as_ref().and_then(|m| m.get(&key)))
+            {
+                original_keys.insert(key.clone(), ok.clone());
             }
-            QuantKind::Bag => {
-                let counts: std::collections::HashMap<String, i64> = map
-                    .iter()
-                    .filter_map(|(k, val)| {
-                        let c = crate::runtime::utils::to_int(val);
-                        (c > 0).then(|| (k.clone(), c))
-                    })
-                    .collect();
-                if mutable {
-                    Value::bag_hash(counts)
-                } else {
-                    Value::bag(counts)
-                }
-            }
-            QuantKind::Mix => {
-                let weights: std::collections::HashMap<String, f64> = map
-                    .iter()
-                    .filter_map(|(k, val)| {
-                        crate::runtime::utils::to_float_value(val).map(|w| (k.clone(), w))
-                    })
-                    .collect();
-                if mutable {
-                    Value::mix_hash(weights)
-                } else {
-                    Value::mix(weights)
-                }
-            }
+            result.insert(key, v);
         }
+        // Inherit object-hash / typed-value identity from whichever
+        // operand carries it (`%a{Any} >>op<< %b` and `%a >>op<< %b{Any}`
+        // must both come out an object hash), left preferred to match the
+        // key-set precedence above.
+        let mut data = crate::value::HashData::new(result);
+        data.key_type = la.key_type.clone().or_else(|| ra.key_type.clone());
+        data.value_type = la.value_type.clone().or_else(|| ra.value_type.clone());
+        data.declared_type = la
+            .declared_type
+            .clone()
+            .or_else(|| ra.declared_type.clone());
+        if !original_keys.is_empty() {
+            data.original_keys = Some(original_keys);
+        }
+        Ok(Value::hash_with_data(Value::hash_arc(data)))
     }
 }
