@@ -20,7 +20,8 @@ submit its consumer. It holds the consumer in a per-thread list (`runtime::decl_
 declaration's store submits it. This covers the plain channel-backed tap, a `supply` block's
 `whenever` reader, and the scheduler-pump drain.
 
-A held consumer is also released at the thread's next blocking point (`gc::block_quiescent`).
+A held consumer is also released at the thread's next blocking point
+(`worker_pool::enter_blocking`, which every `sleep`, `await` and join goes through).
 An initializer that waits for its own callback would otherwise deadlock. In that case the
 callback sees the declaration unbound, which is what Rakudo does.
 

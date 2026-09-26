@@ -12,8 +12,9 @@
 //! while the declaration is in flight, and the declaration's store submits it.
 //!
 //! A held task is also released at the declaring thread's next blocking point
-//! ([`crate::gc::block_quiescent`]). An initializer that waits for its own
-//! callback (`my $t = do { ...tap({ $p.keep; $t }); await $p }`) would
+//! (`worker_pool::enter_blocking`, which `gc::block_quiescent` and
+//! `gc::wait_until` both go through). An initializer that waits for its own
+//! callback (`my $t = await-then-return(...tap({ $p.keep; $t }))`) would
 //! otherwise deadlock; blocking there gives up the ordering, which is exactly
 //! the behavior Rakudo has.
 //!
