@@ -2637,6 +2637,13 @@ pub struct Interpreter {
     /// routines are gone, and a re-`use` — being a no-op — could not bring them
     /// back. See `reinstate_module_functions`.
     module_registered_functions: std::sync::Arc<HashSet<Symbol>>,
+    /// Class registry keys that are not lexical imports, so an import scope's
+    /// class rollback (`pop_import_scope`) must keep them: a loaded module's
+    /// own un-namespaced class (`unit class RS3Base;` -- the rollback already
+    /// keeps every `A::B`-qualified one) and every type a
+    /// `Metamodel::*HOW.new_type` minted at run time. Like `loaded_modules`,
+    /// never rolled back.
+    persistent_classes: std::sync::Arc<HashSet<String>>,
     /// Packages that received a routine import from a role's own deferred
     /// `use`/`need` body statement (`run_role_deferred_use_stmt`). Consulted
     /// by method dispatch (`vm_method_dispatch.rs`) as an extra reason to set

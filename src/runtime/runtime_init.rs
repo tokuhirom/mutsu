@@ -3204,6 +3204,7 @@ impl Interpreter {
             chroot_root: None,
             loaded_modules: Default::default(),
             module_registered_functions: Default::default(),
+            persistent_classes: Default::default(),
             packages_with_deferred_use_imports: Default::default(),
             prelude_registered_functions: Default::default(),
             prelude_declaring_units: Default::default(),
