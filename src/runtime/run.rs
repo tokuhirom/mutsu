@@ -897,6 +897,7 @@ impl Interpreter {
         Self::inject_trait_mod_is_default_prelude(&code, &mut stmts);
         Self::inject_metamodel_role_prelude(&code, &mut stmts);
         Self::inject_enumeration_prelude(&code, &mut stmts);
+        Self::inject_iterator_role_prelude(&code, &mut stmts);
         Self::inject_x_wrapper_prelude(&code, &mut stmts);
         // Install EVERY END phaser this compunit declares — top-level, inside
         // a block, inside a sub or a method — before the VM runs a single
