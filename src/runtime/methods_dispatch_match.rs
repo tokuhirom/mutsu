@@ -360,6 +360,13 @@ impl Interpreter {
                         return Some(Err(err));
                     }
                 }
+                // Cool's `.IO` on an undefined invocant -- a type object
+                // (`Str.IO`) or `Nil` -- is the `IO::Path` type object, not a
+                // path named after the invocant's gist (`"(Str)".IO`) or `""`
+                // (#9495).
+                if matches!(target.view(), ValueView::Package(_) | ValueView::Nil) {
+                    return Some(Ok(Value::package(Symbol::intern("IO::Path"))));
+                }
                 let s = target.to_string_value();
                 if s.contains('\0') {
                     return Some(Err(RuntimeError::new(
