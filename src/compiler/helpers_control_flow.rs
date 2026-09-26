@@ -1315,15 +1315,10 @@ impl Compiler {
             return;
         }
         let rewritten_args = Self::rewrite_stmt_call_args(&name.resolve(), args);
-        // See `stmt_call_positional_closures_nonescaping`.
-        self.stmt_call_positional_closures_nonescaping = !rewritten_args
-            .iter()
-            .all(|arg| matches!(arg, CallArg::Positional(_)));
         self.compile_expr(&Expr::Call {
             name,
             args: Self::call_args_to_expr_args(&rewritten_args),
         });
-        self.stmt_call_positional_closures_nonescaping = false;
     }
 
     /// Classify a CONTROL block as "resume-safe": it always `.resume`s and

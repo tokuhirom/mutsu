@@ -35,12 +35,10 @@ impl Interpreter {
             .cloned()
     }
 
-    /// Cost: O(e), e = elements of the invocant, for `.tail` and `.tail(k)` alike:
-    /// the receiver is copied whole by `value_to_list` before the last k are
-    /// sliced off (a `Seq.new($iterator)` body instead pays O(e) `skip-one` calls).
-    /// This is the path a method call on a named `@a` takes, so `@a.tail` in a
-    /// loop that grows `@a` is quadratic. Rakudo: O(k) on a reified Array/List --
-    /// see #9162.
+    /// Cost: O(k), k = elements requested (1 for `.tail`), on an Array, a List or a
+    /// reified Seq: the last k are sliced off the borrowed items. O(e), e =
+    /// elements, on any other list-like (decomposed first) and on a
+    /// `Seq.new($iterator)` body (O(e) `skip-one` calls).
     pub(in crate::runtime) fn dispatch_tail(
         &mut self,
         target: Value,
@@ -157,14 +155,19 @@ impl Interpreter {
             }
         }
 
-        let items = crate::runtime::utils::value_to_list(&target);
+        // Borrowed, not copied: only the last `tail_count` items are cloned.
         if args.is_empty() {
-            return Ok(items.last().cloned().unwrap_or(Value::NIL));
+            return Ok(crate::runtime::utils::with_list_items(&target, |items| {
+                items.last().cloned().unwrap_or(Value::NIL)
+            }));
         }
 
-        let tail_count = self.resolve_supply_tail_count(args.first(), items.len())?;
-        let start = items.len().saturating_sub(tail_count);
-        Ok(Value::seq(items[start..].to_vec()))
+        let len = crate::runtime::utils::list_items_len(&target);
+        let tail_count = self.resolve_supply_tail_count(args.first(), len)?;
+        Ok(Value::seq(crate::runtime::utils::with_list_items(
+            &target,
+            |items| items[items.len().saturating_sub(tail_count)..].to_vec(),
+        )))
     }
 
     /// Handle `.head(&callable)` / `.head(*)` where the argument is a

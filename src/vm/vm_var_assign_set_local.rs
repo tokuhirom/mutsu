@@ -2636,9 +2636,14 @@ impl Interpreter {
         // Lazy sync: if the local is not a container but env has one (from a
         // cross-scope `:=` or Stash.BIND-KEY binding), adopt it so the
         // write-through below preserves shared container identity.
-        // Skip for type objects and complex values.
+        // Skip for type objects and complex values, and for a declaration: a
+        // fresh `my $a` in an inner block must not adopt the OUTER `$a`'s cell
+        // (the one an escaping closure's capture promoted it to), or its
+        // initializer is stored into -- and type-checked against -- the outer
+        // variable (#9488).
         if !is_bind
             && !is_rebind
+            && !is_vardecl
             && !self.locals[idx].is_container_ref()
             && !matches!(
                 self.locals[idx].view(),
@@ -2668,7 +2673,7 @@ impl Interpreter {
             // the slot (raku value semantics); drop the share and fall through to
             // the plain-replace path below instead of writing through the cell.
             let scalar = !name.starts_with('@') && !name.starts_with('%');
-            if scalar && self.array_share_active && self.is_array_share_scalar(name) {
+            if scalar && self.is_value_share_slot(name, Some(&self.locals[idx])) {
                 self.clear_array_share_marker(name);
             } else {
                 let arc = arc.clone();

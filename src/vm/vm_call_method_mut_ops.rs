@@ -530,6 +530,7 @@ impl Interpreter {
         // `compile_expr_method_on_var`), so `@a.gist` and `$l.raku` arrive here
         // and nowhere else. Placed with the other receiver-deciding steps above,
         // and after them, so it sees the receiver they settled on.
+        let target = Self::gist_receiver(method, target);
         let target = if Self::renders_receiver_elements(method) && Self::holds_nested_proxy(&target)
         {
             loan_env!(self, resolve_proxies_in_value(&target))?

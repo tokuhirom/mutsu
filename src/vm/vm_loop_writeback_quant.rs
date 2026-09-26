@@ -43,6 +43,17 @@ impl Interpreter {
         let Some(source_val) = source_val else {
             return Ok(());
         };
+        // A QuantHash an escaping closure captured sits in a shared
+        // `ContainerRef`: classify its contents and store the new weight map
+        // back INTO the cell, so every closure sharing it sees the write
+        // (#9488).
+        if let ValueView::ContainerRef(cell) = source_val.view() {
+            let inner = cell.lock().unwrap().clone();
+            if let Some(updated) = Self::quanthash_with_weight(&inner, key, elem, value)? {
+                *cell.lock().unwrap() = updated;
+            }
+            return Ok(());
+        }
         let Some(updated) = Self::quanthash_with_weight(&source_val, key, elem, value)? else {
             return Ok(());
         };

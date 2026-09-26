@@ -589,6 +589,25 @@ impl Interpreter {
                 return Some(key);
             }
         }
+        // A method's lexical package is the package where its body was
+        // declared, which can be a sibling of the owning class rather than
+        // the class itself. Prefer that declaration scope before walking the
+        // dynamic method-class stack: the latter also contains callers, so a
+        // caller with a nested type of the same short name could otherwise
+        // capture this method's bareword.
+        if let Some(package) = self
+            .routine_stack
+            .iter()
+            .rev()
+            .find(|frame| frame.is_method)
+            .and_then(|frame| frame.lexical_package)
+        {
+            let qualified =
+                crate::qualified::qualified(package, crate::symbol::Symbol::intern(name));
+            if let Some(key) = self.resolve_lexical_type_key(qualified.as_str()) {
+                return Some(key);
+            }
+        }
         // Check method class stack
         for class_name in self.method_class_stack_syms_rev() {
             let qualified = format!("{}::{}", class_name, name);

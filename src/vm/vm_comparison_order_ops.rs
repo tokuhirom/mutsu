@@ -767,11 +767,10 @@ impl Interpreter {
     /// b` operator form. The routine path used to land on the pure
     /// `apply_reduction_op` fold instead, so `cmp-ok $consumed1, 'eqv',
     /// $consumed2` silently answered `False` where the operator throws.
-    /// Cost: O(e_l + e_r), e = total nodes of each operand, on every call: the
-    /// Proxy pre-scan (`resolve_proxies_in_value`) walks both operands in full
-    /// before `Value::eqv` runs, so a length mismatch or an early difference does
-    /// not short-circuit. Rakudo: O(1) on length mismatch, O(i) to the first
-    /// difference -- see #9162.
+    /// Cost: O(1) on a kind/length mismatch of two Array/List operands, else O(i)
+    /// to the first differing element pair (Proxy elements are resolved pair by
+    /// pair, not in a pre-scan); O(e_l + e_r), e = total nodes of each operand,
+    /// for any other operand shape (the Proxy pre-scan walks both in full).
     pub(crate) fn eqv_values(&mut self, left: Value, right: Value) -> Result<Value, RuntimeError> {
         // A user `multi sub infix:<eqv>` is part of the operator's candidate
         // set. It must get first refusal for object operands (for example,
@@ -790,6 +789,9 @@ impl Interpreter {
             (Some(a), Some(b)) if a == b => return Err(RuntimeError::cannot_lazy("eqv")),
             (Some(_), Some(_)) => return Ok(Value::FALSE),
             _ => {}
+        }
+        if let Some(answer) = self.eqv_arrays_lockstep(&left, &right)? {
+            return Ok(Value::truth(answer));
         }
         // `Value::eqv` is a pure, interpreter-free comparison, so it cannot call
         // a `Proxy` element's FETCH callback itself. `eval_binary_with_junctions`
@@ -814,5 +816,46 @@ impl Interpreter {
         let left = self.reify_or_consume_eqv_operand(left)?;
         let right = self.reify_or_consume_eqv_operand(right)?;
         self.eval_binary_with_junctions(left, right, |_, l, r| Ok(Value::truth(l.eqv(&r))))
+    }
+
+    /// `eqv` of two Array/List operands without the whole-operand Proxy
+    /// pre-scan: the kind and length are compared first, then the element
+    /// pairs in order, each resolved through any `Proxy` just before its
+    /// pure [`Value::eqv`], stopping at the first difference -- so a length
+    /// mismatch is O(1) and an early difference O(i), as in Rakudo. `None`
+    /// for any other operand shape.
+    // Cost: O(1) on a kind/length mismatch, else O(i) to the first differing
+    // element pair (recursing into it), O(e) when equal.
+    fn eqv_arrays_lockstep(
+        &mut self,
+        left: &Value,
+        right: &Value,
+    ) -> Result<Option<bool>, RuntimeError> {
+        let len = match (left.view(), right.view()) {
+            (ValueView::Array(a, a_kind), ValueView::Array(b, b_kind)) => {
+                if a_kind.is_real_array() != b_kind.is_real_array() || a.len() != b.len() {
+                    return Ok(Some(false));
+                }
+                a.len()
+            }
+            _ => return Ok(None),
+        };
+        let element = |v: &Value, i: usize| match v.view() {
+            ValueView::Array(items, _) => items.as_slice().get(i).cloned(),
+            _ => None,
+        };
+        for i in 0..len {
+            // A Proxy FETCH may run arbitrary code, so the pair is re-read by
+            // index each step; a side that shrank underneath is a difference.
+            let (Some(x), Some(y)) = (element(left, i), element(right, i)) else {
+                return Ok(Some(false));
+            };
+            let x = self.resolve_proxies_in_value(&x)?;
+            let y = self.resolve_proxies_in_value(&y)?;
+            if !x.eqv(&y) {
+                return Ok(Some(false));
+            }
+        }
+        Ok(Some(true))
     }
 }

@@ -899,6 +899,7 @@ impl Interpreter {
         // The name test comes first and is a `matches!` over a `&str`, so the
         // element scan only runs for a call that is about to walk every element
         // anyway.
+        let target = Self::gist_receiver(method, target);
         let target = if Self::renders_receiver_elements(method) && Self::holds_nested_proxy(&target)
         {
             loan_env!(self, resolve_proxies_in_value(&target))?

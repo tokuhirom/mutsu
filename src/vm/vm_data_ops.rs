@@ -21,6 +21,19 @@ impl Interpreter {
         if default.is_nil() {
             return value;
         }
+        // Only a container that actually holds a `Nil` is rewritten. The
+        // `make_mut` below deep-copies a shared backing store, so running it
+        // unconditionally detached every store of an EXISTING container from
+        // its other holders -- `$obj.w = %src` stored a copy of `%src` and a
+        // later `%src<y> = 2` never showed through the attribute (#9041).
+        let has_nil = match value.view() {
+            ValueView::Array(items, _) => items.iter().any(Value::is_nil),
+            ValueView::Hash(h) => h.map.values().any(Value::is_nil),
+            _ => false,
+        };
+        if !has_nil {
+            return value;
+        }
         let decayed_array = value
             .with_array_mut(|items, _kind| {
                 let data = crate::gc::Gc::make_mut(items);

@@ -488,7 +488,11 @@ impl Interpreter {
             let ok = match cf.param_fast_types.get(param_idx) {
                 Some(crate::opcode::FastParamCheck::Unconstrained) => continue,
                 Some(&crate::opcode::FastParamCheck::Fast { kind, name_sym }) => {
-                    is_native_int = kind == crate::opcode::FastParamType::NativeInt;
+                    is_native_int = matches!(
+                        kind,
+                        crate::opcode::FastParamType::NativeInt
+                            | crate::opcode::FastParamType::NativeIntSized
+                    );
                     let val = arg_binding_value(&self.stack[args_base + param_idx]);
                     Self::fast_type_check_tagged(&val, kind, name_sym)
                 }
@@ -496,7 +500,7 @@ impl Interpreter {
                     let Some(tc) = cf.param_defs[param_idx].type_constraint.as_ref() else {
                         continue;
                     };
-                    is_native_int = tc == "int";
+                    is_native_int = crate::runtime::native_types::is_native_int_type(tc);
                     let val = arg_binding_value(&self.stack[args_base + param_idx]);
                     Self::fast_type_check(&val, tc)
                 }
@@ -507,8 +511,15 @@ impl Interpreter {
                 // Bool-unbox/range-check/wrap the general binder applies to
                 // a native `int` parameter -- the only way it can still fail
                 // here is a `BigInt` outside `int`'s i64 range.
+                // Under the parameter's own spelling: a sized type
+                // (`uint32`, #9506) wraps to its width exactly as the
+                // general binder does.
                 let val = arg_binding_value(&self.stack[args_base + param_idx]).into_owned();
-                match crate::runtime::types::wrap_native_int_for_binding("int", val) {
+                let tc = cf.param_defs[param_idx]
+                    .type_constraint
+                    .as_deref()
+                    .unwrap_or("int");
+                match crate::runtime::types::wrap_native_int_for_binding(tc, val) {
                     Ok(coerced) => self.stack[args_base + param_idx] = coerced,
                     Err(e) => {
                         native_coerce_err = Some(e);
@@ -553,6 +564,23 @@ impl Interpreter {
             self.current_unit = saved_unit;
             let err = match native_coerce_err {
                 Some(e) => e,
+                // A sized native-int parameter only reaches this path since
+                // #9506; keep the general binder's error for it (it had no
+                // light path before, so its callers only ever saw that one).
+                None if tc != "int" && crate::runtime::native_types::is_native_int_type(tc) => {
+                    let pd = &cf.param_defs[param_idx];
+                    let val = arg_binding_value(&self.stack[args_base + param_idx]).into_owned();
+                    match crate::runtime::types::wrap_native_int_for_binding(tc, val.clone()) {
+                        // A type object: the binder's own "Cannot unbox" error.
+                        Err(e) => e,
+                        Ok(_) => RuntimeError::typecheck_binding_parameter_with_repr(
+                            &crate::runtime::types::param_display_name(pd),
+                            tc,
+                            &val,
+                        )
+                        .with_parameter_object(pd, Some(&*self)),
+                    }
+                }
                 None => positional_light_type_error(
                     func_name,
                     &cf.param_defs,
@@ -662,6 +690,7 @@ impl Interpreter {
                     T::NativeInt => Some("int"),
                     T::NativeStr => Some("str"),
                     T::NativeNum => Some("num"),
+                    T::NativeIntSized => cf.param_defs[param_idx].type_constraint.as_deref(),
                     _ => None,
                 };
                 if let Some(base) = native_base {
@@ -1205,7 +1234,7 @@ impl Interpreter {
             // since the light path did not exist for these constraints until
             // #8686 Phase 0 admitted them.
             ValueView::Mixin(..) => match kind {
-                T::NativeInt => val.isa_check("Int"),
+                T::NativeInt | T::NativeIntSized => val.isa_check("Int"),
                 T::NativeStr => val.isa_check("Str"),
                 T::NativeNum => val.isa_check("Num"),
                 _ => name_sym.with_str(|n| val.isa_check(n)),
@@ -1229,11 +1258,13 @@ impl Interpreter {
             // out-of-range `BigInt`) runs at the bind site right after this
             // check passes (#8686 Phase 0), not in this pure predicate.
             ValueView::Int(_) | ValueView::BigInt(_) => {
-                matches!(kind, T::Int | T::NativeInt | T::Wild)
+                matches!(kind, T::Int | T::NativeInt | T::NativeIntSized | T::Wild)
             }
             ValueView::Str(_) => matches!(kind, T::Str | T::NativeStr | T::Wild),
             ValueView::Num(_) => matches!(kind, T::Num | T::NativeNum | T::Wild),
-            ValueView::Bool(_) => matches!(kind, T::Bool | T::NativeInt | T::Wild),
+            ValueView::Bool(_) => {
+                matches!(kind, T::Bool | T::NativeInt | T::NativeIntSized | T::Wild)
+            }
             ValueView::Rat(_, _) => matches!(kind, T::Rat | T::Wild),
             // An enum value satisfies the base type its values carry (`our Str
             // enum S «:A<a>»` — `S::A` is a `Str`) as well as its own enum type,
@@ -1244,7 +1275,9 @@ impl Interpreter {
             } => match (kind, value) {
                 (T::Wild, _)
                 | (T::Str | T::NativeStr, crate::value::EnumValue::Str(_))
-                | (T::Int | T::NativeInt, crate::value::EnumValue::Int(_)) => true,
+                | (T::Int | T::NativeInt | T::NativeIntSized, crate::value::EnumValue::Int(_)) => {
+                    true
+                }
                 _ => enum_type == name_sym,
             },
             // Every other value shape satisfies only `Any`/`Mu` -- the
@@ -1262,7 +1295,9 @@ impl Interpreter {
             return true;
         }
         // See the tagged form's identical native-return bypass just above.
-        if matches!(type_name, "int" | "str" | "num") {
+        if matches!(type_name, "int" | "str" | "num")
+            || crate::runtime::native_types::is_native_int_type(type_name)
+        {
             return true;
         }
         if let ValueView::Instance { class_name, .. } = val.view()
@@ -1301,7 +1336,10 @@ impl Interpreter {
         // these onto the light/positional-light return check must match that
         // same no-op enforcement rather than inventing a stricter check the
         // slow path never applied (#8686 Phase 0) -- unconditionally accept.
-        if matches!(kind, T::NativeInt | T::NativeStr | T::NativeNum) {
+        if matches!(
+            kind,
+            T::NativeInt | T::NativeIntSized | T::NativeStr | T::NativeNum
+        ) {
             return true;
         }
         match val.view() {
@@ -1339,6 +1377,7 @@ impl Interpreter {
         if matches!(val.view(), ValueView::Mixin(..)) {
             let boxed_name = match type_name {
                 "int" => "Int",
+                n if crate::runtime::native_types::is_native_int_type(n) => "Int",
                 "str" => "Str",
                 "num" => "Num",
                 other => other,
@@ -1377,6 +1416,11 @@ impl Interpreter {
                 ("Str" | "str", crate::value::EnumValue::Str(_))
                 | ("Int" | "int", crate::value::EnumValue::Int(_))
                 | ("Any" | "Mu", _) => true,
+                (n, crate::value::EnumValue::Int(_))
+                    if crate::runtime::native_types::is_native_int_type(n) =>
+                {
+                    true
+                }
                 _ => runtime::value_type_name(val) == type_name,
             };
         }
@@ -1390,7 +1434,8 @@ impl Interpreter {
             // see the coercion step in the light-call bind loops, #8686
             // Phase 0); native `str`/`num` need no such coercion, so they
             // match exactly like their boxed counterparts above.
-            "int" => matches!(
+            // Sized spellings (`uint32`, ...) admit the same shapes (#9506).
+            n if n == "int" || crate::runtime::native_types::is_native_int_type(n) => matches!(
                 val.view(),
                 ValueView::Int(_) | ValueView::BigInt(_) | ValueView::Bool(_)
             ),

@@ -235,6 +235,41 @@ impl Interpreter {
 
     /// Restore function/class/proto registries to the last saved snapshot,
     /// removing any entries added since the push.
+    /// The class registry keys an import scope's rollback keeps: everything
+    /// registered before the scope, every `A::B`-qualified class (a loaded
+    /// module's own, see below), every type minted at run time by
+    /// `new_type` (`persistent_classes`), and -- transitively -- every class
+    /// one of those names as a parent. The last rule is what keeps
+    /// `sub f { use Base; my $c := ....new_type(...); $c.^add_parent(Base); $c }`
+    /// working after `f` returns: the imported *name* `Base` is lexical to
+    /// `f`, but the class object is still the escaping type's parent (#9532).
+    // Cost: O(C + P), C = registered classes, P = parent edges walked.
+    fn classes_outliving_import_scope(&self, class_snapshot: &HashSet<String>) -> HashSet<String> {
+        let reg = self.registry();
+        let mut keep: HashSet<String> = reg
+            .classes
+            .keys()
+            .filter(|key| {
+                class_snapshot.contains(*key)
+                    || self.persistent_classes.contains(*key)
+                    || (key.contains("::") && !key.starts_with("GLOBAL::"))
+            })
+            .cloned()
+            .collect();
+        let mut work: Vec<String> = keep.iter().cloned().collect();
+        while let Some(name) = work.pop() {
+            let Some(def) = reg.classes.get(&name) else {
+                continue;
+            };
+            for parent in &def.parents {
+                if reg.classes.contains_key(parent) && keep.insert(parent.clone()) {
+                    work.push(parent.clone());
+                }
+            }
+        }
+        keep
+    }
+
     pub(crate) fn pop_import_scope(&mut self) {
         if let Some(snapshot) = self.import_scope_stack.pop() {
             let crate::runtime::ImportScopeSnapshot {
@@ -301,10 +336,10 @@ impl Interpreter {
             // (t/module-reuse-class-in-block.t). Bare imported aliases are
             // still removed with the import scope.
             if scope_classes {
-                self.registry_mut().classes.retain(|key, _| {
-                    class_snapshot.contains(key)
-                        || (key.contains("::") && !key.starts_with("GLOBAL::"))
-                });
+                let keep = self.classes_outliving_import_scope(&class_snapshot);
+                self.registry_mut()
+                    .classes
+                    .retain(|key, _| keep.contains(key));
             }
             // `proto sub name(|) is export` imports under the importing package
             // (`GLOBAL::skip`) into BOTH proto tables, and `has_proto` reads the

@@ -8105,7 +8105,8 @@ impl CompiledCode {
             .iter()
             .any(|c| matches!(c.view(), crate::value::ValueView::Str(s) if s.as_str() == "_"));
         self.mentions_native_scalar_type_name = self.constants.iter().any(|c| {
-            matches!(c.view(), crate::value::ValueView::Str(s) if matches!(s.as_str(), "int" | "str" | "num"))
+            matches!(c.view(), crate::value::ValueView::Str(s) if matches!(s.as_str(), "int" | "str" | "num")
+                || crate::runtime::native_types::is_native_int_type(s.as_str()))
         });
         self.compute_const_syms();
         self.compute_locals_sym();
@@ -9709,7 +9710,7 @@ impl CompiledCode {
             std::collections::HashSet::new();
         for (i, nested) in self.closure_compiled_codes.iter().enumerate() {
             let escapes = self.closure_escapes.get(i).copied().unwrap_or(false);
-            for sym in &nested.free_var_syms {
+            for (fv_i, sym) in nested.free_var_syms.iter().enumerate() {
                 // A name that closure declares in EXPRESSION position is its own
                 // binding, however the env-only store spells it, so it must not
                 // earn OUR same-named local a shared cell — an unrelated later
@@ -9729,12 +9730,24 @@ impl CompiledCode {
                     continue;
                 }
                 let is_own = sym.with_str(|s| own.contains(s));
-                if is_own && escapes {
+                // Our same-named local that was NOT yet declared where the
+                // closure was created (`free_var_parent_slots` baked `None`:
+                // a later sibling block's `constant Int`, `my $b`, ...) is a
+                // different lexical from the one the closure names, so the
+                // closure's escape must not promote it to a cell -- the cell
+                // would then catch the closure's writes (`{ Int = 5 }` stored
+                // into it instead of dying). Unbaked chunks keep the old
+                // name-only answer.
+                let declared_at_emit = nested
+                    .free_var_parent_slots
+                    .get(fv_i)
+                    .is_none_or(Option::is_some);
+                if is_own && escapes && declared_at_emit {
                     escaping_captured_own.insert(*sym);
                 }
                 if is_own && self_mutated.contains(sym) {
                     captured_mutated.insert(*sym);
-                    if escapes {
+                    if escapes && declared_at_emit {
                         needs_cell.insert(*sym);
                     }
                 }
@@ -11585,9 +11598,17 @@ pub(crate) enum FastParamType {
     /// boxed case this must not disturb. `NativeInt` additionally accepts a
     /// `Bool` argument (`Bool` "does" `Int`, `t/nativecall/bool-native-int-unbox.t`),
     /// which the boxed `Int` tag deliberately does not. Only the plain
-    /// full-width spellings are covered, not the sized (`int8`/`uint32`/...)
-    /// or C-width-alias forms -- those stay on the general binder.
+    /// full-width `int`; the sized and C-width-alias spellings are
+    /// [`Self::NativeIntSized`].
     NativeInt,
+    /// Every other native integer spelling (`int8`..`int64`, `uint`,
+    /// `uint8`..`uint64`, `byte`, and the C-width aliases `long`, `size_t`,
+    /// ...; see `native_types::is_native_int_type`). Admits exactly what
+    /// [`Self::NativeInt`] admits; the light bind sites then apply the same
+    /// `wrap_native_int_for_binding` the general binder applies, under the
+    /// parameter's own spelling (#9506). The spelling itself is carried by
+    /// `FastParamCheck::Fast::name_sym`.
+    NativeIntSized,
     NativeStr,
     NativeNum,
     /// `Any` / `Mu`: satisfied by every value.
@@ -11616,6 +11637,7 @@ impl FastParamType {
             "str" => Self::NativeStr,
             "num" => Self::NativeNum,
             "Any" | "Mu" => Self::Wild,
+            n if crate::runtime::native_types::is_native_int_type(n) => Self::NativeIntSized,
             _ => return None,
         })
     }

@@ -968,7 +968,24 @@ impl Interpreter {
                 // only updates keys that already exist on the instance.
                 // The slot template is cached per class on the constructor
                 // plan; only the copy is per call.
-                let attributes = (*self.native_ctor_plan(class_name).create_slots).clone();
+                let mut attributes = (*self.native_ctor_plan(class_name).create_slots).clone();
+                let class_key = class_name.resolve();
+                if self
+                    .class_mro(&class_key)
+                    .iter()
+                    .any(|name| Self::is_associative_base(&name.resolve()))
+                {
+                    // An `is Hash`/`is Map` subclass stores its entries in a
+                    // reserved backing value even when it is allocated by
+                    // `nqp::create` (which deliberately skips `new`).
+                    // Without this representation slot, nqp code that binds
+                    // `'$!storage'` while blessing the object has nowhere to
+                    // install the store.
+                    attributes.insert(
+                        "__mutsu_hash_storage",
+                        self.associative_base_storage(&class_key, Vec::new()),
+                    );
+                }
                 Some(Ok(Value::make_instance(class_name, attributes)))
             }
             _ => None,

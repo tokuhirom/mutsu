@@ -287,10 +287,9 @@ impl Interpreter {
     /// and `note` then render `.gist`; `put` and `print` render `.Str`, which
     /// warns on `Nil` and on a `Regex` and threads a Junction. `put` of a lone
     /// Junction prints one line per eigenstate.
-    // Cost: O(t) per argument, t = total rendered size of the whole aggregate:
-    // the Proxy pre-scan walks it and the render visits every element (no
-    // 100-element cap, unlike `.gist`/`.say`). Rakudo: O(1) for the
-    // 100-element head -- see #9162.
+    // Cost: O(t) per argument, t = rendered size: for `say`/`note` the gist head
+    // of a list (at most 100 elements per level, see `gist_head`); for
+    // `put`/`print` the whole aggregate (`.Str` renders every element).
     pub(crate) fn render_output(
         &mut self,
         kind: OutputKind,
@@ -325,7 +324,14 @@ impl Interpreter {
         let caller_code = self.current_code;
         let mut content = String::new();
         for v in &values {
-            let v = self.resolve_proxies_in_value(v)?;
+            // `say`/`note` render only the gist head of a long list, so only
+            // that head is FETCHed, checked and walked below.
+            let v = if kind.renders_gist() {
+                runtime::gist_head(v)
+            } else {
+                v.clone()
+            };
+            let v = self.resolve_proxies_in_value(&v)?;
             check_rat_divide_by_zero(&v)?;
             check_unhandled_failure(&v)?;
             if kind.renders_gist() {

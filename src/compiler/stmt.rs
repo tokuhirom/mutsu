@@ -2785,9 +2785,7 @@ impl Compiler {
                     name: *name,
                     args: Self::call_args_to_expr_args(&rewritten_args),
                 };
-                self.stmt_call_positional_closures_nonescaping = !positional_only;
                 self.compile_expr(&call_expr);
-                self.stmt_call_positional_closures_nonescaping = false;
                 // Sink context, exactly as the normalized path above.
                 self.code.emit(OpCode::SinkPop(false, true));
             }

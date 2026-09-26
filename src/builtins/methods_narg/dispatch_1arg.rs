@@ -988,9 +988,9 @@ pub(crate) fn native_method_1arg(
         // shuffle each inner array's own elements). Slice 1 drew the same
         // distinction for the 0-arg forms in `dispatch_core_range.rs`; this is
         // the n-arg half.
-        // Cost: O(k) on an Array or an integer Range, k = elements requested; O(e)
-        // on any other list-like, e = elements of the invocant (decomposed into a Vec
-        // first). Rakudo: O(k) -- see #9162.
+        // Cost: O(k), k = elements requested, on an Array, a List, a reified Seq or
+        // an integer Range; O(e) on any other list-like, e = elements of the invocant
+        // (decomposed into a Vec first).
         "head" => {
             let n: i64 = match arg.view() {
                 ValueView::Int(i) => i,
@@ -1026,16 +1026,14 @@ pub(crate) fn native_method_1arg(
                     let items: Vec<Value> = (a..=b).take(n).map(Value::int).collect();
                     Some(Ok(Value::seq(items)))
                 }
-                _ => {
-                    let items = runtime::value_to_list_for_receiver(target);
-                    Some(Ok(Value::seq(items[..n.min(items.len())].to_vec())))
-                }
+                _ => Some(Ok(Value::seq(runtime::with_receiver_items(
+                    target,
+                    |items| items[..n.min(items.len())].to_vec(),
+                )))),
             }
         }
-        // Cost: O(k) on an Array, k = elements requested; O(e) otherwise, e = elements
-        // of the invocant (decomposed into a Vec first). `@a.tail(k)` on a named
-        // array measures O(e): that call reaches `dispatch_tail` instead. Rakudo:
-        // O(k) -- see #9162.
+        // Cost: O(k), k = elements requested, on an Array, a List or a reified Seq;
+        // O(e) otherwise, e = elements of the invocant (decomposed into a Vec first).
         "tail" => match target.view() {
             ValueView::Array(items, ..) => {
                 let n = match arg.view() {
@@ -1051,9 +1049,10 @@ pub(crate) fn native_method_1arg(
                     ValueView::Int(i) => i as usize,
                     _ => return None,
                 };
-                let items = runtime::value_to_list_for_receiver(target);
-                let start = items.len().saturating_sub(n);
-                Some(Ok(Value::seq(items[start..].to_vec())))
+                Some(Ok(Value::seq(runtime::with_receiver_items(
+                    target,
+                    |items| items[items.len().saturating_sub(n)..].to_vec(),
+                ))))
             }
         },
         // Cost: O(e + C(e, k) * k), e = elements of the invocant, k = combination size
@@ -1918,9 +1917,9 @@ pub(crate) fn native_method_1arg(
             }
             _ => None,
         },
-        // Cost: O(e + k) on a list/array, e = elements of the invocant (copied into
-        // the sampling pool even for a small k), k = elements rolled; O(k) on an
-        // integer Range. Rakudo: O(k) -- see #9162.
+        // Cost: O(k), k = elements rolled, on an Array, a List, a reified Seq or an
+        // integer Range; O(e + k) on any other list-like, e = elements (decomposed
+        // into the sampling pool first). `.roll(*)` copies the pool once, O(e).
         "roll" => {
             if matches!(target.view(), ValueView::Package(_)) {
                 return None;
@@ -2095,12 +2094,12 @@ pub(crate) fn native_method_1arg(
                 }
             };
 
-            let items = if target.is_range() {
-                Vec::new()
-            } else {
-                runtime::value_to_list_for_receiver(target)
-            };
             if count.is_none() {
+                let items = if target.is_range() {
+                    Vec::new()
+                } else {
+                    runtime::value_to_list_for_receiver(target)
+                };
                 if !target.is_range() && items.is_empty() {
                     return Some(Ok(Value::seq(Vec::new())));
                 }
@@ -2133,25 +2132,38 @@ pub(crate) fn native_method_1arg(
                 ))));
             }
             let count = count.unwrap_or(0);
-            if count == 0 || (!target.is_range() && items.is_empty()) {
+            if count == 0 {
                 return Some(Ok(Value::seq(Vec::new())));
             }
-            let mut result = Vec::with_capacity(count);
-            for _ in 0..count {
-                if target.is_range() {
+            if target.is_range() {
+                let mut result = Vec::with_capacity(count);
+                for _ in 0..count {
                     if let Some(v) = sample_from_range(target) {
                         result.push(v);
                     }
-                } else {
-                    let mut idx =
-                        (crate::builtins::rng::builtin_rand() * items.len() as f64) as usize;
-                    if idx >= items.len() {
-                        idx = items.len() - 1;
-                    }
-                    result.push(items[idx].clone());
                 }
+                return Some(Ok(Value::seq(result)));
             }
-            Some(Ok(Value::seq(result)))
+            // The pool is borrowed, not copied: `.roll(k)` indexes k slots.
+            Some(Ok(Value::seq(runtime::with_receiver_items(
+                target,
+                |items| {
+                    if items.is_empty() {
+                        return Vec::new();
+                    }
+                    (0..count)
+                        .map(|_| {
+                            let mut idx = (crate::builtins::rng::builtin_rand()
+                                * items.len() as f64)
+                                as usize;
+                            if idx >= items.len() {
+                                idx = items.len() - 1;
+                            }
+                            items[idx].clone()
+                        })
+                        .collect()
+                },
+            ))))
         }
         "log" => {
             let base_complex = match arg.view() {
