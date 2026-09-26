@@ -575,6 +575,11 @@ impl Interpreter {
                 )));
             }
             let cn = n;
+            if let Some(err) =
+                crate::vm::vm_type_object_concreteness::io_path_numeric_concreteness_error(&cn)
+            {
+                return Err(err);
+            }
             if self.has_user_method(&cn, "Numeric") {
                 let caller_code = self.current_code;
                 let result = self.try_compiled_method_or_interpret(val.clone(), "Numeric", vec![]);
