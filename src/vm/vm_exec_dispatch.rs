@@ -4708,29 +4708,6 @@ impl Interpreter {
                 }
                 *ip += 1;
             }
-            // Cost: O(a) plus the callee's body, a = arguments.
-            OpCode::ExecCallPairs {
-                name_idx,
-                arity,
-                arg_sources_idx,
-                keep_value,
-            } => {
-                self.sync_source_line(code, *ip);
-                // `use fatal`: see the comment on the `CallFunc` arm above.
-                self.explode_if_fatal_failure_in_call_args(
-                    Self::const_str(code, *name_idx),
-                    *arity as usize,
-                )?;
-                self.exec_exec_call_pairs_op(
-                    code,
-                    compiled_fns,
-                    *name_idx,
-                    *arity,
-                    *arg_sources_idx,
-                    *keep_value,
-                )?;
-                *ip += 1;
-            }
 
             // -- Indexing --
             // Cost: O(1) for a single index/key; O(k) for a slice, k = indices (see

@@ -299,8 +299,9 @@ impl Interpreter {
 
     /// Bind one read-only parameter, mirroring the general binder's
     /// admissions: an `Int` or a `Bool` (which does `Int`) for a native
-    /// `int`, an `Int`/`Num` for a native `num`, an actual string for a
-    /// native `str`. A bare type object, a `BigInt` outside `int`'s range and
+    /// `int`, only a `Num` for a native `num` (an `Int` does not unbox to a
+    /// native number: raku dies "This type cannot unbox to a native number"),
+    /// an actual string for a native `str`. A bare type object, a `BigInt` outside `int`'s range and
     /// everything else decline, so the untyped path raises the error the
     /// program should see.
     pub(super) fn bind_ro_param(
@@ -321,7 +322,6 @@ impl Interpreter {
             TrKind::Num => {
                 let n = match val.view() {
                     ValueView::Num(n) => n,
-                    ValueView::Int(i) => i as f64,
                     _ => return None,
                 };
                 self.trir.nl[frame.nbase as usize + p.slot as usize] = n.to_bits() as i64;

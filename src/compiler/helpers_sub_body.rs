@@ -1602,22 +1602,12 @@ impl Compiler {
                             continue;
                         }
                         // A tail statement-call must keep its value on the
-                        // stack as the body's implicit return.
-                        // `compile_tail_stmt_call_value` takes the fast
-                        // `Expr::Call` path for positional-only args; a call
-                        // with named/slip args instead routes through
-                        // `ExecCallPairs { keep_value: true }`, which keeps
-                        // the call's result on the stack — a plain
-                        // `sub_compiler.compile_stmt(stmt)` fallback compiles
-                        // the same shape with `keep_value: false` (sink
-                        // context), returning Nil instead of the value
-                        // (t/tail-stmt-call-named-value.t's role-method
-                        // case). (Before ADR-0054 Slice 2 this routing also
-                        // dodged `CallFunc`'s blind Slip-shape flattening;
-                        // that concern is gone now that `CallFunc` tracks
-                        // `|EXPR` positions by call-site syntax exactly like
-                        // `ExecCallPairs` does, so `keep_value` is the only
-                        // remaining reason for this special case.)
+                        // stack as the body's implicit return:
+                        // `compile_tail_stmt_call_value` compiles the
+                        // expression form's call, where a plain
+                        // `sub_compiler.compile_stmt(stmt)` would sink the
+                        // value and return Nil instead
+                        // (t/tail-stmt-call-named-value.t's role-method case).
                         Stmt::Call { name, args } => {
                             sub_compiler.compile_tail_stmt_call_value(*name, args);
                             continue;

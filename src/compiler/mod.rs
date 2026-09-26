@@ -1482,6 +1482,20 @@ pub(crate) struct Compiler {
     /// at entry, so a block nested inside the callback does not inherit it.
     /// See [`crate::opcode::CompiledCode::immutable_topic`].
     pending_immutable_topic_block: bool,
+    /// One-shot: the call about to be compiled is a statement call that
+    /// carries named arguments (a Test assertion, with its injected
+    /// callsite-line pair, is the common one). Its POSITIONAL closure-literal
+    /// arguments are then compiled non-escaping, as the retired
+    /// `ExecCallPairs` statement path always compiled them.
+    ///
+    /// TODO: drop this once an escaping closure's captured variables keep
+    /// their container traits (#9488). Compiled escaping, the block in
+    /// `dies-ok { %m<a> = 666 }` (`%m is Map`) or `lives-ok { $a = Nil }`
+    /// (`$a is default(42)`) captures a shared cell that has lost the
+    /// variable's `is default` / read-only / typed-container behaviour -- the
+    /// expression form `my $r = dies-ok { ... }` is wrong for exactly that
+    /// reason today.
+    stmt_call_positional_closures_nonescaping: bool,
     /// Variables declared as `constant` (no Scalar container).
     constant_vars: std::collections::HashSet<String>,
     /// Scalar variables `:=`-bound to a non-itemized value (no Scalar
@@ -1790,6 +1804,7 @@ impl Compiler {
             suppress_multidim_bind_ref_arg: false,
             mint_named_pair: false,
             pending_immutable_topic_block: false,
+            stmt_call_positional_closures_nonescaping: false,
             constant_vars: std::collections::HashSet::new(),
             noncontainer_bound_vars: std::collections::HashSet::new(),
             constant_vars_in_scope: std::collections::HashSet::new(),
@@ -3115,37 +3130,6 @@ impl Compiler {
             None
         } else {
             Some(self.code.add_constant(Value::array(entries)))
-        }
-    }
-
-    /// Bake the `|EXPR` positions of a `Stmt::Call`-shaped (`CallArg`) argument
-    /// list into the constant pool, for `ExecCallPairs`.
-    ///
-    /// ADR-0054 Slice 4: this uses the SAME per-position entry shape
-    /// `add_arg_sources_constant` uses for an `Expr`-list call site (`TRUE`
-    /// for a `|EXPR` position, `NIL` otherwise — decoded by
-    /// `decode_arg_slip_positions`), rather than the separate "array of bare
-    /// integer positions" encoding the retired `add_slip_positions_constant`
-    /// used. `ExecCallPairs` has no rw-arg source tracking (it never did, so
-    /// this does not add `Str`/`Pair` name entries the way
-    /// `add_arg_sources_constant` does for `CallFunc`/`CallMethod`/etc.) — a
-    /// call site now carries exactly one syntax descriptor instead of two
-    /// parallel constants. `None` (no `|` argument) is the common case.
-    fn add_call_arg_sources_constant(&mut self, args: &[CallArg]) -> Option<u32> {
-        let mut entries = Vec::with_capacity(args.len());
-        let mut has_slip = false;
-        for arg in args {
-            if matches!(arg, CallArg::Slip(_)) {
-                entries.push(Value::TRUE);
-                has_slip = true;
-            } else {
-                entries.push(Value::NIL);
-            }
-        }
-        if has_slip {
-            Some(self.code.add_constant(Value::array(entries)))
-        } else {
-            None
         }
     }
 
