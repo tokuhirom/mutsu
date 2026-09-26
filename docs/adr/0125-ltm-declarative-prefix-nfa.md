@@ -65,12 +65,33 @@ A declined pattern is measured by the walker, exactly as before. The builder dec
 - a subrule with arguments, `<::(…)>`, a name that may name a lexical `Regex` (`<&…>`), or
   a body that is not generation-stable (its text interpolates a runtime value);
 - a name that both a rule and a method answer to;
-- a proto (a multi-candidate rule with `sym` keys). The walker ranks the candidates and
-  keeps only the winner's greedy end (ADR-0046 §4's residual); reproducing that in an NFA
-  is not a structural question, and changing it to Rakudo's full union is a ranking change
-  of its own;
+- ~~a proto (a multi-candidate rule with `sym` keys)~~ — no longer declined since #9643,
+  see §3.1;
 - `:m` (ignoremark), a scoped `CaptureIsolatedGroupScoped`, and an NFA over the node
   budget.
+
+### 3.1 Protos (#9643)
+
+A proto call compiles to a `Split` over its candidates' bodies, like any other
+multi-candidate rule: the union of every candidate's every end, which is how Rakudo's NFA
+inlines a proto. A candidate's `<sym>` needs nothing of its own: `replace_sym_assertions`
+already rewrote it to `$<sym>=['<its sym text>']` when the body was resolved.
+
+This is a ranking change and not only a speed-up. Phase 1's walker ranked a proto's
+candidates, walked the winner, and kept only its greedy end, so a prefix that runs through
+a losing candidate, or through a shorter end of the winner, was lost. `raku` confirms the
+union: with `t:sym<a> { 'a' }` and `t:sym<ab> { 'ab' }`,
+`[ <t> [ 'bcde' | 'c' ] | 'abcd' ]` on `"abcde"` ranks the `<t>` branch first (prefix 5,
+through `'a' 'bcde'`), which then matches for real as `'ab' 'c'`; the winner's greedy end
+alone gives it 3 and loses to `'abcd'`. Pinned by `t/regex/regex-ltm-nfa-proto.t`.
+
+The walker changed with it, so that `ltm_prefix_len_at`'s other callers (the ADR-0046
+proto ranking among them, #9644) measure the same union: under `LTM_DECLARATIVE_MODE` a
+proto call in `regex_match_atom.rs` skips rank-then-match and the `take(1)`, and yields
+every candidate's every end. That amends ADR-0046 §4's residual for measurement only; a
+real match still ranks, commits to the first candidate that matches, and keeps its greedy
+end. Walking the losing candidates is safe because a measurement runs no user code
+(ADR-0009).
 
 ## 4. Where the NFA and the walker may differ
 
@@ -78,7 +99,11 @@ The NFA explores every path. The walker has two shortcuts that can make it explo
 
 - a quantifier over an atom without an alternation (`walk_quant_chain`) takes each
   iteration's first end only;
-- `QUANT_ALT_BUDGET` caps a quantifier's DFS.
+- `QUANT_ALT_BUDGET` caps a quantifier's DFS;
+- the walker honours `:ratchet` while measuring (a ratcheted `?`, quantifier or subrule
+  call keeps its first end only), where Rakudo's NFA, and this one, ignore it. A proto
+  candidate written as a `token` therefore still measures only its greedy end in the
+  walker. Retiring the walker's measurement mode (#9644) removes this difference.
 
 Where the walker's shortcut missed a path, the NFA's prefix is the longer one, and it is
 the one Rakudo's NFA computes. `MUTSU_LTM_NFA_VERIFY=1` runs both on every NFA ranking and
@@ -103,7 +128,7 @@ reading code.
   `MUTSU_LTM_NFA_VERIFY`.
 - Phase 1 merged in [#9641](https://github.com/tokuhirom/mutsu/pull/9641).
 - Open:
-  - protos (§3): [#9643](https://github.com/tokuhirom/mutsu/issues/9643);
+  - protos: done in #9643 (§3.1);
   - the other measurement entry points (`ltm_prefix_len_at`'s other callers need the
     "stopped" flag), then retiring the walker's measurement mode once every entry point
     is on the NFA: [#9644](https://github.com/tokuhirom/mutsu/issues/9644);

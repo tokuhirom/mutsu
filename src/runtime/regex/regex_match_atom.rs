@@ -777,6 +777,12 @@ impl Interpreter {
                 let mut best_raw: Vec<(usize, RegexCaptures)> = Vec::new();
 
                 let has_proto = candidates.iter().any(|(_, _, sym)| sym.is_some());
+                // #9643: a measurement sees a proto the way Rakudo's NFA does,
+                // as the union of every candidate's every end, not as the
+                // ranked winner's greedy end alone. Measuring runs no user
+                // code (ADR-0009), so walking the losers is free of the side
+                // effects ADR-0046 §2.3 ranks to avoid.
+                let measuring = LTM_DECLARATIVE_MODE.with(std::cell::Cell::get);
                 // Left-recursion escape hatch for the rank-then-match path — see
                 // the `seed_was_consulted` handling below.
                 let mut lr_match_all = false;
@@ -803,7 +809,7 @@ impl Interpreter {
                     // Evaluate all candidates' patterns directly (unwrapped).
                     let mut raw_out: Vec<(usize, RegexCaptures)> = Vec::new();
 
-                    if has_proto && !lr_match_all {
+                    if has_proto && !lr_match_all && !measuring {
                         // ADR-0046 Decision 1: rank the proto candidates by
                         // MEASUREMENT, then match only the winner. Ranking runs
                         // under `LTM_DECLARATIVE_MODE`, so it executes nothing
@@ -882,7 +888,7 @@ impl Interpreter {
                                 },
                             );
                             // all_matches: HIGHEST FIRST.
-                            let matches_to_use: Vec<_> = if sym_key.is_some() {
+                            let matches_to_use: Vec<_> = if sym_key.is_some() && !measuring {
                                 all_matches.into_iter().take(1).collect()
                             } else {
                                 all_matches
