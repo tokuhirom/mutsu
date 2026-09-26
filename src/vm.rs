@@ -194,6 +194,7 @@ mod vm_for_loop_dispatch;
 mod vm_for_loop_intrange;
 mod vm_for_loop_lazy;
 mod vm_given_when_ops;
+pub(crate) mod vm_handler_snapshot;
 mod vm_hash_subclass_delegate;
 mod vm_helpers;
 mod vm_helpers_junction;
@@ -325,16 +326,14 @@ fn cmp_values(left: &Value, right: &Value) -> std::cmp::Ordering {
 /// `control_handler_depth` so the innermost handler is always `.last()`.
 pub(crate) struct ControlHandlerEntry {
     /// Whether this handler unconditionally `.resume`s (see `OpCode::TryCatch`
-    /// `resume_safe`). When false, `handler` is `None` and a deep warn falls
-    /// back to the unwinding path.
+    /// `resume_safe`), so a run that falls through counts as resuming.
     pub resume_safe: bool,
-    /// Present for `resume_safe` handlers and for handlers that merely
-    /// *contain* a `.resume` (`OpCode::TryCatch::control_resume_capable`): the
-    /// bytecode + range + function table needed to run the handler INLINE at a
-    /// deep `warn` raise site.
-    pub handler: Option<ControlHandlerCode>,
+    /// The bytecode + range + function table needed to run the handler INLINE
+    /// at a deep `warn` raise site. Every CONTROL handler carries it (#9510):
+    /// rakudo runs a CONTROL handler on top of the stack at the raise site.
+    pub handler: ControlHandlerCode,
     /// Identifies this activation of the region (drawn from the same counter
-    /// as `CatchHandlerEntry::token`). A capable handler that ran inline and
+    /// as `CatchHandlerEntry::token`). A handler that ran inline and
     /// did not resume stamps it into the warn signal, so the region applies the
     /// recorded verdict instead of running the handler again (#9469). Nested
     /// active regions always carry increasing tokens, innermost largest.
@@ -346,15 +345,16 @@ pub(crate) struct ControlHandlerEntry {
     pub handles_take: bool,
 }
 
-/// Self-contained bytecode for running a `resume_safe` CONTROL handler inline.
-/// The `code` is an owned `Arc` clone of the installing frame's `CompiledCode`
-/// (intra-range jump targets stay valid because indices are preserved); the
-/// `compiled_fns` clone lets the handler body call user subs visible at install.
+/// Self-contained bytecode for running a CONTROL handler inline. The `code` is
+/// the shared owned copy of the installing frame's `CompiledCode`
+/// ([`CompiledCode::shared_snapshot`]; intra-range jump targets stay valid
+/// because indices are preserved); `compiled_fns` lets the handler body call
+/// user subs visible at install.
 pub(crate) struct ControlHandlerCode {
     pub code: std::sync::Arc<CompiledCode>,
     pub control_begin: usize,
     pub end: usize,
-    pub compiled_fns: CompiledFns,
+    pub compiled_fns: std::sync::Arc<CompiledFns>,
 }
 
 /// ADR-0072: a region that would stop an exception from reaching an outer
@@ -397,7 +397,7 @@ pub(crate) struct CatchHandlerCode {
     /// — applies it with the values it already has.
     pub catch_begin: usize,
     pub control_begin: usize,
-    pub compiled_fns: CompiledFns,
+    pub compiled_fns: std::sync::Arc<CompiledFns>,
 }
 
 pub(crate) struct VmCallFrame {

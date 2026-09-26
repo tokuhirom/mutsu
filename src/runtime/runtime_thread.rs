@@ -948,6 +948,7 @@ impl Interpreter {
             call_frames: Vec::new(),
             stack_check_countdown: 0,
             control_handlers: Vec::new(),
+            handler_fns_snapshot: None,
             catch_handlers: Vec::new(),
             catch_handler_seq: 0,
             current_code: 0,

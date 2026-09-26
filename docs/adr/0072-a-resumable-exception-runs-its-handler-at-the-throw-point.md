@@ -232,8 +232,34 @@ regions always have increasing tokens, so one stamp covers the whole chain.
 Unlike CATCH, a same-frame raise is also run inline. The `resume_safe` path has
 always done that, and an op-raised warning has no `resume_ip` to fall back on.
 
-**Still open.** A CONTROL handler with no `.resume` keeps the unwinding path, so
-an op-raised warning in a callee under it is lost at the call boundary (the
-resume value in `return_value` is read as a `return`). Running *every* CONTROL
-handler inline would fix that, but it would pay the per-entry `CompiledCode`
-clone (#9172) on every CONTROL region. Tracked as #9510.
+**Still open (closed by the next amendment).** A CONTROL handler with no
+`.resume` kept the unwinding path, so an op-raised warning in a callee under it
+was lost at the call boundary (the resume value in `return_value` was read as a
+`return`). Tracked as #9510.
+
+## Amendment (2026-09-26): every CONTROL handler runs at the raise site (#9510)
+
+**Decision.** The resume-capable gate is dropped for CONTROL:
+`OpCode::TryCatch::control_resume_capable` is removed and every
+`ControlHandlerEntry` carries its handler's bytecode, so `try_control_inline`
+runs every active handler at the raise site, as rakudo does. The
+"cannot run inline, unwind" fallback is gone with it; a handler that ends its
+region without resuming still returns the `(token, Handled)` stamp.
+
+Two consequences:
+
+- **Cost.** Carrying the bytecode used to deep-clone the enclosing
+  `CompiledCode` and `CompiledFns` on every region entry (#9172), the reason
+  this was deferred. The copy is now taken once and shared:
+  `CompiledCode::shared_snapshot` caches one `Arc` per code object (a chunk that
+  grew after the copy is served a fresh clone), and
+  `Interpreter::shared_fns_snapshot` caches one per `CompiledFns::id` (redrawn on
+  every mutation, never reused). The resume-capable CATCH entries use the same
+  two caches.
+- **Same-frame writes.** An op-raised warning in the frame that installed the
+  handler now runs it inline too. The handler works on an env reconstruction of
+  that frame and flushes its writes to env; when it resumes, the op site's
+  reconcile copies them into the live slots, but when it ends the region the
+  stamp returns straight to the region with no call boundary in between. The
+  region therefore reconciles its frame's slots when it applies a `Handled`
+  stamp.
