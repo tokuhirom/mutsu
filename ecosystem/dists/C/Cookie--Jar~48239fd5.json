@@ -11,69 +11,66 @@
   "dist": "Cookie::Jar",
   "files": [
     {
-      "cmp": "partial",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "simple key=value",
-        "nok": 14,
-        "ok": 5,
+        "nok": 0,
+        "ok": 19,
         "plan": 19,
-        "secs": 0.64,
+        "secs": 0.62,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "pass"
       },
       "path": "t/add.t",
       "raku": {
         "nok": 0,
         "ok": 19,
         "plan": 19,
-        "secs": 2.25,
+        "secs": 2.13,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "partial",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "delete cookies for missing domain",
-        "nok": 6,
-        "ok": 1,
+        "nok": 0,
+        "ok": 7,
         "plan": 7,
-        "secs": 0.56,
+        "secs": 0.4,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "pass"
       },
       "path": "t/clear.t",
       "raku": {
         "nok": 0,
         "ok": 7,
         "plan": 7,
-        "secs": 0.5,
+        "secs": 0.42,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "partial",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Cookie attribute reader",
-        "nok": 2,
-        "ok": 5,
+        "nok": 0,
+        "ok": 7,
         "plan": 7,
-        "secs": 0.55,
+        "secs": 0.37,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "pass"
       },
       "path": "t/get-header.t",
       "raku": {
         "nok": 0,
         "ok": 7,
         "plan": 7,
-        "secs": 0.61,
+        "secs": 0.46,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -86,30 +83,29 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.32,
+        "secs": 0.26,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
       }
     },
     {
-      "cmp": "partial",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Roundtrip",
-        "nok": 1,
-        "ok": 5,
+        "nok": 0,
+        "ok": 6,
         "plan": 6,
-        "secs": 0.25,
+        "secs": 0.16,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "pass"
       },
       "path": "t/save-load.t",
       "raku": {
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 0.68,
+        "secs": 0.5,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -121,10 +117,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-25",
+    "date": "2026-09-26",
     "harness": 2,
-    "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "404ac78",
+    "host": "linux-x86_64",
+    "mutsu_commit": "5382520f1",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -135,13 +131,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/C/OO/COOKIE_JAR/1d829abefd7da45ac95c6d42cb4a00c90982dfc2.tar.gz"
   },
-  "status": "red",
+  "status": "green",
   "totals": {
     "baseline_assertions": 39,
     "baseline_files": 4,
-    "mutsu_assertions": 16,
-    "parity_files": 0,
-    "regressed_files": 4
+    "mutsu_assertions": 39,
+    "parity_files": 4,
+    "regressed_files": 0
   },
   "version": "0.1.3"
 }

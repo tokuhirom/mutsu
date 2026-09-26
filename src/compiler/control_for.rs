@@ -283,7 +283,30 @@ impl Compiler {
         );
         let saved_suppress = self.suppress_list_var_alias;
         self.suppress_list_var_alias = saved_suppress || synthetic_scalar_wrap;
-        self.compile_expr(&normalized_iterable);
+        // An associative multidimensional slice used as a loop source must
+        // hand the loop its leaf containers.  Cookie::Jar clears selected
+        // entries through a hash held by `for %store{*;*} -> $store`; a plain
+        // read would copy each nested Hash and make its `:delete` invisible
+        // to the source.  Keep positional slices on their existing path: that
+        // family has separate pending writeback semantics.
+        if let Expr::MultiDimIndex {
+            target,
+            dimensions,
+            is_positional: false,
+        } = &normalized_iterable
+            && dimensions
+                .iter()
+                .all(|dimension| matches!(dimension, Expr::Whatever))
+        {
+            self.compile_expr(target);
+            for dimension in dimensions {
+                self.compile_expr(dimension);
+            }
+            self.code
+                .emit(OpCode::MultiDimIndexBindRef(dimensions.len() as u32));
+        } else {
+            self.compile_expr(&normalized_iterable);
+        }
         self.suppress_list_var_alias = saved_suppress;
         if let Some(source_name) = Self::for_iterable_source_name(iterable) {
             let source_slot = self.local_map.get(source_name.as_str()).copied();

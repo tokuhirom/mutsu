@@ -1,6 +1,33 @@
 use super::*;
 
 impl Interpreter {
+    // Cost: O(e), e = elements in a deferred map/grep index; eager sequences
+    // cost O(e) to copy and other values are O(1).
+    fn normalize_delete_seq_index(&mut self, value: &Value) -> Result<Option<Value>, RuntimeError> {
+        match value.view() {
+            ValueView::Seq(body) => {
+                let body = std::sync::Arc::clone(&body);
+                if body.is_map_grep_source() {
+                    self.reify_seq_body(&body)?;
+                }
+                Ok(Some(Value::array_with_kind(
+                    crate::value::Value::array_arc(body.to_vec()),
+                    crate::value::ArrayKind::List,
+                )))
+            }
+            ValueView::Slip(items) => Ok(Some(Value::array_with_kind(
+                crate::value::Value::array_arc(items.to_vec()),
+                crate::value::ArrayKind::List,
+            ))),
+            ValueView::Scalar(inner) => self.normalize_delete_seq_index(inner),
+            ValueView::ContainerRef(cell) | ValueView::ContainerView(cell) => {
+                let inner = cell.lock().unwrap().clone();
+                self.normalize_delete_seq_index(&inner)
+            }
+            _ => Ok(None),
+        }
+    }
+
     /// Resolve WhateverCode indices for array deletion.
     /// Converts `*-N` style closures to concrete integer indices.
     fn resolve_delete_index_for_array(&mut self, idx: Value, container: &Value) -> Value {
@@ -190,6 +217,17 @@ impl Interpreter {
         // back through the cell (so every alias observes the delete) and restore
         // the cell in env and the local slot.
         let var_name = Self::const_str(code, name_idx).to_string();
+        // Materialize a lazy key sequence before refreshing a scalar-held
+        // target from its local slot.  The sequence may close over that same
+        // target (`$store.pairs.grep(...).map(*.key)`); replacing the env
+        // mirror first would make the deferred iterator observe a different
+        // container and the subsequent delete would silently select nothing.
+        if let Some(index) = self.stack.last().cloned()
+            && let Some(index) = self.normalize_delete_seq_index(&index)?
+            && let Some(top) = self.stack.last_mut()
+        {
+            *top = index;
+        }
         // Dual store: a scalar-held container (`my $h = {...}; $h<a>:delete`)
         // keeps its container in the local slot and leaves the env mirror at the
         // `my`-declaration seed (a type object). Every step below resolves the
@@ -273,6 +311,23 @@ impl Interpreter {
         if let Some(ref cell) = bound_cell {
             let inner = cell.lock().unwrap().clone();
             self.env_mut().insert(var_name.clone(), inner);
+        }
+        // A for-bound scalar can retain both a shared cell and a Scalar
+        // wrapper around the aggregate.  The delete machinery below mutates
+        // the concrete Hash/Array representation, so expose that payload in
+        // the temporary env mirror just as the ContainerRef branch above
+        // does.  The backing aggregate remains shared with the binding.
+        if let Some(value) = self.env().get(&var_name).cloned()
+            && !matches!(value.view(), ValueView::Hash(..) | ValueView::Array(..))
+            && value.with_deref(|inner| {
+                matches!(
+                    inner.descalarize().view(),
+                    ValueView::Hash(..) | ValueView::Array(..)
+                )
+            })
+        {
+            let concrete = value.with_deref(|inner| inner.descalarize().clone());
+            self.env_mut().insert(var_name.clone(), concrete);
         }
         // A `%h but R` / `@a but R` mixin wraps its container in a `Mixin`, which
         // none of the container arms below recognise: `:delete` silently did
@@ -388,6 +443,12 @@ impl Interpreter {
     ) -> Result<(), RuntimeError> {
         let var_name = Self::const_str(code, name_idx).to_string();
         let idx = self.stack.pop().unwrap_or(Value::NIL);
+        // Method-produced key lists are lazy `Seq`s (`%h.keys`, `grep`, and
+        // `map` all use this representation).  In a hash subscript they are
+        // ordinary multi-key slices, just like a parenthesized list; leaving
+        // the Seq opaque makes `:delete` stringify the whole sequence and
+        // remove one nonexistent key instead of deleting each selected key.
+        let idx = self.normalize_delete_seq_index(&idx)?.unwrap_or(idx);
         // An *itemized* list subscript (`@a[$(7,8,9)]:delete`) is a SINGLE
         // subscript, not a slice. Only a POSITIONAL one numifies (to its
         // `.Int`, the element count); a HASH subscript keeps the value itself
