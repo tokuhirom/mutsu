@@ -57,6 +57,25 @@ impl Compiler {
                 .any(|(t, _)| t == "__has_initializer" || t == "__scalar_bind" || t == "default")
     }
 
+    /// Return the zero value for a native type alias whose declaration was
+    /// parsed before the alias could be resolved. Ordinary native types are
+    /// lowered by the parser; aliases need the same value supplied here so an
+    /// uninitialized `my time $x` (`constant time = int64`) does not attempt to
+    /// store the synthesized Nil into a native slot.
+    pub(super) fn native_default_expr_for_constraint(&self, constraint: &str) -> Option<Expr> {
+        let resolved = self.resolve_type_alias_constraint(constraint);
+        let (base, _) = crate::runtime::types::strip_type_smiley(&resolved);
+        if crate::runtime::native_types::is_native_int_type(base) {
+            Some(Expr::Literal(Value::int(0)))
+        } else if matches!(base, "num" | "num32" | "num64") {
+            Some(Expr::Literal(Value::num(0.0)))
+        } else if base == "str" {
+            Some(Expr::Literal(Value::str(String::new())))
+        } else {
+            None
+        }
+    }
+
     /// The `Any` type-object literal seeded by
     /// `uninit_untyped_scalar_defaults_to_any` sites.
     pub(super) fn any_type_object_expr() -> Expr {

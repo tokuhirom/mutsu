@@ -205,7 +205,7 @@ pub(crate) fn die_stmt(input: &str) -> PResult<'_, Stmt> {
     // word-logical would run: `die X and Y` is `(die X) and Y`, so `die` throws
     // (or `fail` returns a Failure) with `X` and the tail is dead code. Parse the
     // argument no-word-logical and consume (discard) any trailing tail.
-    let (rest, expr) = expression_no_word_logical(rest)?;
+    let (rest, expr) = parse_comma_or_expr_item_no_word_logical(rest)?;
     // `die $x:` / `fail $x:` is the listop invocant colon: `$x.die` / `$x.fail`.
     // Neither method exists on `Str`, so Rakudo raises X::Method::NotFound —
     // which is the whole point. Dropping the colon and dying with `$x` instead

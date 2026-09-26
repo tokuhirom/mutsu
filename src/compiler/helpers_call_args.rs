@@ -1362,24 +1362,15 @@ impl Compiler {
     /// Whether a parameter's declared type is one of Raku's *native* types —
     /// the ones whose storage is a machine value rather than a `Scalar`, so an
     /// `is rw` parameter of that type binds a native reference.
-    pub(crate) fn is_native_type_constraint(constraint: &str) -> bool {
-        matches!(
-            constraint,
-            "int"
-                | "int8"
-                | "int16"
-                | "int32"
-                | "int64"
-                | "uint"
-                | "uint8"
-                | "uint16"
-                | "uint32"
-                | "uint64"
-                | "num"
-                | "num32"
-                | "num64"
-                | "str"
-        )
+    pub(crate) fn is_native_type_constraint(&self, constraint: &str) -> bool {
+        let constraint = self.resolve_type_alias_constraint(constraint);
+        let constraint = constraint
+            .strip_suffix(":D")
+            .or_else(|| constraint.strip_suffix(":U"))
+            .or_else(|| constraint.strip_suffix(":_"))
+            .unwrap_or(&constraint);
+        crate::runtime::native_types::is_native_int_type(constraint)
+            || matches!(constraint, "num" | "num32" | "num64" | "str")
     }
 
     /// Record this routine's native-typed `is rw` parameters, which
@@ -1397,14 +1388,11 @@ impl Compiler {
             if pd.name.is_empty() || pd.slurpy || pd.double_slurpy {
                 continue;
             }
-            if let Some(tc) = pd.type_constraint.as_deref() {
-                let base = tc
-                    .strip_suffix(":D")
-                    .or_else(|| tc.strip_suffix(":U"))
-                    .unwrap_or(tc);
-                if crate::runtime::native_types::is_native_int_type(base) {
-                    self.local_types.insert(pd.name.clone(), tc.to_string());
-                }
+            if let Some(tc) = pd.type_constraint.as_deref()
+                && self.is_native_type_constraint(tc)
+            {
+                self.local_types
+                    .insert(pd.name.clone(), self.resolve_type_alias_constraint(tc));
             }
         }
     }
@@ -1417,7 +1405,7 @@ impl Compiler {
                     && pd
                         .type_constraint
                         .as_deref()
-                        .is_some_and(Self::is_native_type_constraint)
+                        .is_some_and(|tc| self.is_native_type_constraint(tc))
                     && pd.traits.iter().any(|t| t == "rw")
             })
             .map(|pd| pd.name.clone())
@@ -1473,10 +1461,10 @@ impl Compiler {
         let readonly_native_params: std::collections::HashSet<&str> = param_defs
             .iter()
             .filter(|pd| {
-                let is_native = pd
-                    .type_constraint
-                    .as_deref()
-                    .is_some_and(Self::is_native_type_constraint);
+                let is_native = pd.type_constraint.as_deref().is_some_and(|tc| {
+                    crate::runtime::native_types::is_native_int_type(tc)
+                        || matches!(tc, "num" | "num32" | "num64" | "str")
+                });
                 let has_rw_or_copy = pd
                     .traits
                     .iter()

@@ -300,6 +300,12 @@ impl Compiler {
             .chain(self.constant_values.iter())
             .map(|(k, v)| (k.clone(), v.clone()))
             .collect();
+        child.outer_type_aliases = self
+            .outer_type_aliases
+            .iter()
+            .chain(self.type_aliases.iter())
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect();
     }
 
     /// The `if`/`unless` condition's compile-time truth value, if it has one

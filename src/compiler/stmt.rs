@@ -1347,6 +1347,15 @@ impl Compiler {
                 // Track constant declarations so the compiler can avoid itemizing
                 // them in `for` loops (constants have no Scalar container).
                 let is_constant_decl = custom_traits.iter().any(|(t, _)| t == "__constant");
+                if is_constant_decl
+                    && !name.starts_with(['$', '@', '%', '&'])
+                    && let Expr::BareWord(target) = expr
+                {
+                    // A bare type object on the RHS makes this constant a
+                    // type alias. Keep the spelling for runtime diagnostics,
+                    // but let native storage and arithmetic use its target.
+                    self.type_aliases.insert(name.clone(), target.clone());
+                }
                 // A `constant` that shadows an outer constant of the same name
                 // (in an enclosing block or closure) is a fresh lexical binding,
                 // not a reassignment of the outer package symbol. It must read
@@ -1483,7 +1492,8 @@ impl Compiler {
                 }
                 // Record type constraint for compile-time literal type checks
                 if let Some(tc) = type_constraint {
-                    self.local_types.insert(name.clone(), tc.clone());
+                    self.local_types
+                        .insert(name.clone(), self.resolve_type_alias_constraint(tc));
                 }
                 // For state variables, emit a guard that skips the RHS evaluation
                 // when the state is already initialized (avoiding side effects).
@@ -1680,6 +1690,15 @@ impl Compiler {
                     // Any type object, not Nil (PLAN 8.5 step 3) — see
                     // `uninit_untyped_scalar_defaults_to_any`.
                     let any_default = Self::any_type_object_expr();
+                    let native_default = (name.starts_with('$')
+                        && !has_explicit_initializer
+                        && Self::is_synthesized_decl_default(expr))
+                    .then(|| {
+                        type_constraint
+                            .as_deref()
+                            .and_then(|tc| self.native_default_expr_for_constraint(tc))
+                    })
+                    .flatten();
                     let rhs_expr = if has_default_trait
                         && !name.starts_with('@')
                         && !name.starts_with('%')
@@ -1703,6 +1722,8 @@ impl Compiler {
                         custom_traits,
                     ) {
                         &any_default
+                    } else if let Some(native_default) = native_default.as_ref() {
+                        native_default
                     } else {
                         expr
                     };
@@ -1736,10 +1757,9 @@ impl Compiler {
                 // applies to element values, not to the collection itself.
                 // TODO: enforce per-element type constraints at assignment time.
                 let is_hash = name.starts_with('%');
-                let is_native_type = type_constraint.as_ref().is_some_and(|tc| {
-                    crate::runtime::native_types::is_native_int_type(tc)
-                        || matches!(tc.as_str(), "num" | "num32" | "num64" | "str")
-                });
+                let is_native_type = type_constraint
+                    .as_ref()
+                    .is_some_and(|tc| self.is_native_type_constraint(tc));
                 if let Some(tc) = type_constraint
                     && !is_hash
                     && !has_default_trait
@@ -2240,6 +2260,7 @@ impl Compiler {
                 if name.starts_with('&')
                     && !name.contains("::")
                     && !self.local_map.contains_key(name.as_str())
+                    && !self.class_body_static_code_vars.contains(name)
                     && !name.starts_with("&!")
                 {
                     self.code.emit(OpCode::AssignReadOnly);

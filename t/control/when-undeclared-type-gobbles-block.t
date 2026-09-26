@@ -69,6 +69,16 @@ given Mon {
 }
 is $enum-value, "matched", 'package-qualified enum value still matches';
 
+my $qualified-enum-value = "no";
+given WhenMatcherTypes::EnumOuter::RuleType::julian-day {
+    when WhenMatcherTypes::EnumOuter::RuleType::julian-day {
+        $qualified-enum-value = "matched"
+    }
+    default { $qualified-enum-value = "default" }
+}
+is $qualified-enum-value, "matched",
+    'hyphenated qualified enum value remains a matcher, not a routine call';
+
 # Must still parse: a `constant` exported by a `use`d module. This is the
 # DBDish::Oracle::StatementHandle case (`when SQLT_NUM { }`, where SQLT_NUM is a
 # `constant ... is export` in the sibling DBDish::Oracle::Native) -- the module

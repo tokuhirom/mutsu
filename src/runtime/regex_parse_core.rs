@@ -230,8 +230,16 @@ fn scan_code_assertion_body(rest: &[char]) -> Option<(String, usize)> {
     let mut brace_depth = 1usize;
     let mut quote: Option<char> = None;
     let mut escaped = false;
+    let mut comment = false;
 
     for (idx, &ch) in rest.iter().enumerate() {
+        if comment {
+            code.push(ch);
+            if ch == '\n' {
+                comment = false;
+            }
+            continue;
+        }
         if let Some(closer) = quote {
             code.push(ch);
             if escaped {
@@ -250,6 +258,11 @@ fn scan_code_assertion_body(rest: &[char]) -> Option<(String, usize)> {
         }
         if ch == '\\' {
             escaped = true;
+            code.push(ch);
+            continue;
+        }
+        if ch == '#' {
+            comment = true;
             code.push(ch);
             continue;
         }

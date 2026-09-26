@@ -103,10 +103,10 @@ struct ScanMetadata {
     deps: Vec<ScanDep>,
 }
 
-/// Magic bytes for the scan-cache format. `MSC1` marks version 1; bump the
+/// Magic bytes for the scan-cache format. `MSC2` marks version 2; bump the
 /// trailing byte whenever the framing changes so stale files are rejected by
 /// the magic check rather than mis-decoded.
-const CACHE_MAGIC: &[u8; 4] = b"MSC1";
+const CACHE_MAGIC: &[u8; 4] = b"MSC2";
 
 fn cache_dir() -> std::io::Result<PathBuf> {
     precomp::sibling_cache_dir("modscan")

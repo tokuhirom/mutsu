@@ -39,6 +39,12 @@ impl Compiler {
         chunk_compiler.set_current_package(self.current_package.clone());
         chunk_compiler.current_distribution = self.current_distribution.clone();
         chunk_compiler.last_source_line = self.last_source_line;
+        chunk_compiler.type_aliases = self
+            .outer_type_aliases
+            .iter()
+            .chain(self.type_aliases.iter())
+            .map(|(name, target)| (name.clone(), target.clone()))
+            .collect();
         chunk_compiler
     }
 
@@ -101,9 +107,15 @@ impl Compiler {
         &self,
         stmts: &[Stmt],
         package: &str,
+        class_body_static_code_vars: &std::collections::HashSet<String>,
+        class_body_type_aliases: &std::collections::HashMap<String, String>,
     ) -> crate::opcode::CompiledDeclExpr {
         let mut chunk_compiler = self.new_decl_chunk_compiler();
         chunk_compiler.set_current_package(package.to_string());
+        chunk_compiler.class_body_static_code_vars = class_body_static_code_vars.clone();
+        chunk_compiler
+            .type_aliases
+            .extend(class_body_type_aliases.clone());
         let (code, fns) = chunk_compiler.compile(stmts);
         crate::opcode::CompiledDeclExpr {
             code: std::sync::Arc::new(code),
@@ -305,6 +317,34 @@ impl Compiler {
         let Some(package_name) = package_name else {
             return ops;
         };
+        let class_body_static_code_vars = body
+            .iter()
+            .filter_map(|stmt| match stmt {
+                Stmt::VarDecl {
+                    name,
+                    is_our: false,
+                    is_dynamic: false,
+                    ..
+                } if name.starts_with('&') => Some(name.clone()),
+                _ => None,
+            })
+            .collect();
+        let class_body_type_aliases = body
+            .iter()
+            .filter_map(|stmt| match stmt {
+                Stmt::VarDecl {
+                    name,
+                    expr: Expr::BareWord(target),
+                    custom_traits,
+                    ..
+                } if custom_traits.iter().any(|(t, _)| t == "__constant")
+                    && !name.starts_with(['$', '@', '%', '&']) =>
+                {
+                    Some((name.clone(), target.clone()))
+                }
+                _ => None,
+            })
+            .collect::<std::collections::HashMap<_, _>>();
         let does_args: Vec<Option<&Vec<Expr>>> = body
             .iter()
             .flat_map(|stmt| match stmt {
@@ -335,7 +375,12 @@ impl Compiler {
                 else {
                     unreachable!("LeavePhaser op's raw statement must be Stmt::Phaser");
                 };
-                *chunk = Some(self.compile_decl_stmts_chunk_in_package(phaser_body, package_name));
+                *chunk = Some(self.compile_decl_stmts_chunk_in_package(
+                    phaser_body,
+                    package_name,
+                    &class_body_static_code_vars,
+                    &class_body_type_aliases,
+                ));
                 continue;
             }
             if let crate::opcode::ClassBodyOp::ClassSub {
@@ -345,15 +390,18 @@ impl Compiler {
                 ..
             } = op
             {
-                *chunk =
-                    Some(self.compile_decl_stmts_chunk_in_package(
-                        std::slice::from_ref(raw),
-                        package_name,
-                    ));
+                *chunk = Some(self.compile_decl_stmts_chunk_in_package(
+                    std::slice::from_ref(raw),
+                    package_name,
+                    &class_body_static_code_vars,
+                    &class_body_type_aliases,
+                ));
                 let hoisted_raw = Self::hoisted_class_sub_decl(raw);
                 *hoist_chunk = Some(self.compile_decl_stmts_chunk_in_package(
                     std::slice::from_ref(&hoisted_raw),
                     package_name,
+                    &class_body_static_code_vars,
+                    &class_body_type_aliases,
                 ));
                 continue;
             }
@@ -363,9 +411,12 @@ impl Compiler {
                 | crate::opcode::ClassBodyOp::ProtoMethod { chunk, raw } => (chunk, raw),
                 _ => continue,
             };
-            *chunk = Some(
-                self.compile_decl_stmts_chunk_in_package(std::slice::from_ref(raw), package_name),
-            );
+            *chunk = Some(self.compile_decl_stmts_chunk_in_package(
+                std::slice::from_ref(raw),
+                package_name,
+                &class_body_static_code_vars,
+                &class_body_type_aliases,
+            ));
         }
         ops
     }
@@ -784,6 +835,8 @@ impl Compiler {
                 Some(self.compile_decl_stmts_chunk_in_package(
                     std::slice::from_ref(raw.as_ref()),
                     package_name,
+                    &std::collections::HashSet::new(),
+                    &std::collections::HashMap::new(),
                 ))
             } else {
                 None

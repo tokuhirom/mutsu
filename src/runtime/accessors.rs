@@ -108,7 +108,10 @@ impl Interpreter {
         {
             return true;
         }
-        if crate::runtime::utils::is_known_type_constraint(s) || self.has_type(s) {
+        if crate::runtime::utils::is_known_type_constraint(s)
+            || self.has_type(s)
+            || self.is_type_alias_constant(s)
+        {
             return false;
         }
         if let Some(base) = s.strip_suffix(":D").or_else(|| s.strip_suffix(":U"))
