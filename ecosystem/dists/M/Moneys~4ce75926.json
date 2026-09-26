@@ -9,23 +9,22 @@
   "dist": "Moneys",
   "files": [
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Confused. expected statement: expected known call arguments or first call argument or positional argument expression or reduction operator or expression statement or ... [at dist/t/00-use.rakutest:34]",
         "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 0.03,
+        "ok": 16,
+        "plan": 16,
+        "secs": 0.21,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/00-use.rakutest",
       "raku": {
         "nok": 0,
         "ok": 16,
         "plan": 16,
-        "secs": 2.4,
+        "secs": 2.51,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -37,10 +36,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-25",
+    "date": "2026-09-26",
     "harness": 2,
-    "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "404ac78",
+    "host": "linux-x86_64",
+    "mutsu_commit": "888897fa",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -51,13 +50,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/M/ON/MONEYS/0b8c7f2a3b201065d3b3e0f59f3949c19dd5d274.tar.gz"
   },
-  "status": "red",
+  "status": "green",
   "totals": {
     "baseline_assertions": 16,
     "baseline_files": 1,
-    "mutsu_assertions": 0,
-    "parity_files": 0,
-    "regressed_files": 1
+    "mutsu_assertions": 16,
+    "parity_files": 1,
+    "regressed_files": 0
   },
   "version": "0.0.4"
 }
