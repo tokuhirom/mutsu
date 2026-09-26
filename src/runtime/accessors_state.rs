@@ -461,9 +461,45 @@ impl Interpreter {
     /// outgrows `state_vars` (a long spawn-free stretch that also removed
     /// entries), it is rebuilt from the store's live keys.
     fn note_unmigrated_state_key(&mut self, key: (Symbol, Option<u64>)) {
+        self.reap_dead_state_scopes();
         self.state_vars_unmigrated.push(key);
         if self.state_vars_unmigrated.len() > 2 * self.state_vars.len() + 16 {
             self.state_vars_unmigrated = self.state_vars.keys().copied().collect();
+        }
+    }
+
+    /// Drop the `state` entries of closure clones that no longer exist (see
+    /// `state_scope_reaper`). Runs only when the store grows and only once
+    /// the dead ids number at least a quarter of the store, so the O(n) sweep
+    /// is paid for by the deaths it reclaims: O(1) amortized per dead clone.
+    // Cost: O(1) amortized per dead clone; a sweep is O(n), n = state entries.
+    fn reap_dead_state_scopes(&mut self) {
+        let dead = crate::runtime::state_scope_reaper::dead_scope_count();
+        if dead < 64.max(self.state_vars.len() / 4) {
+            return;
+        }
+        let ids: std::collections::HashSet<u64> =
+            crate::runtime::state_scope_reaper::take_dead_scopes()
+                .into_iter()
+                .collect();
+        let is_dead = |key: &(Symbol, Option<u64>)| key.1.is_some_and(|id| ids.contains(&id));
+        let mut removed = Vec::new();
+        self.state_vars.retain(|key, _| {
+            if is_dead(key) {
+                removed.push(*key);
+                false
+            } else {
+                true
+            }
+        });
+        if removed.is_empty() {
+            return;
+        }
+        self.state_vars_unmigrated.retain(|key| !is_dead(key));
+        if self.shared_vars_active {
+            for key in removed {
+                self.shared_vars.remove(&Self::shared_state_cell_key(key));
+            }
         }
     }
 
@@ -488,11 +524,20 @@ impl Interpreter {
             let Some(sval) = self.state_vars.get(&skey) else {
                 continue;
             };
-            if matches!(sval.view(), ValueView::ContainerRef(_)) {
-                continue;
-            }
+            // A value that is already a cell (every `state` container is
+            // celled at `StateVarInit` since Track B slice 3) is published
+            // as-is, so the parent and its threads share that one container.
+            // Skipping cells here, as this pass once did, made it a no-op for
+            // every such variable: `f(); f(); await start { f() }` re-ran the
+            // declaration's initializer in the thread.
             let shared_key = Self::shared_state_cell_key(skey);
-            shared.seed_if_absent(&shared_key, || sval.clone().into_container_ref());
+            shared.seed_if_absent(&shared_key, || {
+                if sval.is_container_ref() {
+                    sval.clone()
+                } else {
+                    sval.clone().into_container_ref()
+                }
+            });
         }
     }
 

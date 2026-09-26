@@ -583,6 +583,7 @@ mod builtins_postcircumfix;
 mod catch_inline;
 pub(crate) mod json;
 mod proxy_store;
+pub(crate) mod state_scope_reaper;
 pub(crate) use builtins_multidim_subscript::PositionalMissing;
 mod builtins_operators_coerce;
 mod builtins_operators_fallback;
@@ -5439,6 +5440,7 @@ mod tests {
             captured_fatal_mode: false,
             param_name_syms_cache: std::sync::OnceLock::new(),
             source_file_sym_cache: std::sync::OnceLock::new(),
+            state_scope_guard: None,
         });
 
         let mut interp = Interpreter::new();

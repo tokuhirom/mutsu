@@ -1328,6 +1328,12 @@ pub struct SubData {
     /// body's defining file — must re-arm the matching cache, exactly as
     /// `CompiledFunction::stamp_source_file` does.
     pub(crate) source_file_sym_cache: std::sync::OnceLock<Option<Symbol>>,
+    /// Set on a closure clone whose body declares `state` variables: those
+    /// live in the interpreter's store keyed by this clone's `id`, and the
+    /// guard (shared by every Rust-level copy of this `SubData`) reports the
+    /// id as dead when the last copy is dropped, so the store can release the
+    /// clone's entries instead of keeping one per clone forever (#9504).
+    pub(crate) state_scope_guard: Option<Arc<crate::runtime::state_scope_reaper::StateScopeGuard>>,
 }
 
 /// A code object's parameter names, interned once.
