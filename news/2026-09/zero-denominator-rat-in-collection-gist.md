@@ -11,5 +11,5 @@ aggregates a renderer expands (Array/List/Seq/Slip, Hash values and object-hash
 keys, Pair key and value, Junction eigenstates, item containers) and hands back
 the exception. `say`/`put`/`print`/`note`, the native collection `.gist` and the
 native collection `.Str` ask it before rendering. `.raku` is unaffected (it
-renders `<1/0>`). Test: `t/types/numeric/zero-denominator-rat-in-collection-gist.t`
+renders `<1/0>`). Test: `t/types/numeric/divide-by-zero-rat-in-collection-gist.t`
 (GH #9608).
