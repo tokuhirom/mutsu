@@ -1006,81 +1006,17 @@ impl Interpreter {
     ) -> Result<(), RuntimeError> {
         let resolved_source = self.resolve_sigilless_alias_source_name(&source_name);
         let name = code.locals[idx].clone();
-        // Build (or reuse) the shared cell: reuse an existing cell carried by the
-        // value or already held by the source variable, else wrap the snapshot.
-        let cell = match val.view() {
-            ValueView::ContainerRef(arc) => arc.clone(),
-            // A scalar holding an array share is represented as
-            // `Scalar(ContainerRef(cell))` so its `.raku` keeps the `$`
-            // marker without changing the source array's own rendering.
-            // Chained `$r = $q` must nevertheless reuse that same cell.
-            ValueView::Scalar(inner) if inner.is_container_ref() => {
-                if let ValueView::ContainerRef(arc) = inner.view() {
-                    arc.clone()
-                } else {
-                    unreachable!("ContainerRef tag changed while extracting share cell")
-                }
-            }
-            _ => match self.env().get(&resolved_source).map(Value::view) {
-                Some(ValueView::ContainerRef(arc)) => arc.clone(),
-                _ => crate::gc::Gc::new(crate::value::ContainerCell::new(val.clone())),
-            },
-        };
-        // The source and target own different holder words over this one cell:
-        // the aggregate source remains plain, while the scalar target is an
-        // itemized holder. Keeping the flavour on the word is what preserves
-        // `%h.raku` while making `$hi.raku` render `${...}`.
+        let cell = self.promote_array_share_source(code, &resolved_source, &val);
         let container = Value::container_ref(cell.clone());
         // Compiler-generated temporaries are implementation details rather than
         // user-visible scalar bindings. Keep their historical bare cell shape so
         // internal binding paths such as `if $cond -> @items` still decontainerize
         // the temporary before binding the pointy block's `@` parameter.
         let itemized_container = if Self::name_is_itemize_exempt(&name) {
-            container.clone()
+            container
         } else {
             Value::container_ref_itemized(cell)
         };
-        // Promote the SOURCE container variable to the same cell so its own
-        // `.push` / whole-reassign (`@z = (...)`) mutate through and stay visible
-        // via the scalar.
-        if let Some(source_idx) = code.locals.iter().rposition(|n| n == &resolved_source) {
-            self.locals[source_idx] = container.clone();
-            self.flush_local_to_env(code, source_idx);
-        }
-        self.set_env_with_main_alias(&resolved_source, container.clone());
-        // Propagate the shared cell into saved call frames so the sharing
-        // survives method returns (env restore).
-        // Slots now live in one shared stack (ADR-0077), so a saved frame is a
-        // `[base, end)` region rather than its own vector: walking downwards,
-        // the region a frame saved ends where that frame's own base begins, and
-        // the topmost one ends at the executing frame's base. Collect the writes
-        // during the walk (which borrows `call_frames` mutably for the env
-        // inserts) and apply them to the slot stack afterwards.
-        let mut end = self.locals.base();
-        let mut shared_slot_writes: Vec<usize> = Vec::new();
-        for frame in self.call_frames.iter_mut().rev() {
-            let Some(base) = frame.saved_locals_base.as_ref().map(|c| c.base()) else {
-                continue;
-            };
-            // `code.locals` is this frame's slot layout, not the parent's; only
-            // write a parent frame's slots when that frame owns the source
-            // lexical (its saved env holds the name), else the callee slot index
-            // clobbers an unrelated same-index local.
-            if frame.saved_env.contains_key_own_tier(&resolved_source) {
-                frame
-                    .saved_env
-                    .insert(resolved_source.clone(), container.clone());
-                for (i, local_name) in code.locals.iter().enumerate() {
-                    if local_name == &resolved_source && base + i < end {
-                        shared_slot_writes.push(base + i);
-                    }
-                }
-            }
-            end = base;
-        }
-        for slot in shared_slot_writes {
-            *self.locals.absolute_slot_mut(slot) = container.clone();
-        }
         // Store the shared cell in the scalar target (itemized scalar).
         self.locals[idx] = itemized_container.clone();
         // Clear any stale bound-decont marker inherited from an earlier bind of

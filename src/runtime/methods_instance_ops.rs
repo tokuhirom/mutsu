@@ -3600,6 +3600,9 @@ impl Interpreter {
                 continue;
             }
             if let Some(val) = attributes.get(attr_name) {
+                // Render what the slot holds, not the cell a `:=` bind or an
+                // `=` value share (Slice 2e) put around it.
+                let val = &val.deref_container();
                 // The cycle-guarded dispatch renders a direct instance-valued
                 // attribute that refers back up the chain (`$x.next = $y;
                 // $y.next = $x`) as a backreference instead of recursing.

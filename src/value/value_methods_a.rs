@@ -884,7 +884,10 @@ impl Value {
     /// gives.
     pub fn into_deref(self) -> Value {
         if let ValueView::ContainerRef(arc) = self.view() {
-            let itemized = self.container_ref_is_itemized();
+            // The flavour that counts is the LAST holder's: an attribute's own
+            // Scalar cell around an itemized value-share cell (Slice 2e) reads
+            // as that itemized share, exactly as `with_deref` recurses into it.
+            let mut itemized = self.container_ref_is_itemized();
             let mut cell = arc.clone();
             let inner = loop {
                 // See `with_deref`: the cell lock alone does not exclude the store.
@@ -899,7 +902,10 @@ impl Value {
                     _ => None,
                 };
                 match nested {
-                    Some(next) => cell = next,
+                    Some(next) => {
+                        itemized = value.container_ref_is_itemized();
+                        cell = next;
+                    }
                     None => break value,
                 }
             };
@@ -944,8 +950,13 @@ impl Value {
         // nesting recursively. A write of a fresh `ContainerRef` (`val`
         // itself is one) is a REBIND of this slot to a different cell -- that
         // legitimately replaces the wrapper's contents, so it falls through
-        // to the plain `clone_from` below unchanged.
+        // to the plain `clone_from` below unchanged. So is a write over an
+        // ITEMIZED nested holder: that is an `=` value share of an Array/Hash
+        // (Slice 2a/2e, `vm/vm_attr_share.rs`) which the source variable holds
+        // too, and a Scalar assignment rebinds the Scalar rather than
+        // overwriting the shared source.
         if !matches!(val.view(), ValueView::ContainerRef(_))
+            && !inner.container_ref_is_itemized()
             && let ValueView::ContainerRef(nested) = inner.view()
             && !crate::gc::Gc::ptr_eq(&nested, arc)
         {

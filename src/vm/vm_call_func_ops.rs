@@ -1469,6 +1469,19 @@ impl Interpreter {
         } else {
             args
         };
+        // Slice 2e (`docs/scalar-array-sharing.md`, #9041): `$obj.w = %src`
+        // stores into a `$` attribute BY REFERENCE. The value argument's
+        // compile-time source name is only known here, so keep what the
+        // post-store share needs (`share_scalar_attr_store_with_source`).
+        let attr_share = if name == "__mutsu_assign_method_lvalue"
+            && args.len() >= 4
+            && let Some(Some(source)) = arg_sources.as_ref().and_then(|s| s.get(3))
+            && (source.starts_with('@') || source.starts_with('%'))
+        {
+            Some((source.clone(), args[..4].to_vec()))
+        } else {
+            None
+        };
         // Slice F (env<->locals coherence, docs/env-locals-coherence.md): the
         // lvalue-method writeback builtins (`$p.value = X` / `.value--`,
         // `@a.head = v`, `%h.AT-KEY(k) = v`, `@a.first(...) = v`, ...) mutate
@@ -1518,7 +1531,19 @@ impl Interpreter {
             compiled_fns,
             trir_args.as_deref(),
         ) {
-            Ok(v) => v,
+            Ok(v) => {
+                if let Some((source, share_args)) = attr_share {
+                    self.share_scalar_attr_store_with_source(
+                        code,
+                        &share_args[0],
+                        &share_args[1],
+                        &share_args[2],
+                        &share_args[3],
+                        &source,
+                    );
+                }
+                v
+            }
             Err(e) => {
                 // Slice F (exception-escape coherence): an exceptional exit still
                 // ran the callee's UNDO/LEAVE phasers, which can mutate a

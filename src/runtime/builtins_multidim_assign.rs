@@ -684,7 +684,11 @@ impl Interpreter {
             self.overwrite_hash_bindings_by_identity(old_arc, updated.clone());
         }
 
-        // Write back via the setter
+        // Write back via the setter -- or, for a `$` attribute sharing a
+        // source container by `=` (#9041), through that shared cell.
+        if self.store_through_attr_value_share(&target, &method, &method_args, &updated) {
+            return Ok(effective_value);
+        }
         self.assign_method_lvalue_with_values(
             if var_name.is_empty() {
                 None
@@ -793,6 +797,9 @@ impl Interpreter {
             self.overwrite_hash_bindings_by_identity(old_arc, updated.clone());
         }
 
+        if self.store_through_attr_value_share(&target, &method, &[], &updated) {
+            return Ok(removed);
+        }
         self.assign_method_lvalue_with_values(
             if var_name.is_empty() {
                 None
