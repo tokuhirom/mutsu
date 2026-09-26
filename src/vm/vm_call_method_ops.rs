@@ -89,6 +89,8 @@ pub(crate) fn nil_absorbs_method(method: &str) -> bool {
             | "Complex"
             | "ords"
             | "chrs"
+            // `Nil` is `Cool`: `Nil.IO` is the `IO::Path` type object.
+            | "IO"
     )
     // NOTE: the numify-to-0 Real methods (abs/floor/ceiling/round/truncate/sign)
     // are deliberately NOT listed above. Their warn+resume handling lives only in
@@ -2192,6 +2194,12 @@ impl Interpreter {
                         // positional arg — `Nil.say("x")` — is a separate
                         // X::Multi::NoMatch case handled by the catch-all below.)
                         "say" | "note" | "put" | "print" if args.is_empty() => {
+                            // Fall through to normal dispatch
+                        }
+                        // `Nil` is `Cool`, so `.IO` is a real method: `Nil.IO`
+                        // is the `IO::Path` type object (#9495). Mirrors
+                        // `nil_absorbs_method` above.
+                        "IO" if args.is_empty() => {
                             // Fall through to normal dispatch
                         }
                         _ => {
