@@ -1,4 +1,5 @@
 use super::*;
+use crate::runtime::meta_ns::MetaNs;
 use crate::symbol::Symbol;
 use crate::value::ValueMap;
 
@@ -313,6 +314,38 @@ impl Interpreter {
         }
     }
 
+    /// Compose the roles a mixin type object (`Base but R`, a `Mixin(Package,
+    /// ..)`) carries onto `instance`, a freshly constructed `Base`, exactly as
+    /// `$instance but R` does (running the roles' BUILD/TWEAK submethods and
+    /// giving them fresh attribute defaults). Shared by `.new` and `.bless`.
+    // Cost: O(r), r = number of mixed-in roles (each composition is one `does`).
+    pub(super) fn compose_mixin_type_roles(
+        &mut self,
+        instance: Value,
+        mixins: &crate::value::MixinOverrides,
+    ) -> Result<Value, RuntimeError> {
+        // Composed role names are recorded as `__mutsu_role__<name>` markers in
+        // the mixin map. Sort for a deterministic composition order.
+        let mut role_names: Vec<String> = mixins
+            .keys()
+            .filter_map(|k| k.strip_prefix("__mutsu_role__").map(str::to_string))
+            .collect();
+        role_names.sort();
+        let mut result = instance;
+        for role_name in role_names {
+            let role = if let Some(ValueView::Array(args, _)) = mixins
+                .get(&MetaNs::RoleTypeargs.owned_key_for_str(&role_name))
+                .map(Value::view)
+            {
+                Value::parametric_role(Symbol::intern(&role_name), args.to_vec())
+            } else {
+                Value::package(Symbol::intern(&role_name))
+            };
+            result = self.eval_does_values(result, role)?;
+        }
+        Ok(result)
+    }
+
     /// Handle the "bless" method: creates a new instance with attributes from named args.
     pub(super) fn dispatch_bless(
         &mut self,
@@ -325,6 +358,13 @@ impl Interpreter {
         let class_name = match target.view() {
             ValueView::Package(name) => name,
             ValueView::Instance { class_name, .. } => class_name,
+            // `self.bless` inside a user `method new` invoked on a mixin type
+            // object (`(Color but CSS::Units[...]).new(...)`): bless the base
+            // class, then compose the mixed-in roles, as `.new` does.
+            ValueView::Mixin(inner, mixins) if matches!(inner.view(), ValueView::Package(_)) => {
+                let base_instance = self.dispatch_bless(inner.as_ref(), args)?;
+                return self.compose_mixin_type_roles(base_instance, mixins);
+            }
             _ => {
                 return Err(RuntimeError::new(
                     "bless can only be called on a class or instance",

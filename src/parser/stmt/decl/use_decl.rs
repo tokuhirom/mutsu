@@ -35,6 +35,12 @@ pub(in crate::parser::stmt) fn use_stmt(input: &str) -> PResult<'_, Stmt> {
     }
 
     let (rest, module) = qualified_ident(rest)?;
+    // Adverbs glued to the module name (`use CSS::Module:CSS3;`,
+    // `use Foo:ver<1.0>`) belong to the name, not the import list: rakudo
+    // reads a non-selector one as an inert name adverb and imports DEFAULT.
+    // Remember where that glued run ends so the adverb loop can tell.
+    let name_adverbs_end = rest.len() - skip_name_adverbs(rest).len();
+    let name_adverbs_end = rest[name_adverbs_end..].as_ptr() as usize;
     let (rest, _) = ws(rest)?;
 
     // Handle `use variables :D/:U/:_` pragma
@@ -73,6 +79,9 @@ pub(in crate::parser::stmt) fn use_stmt(input: &str) -> PResult<'_, Stmt> {
             let r = &rest[1..];
             // :!name
             let r = r.strip_prefix('!').unwrap_or(r);
+            // `:&name` names the tag `name` too (`use CSS::Units :Lengths,
+            // :&dimension, :pt;` imports the `:dimension` and `:pt` tags).
+            let r = r.strip_prefix('&').unwrap_or(r);
             if let Ok((r, tag_name)) = ident(r) {
                 // The `if` pragma's `:if(EXPR)` adverb (`use Foo:if($cond)`)
                 // loads the module only when EXPR is true. It is NOT an import
@@ -117,7 +126,9 @@ pub(in crate::parser::stmt) fn use_stmt(input: &str) -> PResult<'_, Stmt> {
                 // loads; discard it the same way a `:auth(...)` expression is
                 // discarded. Treating it as an import tag instead would raise
                 // "no such tag 'if'" for a program that runs fine on rakudo.
-                let is_inert_adverb = tag_name == "if" && r.starts_with('(');
+                let is_inert_adverb = (tag_name == "if" && r.starts_with('('))
+                    // `:from<NQP>` is a name adverb the runtime acts on.
+                    || ((rest.as_ptr() as usize) < name_adverbs_end && tag_name != "from");
                 let canonical_tag_name = if tag_name == "v" {
                     "ver"
                 } else {
@@ -144,7 +155,22 @@ pub(in crate::parser::stmt) fn use_stmt(input: &str) -> PResult<'_, Stmt> {
                     rest = after;
                     continue;
                 }
-                if (is_dist_selector || is_inert_adverb) && r.starts_with('(') {
+                if !is_dist_selector && is_inert_adverb && r.starts_with('<') {
+                    let after = r[1..].find('>').map_or("", |end| &r[end + 2..]);
+                    let (after, _) = ws(after)?;
+                    let after = after.strip_prefix(',').unwrap_or(after);
+                    let (after, _) = ws(after)?;
+                    rest = after;
+                    continue;
+                }
+                // A selector's `(expr)` form, or any inert adverb, is consumed
+                // and discarded.
+                let discard = if is_dist_selector {
+                    r.starts_with('(')
+                } else {
+                    is_inert_adverb
+                };
+                if discard {
                     let after = skip_balanced_parens(r);
                     let (after, _) = ws(after)?;
                     let after = after.strip_prefix(',').unwrap_or(after);
@@ -237,7 +263,10 @@ pub(in crate::parser::stmt) fn use_stmt(input: &str) -> PResult<'_, Stmt> {
     } else {
         // Register exported function names so they are recognized as calls
         // without parens.
-        super::super::simple::register_module_exports(&module);
+        // Positional arguments go to the module's `sub EXPORT`, which may
+        // import anything; only a tag-only `use` selects `is export` traits.
+        let import_tags = arg.is_none().then_some(use_tags.as_slice());
+        super::super::simple::register_module_exports_with_tags(&module, import_tags);
     }
     // A slang-activating module (its source `use`s Slangify) executes at
     // parse time so its slang registration can switch parser modes for the
@@ -563,4 +592,22 @@ pub(in crate::parser::stmt) fn no_stmt(input: &str) -> PResult<'_, Stmt> {
         crate::parser::stmt::simple::suppress_worries();
     }
     Ok((rest, Stmt::No { module, arg }))
+}
+
+/// Skip the adverbs glued directly to a `use`d module's name (`:CSS3`,
+/// `:ver<1.0>`, `:auth(...)`), returning the input after them.
+fn skip_name_adverbs(mut input: &str) -> &str {
+    while let Some(r) = input.strip_prefix(':')
+        && !r.starts_with(':')
+        && let Ok((r, _)) = ident(r)
+    {
+        input = if let Some(inner) = r.strip_prefix('<') {
+            inner.find('>').map_or("", |end| &inner[end + 1..])
+        } else if r.starts_with('(') {
+            skip_balanced_parens(r)
+        } else {
+            r
+        };
+    }
+    input
 }

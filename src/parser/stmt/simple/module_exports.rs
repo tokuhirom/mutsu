@@ -5,8 +5,10 @@ use std::cell::Cell;
 use std::rc::Rc;
 
 mod dynamic_stash;
+mod enum_values;
 mod export_hook;
 use dynamic_stash::{has_dynamic_export_stash_binding, probe_dynamic_exports};
+use enum_values::{collect_module_enum_values, import_admits};
 use export_hook::{
     collect_export_hook_operator_subs, collect_export_hook_value_terms,
     collect_unit_scope_routines, declares_export_sub, find_export_sub_body,
@@ -28,6 +30,12 @@ struct ModuleScanResult {
     #[serde(default)]
     enum_type_names: Vec<String>,
     enum_values: Vec<String>,
+    /// Enum values the module exports only under explicit non-default tags
+    /// (`my enum Time is export(:Time) < s ms >`), each with those tags. Unlike
+    /// `enum_values` these reach an importer's parse only when its `use` names
+    /// a matching tag (see `enum_values.rs`).
+    #[serde(default)]
+    tagged_enum_values: Vec<(String, Vec<String>)>,
     /// Sigilless value terms the module declares: `constant SQLT_NUM is export
     /// = 2;`, `my \foo = ...`. Harvested from the scan's own scope stack, the
     /// same way `enum_values` is, because the parser records them as term
@@ -214,6 +222,12 @@ fn note_scan_guard_skip() {
 /// (see [`TEST_EXPORTS`]). For all other modules, dynamically scans the module
 /// file to extract `is export` subs.
 pub(crate) fn register_module_exports(module: &str) {
+    register_module_exports_with_tags(module, None);
+}
+
+/// [`register_module_exports`] for a `use` whose tag list is known to select
+/// the module's `is export` traits; see [`apply_scan_types`].
+pub(crate) fn register_module_exports_with_tags(module: &str, import_tags: Option<&[String]>) {
     record_use_scan_outcome(module, false);
     if module == "Test" {
         let exports: Vec<InlineModuleExport> = TEST_EXPORTS
@@ -248,7 +262,7 @@ pub(crate) fn register_module_exports(module: &str) {
         // a zero-argument slang activation would call its four-argument
         // EXPORT with no arguments and fail every Slangify-based module.
         record_use_scan_outcome(module, module != "Slangify" && scan.uses_slangify);
-        apply_scan_types(&scan);
+        apply_scan_types(&scan, import_tags);
         apply_module_exports(&scan.exports);
         if scan.dynamic_export_stash {
             apply_module_exports(&probe_dynamic_exports(module));
@@ -283,7 +297,13 @@ pub(crate) fn register_module_exports(module: &str) {
 }
 
 /// Replay a scan's declared type/enum names into the importer's current scope.
-fn apply_scan_types(scan: &ModuleScanResult) {
+///
+/// `import_tags` is the importing `use`'s tag list when it is known to select
+/// the module's `is export` traits (`use M;` → `Some(&[])`, `use M :Time;` →
+/// `Some(["Time"])`), and `None` when it is not (`need`, `require`, or a `use`
+/// whose positional arguments go to a `sub EXPORT`), in which case every
+/// tagged enum value is admitted as before.
+fn apply_scan_types(scan: &ModuleScanResult, import_tags: Option<&[String]>) {
     // Replay the scanned module's inline `module Foo { ... is export }` tables
     // so a later `import Foo;` resolves them on a cache hit exactly as it does
     // after a fresh scan.
@@ -314,7 +334,20 @@ fn apply_scan_types(scan: &ModuleScanResult) {
     // the `?? then !!` guard reads it as a listop head that gobbled the
     // `!!` (see `is_user_declared_enum_value`).
     for name in &scan.enum_values {
-        register_user_enum_value(name);
+        register_imported_enum_value(name);
+    }
+    // A run-time export hook or a computed export stash can import a tagged
+    // value whatever tags the `use` names, so only a trait-driven module is
+    // filtered.
+    let tags_decide = !scan.declares_export_hook && !scan.dynamic_export_stash;
+    for (name, export_tags) in &scan.tagged_enum_values {
+        let admitted = match import_tags {
+            Some(tags) if tags_decide => import_admits(export_tags, tags),
+            _ => true,
+        };
+        if admitted {
+            register_imported_enum_value(name);
+        }
     }
     // An exported `constant` is a complete nullary term wherever the importer
     // can see it, exactly like an enum value.
@@ -470,7 +503,7 @@ pub(crate) fn register_module_type_names(module: &str) {
         m.borrow_mut().remove(module);
     });
     if let Some(scan) = scan {
-        apply_scan_types(&scan);
+        apply_scan_types(&scan, None);
     } else if !import_is_pragma_like(module) {
         note_type_index_incomplete();
     }
@@ -698,15 +731,24 @@ fn scan_module_source(source: &str, path: &str) -> ModuleScanResult {
             .filter(|name| name.contains("::"))
             .collect()
     });
-    // The same for enum *values* declared by a module this one used: they are
-    // complete nullary terms wherever the importer can see them, and unlike type
-    // names they are never qualified, so there is nothing to filter on.
-    let transitive_enum_values: Vec<String> = SCOPES.with(|s| {
-        s.borrow()
-            .iter()
-            .flat_map(|scope| scope.user_enum_values.iter().cloned())
-            .collect()
-    });
+    // The module's enum *values*, as its own parse registered them — its
+    // declarations and whatever its own `use`s imported. Imports are lexical
+    // and never re-exported, so the imported subset is split off here and
+    // dropped below (unless an export hook could re-export it).
+    let (scanned_enum_values, imported_enum_values): (Vec<String>, HashSet<String>) =
+        SCOPES.with(|s| {
+            let scopes = s.borrow();
+            (
+                scopes
+                    .iter()
+                    .flat_map(|scope| scope.user_enum_values.iter().cloned())
+                    .collect(),
+                scopes
+                    .iter()
+                    .flat_map(|scope| scope.imported_enum_values.iter().cloned())
+                    .collect(),
+            )
+        });
     let transitive_enum_types: Vec<String> = SCOPES.with(|s| {
         s.borrow()
             .iter()
@@ -757,8 +799,30 @@ fn scan_module_source(source: &str, path: &str) -> ModuleScanResult {
     collect_module_type_names(&stmts, &mut type_names);
     let mut enum_type_names: Vec<String> = transitive_enum_types;
     collect_module_enum_type_names(&stmts, &mut enum_type_names);
-    let mut enum_values: Vec<String> = transitive_enum_values;
-    collect_module_enum_values(&stmts, &mut enum_values);
+    let declares_export_hook = declares_export_sub(&stmts) || source_declares_export_sub(source);
+    let mut enum_values: Vec<String> = Vec::new();
+    let mut tagged_enum_values: Vec<(String, Vec<String>)> = Vec::new();
+    collect_module_enum_values(&stmts, &mut enum_values, &mut tagged_enum_values);
+    // Keep the scanned values the AST walk cannot see (a computed enum body's
+    // names), minus the own tag-restricted ones, which travel only in
+    // `tagged_enum_values`, and minus the imported ones: a `use` inside this
+    // module does not import anything into *its* importer (ADR-0087's
+    // superset stops short of that, because an extra value can shadow a quote
+    // construct such as `s///`). A `sub EXPORT` hook can re-export an import,
+    // so a hook module keeps them.
+    let restricted: HashSet<&str> = tagged_enum_values
+        .iter()
+        .map(|(name, _)| name.as_str())
+        .filter(|name| !enum_values.iter().any(|n| n == name))
+        .collect();
+    let scanned_enum_values: Vec<String> = scanned_enum_values
+        .into_iter()
+        .filter(|name| {
+            !restricted.contains(name.as_str())
+                && (declares_export_hook || !imported_enum_values.contains(name))
+        })
+        .collect();
+    enum_values.extend(scanned_enum_values);
     collect_module_constant_names(&stmts, &mut value_terms);
     let mut exports: HashMap<String, InlineModuleExport> = HashMap::new();
     collect_exported_subs(&stmts, &mut exports);
@@ -767,7 +831,6 @@ fn scan_module_source(source: &str, path: &str) -> ModuleScanResult {
     // Approximate its export set with the routines it declares in its own unit
     // scope, which is what the dominant `UNIT::`-grep idiom exports verbatim
     // (ADR-0087).
-    let declares_export_hook = declares_export_sub(&stmts) || source_declares_export_sub(source);
     if declares_export_hook {
         collect_unit_scope_routines(&stmts, &mut exports);
         // A third idiom: `is export`-tagged declarations made LOCALLY inside
@@ -838,6 +901,7 @@ fn scan_module_source(source: &str, path: &str) -> ModuleScanResult {
         type_names,
         enum_type_names,
         enum_values,
+        tagged_enum_values,
         value_terms,
         declare_keywords,
         type_index_incomplete,
@@ -1206,40 +1270,6 @@ fn collect_module_constant_names(stmts: &[Stmt], out: &mut Vec<String>) {
 /// parser knows they are declared types rather than undeclared barewords.
 fn collect_module_type_names(stmts: &[Stmt], out: &mut Vec<String>) {
     collect_module_type_names_under(stmts, "", out);
-}
-
-/// The value names of every `enum` a module declares, at any nesting depth.
-///
-/// Unlike a type name an enum value is never package-composed here: the
-/// importer spells it bare, which is the only spelling the `?? then !!` guard
-/// ever sees.
-fn collect_module_enum_values(stmts: &[Stmt], out: &mut Vec<String>) {
-    for stmt in stmts {
-        match stmt {
-            Stmt::EnumDecl { variants, .. } => {
-                out.extend(
-                    variants
-                        .iter()
-                        .map(|(name, _)| name.clone())
-                        .filter(|name| name != "__DYNAMIC__" && !name.is_empty()),
-                );
-                if variants.len() == 1
-                    && variants[0].0 == "__DYNAMIC__"
-                    && let Some(body) = variants[0].1.as_ref()
-                {
-                    super::super::decl::collect_dynamic_enum_value_names(body, out);
-                }
-            }
-            Stmt::ClassDecl { body, .. }
-            | Stmt::RoleDecl { body, .. }
-            | Stmt::Package { body, .. }
-            // A traited declarator (`enum E is export < a b >`) is wrapped in a
-            // bare block by the parser; walk into it like any other body.
-            | Stmt::Block(body)
-            | Stmt::SyntheticBlock(body) => collect_module_enum_values(body, out),
-            _ => {}
-        }
-    }
 }
 
 /// Collect enum type names with the same package composition rules as the

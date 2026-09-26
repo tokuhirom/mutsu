@@ -273,6 +273,16 @@ impl Interpreter {
         snapshot: &ClassRegSnapshot,
         is_hoisted_shell: bool,
     ) -> Result<(), RuntimeError> {
+        // Publish the final `ClassDef` BEFORE the composition checks: they
+        // walk the registry's MRO for inherited implementations, and the
+        // shell published before the body lacks every `also is` parent the
+        // body introduced (`class A { use P; also is P; also does R }`, where
+        // R's stub is implemented by P — CSS::Module's Actions classes).
+        // Rakudo checks role requirements at compose time, after the whole
+        // body. A failed check rolls the class back through the snapshot.
+        self.registry_mut()
+            .classes
+            .insert(name.to_string(), class_def);
         if let Err(err) = self.resolve_class_stub_requirements(name) {
             snapshot.restore(self, name);
             return Err(err);
@@ -281,9 +291,6 @@ impl Interpreter {
             snapshot.restore(self, name);
             return Err(err);
         }
-        self.registry_mut()
-            .classes
-            .insert(name.to_string(), class_def);
         // The per-op walk in `run_class_body` re-derives the accessor column
         // after each body statement so mid-body introspection sees it, but a
         // class whose attributes arrive ONLY from header-level composition

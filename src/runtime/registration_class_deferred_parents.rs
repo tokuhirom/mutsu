@@ -42,6 +42,8 @@ pub(super) struct DeferredParentOutcome {
 /// own role-composition outcome so a deferred parent that turns out to name a
 /// role can be merged into it rather than replacing it.
 pub(super) struct DeferredParentCx<'a> {
+    /// Every declared parent in source order (header `is` and body `also is`).
+    pub(super) source_parents: &'a [String],
     pub(super) class_lang_rev: &'a str,
     pub(super) is_hoisted_shell: bool,
     pub(super) composed_roles_list: &'a mut Vec<String>,
@@ -135,15 +137,37 @@ impl Interpreter {
                 );
                 return Err(RuntimeError::typed("X::Inheritance::SelfInherit", attrs));
             }
-            // A name that is a role and not also a class is composed, not
-            // inherited -- `also is R` puns/composes R exactly like the header
-            // `is R` form does.
-            if !self.registry().classes.contains_key(base) && self.is_role_type_name(base) {
-                late_roles.push(resolved);
-                continue;
+            // A name that is a role and not also a class puns R exactly like
+            // the header `is R` form does: R is composed, and its pun stays in
+            // the parent list, so it takes its place in the MRO (rakudo:
+            // CSS::Module's `also is CSS::Specification::Base::Actions`; a
+            // pun missing from the MRO made the C3 merge of its subclasses
+            // inconsistent).
+            let is_role =
+                !self.registry().classes.contains_key(base) && self.is_role_type_name(base);
+            if is_role {
+                late_roles.push(resolved.clone());
             }
             if !class_def.parents.contains(&resolved) {
-                class_def.parents.push(resolved.clone());
+                // `also is` takes effect at its position in the body, so the
+                // parent goes before the first already-placed parent declared
+                // after it. Appending it instead reordered a class whose other
+                // `also is` parents happened to be loaded already
+                // (CSS::Module::CSS3::Fonts::Actions), and the C3 merge of its
+                // subclasses then disagreed with its siblings' linearizations.
+                let source_pos = |p: &str| cx.source_parents.iter().position(|s| s == p);
+                let at = source_pos(parent).and_then(|mine| {
+                    class_def
+                        .parents
+                        .iter()
+                        .position(|placed| source_pos(placed).is_some_and(|theirs| theirs > mine))
+                });
+                match at {
+                    Some(at) => class_def.parents.insert(at, resolved.clone()),
+                    None => class_def.parents.push(resolved.clone()),
+                }
+                // Any linearization memoized before this parent existed is stale.
+                class_def.mro = [].into();
             }
             out.parents.push(resolved);
         }

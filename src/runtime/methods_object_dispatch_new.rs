@@ -349,26 +349,7 @@ impl Interpreter {
             && let ValueView::Package(_) = inner.as_ref().view()
         {
             let base_instance = self.dispatch_new(inner.as_ref().clone(), args)?;
-            // Composed role names are recorded as `__mutsu_role__<name>` markers in
-            // the mixin map. Sort for a deterministic composition order.
-            let mut role_names: Vec<String> = mixins
-                .keys()
-                .filter_map(|k| k.strip_prefix("__mutsu_role__").map(str::to_string))
-                .collect();
-            role_names.sort();
-            let mut result = base_instance;
-            for role_name in role_names {
-                let role = if let Some(ValueView::Array(args, _)) = mixins
-                    .get(&MetaNs::RoleTypeargs.owned_key_for_str(&role_name))
-                    .map(Value::view)
-                {
-                    Value::parametric_role(Symbol::intern(&role_name), args.to_vec())
-                } else {
-                    Value::package(Symbol::intern(&role_name))
-                };
-                result = self.eval_does_values(result, role)?;
-            }
-            return Ok(result);
+            return self.compose_mixin_type_roles(base_instance, mixins);
         }
         // Calling .new() on a concrete Array delegates to the type constructor.
         // If the array has type metadata (e.g. array[str]), use the declared type.
