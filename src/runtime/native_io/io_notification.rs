@@ -105,7 +105,10 @@ impl Interpreter {
                 index,
             );
             base.insert(
-                Symbol::intern(&format!("{FILE_CHANGE_EVENT}::{key}")),
+                crate::qualified::qualified(
+                    Symbol::intern(FILE_CHANGE_EVENT),
+                    Symbol::intern(&key),
+                ),
                 enum_val.clone(),
             );
             base.insert(Symbol::intern(&key), enum_val);
