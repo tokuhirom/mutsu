@@ -117,7 +117,15 @@ impl Interpreter {
                 .flatten()
                 .filter(|v| !v.is_nil())
                 .cloned();
-            let Some(v) = from_local.or_else(|| self.env().get(name.as_str()).cloned()) else {
+            // A name with no local slot resolves exactly as a bare `GetGlobal`
+            // read of it would: an escaped `our sub`'s persisted block lexical
+            // and a package-block `my` are authoritative over `env`, which no
+            // longer holds them once the declaring block has exited.
+            let Some(v) = from_local
+                .or_else(|| self.escaping_our_read(name.as_str()).filter(|v| !v.is_nil()))
+                .or_else(|| self.package_scope_lexical(name.as_str()))
+                .or_else(|| self.env().get(name.as_str()).cloned())
+            else {
                 continue;
             };
             if v.is_nil() {
