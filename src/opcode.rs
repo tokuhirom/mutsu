@@ -1892,6 +1892,17 @@ pub(crate) enum OpCode {
     FunctionCompose,
 
     // -- Mixin --
+    /// Infix `but`: a copy of the left operand with the right one mixed in.
+    /// Stack: `[value, mixin] → [result]`.
+    ///
+    /// The right operand is a role (plain, parametric or anonymous), or a
+    /// value such as `True` or `42`, which mixes in a role that makes the
+    /// matching method return it. The role's `submethod BUILD`/`TWEAK` run,
+    /// and a write they make to a caller's lexical is drained back. A class
+    /// type object on the left gives a mixin type object (`Int but R` is
+    /// `Int+{R}`); mixing a role into a role type object, or a role into a
+    /// built-in type object, is an error. `but (R1, R2)` compiles to
+    /// [`Self::ButMixinTupleElem`] per element instead.
     ButMixin,
     /// Like ButMixin but checks for duplicate type conflicts (used for
     /// per-element tuple expansion: `True but (1, "x")`).
@@ -2010,29 +2021,143 @@ pub(crate) enum OpCode {
     StrShiftRight,
 
     // -- Set operations --
+    /// Infix `∈` / `(elem)`: whether the left operand is an element of the
+    /// right one. Stack: `[left, right] → [Bool]` (right on top).
+    ///
+    /// Junction operands are threaded and a user `infix:<(elem)>` candidate
+    /// gets first refusal. The membership test is `set_contains`: a key
+    /// lookup on a `Set`/`Bag`/`Mix`/`Hash` right operand, and a scan (by
+    /// `===` identity) of any other list-like right operand.
     SetElem,
+    /// Infix `∋` / `(cont)`: whether the left operand contains the right one.
+    /// Stack: `[left, right] → [Bool]` (right on top). [`Self::SetElem`] with the operands swapped (a user
+    /// `infix:<(cont)>` candidate is tried first).
     SetCont,
+    /// Infix `∪` / `(|)` (union: the larger weight of each key). Stack: `[left, right] → [QuantHash]` (right on top).
+    ///
+    /// The six binary set operators share one body,
+    /// `runtime::set_op_values` (`src/runtime/utils/set_algebra.rs`), which
+    /// the `[op]` reduction and `&infix:<op>` use too (#9451). A user
+    /// candidate under either spelling is tried first (ADR-0071). Both
+    /// operands are promoted to the higher of their levels, `Set` < `Bag` <
+    /// `Mix`, and the result takes that level and the left operand's
+    /// mutability (a `SetHash` operand gives a `SetHash`).
     SetUnion,
+    /// Infix `⊎` / `(+)` (baggy addition: the sum of the weights). Stack: `[left, right] → [QuantHash]` (right on top).
+    ///
+    /// The six binary set operators share one body,
+    /// `runtime::set_op_values` (`src/runtime/utils/set_algebra.rs`), which
+    /// the `[op]` reduction and `&infix:<op>` use too (#9451). A user
+    /// candidate under either spelling is tried first (ADR-0071). Both
+    /// operands are promoted to the higher of their levels, `Set` < `Bag` <
+    /// `Mix`, and the result takes that level and the left operand's
+    /// mutability (a `SetHash` operand gives a `SetHash`). `(+)` starts at `Bag`, so two `Set`s give a `Bag`.
     SetAddition,
+    /// Infix `∩` / `(&)` (intersection: the smaller weight of each key both
+    /// sides hold). Stack: `[left, right] → [QuantHash]` (right on top).
+    ///
+    /// The six binary set operators share one body,
+    /// `runtime::set_op_values` (`src/runtime/utils/set_algebra.rs`), which
+    /// the `[op]` reduction and `&infix:<op>` use too (#9451). A user
+    /// candidate under either spelling is tried first (ADR-0071). Both
+    /// operands are promoted to the higher of their levels, `Set` < `Bag` <
+    /// `Mix`, and the result takes that level and the left operand's
+    /// mutability (a `SetHash` operand gives a `SetHash`).
     SetIntersect,
+    /// Infix `⊍` / `(.)` (baggy multiplication: the product of the weights
+    /// of each key both sides hold). Stack: `[left, right] → [QuantHash]` (right on top).
+    ///
+    /// The six binary set operators share one body,
+    /// `runtime::set_op_values` (`src/runtime/utils/set_algebra.rs`), which
+    /// the `[op]` reduction and `&infix:<op>` use too (#9451). A user
+    /// candidate under either spelling is tried first (ADR-0071). Both
+    /// operands are promoted to the higher of their levels, `Set` < `Bag` <
+    /// `Mix`, and the result takes that level and the left operand's
+    /// mutability (a `SetHash` operand gives a `SetHash`). `(.)` starts at `Bag`, like `(+)`.
     SetMultiply,
+    /// Infix `∖` / `(-)` (set difference: the left weight less the right
+    /// one). Stack: `[left, right] → [QuantHash]` (right on top).
+    ///
+    /// The six binary set operators share one body,
+    /// `runtime::set_op_values` (`src/runtime/utils/set_algebra.rs`), which
+    /// the `[op]` reduction and `&infix:<op>` use too (#9451). A user
+    /// candidate under either spelling is tried first (ADR-0071). Both
+    /// operands are promoted to the higher of their levels, `Set` < `Bag` <
+    /// `Mix`, and the result takes that level and the left operand's
+    /// mutability (a `SetHash` operand gives a `SetHash`).
     SetDiff,
+    /// Infix `⊖` / `(^)` (symmetric difference: the distance between the
+    /// weights). Stack: `[left, right] → [QuantHash]` (right on top).
+    ///
+    /// The six binary set operators share one body,
+    /// `runtime::set_op_values` (`src/runtime/utils/set_algebra.rs`), which
+    /// the `[op]` reduction and `&infix:<op>` use too (#9451). A user
+    /// candidate under either spelling is tried first (ADR-0071). Both
+    /// operands are promoted to the higher of their levels, `Set` < `Bag` <
+    /// `Mix`, and the result takes that level and the left operand's
+    /// mutability (a `SetHash` operand gives a `SetHash`).
     SetSymDiff,
+    /// Infix `⊆` / `(<=)` (subset or equal). Stack: `[left, right] → [Bool]` (right on top).
+    ///
+    /// Both operands are read as QuantHashes (`quant_hash_subset`), weights
+    /// included: every key of the left side must be on the right side with
+    /// at least the same weight. Junctions are not threaded here.
     SetSubset,
+    /// Infix `⊇` / `(>=)` (superset or equal). Stack: `[left, right] → [Bool]` (right on top). [`Self::SetSubset`]
+    /// with the operands swapped.
     SetSuperset,
+    /// Infix `⊂` / `(<)` (strict subset). Stack: `[left, right] → [Bool]` (right on top). As [`Self::SetSubset`], and
+    /// the two sides must differ.
     SetStrictSubset,
+    /// Infix `⊃` / `(>)` (strict superset). Stack: `[left, right] → [Bool]` (right on top). [`Self::SetStrictSubset`]
+    /// with the operands swapped.
     SetStrictSuperset,
+    /// Build a two-element `any` junction. Stack: `[left, right] →
+    /// [Junction]`.
+    ///
+    /// Never flattens a junction operand: `merge_junction` wraps exactly the
+    /// two values. Emitted for a two-operand infix `a | b` and for the
+    /// sequential metaoperator `S|`; a chain of three or more (`a | b | c`)
+    /// compiles to [`Self::JunctionAnyN`] instead, which is also the only
+    /// form that consults a user `infix:<|>`.
     JunctionAny,
+    /// Build a two-element `all` junction, as [`Self::JunctionAny`]: infix
+    /// `a & b` and `S&`; longer chains use [`Self::JunctionAllN`].
     JunctionAll,
+    /// Build a two-element `one` junction, as [`Self::JunctionAny`]: infix
+    /// `a ^ b` and `S^`; longer chains use [`Self::JunctionOneN`].
     JunctionOne,
-    /// Multi-operand junction: pop `count` values, check for user-defined
-    /// infix:<|>/<&>/<^> override (list-associative), or build junction.
+    /// Infix `|` over a chain of three or more operands (`a | b | c`):
+    /// build an `any` junction.
+    /// Stack: `[v1, …, vN] → [Junction]`.
+    ///
+    /// The operand is `N`, the number of chain operands the compiler
+    /// flattened; that many values are popped (the first operand deepest).
+    /// When a user `infix:<|>` candidate matches, it is called ONCE with all
+    /// `N` values (list associativity) and its result is pushed; otherwise
+    /// the junction holds the values in order.
     JunctionAnyN(u32),
+    /// Infix `&` over a whole chain: build an `all` junction from the `N`
+    /// popped values, or call a user `infix:<&>` once with all of them. See
+    /// [`Self::JunctionAnyN`].
     JunctionAllN(u32),
+    /// Infix `^` over a whole chain: build a `one` junction from the `N`
+    /// popped values, or call a user `infix:<^>` once with all of them. See
+    /// [`Self::JunctionAnyN`].
     JunctionOneN(u32),
 
     // -- Sequence --
+    /// Infix `…` / `...` (and `…^` / `...^`): the sequence operator. Stack:
+    /// `[seeds, limit] → [Seq]`.
+    ///
+    /// The left operand holds the seed values and any generator closure; the
+    /// right one is the end point or end matcher (`*` for none). Both are
+    /// handed to `eval_sequence_values`, which deduces an arithmetic or
+    /// geometric progression from the seeds, or runs the closure. The
+    /// result is normally a lazy `Seq`; a finite sequence it answers eagerly
+    /// is wrapped into one.
     Sequence {
+        /// `true` for `...^`, which leaves out the end point.
         exclude_end: bool,
     },
 
@@ -2138,17 +2263,49 @@ pub(crate) enum OpCode {
     ThrowIfFailure,
 
     // -- Range creation --
+    /// Infix `..` (inclusive range). Stack: `[min, max] → [Range]`.
+    ///
+    /// `build_range_value`, shared with the metaop forms (`Z..`, `X..`),
+    /// picks the representation from the endpoints: a compact integer range,
+    /// or a generic range that keeps `Num`/`Rat`/`Str` endpoints (a `-Inf`
+    /// start stays a `Num`). A list endpoint numifies to its element count,
+    /// so `0 .. @a` ends at `@a.elems`.
     MakeRange,
+    /// Infix `..^` (excluding the end point). Stack: `[min, max] → [Range]`.
+    /// As [`Self::MakeRange`].
     MakeRangeExcl,
+    /// Infix `^..` (excluding the start point). Stack: `[min, max] →
+    /// [Range]`. As [`Self::MakeRange`].
     MakeRangeExclStart,
+    /// Infix `^..^` (excluding both end points). Stack: `[min, max] →
+    /// [Range]`. As [`Self::MakeRange`].
     MakeRangeExclBoth,
 
     // -- Composite --
+    /// Build a `List` from `n` stack values. Stack: `[v1, …, vn] → [List]`.
+    ///
+    /// The operand is the number of values popped (the first element
+    /// deepest). Emitted for a comma list, `(a, b, c)`, and for compiler
+    /// lists (`start … xx N`, shape dimensions, the keys of a subscript).
+    /// A user list-associative `infix:<,>` is called with all the values
+    /// instead, when one is in scope. A `Slip` element is spliced in, a
+    /// scalar variable element keeps its container (so the List aliases it),
+    /// and a lone lazy element keeps the list lazy. See
+    /// [`Self::MakeRealArray`] for the `[...]` form.
     MakeArray(u32),
     /// Like MakeArray but creates a true Array (from [...] literals) instead of a List.
     MakeRealArray(u32),
     /// Like MakeRealArray but never flattens a single element (from `[x,]` trailing comma).
     MakeRealArrayNoFlatten(u32),
+    /// Build a `Hash` from `n` key/value pairs pushed flat. Stack:
+    /// `[k1, v1, …, kn, vn] → [Hash]`.
+    ///
+    /// The operand is the number of *pairs*, so `2 * n` values are popped.
+    /// Emitted for a hash literal whose keys are known at compile time
+    /// (`{ a => 1, :b }`; a bare `:b` has value `True`). A type-object key
+    /// warns and stringifies; each value is itemized into its own `Scalar`,
+    /// and a `Proxy` value is FETCHed. Under `use fatal` a `Failure` among the
+    /// keys or values throws.
     MakeHash(u32),
     /// Build a Hash from `count` Pair values on the stack (from `%(k=>v, ...)` syntax).
     MakeHashFromPairs(u32),
