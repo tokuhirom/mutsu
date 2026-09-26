@@ -94,6 +94,17 @@ impl ProbeTable for PublicAccessorOwner {
     }
 }
 
+/// The memo key for a name a caller holds as `&str`. Every class and method a
+/// probe can answer about was interned when it was declared, so a *lookup*
+/// finds it -- and unlike `Symbol::intern` a lookup neither grows the intern
+/// table nor counts against the per-call intern budgets
+/// (`tests/named_call_intern_budget.rs`). A name that was never interned
+/// declares nothing, so its caller skips the memo and answers directly.
+// Cost: O(n), n = the name's length (one hash probe).
+pub(crate) fn probe_key(name: &str) -> Option<Symbol> {
+    Symbol::lookup(name)
+}
+
 impl Interpreter {
     /// Look `(class, method)` up in table `T`, computing and recording it with
     /// `compute` on a miss.
@@ -170,9 +181,12 @@ impl Interpreter {
     // Cost: O(1) on a hit; a miss costs one MRO walk, O(d), d = MRO depth.
     pub(crate) fn first_public_accessor_owner(
         &mut self,
-        class: Symbol,
+        class_name: &str,
         method: Symbol,
     ) -> Option<Symbol> {
+        let Some(class) = probe_key(class_name) else {
+            return self.first_public_accessor_owner_uncached(class_name, method);
+        };
         self.probe_memo::<PublicAccessorOwner>(class, method, |this| {
             this.first_public_accessor_owner_uncached(class.as_str(), method)
         })
@@ -181,7 +195,14 @@ impl Interpreter {
     /// [`Self::method_candidate_levels_uncached`], memoized per
     /// `(class, method)`.
     // Cost: O(1) on a hit; a miss costs one MRO walk, O(d), d = MRO depth.
-    pub(crate) fn method_candidate_levels(&mut self, class: Symbol, method: Symbol) -> Arc<[u32]> {
+    pub(crate) fn method_candidate_levels(
+        &mut self,
+        class_name: &str,
+        method_name: &str,
+    ) -> Arc<[u32]> {
+        let (Some(class), Some(method)) = (probe_key(class_name), probe_key(method_name)) else {
+            return self.method_candidate_levels_uncached(class_name, method_name);
+        };
         self.probe_memo::<MethodCandidateLevels>(class, method, |this| {
             this.method_candidate_levels_uncached(class.as_str(), method.as_str())
         })

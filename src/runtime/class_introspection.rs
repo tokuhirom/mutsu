@@ -3,6 +3,7 @@
 //! attribute collection across the MRO and composed roles. Lifecycle/MRO lives
 //! in `class`; instance-method dispatch in `class_dispatch`.
 
+use super::user_method_probe_memo::probe_key;
 use super::*;
 use crate::runtime::meta_ns::MetaNs;
 
@@ -269,10 +270,10 @@ impl Interpreter {
         if Self::hardcoded_native_method(class_name, method_name) {
             return true;
         }
-        self.is_native_method_memo(
-            crate::symbol::Symbol::intern(class_name),
-            crate::symbol::Symbol::intern(method_name),
-        )
+        match (probe_key(class_name), probe_key(method_name)) {
+            (Some(class), Some(method)) => self.is_native_method_memo(class, method),
+            _ => self.is_native_method_uncached(class_name, method_name),
+        }
     }
 
     /// The MRO walk behind [`Self::is_native_method`], unmemoized.
@@ -308,7 +309,10 @@ impl Interpreter {
         class_name: &str,
         name_sym: crate::symbol::Symbol,
     ) -> bool {
-        self.has_user_method_memo(crate::symbol::Symbol::intern(class_name), name_sym)
+        match probe_key(class_name) {
+            Some(class) => self.has_user_method_memo(class, name_sym),
+            None => self.has_user_method_uncached(class_name, name_sym),
+        }
     }
 
     /// The MRO walk behind [`Self::has_user_method_sym`], unmemoized.
@@ -364,10 +368,10 @@ impl Interpreter {
     // roles, plus the O(d^2) grammar-ancestry walk when a role on the MRO
     // declares the method.
     pub(crate) fn grammar_has_user_method(&mut self, name: &str, method_name: &str) -> bool {
-        self.grammar_has_user_method_memo(
-            crate::symbol::Symbol::intern(name),
-            crate::symbol::Symbol::intern(method_name),
-        )
+        match (probe_key(name), probe_key(method_name)) {
+            (Some(class), Some(method)) => self.grammar_has_user_method_memo(class, method),
+            _ => self.grammar_has_user_method_sym(name, crate::symbol::Symbol::intern(method_name)),
+        }
     }
 
     /// [`Self::grammar_has_user_method`] for a caller that already holds the
@@ -456,10 +460,10 @@ impl Interpreter {
         class_name: &str,
         name_sym: crate::symbol::Symbol,
     ) -> Option<UserMethodOrAccessor> {
-        self.resolve_user_method_or_accessor_memo(
-            crate::symbol::Symbol::intern(class_name),
-            name_sym,
-        )
+        match probe_key(class_name) {
+            Some(class) => self.resolve_user_method_or_accessor_memo(class, name_sym),
+            None => self.resolve_user_method_or_accessor_uncached(class_name, name_sym),
+        }
     }
 
     /// The MRO walk behind [`Self::resolve_user_method_or_accessor_sym`],
@@ -546,15 +550,14 @@ impl Interpreter {
         class_name: &str,
         method_name: &str,
     ) -> Option<crate::symbol::Symbol> {
-        let class = crate::symbol::Symbol::intern(class_name);
-        let name = crate::symbol::Symbol::intern(method_name);
+        let name = probe_key(method_name)?;
         if !matches!(
-            self.resolve_user_method_or_accessor_memo(class, name),
+            self.resolve_user_method_or_accessor_sym(class_name, name),
             Some(UserMethodOrAccessor::Accessor)
         ) {
             return None;
         }
-        self.first_public_accessor_owner(class, name)
+        self.first_public_accessor_owner(class_name, name)
     }
 
     /// Whether `class_name`'s public attribute `attr_name` was contributed by a

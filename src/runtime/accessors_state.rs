@@ -1440,10 +1440,8 @@ impl Interpreter {
         // and silently answering Nil instead of reading the attribute
         // (Email::MIME's `Email::Simple` subclass overrides the auto `body`
         // reader this way).
-        let accessor_owner = self.first_public_accessor_owner(
-            crate::symbol::Symbol::intern(receiver_class),
-            crate::symbol::Symbol::intern(method_name),
-        );
+        let accessor_owner = super::user_method_probe_memo::probe_key(method_name)
+            .and_then(|name| self.first_public_accessor_owner(receiver_class, name));
         let accessor_base_override =
             accessor_owner.is_some() && self.has_user_method(receiver_class, method_name);
         // A user method on a subclass of a builtin metamodel HOW (OO::Monitors'

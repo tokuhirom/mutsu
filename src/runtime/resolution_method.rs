@@ -271,8 +271,7 @@ impl Interpreter {
         // Only the levels that declare `method_name` at all can contribute a
         // candidate; the memo lists them so the walk is O(candidate levels),
         // not O(MRO depth) with a registry probe per level.
-        let levels =
-            self.method_candidate_levels(Symbol::intern(class_name), Symbol::intern(method_name));
+        let levels = self.method_candidate_levels(class_name, method_name);
         for &level in levels.iter() {
             let level = level as usize;
             if level >= mro.len() {
