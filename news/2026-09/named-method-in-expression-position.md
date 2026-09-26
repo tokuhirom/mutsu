@@ -37,4 +37,4 @@ death ran only DESTROYs flagged as submethods, so a plain `method DESTROY`
 where rakudo runs each MRO class's own DESTROY in either spelling. The
 submethod-only filter in `run_pending_instance_destroys_inner` is gone; the
 latch test now uses `anon method` plus `^compose` and passes for the right
-reason, and `t/vm/destroy-plain-method.t` pins the plain-method spelling.
+reason, and `t/oo/method/destroy-plain-method.t` pins the plain-method spelling.
