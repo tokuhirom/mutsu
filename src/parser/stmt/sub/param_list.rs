@@ -352,7 +352,9 @@ pub(crate) fn parse_param_list_inner(input: &str) -> PResult<'_, Vec<ParamDef>> 
         }
         let (r, _) = parse_char(r, ',')?;
         let (r, _) = ws(r)?;
-        if r.starts_with(')') {
+        // A trailing comma is allowed before the closer of either list form:
+        // `sub f($a,)` and a role's `role R[::T, Int :$n = 1,]`.
+        if r.starts_with(')') || r.starts_with(']') {
             return Ok((r, params));
         }
         // Handle --> return type after comma

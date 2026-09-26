@@ -70,6 +70,23 @@ pub(crate) fn split_role_param_parts(input: &str) -> Vec<&str> {
     parts
 }
 
+/// The tail of a `Type ::Name` role parameter after the capture name: nothing
+/// (no default) or `= <expr>`. `None` means the part is not that form at all —
+/// e.g. `K::R :$r = C`, a qualified type constraint whose first segment `K`
+/// happens to be a declared type — so the caller must try the general
+/// single-parameter parser instead of dropping the parameter.
+fn type_capture_default(rest: &str) -> Option<Option<Expr>> {
+    if rest.is_empty() {
+        return Some(None);
+    }
+    let rhs = rest.strip_prefix('=')?.trim_start();
+    let (rest_after_expr, default_expr) = expression(rhs).ok()?;
+    rest_after_expr
+        .trim()
+        .is_empty()
+        .then_some(Some(default_expr))
+}
+
 /// Parse optional role type parameters like `[::T]`, `[Str $x]`, or
 /// `[Int $x where { ... }]`.
 /// Returns both full parameter defs and plain names used for substitution.
@@ -160,24 +177,8 @@ pub(crate) fn parse_optional_role_type_params(
             if !constraint.is_empty()
                 && role_type_param_constraint_is_known(constraint)
                 && let Ok((rest_after_name, name)) = ident(capture_part)
+                && let Some(default) = type_capture_default(rest_after_name.trim_start())
             {
-                let rest_after_name = rest_after_name.trim_start();
-                let default = if let Some(rhs) = rest_after_name.strip_prefix('=') {
-                    let rhs = rhs.trim_start();
-                    if let Ok((rest_after_expr, default_expr)) = expression(rhs) {
-                        if rest_after_expr.trim().is_empty() {
-                            Some(default_expr)
-                        } else {
-                            continue;
-                        }
-                    } else {
-                        continue;
-                    }
-                } else if rest_after_name.is_empty() {
-                    None
-                } else {
-                    continue;
-                };
                 params.push(name.clone());
                 param_defs.push(ParamDef {
                     type_capture: None,
