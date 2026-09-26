@@ -44,12 +44,14 @@ is in-a-routine(), 'stored', '... also inside a routine body';
 }
 
 class Waiter {
-    method wait-for(Supply $s) {
+    method wait-for(Supplier $s) {
         my $p = Promise.new;
         my $v = $p.vow;
-        my $tap = $s.tap({ $tap.close; $v.keep($_) });
+        my $tap = $s.Supply.tap({ $tap.close; $v.keep($_) });
+        start { $s.emit(True) };
         $p
     }
 }
-is (await Promise.anyof(Waiter.wait-for(Supply.interval(0.05)), Promise.in(10))), True,
+my $s = Supplier.new;
+is (await Promise.anyof(Waiter.wait-for($s), Promise.in(10))), True,
     'a method body closing its own tap from the callback completes';
