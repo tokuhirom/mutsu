@@ -6772,6 +6772,14 @@ pub(crate) struct CompiledCode {
     /// this very declaration's initializer, so clearing it orphans the closure's
     /// capture and `$f` reads back as `Any`.
     pub(crate) self_capture_decl_locals: Vec<Symbol>,
+    /// Set on a CLOSURE's code: the creating frame's self-captured declarations
+    /// (`self_capture_decl_locals` there) whose initializer creates this
+    /// closure — `$t` for the `{ $t.close }` in `my $t = $s.tap({ $t.close })`.
+    /// A callee that runs the closure on another thread (a channel-backed
+    /// `.tap`) holds its first call until that declaration's store, so the
+    /// closure never observes the name before it is bound (#9590; see
+    /// `runtime::decl_gate`).
+    pub(crate) captures_own_declaration: Vec<Symbol>,
     /// `&`-sigiled lexicals (params like `&x1`, `my &f = ...`) visible in the
     /// ENCLOSING scopes at this closure's definition point, threaded down by
     /// `compile_closure_body` (transitively, so a grandchild still sees an
@@ -7497,6 +7505,7 @@ impl CompiledCode {
             type_body_written_lexicals: Vec::new(),
             authoritative_free_vars: Vec::new(),
             self_capture_decl_locals: Vec::new(),
+            captures_own_declaration: Vec::new(),
             outer_code_var_names: std::collections::HashSet::new(),
             needs_cell_free_vars: Vec::new(),
             has_calls: false,
@@ -9283,6 +9292,11 @@ impl CompiledCode {
         // Own locals whose declaration's own initializer captured them.
         let mut self_capture_decl: std::collections::HashSet<Symbol> =
             std::collections::HashSet::new();
+        // `(closure code index, own local)` for each capture recorded in
+        // `captured_in_decl`, and the ones a store turned into self-captures:
+        // they become the closures' `captures_own_declaration`.
+        let mut captured_in_decl_closures: Vec<(u32, Symbol)> = Vec::new();
+        let mut self_capture_closures: Vec<(u32, Symbol)> = Vec::new();
         let mut pending_decl = false;
         for op in &self.ops {
             // `S///` / `s///` / `tr///` work on the implicit topic without
@@ -9513,6 +9527,7 @@ impl CompiledCode {
             // 5`) is not this declaration's self-capture.
             if matches!(op, OpCode::SetVarDynamic { .. }) {
                 captured_in_decl.clear();
+                captured_in_decl_closures.clear();
             }
             // Self-capturing declaration: `my $f = -> $n { ... $f($n-1) ... }`.
             // The initializer's closure-creation op snapshots the env BEFORE the
@@ -9530,6 +9545,7 @@ impl CompiledCode {
                 for sym in &nested.free_var_syms {
                     if sym.with_str(|s| own.contains(s)) {
                         captured_in_decl.insert(*sym);
+                        captured_in_decl_closures.push((cc_idx, *sym));
                     }
                 }
             }
@@ -9548,11 +9564,14 @@ impl CompiledCode {
                     if captured_in_decl.contains(&sym) {
                         self_mutated.insert(sym);
                         self_capture_decl.insert(sym);
+                        self_capture_closures
+                            .extend(captured_in_decl_closures.iter().filter(|(_, s)| *s == sym));
                     }
                 }
                 // The store ends this initializer: later closures belong to the
                 // next one.
                 captured_in_decl.clear();
+                captured_in_decl_closures.clear();
             }
             match op {
                 OpCode::MarkVarDeclContext => pending_decl = true,
@@ -9944,6 +9963,16 @@ impl CompiledCode {
             .into_iter()
             .filter(|sym| self.needs_cell_locals.contains(sym))
             .collect();
+        for (cc_idx, sym) in self_capture_closures {
+            if self.self_capture_decl_locals.contains(&sym)
+                && let Some(nested) = self.closure_compiled_codes.get_mut(cc_idx as usize)
+            {
+                let nested = Arc::make_mut(nested);
+                if !nested.captures_own_declaration.contains(&sym) {
+                    nested.captures_own_declaration.push(sym);
+                }
+            }
+        }
         self.needs_cell_free_vars = needs_cell_free.into_iter().collect();
         // Tell each closure we embed which of ITS free variables we (the creating
         // frame) vouch for: a plain lexical we declare and never mutate after the
