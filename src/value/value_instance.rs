@@ -284,7 +284,9 @@ impl InstanceAttrs {
         }
         match guard.slot_mut(slot) {
             Some(held) => {
-                if let ValueView::ContainerRef(cell) = held.view() {
+                if let ValueView::ContainerRef(cell) = held.view()
+                    && !held.container_ref_is_itemized()
+                {
                     *cell.lock().unwrap_or_else(|e| e.into_inner()) = value;
                 } else {
                     *held = value;
@@ -298,6 +300,10 @@ impl InstanceAttrs {
     /// Store `value` at `key`, writing *through* a promoted `ContainerRef` cell
     /// when the slot holds one instead of replacing it.
     ///
+    /// An ITEMIZED cell is not such a promotion: it is a `$obj.w = @src` value
+    /// share (Slice 2e, `vm/vm_attr_share.rs`) whose cell the source variable
+    /// also holds, so `$!w = v` rebinds the Scalar and leaves `@src` alone.
+    ///
     /// A slot promoted by [`Self::promote_attr_to_container`] is the attribute's
     /// Scalar: `$!x = v` assigns into it, so every alias handed out
     /// (a `:=`-bound name, an `is rw` method result, an `is rw` argument) keeps
@@ -307,7 +313,9 @@ impl InstanceAttrs {
         let mut guard = write_attrs(&self.attributes);
         match guard.get_mut(key) {
             Some(slot) => {
-                if let ValueView::ContainerRef(cell) = slot.view() {
+                if let ValueView::ContainerRef(cell) = slot.view()
+                    && !slot.container_ref_is_itemized()
+                {
                     *cell.lock().unwrap() = value;
                 } else {
                     *slot = value;
@@ -330,6 +338,18 @@ impl InstanceAttrs {
         let mut guard = write_attrs(&self.attributes);
         match guard.get_mut(key) {
             Some(slot) => {
+                // An itemized cell is a `$obj.w = @src` VALUE share (Slice 2e,
+                // `vm/vm_attr_share.rs`) that the source variable holds too, not
+                // the attribute's own Scalar. Give the attribute a Scalar cell
+                // of its own around it, so a bound alias (`my $x := $o.w; $x =
+                // 5`) rebinds the attribute instead of overwriting `@src`, while
+                // reads still collapse through to the shared, itemized value.
+                if slot.container_ref_is_itemized() {
+                    let share = std::mem::replace(slot, Value::Nil);
+                    let cell = crate::gc::Gc::new(crate::value::ContainerCell::new(share));
+                    *slot = Value::ContainerRef(cell.clone());
+                    return Value::ContainerRef(cell);
+                }
                 if let ValueView::ContainerRef(cell) = slot.view() {
                     return Value::ContainerRef(cell.clone());
                 }

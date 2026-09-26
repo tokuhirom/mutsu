@@ -167,16 +167,74 @@ impl Interpreter {
         method: &str,
         method_args: &[Value],
     ) -> bool {
-        let ValueView::Instance { class_name, .. } = target.view() else {
+        self.method_lvalue_scalar_attr_name(target, method, method_args)
+            .is_some()
+    }
+
+    /// Write an element-store result (`$obj.w[0] = 9` rebuilds the container
+    /// and writes it back through the accessor) THROUGH a `$` attribute's
+    /// `=` value-share cell (Slice 2e, `vm/vm_attr_share.rs`) instead of
+    /// rebinding the attribute: an element store mutates the shared Array/Hash,
+    /// so the source variable holding the same cell must observe it. `false`
+    /// (nothing written) when the attribute holds no share cell.
+    // Cost: O(m + a), m = MRO length, a = attributes of the class.
+    pub(crate) fn store_through_attr_value_share(
+        &mut self,
+        target: &Value,
+        method: &str,
+        method_args: &[Value],
+        updated: &Value,
+    ) -> bool {
+        let Some(attr) = self.method_lvalue_scalar_attr_name(target, method, method_args) else {
             return false;
+        };
+        let ValueView::Instance { attributes, .. } = target.view() else {
+            return false;
+        };
+        let private_key = format!("{attr}!");
+        let map = attributes.as_map();
+        let Some(slot) = map
+            .get(attr.as_str())
+            .or_else(|| map.get(private_key.as_str()))
+            .filter(|slot| slot.container_ref_is_itemized())
+        else {
+            return false;
+        };
+        let ValueView::ContainerRef(cell) = slot.view() else {
+            return false;
+        };
+        let cell = cell.clone();
+        drop(map);
+        // The rebuilt container came from the `$`-itemized accessor read; the
+        // cell holds the source's own (un-itemized) holder word.
+        Value::store_through_cell(&cell, &updated.clone().deitemize_element());
+        true
+    }
+
+    /// The attribute NAME (sigil-less, e.g. `w` for `$!w`) behind a `$`-sigil
+    /// accessor that `target.method = value` assigns through, or `None` when
+    /// [`Self::method_lvalue_is_scalar_attr`] would answer `false`.
+    // Cost: O(m + a), m = MRO length, a = attributes of the class.
+    pub(crate) fn method_lvalue_scalar_attr_name(
+        &mut self,
+        target: &Value,
+        method: &str,
+        method_args: &[Value],
+    ) -> Option<String> {
+        let ValueView::Instance { class_name, .. } = target.view() else {
+            return None;
         };
         let class_name = class_name.resolve();
         if let Some(def) = self.resolve_method(&class_name, method, method_args) {
-            return matches!(Self::rw_method_attribute_target(&def.body), Some((_, '$')));
+            return match Self::rw_method_attribute_target(&def.body) {
+                Some((name, '$')) => Some(name),
+                _ => None,
+            };
         }
         self.collect_class_attributes(&class_name)
             .iter()
             .any(|attr| attr.name == method && attr.sigil == '$')
+            .then(|| method.to_string())
     }
 
     /// What assigning `Nil` to attribute `attr` actually stores.

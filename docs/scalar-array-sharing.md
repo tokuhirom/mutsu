@@ -243,6 +243,39 @@ verify it is deconted there (a complement of the same shape as the `deref_contai
      `prove -j4 $(cat roast-whitelist.txt)` locally in full and look for concrete subtests with Failed:[1-9]
      (Failed:0/exited255 are load flakes; encoding-related ones fail on main too = red herrings).
 
+5. **Slice 2e — `$`-sigil attribute store `$obj.w = @src` / `%src` [DONE 2026-09-26, #9041]**: the
+   attribute accessor store (`__mutsu_assign_method_lvalue`) now shares the source container the way
+   Slice 2a's local store does.
+   - **First, a real copy was hiding in the store**: `decay_nil_container_elements` ran `Gc::make_mut`
+     unconditionally whenever the container had a non-`Nil` default, deep-copying every shared backing
+     store even when no element was `Nil`. It now scans for a `Nil` first. Without that, no cell
+     mechanism could have kept the attribute's value identical to the source.
+   - **Trigger (`vm/vm_attr_share.rs`)**: no new opcode — the `CallFunc`'s existing `arg_sources`
+     already names the value argument's source variable (`%src`). AFTER the store succeeds, the VM
+     checks that the attribute is a `$` accessor (`method_lvalue_scalar_attr_name`: the generated
+     accessor or an `is rw` method over `$!attr`) and that its slot holds the SAME backing `Gc` as the
+     source. Deciding after the store keeps every type check / coercion / `Nil`-default exact: a store
+     that built a new container simply fails the identity test and stays a copy. Then the source is
+     promoted with the helper factored out of `array_share_assign` (`promote_array_share_source`) and
+     the slot takes the cell in its ITEMIZED flavour (`ContainerRefItemized`).
+   - **The itemized flavour is the "value share, not `:=` bind" marker** (the per-slot analogue of
+     2a's `__mutsu_array_share::` env marker, which an attribute slot has no env key for). Every
+     whole-store path that writes through a `ContainerRef` attribute slot now REPLACES an itemized one
+     instead: the generated accessor store, `InstanceAttrs::store_through_container` /
+     `store_slot_through` (`$!w = v` in a method), and the `!`-attribute local write-through gates
+     (`is_value_share_slot`, shared with 2a's name-keyed check).
+   - **Element stores through the accessor** (`$obj.w[0] = 9`, `$obj.w<k>:delete`) rebuild the
+     container and write it back through the setter; that write-back goes THROUGH the share cell
+     (`store_through_attr_value_share`, de-itemized) so the source keeps seeing it.
+   - **Bound alias** (`my $x := $obj.w`): `promote_attr_to_container` wraps an itemized share cell in
+     a fresh plain Scalar cell, so `$x = 5` rebinds the attribute and leaves `@src` alone;
+     `store_through_cell` no longer peels an itemized nested holder, and `into_deref` takes the
+     itemization of the LAST holder in a chain (as `with_deref` already did), so the alias still reads
+     `$[...]`. pin=`t/oo/attribute/scalar-attr-shares-assigned-container.t`.
+   - **Not covered**: `$x := $obj.w` followed by a SECOND `$obj.w = @other` store (the plain bind
+     cell receives the value by copy, as before this slice). Construction (`T.new(w => @src)`)
+     already shared before this slice.
+
 Each Slice is hardened with **make test (t/ regressions are not in the whitelist = mandatory) + a release-roast
 main-vs-branch comparison + int.t / method-call wall-clock** (the #2746 lesson: perf regressions only surface as roast timeouts).
 

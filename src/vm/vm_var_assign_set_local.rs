@@ -2668,7 +2668,7 @@ impl Interpreter {
             // the slot (raku value semantics); drop the share and fall through to
             // the plain-replace path below instead of writing through the cell.
             let scalar = !name.starts_with('@') && !name.starts_with('%');
-            if scalar && self.array_share_active && self.is_array_share_scalar(name) {
+            if scalar && self.is_value_share_slot(name, Some(&self.locals[idx])) {
                 self.clear_array_share_marker(name);
             } else {
                 let arc = arc.clone();

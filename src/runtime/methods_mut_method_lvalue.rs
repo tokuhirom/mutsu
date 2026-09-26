@@ -1288,6 +1288,14 @@ impl Interpreter {
                     } else {
                         updated.insert_through(attr_key.as_str(), assigned_value.clone());
                     }
+                } else if updated
+                    .get(attr_key.as_str())
+                    .is_some_and(Value::container_ref_is_itemized)
+                {
+                    // An itemized cell is a `$obj.w = @src` VALUE share
+                    // (`vm_attr_share.rs`), not a `:=` binding: a whole store
+                    // rebinds the Scalar, leaving the shared source untouched.
+                    updated.insert(attr_key.as_str(), assigned_value.clone());
                 } else {
                     // Write through an existing `ContainerRef` slot (preserving any
                     // `:=`-bound alias of the attribute container); otherwise replace
