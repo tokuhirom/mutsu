@@ -207,6 +207,7 @@ mod vm_helpers_lazy;
 mod vm_helpers_lazy_adaptor;
 mod vm_helpers_lazy_adaptor_build;
 mod vm_helpers_lazy_pull;
+mod vm_helpers_lazy_reify;
 mod vm_helpers_lazy_scan;
 pub(crate) mod vm_hyper_func;
 mod vm_hyper_method_ops;

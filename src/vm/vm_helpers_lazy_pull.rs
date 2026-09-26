@@ -446,7 +446,11 @@ impl Interpreter {
                             Err(e) => Err(e),
                         }
                     } else {
+                        // A callback result that is itself a finite pipe or a
+                        // plain gather is reified like the eager map path does
+                        // (`reify_finite_pipe_value`, #9584).
                         self.vm_call_on_value(func, vec![elem], None)
+                            .and_then(|v| self.reify_finite_pipe_value(v))
                             .map(|v| match v.view() {
                                 ValueView::Slip(items) => items.as_ref().clone(),
                                 _ => vec![v],
