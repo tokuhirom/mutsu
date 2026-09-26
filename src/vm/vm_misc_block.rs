@@ -92,6 +92,21 @@ impl Interpreter {
         // `foo`. The compiler sets `scope_routines` only when the body actually
         // declares a routine, so the common case pays nothing.
         let routine_snapshot = scope_routines.then(|| self.snapshot_routine_registry());
+        // `OpCode::BlockScope` raises `block_scope_depth` for every statement
+        // bare block unconditionally, which is what lets a closure escaping the
+        // block still call the routine it declared: `RegisterSub` only stashes
+        // that escape-hatch copy (`BLOCK_LEXICAL_SUB_PREFIX`) while
+        // `block_scope_depth() > 0`. This op never raised it, so the identical
+        // `do { sub foo {...}; -> { foo() } }` -- a closure that escapes a
+        // VALUE-position block instead of a statement one -- died with "Unknown
+        // function" once the registry snapshot above was restored (#9636).
+        // Scoped to `scope_routines` (this block actually declares one) rather
+        // than raised unconditionally, matching the snapshot's own gate: no
+        // other reader of `block_scope_depth` needs it bumped for a block that
+        // declares no routine.
+        if scope_routines {
+            self.push_block_scope_depth();
+        }
         // A scope-isolating block runs over a block tier (see `vm_block_env`),
         // so its exit reads back only what it wrote by name, and saves just the
         // local slots it may have to revert rather than the whole frame (#9170).
@@ -147,6 +162,9 @@ impl Interpreter {
         };
         self.pop_enum_scope();
         self.pop_once_scope();
+        if scope_routines {
+            self.pop_block_scope_depth();
+        }
         if let Some(routine_snapshot) = routine_snapshot {
             self.restore_routine_registry(routine_snapshot);
         }
