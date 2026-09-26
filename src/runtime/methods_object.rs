@@ -617,14 +617,19 @@ impl Interpreter {
     /// `dispatch_new`'s no-match fall-through, decided up front. Only the
     /// all-named argument shape falls back: a positional argument makes that
     /// fall-through die instead, and an explicit `proto method new` owns
-    /// dispatch outright, so both keep the full path. Text::CSV's
+    /// dispatch outright, so both keep the full path, as does a punned role.
+    /// Text::CSV's
     /// `CSV::Field.new` (its one `new` candidate takes a `Str(Cool)`) is this
     /// shape, once per parsed field (#9494).
     // Cost: O(m * c), m = MRO length, c = `new` candidates (the resolution).
     fn user_new_declines(&mut self, class_name: Symbol, args: &[Value]) -> bool {
         let cn = class_name.as_str();
-        args.iter()
-            .all(|a| matches!(a.view(), ValueView::Pair(..) | ValueView::ValuePair(..)))
+        // A punned role constructs through `dispatch_new`'s pun path, which
+        // marks the instance as its role's pun; keep it there.
+        !self.is_role(cn)
+            && args
+                .iter()
+                .all(|a| matches!(a.view(), ValueView::Pair(..) | ValueView::ValuePair(..)))
             && self.lookup_proto_method(cn, "new").is_none()
             && self.has_visible_user_method(cn, "new")
             && self
