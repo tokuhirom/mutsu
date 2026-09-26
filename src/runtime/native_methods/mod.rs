@@ -468,6 +468,7 @@ impl Interpreter {
                 | "Encoding::Encoder"
                 | "Encoding::Decoder"
                 | "VM"
+                | "IO::Notification::Change"
         ) {
             Some(class_name.to_string())
         } else {
@@ -514,6 +515,7 @@ impl Interpreter {
                             | "Encoding::Encoder"
                             | "Encoding::Decoder"
                             | "VM"
+                            | "IO::Notification::Change"
                     )
                 })
         };
@@ -570,6 +572,14 @@ impl Interpreter {
             "Encoding::Encoder" => Self::native_encoding_encoder(attributes, method, &args),
             "Encoding::Decoder" => Ok(Self::native_encoding_decoder(attributes, method, &args)),
             "VM" => self.native_vm(attributes, method, &args),
+            "IO::Notification::Change" => self
+                .try_io_notification_change_method("IO::Notification::Change", attributes, method)
+                .unwrap_or_else(|| {
+                    Err(RuntimeError::new(format!(
+                        "No native method '{}' on 'IO::Notification::Change'",
+                        method
+                    )))
+                }),
             _ => Err(RuntimeError::new(format!(
                 "No native method '{}' on '{}'",
                 method, class_name

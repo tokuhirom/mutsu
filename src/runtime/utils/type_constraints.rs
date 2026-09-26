@@ -241,6 +241,7 @@ pub(crate) fn is_builtin_enum_value(name: &str) -> bool {
                 crate::runtime::Interpreter::order_enum_variants(),
                 crate::runtime::Interpreter::seek_type_enum_variants(),
                 crate::runtime::Interpreter::signal_enum_variants(),
+                crate::runtime::Interpreter::file_change_event_enum_variants(),
             ]
             .into_iter()
             .flatten()
