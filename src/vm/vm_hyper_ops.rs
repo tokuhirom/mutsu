@@ -331,17 +331,19 @@ impl Interpreter {
             return Ok(v);
         }
         // Hyper op on two hashes: combine values key-by-key, with the dwim arrows
-        // selecting the resulting key set. A missing value on either side uses the
-        // operator's identity element (e.g. 0 for `+`).
+        // selecting the resulting key set. A key one side lacks reads what that
+        // side's AT-KEY yields -- its `is default`, else its value type object
+        // (`Any` for a plain Hash) -- as in rakudo: `{a=>1} »*« {b=>2}` is
+        // `{a => 0, b => 0}`.
         if let (ValueView::Hash(la), ValueView::Hash(ra)) = (left.view(), right.view()) {
-            let identity = runtime::reduction_identity(op.leaf());
+            let missing = [Self::hash_absent_value(&la), Self::hash_absent_value(&ra)];
             return self.hyper_hash_pair(
                 op,
                 &la,
                 &ra,
                 dwim_left,
                 dwim_right,
-                [&identity, &identity],
+                [&missing[0], &missing[1]],
             );
         }
         // Hyper op between a hash and a scalar: apply the op to each value with
@@ -544,13 +546,24 @@ impl Interpreter {
         self.eval_infix_shape(op, left, right)
     }
 
+    /// What a missing-key read of a Hash yields (its AT-KEY default): the
+    /// `is default(...)` value, else the value type object (`Int` for
+    /// `my Int %h`, `Any` for a plain Hash).
+    // Cost: O(1).
+    pub(super) fn hash_absent_value(map: &crate::value::HashData) -> Value {
+        map.default.as_deref().cloned().unwrap_or_else(|| {
+            Value::package(Symbol::intern(map.value_type.as_deref().unwrap_or("Any")))
+        })
+    }
+
     /// Hyper `op` over two hashes, key by key, with the dwim arrows selecting
     /// the result's key set:
     ///   `>>op<<` (neither dwims) -> union; `<<op>>` (both) -> intersection;
     ///   `>>op>>` (right dwims) -> left's keys; `<<op<<` (left) -> right's keys.
-    /// A key one side lacks reads that side's `missing` value (the operator's
-    /// identity for a plain Hash; a QuantHash's own absent weight, see
-    /// `hyper_quanthash_pair`).
+    /// A key one side lacks reads that side's `missing` value (a plain Hash's
+    /// [`Self::hash_absent_value`]; a QuantHash's own absent weight, see
+    /// `hyper_quanthash_pair`). Like rakudo's hash hyper, the combination is
+    /// quiet: an `Any` operand does not warn "Use of uninitialized value".
     // Cost: O(k_l + k_r) operator applications, k = keys of each hash.
     pub(super) fn hyper_hash_pair(
         &mut self,
@@ -589,7 +602,10 @@ impl Interpreter {
         for key in keys {
             let l = la.get(&key).unwrap_or(missing[0]).clone();
             let r = ra.get(&key).unwrap_or(missing[1]).clone();
-            let v = self.hyper_op_pair(op, &l, &r, dwim_left, dwim_right)?;
+            self.push_warn_suppression();
+            let v = self.hyper_op_pair(op, &l, &r, dwim_left, dwim_right);
+            self.pop_warn_suppression();
+            let v = v?;
             if let Some(ok) = la
                 .original_keys
                 .as_ref()

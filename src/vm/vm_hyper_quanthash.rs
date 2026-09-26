@@ -67,13 +67,13 @@ impl Interpreter {
         // A key a QuantHash lacks reads as its absent weight -- `False` for a
         // Set, 0 for a Bag/Mix -- the way rakudo's hyper reads it through
         // AT-KEY: `mix(<a b>) »*« mix(<a>)` is `("a"=>1).Mix`, not
-        // `("a"=>1,"b"=>1).Mix`. A plain Hash side keeps the Hash hyper's
-        // operator-identity default.
-        let identity = runtime::reduction_identity(op.leaf());
-        let absent = |v: &Value| match Self::quanthash_kind(v) {
-            Some((QuantKind::Set, _)) => Value::FALSE,
-            Some(_) => Value::int(0),
-            None => identity.clone(),
+        // `("a"=>1,"b"=>1).Mix`. A plain Hash side reads its own AT-KEY
+        // default (`Any`), so `bag(<a b>) »*« {a=>2}` is `("a"=>2).Bag`.
+        let absent = |v: &Value| match (Self::quanthash_kind(v), v.view()) {
+            (Some((QuantKind::Set, _)), _) => Value::FALSE,
+            (Some(_), _) => Value::int(0),
+            (None, ValueView::Hash(map)) => Self::hash_absent_value(&map),
+            (None, _) => Value::package(Symbol::intern("Any")),
         };
         let missing = [absent(left), absent(right)];
         let left = Self::quanthash_to_hash(left)?;
