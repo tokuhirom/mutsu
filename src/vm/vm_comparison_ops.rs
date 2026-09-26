@@ -518,7 +518,7 @@ impl Interpreter {
             check_type_object_in_numeric_context(&r)?;
             let l = vm.warn_uninitialized_numeric_operand(l, 0)?;
             let r = vm.warn_uninitialized_numeric_operand(r, 1)?;
-            let (l, r) = vm.coerce_numeric_bridge_pair(l, r)?;
+            let (l, r) = vm.coerce_ordering_real_methods_pair(l, r)?;
             Interpreter::compare(l, r, |o| o < 0)
         })
     }
@@ -550,7 +550,7 @@ impl Interpreter {
             check_type_object_in_numeric_context(&r)?;
             let l = vm.warn_uninitialized_numeric_operand(l, 0)?;
             let r = vm.warn_uninitialized_numeric_operand(r, 1)?;
-            let (l, r) = vm.coerce_numeric_bridge_pair(l, r)?;
+            let (l, r) = vm.coerce_ordering_real_methods_pair(l, r)?;
             Interpreter::compare(l, r, |o| o <= 0)
         })
     }
@@ -582,7 +582,7 @@ impl Interpreter {
             check_type_object_in_numeric_context(&r)?;
             let l = vm.warn_uninitialized_numeric_operand(l, 0)?;
             let r = vm.warn_uninitialized_numeric_operand(r, 1)?;
-            let (l, r) = vm.coerce_numeric_bridge_pair(l, r)?;
+            let (l, r) = vm.coerce_ordering_real_methods_pair(l, r)?;
             Interpreter::compare(l, r, |o| o > 0)
         })
     }
@@ -614,7 +614,7 @@ impl Interpreter {
             check_type_object_in_numeric_context(&r)?;
             let l = vm.warn_uninitialized_numeric_operand(l, 0)?;
             let r = vm.warn_uninitialized_numeric_operand(r, 1)?;
-            let (l, r) = vm.coerce_numeric_bridge_pair(l, r)?;
+            let (l, r) = vm.coerce_ordering_real_methods_pair(l, r)?;
             Interpreter::compare(l, r, |o| o >= 0)
         })
     }
