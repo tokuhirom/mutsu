@@ -29,4 +29,4 @@ has a larger sequence. `SupplyReceiver::peek_seq` waits for a concurrent pumper,
 event sent before the peek is accounted for.
 
 The same loop had 0 losses in 320 iterations after the change, and
-`t/concurrency/react-receiver-send-order.t` pins it.
+`t/concurrency/supply/react-receiver-send-order.t` pins it.
