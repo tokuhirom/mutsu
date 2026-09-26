@@ -101,8 +101,11 @@ reading code.
 - Phase 1 (this PR): the NFA in `src/runtime/regex/regex_ltm_nfa*.rs`, used by
   `ltm_branch_rank_key` for measurements started from a real match, plus
   `MUTSU_LTM_NFA_VERIFY`.
+- Phase 1 merged in [#9641](https://github.com/tokuhirom/mutsu/pull/9641).
 - Open:
-  - protos (§3);
-  - the other measurement entry points: `ltm_prefix_len_at`'s other callers need the
-    "stopped" flag;
-  - retiring the walker's measurement mode once every entry point is on the NFA.
+  - protos (§3): [#9643](https://github.com/tokuhirom/mutsu/issues/9643);
+  - the other measurement entry points (`ltm_prefix_len_at`'s other callers need the
+    "stopped" flag), then retiring the walker's measurement mode once every entry point
+    is on the NFA: [#9644](https://github.com/tokuhirom/mutsu/issues/9644);
+  - a bounded `** m..n` measures longer than Rakudo in both engines:
+    [#9637](https://github.com/tokuhirom/mutsu/issues/9637).
