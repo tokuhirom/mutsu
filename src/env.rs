@@ -166,6 +166,28 @@ pub(crate) fn is_plain_user_lexical(name: &str) -> bool {
     matches!(decider, Some(c) if c.is_ascii_lowercase())
 }
 
+/// True if `name` has the shape of a user variable's env key -- an identifier
+/// of either case (`$F` -> `"F"`, `@Items` -> `"@Items"`), not `self`, a
+/// special/dynamic/capture key or `__mutsu_*` metadata.
+///
+/// Unlike [`is_plain_user_lexical`] this accepts an uppercase-initial name, so
+/// it cannot by itself tell a scalar `$F` from a type `F` (both are key `"F"`).
+/// Use it only where the caller has already established the key is a variable
+/// -- e.g. it names a `my` declaration that owns a local slot (#9459) -- and
+/// the case check would only reject legitimate `my $F` variables.
+#[inline]
+pub(crate) fn is_user_variable_key(name: &str) -> bool {
+    if name == "self" {
+        return false;
+    }
+    let b = name.as_bytes();
+    let decider = match b.first() {
+        Some(b'@' | b'%' | b'&' | b'$') => b.get(1).copied(),
+        other => other.copied(),
+    };
+    matches!(decider, Some(c) if c.is_ascii_alphabetic())
+}
+
 /// True for an *attribute-twigil* env key (`!x`, `@!x`, `%.x`, `$.y`, …): a
 /// per-frame materialization of one of `self`'s attributes rather than a
 /// lexical.
