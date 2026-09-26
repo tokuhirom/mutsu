@@ -54,10 +54,32 @@ fn has_decl_list(
         let (r, name) = take_while1(rest, |c: char| c.is_alphanumeric() || c == '_' || c == '-')?;
         let name = name.to_string();
         rest = r;
+        // Optional per-attribute default (`$.tf-x = 0.0`). Rakudo parses but
+        // ignores it for the parenthesized list form: `.tf-x` reads back as
+        // the declared type object, not `0.0` (PDF::Content::Ops's
+        // `has Numeric ($.tf-x = 0.0, $.tf-y = 0.0) is rw;`). Parse and
+        // discard it so the source consumes correctly, rather than falling
+        // through to "Two terms in a row" on the `=`.
+        let (r, _) = ws(rest)?;
+        if r.starts_with('=') && !r.starts_with("==") {
+            let (r, _) = ws(&r[1..])?;
+            let (r, _discarded_default) = expression(r)?;
+            let (r, _) = ws(r)?;
+            rest = r;
+        }
+        // Auto-default: a typed scalar attribute with no *applied* initializer
+        // (the parsed-and-discarded `= EXPR` above counts as none) reads back
+        // as its declared type's own type object, same as the single-attribute
+        // form (`has Int $.x` -> `(Int)`).
+        let default = if sigil == b'$' {
+            type_constraint.as_deref().map(auto_default_expr_for_type)
+        } else {
+            None
+        };
         stmts.push(Stmt::HasDecl {
             name: Symbol::intern(&name),
             is_public,
-            default: None,
+            default,
             handles: Vec::new(),
             is_rw: false,
             is_readonly: false,
@@ -211,6 +233,32 @@ fn coercion_target_type(tc: &str) -> Option<&str> {
 fn normalize_empty_coercion_type(tc: String) -> String {
     tc.strip_suffix("()")
         .map_or(tc.clone(), |target| format!("{target}(Any)"))
+}
+
+/// The auto-default for an uninitialized typed scalar attribute: the
+/// declared type's own type object, except a native type (`int`, `num`,
+/// `str`, ...) which defaults to zero/empty, and a coercion type (`Int()`)
+/// which defaults to its *target* type object rather than a bareword of the
+/// whole coercion spec. Shared by the single-attribute `has $.x` path and the
+/// parenthesized list form `has T ($.x, $.y)`, where an explicit `= EXPR` in
+/// the list is parsed but ignored (rakudo does the same), so a listed
+/// attribute needs this same auto-default rather than staying uninitialized.
+fn auto_default_expr_for_type(tc: &str) -> Expr {
+    if tc == "::?CLASS" {
+        Expr::Var("?CLASS".to_string())
+    } else if tc == "::?ROLE" {
+        Expr::Var("?ROLE".to_string())
+    } else if let Some(target) = coercion_target_type(tc) {
+        Expr::BareWord(target.to_string())
+    } else {
+        match tc {
+            "int" | "int8" | "int16" | "int32" | "int64" | "uint" | "uint8" | "uint16"
+            | "uint32" | "uint64" | "byte" | "atomicint" => Expr::Literal(Value::int(0)),
+            "num" | "num32" | "num64" => Expr::Literal(Value::num(0.0)),
+            "str" => Expr::Literal(Value::str("".to_string())),
+            _ => Expr::BareWord(tc.to_string()),
+        }
+    }
 }
 
 /// Whether a `HAS`-scoped attribute of this declared type inlines nothing.
@@ -1114,25 +1162,7 @@ pub(in crate::parser::stmt) fn has_decl(input: &str) -> PResult<'_, Stmt> {
         && sigil == b'$'
         && let Some(ref tc) = type_constraint
     {
-        if tc == "::?CLASS" {
-            default = Some(Expr::Var("?CLASS".to_string()));
-        } else if tc == "::?ROLE" {
-            default = Some(Expr::Var("?ROLE".to_string()));
-        } else if let Some(target) = coercion_target_type(tc) {
-            // A coercion type (`Int()`, `Int(Str)`): an uninitialized attribute
-            // defaults to the *target* type object (`Int`), not a bareword of the
-            // whole coercion spec. (The provided-value coercion happens at
-            // construction time.)
-            default = Some(Expr::BareWord(target.to_string()));
-        } else {
-            default = Some(match tc.as_str() {
-                "int" | "int8" | "int16" | "int32" | "int64" | "uint" | "uint8" | "uint16"
-                | "uint32" | "uint64" | "byte" | "atomicint" => Expr::Literal(Value::int(0)),
-                "num" | "num32" | "num64" => Expr::Literal(Value::num(0.0)),
-                "str" => Expr::Literal(Value::str("".to_string())),
-                _ => Expr::BareWord(tc.clone()),
-            });
-        }
+        default = Some(auto_default_expr_for_type(tc));
     }
 
     // A shaped array attribute (`has @.a[3, 3]`) still builds its container at
