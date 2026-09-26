@@ -799,6 +799,7 @@ mod ops_compare;
 mod ops_reduction;
 mod ops_set;
 mod output_sink;
+pub(crate) mod parse_time_exports;
 pub(crate) mod phasers;
 mod promise_broken_gist;
 mod promise_errors;

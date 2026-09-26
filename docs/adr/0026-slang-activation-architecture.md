@@ -16,7 +16,10 @@
   candidate; §4's refusal to execute token bodies is preserved) and
   [ADR-0098](0098-if-pragma-actions-slang.md) (the **actions** half of a
   `define_slang` call is read too — an actions role's method names are override
-  names; this answers §5's third open question, and again preserves §4)
+  names; this answers §5's third open question, and again preserves §4), and
+  [ADR-0124](0124-parse-time-export-probe-for-computed-export-stashes.md) (the
+  §2.1 parse-time execution also serves a module that binds its export stash
+  under computed keys, to learn the exported operator names)
 
 ## Outcome (2026-08-12)
 

@@ -66,12 +66,15 @@ pub(crate) fn match_user_declared_prefix_op(input: &str) -> Option<(String, usiz
                     continue;
                 }
                 let consumed = op.len();
-                // For word-like operators, require identifier boundary.
+                // For word-like operators, require identifier boundary. A
+                // trailing `-` does not make an operator word-like: `-` is an
+                // identifier character only *inside* a name, so a user
+                // `prefix:<->` must still match `-Foo.new` (Moneys).
                 if op
                     .as_bytes()
                     .last()
                     .copied()
-                    .is_some_and(|b| crate::parser::helpers::is_ident_char(Some(b)))
+                    .is_some_and(|b| b.is_ascii_alphanumeric() || b == b'_')
                     && input
                         .as_bytes()
                         .get(consumed)

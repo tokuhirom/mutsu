@@ -4,7 +4,9 @@ use crate::scan_cache::{self, FileStamp, ScanDep};
 use std::cell::Cell;
 use std::rc::Rc;
 
+mod dynamic_stash;
 mod export_hook;
+use dynamic_stash::{has_dynamic_export_stash_binding, probe_dynamic_exports};
 use export_hook::{
     collect_export_hook_operator_subs, collect_export_hook_value_terms,
     collect_unit_scope_routines, declares_export_sub, find_export_sub_body,
@@ -59,6 +61,13 @@ struct ModuleScanResult {
     /// before this field existed still decodes.
     #[serde(default)]
     declares_export_hook: bool,
+    /// Whether the module binds into an export stash under a computed key
+    /// (`OUR::{'&postfix:<' ~ $code ~ '>'} := ...` in a loop — Moneys). The
+    /// names exist only once the module has run, so a `use` of it runs the
+    /// module at parse time to learn them (#9500). Defaulted for the same
+    /// cache-compatibility reason as `declares_export_hook`.
+    #[serde(default)]
+    dynamic_export_stash: bool,
     /// `module Foo { sub bar is export }` blocks declared *inside* the scanned
     /// module. The nested parse registers these in the process-wide inline
     /// export table, which — unlike the scopes — the scan does not restore, so
@@ -237,6 +246,9 @@ pub(crate) fn register_module_exports(module: &str) {
         record_use_scan_outcome(module, module != "Slangify" && scan.uses_slangify);
         apply_scan_types(&scan);
         apply_module_exports(&scan.exports);
+        if scan.dynamic_export_stash {
+            apply_module_exports(&probe_dynamic_exports(module));
+        }
         for (keyword, _how_type) in &scan.declare_keywords {
             register_declare_keyword(keyword, false);
         }
@@ -815,6 +827,7 @@ fn scan_module_source(source: &str, path: &str) -> ModuleScanResult {
         type_index_incomplete,
         uses_slangify,
         declares_export_hook,
+        dynamic_export_stash: has_dynamic_export_stash_binding(&stmts),
         inline_module_exports,
         // Filled in by `find_and_scan_module`, which owns the dependency frame
         // and the file stamp.
@@ -1479,7 +1492,8 @@ fn collect_exported_subs_in(
             // an export stash binds that routine into the tag's export list,
             // exactly like an `our sub` declared there (Data::Record's
             // `&infix:<@~~>`). Only a literal key is knowable here; a key
-            // computed at run time needs the module run at parse time (#9500).
+            // computed at run time flags the module for a parse-time probe
+            // instead (`dynamic_stash`, #9500).
             Stmt::Expr(Expr::IndexAssign { target, index, .. })
                 if in_export_stash
                     && matches!(target.as_ref(), Expr::PseudoStash(s) if s == "OUR::") =>
@@ -1669,5 +1683,26 @@ mod test_exports_tests {
             "<test>",
         );
         assert!(registered.uses_slangify);
+    }
+
+    #[test]
+    fn dynamic_export_stash_needs_a_computed_key_in_an_export_stash() {
+        let computed = super::scan_module_source(
+            "my package EXPORT::ALL { for <a b> -> $c { OUR::{'&postfix:<' ~ $c ~ '>'} := sub ($n) { $n } } }",
+            "<test>",
+        );
+        assert!(computed.dynamic_export_stash);
+
+        let literal = super::scan_module_source(
+            "my package EXPORT::DEFAULT { OUR::{'&infix:<%%%>'} := sub ($a, $b) { $a } }",
+            "<test>",
+        );
+        assert!(!literal.dynamic_export_stash);
+
+        let not_a_stash = super::scan_module_source(
+            "package Foo { for <a> -> $c { OUR::{'&' ~ $c} := sub { 1 } } }",
+            "<test>",
+        );
+        assert!(!not_a_stash.dynamic_export_stash);
     }
 }
