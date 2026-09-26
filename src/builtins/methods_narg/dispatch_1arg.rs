@@ -871,6 +871,11 @@ pub(crate) fn native_method_1arg(
         // Cost: O(e + t), e = elements of the invocant, t = total chars of the result
         // (each element stringified once, one `join` into a single buffer).
         "join" => {
+            // `.join` stringifies every element, so a zero-denominator Rational
+            // among them dies like its own `.Str` (GH #9621).
+            if let Err(err) = crate::runtime::utils::check_str_coercion_zero_denominator(target) {
+                return Some(Err(err));
+            }
             // A Uni/NFC/NFD/NFKC/NFKD value has no itemization wrapper of its
             // own and decomposes into its codepoints in their original
             // (unsorted) order -- matching Rakudo (`'ba'.NFC.join(',')` is

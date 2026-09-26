@@ -195,7 +195,7 @@ pub(crate) fn native_function_2arg(
         // `join_needs_interpreter`).
         "join" if !super::flat::join_needs_interpreter(arg2) => {
             join_flat(&arg1.to_string_value(), std::slice::from_ref(arg2))
-                .map(|joined| Ok(Value::str(joined)))
+                .map(|joined| joined.map(Value::str))
         }
         "rotate" => {
             if let Some(shape) = crate::runtime::utils::shaped_array_shape(arg1) {

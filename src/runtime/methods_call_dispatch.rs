@@ -4268,16 +4268,8 @@ impl Interpreter {
                 target.view(),
                 ValueView::Rat(_, 0) | ValueView::FatRat(_, 0)
             )
+            && let Some(err) = crate::runtime::utils::zero_denominator_rational_error(&target)
         {
-            let mut attrs = std::collections::HashMap::new();
-            attrs.insert(
-                "message".to_string(),
-                Value::str_from("Attempt to divide by zero when coercing Rational to Str"),
-            );
-            let ex = Value::make_instance(Symbol::intern("X::Numeric::DivideByZero"), attrs);
-            let mut err =
-                RuntimeError::new("Attempt to divide by zero when coercing Rational to Str");
-            err.exception = Some(Box::new(ex));
             return Err(err);
         }
 

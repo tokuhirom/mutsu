@@ -842,6 +842,14 @@ impl Interpreter {
                 resolved.push(v);
             }
         }
+        // A zero-denominator Rational element dies like its own `.Str`
+        // (GH #9621) instead of rendering `Inf`.
+        if let Some(err) = resolved
+            .iter()
+            .find_map(crate::runtime::utils::zero_denominator_rational_error)
+        {
+            return Some(Err(err));
+        }
         if let Some(threaded) = crate::builtins::thread_junctions_in_items(&resolved, &|c| {
             Value::str(
                 c.iter()

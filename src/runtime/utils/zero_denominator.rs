@@ -34,12 +34,12 @@ fn find(v: &Value, seen: &mut HashSet<usize>, depth: usize) -> Option<RuntimeErr
     }
     let next = depth + 1;
     match v.view() {
-        ValueView::Rat(n, 0) | ValueView::FatRat(n, 0) => Some(
-            RuntimeError::numeric_divide_by_zero_with(Some(Value::int(n))),
+        ValueView::Rat(n, 0) | ValueView::FatRat(n, 0) => {
+            Some(RuntimeError::rational_to_str_divide_by_zero(Value::int(n)))
+        }
+        ValueView::BigRat(n, d) if d.is_zero() => Some(
+            RuntimeError::rational_to_str_divide_by_zero(Value::from_bigint(n.clone())),
         ),
-        ValueView::BigRat(n, d) if d.is_zero() => Some(RuntimeError::numeric_divide_by_zero_with(
-            Some(Value::from_bigint(n.clone())),
-        )),
         ValueView::Scalar(inner) => find(inner, seen, next),
         ValueView::ContainerRef(cell) => {
             // Clone out and drop the guard before recursing: a cycle can
@@ -75,5 +75,25 @@ fn find(v: &Value, seen: &mut HashSet<usize>, depth: usize) -> Option<RuntimeErr
         ValueView::ValuePair(k, val) => find(k, seen, next).or_else(|| find(val, seen, next)),
         ValueView::Junction { values, .. } => values.iter().find_map(|e| find(e, seen, next)),
         _ => None,
+    }
+}
+
+/// The single guard every string-context coercion that bypasses method
+/// dispatch runs before rendering: prefix `~` (`StrCoerce`), infix `~` and the
+/// string comparators (`coerce_stringy_operand`), interpolation
+/// (`StringConcat`) and `join`. They render through the infallible
+/// `to_str_context`, which prints a zero-denominator Rational as `Inf`; Rakudo
+/// dies with `Attempt to divide 1 by zero when coercing Rational to Str`
+/// (GH #9621). A plain Str and a lazy Match are tag-probed out first: they are
+/// the hot operands here, and `view()` on a lazy Match would materialize it.
+// Cost: O(1) for a scalar operand; O(t) for an aggregate (see
+// `zero_denominator_rational_error`), already the cost of rendering it.
+pub(crate) fn check_str_coercion_zero_denominator(v: &Value) -> Result<(), RuntimeError> {
+    if v.is_str_value() || v.is_lazy_match_value() {
+        return Ok(());
+    }
+    match zero_denominator_rational_error(v) {
+        Some(err) => Err(err),
+        None => Ok(()),
     }
 }

@@ -1,3 +1,4 @@
+use crate::value::RuntimeError;
 use crate::value::{ArrayKind, Value, ValueView};
 
 pub(crate) fn is_infinite_range(value: &Value) -> bool {
@@ -232,8 +233,9 @@ pub(crate) fn join_needs_interpreter(v: &Value) -> bool {
 /// shared `join` body for both `native_function("join", ..)` and the
 /// interpreter's `builtin_join`). Returns `None` when an un-realized lazy list is
 /// present, so the interpreter can force it and retry. Top-level shaped arrays
-/// join over their leaves.
-pub(crate) fn join_flat(sep: &str, rest: &[Value]) -> Option<String> {
+/// join over their leaves. An element that is (or holds) a zero-denominator
+/// Rational dies like its own `.Str` (GH #9621).
+pub(crate) fn join_flat(sep: &str, rest: &[Value]) -> Option<Result<String, RuntimeError>> {
     let mut items = Vec::new();
     for v in rest {
         if let ValueView::LazyList(ll) = v.view()
@@ -247,13 +249,17 @@ pub(crate) fn join_flat(sep: &str, rest: &[Value]) -> Option<String> {
             flat_val(v, &mut items, true);
         }
     }
-    Some(
-        items
-            .iter()
-            .map(|v| v.to_str_context())
-            .collect::<Vec<_>>()
-            .join(sep),
-    )
+    if let Some(err) = items
+        .iter()
+        .find_map(crate::runtime::utils::zero_denominator_rational_error)
+    {
+        return Some(Err(err));
+    }
+    Some(Ok(items
+        .iter()
+        .map(|v| v.to_str_context())
+        .collect::<Vec<_>>()
+        .join(sep)))
 }
 
 /// If a (already fully flattened) list of items contains a `Junction`

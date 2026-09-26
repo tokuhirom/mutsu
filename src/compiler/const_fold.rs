@@ -421,7 +421,13 @@ fn fold_values(op: &TokenKind, l: Value, r: Value) -> Option<Value> {
         // Concatenation: `~` stringifies via `.Stringy`/`.Str`, which for scalar
         // values is exactly what `concat_values` does (only Instances/Packages
         // can dispatch a user method, and those never reach here).
-        TokenKind::Tilde => crate::runtime::Interpreter::concat_values(l, r).ok(),
+        // A zero-denominator Rational operand dies at run time (GH #9621), so
+        // `"a" ~ 1/0` must not fold to `aInf`.
+        TokenKind::Tilde => {
+            crate::runtime::utils::check_str_coercion_zero_denominator(&l).ok()?;
+            crate::runtime::utils::check_str_coercion_zero_denominator(&r).ok()?;
+            crate::runtime::Interpreter::concat_values(l, r).ok()
+        }
         // Numeric comparison: restricted to the Int/Int and Num/Num pairs the VM
         // itself fast-paths, so the folded result is the same expression the VM
         // would evaluate (no Rat/BigInt cross-type comparison logic duplicated).
@@ -534,6 +540,15 @@ mod tests {
         )
         .expect("folds");
         assert_eq!(folded.as_str(), Some("a1"));
+    }
+
+    #[test]
+    fn concat_with_zero_denominator_rat_does_not_fold() {
+        let rat = crate::builtins::arith_div(Value::int(1), Value::int(0)).expect("1/0 is a Rat");
+        assert!(
+            fold_values(&TokenKind::Tilde, Value::str("a".to_string()), rat).is_none(),
+            "`\"a\" ~ 1/0` must die at run time, not fold to `aInf`"
+        );
     }
 
     #[test]

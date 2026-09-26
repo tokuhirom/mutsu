@@ -242,9 +242,9 @@ pub(super) fn dispatch(
         ValueView::Nil => Some(Ok(Value::str_from("Nil"))),
         ValueView::FatRat(n, d) => {
             if d == 0 && (method == "gist" || method == "Str") {
-                Some(Err(RuntimeError::numeric_divide_by_zero_with(Some(
+                Some(Err(RuntimeError::rational_to_str_divide_by_zero(
                     Value::int(n),
-                ))))
+                )))
             } else if method == "gist" {
                 Some(Ok(Value::str(target.to_string_value())))
             } else {
@@ -254,9 +254,9 @@ pub(super) fn dispatch(
         ValueView::BigRat(n, d) => {
             use num_traits::Zero;
             if d.is_zero() && (method == "gist" || method == "Str") {
-                Some(Err(RuntimeError::numeric_divide_by_zero_with(Some(
+                Some(Err(RuntimeError::rational_to_str_divide_by_zero(
                     Value::from_bigint(n.clone()),
-                ))))
+                )))
             } else if method == "gist" {
                 Some(Ok(Value::str(target.to_string_value())))
             } else if target.is_bigfatrat() {
@@ -270,9 +270,9 @@ pub(super) fn dispatch(
                 if method == "raku" || method == "perl" {
                     Some(Ok(Value::str(format!("<{}/0>", n))))
                 } else {
-                    Some(Err(RuntimeError::numeric_divide_by_zero_with(Some(
+                    Some(Err(RuntimeError::rational_to_str_divide_by_zero(
                         Value::int(n),
-                    ))))
+                    )))
                 }
             } else if n % d == 0 {
                 if method == "raku" || method == "perl" {
