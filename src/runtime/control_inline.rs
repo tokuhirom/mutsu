@@ -76,8 +76,15 @@ impl Interpreter {
     /// - `Err(e)`: a handler ended its region without resuming, or raised
     ///   a new error. `e` carries the verdict stamp where one applies.
     pub(crate) fn try_control_inline(&mut self, message: &str) -> Result<Value, RuntimeError> {
+        // A `warn` raised inside a suppressed region (`quietly`, the Hash
+        // hyper) must never reach a CONTROL handler registered outside it --
+        // rakudo's `quietly` installs its own resume-everything CONTROL, so an
+        // outer handler never sees the warning at all (#9607). A handler
+        // declared *inside* the region is still above this floor and gets
+        // first look, matching rakudo's nesting order.
+        let floor = self.warn_control_handler_floor();
         let mut idx = self.control_handlers.len();
-        while idx > 0 {
+        while idx > floor {
             idx -= 1;
             let entry = &self.control_handlers[idx];
             let resume_safe = entry.resume_safe;

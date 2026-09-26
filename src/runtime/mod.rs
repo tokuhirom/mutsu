@@ -2118,6 +2118,15 @@ pub struct Interpreter {
     output_sink: Arc<RwLock<OutputSink>>,
     warn_output: String,
     warn_suppression_depth: usize,
+    /// `control_handlers.len()` recorded at each active `push_warn_suppression`
+    /// call (`quietly`, the Hash hyper). A `warn` raised while suppressed must
+    /// resume in place rather than reach a CONTROL handler registered outside
+    /// the suppressed region -- rakudo's `quietly` installs its own
+    /// resume-everything CONTROL, so an outer handler never sees the warning
+    /// at all (#9607). The innermost entry bounds how far `try_control_inline`
+    /// searches; a CONTROL declared *inside* the suppressed region is still
+    /// above the boundary and gets first look, matching rakudo's nesting order.
+    warn_suppression_boundaries: Vec<usize>,
     /// Parse warnings (e.g. "Duplicate 'is export' trait") already surfaced
     /// during the current top-level `run()` invocation, keyed by (origin
     /// file, message text). A module's source can be parsed more than once
