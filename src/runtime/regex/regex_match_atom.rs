@@ -118,7 +118,10 @@ impl Interpreter {
         let mut ltm_alternatives = super::regex_helpers::LtmAlternativeScope::new();
         for alt in alts {
             ltm_alternatives.before_alternative();
+            // #9617: under measurement this walk is also the branch's rank walk.
+            let walk = super::regex_ltm_rank_reuse::ltm_branch_walk_open();
             let raw_ends = self.regex_match_ends_from_caps_in_pkg(alt, chars, pos, pkg);
+            let measured_plen = walk.close(&raw_ends, pos);
             ltm_alternatives.after_alternative(!raw_ends.is_empty());
             if raw_ends.is_empty() {
                 continue;
@@ -142,7 +145,10 @@ impl Interpreter {
                     (end, new_caps)
                 })
                 .collect();
-            let rank = self.ltm_branch_rank_key(alt, chars, pos, pkg);
+            let rank = match measured_plen {
+                Some(plen) => self.ltm_branch_rank_key_with_prefix(alt, chars, pos, pkg, plen),
+                None => self.ltm_branch_rank_key(alt, chars, pos, pkg),
+            };
             out.push((rank, ends));
         }
         out
