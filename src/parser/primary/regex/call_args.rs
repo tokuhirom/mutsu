@@ -72,14 +72,12 @@ fn finish_call_arg_group(args: Vec<Expr>) -> Vec<Expr> {
 /// parse it the way a listop argument is parsed: item assignment, comma-blind
 /// RHS (#9551). Declines unless the argument is exactly that assignment.
 pub(in crate::parser) fn sigilless_item_assign_arg(input: &str) -> Option<(&str, Expr)> {
-    let word_len = input
-        .bytes()
-        .take_while(|&b| crate::parser::helpers::is_ident_char(Some(b)))
-        .count();
-    if word_len == 0
-        || !crate::parser::stmt::simple::is_user_declared_value_term(&input[..word_len])
-    {
-        return None;
+    // The term's own spelling may carry a sigil (`constant term:<$bar> = ...`
+    // is the term `$bar`), so match against the declared term symbols rather
+    // than scanning an identifier (#9566).
+    match crate::parser::stmt::simple::match_user_declared_term_symbol(input) {
+        Some((_, _, false)) => {}
+        _ => return None,
     }
     let (rest, expr) = crate::parser::expr::call_arg_expr(input).ok()?;
     // Only a compound assignment: a plain `=` to a sigilless name is *list*
