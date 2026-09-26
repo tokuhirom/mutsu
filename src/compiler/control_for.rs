@@ -569,7 +569,7 @@ impl Compiler {
                     .emit(OpCode::TagContainerRef(name_idx, source_slot));
             }
         } else {
-            self.compile_scope_restored_loop_body(&loop_body);
+            self.compile_scope_restored_loop_body(&loop_body, body);
         }
         for (name, old) in loop_param_types {
             if let Some(old) = old {

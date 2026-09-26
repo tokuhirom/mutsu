@@ -626,7 +626,21 @@ impl Compiler {
     /// env-restore guarantee `lexically_in_block` stands for, so a `my TYPE $x`
     /// here can use the env-only `SetVarTypeScoped` instead of also writing the
     /// enclosing scope's type metadata.
-    pub(super) fn compile_scope_restored_loop_body(&mut self, stmts: &[Stmt]) {
+    ///
+    /// `source_body` is the body as written, before `expand_loop_phasers`
+    /// lowered it to `stmts`; it decides whether the body's declarations may
+    /// skip their per-iteration reset (see `decl_reset.rs`).
+    pub(super) fn compile_scope_restored_loop_body(
+        &mut self,
+        stmts: &[Stmt],
+        source_body: &[Stmt],
+    ) {
+        let mark = self.loop_body_decl_reset_mark();
+        self.compile_scope_restored_loop_body_inner(stmts);
+        self.relax_loop_body_decl_resets(mark, source_body, stmts);
+    }
+
+    fn compile_scope_restored_loop_body_inner(&mut self, stmts: &[Stmt]) {
         let Some(needs_value) = Self::loop_body_let_frame(stmts) else {
             self.in_scope_restored_body(|c| c.compile_body_with_implicit_try(stmts));
             return;

@@ -250,11 +250,16 @@ impl Compiler {
                         name_idx,
                         dynamic: is_dynamic,
                         local_slot: decl_slot,
-                        reset_binding: !*is_state
+                        reset: if !*is_state
                             && !*is_our
                             && !is_constant_decl
                             && !name.starts_with('@')
-                            && !name.starts_with('%'),
+                            && !name.starts_with('%')
+                        {
+                            DeclReset::Fresh
+                        } else {
+                            DeclReset::Keep
+                        },
                     });
                 }
                 let mark_explicit_local_init = decl_slot.is_some()
@@ -278,7 +283,7 @@ impl Compiler {
                         name_idx,
                         dynamic: is_dynamic,
                         local_slot: None,
-                        reset_binding: true,
+                        reset: DeclReset::Fresh,
                     });
                 }
                 // my $x = expr in expression context -> declare, assign, return value
@@ -730,7 +735,7 @@ impl Compiler {
                         name_idx,
                         dynamic: is_dynamic,
                         local_slot: None,
-                        reset_binding: false,
+                        reset: DeclReset::Keep,
                     });
                 }
                 // Register a scalar type constraint AFTER `SetVarDynamic` (which

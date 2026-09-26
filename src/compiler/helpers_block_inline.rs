@@ -403,11 +403,16 @@ impl Compiler {
                             name_idx,
                             dynamic: is_dynamic,
                             local_slot: None,
-                            reset_binding: !*is_state
+                            reset: if !*is_state
                                 && !*is_our
                                 && !custom_traits.iter().any(|(t, _)| t == "__constant")
                                 && !name.starts_with('@')
-                                && !name.starts_with('%'),
+                                && !name.starts_with('%')
+                            {
+                                DeclReset::Fresh
+                            } else {
+                                DeclReset::Keep
+                            },
                         });
                         // Register the declared type constraint (e.g. `my Int %h`)
                         // so element type-checks and `:=` bind type-checks see it,
