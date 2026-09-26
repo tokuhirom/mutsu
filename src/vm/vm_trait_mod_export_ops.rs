@@ -54,7 +54,7 @@ impl Interpreter {
             ValueView::ValuePair(key, _) => vec![key.to_string_value()],
             ValueView::Array(items, ..) => items
                 .iter()
-                .flat_map(|item| Self::export_trait_tags(item))
+                .flat_map(Self::export_trait_tags)
                 .collect(),
             _ => Vec::new(),
         }
