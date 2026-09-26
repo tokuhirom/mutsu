@@ -22,6 +22,10 @@
   `'aab'` on "aabb" loses, 1 to 3). This changes rankings only where following the
   recursion had given a longer prefix than Rakudo's, and it makes each ranking linear
   in the subject instead of walking the whole nesting below it.
+- **Implementation note** (2026-09-26, #9617): inside a measurement, a `|` branch's
+  `prefix_len` is taken from the walk that collected its ends
+  (`src/runtime/regex/regex_ltm_rank_reuse.rs`) instead of from a second walk. The
+  two are the same walk, so the ranking is unchanged.
 - **Amended by**: [ADR-0111](0111-ltm-stoppers-end-one-path.md) (2026-09-23) — a
   `Terminate` atom now records a fate and fails its own path instead of unwinding the
   whole walk (§4.2), so the prefix is the furthest fate, as in Rakudo's NFA.
