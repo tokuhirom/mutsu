@@ -842,10 +842,10 @@ impl Interpreter {
                             // the enclosing routine has exited.
                             if e.is_return()
                                 && e.return_target_callable_id().is_none()
-                                && let Some(ValueView::Int(id)) =
-                                    data.env.get("__mutsu_callable_id").map(Value::view)
+                                && let Some(id) =
+                                    crate::runtime::return_target::return_target_in_env(&data.env)
                             {
-                                e.set_return_target_callable_id(Some(id as u64));
+                                e.set_return_target_callable_id(Some(id));
                             }
                             return Err(e);
                         }
@@ -1202,10 +1202,10 @@ impl Interpreter {
                             // ordinary closure-call path does this at its
                             // call boundary.
                             if e.return_target_callable_id().is_none()
-                                && let Some(ValueView::Int(id)) =
-                                    data.env.get("__mutsu_callable_id").map(Value::view)
+                                && let Some(id) =
+                                    crate::runtime::return_target::return_target_in_env(&data.env)
                             {
-                                e.set_return_target_callable_id(Some(id as u64));
+                                e.set_return_target_callable_id(Some(id));
                             }
                             return Err(e);
                         }

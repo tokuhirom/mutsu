@@ -1187,9 +1187,9 @@ impl Interpreter {
         if let Err(e) = &mut r
             && e.is_return()
             && e.return_target_callable_id().is_none()
-            && let Some(ValueView::Int(id)) = list.env.get("__mutsu_callable_id").map(Value::view)
+            && let Some(id) = crate::runtime::return_target::return_target_in_env(&list.env)
         {
-            e.set_return_target_callable_id(Some(id as u64));
+            e.set_return_target_callable_id(Some(id));
         }
         self.pop_captured_samewith_context(pushed_samewith);
         self.restore_readonly_state(saved_readonly);

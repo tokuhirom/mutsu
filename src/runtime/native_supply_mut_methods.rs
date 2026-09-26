@@ -945,7 +945,7 @@ impl Interpreter {
                                         &body_cb,
                                         &last_cbs,
                                         &quit_cbs,
-                                    );
+                                    )?;
                                 if !outer_tap_registered {
                                     plain_values.append(&mut captured);
                                 }
