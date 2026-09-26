@@ -171,17 +171,9 @@ pub(crate) fn coerce_to_set(val: &Value, originals: &mut ValueMap) -> HashSet<St
                 }
             }
             _ => {
-                // Preserve the historical "empty stringification contributes
-                // no element" rule (an undefined scalar operand unions from
-                // the empty set), and its `Any` type object form.
-                if value.is_any_type_object() {
-                    return;
-                }
                 let (key, elem) = quanthash_elem_entry(value);
-                if !elem.to_string_value().is_empty() {
-                    record_quanthash_original(originals, &key, &elem);
-                    elems.insert(key);
-                }
+                record_quanthash_original(originals, &key, &elem);
+                elems.insert(key);
             }
         }
     }
@@ -233,12 +225,8 @@ pub(crate) fn coerce_to_set(val: &Value, originals: &mut ValueMap) -> HashSet<St
         _ => {
             let mut s = HashSet::new();
             let (key, elem) = quanthash_elem_entry(val);
-            // The `Any` type object is the uninitialized-scalar seed
-            // (`my $s; $s ∪= 0` unions from the empty set).
-            if !val.is_any_type_object() && !elem.to_string_value().is_empty() {
-                record_quanthash_original(originals, &key, &elem);
-                s.insert(key);
-            }
+            record_quanthash_original(originals, &key, &elem);
+            s.insert(key);
             s
         }
     }
@@ -351,10 +339,8 @@ pub(crate) fn coerce_value_to_quanthash(val: &Value) -> Value {
             let mut set = HashSet::new();
             let mut originals = ValueMap::default();
             let (key, elem) = quanthash_elem_entry(val);
-            if !elem.to_string_value().is_empty() {
-                record_quanthash_original(&mut originals, &key, &elem);
-                set.insert(key);
-            }
+            record_quanthash_original(&mut originals, &key, &elem);
+            set.insert(key);
             Value::set_typed(set, originals)
         }
     }

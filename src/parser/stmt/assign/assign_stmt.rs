@@ -288,7 +288,9 @@ pub(in crate::parser) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
             exception: None,
         })?;
         let expr = Expr::Binary {
-            left: Box::new(var_expr),
+            left: Box::new(crate::parser::stmt::assign::autoviv_set_compound_lhs(
+                var_expr, &set_tok,
+            )),
             op: set_tok,
             right: Box::new(rhs),
         };

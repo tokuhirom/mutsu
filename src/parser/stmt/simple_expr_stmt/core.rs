@@ -1306,7 +1306,9 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                 is_positional: *is_positional,
             };
             let assigned_value = Expr::Binary {
-                left: Box::new(lhs_expr),
+                left: Box::new(crate::parser::stmt::assign::autoviv_set_compound_lhs(
+                    lhs_expr, &set_tok,
+                )),
                 op: set_tok,
                 right: Box::new(rhs),
             };
@@ -1341,7 +1343,10 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
         } = expr
         {
             let assigned_value = Expr::Binary {
-                left: Box::new(expr.clone()),
+                left: Box::new(crate::parser::stmt::assign::autoviv_set_compound_lhs(
+                    expr.clone(),
+                    &set_tok,
+                )),
                 op: set_tok,
                 right: Box::new(rhs),
             };
@@ -1370,7 +1375,9 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
         }
         // Fallback for any other lvalue shape: `lhs = lhs OP rhs`.
         let stmt = Stmt::Expr(Expr::Binary {
-            left: Box::new(expr),
+            left: Box::new(crate::parser::stmt::assign::autoviv_set_compound_lhs(
+                expr, &set_tok,
+            )),
             op: set_tok,
             right: Box::new(rhs),
         });

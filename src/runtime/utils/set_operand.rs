@@ -81,14 +81,6 @@ pub(crate) fn is_lazy_set_operand(val: &Value) -> bool {
     }
 }
 
-/// Whether a bare scalar operand or list element contributes a key at all:
-/// the `Any` type object is the uninitialized-scalar seed (`my $s; $s ∪= 0`
-/// unions from the empty set), and an empty stringification is the older
-/// `Nil` seed.
-fn contributes(elem: &Value) -> bool {
-    !elem.is_any_type_object() && !elem.to_string_value().is_empty()
-}
-
 /// Add one list element's weight to a count map: a Pair weighs its value,
 /// anything else counts once.
 fn bag_add_item(result: &mut HashMap<String, BigInt>, originals: &mut ValueMap, item: &Value) {
@@ -103,10 +95,8 @@ fn bag_add_item(result: &mut HashMap<String, BigInt>, originals: &mut ValueMap, 
         }
         _ => {
             let (key, elem) = quanthash_elem_entry(item);
-            if contributes(&elem) {
-                record_quanthash_original(originals, &key, &elem);
-                *result.entry(key).or_default() += 1;
-            }
+            record_quanthash_original(originals, &key, &elem);
+            *result.entry(key).or_default() += 1;
         }
     }
 }
@@ -188,9 +178,6 @@ fn mix_add_item(result: &mut HashMap<String, f64>, originals: &mut ValueMap, ite
         }
         _ => {
             let (key, elem) = quanthash_elem_entry(item);
-            if !contributes(&elem) {
-                return;
-            }
             record_quanthash_original(originals, &key, &elem);
             (key, 1.0)
         }

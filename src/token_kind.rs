@@ -34,6 +34,11 @@ pub(crate) enum MetaAssignIdentity {
     NoZeroArgDiv,
     /// `infix:<%>` has no zero-argument candidate.
     NoZeroArgMod,
+    /// `infix:<(|)>()`, `(&)`, `(-)` and `(^)` are `set()`: `my $s; $s ∪= 0`
+    /// unions from the empty set.
+    EmptySet,
+    /// `infix:<(+)>()` and `(.)` are `bag()`.
+    EmptyBag,
 }
 
 /// The JIT is the only consumer of this conversion pair: the interpreter
@@ -49,15 +54,18 @@ impl MetaAssignIdentity {
             MetaAssignIdentity::NoZeroArgDiv => 2,
             MetaAssignIdentity::NoZeroArgMod => 3,
             MetaAssignIdentity::EmptyStr => 4,
+            MetaAssignIdentity::EmptySet => 5,
+            MetaAssignIdentity::EmptyBag => 6,
         }
     }
 
-    /// Whether seeding this identity can never throw (`Zero` / `One`). The JIT
-    /// emits a void shim with no status check for these.
+    /// Whether seeding this identity can never throw (every identity but the
+    /// two "no zero-argument candidate" ones). The JIT emits a void shim with
+    /// no status check for these.
     pub(crate) fn is_infallible(self) -> bool {
-        matches!(
+        !matches!(
             self,
-            MetaAssignIdentity::Zero | MetaAssignIdentity::One | MetaAssignIdentity::EmptyStr
+            MetaAssignIdentity::NoZeroArgDiv | MetaAssignIdentity::NoZeroArgMod
         )
     }
 
@@ -69,6 +77,8 @@ impl MetaAssignIdentity {
             2 => MetaAssignIdentity::NoZeroArgDiv,
             3 => MetaAssignIdentity::NoZeroArgMod,
             4 => MetaAssignIdentity::EmptyStr,
+            5 => MetaAssignIdentity::EmptySet,
+            6 => MetaAssignIdentity::EmptyBag,
             _ => MetaAssignIdentity::Zero,
         }
     }
