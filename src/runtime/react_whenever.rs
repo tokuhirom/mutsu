@@ -253,10 +253,19 @@ impl Interpreter {
         // through registered no tap on any of its supplies at all, so the
         // body simply never ran — the merged output was collected into a
         // buffer nobody read and thrown away.
-        let supply_val = if let ValueView::Instance { class_name, .. } = supply_val.view()
+        //
+        // Any other object that declares its own `Supply` coercion is the same
+        // case: rakudo's `whenever` takes `$source.Supply`, which is how
+        // `whenever $stopwatch` reaches Timer::Stopwatch's supplier.
+        let coerce_class = match supply_val.view() {
+            ValueView::Instance { class_name, .. } if class_name != "Supply" => Some(class_name),
+            _ => None,
+        };
+        let supply_val = if let Some(class_name) = coerce_class
             && (class_name == "Supplier"
                 || class_name == "Supplier::Preserving"
-                || class_name == "Proc::Async")
+                || class_name == "Proc::Async"
+                || self.has_user_method_sym(class_name.as_str(), Symbol::intern("Supply")))
         {
             self.call_method_with_values(supply_val, "Supply", vec![])?
         } else {

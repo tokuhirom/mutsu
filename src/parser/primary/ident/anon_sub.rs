@@ -67,7 +67,8 @@ pub(crate) fn parse_anon_method_with_params(
     // constraint moves onto `self` (so `method (List:D:)` still type-checks the
     // invocant), and a user-chosen name is bound to `self` in the body.
     let mut invocant = invocant_param_def();
-    let mut invocant_aliases: Vec<String> = Vec::new();
+    // `(name, sigilless)` for every user-named invocant.
+    let mut invocant_aliases: Vec<(String, bool)> = Vec::new();
     let mut rest_params: Vec<crate::ast::ParamDef> = Vec::new();
     let mut seen_positional = false;
     for pd in param_defs {
@@ -86,7 +87,7 @@ pub(crate) fn parse_anon_method_with_params(
             // invocant's env key (ADR-0061). A parser-synthesized anonymous
             // invocant (`method (Foo:D:)`) declares nothing and is skipped.
             if !pd.name.is_empty() && (pd.name != "self" || declares_self_lexical) {
-                invocant_aliases.push(pd.name);
+                invocant_aliases.push((pd.name, pd.sigilless));
             }
             continue;
         }
@@ -104,7 +105,14 @@ pub(crate) fn parse_anon_method_with_params(
 /// Prepend `my $NAME := self;` for every user-named invocant of a method
 /// literal, so `method ($x: $p) { ... }` can read the receiver as `$x` while
 /// `self` keeps working (rakudo binds both).
-fn bind_invocant_aliases(expr: Expr, aliases: &[String]) -> Expr {
+///
+/// A **sigilless** invocant (`method (\SELF: |)`, OO::Monitors' wrapper
+/// idiom) is declared like `my \SELF := self`: it carries the
+/// `MarkSigillessReadonly` marker that tells the compiler the bare word reads
+/// the local slot. Without it `SELF` compiled to a bare-word lookup, which
+/// only found the binding when the dual env store happened to be synced, so
+/// the invocant read as `(Any)` in a program that loaded no module.
+fn bind_invocant_aliases(expr: Expr, aliases: &[(String, bool)]) -> Expr {
     if aliases.is_empty() {
         return expr;
     }
@@ -124,23 +132,32 @@ fn bind_invocant_aliases(expr: Expr, aliases: &[String]) -> Expr {
     };
     let mut new_body: Vec<crate::ast::Stmt> = aliases
         .iter()
-        .map(|name| crate::ast::Stmt::VarDecl {
-            // `$self` binds the reserved lexical key, not the invocant's own
-            // (ADR-0061); every other alias keeps its sigil-less name.
-            name: if name == "self" {
-                crate::env::LEX_SELF.to_string()
-            } else {
-                name.clone()
-            },
-            expr: Expr::BareWord("self".to_string()),
-            type_constraint: None,
-            is_state: false,
-            is_our: false,
-            is_dynamic: false,
-            is_export: false,
-            export_tags: Vec::new(),
-            custom_traits: vec![("__scalar_bind".to_string(), None)],
-            where_constraint: None,
+        .map(|(name, sigilless)| {
+            if *sigilless {
+                return crate::parser::stmt::control::simple_pointy_bind(
+                    name,
+                    &Expr::BareWord("self".to_string()),
+                    true,
+                );
+            }
+            crate::ast::Stmt::VarDecl {
+                // `$self` binds the reserved lexical key, not the invocant's
+                // own (ADR-0061); every other alias keeps its sigil-less name.
+                name: if name == "self" {
+                    crate::env::LEX_SELF.to_string()
+                } else {
+                    name.clone()
+                },
+                expr: Expr::BareWord("self".to_string()),
+                type_constraint: None,
+                is_state: false,
+                is_our: false,
+                is_dynamic: false,
+                is_export: false,
+                export_tags: Vec::new(),
+                custom_traits: vec![("__scalar_bind".to_string(), None)],
+                where_constraint: None,
+            }
         })
         .collect();
     new_body.extend(body);

@@ -13,6 +13,7 @@ impl Interpreter {
         // method name walk the whole probe prefix below without a single probe
         // claiming the call, so go straight to the dispatch tail. Consumed here
         // (rather than read) so the flag can never outlive one dispatch.
+        let target = self.new_on_builtin_instance_target(target, method_sym);
         if std::mem::take(&mut self.plain_method_lane_active) {
             return self.compiled_mut_resolved_dispatch(target_name, target, method_sym, args);
         }
@@ -426,5 +427,37 @@ impl Interpreter {
             }
         }
         self.compiled_mut_resolved_dispatch(target_name, target, method_sym, args)
+    }
+
+    /// `.new` on an INSTANCE of a built-in class constructs from its type, as
+    /// `Mu.new` does in rakudo: `$proc .= new(@args)` re-creates a
+    /// `Proc::Async` (App::Lorea restarts its command that way), and
+    /// `$lock.new`, `$promise.new`, `$path.new('b')` are new objects of the
+    /// same type. The built-in constructors are keyed on the type object, so
+    /// the instance receiver answered `Nil` or "No native method 'new'".
+    /// User classes already delegate in `dispatch_new`, and a class with its
+    /// own `new` keeps its instance receiver.
+    // Cost: O(1) for any other method; O(d) for `.new`, d = MRO depth (the
+    // memoized user-method probe).
+    pub(super) fn new_on_builtin_instance_target(
+        &mut self,
+        target: Value,
+        method_sym: crate::symbol::Symbol,
+    ) -> Value {
+        if method_sym != "new" {
+            return target;
+        }
+        let class_name = match target.view() {
+            ValueView::Instance { class_name, .. } => class_name,
+            ValueView::Promise(_) => crate::symbol::Symbol::intern("Promise"),
+            ValueView::Channel(_) => crate::symbol::Symbol::intern("Channel"),
+            _ => return target,
+        };
+        if self.user_declared_classes.contains(class_name.as_str())
+            || self.has_user_method_sym(class_name.as_str(), method_sym)
+        {
+            return target;
+        }
+        Value::package(class_name)
     }
 }

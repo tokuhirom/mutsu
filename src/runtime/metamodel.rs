@@ -413,18 +413,30 @@ impl Interpreter {
                     registry
                         .user_method_overloads(class_name, name)
                         .is_some_and(|overloads| {
-                            overloads.first().is_some_and(|first| {
-                                !first.is_private && !first.is_submethod && !first.is_multi
-                            })
+                            overloads
+                                .iter()
+                                .find(|def| !def.is_private)
+                                .is_some_and(|first| !first.is_submethod && !first.is_multi)
                         })
                 })
                 .collect();
             drop(registry);
             method_names.sort();
             for method_name in method_names {
+                // A private method shares the name's candidate list with a
+                // public one (`method stop` next to `method !stop`, as
+                // Timer::Stopwatch declares); only the public candidates are
+                // the method `add_method` receives. Handing the private one
+                // over too let the HOW's re-add replace the name's whole
+                // candidate list, and `self!stop` stopped resolving.
                 let Some(overloads) = self
                     .registry()
                     .user_method_overloads(class_name, &method_name)
+                    .map(|defs| {
+                        defs.into_iter()
+                            .filter(|def| !def.is_private)
+                            .collect::<Vec<_>>()
+                    })
                 else {
                     continue;
                 };

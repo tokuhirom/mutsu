@@ -30,6 +30,12 @@ pub(super) struct Stamp {
     len: u64,
     modified: Option<SystemTime>,
     readonly: bool,
+    /// A non-empty regular file whose last inode change was a content write
+    /// (ctime == mtime). A *new* entry like that was created and then written
+    /// between two polls, which libuv reports as `FileRenamed` followed by
+    /// `FileChanged`; one moved in by `rename` (ctime > mtime) or created
+    /// empty is `FileRenamed` alone.
+    content_written_last: bool,
     #[cfg(unix)]
     mode: u32,
     #[cfg(unix)]
@@ -40,10 +46,18 @@ impl Stamp {
     fn of(meta: &fs::Metadata) -> Self {
         #[cfg(unix)]
         use std::os::unix::fs::MetadataExt;
+        #[cfg(unix)]
+        let content_written_last = meta.is_file()
+            && meta.len() > 0
+            && (meta.ctime(), meta.ctime_nsec()) == (meta.mtime(), meta.mtime_nsec());
+        // No portable ctime: a new entry is reported as `FileRenamed` alone.
+        #[cfg(not(unix))]
+        let content_written_last = false;
         Stamp {
             len: meta.len(),
             modified: meta.modified().ok(),
             readonly: meta.permissions().readonly(),
+            content_written_last,
             #[cfg(unix)]
             mode: meta.mode(),
             #[cfg(unix)]
@@ -125,9 +139,12 @@ impl WatchState {
                         Some(_) => {}
                     }
                 }
-                for name in after.keys() {
+                for (name, stamp) in after {
                     if !before.contains_key(name) {
                         events.push((entry_path(display, name), ChangeKind::Renamed));
+                        if stamp.content_written_last {
+                            events.push((entry_path(display, name), ChangeKind::Changed));
+                        }
                     }
                 }
                 // Adding or removing an entry also touches the directory's own
@@ -165,6 +182,7 @@ mod tests {
             len,
             modified: None,
             readonly: false,
+            content_written_last: false,
             #[cfg(unix)]
             mode: 0o644,
             #[cfg(unix)]
@@ -206,6 +224,30 @@ mod tests {
         assert_eq!(
             before.diff(&dir(&[("a", 1), ("x", 0)], 1), "d/"),
             vec![("d/x".to_string(), ChangeKind::Renamed)]
+        );
+    }
+
+    #[test]
+    fn a_new_entry_written_since_the_last_poll_is_renamed_then_changed() {
+        let before = dir(&[], 0);
+        let mut written = stamp(4);
+        written.content_written_last = true;
+        let after = WatchState::Dir {
+            own: stamp(1),
+            entries: [
+                (OsString::from("w"), written),
+                (OsString::from("m"), stamp(4)),
+            ]
+            .into_iter()
+            .collect(),
+        };
+        assert_eq!(
+            before.diff(&after, "d"),
+            vec![
+                ("d/m".to_string(), ChangeKind::Renamed),
+                ("d/w".to_string(), ChangeKind::Renamed),
+                ("d/w".to_string(), ChangeKind::Changed),
+            ]
         );
     }
 
