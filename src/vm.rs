@@ -267,6 +267,7 @@ pub(crate) mod vm_poll;
 mod vm_range_int_bounds;
 pub(crate) mod vm_raw_invocant_arrival;
 mod vm_raw_invocant_lvalue;
+mod vm_react_callback;
 mod vm_react_loop;
 mod vm_react_subscriptions;
 mod vm_react_supply_helpers;

@@ -7,8 +7,8 @@
 //! — the loop itself must live here.
 //!
 //! All `whenever`-body / `LAST` / `QUIT` / `CLOSE` callback dispatch goes through
-//! [`Interpreter::call_react_callback`], which runs the (on-the-fly compiled) closure via
-//! `vm_call_map_block` with the triggering value bound as the block topic `$_`.
+//! [`Interpreter::call_react_callback`] (`vm_react_callback.rs`), which runs the
+//! callback as an on-the-fly compiled block.
 //! Loop-control signals (`done` / `next` / `last`) surface as `Err` just as the
 //! old tree-walk path produced them, so the signal mapping is unchanged. Supply
 //! `QUIT` handlers now dispatch natively too, via [`Interpreter::call_supply_quit_handler`]
@@ -28,44 +28,6 @@ use crate::runtime::native_methods::{
 use crate::runtime::react_whenever::{ReactSubscription, StreamConsumer, SupplyDrivePolicy};
 
 impl Interpreter {
-    /// Dispatch a `whenever` body or one of its `LAST` / `QUIT` / `CLOSE` phaser
-    /// callbacks as **compiled bytecode** (Stage 2). The first argument, when
-    /// present, is the triggering value: it is bound as the block topic `$_`
-    /// (and a lone pointy param) via `vm_call_map_block`'s explicit-topic path.
-    /// This reproduces the tree-walk `call_sub_value` topic semantics — the
-    /// on-the-fly routine-body compile would otherwise reset `$_` to `Any` and
-    /// drop the topic. Loop-control signals (`done` / `next` / `last`) still
-    /// surface as `Err` exactly as the tree-walk path produced them, so the
-    /// drive loop's signal mapping (`run_react_consumer` etc.) is unchanged.
-    pub(super) fn call_react_callback(
-        &mut self,
-        cb: &Value,
-        args: Vec<Value>,
-    ) -> Result<Value, RuntimeError> {
-        // A `whenever`/`LAST`/`QUIT` callback shares the enclosing react block's
-        // lexicals. Each closure call persists its captured-outer free vars as
-        // per-instance state (keyed by the callback's Sub id) and restores that
-        // snapshot on re-entry. For a react callback that is wrong: on re-entry it
-        // would restore a *stale* snapshot of a shared lexical (e.g. `my $order`
-        // that a sibling `whenever` just updated), clobbering the sibling's write.
-        // Drop this callback's per-instance state so it reads the shared lexical
-        // from the live caller env — which every sibling writes back to.
-        if let ValueView::Sub(data) = cb.view()
-            && !self.nested_react_callbacks.contains(&data.id)
-        {
-            self.clear_closure_captured_state_for(data.id);
-        }
-        // Every `whenever`/`LAST`/`QUIT`/`CLOSE` callback body dispatches
-        // through here, on whichever thread actually runs it, so a `done`
-        // raised anywhere in its dynamic extent (directly or via a nested
-        // sub call) has a react/supply drive loop to terminate — see
-        // `runtime::react_done_handler_depth`.
-        let _react_done_handler =
-            crate::runtime::react_done_handler_depth::ReactDoneHandlerGuard::new();
-        let topic = args.first().cloned();
-        self.vm_call_map_block(cb, args, topic, false)
-    }
-
     /// Interpreter-native supply `QUIT` handler dispatch. Mirrors
     /// `Interpreter::call_supply_quit_handler` but runs the `QUIT` phaser body as
     /// **compiled bytecode** via [`Self::call_react_callback`] (with `reason`

@@ -12,7 +12,14 @@ impl Interpreter {
     /// Wrap a `RuntimeError` in `X::React::Died`.
     /// The resulting exception reports as `X::React::Died` and includes
     /// the original error message and backtrace in its gist.
+    ///
+    /// A `return` signal is not an exception: a `whenever` body is a block, so
+    /// its `return` leaves the routine enclosing the `react` and passes through
+    /// unwrapped.
     pub(crate) fn wrap_react_died(inner: RuntimeError) -> RuntimeError {
+        if inner.is_return() {
+            return inner;
+        }
         let original_message = inner.message.to_string();
         let backtrace_str = inner.backtrace().unwrap_or_default().to_string();
         let mut gist = format!(
