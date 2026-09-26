@@ -140,6 +140,16 @@ impl Compiler {
         .then(|| name.clone())
     }
 
+    /// Whether a bareword names an in-scope lexical term -- a sigilless
+    /// binding of this or an enclosing frame, or a `constant` -- rather than a
+    /// type, package or not-yet-declared listop.
+    pub(super) fn bareword_is_lexical_term(&self, name: &str) -> bool {
+        self.sigilless_locals.contains(name)
+            || self.enclosing_sigilless.contains(name)
+            || self.constant_vars_in_scope.contains(name)
+            || self.constant_value(name).is_some()
+    }
+
     /// Deliberately narrow. `@`/`%`/`&`-sigiled names, twigils, attributes and
     /// package-qualified names are excluded: their containers are reached by
     /// their own machinery, and boxing them into a scalar cell here would leak a
