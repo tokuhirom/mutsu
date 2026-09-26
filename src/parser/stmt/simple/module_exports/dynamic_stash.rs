@@ -13,10 +13,13 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
+/// A probe's key: the module name and the search path it resolved under.
+type ProbeKey = (String, Vec<String>);
+
 thread_local! {
     /// Probe results by module name and search path, so a module `use`d from
     /// several files of one process runs at parse time once.
-    static PROBE_CACHE: RefCell<HashMap<(String, Vec<String>), Rc<Vec<InlineModuleExport>>>> =
+    static PROBE_CACHE: RefCell<HashMap<ProbeKey, Rc<Vec<InlineModuleExport>>>> =
         RefCell::new(HashMap::new());
 }
 
