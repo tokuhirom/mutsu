@@ -132,7 +132,12 @@ impl Interpreter {
         // over exist nowhere else. Same install/restore discipline, same
         // saved-shadow list.
         let lexical = self.install_lexical_regex_closure_scope(spec, pkg);
-        self.install_subrule_dynamic_params_named(&spec.lookup_name, pkg, arg_values, lexical)
+        let saved =
+            self.install_subrule_dynamic_params_named(&spec.lookup_name, pkg, arg_values, lexical);
+        if saved.is_some() {
+            super::regex_ltm_memo::note_env_scope_change();
+        }
+        saved
     }
 
     /// [`Self::install_subrule_dynamic_params`] for a rule named directly
@@ -226,6 +231,7 @@ impl Interpreter {
     /// restoring whatever they shadowed (an enclosing rule's binding of the same
     /// name, most often).
     pub(crate) fn restore_subrule_dynamic_params(&mut self, saved: SavedDynParams) {
+        super::regex_ltm_memo::note_env_scope_change();
         for (key, prior) in saved.into_iter().rev() {
             match prior {
                 Some(value) => {

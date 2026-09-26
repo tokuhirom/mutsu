@@ -405,8 +405,13 @@ pub(crate) fn max_threads() -> usize {
 /// ADR-0123 hook that keeps blocking `await` deadlock-free without growing
 /// the pool on every CPU-bound burst. Call it before taking any lock the
 /// blocking operation needs: growth may run a rejected task's rejecter.
+///
+/// Every blocking point passes through here, so it is also where a consumer
+/// held for this thread's in-flight declaration is released: it must not wait
+/// on what this thread is about to wait for (`decl_gate`, #9590).
 #[cfg(not(target_arch = "wasm32"))]
 pub(crate) fn enter_blocking() -> native::BlockingGuard {
+    crate::runtime::decl_gate::release_all();
     native::enter_blocking()
 }
 
@@ -416,6 +421,7 @@ pub(crate) struct BlockingGuard;
 
 #[cfg(target_arch = "wasm32")]
 pub(crate) fn enter_blocking() -> BlockingGuard {
+    crate::runtime::decl_gate::release_all();
     BlockingGuard
 }
 

@@ -241,35 +241,26 @@ impl Interpreter {
                 Value::NIL
             }
         };
-        // If the source is a Supplier, convert it to its associated Supply
-        // so that subscription registration and tap dispatch work correctly.
-        // Without this, `whenever $supplier { ... }` inside a `supply` block
-        // would pass the Supplier object itself as the subscription source,
-        // which the tap dispatch code does not recognize (it expects Supply).
-        //
-        // `Proc::Async` needs the same treatment for the same reason:
-        // `whenever $proc { ... }` means `whenever $proc.Supply` (the merged
-        // stdout+stderr stream). Passing the `Proc::Async` instance straight
-        // through registered no tap on any of its supplies at all, so the
-        // body simply never ran — the merged output was collected into a
-        // buffer nobody read and thrown away.
-        //
-        // Any other object that declares its own `Supply` coercion is the same
-        // case: rakudo's `whenever` takes `$source.Supply`, which is how
-        // `whenever $stopwatch` reaches Timer::Stopwatch's supplier.
-        let coerce_class = match supply_val.view() {
-            ValueView::Instance { class_name, .. } if class_name != "Supply" => Some(class_name),
-            _ => None,
-        };
-        let supply_val = if let Some(class_name) = coerce_class
-            && (class_name == "Supplier"
-                || class_name == "Supplier::Preserving"
-                || class_name == "Proc::Async"
-                || self.has_user_method_sym(class_name.as_str(), Symbol::intern("Supply")))
-        {
-            self.call_method_with_values(supply_val, "Supply", vec![])?
-        } else {
-            supply_val
+        // `whenever` coerces an object source through `.Supply`. Special live
+        // sources need their runtime-native conversion so their returned Supply
+        // retains the producer linkage; every other instance, including a user
+        // object with its own `Supply` method, goes through ordinary dispatch.
+        // Keeping the conversion here means the subscription builder below only
+        // has to handle the actual source kinds (Supply, Promise, and Channel).
+        let supply_val = match supply_val.view() {
+            ValueView::Instance { class_name, .. }
+                if class_name == "Supplier"
+                    || class_name == "Supplier::Preserving"
+                    || class_name == "Proc::Async" =>
+            {
+                self.call_method_with_values(supply_val, "Supply", vec![])?
+            }
+            ValueView::Instance { class_name, .. }
+                if class_name != "Supply" && class_name != "IO::Socket::Async::Listener" =>
+            {
+                self.call_method_with_values(supply_val, "Supply", vec![])?
+            }
+            _ => supply_val,
         };
 
         // A `Proc::Async` merge is a live stream, not a replayable output

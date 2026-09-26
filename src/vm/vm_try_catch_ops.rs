@@ -111,7 +111,13 @@ impl Interpreter {
     ) -> Result<(), RuntimeError> {
         let saved_depth = self.stack.len();
         let let_mark = self.let_saves_len();
-        let body_start = *ip + 1;
+        let try_ip = *ip;
+        let body_start = try_ip + 1;
+        // A lazy-gather pull that suspended inside this body re-enters here:
+        // continue where it stopped instead of replaying the body.
+        let run_start = self
+            .take_try_catch_gather_resume(code, try_ip)
+            .unwrap_or(body_start);
         let catch_begin = catch_start as usize;
         let control_begin = control_start as usize;
         let end = body_end as usize;
@@ -178,7 +184,7 @@ impl Interpreter {
         // Guard the protected body with a panic->X:: boundary so an internal
         // Rust panic (overflow/OOB/unwrap) raised anywhere inside it becomes a
         // catchable exception routed to the CATCH handler, instead of crashing.
-        let body_result = self.run_range_guarded(code, body_start, catch_begin, compiled_fns);
+        let body_result = self.run_range_guarded(code, run_start, catch_begin, compiled_fns);
         // A genuine `try` *evaluates* its value, so a `Proxy` the body produced
         // is FETCHed inside the protected region: a throwing FETCH is caught
         // here and the `try` yields Nil, exactly as rakudo does. The container
@@ -209,6 +215,11 @@ impl Interpreter {
             self.catch_handlers.pop();
         }
         match body_result {
+            // A lazy-gather take-limit suspension is not an exception: CATCH
+            // never sees it and the region does not end (#9585).
+            Err(e) if Self::is_gather_take_limit_signal(&e) => {
+                Err(self.park_try_catch_gather_suspend(code, try_ip, catch_begin, e))
+            }
             Ok(()) => {
                 // A `try`/implicit-CATCH region is a block, so it owns the
                 // `let`/`temp` saves its body recorded: `temp` restores here and
@@ -566,6 +577,14 @@ impl Interpreter {
                                 {
                                     pending_err = new_err;
                                     continue;
+                                }
+                                Err(new_err) if Self::is_gather_take_limit_signal(&new_err) => {
+                                    return Err(self.park_try_catch_gather_suspend(
+                                        code,
+                                        try_ip,
+                                        catch_begin,
+                                        new_err,
+                                    ));
                                 }
                                 Err(new_err) => return Err(new_err),
                             }

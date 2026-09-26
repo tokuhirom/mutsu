@@ -562,9 +562,12 @@ impl Interpreter {
         // the plain-Hash fallback below would REPLACE the instance with a
         // fresh Hash. Only fires when the class actually declares the method,
         // so `class MyHash is Hash {}` keeps the container-subclass path.
+        // A variable captured by a closure holds its shared `ContainerRef`
+        // cell; the protocol dispatch is on the object inside it.
         if let Some(target) = target_slot
             .and_then(|slot| self.locals.get(slot as usize).cloned())
             .or_else(|| self.env().get(&var_name).cloned())
+            .map(|t| t.deref_container())
             && let ValueView::Instance { class_name, .. } = target.view()
         {
             let cls = class_name.resolve();
@@ -661,7 +664,7 @@ impl Interpreter {
                     .resolve_method_with_owner_invocant(
                         &cls,
                         bind_method,
-                        &[idx.clone(), Value::NIL],
+                        &[idx_arg.clone(), Value::NIL],
                         &target,
                     )
                     .is_some();
@@ -1554,6 +1557,11 @@ impl Interpreter {
                 return Err(RuntimeError::assignment_ro_typename(tn, &disp));
             }
             return Err(RuntimeError::new("Cannot assign to an immutable value"));
+        }
+        // The same refusal for an entry `%h.BIND-KEY($k, 42)` bound to a bare
+        // value: that entry is a read-only cell rather than a name-keyed marker.
+        if !bind_mode && !is_positional && self.hash_element_is_readonly_bound(&var_name, &idx) {
+            return Err(RuntimeError::immutable_value());
         }
         // Native typed arrays store unboxed scalars and cannot bind containers to
         // their elements: `my num @a; @a[0] := $x` is illegal.
