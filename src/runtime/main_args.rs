@@ -67,6 +67,23 @@ impl Interpreter {
         opts
     }
 
+    /// Rakudo's "Potential difficulties" worry for an `is rw` parameter on
+    /// any MAIN candidate, emitted once whichever dispatch path runs.
+    fn warn_rw_main_params(&mut self, candidates: &[FunctionDef]) {
+        if candidates.iter().any(|c| {
+            c.param_defs
+                .iter()
+                .any(|pd| pd.traits.iter().any(|t| t == "rw"))
+        }) {
+            self.emit_stderr(
+                "Potential difficulties:\n    \
+                 'is rw' on parameters of 'sub MAIN' usually cannot \
+                 be satisfied.\n    \
+                 Did you mean 'is copy'?\n",
+            );
+        }
+    }
+
     pub(super) fn dispatch_main(
         &mut self,
         _compiled_fns: &CompiledFns,
@@ -84,6 +101,7 @@ impl Interpreter {
         if self.resolve_function("ARGS-TO-CAPTURE").is_some()
             || self.resolve_function("GENERATE-USAGE").is_some()
         {
+            self.warn_rw_main_params(&all_candidates);
             let main = self.resolve_code_var("MAIN");
             self.builtin_run_main(&[main, Value::NIL])?;
             return Ok(());
@@ -108,20 +126,7 @@ impl Interpreter {
             return Ok(());
         }
 
-        // Emit warning for 'is rw' parameters on MAIN
-        'rw_check: for candidate in &all_candidates {
-            for pd in &candidate.param_defs {
-                if pd.traits.iter().any(|t| t == "rw") {
-                    self.emit_stderr(
-                        "Potential difficulties:\n    \
-                         'is rw' on parameters of 'sub MAIN' usually cannot \
-                         be satisfied.\n    \
-                         Did you mean 'is copy'?\n",
-                    );
-                    break 'rw_check;
-                }
-            }
-        }
+        self.warn_rw_main_params(&all_candidates);
 
         for candidate in &all_candidates {
             let named_info = Self::extract_named_param_info(candidate);
