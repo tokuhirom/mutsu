@@ -13,7 +13,7 @@
 
 use super::super::*;
 use super::regex_helpers::named_lookup_is_ws;
-use super::regex_ltm_nfa::{LtmNfa, NfaNode};
+use super::regex_ltm_nfa::{LeafKind, LtmNfa, NfaNode};
 use super::regex_ltm_rank::{LtmAtomMode, ltm_atom_mode};
 
 /// More nodes than this and the NFA is declined: inlining copies every
@@ -269,13 +269,26 @@ impl<'a> NfaBuilder<'a> {
             RegexAtom::CaptureIsolatedGroupScoped(..) => Err(Declined),
             // Everything else consumes one grapheme-sized unit or is a
             // zero-width test: one end at most.
-            _ => self.push(NfaNode::Leaf {
-                atom: Box::new(atom.clone()),
-                pkg,
-                ic,
-                plural: false,
-                next,
-            }),
+            _ => {
+                let kind = match atom {
+                    RegexAtom::Literal(_)
+                    | RegexAtom::LiteralGrapheme(_)
+                    | RegexAtom::Any
+                    | RegexAtom::CharClass(_)
+                    | RegexAtom::Newline
+                    | RegexAtom::NotNewline
+                    | RegexAtom::UnicodeProp { .. }
+                    | RegexAtom::CompositeClass { .. } => LeafKind::Consume,
+                    _ => LeafKind::Probe,
+                };
+                self.push(NfaNode::Leaf {
+                    atom: Box::new(atom.clone()),
+                    pkg,
+                    ic,
+                    kind,
+                    next,
+                })
+            }
         }
     }
 
@@ -323,7 +336,7 @@ impl<'a> NfaBuilder<'a> {
                 atom: Box::new(atom.clone()),
                 pkg,
                 ic,
-                plural: true,
+                kind: LeafKind::Plural,
                 next,
             });
         }

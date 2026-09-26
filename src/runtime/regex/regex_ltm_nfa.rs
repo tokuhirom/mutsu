@@ -32,13 +32,12 @@ pub(super) enum NfaNode {
     /// ε-edges to every target. A placeholder loop head is an empty split
     /// until the builder patches it.
     Split(Vec<u32>),
-    /// One atom, answered by the existing matcher: the single-end prober, or
-    /// (`plural`) the atom matcher that returns every end.
+    /// One atom, answered by the existing matcher (see [`LeafKind`]).
     Leaf {
         atom: Box<RegexAtom>,
         pkg: Symbol,
         ic: bool,
-        plural: bool,
+        kind: LeafKind,
         next: u32,
     },
     /// `<.ws>`: a fate, except at the very start of the subject where a rule's
@@ -61,6 +60,20 @@ pub(super) enum NfaNode {
     Fate,
     /// The end of the branch.
     Accept,
+}
+
+/// Which existing matcher answers a leaf.
+#[derive(Clone, Copy)]
+pub(super) enum LeafKind {
+    /// A one-grapheme atom (literal, `.`, class, property):
+    /// `match_consuming_atom`, the prober's own tail.
+    Consume,
+    /// Any other atom with at most one end (a zero-width test):
+    /// the single-end prober `regex_match_atom_in_pkg`.
+    Probe,
+    /// A builtin `<name>`, which may have several ends: the plural atom
+    /// matcher.
+    Plural,
 }
 
 pub(crate) struct LtmNfa {

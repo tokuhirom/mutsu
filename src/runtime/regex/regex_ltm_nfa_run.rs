@@ -3,9 +3,8 @@
 //! Positions are processed in increasing order. Each position keeps the set
 //! of nodes reached there; a node is expanded at most once per position, so a
 //! run costs O(positions × nodes) plus the leaves' own matching. A leaf may
-//! jump more than one character (a grapheme, a builtin `<ident>`), so the
-//! positions still to visit are kept in an ordered map rather than a
-//! lockstep frontier.
+//! jump more than one character (a grapheme, a builtin `<ident>`), so besides
+//! the next position's frontier the run keeps a min-heap of further ones.
 //!
 //! The run happens under `LTM_DECLARATIVE_MODE`, inside a fate frame of its
 //! own, and from an empty subrule stack, exactly as `ltm_prefix_len_at`
@@ -15,8 +14,9 @@
 use super::super::*;
 use super::regex_helpers::{LTM_DECLARATIVE_MODE, LTM_PREFIX_TERMINATED, LTM_SEQALT_EPSILON};
 use super::regex_ltm_fate::{ltm_fate_frame_close, ltm_fate_frame_open};
-use super::regex_ltm_nfa::{LtmNfa, NfaNode};
-use std::collections::BTreeMap;
+use super::regex_ltm_nfa::{LeafKind, LtmNfa, NfaNode};
+use std::cmp::Reverse;
+use std::collections::BinaryHeap;
 
 /// The simulation handed the measurement back to the walker.
 struct HandBack;
@@ -59,11 +59,13 @@ impl LtmNfa {
         let mut furthest: Option<usize> = None;
         // `seen[node]` is the last position the node was expanded at.
         let mut seen = vec![usize::MAX; self.nodes.len()];
-        let mut pending: BTreeMap<usize, Vec<u32>> = BTreeMap::new();
-        pending.insert(start, vec![self.start]);
-        let mut work: Vec<u32> = Vec::new();
-        while let Some((pos, nodes)) = pending.pop_first() {
-            work.extend(nodes);
+        // Nodes still to expand at `pos`, nodes reached at `pos + 1` (almost
+        // every leaf consumes one grapheme of one char), and the rest.
+        let mut work: Vec<u32> = vec![self.start];
+        let mut step: Vec<u32> = Vec::new();
+        let mut far: BinaryHeap<Reverse<(usize, u32)>> = BinaryHeap::new();
+        let mut pos = start;
+        loop {
             while let Some(node) = work.pop() {
                 let slot = &mut seen[node as usize];
                 if *slot == pos {
@@ -73,8 +75,10 @@ impl LtmNfa {
                 let mut reach = |end: usize, next: u32, work: &mut Vec<u32>| {
                     if end == pos {
                         work.push(next);
+                    } else if end == pos + 1 {
+                        step.push(next);
                     } else {
-                        pending.entry(end).or_default().push(next);
+                        far.push(Reverse((end, next)));
                     }
                 };
                 match &self.nodes[node as usize] {
@@ -83,19 +87,29 @@ impl LtmNfa {
                         atom,
                         pkg,
                         ic,
-                        plural,
+                        kind,
                         next,
-                    } => {
-                        if *plural {
+                    } => match kind {
+                        LeafKind::Consume => {
+                            if let Some(end) =
+                                interp.match_consuming_atom(atom, chars, pos, *pkg, *ic)
+                            {
+                                reach(end, *next, &mut work);
+                            }
+                        }
+                        LeafKind::Probe => {
+                            if let Some(end) =
+                                interp.regex_match_atom_in_pkg(atom, chars, pos, *pkg, *ic)
+                            {
+                                reach(end, *next, &mut work);
+                            }
+                        }
+                        LeafKind::Plural => {
                             for end in plural_ends(interp, atom, chars, pos, *pkg, *ic) {
                                 reach(end, *next, &mut work);
                             }
-                        } else if let Some(end) =
-                            interp.regex_match_atom_in_pkg(atom, chars, pos, *pkg, *ic)
-                        {
-                            reach(end, *next, &mut work);
                         }
-                    }
+                    },
                     NfaNode::WsLead {
                         atom,
                         pkg,
@@ -134,6 +148,21 @@ impl LtmNfa {
                     }
                     NfaNode::Fate | NfaNode::Accept => furthest = furthest.max(Some(pos)),
                 }
+            }
+            // Advance to the nearest position anything reached.
+            pos = if !step.is_empty() {
+                std::mem::swap(&mut work, &mut step);
+                pos + 1
+            } else if let Some(&Reverse((end, _))) = far.peek() {
+                end
+            } else {
+                break;
+            };
+            while let Some(&Reverse((end, node))) = far.peek()
+                && end == pos
+            {
+                far.pop();
+                work.push(node);
             }
         }
         Ok(furthest)
