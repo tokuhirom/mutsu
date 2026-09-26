@@ -917,7 +917,7 @@ impl Interpreter {
         if cc.is_routine
             && !has_placeholder_param
             && !is_whatever_code
-            && !data.param_defs.iter().any(|pd| pd.name == "_")
+            && !data.param_defs.iter().any(param_def_binds_topic)
         {
             self.env_mut().insert_sym(
                 crate::symbol::wk::topic(),
@@ -957,9 +957,16 @@ impl Interpreter {
         // param — to the element value. Applied after the routine-`$_` reset so
         // it wins, and before the locals load so the slot picks it up.
         if let Some(topic) = explicit_topic {
+            // A signature that binds `$_` itself (`-> ($_, $path?) { when … }`,
+            // Temp::Path's `whenever` body) already owns the topic: the binder
+            // above set it from the argument, and forcing the whole element
+            // over it would make every `when` test the wrong value.
+            let binds_topic = data.param_defs.iter().any(param_def_binds_topic);
             let env = self.env_mut();
-            env.insert_sym(crate::symbol::wk::topic(), topic.clone());
-            env.insert_sym(crate::symbol::wk::topic_sigiled(), topic.clone());
+            if !binds_topic {
+                env.insert_sym(crate::symbol::wk::topic(), topic.clone());
+                env.insert_sym(crate::symbol::wk::topic_sigiled(), topic.clone());
+            }
             // A single simple positional param consumes the topic too (e.g.
             // `-> $p { $p.key }`, which the native map call site stores as
             // `params == ["p"]` with empty `param_defs`). The call site only
@@ -2019,4 +2026,17 @@ pub(super) fn is_plain_positional_param(p: &str) -> bool {
         .next()
         .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
         && p != "_"
+}
+
+/// Whether a declared parameter — or one nested in its sub-signature — binds
+/// the topic `$_` (`-> ($_, $n)`, `-> $_`).
+fn param_def_binds_topic(pd: &crate::ast::ParamDef) -> bool {
+    pd.name == "_"
+        || pd.name == "$_"
+        || pd
+            .sub_signature
+            .iter()
+            .chain(pd.outer_sub_signature.iter())
+            .flatten()
+            .any(param_def_binds_topic)
 }

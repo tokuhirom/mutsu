@@ -39,56 +39,43 @@ pub(crate) fn whenever_stmt(input: &str) -> PResult<'_, Stmt> {
     let (rest, _) = ws1(rest)?;
     let (rest, supply) = expression(rest)?;
     let (rest, _) = ws(rest)?;
-    let (rest, param, param_type) = if let Some(stripped) = rest.strip_prefix("->") {
-        let (r, _) = ws(stripped)?;
-        // Optional type constraint before the variable name
-        // (`whenever $s -> Int $x { }`, `-> IO::Socket::Async:D $c { }`). Reuse
-        // the signature type parser so qualified names and `:D`/`:U` smileys are
-        // handled, and carried through so the binding can enforce it (as an
-        // ordinary typed block parameter would) — see
-        // news/2026-08/whenever-parameter-type-constraint-enforced.md.
-        // Without consuming it here, a typed pointy param made `whenever_stmt`
-        // fail, so the whole `whenever ... -> Type $x { ... }` fragmented into a
-        // bare `whenever` word + a standalone pointy block, which then tripped
-        // the out-of-scope-`whenever` check (SSH::LibSSH::Tunnel).
-        let (r, param_type) = match crate::parser::stmt::sub_param::parse_type_constraint_expr(r) {
-            Some((r2, tc)) => {
-                let (r2, _) = ws(r2)?;
-                (r2, Some(tc))
-            }
-            None => (r, None),
+    // A pointy block (`-> $x`, `-> Int $x`, `-> \row`, `-> ($cmd, $arg?)`,
+    // `-> $a, $b`, ...) is parsed by the ordinary pointy-block parser, so a
+    // `whenever` accepts every signature a `.tap(-> ... { })` block does.
+    // A hand-rolled single-parameter parser here used to reject anything
+    // else (a sub-signature like Temp::Path's `-> ($_, $path?)`), and the
+    // statement then fragmented into a bare `whenever` word + a standalone
+    // pointy block, tripping the out-of-scope-`whenever` check.
+    if rest.starts_with("->") || rest.starts_with("<->") {
+        let (rest, lambda) = crate::parser::primary::arrow_lambda_pub(rest)?;
+        let (params, param_defs, body) = match lambda {
+            Expr::Lambda { param, body, .. } => (vec![param], Vec::new(), body),
+            Expr::AnonSubParams {
+                params,
+                param_defs,
+                body,
+                ..
+            } => (params, param_defs, body),
+            _ => return Err(PError::expected("whenever pointy block")),
         };
-        match var_name(r) {
-            Ok((r, name)) => (r, Some(name), param_type),
-            Err(_) => {
-                // Sigilless pointy param (`whenever $ch -> \row { }`,
-                // Text::CSV's Channel/Supply in-format loops): binds the raw
-                // value under the bare name — the same env key a sigil-less
-                // read resolves. Without this the whole statement failed to
-                // parse and fragmented into a bare `whenever` word plus a
-                // standalone pointy block, so the subscription never
-                // registered and the react saw zero events.
-                if let Some(stripped) = r.strip_prefix('\\')
-                    && let Ok((r2, name)) = crate::parser::stmt::idents::ident(stripped)
-                {
-                    (r2, Some(name), param_type)
-                } else {
-                    // Type-only pointy block (`-> Int { }`) binds no variable.
-                    (r, None, param_type)
-                }
-            }
-        }
-    } else {
-        (rest, None, None)
-    };
+        return Ok((
+            rest,
+            Stmt::Whenever {
+                supply,
+                params,
+                param_defs,
+                body,
+            },
+        ));
+    }
     let (rest, _) = ws(rest)?;
     let (rest, body) = block(rest)?;
     Ok((
         rest,
         Stmt::Whenever {
             supply,
-            param,
-            param_type,
+            params: Vec::new(),
+            param_defs: Vec::new(),
             body,
         },
     ))

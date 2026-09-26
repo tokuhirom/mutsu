@@ -4043,25 +4043,21 @@ pub(crate) enum OpCode {
     ///
     /// Taps the supply with the body as its callback (the runtime
     /// `run_whenever_with_value`). `body_idx` indexes `CompiledCode::stmt_pool`
-    /// (a `Stmt::Block`); `param_idx` is the constant-pool index of the pointy
-    /// parameter's name (or the first placeholder), and `param_type_idx` its
-    /// declared type. Inside a `supply { }` block the block's own lexicals are
-    /// first promoted to shared cells, so the callback and the block see one
-    /// variable.
+    /// (an anonymous `Stmt::SubDecl` carrying the pointy block's full
+    /// signature — or the body's first placeholder — and its body; read back
+    /// through `closure_signature`/`closure_body_arc`). Inside a `supply { }`
+    /// block the block's own lexicals are first promoted to shared cells, so
+    /// the callback and the block see one variable.
     WheneverScope {
         body_idx: u32,
         /// Analysis-only compiled form of the stmt-pool body. It is never
         /// executed, but supplies precise free-variable parent slots to
         /// ADR-0018's env-consumer analysis.
         analysis_cc_idx: u32,
-        param_idx: Option<u32>,
         /// Whether this statement is the operand of `do` and therefore leaves
         /// the newly-created Tap on the value stack. A statement-form
         /// `whenever` deliberately sinks that value.
         yields_value: bool,
-        /// Constant index of the pointy param's declared type constraint
-        /// (`whenever $s -> Int $x { }`), if any.
-        param_type_idx: Option<u32>,
     },
     /// `use Module ...`. Stack: `[a1, …, an] → []` (`n` = `arg_count`).
     ///

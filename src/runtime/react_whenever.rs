@@ -228,8 +228,7 @@ impl Interpreter {
         &mut self,
         supply_val: Value,
         yields_value: bool,
-        param: &Option<String>,
-        param_type: &Option<String>,
+        signature: &crate::opcode::ClosureSignature,
         body: &std::sync::Arc<Vec<Stmt>>,
         owned_lexicals: &[Symbol],
     ) -> Result<Value, RuntimeError> {
@@ -304,43 +303,15 @@ impl Interpreter {
                 None => cb,
             }
         };
-        // Thread the pointy param's declared type constraint into a ParamDef
-        // so the ordinary call-time binding check enforces it, exactly like a
-        // `.tap(-> Int $x { ... })` block — see
+        // The callback carries the pointy block's own signature (types,
+        // sub-signatures, optional params), so the ordinary call-time binder
+        // treats it exactly like a `.tap(-> ... { })` block — see
         // news/2026-08/whenever-parameter-type-constraint-enforced.md.
-        let main_param_defs: Vec<ParamDef> = match (param, param_type) {
-            (Some(name), Some(tc)) => vec![ParamDef {
-                type_capture: None,
-                name: name.clone(),
-                default: None,
-                multi_invocant: true,
-                required: false,
-                named: false,
-                named_alias: false,
-                slurpy: false,
-                double_slurpy: false,
-                onearg: false,
-                sigilless: false,
-                type_constraint: Some(tc.clone()),
-                literal_value: None,
-                sub_signature: None,
-                where_constraint: None,
-                traits: Vec::new(),
-                optional_marker: false,
-                outer_sub_signature: None,
-                code_signature: None,
-                is_invocant: false,
-                shape_constraints: None,
-                block_param: true,
-                trait_args: Vec::new(),
-            }],
-            _ => Vec::new(),
-        };
         let callback = stamp(Value::make_sub_owning(
             Symbol::intern(&self.current_package()),
             Symbol::intern(""),
-            param.iter().cloned().collect::<Vec<String>>(),
-            main_param_defs,
+            std::sync::Arc::clone(&signature.params),
+            std::sync::Arc::clone(&signature.param_defs),
             main_body,
             false,
             self.env.clone(),

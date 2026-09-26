@@ -150,15 +150,11 @@ impl Interpreter {
         code: &CompiledCode,
         body_idx: u32,
         analysis_cc_idx: u32,
-        param_idx: &Option<u32>,
         yields_value: bool,
-        param_type_idx: &Option<u32>,
     ) -> Result<(), RuntimeError> {
         let supply_val = self.stack.pop().unwrap_or(Value::NIL);
-        let param = param_idx.map(|idx| Self::const_str(code, idx).to_string());
-        let param_type = param_type_idx.map(|idx| Self::const_str(code, idx).to_string());
         let stmt = &code.stmt_pool[body_idx as usize];
-        if let Stmt::Block(_) = stmt {
+        if let Stmt::SubDecl { .. } = stmt {
             // Box captured-and-mutated lexicals the whenever body reads into
             // shared ContainerRef cells BEFORE run_whenever_with_value clones
             // the env for the callback closures below: those closures are
@@ -252,13 +248,13 @@ impl Interpreter {
             // registrations instead of rebuilt per value (see
             // `WheneverBodySplit` and `CarrierCacheKey`).
             let body_arc = code.closure_body_arc(body_idx as usize);
+            let signature = code.closure_signature(body_idx as usize);
             let tap = loan_env!(
                 self,
                 run_whenever_with_value(
                     supply_val,
                     yields_value,
-                    &param,
-                    &param_type,
+                    &signature,
                     &body_arc,
                     &owned_lexicals
                 )
@@ -268,7 +264,7 @@ impl Interpreter {
             }
             Ok(())
         } else {
-            Err(RuntimeError::new("WheneverScope expects Block body"))
+            Err(RuntimeError::new("WheneverScope expects SubDecl body"))
         }
     }
 
