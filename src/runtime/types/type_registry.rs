@@ -179,6 +179,47 @@ impl Interpreter {
         }
     }
 
+    pub(in crate::runtime) fn init_promise_status_enum(base: &mut HashMap<Symbol, Value>) {
+        // `Promise.status` answers one of these, so `$p.status == Kept`
+        // compares enum values numerically and `when Kept` smartmatches the
+        // enum -- mutsu used to model them as the bare strings "Kept" etc.
+        base.insert(
+            Symbol::intern("PromiseStatus"),
+            Value::str_from("PromiseStatus"),
+        );
+        for (key, _) in Self::promise_status_enum_variants() {
+            let enum_val = Self::promise_status_value(&key);
+            base.insert(
+                Symbol::intern(&format!("PromiseStatus::{}", key)),
+                enum_val.clone(),
+            );
+            base.insert(Symbol::intern(&key), enum_val);
+        }
+    }
+
+    /// The `PromiseStatus` enum value named `status` (`"Planned"`, `"Kept"` or
+    /// `"Broken"`, the promise's internal state string); an unknown name falls
+    /// back to `Planned`.
+    /// Cost: O(1).
+    pub(crate) fn promise_status_value(status: &str) -> Value {
+        let (index, value) = match status {
+            "Kept" => (1, 1),
+            "Broken" => (2, 2),
+            _ => (0, 0),
+        };
+        let key = match index {
+            1 => "Kept",
+            2 => "Broken",
+            _ => "Planned",
+        };
+        Value::enum_parts(
+            Symbol::intern("PromiseStatus"),
+            Symbol::intern(key),
+            EnumValue::Int(value),
+            index,
+        )
+    }
+
     pub(in crate::runtime) fn init_signal_enum(base: &mut HashMap<Symbol, Value>) {
         let variants = Self::signal_enum_variants();
         base.insert(Symbol::intern("Signal"), Value::str_from("Signal"));
@@ -220,6 +261,15 @@ impl Interpreter {
             ("PF_LOCAL".to_string(), EnumValue::Int(3)),
             ("PF_UNIX".to_string(), EnumValue::Int(3)),
             ("PF_MAX".to_string(), EnumValue::Int(4)),
+        ]
+    }
+    /// The `PromiseStatus` enum's variants. Shared by
+    /// [`Self::init_promise_status_enum`] and [`Self::seed_builtin_enum_types`].
+    pub(in crate::runtime) fn promise_status_enum_variants() -> Vec<(String, EnumValue)> {
+        vec![
+            ("Planned".to_string(), EnumValue::Int(0)),
+            ("Kept".to_string(), EnumValue::Int(1)),
+            ("Broken".to_string(), EnumValue::Int(2)),
         ]
     }
     /// The `Order` enum's variants. Shared by [`Self::init_order_enum`] (which
@@ -292,8 +342,8 @@ impl Interpreter {
     }
 
     /// Record the process-constant built-in enum types (`Endian`,
-    /// `ProtocolFamily`, `Order`, `SeekType`, `Signal`, `FileChangeEvent`) in
-    /// a registry.
+    /// `ProtocolFamily`, `Order`, `SeekType`, `Signal`, `FileChangeEvent`,
+    /// `PromiseStatus`) in a registry.
     ///
     /// Called while BUILDING the shared built-in registry template, not per
     /// interpreter: these five entries are identical in every interpreter, but
@@ -320,6 +370,10 @@ impl Interpreter {
         registry.enum_types.insert(
             "FileChangeEvent".to_string(),
             Self::file_change_event_enum_variants(),
+        );
+        registry.enum_types.insert(
+            "PromiseStatus".to_string(),
+            Self::promise_status_enum_variants(),
         );
     }
 

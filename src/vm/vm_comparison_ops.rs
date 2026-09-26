@@ -33,6 +33,16 @@ fn complex_parts(v: &Value) -> (f64, f64) {
     }
 }
 
+/// The lazy X::Str::Numeric `Failure` a numeric comparison (`==`, `<`, `<=`,
+/// `>`, `>=`) evaluates to when either operand is a Str that cannot be
+/// numified -- rakudo's `"a" < 2` is a Failure, not `True` from comparing 0.
+/// The left operand is checked first; `None` for every other operand pair.
+/// Cost: O(n), n = length of a Str operand; O(1) otherwise.
+fn str_numeric_pair_failure(l: &Value, r: &Value) -> Option<Value> {
+    crate::runtime::utils::str_numeric_operand_failure(l)
+        .or_else(|| crate::runtime::utils::str_numeric_operand_failure(r))
+}
+
 pub(super) fn value_to_f64(v: &Value) -> f64 {
     runtime::to_float_value(v).unwrap_or(0.0)
 }
@@ -308,6 +318,9 @@ impl Interpreter {
             }
             check_type_object_in_numeric_context(&l)?;
             check_type_object_in_numeric_context(&r)?;
+            if let Some(failure) = str_numeric_pair_failure(&l, &r) {
+                return Ok(failure);
+            }
             // Numeric equality on two positional values compares their
             // numeric size, not their individual elements. Handle this before
             // the numeric bridge turns each positional value into its `.Int`
@@ -397,12 +410,8 @@ impl Interpreter {
                 // numeric-string coercion trims surrounding whitespace, so a
                 // trailing/leading space made two otherwise-equal numbers
                 // compare unequal under the `same_variant` raw-`l == r` shortcut
-                // below. Two non-numeric Strs of the same shape (mutsu's
-                // bare-string enum modeling, e.g. `$status == Broken`) still
-                // fall through to that shortcut unchanged — `==` is
-                // deliberately lenient about non-numeric strings (see
-                // `infix_is_strictly_numeric`'s doc comment), so this only
-                // widens the case where BOTH sides actually parse as numbers.
+                // below. A non-numeric Str never gets this far: it made the
+                // comparison a Failure above.
                 let both_numeric_strs = matches!(l.view(), ValueView::Str(_))
                     && matches!(r.view(), ValueView::Str(_))
                     && runtime::to_float_value(&l).is_some()
@@ -515,6 +524,9 @@ impl Interpreter {
             }
             check_type_object_in_numeric_context(&l)?;
             check_type_object_in_numeric_context(&r)?;
+            if let Some(failure) = str_numeric_pair_failure(&l, &r) {
+                return Ok(failure);
+            }
             let l = vm.warn_uninitialized_numeric_operand(l, 0)?;
             let r = vm.warn_uninitialized_numeric_operand(r, 1)?;
             let (l, r) = vm.coerce_ordering_real_methods_pair(l, r)?;
@@ -547,6 +559,9 @@ impl Interpreter {
             }
             check_type_object_in_numeric_context(&l)?;
             check_type_object_in_numeric_context(&r)?;
+            if let Some(failure) = str_numeric_pair_failure(&l, &r) {
+                return Ok(failure);
+            }
             let l = vm.warn_uninitialized_numeric_operand(l, 0)?;
             let r = vm.warn_uninitialized_numeric_operand(r, 1)?;
             let (l, r) = vm.coerce_ordering_real_methods_pair(l, r)?;
@@ -579,6 +594,9 @@ impl Interpreter {
             }
             check_type_object_in_numeric_context(&l)?;
             check_type_object_in_numeric_context(&r)?;
+            if let Some(failure) = str_numeric_pair_failure(&l, &r) {
+                return Ok(failure);
+            }
             let l = vm.warn_uninitialized_numeric_operand(l, 0)?;
             let r = vm.warn_uninitialized_numeric_operand(r, 1)?;
             let (l, r) = vm.coerce_ordering_real_methods_pair(l, r)?;
@@ -611,6 +629,9 @@ impl Interpreter {
             }
             check_type_object_in_numeric_context(&l)?;
             check_type_object_in_numeric_context(&r)?;
+            if let Some(failure) = str_numeric_pair_failure(&l, &r) {
+                return Ok(failure);
+            }
             let l = vm.warn_uninitialized_numeric_operand(l, 0)?;
             let r = vm.warn_uninitialized_numeric_operand(r, 1)?;
             let (l, r) = vm.coerce_ordering_real_methods_pair(l, r)?;

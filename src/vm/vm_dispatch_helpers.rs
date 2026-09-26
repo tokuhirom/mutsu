@@ -240,6 +240,18 @@ impl Interpreter {
                 return Ok(v);
             }
         }
+        // The arithmetic operators evaluate to a lazy X::Str::Numeric Failure
+        // on a non-numeric Str operand, like their opcodes
+        // (`coerce_numeric_bridge_pair_strict`): `[+] "a", 1` and
+        // `("a",) »+« (1,)` are Failures in rakudo, not the 0-coerced answer.
+        // (The integer operators `+|`/`gcd`/... carry the same check in their
+        // `builtins::arith` primitive, which the table below calls.)
+        if matches!(normalized_op, "+" | "-" | "*" | "/" | "%" | "**")
+            && let Some(failure) = crate::runtime::utils::str_numeric_operand_failure(left)
+                .or_else(|| crate::runtime::utils::str_numeric_operand_failure(right))
+        {
+            return Ok(failure);
+        }
         match Interpreter::apply_reduction_op(normalized_op, left, right) {
             Ok(v) => Ok(v),
             Err(err) if err.message.starts_with("Unsupported reduction operator:") => {

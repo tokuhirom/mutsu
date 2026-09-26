@@ -3580,6 +3580,7 @@ impl Interpreter {
             Self::init_signal_enum(&mut enum_base);
             Self::init_seek_type_enum(&mut enum_base);
             Self::init_file_change_event_enum(&mut enum_base);
+            Self::init_promise_status_enum(&mut enum_base);
             // Hoist the immutable process-constant magic/dynamic vars out of every
             // per-frame env overlay into the shared base tier (docs/vm-dual-store.md
             // 4c "natural extension"). These are set once at interpreter start and

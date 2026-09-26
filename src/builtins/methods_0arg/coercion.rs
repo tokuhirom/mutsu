@@ -1166,17 +1166,13 @@ fn value_to_capture(target: &Value) -> Result<Value, RuntimeError> {
             Ok(Value::capture(vec![], named))
         }
         // Promise follows Mu.Capture: its public `.status` accessor becomes a
-        // named argument. The value is the `PromiseStatus` enum constant (a
-        // package-qualified term, e.g. `PromiseStatus::Planned`) so it `eqv`s
-        // the literal `PromiseStatus::<status>`.
+        // named argument. The value is the `PromiseStatus` enum constant, so
+        // it `eqv`s the literal `PromiseStatus::<status>`.
         ValueView::Promise(shared) => {
             let mut named = ValueMap::default();
             named.insert(
                 "status".to_string(),
-                Value::package(crate::symbol::Symbol::intern(&format!(
-                    "PromiseStatus::{}",
-                    shared.status()
-                ))),
+                crate::runtime::Interpreter::promise_status_value(&shared.status()),
             );
             Ok(Value::capture(vec![], named))
         }
