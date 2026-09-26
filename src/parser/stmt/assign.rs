@@ -153,9 +153,9 @@ pub(crate) use lvalue::{
 #[allow(unused_imports)]
 pub(crate) use op::{ShortCircuitKeep, short_circuit_keep, short_circuit_test};
 pub(crate) use op::{
-    compound_assign_op_from_name, compound_assigned_value_expr, parse_compound_assign_op,
-    parse_custom_compound_assign_op, parse_meta_compound_assign_op, parse_set_compound_assign_op,
-    short_circuit_compound_assign_expr,
+    autoviv_set_compound_lhs, compound_assign_op_from_name, compound_assigned_value_expr,
+    parse_compound_assign_op, parse_custom_compound_assign_op, parse_meta_compound_assign_op,
+    parse_set_compound_assign_op, short_circuit_compound_assign_expr,
 };
 pub(crate) use paren::{looks_like_parenthesized_assignment, parenthesized_assign_expr};
 pub(crate) use sink::{

@@ -35,6 +35,8 @@ pub(super) fn seed_meta_assign_identity(
         MetaAssignIdentity::EmptyStr => Ok(Value::str(String::new())),
         MetaAssignIdentity::NoZeroArgDiv => Err(RuntimeError::no_zero_arg_meaning("infix:</>")),
         MetaAssignIdentity::NoZeroArgMod => Err(RuntimeError::no_zero_arg_meaning("infix:<%>")),
+        MetaAssignIdentity::EmptySet => Ok(Value::set(Default::default())),
+        MetaAssignIdentity::EmptyBag => Ok(Value::bag(Default::default())),
     }
 }
 

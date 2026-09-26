@@ -184,6 +184,27 @@ fn autoviv_compound_lhs(lhs: Expr, op: CompoundAssignOp) -> Expr {
     }
 }
 
+/// [`autoviv_compound_lhs`] for the set operators, which the parser carries as
+/// a raw `TokenKind` rather than a `CompoundAssignOp`: an undefined `$s` in
+/// `$s ∪= x` is replaced by the operator's zero-argument value (`set()` /
+/// `bag()`), exactly as rakudo's `METAOP_ASSIGN` does. The operators
+/// themselves then take `Any`, `Nil` and `""` operands as ordinary elements
+/// (#9481).
+pub(crate) fn autoviv_set_compound_lhs(lhs: Expr, op: &TokenKind) -> Expr {
+    let identity = match op {
+        TokenKind::SetUnion
+        | TokenKind::SetIntersect
+        | TokenKind::SetDiff
+        | TokenKind::SetSymDiff => MetaAssignIdentity::EmptySet,
+        TokenKind::SetAddition | TokenKind::SetMultiply => MetaAssignIdentity::EmptyBag,
+        _ => return lhs,
+    };
+    Expr::Unary {
+        op: TokenKind::MetaAssignIdentity(identity),
+        expr: Box::new(lhs),
+    }
+}
+
 /// Which value of the LHS makes a short-circuiting compound assignment KEEP
 /// the current value instead of storing the RHS.
 #[derive(Clone, Copy)]
