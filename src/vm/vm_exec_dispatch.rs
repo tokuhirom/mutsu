@@ -6297,6 +6297,11 @@ impl Interpreter {
                 self.exec_register_var_export_op(code, *name_idx, *tags_idx)?;
                 *ip += 1;
             }
+            // Cost: O(m), m = modules on the load stack (the export mirrors in `register_exported_var`).
+            OpCode::PublishExportStashVar { name_idx } => {
+                self.exec_publish_export_stash_var_op(code, *name_idx);
+                *ip += 1;
+            }
             // Cost: O(1) plus the trait's own work (a tied container's STORE may copy the initializer, O(e)).
             OpCode::ApplyVarTrait {
                 name_idx,

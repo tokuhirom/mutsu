@@ -4166,6 +4166,13 @@ pub(crate) enum OpCode {
         name_idx: u32,
         tags_idx: Option<u32>,
     },
+    /// Publish an `our` variable declared directly inside an
+    /// `EXPORT::<tag>` package (`package EXPORT::DEFAULT { our &f = ... }`)
+    /// as one of the loading module's exports, after its value has been
+    /// stored. Stack: `[] → []`. `name_idx` is the constant-pool index of the
+    /// declared (unqualified) name. A no-op unless the runtime package is an
+    /// export stash.
+    PublishExportStashVar { name_idx: u32 },
     /// Apply a custom variable trait via `trait_mod:<is>`.
     /// When `has_arg` is true, pops trait argument value from stack.
     /// `slot` is the compile-time-baked local slot of the declared variable

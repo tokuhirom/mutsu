@@ -1989,6 +1989,13 @@ impl Compiler {
                         }
                     }
                 }
+                if *is_our
+                    && !*is_export
+                    && crate::runtime::Interpreter::export_stash_tag(&self.current_package)
+                        .is_some()
+                {
+                    self.code.emit(OpCode::PublishExportStashVar { name_idx });
+                }
                 if *is_export {
                     let tags_idx = if export_tags.is_empty() {
                         None

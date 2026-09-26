@@ -17,3 +17,12 @@ The private-helper seclusion also stopped treating a name as public just
 because *some other* module exports it: only the loaded module's own exports
 stay shared, so a module's private `sub ex` no longer leaks when an unrelated
 module happens to export an `ex`.
+
+Closing the leak exposed a missing export path it had been papering over:
+`our` declarations directly inside a `package EXPORT::<tag> { ... }` block --
+`our &decode-percents = &Cro::ResourceIdentifier::decode-percents;` in
+`Cro::Uri`, or a plain `our $answer = 42;` -- were never registered as that
+tag's exports. `Cro::Uri`'s users only reached `decode-percents` because the
+module's own `use Cro::ResourceIdentifier` had leaked it into `GLOBAL`. Such
+declarations are now published like an `OUR::{'&name'} := ...` binding in the
+same stash.
