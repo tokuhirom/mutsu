@@ -146,8 +146,9 @@ impl Interpreter {
     /// that overrides `WHICH` decides its own identity. `!==` autothreads
     /// `===` and negates the collapsed result.
     // Cost: O(1) for scalars and list-shaped operands (compared by container
-    // identity; their elements are never visited), O(d) for an instance,
-    // d = MRO depth (the user-`WHICH` probe), O(k) for a Capture, k = elements.
+    // identity; their elements are never visited) and for instances (the
+    // user-`WHICH` probe is memoized per class); O(k) for a Capture,
+    // k = elements.
     pub(crate) fn identical_values(
         &mut self,
         negate: bool,

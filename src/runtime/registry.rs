@@ -602,6 +602,17 @@ impl Registry {
             .map(|entry| entry.user_candidates.clone())
     }
 
+    /// Whether [`Self::user_method_overloads`] would answer `Some` for
+    /// `(owner, name)`, without cloning the candidate list.
+    pub(crate) fn method_overloads_present(&self, owner: Symbol, name: &str) -> bool {
+        self.method_entries
+            .get(&MethodEntryKey {
+                owner,
+                name: Symbol::intern(name),
+            })
+            .is_some_and(|entry| !entry.user_candidates.is_empty())
+    }
+
     /// Visibility of the auto-generated accessor `name` declares directly on
     /// `owner`, if any (ADR-0019 D2d). `None` means this class does not
     /// declare an attribute of that name at all — distinct from `Some(false)`

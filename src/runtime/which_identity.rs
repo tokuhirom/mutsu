@@ -56,8 +56,8 @@ impl Interpreter {
     /// Set/Bag/Mix, an object-hash subscript); `===` uses the shallower
     /// [`Self::warm_which_identity_for_identity`].
     // Cost: O(t), t = elements of a list-shaped `value` counted recursively to
-    // depth 16 (the caller is about to key each of them anyway), O(d) for an
-    // instance, d = MRO depth.
+    // depth 16 (the caller is about to key each of them anyway), O(1) amortized
+    // for an instance (memoized `has_user_method`).
     pub(crate) fn warm_which_identity(&mut self, value: &Value) {
         self.warm_which_identity_depth(value, 0);
     }
@@ -70,9 +70,9 @@ impl Interpreter {
     /// arrays hold. Still descended: a container's value, a mixin's base, a
     /// Pair's key and value, and a Capture's elements (a Capture's `WHICH` is
     /// built from its elements, so the comparison walks them itself).
-    // Cost: O(1) for a list-shaped operand or scalar; O(d) for an instance,
-    // d = MRO depth (`has_user_method`); O(k) for a Capture, k = its elements,
-    // which the comparison itself walks too.
+    // Cost: O(1) for a list-shaped operand, scalar or instance (the
+    // `has_user_method` probe is memoized per class); O(k) for a Capture,
+    // k = its elements, which the comparison itself walks too.
     pub(crate) fn warm_which_identity_for_identity(&mut self, value: &Value) {
         self.warm_which_identity_shallow(value, 0);
     }

@@ -7,7 +7,7 @@ use Test;
 #
 # All expectations below were measured against rakudo v2026.07.
 
-plan 42;
+plan 50;
 
 class WithWhich {
     has $.a;
@@ -89,3 +89,17 @@ my %g{Any};
 is %g{$one}, 'x', 'an object hash still keys a plain object by identity';
 is %g{p(5)}, Any, 'and a different plain object is a different key';
 is %g.elems, 1, 'so the hash still holds one entry';
+
+# --- === consults the parts identity is built from, and no more ------------
+# A list-shaped operand is compared by container identity, so its elements'
+# WHICH never decides `===` (and is never computed for it, #9172).
+my @wa = w(5), w(6);
+ok @wa === @wa, 'an array holding user-WHICH objects is === to itself';
+nok [w(5)] === [w(5)], 'two arrays with WHICH-equal elements are not ===';
+nok (w(5), w(6)) === (w(5), w(6)), 'nor are two such Lists';
+ok (a => w(5)) === (a => w(5)), 'a Pair === follows its value\'s user WHICH';
+nok (a => w(5)) === (a => w(6)), 'and a different value is not ===';
+ok \(w(5)) === \(w(5)), 'a Capture === follows its elements\' user WHICH';
+nok \(w(5)) === \(w(6)), 'and a different element is not ===';
+my $wx = w(5);
+nok [$wx] === [$wx], 'two arrays holding the same object are still not ===';
