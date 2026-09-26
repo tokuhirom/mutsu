@@ -1828,9 +1828,41 @@ impl Interpreter {
                 }
             }
             (ValueView::Instance { class_name, .. }, ValueView::Int(i)) => {
-                let fallback = target.clone();
-                let result = self
-                    .try_compiled_method_or_interpret(target.clone(), "AT-POS", vec![Value::int(i)])
+                let class_name = class_name.resolve();
+                let has_user_at_pos = self.has_user_method_including_role(&class_name, "AT-POS");
+                let has_user_at_key = self.has_user_method_including_role(&class_name, "AT-KEY");
+                let is_positional_type = self.type_matches_value("Positional", &target);
+                let has_typed_positional_default = is_positional_type
+                    && !has_user_at_pos
+                    && !has_user_at_key
+                    && self.container_type_metadata(&target).is_some();
+                let result = if is_positional && !has_user_at_pos && has_user_at_key {
+                    // For an Associative object, `[...]` falls back to AT-KEY
+                    // when the class has no positional protocol of its own.
+                    self.try_compiled_method_or_interpret(
+                        target.clone(),
+                        "AT-KEY",
+                        vec![Value::int(i)],
+                    )
+                    .unwrap_or(Value::NIL)
+                } else if has_typed_positional_default {
+                    // A parameterized Array subclass stores its element type
+                    // in side metadata rather than in a user AT-POS method.
+                    // Any.AT-POS is still the inherited method for ordinary
+                    // objects, but typed positional containers must preserve
+                    // their element default (e.g. A[Int].new[0] is Int).
+                    Value::NIL
+                } else if !is_positional && !has_user_at_key {
+                    // The inherited Any.AT-POS is only a positional default;
+                    // `{...}` on an object without AT-KEY remains undefined.
+                    Value::NIL
+                } else {
+                    let fallback = target.clone();
+                    self.try_compiled_method_or_interpret(
+                        target.clone(),
+                        "AT-POS",
+                        vec![Value::int(i)],
+                    )
                     .or_else(|_| {
                         self.try_compiled_method_or_interpret(
                             fallback,
@@ -1838,10 +1870,11 @@ impl Interpreter {
                             vec![Value::int(i)],
                         )
                     })
-                    .unwrap_or(Value::NIL);
+                    .unwrap_or(Value::NIL)
+                };
                 if result.is_nil() {
-                    if self.type_matches_value("Positional", &target)
-                        && self.has_user_method_including_role(&class_name.resolve(), "keys")
+                    if is_positional_type
+                        && self.has_user_method_including_role(&class_name, "keys")
                     {
                         Value::package(crate::symbol::wk::any())
                     } else {
@@ -1862,9 +1895,30 @@ impl Interpreter {
                 ValueView::Num(_) | ValueView::Rat(..) | ValueView::FatRat(..),
             ) => {
                 let i = crate::runtime::to_int(&index);
-                let fallback = target.clone();
-                let result = self
-                    .try_compiled_method_or_interpret(target.clone(), "AT-POS", vec![Value::int(i)])
+                let class_name = class_name.resolve();
+                let has_user_at_pos = self.has_user_method_including_role(&class_name, "AT-POS");
+                let has_user_at_key = self.has_user_method_including_role(&class_name, "AT-KEY");
+                let is_positional_type = self.type_matches_value("Positional", &target);
+                let has_typed_positional_default = is_positional_type
+                    && !has_user_at_pos
+                    && !has_user_at_key
+                    && self.container_type_metadata(&target).is_some();
+                let result = if is_positional && !has_user_at_pos && has_user_at_key {
+                    self.try_compiled_method_or_interpret(
+                        target.clone(),
+                        "AT-KEY",
+                        vec![Value::int(i)],
+                    )
+                    .unwrap_or(Value::NIL)
+                } else if has_typed_positional_default || (!is_positional && !has_user_at_key) {
+                    Value::NIL
+                } else {
+                    let fallback = target.clone();
+                    self.try_compiled_method_or_interpret(
+                        target.clone(),
+                        "AT-POS",
+                        vec![Value::int(i)],
+                    )
                     .or_else(|_| {
                         self.try_compiled_method_or_interpret(
                             fallback,
@@ -1872,10 +1926,11 @@ impl Interpreter {
                             vec![Value::int(i)],
                         )
                     })
-                    .unwrap_or(Value::NIL);
+                    .unwrap_or(Value::NIL)
+                };
                 if result.is_nil() {
-                    if self.type_matches_value("Positional", &target)
-                        && self.has_user_method_including_role(&class_name.resolve(), "keys")
+                    if is_positional_type
+                        && self.has_user_method_including_role(&class_name, "keys")
                     {
                         Value::package(crate::symbol::wk::any())
                     } else {
