@@ -8105,7 +8105,8 @@ impl CompiledCode {
             .iter()
             .any(|c| matches!(c.view(), crate::value::ValueView::Str(s) if s.as_str() == "_"));
         self.mentions_native_scalar_type_name = self.constants.iter().any(|c| {
-            matches!(c.view(), crate::value::ValueView::Str(s) if matches!(s.as_str(), "int" | "str" | "num"))
+            matches!(c.view(), crate::value::ValueView::Str(s) if matches!(s.as_str(), "int" | "str" | "num")
+                || crate::runtime::native_types::is_native_int_type(s.as_str()))
         });
         self.compute_const_syms();
         self.compute_locals_sym();
@@ -11585,9 +11586,17 @@ pub(crate) enum FastParamType {
     /// boxed case this must not disturb. `NativeInt` additionally accepts a
     /// `Bool` argument (`Bool` "does" `Int`, `t/nativecall/bool-native-int-unbox.t`),
     /// which the boxed `Int` tag deliberately does not. Only the plain
-    /// full-width spellings are covered, not the sized (`int8`/`uint32`/...)
-    /// or C-width-alias forms -- those stay on the general binder.
+    /// full-width `int`; the sized and C-width-alias spellings are
+    /// [`Self::NativeIntSized`].
     NativeInt,
+    /// Every other native integer spelling (`int8`..`int64`, `uint`,
+    /// `uint8`..`uint64`, `byte`, and the C-width aliases `long`, `size_t`,
+    /// ...; see `native_types::is_native_int_type`). Admits exactly what
+    /// [`Self::NativeInt`] admits; the light bind sites then apply the same
+    /// `wrap_native_int_for_binding` the general binder applies, under the
+    /// parameter's own spelling (#9506). The spelling itself is carried by
+    /// `FastParamCheck::Fast::name_sym`.
+    NativeIntSized,
     NativeStr,
     NativeNum,
     /// `Any` / `Mu`: satisfied by every value.
@@ -11616,6 +11625,7 @@ impl FastParamType {
             "str" => Self::NativeStr,
             "num" => Self::NativeNum,
             "Any" | "Mu" => Self::Wild,
+            n if crate::runtime::native_types::is_native_int_type(n) => Self::NativeIntSized,
             _ => return None,
         })
     }

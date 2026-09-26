@@ -25,7 +25,7 @@ fn is_multidim_slice_cells(value: &crate::value::Value) -> bool {
 /// A parameter as raku spells it in an error message. `ParamDef::name` carries
 /// no sigil for a scalar (`x` for `$x`), so restore it; a name that already has
 /// one (`@a`, `%h`, `&c`) is left alone.
-fn param_display_name(pd: &crate::ast::ParamDef) -> String {
+pub(crate) fn param_display_name(pd: &crate::ast::ParamDef) -> String {
     // An anonymous parameter (`$`, `$?`, `@?`, `%?`) carries a synthetic parser
     // placeholder as its name. Rakudo names it `<anon>` in a binding error, so
     // leaking `$__ANON_OPTIONAL__` / `$__ANON_STATE__` into the message would
