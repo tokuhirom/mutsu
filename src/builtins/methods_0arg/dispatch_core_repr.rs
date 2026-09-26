@@ -201,6 +201,11 @@ pub(super) fn dispatch(
                 | ValueView::ValuePair(..)
         )
     {
+        // An element that is a zero-denominator Rational dies when the
+        // collection gists it, as `(1/0).gist` does (GH #9608).
+        if let Some(err) = crate::runtime::utils::zero_denominator_rational_error(target) {
+            return Some(Some(Err(err)));
+        }
         match gist_route(target) {
             GistRoute::Dispatch => return Some(None),
             GistRoute::Cyclic => {
