@@ -36,6 +36,9 @@ use crate::runtime::builtins_system::SpawnError;
 pub(crate) type Rejecter = Box<dyn FnOnce(&SpawnError) + Send + 'static>;
 
 #[cfg(not(target_arch = "wasm32"))]
+mod yield_points;
+
+#[cfg(not(target_arch = "wasm32"))]
 mod native {
     use super::Rejecter;
     use crate::runtime::builtins_system::{SpawnError, StackPolicy};
@@ -155,7 +158,7 @@ mod native {
 
     thread_local! {
         /// Whether this thread is a pool worker currently running a task.
-        static IN_TASK: Cell<bool> = const { Cell::new(false) };
+        pub(super) static IN_TASK: Cell<bool> = const { Cell::new(false) };
         /// Nesting depth of `enter_blocking` on this thread; only the
         /// outermost level is counted.
         static BLOCK_DEPTH: Cell<u32> = const { Cell::new(0) };
@@ -165,7 +168,7 @@ mod native {
     /// report any task that could not get a worker. Called with no lock held,
     /// on a thread that is free to run a rejecter (it holds no lock the
     /// rejected task's waiter could need).
-    pub(super) fn grow_as_needed() {
+    pub(in crate::runtime::worker_pool) fn grow_as_needed() {
         let cvar = &pool().1;
         loop {
             let policy = {
@@ -226,6 +229,7 @@ mod native {
             let mut st = lock_pool();
             st.starting -= 1;
         }
+        super::yield_points::register_worker();
         while let Some(task) = wait_for_task() {
             IN_TASK.with(|c| c.set(true));
             // A panicking task must not take the worker's `live` accounting
@@ -233,12 +237,18 @@ mod native {
             // a panicking dedicated thread (the panic is already turned into a
             // broken Promise by `guard_worker_panic` where that matters).
             let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(task.run));
+            // Task end is a yield (ADR-0105 D2): deliver the wake-ups this
+            // task deferred. Deferred starts need nothing: this worker is
+            // about to dequeue them itself.
+            super::yield_points::flush_own();
             IN_TASK.with(|c| c.set(false));
             // Task boundary (ADR-0020 §3.4): task N's pending DESTROY queue
             // and failure registry must not leak into task N+1 while the
-            // thread stays GC-registered.
+            // thread stays GC-registered. (This also releases any ADR-0105 D3
+            // rendezvous the task still owes.)
             crate::value::drop_thread_local_gc_state();
         }
+        super::yield_points::unregister_worker();
     }
 
     /// Park until a task is available. Returns `None` when the worker should
@@ -297,6 +307,8 @@ mod native {
     }
 
     pub(super) fn enter_blocking() -> BlockingGuard {
+        // A blocking point is a yield (ADR-0105 D2/D3), on any thread.
+        super::yield_points::on_park();
         if !IN_TASK.with(|c| c.get()) {
             return BlockingGuard { counted: false };
         }
@@ -429,12 +441,40 @@ fn submit_task(run: Box<dyn FnOnce() + Send + 'static>, reject: Option<Rejecter>
         return;
     }
     crate::vm::vm_stats::record_pool_task();
-    {
+    // ADR-0105 D4: a task submitted by a running pool worker while no worker
+    // is idle must not overtake its submitter. It waits for the submitter to
+    // yield — park (which grows the pool), task end (the submitter dequeues it
+    // itself) — or for the pool tick, instead of getting a fresh worker now.
+    let from_worker = native::IN_TASK.with(|c| c.get());
+    let defer = {
         let mut st = native::lock_pool();
+        let defer = from_worker && st.idle == 0;
         st.queue.push_back(native::Task { run, reject });
-    }
+        defer
+    };
     native::pool().1.notify_one();
+    if defer && yield_points::arm_tick() {
+        return;
+    }
     native::grow_as_needed();
+}
+
+/// Defer `f` to the calling pool worker's next yield — its next blocking
+/// point, its task end, or the pool tick (ADR-0105 D2). Hands `f` back when
+/// the caller is not a pool worker running a task; the caller runs it now.
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) fn defer_until_yield(
+    f: Box<dyn FnOnce() + Send + 'static>,
+) -> Result<(), Box<dyn FnOnce() + Send + 'static>> {
+    yield_points::defer_until_yield(f)
+}
+
+/// wasm32: the cooperative pump is already sequential; nothing to defer to.
+#[cfg(target_arch = "wasm32")]
+pub(crate) fn defer_until_yield(
+    f: Box<dyn FnOnce() + Send + 'static>,
+) -> Result<(), Box<dyn FnOnce() + Send + 'static>> {
+    Err(f)
 }
 
 /// wasm32: the cooperative scheduler is already a pool of one — queue the task.

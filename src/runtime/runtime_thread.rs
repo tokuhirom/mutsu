@@ -350,6 +350,15 @@ impl Interpreter {
                     || (key.with_str(crate::env::is_dynamic_var_name)
                         && !key.starts_with("@")
                         && !key.starts_with("%"))
+                    // An attribute alias (`!x`, `@!x`, `%!x`) is a view of
+                    // the invocant's storage, not a lexical of this frame: the
+                    // instance is already shared, so seeding a snapshot of the
+                    // alias into the lineage store only shadows it — an inline
+                    // `$!lock.protect: { @!x ... }` in the spawning method then
+                    // read the spawn-time copy and lost every write another
+                    // thread made to the attribute since (#8380's
+                    // `Test::Scheduler.run-due` dropping a `FutureEvent`).
+                    || key.with_str(is_attribute_alias_name)
                 {
                     continue;
                 }
@@ -1303,4 +1312,11 @@ impl Interpreter {
         }
         Some(result)
     }
+}
+
+/// Whether an env key is an attribute alias (`!x`, `@!x`, `%!x`, `&!x`) rather
+/// than a lexical.
+fn is_attribute_alias_name(key: &str) -> bool {
+    let bare = key.trim_start_matches(['$', '@', '%', '&']);
+    bare.len() > 1 && bare.starts_with('!')
 }

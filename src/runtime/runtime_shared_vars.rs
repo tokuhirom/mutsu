@@ -797,10 +797,19 @@ impl Interpreter {
         if !self.shared_vars_active {
             return;
         }
+        // A name this lineage re-declared is a fresh binding that merely shares
+        // a bare name with the store's entry (the shadowed binding, or an
+        // earlier call's), exactly as `sync_shared_vars_to_env` treats it:
+        // pulling that entry in made a `$lock.protect: { @a ... }` block read
+        // a previous invocation's `@a` (#8380: `Test::Scheduler.run-due`
+        // re-queued a cancelled event forever).
+        let redeclared = self.thread_redeclared_vars.borrow();
         let entries: Vec<(String, Value)> = names
             .into_iter()
+            .filter(|n| !redeclared.contains(*n))
             .filter_map(|n| self.shared_vars.get(n).map(|v| (n.to_string(), v)))
             .collect();
+        drop(redeclared);
         for (name, val) in entries {
             if matches!(val.view(), ValueView::Array(..) | ValueView::Hash(..)) {
                 self.env.remove(&name);

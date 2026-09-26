@@ -537,6 +537,7 @@ mod nanbox;
 pub(crate) use nanbox::jit_words;
 pub(crate) mod buf_bytes;
 mod native_backing;
+pub(crate) mod promise_wake;
 pub(crate) mod seq_body;
 mod serde_support;
 pub(crate) mod signature;
@@ -1121,6 +1122,10 @@ pub(crate) fn take_pending_instance_destroys() -> Vec<PendingInstanceDestroy> {
 /// leftover DESTROY items are dropped without running their Raku handlers, which
 /// matches the prior behavior (the TLS destructor never ran handlers either).
 pub(crate) fn drop_thread_local_gc_state() {
+    // ADR-0105 D3: a task end or thread exit is a yield — release any
+    // user-scheduler dispatcher still lending this thread its turn, while the
+    // thread is still registered (the release drops `Gc` promise handles).
+    promise_wake::release_borrowed_wakes();
     // Take each collection OUT of its RefCell before dropping it: an element's
     // `Drop` re-enters these same thread-locals (an instance's `finalize_destroy`
     // pushes to PENDING_INSTANCE_DESTROYS), so dropping in place while holding the
@@ -3221,7 +3226,27 @@ struct PromiseState {
     /// reaction of a supply block, that block's serialize group. The group is
     /// what lets `dispatch_waiters` order these reactions by resolution order
     /// rather than by pooled-worker wake-up luck -- see `SupplyTicket`.
-    waiters: Vec<(PromiseWaiter, Option<u64>)>,
+    ///
+    /// An `await` parked on this promise is a subscriber too (ADR-0105 D2):
+    /// a [`promise_wake::Subscriber::Wake`] entry holding the awaiter's wake
+    /// ticket, so a user scheduler dispatches it in registration order along
+    /// with the callbacks.
+    waiters: Vec<promise_wake::Subscriber>,
+    /// Wake tickets handed to awaiters that parked while `Planned`; the next
+    /// awaiter gets this one (ADR-0105 D2).
+    wake_next: u64,
+    /// Awaiters holding a ticket below this may resume. Resolving does not
+    /// wake anyone by itself: the built-in path grants every ticket at the
+    /// keeper's next yield, a user scheduler grants them one at a time from
+    /// the task it was cued with.
+    wake_granted: u64,
+    /// ADR-0105 D3: awaiters holding a ticket below this have reached their
+    /// next blocking point (or finished their task) after resuming, which is
+    /// what the user-scheduler dispatch that woke them waits for.
+    wake_resumed: u64,
+    /// Whether the grant came from a user scheduler's dispatch, so the woken
+    /// awaiter owes it a rendezvous (ADR-0105 D3).
+    wake_rendezvous: bool,
     /// Has a `Promise::Vow` been taken for this promise? Rakudo's
     /// `Promise.vow`, `Promise.keep` and `Promise.break` all consume the
     /// single available vow: the first of them to run sets this, and every

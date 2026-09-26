@@ -229,7 +229,8 @@ that its continuation is *not* what orders `Test::Scheduler` — every promise s
 dispatched through `$promise.scheduler.cue`, and a worker-submitted task never overtakes its
 still-running submitter. [ADR-0105](0105-promise-resolution-dispatches-through-the-promise-scheduler.md)
 proposes those two properties plus a thread-backed rendezvous in place of fork (b), which reverts
-to the perf/thread-count axis it was before this section.
+to the perf/thread-count axis it was before this section. **Implemented 2026-09-26**: `Test::Time`
+`t/01-tdd.t` and all three `Test::Scheduler` files pass under the default pool.
 
 ## 6. Implementation status
 

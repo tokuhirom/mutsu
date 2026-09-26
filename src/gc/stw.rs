@@ -327,9 +327,18 @@ pub(crate) fn wait_until<'a, T>(
     {
         // See `block_quiescent`: taken before `mutex`, so pool growth (and a
         // rejected task's promise break) never runs under the caller's lock.
+        let mut ready = ready;
+        // Already satisfied: not a blocking point at all, so neither a pool
+        // slot to free nor a yield (ADR-0105: a spurious yield would release
+        // a D3 rendezvous before the awaiter really parks).
+        let guard = mutex.lock().unwrap();
+        if ready(&guard) {
+            return Some(guard);
+        }
+        drop(guard);
         let _blocking = crate::runtime::worker_pool::enter_blocking();
         let guard = mutex.lock().unwrap();
-        Some(stw_aware_wait(cvar, guard, ready))
+        Some(stw_aware_wait(cvar, guard, &mut ready))
     }
     #[cfg(target_arch = "wasm32")]
     {

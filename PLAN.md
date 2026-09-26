@@ -259,10 +259,10 @@ from the real dispatch table (ADR-0019 F1/F2). Digest's `t/ripemd.t` is now whit
       thread consumption under heavy concurrency, so start this only on a measured trigger and an
       updated ADR. **The [#8380](https://github.com/tokuhirom/mutsu/issues/8380) `Test::Scheduler`
       deadlock is NOT that trigger**: [ADR-0105](docs/adr/0105-promise-resolution-dispatches-through-the-promise-scheduler.md)
-      (Accepted 2026-09-16, not yet implemented) measured that Rakudo's continuation is not what orders it, and
-      scopes the actual fix — scheduler-routed promise resolution, a woken awaiter borrowing the
-      resuming worker's slot, and no task overtaking its running submitter — as four bounded
-      slices that leave this axis untouched.
+      (Accepted 2026-09-16, implemented 2026-09-26) measured that Rakudo's continuation is not what
+      orders it, and fixed it with scheduler-routed promise resolution, a woken awaiter borrowing
+      the resuming worker's slot, and no task overtaking its running submitter — leaving this axis
+      untouched.
 - [ ] Split out the roast fudge logic. File size (376 over 500 lines, 138 over 1000, still growing —
       `ANALYSIS.md` §6) is **not** a standalone campaign: split when a campaign opens the file and the
       ownership boundary is visible.
