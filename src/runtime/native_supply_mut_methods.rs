@@ -1518,6 +1518,7 @@ impl Interpreter {
                 Some("ThreadPoolScheduler") => {
                     let (pump_id, rx) = register_scheduled_pump();
                     let real_tap = tap_cb.clone();
+                    let tap_cb_gate = tap_cb.clone();
                     let real_done = done_cb.clone();
                     let real_quit = quit_cb.clone();
                     let real_delay = delay_seconds;
@@ -1543,7 +1544,7 @@ impl Interpreter {
                     // calling the shim); re-splitting here would be wrong.
                     // Held while a declaration the tap callback captures is
                     // in flight (`decl_gate`).
-                    crate::runtime::decl_gate::submit_after_declaration(&real_tap, move || {
+                    crate::runtime::decl_gate::submit_after_declaration(&tap_cb_gate, move || {
                         Self::run_supply_act_loop(
                             &mut thread_interp,
                             &rx,
