@@ -191,6 +191,11 @@ impl Interpreter {
         ignore_case: bool,
         subrule_first_only: bool,
     ) -> Vec<(usize, RegexCaptures)> {
+        // #9617: under measurement a recursive subrule call is a fate.
+        let _ltm_subrule = match super::regex_ltm_recursion::ltm_enter_subrule(atom, pos) {
+            super::regex_ltm_recursion::LtmSubruleEntry::Recursive => return Vec::new(),
+            entry => entry,
+        };
         // #9579: inside a measurement, an argument-less `<subrule>` call is
         // walked once per position (`regex_ltm_memo`). It opens no grammar
         // frame under measurement (see below); a defaulted `$*` parameter is

@@ -174,6 +174,11 @@ impl Interpreter {
         pos: usize,
         pkg: Symbol,
     ) -> (Option<usize>, bool) {
+        // #9617: a measurement started from a real match walks from an empty
+        // subrule stack (`regex_ltm_recursion`).
+        let _stack = super::regex_ltm_recursion::LtmMeasurementStack::open(
+            LTM_DECLARATIVE_MODE.with(Cell::get),
+        );
         // #9579: one measurement per (branch, position) per outermost
         // measurement — see `regex_ltm_memo` for why the key is sound.
         let slot = match super::regex_ltm_memo::ltm_memo_enter(pattern, chars, pos, pkg) {
