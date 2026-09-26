@@ -665,7 +665,7 @@ impl Interpreter {
             ClassDef {
                 parents: vec!["Scheduler".to_string()],
                 attributes: Vec::new(),
-                native_methods: ["cue", "uncaught_handler", "loads"]
+                native_methods: ["cue", "uncaught_handler", "loads", "max_threads"]
                     .iter()
                     .map(|s| s.to_string())
                     .collect(),

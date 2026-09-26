@@ -17,6 +17,7 @@ impl Interpreter {
         err
     }
 
+    // Cost: O(a + p), a = argument count and p = promise elements in list arguments.
     pub(super) fn collect_promise_combinator_inputs(
         &self,
         combinator: &str,
@@ -24,10 +25,12 @@ impl Interpreter {
     ) -> Result<Vec<SharedPromise>, RuntimeError> {
         let mut promises = Vec::new();
         for arg in args {
+            let arg = arg.deref_container();
             match arg.view() {
                 ValueView::Promise(promise) => promises.push(promise.clone()),
                 _ if arg.as_list_items().is_some() => {
                     for item in arg.as_list_items().unwrap().iter() {
+                        let item = item.deref_container();
                         if let ValueView::Promise(promise) = item.view() {
                             promises.push(promise.clone());
                         } else {

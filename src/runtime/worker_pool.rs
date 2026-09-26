@@ -140,6 +140,7 @@ mod native {
     /// Active workers past which the pool queues instead of growing, as long
     /// as some worker is running. Rakudo's `ThreadPoolScheduler` default
     /// `max_threads` (8 x cores): past it, rakudo queues too.
+    // Cost: O(1), cores = the process CPU count.
     pub(super) fn soft_cap() -> usize {
         cores() * 8
     }
@@ -379,6 +380,22 @@ mod native {
             // A starting worker is spoken for by another task.
             assert_eq!(state(2, 0, 3, 1, 2).growth(8), Some(StackPolicy::Required));
         }
+    }
+}
+
+/// Return the maximum number of active workers exposed by `ThreadPoolScheduler`.
+// Cost: O(1), cores = the process CPU count.
+pub(crate) fn max_threads() -> usize {
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        native::soft_cap()
+    }
+    #[cfg(target_arch = "wasm32")]
+    {
+        std::thread::available_parallelism()
+            .map(|n| n.get())
+            .unwrap_or(1)
+            * 8
     }
 }
 
