@@ -1737,6 +1737,16 @@ impl Interpreter {
             {
                 return result;
             }
+            // A Version subclass stores its native payload separately because
+            // ValueView::Instance carries the subclass name. Delegate the
+            // payload-only accessors that are not representation methods after
+            // user methods have had a chance to win.
+            if matches!(method, "parts" | "plus" | "whatever")
+                && !self.has_user_method(&class_name.resolve(), method)
+                && let Some(payload) = attributes.as_map().get("__mutsu_version_value")
+            {
+                return self.call_method_with_values(payload.clone(), method, args);
+            }
             // A few built-in instance representations carry their native
             // identity in an attribute named `name` (for example the Pair
             // values used by bundled modules). Keep that compatibility path

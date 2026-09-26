@@ -36,6 +36,20 @@ impl Interpreter {
         if !matches!(value.view(), ValueView::Instance { .. }) {
             return Ok(value);
         }
+        // A subclass of native Version stores its comparable payload in the
+        // instance attributes. Use that payload for the shared numeric
+        // comparison routines, while leaving a user-defined Numeric method
+        // in charge when one exists on the subclass.
+        if let ValueView::Instance {
+            class_name,
+            attributes,
+            ..
+        } = value.view()
+            && let Some(payload) = attributes.as_map().get("__mutsu_version_value")
+            && !self.has_user_method(&class_name.resolve(), "Numeric")
+        {
+            return Ok(payload.clone());
+        }
         // A Buf/Blob is Positional too, so it numifies to its element count in
         // exactly the same way: `Buf.new(1,2,3,4,5) == 5` is True (rakudo), and
         // `+$buf` already agrees. TestServer's

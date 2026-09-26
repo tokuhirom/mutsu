@@ -124,6 +124,28 @@ pub(crate) fn native_method_1arg(
     {
         return native_method_1arg(inner, method_sym, arg);
     }
+    // Cost: O(p), p = number of parts in the Version matcher.
+    // Version subclasses carry the native matcher in an instance payload, so
+    // expose the same ACCEPTS semantics as a native Version to their methods.
+    if method == "ACCEPTS" {
+        let version_value = |value: &Value| match value.view() {
+            ValueView::Version { .. } => Some(value.clone()),
+            ValueView::Instance { attributes, .. } => {
+                attributes.as_map().get("__mutsu_version_value").cloned()
+            }
+            _ => None,
+        };
+        if let Some(matcher) = version_value(target)
+            && let ValueView::Version {
+                parts, plus, minus, ..
+            } = matcher.view()
+        {
+            let candidate = version_value(arg).unwrap_or_else(|| arg.clone());
+            return Some(Ok(Value::truth(runtime::Interpreter::version_smart_match(
+                &candidate, parts, plus, minus,
+            ))));
+        }
+    }
     // Cool numeric coercion: when a Str calls a numeric 1-arg method, coerce to numeric first.
     // Also coerce the arg if it's a Str for numeric methods.
     {
