@@ -21,10 +21,11 @@ fn polymod_digit_bound(target: &Value) -> usize {
 }
 
 impl Interpreter {
-    /// Cost: O(e + i), e = elements of the invocant, i = index of the first match:
-    /// the whole receiver is decomposed up front (a container cell per element for
-    /// a mutable array, a copied Vec otherwise), then i+1 matcher calls run, so an
-    /// early hit still pays O(e). Rakudo: O(i) -- see #9162.
+    /// Cost: O(i), i = index of the first match (distance from the end for
+    /// `:end`), on an Array, a List or a reified Seq: the receiver is scanned in
+    /// doubling chunks, so only O(i) elements are decomposed and i+1 matcher
+    /// calls run. O(e + i), e = elements, on any other list-like (decomposed
+    /// whole first).
     pub(in crate::runtime) fn dispatch_first(
         &mut self,
         target: Value,
@@ -143,10 +144,15 @@ impl Interpreter {
         // `@a.first({ $_ = 5 })` writes `@a`, exactly as `.grep`/`.map` and
         // `@a.values.first(...)` already do. Every other receiver (a `List`, a
         // `Seq`, a native or multi-dimensional array) keeps the bare-item scan.
-        let items = Self::buf_as_byte_items(&target)
-            .or_else(|| Self::array_element_cells(&target))
-            .unwrap_or_else(|| crate::runtime::utils::value_to_list_for_receiver(&target));
-        if let Some((idx, value)) = self.find_first_match_over_items(func, &items, has_end)? {
+        let found = if let Some(bytes) = Self::buf_as_byte_items(&target) {
+            self.find_first_match_over_items(func, &bytes, has_end)?
+        } else if Self::promotable_array_len(&target).is_some() || Self::first_borrows(&target) {
+            self.find_first_match_chunked(&target, func, has_end)?
+        } else {
+            let items = crate::runtime::utils::value_to_list_for_receiver(&target);
+            self.find_first_match_over_items(func, &items, has_end)?
+        };
+        if let Some((idx, value)) = found {
             return Ok(super::super::builtins_collection::format_first_result(
                 idx,
                 // `.first` answers the element's VALUE; the container above is

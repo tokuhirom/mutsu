@@ -51,6 +51,8 @@ impl Interpreter {
 
     /// Try to run `target.first(...)` natively. Returns `Some(result)` when
     /// handled in the Interpreter, `None` to fall back unchanged.
+    // Cost: O(i), i = index of the first match, on an Array/List/Seq (scanned
+    // in doubling chunks); O(e + i), e = elements, on any other receiver.
     pub(super) fn try_native_first(
         &mut self,
         target: &Value,
@@ -87,36 +89,37 @@ impl Interpreter {
         // see `todo/tickets/map-rejects-role-mixed-sub-as-callable.md`.
         let func = func.map(Self::unwrap_callable_mixin);
 
-        // A mutable array is scanned through its element CONTAINERS, so the
-        // matcher's topic aliases the element rather than a copy of its value:
-        // `@a.first({ $_ = 5 })` writes `@a`, as `.grep`/`.map` and
-        // `@a.values.first(...)` already do. Every other receiver (a `List`, a
-        // `Seq` of bare items, a native or multi-dimensional array, a `Hash`)
-        // keeps the bare-item scan.
-        let items = Self::array_element_cells(target)
-            .unwrap_or_else(|| crate::runtime::utils::value_to_list_for_receiver(target));
         // `.first` answers the element's VALUE; a container above is the
         // matcher's binding, not the result.
-        let answer = |v: Value| Some(Ok(v.deref_container()));
+        let answer = |found: Result<Option<(usize, Value)>, RuntimeError>| match found {
+            Ok(Some((_, value))) => Some(Ok(value.deref_container())),
+            Ok(None) => Some(Ok(Value::NIL)),
+            Err(e) => Some(Err(e)),
+        };
         // Setup-once batched scan for a plain `Sub` matcher (one compile +
         // env setup, bare `run_reuse` per element, early exit) — ~25x cheaper
         // per element than the per-element closure call below. Falls through
         // for matchers it cannot handle (sub-signature, composed, .assuming).
-        if let Some(func_ref) = func.as_ref()
-            && let Some(res) = self.try_first_match_batched(func_ref, &items, false)
-        {
-            return match res {
-                Ok(Some((_, value))) => answer(value),
-                Ok(None) => Some(Ok(Value::NIL)),
-                Err(e) => Some(Err(e)),
-            };
+        let scan = |interp: &mut Self, items: &[Value], from_end: bool| {
+            if let Some(func_ref) = func.as_ref()
+                && let Some(res) = interp.try_first_match_batched(func_ref, items, from_end)
+            {
+                return res;
+            }
+            let mut matcher = VmFirstMatcher(interp);
+            find_first_match_generic(&mut matcher, func.as_ref(), items, from_end)
+        };
+        // An Array/List/Seq is scanned in doubling chunks, so a hit at index i
+        // decomposes O(i) elements, not the whole receiver. A mutable array is
+        // scanned through its element CONTAINERS, so the matcher's topic
+        // aliases the element rather than a copy of its value: `@a.first({ $_
+        // = 5 })` writes `@a`, as `.grep`/`.map` and `@a.values.first(...)`
+        // already do. A `Hash` is decomposed whole into its pairs.
+        if Self::promotable_array_len(target).is_some() || Self::first_borrows(target) {
+            return answer(self.find_first_match_chunked_with(target, false, scan));
         }
-        let mut matcher = VmFirstMatcher(self);
-        match find_first_match_generic(&mut matcher, func.as_ref(), &items, false) {
-            Ok(Some((_, value))) => answer(value),
-            Ok(None) => Some(Ok(Value::NIL)),
-            Err(e) => Some(Err(e)),
-        }
+        let items = crate::runtime::utils::value_to_list_for_receiver(target);
+        answer(scan(self, &items, false))
     }
 
     /// Lazy `.first` over a gather-sourced `LazyList`: pull elements

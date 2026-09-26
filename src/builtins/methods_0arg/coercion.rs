@@ -331,8 +331,24 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
             // A shaped array falls through to the slow path, which flattens all
             // dimensions and replaces Nil slots with the type-default.
             ValueView::Array(..) if crate::runtime::utils::is_shaped_array(target) => None,
-            // Cost: O(e), e = elements (a fresh copy, for a List invocant too).
-            // Rakudo: O(e) for an Array, O(1) for a List (`.List` is identity) -- see #9162.
+            // `.List` on a List is identity (Rakudo: `method List { self }`): hand
+            // back the same immutable storage, only dropping the invocant's own
+            // itemization. A List can only hold a hole once an element-wise
+            // store recorded `initialized`, so one without that set has none to
+            // materialize as `Nil`.
+            // Cost: O(1).
+            ValueView::Array(items, kind)
+                if matches!(
+                    kind,
+                    crate::value::ArrayKind::List | crate::value::ArrayKind::ItemList
+                ) && items.initialized.is_none() =>
+            {
+                Some(Ok(Value::array_with_kind(
+                    items.clone(),
+                    crate::value::ArrayKind::List,
+                )))
+            }
+            // Cost: O(e), e = elements (a fresh, decontainerized copy).
             ValueView::Array(items, kind) => {
                 // `.List` materializes array holes as literal `Nil` — even when
                 // the array has an `is default(...)` value (Rakudo semantics:

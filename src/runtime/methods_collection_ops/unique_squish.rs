@@ -248,10 +248,10 @@ impl Interpreter {
     }
 
     /// Cost: O(e), e = elements of the invocant (one `===` or one `:with` call per
-    /// adjacent pair), plus, with `:as`/`:with`, O(V + A) for the env snapshot,
-    /// V = env entries, A = total elements of every Array/Hash lexical in scope
-    /// (each is detached, i.e. copied) -- so a small squish next to a large array
-    /// costs the large array. Rakudo: O(e) -- see #9162.
+    /// adjacent pair), plus, with `:as`/`:with`, O(f + A_f) for the env snapshot,
+    /// f = free variables of the callbacks, A_f = elements of the Array/Hash
+    /// lexicals among them (see `squish_env_snapshot`); O(V), V = env entries,
+    /// only when a callback rebinds a lexical.
     pub(crate) fn dispatch_squish(
         &mut self,
         target: Value,
@@ -301,36 +301,9 @@ impl Interpreter {
         // (container identity §3) — a plain `env.clone()` would share those
         // nodes, making the changed-value diff below blind and the revert a
         // no-op, so the lazy iterator's re-run would double the side effects.
-        //
-        // A `ContainerRef`-celled `@`/`%` lexical (ADR-0055: an escaping capture
-        // the creating frame cannot vouch for) is the same hazard one level in:
-        // the binding never changes — the cell IS the binding — so the diff must
-        // compare, and the revert must restore, the cell's CONTENTS. Snapshot
-        // the detached contents under the name; the revert in
-        // `dispatch_iterator_method` writes them back THROUGH the cell.
+        // See `squish_env_snapshot` for which containers are detached.
         let env_before_callbacks = if as_func.is_some() || with_func.is_some() {
-            let mut snapshot = self.env.clone();
-            let detach: Vec<(crate::symbol::Symbol, Value)> = snapshot
-                .iter()
-                .filter_map(|(k, v)| {
-                    let inner = match v.view() {
-                        ValueView::Array(..) | ValueView::Hash(..) => v.clone(),
-                        ValueView::ContainerRef(_) => {
-                            let inner = v.deref_container();
-                            if !matches!(inner.view(), ValueView::Array(..) | ValueView::Hash(..)) {
-                                return None;
-                            }
-                            inner
-                        }
-                        _ => return None,
-                    };
-                    Some((*k, inner.detach_shared_container()))
-                })
-                .collect();
-            for (k, v) in detach {
-                snapshot.insert_sym(k, v);
-            }
-            Some(snapshot)
+            Some(self.squish_env_snapshot(&[as_func.as_ref(), with_func.as_ref()]))
         } else {
             None
         };
@@ -371,23 +344,7 @@ impl Interpreter {
             let mut revert_values = ValueMap::default();
             let mut revert_remove = Vec::new();
             if let Some(before) = env_before_callbacks {
-                for (k, old_v) in &before {
-                    // Compare through a cell: the snapshot holds the detached
-                    // CONTENTS of a `ContainerRef` binding, so the live side has
-                    // to be deref'd too or every celled name looks changed.
-                    let live = self.env.get_sym(*k).map(|v| match v.view() {
-                        ValueView::ContainerRef(_) => v.deref_container(),
-                        _ => v.clone(),
-                    });
-                    if live.as_ref() != Some(old_v) {
-                        revert_values.insert(k.resolve(), old_v.clone());
-                    }
-                }
-                for k in self.env.keys() {
-                    if !before.contains_key_sym(*k) {
-                        revert_remove.push(k.resolve());
-                    }
-                }
+                self.squish_env_diff(before, &mut revert_values, &mut revert_remove);
             }
             let seq_id = items.identity();
             self.squish_iterator_meta.insert(

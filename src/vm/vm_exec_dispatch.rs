@@ -3100,8 +3100,8 @@ impl Interpreter {
             }
 
             // -- Numeric comparison --
-            // Cost: O(1) on scalars; O(e_l + e_r) for two list operands (see num_eq_values).
-            // Rakudo: O(1) for reified arrays -- see #9162.
+            // Cost: O(1) on scalars and on two Array/List/Seq operands (lengths are
+            // compared in place); O(e) on a Range operand (see num_eq_values).
             OpCode::NumEq => {
                 let saved_site = self.enter_numeric_op_site(code, *ip);
                 let r = self.exec_num_eq_op();
@@ -3109,8 +3109,8 @@ impl Interpreter {
                 r?;
                 *ip += 1;
             }
-            // Cost: as NumEq: O(1) on scalars, O(e_l + e_r) for two list operands. Rakudo: O(1)
-            // for reified arrays -- see #9162.
+            // Cost: as NumEq: O(1) on scalars and Array/List/Seq operands, O(e) on a
+            // Range operand.
             OpCode::NumNe => {
                 let saved_site = self.enter_numeric_op_site(code, *ip);
                 let r = self.exec_num_ne_op();
@@ -3282,9 +3282,9 @@ impl Interpreter {
                 self.exec_strict_ne_op()?;
                 *ip += 1;
             }
-            // Cost: O(e_l + e_r), e = total nodes of each operand, on every call
-            // (see eqv_values). Rakudo: O(1) on length mismatch, O(i) to the
-            // first difference -- see #9162.
+            // Cost: O(1) on a length mismatch of two Array/List operands, O(i) to
+            // the first differing element otherwise; O(e_l + e_r) for other operand
+            // shapes (see eqv_values).
             OpCode::Eqv => {
                 self.exec_eqv_op()?;
                 *ip += 1;
