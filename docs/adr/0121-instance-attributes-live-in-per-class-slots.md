@@ -1,6 +1,6 @@
 # ADR-0121: Instance attributes live in per-class slots, and each access site resolves its slot once
 
-- **Status**: Accepted (user approval 2026-09-24; D1, D2, and the `$!x`, accessor and literal-name `getattr`/`bindattr` parts of D3 implemented, see §5)
+- **Status**: Accepted (user approval 2026-09-24; D1, D2, and the `$!x`, accessor and literal-name `getattr`/`bindattr` and `nqp::create` parts of D3 implemented, see §5)
 - **Deciders**: tokuhirom, Claude
 - **Context**: [#9291](https://github.com/tokuhirom/mutsu/issues/9291) (the measurements),
   [#9134](https://github.com/tokuhirom/mutsu/issues/9134) group 1 and `create` (the `nqp::`
@@ -270,6 +270,15 @@ probe and the lock.
   callgrind instructions per op above a mainline loop: `getattr(obj)` 4,796 →
   1,625, `bindattr(obj)` 4,709 → 1,541. See
   `news/2026-09/literal-attribute-names-resolve-once-per-untyped-site.md`.
+- **D3, `nqp::create` (landed).** `nqp::create` has one implementation
+  (`src/runtime/nqp_create.rs`), shared by the untyped VM, TRIR and
+  `.CREATE`. Which allocation a type gets, and a class's slot template plus
+  whether it needs an associative backing store, are memoized per type on
+  the registry write generation (`CreateMemo`). On the untyped VM,
+  `nqp::create(Bareword)` compiles to `OpCode::NqpCreateC`, whose
+  `ClassOperandSite` remembers the resolved type object. In callgrind
+  instructions per create: untyped 5,134 → 739, TRIR 3,882 → 2,278. See
+  `news/2026-09/nqp-create-remembers-its-class-shape.md`.
 - **D3, the rest:** not started. That covers a per-site layout cache for
   the attribute ops, and `Array` / `Hash` `$!descriptor`.
 - **D4:** not started.

@@ -611,6 +611,7 @@ mod container_element_proxy;
 mod ctor_phase_plan;
 pub(crate) mod nqp_attr;
 pub(crate) mod nqp_backing;
+mod nqp_create;
 pub(crate) mod nqp_native;
 pub(crate) mod nqp_op_ids;
 pub(crate) mod nqp_ops;
@@ -4546,6 +4547,9 @@ pub struct Interpreter {
     /// `grammar_has_user_method_sym` answers per `(class, method)`, valid for
     /// one registry write generation (see `user_method_probe_memo.rs`).
     pub(crate) user_method_probe_memo: user_method_probe_memo::UserMethodProbeMemo,
+    /// `nqp::create` / `CREATE` answers per type, valid for one registry
+    /// write generation (see `nqp_create.rs`).
+    pub(crate) create_memo: nqp_create::CreateMemo,
     /// Sound multi-method resolution cache (§B): for a multi whose dispatch is
     /// purely type+arity based (no `where` / literal / subset / `:D`/`:U` smiley /
     /// coercion candidate), the resolved candidate is a function of the receiver

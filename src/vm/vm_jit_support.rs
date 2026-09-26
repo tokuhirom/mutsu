@@ -115,6 +115,7 @@ pub(super) fn step_supported(op: &OpCode) -> bool {
             // loop is exactly the kind of chunk the JIT is for.
             | OpCode::NqpOp { .. }
             | OpCode::NqpAttrC(..)
+            | OpCode::NqpCreateC(..)
             // In-place container mutation
             | OpCode::ArrayPush { .. }
             | OpCode::TagContainerRef(..)
