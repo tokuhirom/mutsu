@@ -3207,28 +3207,30 @@ impl Interpreter {
             Some(match method {
                 // ADR-0040 slice 1: itemize per element, after the
                 // one-arg-rule flattening decision.
-                // Cost: O(k) amortized, k = pushed elements, when the storage node is
-                // unshared; `Gc::make_mut` copies all e elements first when it is shared.
+                // Cost: O(k) amortized, k = pushed elements.
                 "push" => {
                     let norm =
                         crate::runtime::Interpreter::normalize_push_unshift_args(args.to_vec())
                             .into_iter()
                             .map(crate::runtime::Interpreter::itemize_value)
                             .collect::<Vec<_>>();
-                    crate::gc::Gc::make_mut(arc_items).extend(norm);
+                    // SAFETY: this is a container mutation; every holder of
+                    // the array must observe the same backing node.
+                    unsafe { crate::value::gc_contents_mut(arc_items) }.extend(norm);
                     Value::array_with_kind(
                         crate::gc::Gc::clone(arc_items),
                         crate::value::ArrayKind::Array,
                     )
                 }
-                // Cost: O(k) amortized, k = appended elements (plus the `make_mut`
-                // copy noted on `push`).
+                // Cost: O(k) amortized, k = appended elements.
                 "append" => {
                     let flat = crate::runtime::flatten_append_args(args.to_vec())
                         .into_iter()
                         .map(crate::runtime::Interpreter::itemize_value)
                         .collect::<Vec<_>>();
-                    crate::gc::Gc::make_mut(arc_items).extend(flat);
+                    // SAFETY: this is a container mutation; every holder of
+                    // the array must observe the same backing node.
+                    unsafe { crate::value::gc_contents_mut(arc_items) }.extend(flat);
                     Value::array_with_kind(
                         crate::gc::Gc::clone(arc_items),
                         crate::value::ArrayKind::Array,
@@ -3243,7 +3245,9 @@ impl Interpreter {
                             .into_iter()
                             .map(crate::runtime::Interpreter::itemize_value)
                             .collect::<Vec<_>>();
-                    let items = crate::gc::Gc::make_mut(arc_items);
+                    // SAFETY: this is a container mutation; every holder of
+                    // the array must observe the same backing node.
+                    let items = unsafe { crate::value::gc_contents_mut(arc_items) };
                     for (i, v) in norm.into_iter().enumerate() {
                         items.insert(i, v);
                     }
@@ -3260,7 +3264,9 @@ impl Interpreter {
                         .into_iter()
                         .map(crate::runtime::Interpreter::itemize_value)
                         .collect::<Vec<_>>();
-                    let items = crate::gc::Gc::make_mut(arc_items);
+                    // SAFETY: this is a container mutation; every holder of
+                    // the array must observe the same backing node.
+                    let items = unsafe { crate::value::gc_contents_mut(arc_items) };
                     for (i, v) in flat.into_iter().enumerate() {
                         items.insert(i, v);
                     }
@@ -3269,7 +3275,7 @@ impl Interpreter {
                         crate::value::ArrayKind::Array,
                     )
                 }
-                // Cost: O(1) (plus the `make_mut` copy noted on `push`).
+                // Cost: O(1).
                 "pop" => {
                     if !args.is_empty() {
                         return None;
@@ -3277,13 +3283,13 @@ impl Interpreter {
                     if arc_items.is_empty() {
                         crate::runtime::utils::make_empty_array_failure_what("pop", "Array")
                     } else {
-                        crate::gc::Gc::make_mut(arc_items)
+                        unsafe { crate::value::gc_contents_mut(arc_items) }
                             .pop()
                             .unwrap_or(Value::NIL)
                     }
                 }
                 // Cost: O(1) amortized (`ArrayData::remove(0)` advances the front head
-                // offset, #9121), plus the `make_mut` copy noted on `push`.
+                // offset, #9121).
                 "shift" => {
                     if !args.is_empty() {
                         return None;
@@ -3291,7 +3297,7 @@ impl Interpreter {
                     if arc_items.is_empty() {
                         crate::runtime::utils::make_empty_array_failure_what("shift", "Array")
                     } else {
-                        crate::gc::Gc::make_mut(arc_items).remove(0)
+                        unsafe { crate::value::gc_contents_mut(arc_items) }.remove(0)
                     }
                 }
                 _ => return None,

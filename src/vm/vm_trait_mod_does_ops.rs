@@ -121,7 +121,14 @@ impl Interpreter {
             _ => None,
         };
         if let Some(var_name) = Self::var_target_from_meta_value(&doee) {
-            let current = self.env().get(&var_name).cloned().unwrap_or(Value::NIL);
+            let current = match doee.view() {
+                ValueView::Instance { attributes, .. } => {
+                    attributes.as_map().get("__mutsu_var_value").cloned()
+                }
+                _ => None,
+            }
+            .or_else(|| self.get_env_with_main_alias(&var_name))
+            .unwrap_or(Value::NIL);
             let mixed = self.vm_does_values(current, role)?;
             self.set_env_with_main_alias(&var_name, mixed.clone());
             if self.trait_mod_writeback_key.is_some() {

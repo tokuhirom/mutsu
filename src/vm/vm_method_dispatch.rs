@@ -552,6 +552,16 @@ impl Interpreter {
                 }
             }
         }
+        // A composed role's type parameters are more specific than a lexical
+        // capture with the same spelling. Re-apply them after the captured
+        // environment: `role R[&limit]` must keep its `&limit` callable even
+        // when the callable argument closes over an outer `$limit`, whose
+        // capture metadata otherwise supplies a same-named nil entry.
+        if let Some(bindings) = method_def.role_param_bindings.as_deref() {
+            for (name, value) in bindings {
+                self.env_mut().insert(name.clone(), value.clone());
+            }
+        }
 
         // Skip invocant param, bind remaining
         let mut bind_params = Vec::new();
