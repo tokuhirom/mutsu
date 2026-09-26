@@ -9,5 +9,5 @@ plan 5;
 is-deeply Q[my @a; @a].AST.EVAL, [], 'my @a is empty';
 is-deeply Q[my @a; @a.push(1); @a].AST.EVAL, [1], 'a push onto it is its only element';
 is-deeply Q[my %h; %h].AST.EVAL, {}, 'my %h is empty';
-is Q[my %h; %h<k> = 1; %h.elems].AST.EVAL, 1, 'a store into it is its only key';
+is Q[my %h; %h.push((k => 1)); %h.elems].AST.EVAL, 1, 'a pair pushed into it is its only key';
 nok Q[my $x; $x].AST.EVAL.defined, 'my $x is still undefined';
