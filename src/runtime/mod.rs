@@ -819,6 +819,7 @@ mod regex_parse_core;
 mod regex_parse_grapheme;
 mod regex_parse_ltm;
 mod regex_parse_modifier;
+mod regex_qq_array_interp;
 mod regex_types;
 mod registration;
 mod registration_class;

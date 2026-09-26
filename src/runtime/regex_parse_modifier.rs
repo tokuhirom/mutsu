@@ -566,10 +566,19 @@ impl Interpreter {
                 }
             }
             if ch == '@' {
-                // Inside single-quoted regex literals, @ is not interpolated
+                // Inside a single-quoted regex literal `@` is literal. Inside a
+                // double-quoted one it follows qq-string rules (`"@a"` is
+                // literal, `"@a[]"` interpolates the space-joined elements),
+                // not the bare-`@name` alternation expansion below.
                 if is_inside_single_quoted_regex_literal(&chars, i) {
                     out.push('@');
                     i += 1;
+                    continue;
+                }
+                if is_inside_double_quoted_regex_literal(&chars, i)
+                    && let Some(next) = self.interpolate_qq_array_in_regex(&chars, i, &mut out)
+                {
+                    i = next;
                     continue;
                 }
                 let mut j = i + 1;
@@ -806,7 +815,7 @@ impl Interpreter {
         None
     }
 
-    fn push_value_as_regex_pattern(value: &Value, out: &mut String) {
+    pub(super) fn push_value_as_regex_pattern(value: &Value, out: &mut String) {
         match value.view() {
             ValueView::Nil => out.push_str("<!>"),
             ValueView::Regex(pat) => out.push_str(&pat),
