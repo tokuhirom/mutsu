@@ -1,18 +1,15 @@
 use Test;
-# A regex literal inside an `our sub` interpolates a lexical of the block or
+# A regex literal inside an `our sub` interpolates a lexical of the module or
 # package the sub was declared in, even when the sub is called after that
-# block has exited. Plain reads of the lexical already resolved through the
+# package block has exited. Plain reads of the lexical already resolved through the
 # sub's persisted scope; the regex capture read only `env`, where the
 # lexical no longer lives. Found via App::Moneymoor's `parse-pence`
 # (`unit module` + `my Str $current-decimal` + `/ ... $current-decimal ... /`).
 
-plan 4;
+use lib $?FILE.IO.parent(2).add('lib');
+use RegexUnitLexical;
 
-{
-    my $dec = '.';
-    our sub block-sub($s) { so $s ~~ / ^ \d+ $dec \d+ $ / }
-}
-ok OUR::block-sub('12.34'), 'bare-block lexical interpolates after the block exits';
+plan 7;
 
 module M {
     my $mark = ',';
@@ -28,3 +25,10 @@ package P {
     our sub pkg-sub($s) { so $s ~~ / ^ a $sep b $ / }
 }
 ok P::pkg-sub('a-b'), 'package-block lexical interpolates';
+
+is whole-part('12.34'), 12, 'kebab-case compunit lexical interpolates';
+nok whole-part('12x34').defined, 'and matches only its own value';
+
+# A module routine called from regex code reads its own file-scope lexical.
+ok 'cost GBP12' ~~ / $(money(12)) /, 'a $(...) call sees the callee module lexical';
+ok 'cost GBP12' ~~ / <{ money(12) }> /, 'a <{...}> call sees the callee module lexical';

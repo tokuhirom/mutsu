@@ -109,22 +109,29 @@ impl Interpreter {
         let mut scope: ValueMap = ValueMap::default();
         for (sym, slot) in captures {
             let name = sym.resolve();
-            if *slot != crate::opcode::NOT_A_LOCAL && code.needs_cell_regex.contains(sym) {
+            let store_only = *slot == crate::opcode::OUTER_STORE_ONLY;
+            let is_local = *slot != crate::opcode::NOT_A_LOCAL && !store_only;
+            if is_local && code.needs_cell_regex.contains(sym) {
                 self.box_decl_local_cell(code, *slot as usize);
             }
-            let from_local = (*slot != crate::opcode::NOT_A_LOCAL)
+            let from_local = is_local
                 .then(|| self.locals.get(*slot as usize))
                 .flatten()
                 .filter(|v| !v.is_nil())
                 .cloned();
             // A name with no local slot resolves exactly as a bare `GetGlobal`
-            // read of it would: an escaped `our sub`'s persisted block lexical
-            // and a package-block `my` are authoritative over `env`, which no
-            // longer holds them once the declaring block has exited.
+            // read of it would: an escaped `our sub`'s persisted block lexical,
+            // a package-block `my` and a file-scope `my` of the running
+            // routine's own compunit are authoritative over `env`, which does
+            // not hold them once the declaring block (or module load) is done.
             let Some(v) = from_local
-                .or_else(|| self.escaping_our_read(name.as_str()).filter(|v| !v.is_nil()))
+                .or_else(|| {
+                    self.escaping_our_read(name.as_str())
+                        .filter(|v| !v.is_nil())
+                })
                 .or_else(|| self.package_scope_lexical(name.as_str()))
-                .or_else(|| self.env().get(name.as_str()).cloned())
+                .or_else(|| self.unit_scope_lexical(name.as_str()))
+                .or_else(|| (!store_only).then(|| self.env().get(name.as_str()).cloned())?)
             else {
                 continue;
             };

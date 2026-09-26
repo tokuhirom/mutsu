@@ -68,24 +68,36 @@ pub(crate) fn try_add_parse_time_lib_path(expr: &Expr) {
 /// `$?FILE` (the unit's own file) or `$*PROGRAM` — through `.IO`, `.Str`,
 /// `.parent(N)`, `.add`/`.child` and `.sibling`.
 fn extract_lib_path(expr: &Expr) -> Option<String> {
-    match expr {
-        Expr::Literal(lit) => lit.as_str().map(|s| s.to_string()),
-        _ => static_path(expr),
-    }
+    let program = PROGRAM_PATH.with(|p| p.borrow().clone());
+    let file = parser_source_file().or_else(|| program.clone());
+    fold_use_lib_path(expr, file.as_deref(), program.as_deref())
 }
 
-/// Fold a path-method chain rooted at `$?FILE` or `$*PROGRAM` to its path
-/// string (see [`extract_lib_path`]).
-fn static_path(expr: &Expr) -> Option<String> {
+/// Fold one `use lib` argument to its path, given the unit's `$?FILE` and the
+/// running `$*PROGRAM`. Shared by the parser (which must import the module a
+/// later `use` names while still parsing) and the runtime's pre-execution
+/// type check (`eval_check`), so both agree on which directories a unit adds.
+pub(crate) fn fold_use_lib_path(
+    expr: &Expr,
+    file: Option<&str>,
+    program: Option<&str>,
+) -> Option<String> {
+    static_path(expr, file, program)
+}
+
+/// Fold a path-method chain rooted at `$?FILE`, `$*PROGRAM` or a string
+/// literal to its path string (see [`extract_lib_path`]).
+fn static_path(expr: &Expr, file: Option<&str>, program: Option<&str>) -> Option<String> {
     match expr {
-        Expr::Var(v) if v == "*PROGRAM" => PROGRAM_PATH.with(|p| p.borrow().clone()),
-        Expr::Var(v) if v == "?FILE" => {
-            parser_source_file().or_else(|| PROGRAM_PATH.with(|p| p.borrow().clone()))
-        }
+        // The parser folds `$?FILE` itself to a string literal when it knows
+        // the unit's file, so a literal is a chain root too (`'t'.IO.add(..)`).
+        Expr::Literal(lit) => lit.as_str().map(|s| s.to_string()),
+        Expr::Var(v) if v == "*PROGRAM" => program.map(str::to_string),
+        Expr::Var(v) if v == "?FILE" => file.or(program).map(str::to_string),
         Expr::MethodCall {
             target, name, args, ..
         } => {
-            let base = static_path(target)?;
+            let base = static_path(target, file, program)?;
             match name.as_str() {
                 // Coercions between Str and IO::Path leave the path unchanged.
                 "IO" | "Str" if args.is_empty() => Some(base),
@@ -99,7 +111,12 @@ fn static_path(expr: &Expr) -> Option<String> {
                 }
                 "add" | "child" => {
                     let arg = args.first().and_then(extract_static_string)?;
-                    Some(std::path::Path::new(&base).join(&arg).to_string_lossy().into_owned())
+                    Some(
+                        std::path::Path::new(&base)
+                            .join(&arg)
+                            .to_string_lossy()
+                            .into_owned(),
+                    )
                 }
                 "sibling" => {
                     let arg = args.first().and_then(extract_static_string)?;

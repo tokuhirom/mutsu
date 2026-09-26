@@ -39,10 +39,10 @@ mod slang_use;
 mod user_ops;
 
 // `pub` re-exports.
-pub(crate) use lib_paths::parser_source_file;
 pub use lib_paths::{
     clear_parser_lib_paths, set_parser_lib_paths, set_parser_program_path, set_parser_source_file,
 };
+pub(crate) use lib_paths::{fold_use_lib_path, parser_source_file};
 
 // `pub(crate)` re-exports.
 pub(crate) use compile_consts::is_imported_function;

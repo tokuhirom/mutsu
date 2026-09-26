@@ -148,6 +148,7 @@ pub use stmt::simple::{
 };
 
 pub(crate) use expr::precedence::lower_feed_node;
+pub(crate) use stmt::simple::fold_use_lib_path;
 /// Lower a deferred `Expr::Feed` node into its executable (sink-call) form.
 /// Re-exported for the compiler's `Expr::Feed` arm.
 pub(crate) use stmt::sub::is_builtin_param_trait;
