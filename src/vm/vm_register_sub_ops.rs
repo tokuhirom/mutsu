@@ -159,6 +159,11 @@ impl Interpreter {
             let compiled_fns = compiled_code
                 .as_ref()
                 .and_then(|cc| cc.compiled_fns.clone());
+            let id = crate::value::next_instance_id();
+            let state_scope_guard = compiled_code
+                .as_ref()
+                .filter(|cc| !cc.state_locals.is_empty())
+                .map(|_| crate::runtime::state_scope_reaper::StateScopeGuard::new(id));
             let val = Value::sub_value(crate::gc::Gc::new(crate::value::SubData {
                 package: self.lexical_closure_package_sym(),
                 name: crate::symbol::well_known::anon(),
@@ -171,7 +176,7 @@ impl Interpreter {
                 env,
                 assumed_positional: Vec::new(),
                 assumed_named: ValueMap::default(),
-                id: crate::value::next_instance_id(),
+                id,
                 // A pointy block (`-> $x {...}`) is a `Block`, not a `Sub` — mark it
                 // so `.WHAT`/`.^name`/smartmatch report `Block`. Named anonymous subs
                 // (`sub {...}`) have `is_pointy_block == false` and stay `Sub`.
@@ -200,6 +205,7 @@ impl Interpreter {
                 captured_fatal_mode: self.fatal_mode,
                 param_name_syms_cache: std::sync::OnceLock::new(),
                 source_file_sym_cache: std::sync::OnceLock::new(),
+                state_scope_guard,
             }));
             self.stack.push(val);
             Ok(())
@@ -232,6 +238,11 @@ impl Interpreter {
             let compiled_fns = compiled_code
                 .as_ref()
                 .and_then(|cc| cc.compiled_fns.clone());
+            let id = crate::value::next_instance_id();
+            let state_scope_guard = compiled_code
+                .as_ref()
+                .filter(|cc| !cc.state_locals.is_empty())
+                .map(|_| crate::runtime::state_scope_reaper::StateScopeGuard::new(id));
             let val = Value::sub_value(crate::gc::Gc::new(crate::value::SubData {
                 package: self.lexical_closure_package_sym(),
                 name: crate::symbol::well_known::anon(),
@@ -246,7 +257,7 @@ impl Interpreter {
                 env: self.capture_closure_env(code, &compiled_code),
                 assumed_positional: Vec::new(),
                 assumed_named: ValueMap::default(),
-                id: crate::value::next_instance_id(),
+                id,
                 empty_sig: false,
                 is_bare_block: true,
                 owned_captures,
@@ -273,6 +284,7 @@ impl Interpreter {
                 captured_fatal_mode: self.fatal_mode,
                 param_name_syms_cache: std::sync::OnceLock::new(),
                 source_file_sym_cache: std::sync::OnceLock::new(),
+                state_scope_guard,
             }));
             self.stack.push(val);
             Ok(())

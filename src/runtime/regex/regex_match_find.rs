@@ -550,6 +550,7 @@ impl Interpreter {
             current_package_sym: std::sync::Arc::new(std::sync::atomic::AtomicU32::new(pkg.id())),
             var_dynamic_flags: self.var_dynamic_flags.clone(),
             state_vars: self.state_vars.clone(),
+            state_vars_unmigrated: self.state_vars_unmigrated.clone(),
             ..self.new_regex_scratch_sharing_io()
         };
         self.copy_decl_registry_into(&mut interp);

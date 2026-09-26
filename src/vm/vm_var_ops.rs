@@ -425,7 +425,14 @@ impl Interpreter {
     /// invocation id folded into the key, so it starts fresh on every call of
     /// that routine. At the mainline there is no such frame and the id is a
     /// constant, so a top-level `$` keeps counting.
-    pub(super) fn anon_state_key(&self, name: &str) -> Option<String> {
+    ///
+    /// The scope travels in the key's id half, not folded into the interned
+    /// base string: a per-clone `#{scope}` suffix interned one never-freed
+    /// `Symbol` per closure clone, and hid the entry from the dead-clone
+    /// reaper (`reap_dead_state_scopes`, #9504). A routine-invocation scope
+    /// comes from a different counter than closure ids, so it is tagged with
+    /// [`ROUTINE_INVOCATION_SCOPE`] to keep the two id spaces apart.
+    pub(super) fn anon_state_key(&self, name: &str) -> Option<(Symbol, Option<u64>)> {
         if !name.starts_with("__ANON_STATE_") {
             return None;
         }
@@ -442,13 +449,16 @@ impl Interpreter {
             // that case. A closure frame is still a block frame, so use the
             // state scope itself to distinguish these two cases.
             let scope = if self.state_scope_belongs_to_routine() {
-                self.enclosing_routine_invocation_id()
+                self.enclosing_routine_invocation_id() | ROUTINE_INVOCATION_SCOPE
             } else {
                 self.state_scope_id.get().unwrap_or(0)
             };
-            Some(format!("__anon_state::{name}#{scope}"))
+            Some((
+                Symbol::intern(&format!("__anon_state::{name}")),
+                Some(scope),
+            ))
         } else {
-            Some(format!("__anon_state::{name}"))
+            Some((Symbol::intern(&format!("__anon_state::{name}")), None))
         }
     }
 
@@ -531,12 +541,11 @@ impl Interpreter {
 
     pub(super) fn anon_state_value(&self, name: &str) -> Option<Value> {
         let key = self.anon_state_key(name)?;
-        self.get_state_var((Symbol::intern(&key), None)).cloned()
+        self.get_state_var(key).cloned()
     }
 
     pub(super) fn sync_anon_state_value(&mut self, name: &str, value: &Value) {
         if let Some(key) = self.anon_state_key(name) {
-            let key = (Symbol::intern(&key), None);
             loan_env!(self, set_state_var(key, value.clone()));
         }
     }
@@ -561,6 +570,11 @@ impl Interpreter {
             .and_then(|s| s.strip_suffix('>'))
     }
 }
+
+/// Tag bit for an anonymous-state scope taken from a routine invocation id
+/// (`next_invocation_id`) rather than a closure clone id (`next_instance_id`,
+/// which never reaches this bit), so a dead clone's id cannot name it.
+const ROUTINE_INVOCATION_SCOPE: u64 = 1 << 63;
 
 /// The default ("zero") value for a native array element type.
 /// Native integer types default to 0, native floats (num/num32/num64) to 0e0,

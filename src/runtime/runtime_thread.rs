@@ -444,19 +444,9 @@ impl Interpreter {
             for key in transient_marks {
                 self.transient_lane_containers.insert(key);
             }
-            // Track C: migrate the parent's existing `state` variables into shared
-            // cells (keyed by their normalized cross-compilation key) so a routine
-            // whose `state` was already mutated before the first thread spawned
-            // (`f(); f(); start { f() }`) carries that value into the threads
-            // instead of re-initializing from the declaration. Only seeds cells
-            // that don't exist yet; the value becomes the cell's initial content.
-            for (skey, sval) in &self.state_vars {
-                if matches!(sval.view(), ValueView::ContainerRef(_)) {
-                    continue;
-                }
-                let shared_key = Self::shared_state_cell_key(*skey);
-                shared.seed_if_absent(&shared_key, || sval.clone().into_container_ref());
-            }
+            // Track C: migrate the parent's `state` variables into shared cells.
+            // Incremental: only the keys created since the previous spawn.
+            self.seed_unmigrated_state_vars(&shared);
         }
         self.shared_vars_active = true;
         // The child captures the parent's CURRENT bindings — including any
@@ -769,6 +759,7 @@ impl Interpreter {
             escaped_our_sub_names: self.escaped_our_sub_names.clone(),
             our_scalar_cell_names: self.our_scalar_cell_names.clone(),
             state_vars: HashMap::new(),
+            state_vars_unmigrated: Vec::new(),
             // The spawned block's own captured scalars were NOT seeded into the
             // store (the closure machinery owns them per binding), so the child
             // must treat them exactly like re-declared names: reads and writes

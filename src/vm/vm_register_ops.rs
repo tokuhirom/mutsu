@@ -714,6 +714,11 @@ impl Interpreter {
             let compiled_fns = compiled_code
                 .as_ref()
                 .and_then(|cc| cc.compiled_fns.clone());
+            let id = crate::value::next_instance_id();
+            let state_scope_guard = compiled_code
+                .as_ref()
+                .filter(|cc| !cc.state_locals.is_empty())
+                .map(|_| crate::runtime::state_scope_reaper::StateScopeGuard::new(id));
             let val = Value::sub_value(crate::gc::Gc::new(crate::value::SubData {
                 package: self.lexical_closure_package_sym(),
                 // Pre-interned like its `MakeLambda` twin: re-interning the
@@ -730,7 +735,7 @@ impl Interpreter {
                 env: captured_env,
                 assumed_positional: Vec::new(),
                 assumed_named: ValueMap::default(),
-                id: crate::value::next_instance_id(),
+                id,
                 empty_sig: false,
                 is_bare_block: is_block,
                 owned_captures,
@@ -755,6 +760,7 @@ impl Interpreter {
                 captured_fatal_mode: self.fatal_mode,
                 param_name_syms_cache: std::sync::OnceLock::new(),
                 source_file_sym_cache: std::sync::OnceLock::new(),
+                state_scope_guard,
             }));
             self.stack.push(val);
             Ok(())
@@ -846,6 +852,11 @@ impl Interpreter {
             let compiled_fns = compiled_code
                 .as_ref()
                 .and_then(|cc| cc.compiled_fns.clone());
+            let id = crate::value::next_instance_id();
+            let state_scope_guard = compiled_code
+                .as_ref()
+                .filter(|cc| !cc.state_locals.is_empty())
+                .map(|_| crate::runtime::state_scope_reaper::StateScopeGuard::new(id));
             let mut val = Value::sub_value(crate::gc::Gc::new(crate::value::SubData {
                 package: self.lexical_closure_package_sym(),
                 // Anonymous closures pool a SubDecl with an empty name; a
@@ -860,7 +871,7 @@ impl Interpreter {
                 env,
                 assumed_positional: Vec::new(),
                 assumed_named: ValueMap::default(),
-                id: crate::value::next_instance_id(),
+                id,
                 // A pointy block (`-> $x {...}`) is a `Block`, not a `Sub`. Named
                 // anonymous subs (`sub {...}`) have `is_pointy_block == false` and
                 // stay `Sub`. (`WhateverCode` already overrides via callable_type.)
@@ -883,6 +894,7 @@ impl Interpreter {
                 source_file: self.executing_source_file(),
                 param_name_syms_cache: std::sync::OnceLock::new(),
                 source_file_sym_cache: std::sync::OnceLock::new(),
+                state_scope_guard,
             }));
             // Anonymous routine literals carry their custom `is` traits in the
             // pooled declaration just like named subs do. Apply them after the

@@ -3293,6 +3293,7 @@ impl Interpreter {
             escaped_our_sub_names: Default::default(),
             our_scalar_cell_names: Default::default(),
             state_vars: HashMap::new(),
+            state_vars_unmigrated: Vec::new(),
             thread_redeclared_vars: Box::new(std::cell::RefCell::new(
                 rustc_hash::FxHashSet::default(),
             )),
