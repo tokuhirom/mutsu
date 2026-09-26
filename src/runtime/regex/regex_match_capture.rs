@@ -155,6 +155,11 @@ impl Interpreter {
         pkg: Symbol,
         ignore_case: bool,
     ) -> Option<(usize, RegexCaptures)> {
+        // #9617: under measurement a recursive subrule call is a fate.
+        let _ltm_subrule = match super::regex_ltm_recursion::ltm_enter_subrule(atom, pos) {
+            super::regex_ltm_recursion::LtmSubruleEntry::Recursive => return None,
+            entry => entry,
+        };
         let mut dyn_saved = None;
         let mut preinstalled_arg_values = None;
         // The single-candidate matcher is used by quantified named subrules

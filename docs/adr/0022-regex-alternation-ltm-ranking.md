@@ -12,6 +12,16 @@
 - **Implementation note** (2026-09-26, #9579): measurements are memoized per
   outermost `ltm_prefix_len_at` call (`src/runtime/regex/regex_ltm_memo.rs`, whose
   module docs argue why the key is sound). The ranking decision is unchanged.
+- **Implementation note** (2026-09-26, #9617): §2's "recursion cut" row is now
+  implemented. Measurement used to follow a recursive subrule call all the way down;
+  now a call to a rule the measurement is already walking records a fate and ends that
+  path, as Rakudo's `%seen` does (`src/runtime/regex/regex_ltm_recursion.rs`). The
+  set of rules being walked starts empty at every measurement, so the ranked branch's
+  own rule is inlined once (verified against `raku`: `token A { 'x' [ <A> | 'x' ] }`
+  matches all of "xxx", while `token A { 'a' <A>? 'b' | 'q' }` ranked against
+  `'aab'` on "aabb" loses, 1 to 3). This changes rankings only where following the
+  recursion had given a longer prefix than Rakudo's, and it makes each ranking linear
+  in the subject instead of walking the whole nesting below it.
 - **Amended by**: [ADR-0111](0111-ltm-stoppers-end-one-path.md) (2026-09-23) — a
   `Terminate` atom now records a fate and fails its own path instead of unwinding the
   whole walk (§4.2), so the prefix is the furthest fate, as in Rakudo's NFA.

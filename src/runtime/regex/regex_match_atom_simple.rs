@@ -226,6 +226,11 @@ impl Interpreter {
         pkg: Symbol,
         ignore_case: bool,
     ) -> Option<usize> {
+        // #9617: under measurement a recursive subrule call is a fate.
+        let _ltm_subrule = match super::regex_ltm_recursion::ltm_enter_subrule(atom, pos) {
+            super::regex_ltm_recursion::LtmSubruleEntry::Recursive => return None,
+            entry => entry,
+        };
         let mut dyn_saved = None;
         // Ratcheted grammar tokens use this no-capture matcher for their
         // subrules. Keep the same grammar-rule dynamic-variable frame as the

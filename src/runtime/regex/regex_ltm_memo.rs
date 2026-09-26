@@ -25,6 +25,11 @@
 //!   removal moves [`note_env_scope_change`]'s epoch, which is part of the
 //!   key, so an entry only answers under the very bindings it was taken
 //!   under. The token generation is carried the same way, as a cheap guard.
+//! - **The subrule stack is part of the key.** A call to a rule the walk is
+//!   already inside ends its path in a fate (`regex_ltm_recursion`, #9617),
+//!   so the same branch at the same position measures differently under
+//!   different enclosing calls. The stack's id is exact: equal ids mean equal
+//!   stacks.
 //! - **Identities are pinned.** An entry keeps its pattern's `derived` `Arc`
 //!   alive, so the address used as the key cannot be reused by another
 //!   pattern while the scope lives; and only measurements over the outermost
@@ -51,8 +56,9 @@ use std::cell::Cell;
 use std::cell::RefCell;
 use std::sync::Arc;
 
-/// `(pattern identity, position, package, token generation, env epoch)`.
-type MemoKey = (usize, usize, Symbol, u64, u64);
+/// `(pattern identity, position, package, token generation, env epoch,
+/// subrule stack id)`.
+type MemoKey = (usize, usize, Symbol, u64, u64, u32);
 
 struct MemoEntry {
     /// Pins the pattern whose address is part of the key.
@@ -61,8 +67,9 @@ struct MemoEntry {
 }
 
 /// `(subrule spec identity, position, package, token generation, env epoch,
-/// flags)`, where the flags are the caller's `first_only` and `:i`.
-type SubruleKey = (usize, usize, Symbol, u64, u64, bool, bool);
+/// subrule stack id, flags)`, where the flags are the caller's `first_only`
+/// and `:i`.
+type SubruleKey = (usize, usize, Symbol, u64, u64, u32, bool, bool);
 
 /// One `<subrule>` call's result inside a measurement, with everything the
 /// walk left behind in the measurement's thread-locals so a hit can replay it.
@@ -124,6 +131,7 @@ fn memo_key(pattern: &RegexPattern, pos: usize, pkg: Symbol) -> MemoKey {
         pkg,
         generation,
         env_scope_epoch(),
+        super::regex_ltm_recursion::ltm_subrule_stack_id(),
     )
 }
 
@@ -194,6 +202,7 @@ impl Drop for LtmMemoSlot {
         if matches!(self, LtmMemoSlot::Outermost) {
             let dropped = LTM_MEMO.with(|m| m.borrow_mut().take());
             drop(dropped);
+            super::regex_ltm_recursion::ltm_subrule_stack_reset_ids();
         }
     }
 }
@@ -246,6 +255,7 @@ pub(super) fn ltm_memo_subrule_ends(
         pkg,
         generation,
         env_scope_epoch(),
+        super::regex_ltm_recursion::ltm_subrule_stack_id(),
         first_only,
         ignore_case,
     );
