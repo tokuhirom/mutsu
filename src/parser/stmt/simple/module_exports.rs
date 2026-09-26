@@ -23,6 +23,10 @@ use export_hook::{
 struct ModuleScanResult {
     exports: Vec<InlineModuleExport>,
     type_names: Vec<String>,
+    /// The subset of `type_names` that are enums. Qualified enum members need
+    /// this distinction during parse-time `when` disambiguation.
+    #[serde(default)]
+    enum_type_names: Vec<String>,
     enum_values: Vec<String>,
     /// Sigilless value terms the module declares: `constant SQLT_NUM is export
     /// = 2;`, `my \foo = ...`. Harvested from the scan's own scope stack, the
@@ -301,6 +305,9 @@ fn apply_scan_types(scan: &ModuleScanResult) {
         // The names are already fully composed; a `use` that appears inside
         // a package block must not compose them a second time.
         register_imported_type(name);
+    }
+    for name in &scan.enum_type_names {
+        register_imported_enum_type(name);
     }
     // An enum's *values* travel with it. Without this a bare
     // `MYSQL_TYPE_BLOB` in the importing file is an unknown identifier, and
@@ -700,6 +707,12 @@ fn scan_module_source(source: &str, path: &str) -> ModuleScanResult {
             .flat_map(|scope| scope.user_enum_values.iter().cloned())
             .collect()
     });
+    let transitive_enum_types: Vec<String> = SCOPES.with(|s| {
+        s.borrow()
+            .iter()
+            .flat_map(|scope| scope.user_enum_types.iter().cloned())
+            .collect()
+    });
     // The module's `constant`s (and any it re-exports from a module it used).
     // The parser registers these as `TermBinding::Value` term symbols while
     // parsing the declaration, so — unlike a type name — there is no AST node
@@ -742,6 +755,8 @@ fn scan_module_source(source: &str, path: &str) -> ModuleScanResult {
     // current scope, not the module's discarded parse scope.
     let mut type_names: Vec<String> = transitive_types;
     collect_module_type_names(&stmts, &mut type_names);
+    let mut enum_type_names: Vec<String> = transitive_enum_types;
+    collect_module_enum_type_names(&stmts, &mut enum_type_names);
     let mut enum_values: Vec<String> = transitive_enum_values;
     collect_module_enum_values(&stmts, &mut enum_values);
     collect_module_constant_names(&stmts, &mut value_terms);
@@ -821,6 +836,7 @@ fn scan_module_source(source: &str, path: &str) -> ModuleScanResult {
     ModuleScanResult {
         exports: result,
         type_names,
+        enum_type_names,
         enum_values,
         value_terms,
         declare_keywords,
@@ -1221,6 +1237,63 @@ fn collect_module_enum_values(stmts: &[Stmt], out: &mut Vec<String>) {
             // bare block by the parser; walk into it like any other body.
             | Stmt::Block(body)
             | Stmt::SyntheticBlock(body) => collect_module_enum_values(body, out),
+            _ => {}
+        }
+    }
+}
+
+/// Collect enum type names with the same package composition rules as the
+/// general type-name harvest. The importer needs the enum/class distinction so
+/// a qualified enum member remains a `when` term rather than a block-gobbling
+/// routine call.
+fn collect_module_enum_type_names(stmts: &[Stmt], out: &mut Vec<String>) {
+    collect_module_enum_type_names_under(stmts, "", out);
+}
+
+fn collect_module_enum_type_names_under(stmts: &[Stmt], prefix: &str, out: &mut Vec<String>) {
+    let mut prefix = prefix.to_string();
+    for stmt in stmts {
+        match stmt {
+            Stmt::EnumDecl { name, .. } => {
+                let name = name.resolve();
+                out.push(compose_type_name(&prefix, &name));
+                out.push(name);
+            }
+            Stmt::ClassDecl {
+                name,
+                body,
+                is_unit,
+                ..
+            } => {
+                let name = name.resolve();
+                let composed = compose_type_name(&prefix, &name);
+                collect_module_enum_type_names_under(body, &composed, out);
+                if *is_unit {
+                    prefix = composed;
+                }
+            }
+            Stmt::RoleDecl { name, body, .. } => {
+                let name = name.resolve();
+                let composed = compose_type_name(&prefix, &name);
+                collect_module_enum_type_names_under(body, &composed, out);
+            }
+            Stmt::Package {
+                name,
+                body,
+                is_unit,
+                ..
+            } => {
+                let name = name.resolve();
+                let composed =
+                    compose_type_name(&prefix, name.strip_prefix("GLOBAL::").unwrap_or(&name));
+                collect_module_enum_type_names_under(body, &composed, out);
+                if *is_unit {
+                    prefix = composed;
+                }
+            }
+            Stmt::Block(body) | Stmt::SyntheticBlock(body) => {
+                collect_module_enum_type_names_under(body, &prefix, out);
+            }
             _ => {}
         }
     }

@@ -540,6 +540,11 @@ impl Interpreter {
             && let Some(unit) = crate::precomp::load_cached_unit(source_path, Some(&code))
         {
             crate::parser::set_current_language_version(&unit.effects.language_version);
+            crate::parser::replay_cached_type_names(
+                &unit.effects.type_names,
+                &unit.effects.enum_type_names,
+                &unit.effects.enum_value_names,
+            );
             // The on-disk cache entry stores plain warning text (no per-warning
             // origin tag, see `precomp::ParseEffects`); every warning in this
             // batch was raised while parsing exactly this module, so tag them
@@ -570,9 +575,13 @@ impl Interpreter {
         // replay always tags the whole batch with `source_path` itself (see
         // the cache-hit branch above).
         let tagged_warnings = crate::parser::take_parse_warnings();
+        let (type_names, enum_type_names, enum_value_names) = crate::parser::cached_type_names();
         let effects = crate::precomp::ParseEffects {
             language_version: crate::parser::current_language_version(),
             warnings: tagged_warnings.iter().map(|(_, m)| m.clone()).collect(),
+            type_names,
+            enum_type_names,
+            enum_value_names,
         };
         self.emit_parse_warnings(tagged_warnings);
         // `unit class`/`unit role`/`unit grammar` bodies are already merged at

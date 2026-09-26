@@ -11,7 +11,7 @@
 //! depends on them behaved differently depending on whether the cache happened
 //! to be warm — the same program, two different results.
 //!
-//! Two such effects are proven and are therefore captured in the cache entry
+//! Three such effects are proven and are therefore captured in the cache entry
 //! (`ParseEffects`) and replayed on a hit:
 //!
 //! - **the language revision** the module's `use vX` selected. Without the
@@ -20,6 +20,10 @@
 //!   cold cache and fail on every run after it).
 //! - **parse warnings**, which were emitted on the first run and then silently
 //!   vanished on every subsequent one.
+//! - **parser type facts**, including user types, enum types, and enum values.
+//!   The compiler consults these facts when classifying lowercase native aliases
+//!   and hyphenated qualified enum members, so omitting them made a warm cache
+//!   take a different compile path from a cold cache.
 //!
 //! Anything new the parser starts recording in a thread-local must be added to
 //! `ParseEffects` too, or it becomes the next cache-state-dependent bug. A
@@ -106,7 +110,7 @@ pub(crate) fn interpreter_version() -> String {
     // 12: `SerValue::Instance` gained `sig_info`, so a cached `Signature`
     // literal now carries its structured parameter data instead of an id
     // pointing at a side table the cache cannot reach.
-    const CACHE_FORMAT_VERSION: u32 = 12;
+    const CACHE_FORMAT_VERSION: u32 = 13;
     // The exe mtime cannot change while this process runs, so stat it once —
     // every cache validation used to re-stat the (large) binary per module.
     static VERSION: std::sync::OnceLock<String> = std::sync::OnceLock::new();
@@ -251,6 +255,17 @@ pub(crate) struct ParseEffects {
     pub(crate) language_version: String,
     /// Warnings the parse emitted, so a warm run reports them like a cold one.
     pub(crate) warnings: Vec<String>,
+    /// User type names registered by the parse. Cached AST compilation still
+    /// consults this parser-side index for lowercase native aliases in return
+    /// constraints and for ambiguous qualified enum members.
+    #[serde(default)]
+    pub(crate) type_names: Vec<String>,
+    /// The enum subset of `type_names`, used by qualified enum-member parsing.
+    #[serde(default)]
+    pub(crate) enum_type_names: Vec<String>,
+    /// User enum values used by definite-return classification.
+    #[serde(default)]
+    pub(crate) enum_value_names: Vec<String>,
 }
 
 /// A cached compilation unit: the AST plus the parse effects to replay.
@@ -707,6 +722,9 @@ mod tests {
         let effects = ParseEffects {
             language_version: "6.e".to_string(),
             warnings: vec!["Potential difficulties:\n    Duplicate 'is export' trait".to_string()],
+            type_names: vec!["time".to_string()],
+            enum_type_names: vec!["RuleType".to_string()],
+            enum_value_names: vec!["julian-day".to_string()],
         };
 
         let dir = tempdir("effects");

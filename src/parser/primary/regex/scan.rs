@@ -254,6 +254,17 @@ fn skip_interp_block(chars: &mut std::str::CharIndices<'_>) -> Option<()> {
                     return Some(());
                 }
             }
+            '#' => {
+                // Code assertions use Main-slang comments. Skip the rest of
+                // the line before looking for quotes or braces: an apostrophe
+                // in a comment such as "it's valid" must not open a string,
+                // and a brace in the comment must not change the depth.
+                for (_, c2) in chars.by_ref() {
+                    if c2 == '\n' {
+                        break;
+                    }
+                }
+            }
             '\\' => {
                 chars.next();
             }

@@ -146,6 +146,25 @@ pub(crate) fn register_imported_type(name: &str) {
     });
 }
 
+/// Register an enum type name harvested from a `use`d module. Keep the
+/// spelling verbatim: module scans already compose nested declarations before
+/// replaying them into the importing scope.
+pub(crate) fn register_imported_enum_type(name: &str) {
+    SCOPES.with(|s| {
+        let mut scopes = s.borrow_mut();
+        scopes
+            .first_mut()
+            .expect("scope stack should never be empty")
+            .user_enum_types
+            .insert(name.to_string());
+        scopes
+            .last_mut()
+            .expect("scope stack should never be empty")
+            .user_enum_types
+            .insert(name.to_string());
+    });
+}
+
 /// Register a user-declared type name (class, role, grammar, enum).
 pub(crate) fn register_user_type(name: &str) {
     register_user_type_verbatim(name);
@@ -185,6 +204,36 @@ pub(crate) fn register_user_type(name: &str) {
                 .first_mut()
                 .expect("scope stack should never be empty");
             outermost.user_types.insert(composed);
+        });
+    }
+}
+
+/// Register a locally declared enum type in the same scopes as its ordinary
+/// user-type spelling. The separate set lets parse-time disambiguation tell an
+/// enum member from a package-qualified routine without consulting runtime
+/// state.
+pub(crate) fn register_user_enum_type(name: &str) {
+    SCOPES.with(|s| {
+        let mut scopes = s.borrow_mut();
+        scopes
+            .last_mut()
+            .expect("scope stack should never be empty")
+            .user_enum_types
+            .insert(name.to_string());
+        scopes
+            .first_mut()
+            .expect("scope stack should never be empty")
+            .user_enum_types
+            .insert(name.to_string());
+    });
+    if let Some(prefix) = current_package_prefix() {
+        let composed = format!("{}::{}", prefix, name);
+        SCOPES.with(|s| {
+            s.borrow_mut()
+                .first_mut()
+                .expect("scope stack should never be empty")
+                .user_enum_types
+                .insert(composed);
         });
     }
 }
@@ -306,5 +355,44 @@ pub(crate) fn is_user_declared_type(name: &str) -> bool {
             .iter()
             .rev()
             .any(|scope| scope.user_types.contains(name))
+    })
+}
+
+/// Whether `name` is a user-declared enum type, including one imported from a
+/// scanned module.
+pub(crate) fn is_user_declared_enum_type(name: &str) -> bool {
+    SCOPES.with(|s| {
+        let scopes = s.borrow();
+        scopes
+            .iter()
+            .rev()
+            .any(|scope| scope.user_enum_types.contains(name))
+    })
+}
+
+/// Snapshot parser names needed when a module AST is compiled from the
+/// precompilation cache instead of being parsed in this process.
+pub(crate) fn cached_type_names() -> (Vec<String>, Vec<String>, Vec<String>) {
+    SCOPES.with(|s| {
+        let scopes = s.borrow();
+        let mut types: Vec<String> = scopes
+            .iter()
+            .flat_map(|scope| scope.user_types.iter().cloned())
+            .collect();
+        let mut enum_types: Vec<String> = scopes
+            .iter()
+            .flat_map(|scope| scope.user_enum_types.iter().cloned())
+            .collect();
+        let mut enum_values: Vec<String> = scopes
+            .iter()
+            .flat_map(|scope| scope.user_enum_values.iter().cloned())
+            .collect();
+        types.sort_unstable();
+        types.dedup();
+        enum_types.sort_unstable();
+        enum_types.dedup();
+        enum_values.sort_unstable();
+        enum_values.dedup();
+        (types, enum_types, enum_values)
     })
 }

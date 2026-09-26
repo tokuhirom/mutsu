@@ -343,6 +343,7 @@ pub(super) fn parse_enum_decl_body_with_type(
     // module-scan harvest already collects enum names this way for imported
     // enums; this is the same for the file being parsed.
     super::super::simple::register_user_type(&name_str);
+    super::super::simple::register_user_enum_type(&name_str);
     let (rest, _) = ws(rest)?;
 
     // Parse the declaration's trait clauses (`is export`, `does Role`) that

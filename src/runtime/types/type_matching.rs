@@ -116,10 +116,7 @@ impl Interpreter {
         {
             return None;
         }
-        match self.env.get(name)?.view() {
-            ValueView::Package(target) => Some(target.resolve()),
-            _ => None,
-        }
+        self.resolve_type_alias_chain(name)
     }
 
     pub(crate) fn resolved_type_capture_name(&self, constraint: &str) -> String {
@@ -254,6 +251,14 @@ impl Interpreter {
         // resolve it before dispatch/binding compares the constraint.
         if !package_qualified && let Some(resolved) = self.package_type_alias(constraint) {
             return Some(resolved);
+        }
+        // A module's own file-scope `constant` aliases are retained in its
+        // package-keyed module scope after loading. Resolve the short spelling
+        // there as well as imported package aliases; otherwise a native alias
+        // such as `constant time = int64` remains a nominal name and rejects
+        // ordinary Int arguments even though Rakudo accepts them.
+        if !package_qualified {
+            return self.type_alias_target(constraint);
         }
         None
     }
@@ -479,7 +484,8 @@ impl Interpreter {
         if (constraint.starts_with("::(")
             || constraint.contains('[')
             || Self::any_type_capture_seen()
-            || !self.package_type_aliases.is_empty())
+            || !self.package_type_aliases.is_empty()
+            || !self.module_scope_lexicals.is_empty())
             && let Some(resolved_constraint) = self.try_resolved_type_capture_name(constraint)
         {
             return self.type_matches_value(&resolved_constraint, value);

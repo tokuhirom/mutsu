@@ -11,6 +11,13 @@ role Marker {
 
 enum Colour <Red Green Blue>;
 
+class EnumOuter {
+    enum RuleType (
+        'julian-day' => 0,
+        'gregorian-day' => 1,
+    );
+}
+
 # A `constant ... is export` is a complete nullary term wherever the importer
 # can see it, so a bareword `when MATCHER_CONSTANT { }` is never the routine
 # call the gobbled-block check looks for. DBDish::Oracle::StatementHandle's

@@ -377,12 +377,10 @@ pub(crate) fn parse_statement_modifier(input: &str, stmt: Stmt) -> PResult<'_, S
     let (rest, _) = ws(input)?;
     // A trailing comma in the statement's argument list is an empty list slot, not
     // a syntax error: `die "x", if @c;` is legal Raku. Statements that parse a
-    // single argument expression (`die`/`fail`, via `expression_no_word_logical`,
-    // which does not consume commas) leave that comma here, so skip it when a
-    // statement modifier follows. A comma before anything else is left alone so
-    // real errors still surface. (The comma-list statements — `return` and
-    // friends, via `parse_comma_or_expr*` — never reach here with the comma
-    // pending: that parser ends the list itself, see `comma.rs`.)
+    // a statement modifier follows. A comma before anything else is left alone so
+    // real errors still surface. Comma-list statements parse their arguments
+    // before reaching this point; the comma here is only the empty trailing slot
+    // accepted by Raku (`die "x", if @c`).
     let rest = if let Some(after_comma) = rest.strip_prefix(',') {
         let (after_ws, _) = ws(after_comma)?;
         if is_stmt_modifier_after_trailing_comma(after_ws) {

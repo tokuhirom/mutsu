@@ -12005,9 +12005,12 @@ impl CompiledFunction {
     /// interned once per compiled function — see [`Self::package_sym`] for
     /// why this is cached rather than interned per call.
     pub(crate) fn source_file_sym(&self) -> Option<Symbol> {
-        *self
-            .source_file_sym_cache
-            .get_or_init(|| self.source_file.as_deref().map(Symbol::intern))
+        *self.source_file_sym_cache.get_or_init(|| {
+            self.source_file
+                .as_deref()
+                .map(Symbol::intern)
+                .or(self.code.source_file)
+        })
     }
 
     /// Pre-compute the mapping from positional parameter index to locals slot index.

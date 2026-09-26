@@ -67,7 +67,7 @@ impl Interpreter {
             .iter()
             .map(|sym| sym.resolve())
             .collect();
-        let body_lexicals: Vec<(String, Value)> = self
+        let mut body_lexicals: Vec<(String, Value)> = self
             .env
             .iter()
             .filter_map(|(k, v)| {
@@ -129,6 +129,45 @@ impl Interpreter {
                 Some((bare, v.clone()))
             })
             .collect();
+        // A sigiled class-body static is stored under the sigil-leading
+        // package-qualified spelling (`&State::tzparse`, `@State::items`, ...),
+        // while the declaration's local name is `&tzparse`/`@items`. The
+        // ordinary body walk also leaves the declaration-time type object under
+        // the local key, so prefer the qualified store's final value here.
+        // Without this, a later `&name = sub {...}` assignment was persisted as
+        // the `Callable` type object and bare calls from the class's own subs
+        // resolved to an unusable placeholder.
+        for static_name in declared_static_names {
+            let static_name = static_name.resolve();
+            let (sigil, bare_name) = match static_name.as_bytes().first() {
+                Some(b'$' | b'@' | b'%' | b'&') => static_name.split_at(1),
+                _ => ("", static_name.as_str()),
+            };
+            let qualified_symbol = crate::qualified::qualified(
+                crate::symbol::Symbol::intern(name),
+                crate::symbol::Symbol::intern(bare_name),
+            );
+            let qualified = if sigil.is_empty() {
+                qualified_symbol.as_str().to_string()
+            } else {
+                format!("{sigil}{}", qualified_symbol.as_str())
+            };
+            let Some(value) = self
+                .get_our_var(&qualified)
+                .cloned()
+                .or_else(|| self.env.get(&qualified).cloned())
+            else {
+                continue;
+            };
+            if let Some((_, existing)) = body_lexicals
+                .iter_mut()
+                .find(|(bare, _)| bare == &static_name)
+            {
+                *existing = value;
+            } else {
+                body_lexicals.push((static_name.to_string(), value));
+            }
+        }
         if !body_lexicals.is_empty() {
             let marks = crate::runtime::cow_table_mut(&mut self.class_body_static_names)
                 .entry(name.to_string())

@@ -119,6 +119,30 @@ pub(crate) use stmt::simple::is_user_declared_enum_value;
 /// `subset` (or class/role/grammar/enum) as a type constraint rather than a
 /// definite return value, independent of runtime sub-hoisting order (#8657).
 pub(crate) use stmt::simple::is_user_declared_type;
+
+/// Snapshot parse-time type facts that affect compiling a module's cached AST.
+/// The parser normally leaves these in its thread-local scope; precompilation
+/// must persist and replay them when it skips the parse.
+pub(crate) fn cached_type_names() -> (Vec<String>, Vec<String>, Vec<String>) {
+    stmt::simple::cached_type_names()
+}
+
+/// Replay parse-time type facts captured with a cached module AST.
+pub(crate) fn replay_cached_type_names(
+    type_names: &[String],
+    enum_type_names: &[String],
+    enum_value_names: &[String],
+) {
+    for name in type_names {
+        stmt::simple::register_imported_type(name);
+    }
+    for name in enum_type_names {
+        stmt::simple::register_imported_enum_type(name);
+    }
+    for name in enum_value_names {
+        stmt::simple::register_user_enum_value(name);
+    }
+}
 pub use stmt::simple::{
     clear_parser_lib_paths, set_parser_lib_paths, set_parser_program_path, set_parser_source_file,
 };

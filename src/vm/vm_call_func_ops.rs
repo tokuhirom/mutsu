@@ -273,6 +273,12 @@ impl Interpreter {
                 // running package only, so the name does not leak to a
                 // compunit that never imported it.
                 .or_else(|| self.module_scope_lexical(ampname).cloned())
+                // A class-body `my &name` is persisted in the owning package's
+                // lexical store. Methods run with that package selected, but
+                // their compiled bare calls still use the ordinary function
+                // opcode, so include the same store used by code-variable
+                // reads before declaring the name unknown.
+                .or_else(|| self.package_scope_lexical(ampname))
         })
         // An `&` lexical may be a shared cell (ADR-0055 §7.3); the shape
         // filter below must classify the CALLABLE, not the cell.

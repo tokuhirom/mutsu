@@ -197,6 +197,17 @@ pub(in crate::parser::stmt) fn constant_decl(input: &str) -> PResult<'_, Stmt> {
         // See the matching comment in the `.=` branch above: do not consume
         // a trailing `;` here, so `parse_statement_modifier` (applied by
         // `my_decl_dispatch.rs`'s "my constant" branch) can still see it.
+        // A constant bound to a bare type object is a type alias, not merely a
+        // value term. Register it in the parser's type registry now so a
+        // lowercase alias (for example `constant time = int64`) is treated as
+        // a return type by the compiler's definite-return check below.
+        if let Expr::BareWord(target) = &expr
+            && (crate::runtime::utils::is_known_type_constraint(target)
+                || crate::runtime::nativecall::CType::from_type_name(target).is_some()
+                || super::super::simple::is_user_declared_type(target))
+        {
+            super::super::simple::register_user_type(&name);
+        }
         return Ok((
             rest,
             Stmt::VarDecl {

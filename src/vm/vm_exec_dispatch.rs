@@ -829,7 +829,8 @@ impl Interpreter {
                 self.stack.push(val);
                 *ip += 1;
             }
-            // Cost: O(d) env probe (`%?RESOURCES` builds its hash, O(r) resources).
+            // Cost: O(d) env probe, or O(p + r) for `%?RESOURCES` where p is
+            // source-path depth and r is the distribution's resource count.
             OpCode::GetHashVar(name_idx) => {
                 let name = Self::const_str(code, *name_idx);
                 // Reject %!attr (private attribute twigil) when no self is available
@@ -845,7 +846,9 @@ impl Interpreter {
                 }
                 // %?RESOURCES — build from the current package's distribution context
                 if name == "%?RESOURCES" {
-                    let resources = self.build_resources_for_package();
+                    let resources = self
+                        .build_resources_for_source_file(code.source_file)
+                        .unwrap_or_else(|| self.build_resources_for_package());
                     self.stack.push(resources);
                     *ip += 1;
                     return Ok(());

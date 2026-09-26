@@ -2254,8 +2254,20 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
         // forward-referenced sub: `%streams{$_}.state !~~ header-c { ... }`
         // (Cro::HTTP2::GeneralParser) must leave the block to the enclosing
         // `if`, exactly like the declared-type exclusion above.
+        let qualified_enum_member = name.rsplit_once("::").is_some_and(|(head, member)| {
+            let head_is_enum_type = crate::parser::stmt::simple::is_user_declared_enum_type(head)
+                || head.rsplit_once("::").is_some_and(|(_, short)| {
+                    crate::parser::stmt::simple::is_user_declared_enum_type(short)
+                });
+            let head_is_type = crate::parser::stmt::simple::is_user_declared_type(head)
+                || head.rsplit_once("::").is_some_and(|(_, short)| {
+                    crate::parser::stmt::simple::is_user_declared_type(short)
+                });
+            (head_is_enum_type || head_is_type) && member.contains('-')
+        });
         let name_is_enum_value = crate::parser::stmt::simple::is_user_declared_enum_value(&name)
-            || crate::runtime::utils::is_builtin_enum_value(&name);
+            || crate::runtime::utils::is_builtin_enum_value(&name)
+            || qualified_enum_member;
         let hyphen_forward_call = !is_user_sub
             && !name_is_declared_type
             && !short_name_is_type

@@ -123,13 +123,22 @@ fn bareword_names_known_term(name: &str) -> bool {
     // (or, for a constant, the declaring package) and the last segment one of
     // its values.
     if let Some((head, last)) = name.rsplit_once("::") {
+        let head_is_enum_type = simple::is_user_declared_enum_type(head)
+            || head
+                .rsplit_once("::")
+                .is_some_and(|(_, short)| simple::is_user_declared_enum_type(short));
         let head_is_type = simple::is_user_declared_type(head)
+            || head
+                .rsplit_once("::")
+                .is_some_and(|(_, short)| simple::is_user_declared_type(short))
             || utils::is_known_type_constraint(head)
             || utils::is_known_compound_type(head);
         let last_is_value = simple::is_user_declared_enum_value(last)
             || utils::is_builtin_enum_value(last)
             || simple::is_imported_value_term(last);
-        if head_is_type && last_is_value {
+        if (head_is_enum_type && !last.is_empty())
+            || (head_is_type && (last_is_value || last.contains('-')))
+        {
             return true;
         }
     }

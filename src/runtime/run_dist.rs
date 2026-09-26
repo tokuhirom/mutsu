@@ -2,6 +2,19 @@ use super::*;
 use crate::value::ValueMap;
 
 impl Interpreter {
+    /// Build `%?RESOURCES` from the source file attached to the executing code.
+    /// This is the most precise context for a routine compiled in a module:
+    /// runtime package state can still refer to the module that triggered a
+    /// load, while the code object retains the module that owns the routine.
+    pub(crate) fn build_resources_for_source_file(
+        &self,
+        source_file: Option<crate::symbol::Symbol>,
+    ) -> Option<Value> {
+        let source_file = source_file.map(|file| file.resolve())?;
+        let dist = Self::find_real_distribution_meta6(Path::new(&source_file))?;
+        Some(self.build_resources_from_dist(&dist))
+    }
+
     /// Build the %?RESOURCES hash for the current package/distribution context.
     /// Looks up the distribution for the current package (or falls back to current_distribution)
     /// and returns a Hash mapping resource names to their absolute paths on disk.

@@ -1251,6 +1251,18 @@ pub(crate) struct Compiler {
     /// prefix at compile time, since the runtime does not get a
     /// PackageScope opcode for unit declarations.
     pub(crate) in_unit_package: bool,
+    /// Code-variable names declared as class-body statics. Class-body
+    /// statements are compiled in independent chunks, so a later `&name =`
+    /// statement cannot see the declaration's local slot. Those assignments
+    /// must still target the class package's static store, while an
+    /// undeclared routine assignment remains readonly.
+    pub(crate) class_body_static_code_vars: HashSet<String>,
+    /// Compile-time aliases from a constant type object to its target spelling.
+    /// Native storage and arithmetic need the target (`int64`), while runtime
+    /// diagnostics retain the source alias (`time`).
+    pub(crate) type_aliases: HashMap<String, String>,
+    /// Type aliases visible from an enclosing compiler (routine/closure body).
+    pub(crate) outer_type_aliases: HashMap<String, String>,
     /// When `Some`, every `my`/`state` variable declaration compiled while the
     /// stack-top frame is active is recorded here. A scope-isolating do-block
     /// expression (e.g. a string-interpolation `{...}`) uses this to learn the
@@ -1763,6 +1775,9 @@ impl Compiler {
             compiled_functions: CompiledFns::default(),
             current_package: "GLOBAL".to_string(),
             in_unit_package: false,
+            class_body_static_code_vars: HashSet::new(),
+            type_aliases: HashMap::new(),
+            outer_type_aliases: HashMap::new(),
             block_decl_tracker: Vec::new(),
             promoted_expr_decl_names: HashSet::new(),
             current_package_kind: None,
@@ -1834,6 +1849,35 @@ impl Compiler {
             begin_preload_lib_paths: Vec::new(),
             constant_values: ValueMap::default(),
             outer_constant_values: ValueMap::default(),
+        }
+    }
+
+    /// Resolve a constant type alias for compiler decisions that depend on the
+    /// representation of the type. Keep an optional definedness smiley on the
+    /// resolved target; runtime checks still receive the original alias.
+    pub(super) fn resolve_type_alias_constraint(&self, constraint: &str) -> String {
+        let (base, suffix) = [":D", ":U", ":_"]
+            .iter()
+            .find_map(|smiley| constraint.strip_suffix(smiley).map(|base| (base, *smiley)))
+            .unwrap_or((constraint, ""));
+        let mut current = base.to_string();
+        for _ in 0..16 {
+            let Some(target) = self
+                .type_aliases
+                .get(&current)
+                .or_else(|| self.outer_type_aliases.get(&current))
+            else {
+                break;
+            };
+            if target == &current {
+                break;
+            }
+            current = target.clone();
+        }
+        if current == base {
+            constraint.to_string()
+        } else {
+            format!("{current}{suffix}")
         }
     }
 
@@ -2759,6 +2803,7 @@ impl Compiler {
                 .get(tc_idx as usize)
                 .and_then(|c| c.as_str().map(str::to_owned));
             if let Some(tc) = tc {
+                let tc = self.resolve_type_alias_constraint(&tc);
                 self.code.note_declared_constraint(name, &tc);
             }
         }
@@ -3918,7 +3963,12 @@ impl Compiler {
     /// the unit is recompiled here, folding disabled, if one turned up after
     /// something had already been folded. Only files that declare operators pay
     /// the second pass.
-    pub(crate) fn compile(self, stmts: &[Stmt]) -> (CompiledCode, CompiledFns) {
+    pub(crate) fn compile(mut self, stmts: &[Stmt]) -> (CompiledCode, CompiledFns) {
+        // Subroutines are hoisted and compiled before the mainline executes
+        // its declarations. Seed constant type aliases from the source AST so
+        // native local storage decisions do not depend on runtime declaration
+        // order (for example, `constant time = int64` used by a sub body).
+        self.seed_type_aliases(stmts);
         if !self.fold_root {
             return self.compile_unit(stmts);
         }
@@ -3948,6 +3998,57 @@ impl Compiler {
             retry.begin_preloads = preloads;
         }
         retry.compile_unit(stmts)
+    }
+
+    fn seed_type_aliases(&mut self, stmts: &[Stmt]) {
+        for stmt in stmts {
+            match stmt {
+                Stmt::VarDecl {
+                    name,
+                    expr: Expr::BareWord(target),
+                    custom_traits,
+                    ..
+                } if custom_traits
+                    .iter()
+                    .any(|(trait_name, _)| trait_name == "__constant")
+                    && !name.starts_with(['$', '@', '%', '&']) =>
+                {
+                    self.type_aliases.insert(name.clone(), target.clone());
+                }
+                Stmt::Package { body, .. }
+                | Stmt::ClassDecl { body, .. }
+                | Stmt::RoleDecl { body, .. }
+                | Stmt::SubDecl { body, .. }
+                | Stmt::TokenDecl { body, .. }
+                | Stmt::RuleDecl { body, .. }
+                | Stmt::MethodDecl { body, .. }
+                | Stmt::ProtoDecl { body, .. }
+                | Stmt::Block(body)
+                | Stmt::SyntheticBlock(body)
+                | Stmt::React { body }
+                | Stmt::Whenever { body, .. }
+                | Stmt::Default(body)
+                | Stmt::Catch(body)
+                | Stmt::Control(body)
+                | Stmt::Phaser { body, .. }
+                | Stmt::AugmentClass { body, .. } => self.seed_type_aliases(body),
+                Stmt::If {
+                    then_branch,
+                    else_branch,
+                    ..
+                } => {
+                    self.seed_type_aliases(then_branch);
+                    self.seed_type_aliases(else_branch);
+                }
+                Stmt::For { body, .. }
+                | Stmt::While { body, .. }
+                | Stmt::Loop { body, .. }
+                | Stmt::Given { body, .. }
+                | Stmt::When { body, .. } => self.seed_type_aliases(body),
+                Stmt::Label { stmt, .. } => self.seed_type_aliases(std::slice::from_ref(stmt)),
+                _ => {}
+            }
+        }
     }
 
     fn compile_unit(mut self, stmts: &[Stmt]) -> (CompiledCode, CompiledFns) {

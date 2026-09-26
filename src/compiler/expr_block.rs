@@ -15,6 +15,7 @@ impl Compiler {
     /// h{$_}=... }`) can still store plain string keys, so adverbs
     /// (`%j<b>:k`) would miss.
     fn expr_decl_settable_constraint(
+        &self,
         name: &str,
         type_constraint: &Option<String>,
     ) -> Option<String> {
@@ -22,19 +23,19 @@ impl Compiler {
             return None;
         }
         let tc = type_constraint.as_ref()?;
+        let resolved_tc = self.resolve_type_alias_constraint(tc);
         let is_native_value_type = if name.starts_with('@') {
-            crate::runtime::native_types::is_native_array_element_type(tc)
+            crate::runtime::native_types::is_native_array_element_type(&resolved_tc)
         } else {
-            crate::runtime::native_types::is_native_int_type(tc)
-                || matches!(tc.as_str(), "num" | "num32" | "num64" | "str")
+            self.is_native_type_constraint(&resolved_tc)
         };
         if is_native_value_type {
             return None;
         }
         let value_tc = if name.starts_with('%') && !name.contains("__ANON_HASH__") {
-            tc.split('{').next().unwrap_or(tc)
+            resolved_tc.split('{').next().unwrap_or(&resolved_tc)
         } else {
-            tc
+            &resolved_tc
         };
         // Bare `my %h{KeyType}` (no value type): nothing to tag.
         (!value_tc.is_empty()).then(|| value_tc.to_string())
@@ -338,7 +339,7 @@ impl Compiler {
                     // `%__ANON_HASH__`, and the stale `Int` constraint would
                     // reject the new values). The post-assignment `SetVarType`
                     // below still runs to re-tag the stored value.
-                    if let Some(pre_tc) = Self::expr_decl_settable_constraint(name, type_constraint)
+                    if let Some(pre_tc) = self.expr_decl_settable_constraint(name, type_constraint)
                     {
                         let name_idx = self.code.add_constant(Value::str(name.clone()));
                         let tc_idx = self.code.add_constant(Value::str(pre_tc));
@@ -379,7 +380,9 @@ impl Compiler {
                     // pre-clear just removed — the SetGlobal below must not see it.
                     if type_constraint.is_none()
                         && !name.contains("__ANON")
-                        && Self::expr_decl_settable_constraint(name, type_constraint).is_none()
+                        && self
+                            .expr_decl_settable_constraint(name, type_constraint)
+                            .is_none()
                     {
                         let name_idx = self.code.add_constant(Value::str(name.clone()));
                         let tc_idx = self.code.add_constant(Value::str(String::new()));
@@ -487,8 +490,7 @@ impl Compiler {
                     //    `Positional[T]`/`Associative[T]` type-capture binding working;
                     //    that role-matching gap is now fixed in `resolved_type_capture_name`,
                     //    so a genuinely-typed `Hash[Int]`/`Array[Int]` binds correctly.)
-                    if let Some(post_tc) =
-                        Self::expr_decl_settable_constraint(name, type_constraint)
+                    if let Some(post_tc) = self.expr_decl_settable_constraint(name, type_constraint)
                     {
                         let tc_idx = self.code.add_constant(Value::str(post_tc));
                         self.code.emit(OpCode::SetVarType { name_idx, tc_idx });
@@ -523,6 +525,17 @@ impl Compiler {
                     // load the existing package variable value instead of Nil.
                     let is_our_redecl_nil =
                         *is_our && matches!(expr, Expr::Literal(lit) if lit.is_nil());
+                    let native_default = (!name.starts_with('@')
+                        && !name.starts_with('%')
+                        && !name.starts_with('&')
+                        && !custom_traits.iter().any(|(t, _)| t == "__has_initializer")
+                        && Self::is_synthesized_decl_default(expr))
+                    .then(|| {
+                        type_constraint
+                            .as_deref()
+                            .and_then(|tc| self.native_default_expr_for_constraint(tc))
+                    })
+                    .flatten();
                     if is_our_redecl_nil {
                         let qualified = self.qualify_variable_name(name);
                         let idx = self.code.add_constant(Value::str(qualified));
@@ -543,6 +556,8 @@ impl Compiler {
                         // (`(my $x)`, `(my $)`, do-block value): seed and yield
                         // the Any type object (PLAN 8.5 step 3).
                         self.compile_expr(&Self::any_type_object_expr());
+                    } else if let Some(native_default) = native_default.as_ref() {
+                        self.compile_expr(native_default);
                     } else {
                         self.compile_expr(expr);
                     }
@@ -589,9 +604,10 @@ impl Compiler {
                         // wraps on the stack) then Dup, then store.
                         let is_native_int = type_constraint
                             .as_ref()
-                            .is_some_and(|tc| crate::runtime::native_types::is_native_int_type(tc));
+                            .is_some_and(|tc| self.is_native_type_constraint(tc));
                         if is_native_int {
-                            let tc = type_constraint.as_ref().unwrap();
+                            let tc = self
+                                .resolve_type_alias_constraint(type_constraint.as_ref().unwrap());
                             // Set type constraint so future assignments also wrap
                             let name_idx2 = self.code.add_constant(Value::str(name.clone()));
                             let tc_idx = self.code.add_constant(Value::str(tc.clone()));
@@ -779,7 +795,9 @@ impl Compiler {
                     && !is_constant_decl
                     && let Some(tc) = type_constraint
                     && !matches!(tc.as_str(), "Any" | "Mu" | "")
-                    && !crate::runtime::native_types::is_native_array_element_type(tc)
+                    && !crate::runtime::native_types::is_native_array_element_type(
+                        &self.resolve_type_alias_constraint(tc),
+                    )
                 {
                     // A typed anonymous scalar (`my Int $`) used as a value: wrap
                     // it in a typed ContainerRef so the `of`-type constraint
