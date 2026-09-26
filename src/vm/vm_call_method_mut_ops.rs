@@ -1639,12 +1639,42 @@ impl Interpreter {
             "ASSIGN-KEY" if args.len() == 2 => {
                 let key = args[0].to_string_value();
                 let value = args[1].clone();
+                // A hash captured by a routine arrives as its shared
+                // `ContainerRef` cell; the method acts on the hash inside.
+                let derefed;
                 let inner_target = match target.view() {
                     ValueView::Scalar(inner) => inner,
+                    ValueView::ContainerRef(_) => {
+                        derefed = target.deref_container();
+                        &derefed
+                    }
                     _ => &target,
                 };
                 match inner_target.view() {
                     ValueView::Hash(map) => {
+                        // Write through the shared hash node, as BIND-KEY does,
+                        // so an alias (`my %s := %!s; %s.ASSIGN-KEY(...)`) sees
+                        // the store instead of a detached rebuild.
+                        //
+                        // A key bound by the subscript form (`%h<k> := 5`) is
+                        // recorded as a name-keyed read-only marker instead.
+                        if self.is_ro_index(target_name, &Self::encode_bound_index(&args[0])) {
+                            return Err(RuntimeError::immutable_value());
+                        }
+                        if self.assign_key_in_place(target_name, &args[0], &value)? {
+                            crate::vm::vm_stats::record_dispatch_entry_intercept(
+                                "callmethodmut",
+                                "assign-key",
+                            );
+                            self.stack.push(value);
+                            return Ok(());
+                        }
+                        let probe_key = if map.key_type.is_some() {
+                            crate::runtime::utils::value_which_key(&args[0])
+                        } else {
+                            key.clone()
+                        };
+                        Self::check_assign_key_writable(&map, &probe_key)?;
                         let old_meta = self.container_type_metadata(inner_target);
                         // Clone the whole HashData (not just the map) so the
                         // object-hash `original_keys` survive; an object hash
@@ -1954,8 +1984,15 @@ impl Interpreter {
                 }
             }
             "BIND-KEY" if args.len() == 2 => {
+                // A hash captured by a routine arrives as its shared
+                // `ContainerRef` cell; the method acts on the hash inside.
+                let derefed;
                 let inner_target = match target.view() {
                     ValueView::Scalar(inner) => inner,
+                    ValueView::ContainerRef(_) => {
+                        derefed = target.deref_container();
+                        &derefed
+                    }
                     _ => &target,
                 };
                 match inner_target.view() {
@@ -1979,21 +2016,11 @@ impl Interpreter {
                         // existing cell binding when present) instead of a
                         // BOUND_HASH_REF_SENTINEL back-reference.
                         let mut bind_source_install: Option<(String, Value)> = None;
-                        let source_cell = source_var.as_ref().map(|var_name| {
-                            match self.env().get(var_name).map(Value::view) {
-                                Some(ValueView::ContainerRef(cell)) => cell.clone(),
-                                _ => {
-                                    let cell = crate::gc::Gc::new(
-                                        crate::value::ContainerCell::new(value.clone()),
-                                    );
-                                    bind_source_install = Some((
-                                        var_name.clone(),
-                                        Value::container_ref(cell.clone()),
-                                    ));
-                                    cell
-                                }
-                            }
-                        });
+                        let source_cell = Some(self.bind_key_source_cell(
+                            source_var.as_deref(),
+                            &value,
+                            &mut bind_source_install,
+                        ));
                         // A mutating method on a captured aggregate must write
                         // through the shared hash node. Rebuilding a fresh
                         // HashData here severs the alias held by the caller;
