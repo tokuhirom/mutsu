@@ -1442,7 +1442,17 @@ fn lower_var_decl(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
             let init = named_child(node, "initializer")?;
             (lower_expr(named_child_or_positional(init)?)?, true)
         }
-        None => (Expr::Literal(Value::NIL), false),
+        // The same sigil-aware default the parser gives an uninitialized
+        // declaration: `my @a` is an empty Array and `my %h` an empty Hash,
+        // not a container holding `Nil` (which read back as `[(Any)]`, #9568).
+        None => (
+            match sigil.as_str() {
+                "@" => Expr::Literal(Value::real_array(Vec::new())),
+                "%" => Expr::Hash(Vec::new()),
+                _ => Expr::Literal(Value::NIL),
+            },
+            false,
+        ),
     };
     let custom_traits = if has_initializer {
         vec![("__has_initializer".to_string(), None)]

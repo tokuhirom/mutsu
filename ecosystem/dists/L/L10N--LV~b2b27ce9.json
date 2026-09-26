@@ -9,23 +9,23 @@
   "dist": "L10N::LV",
   "files": [
     {
-      "cmp": "partial",
+      "cmp": "regression",
       "mutsu": {
-        "first_failure": "loop, modifier, infix word operators",
-        "nok": 1,
-        "ok": 3,
+        "first_failure": "RakuAST: `.AST` does not yet support this construct: attribute with traits / smiley / scope",
+        "nok": 0,
+        "ok": 4,
         "plan": 16,
-        "secs": 0.15,
+        "secs": 0.13,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "die"
       },
       "path": "t/01-latvian.t",
       "raku": {
         "nok": 0,
         "ok": 16,
         "plan": 16,
-        "secs": 9.91,
+        "secs": 9.65,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -41,7 +41,7 @@
     "date": "2026-09-26",
     "harness": 2,
     "host": "linux-x86_64",
-    "mutsu_commit": "a936c28b1",
+    "mutsu_commit": "353a998c3",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -56,7 +56,7 @@
   "totals": {
     "baseline_assertions": 16,
     "baseline_files": 1,
-    "mutsu_assertions": 3,
+    "mutsu_assertions": 4,
     "parity_files": 0,
     "regressed_files": 1
   },
