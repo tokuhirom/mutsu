@@ -292,8 +292,9 @@ impl<'a> NfaBuilder<'a> {
         }
     }
 
-    /// A `<name>` call: inline the rule's body, cut a recursive call into a
-    /// fate, leave a builtin to the matcher, or decline (ADR-0125 §3).
+    /// A `<name>` call: inline the rule's body (a proto's every candidate),
+    /// cut a recursive call into a fate, leave a builtin to the matcher, or
+    /// decline (ADR-0125 §3).
     fn build_subrule(
         &mut self,
         atom: &RegexAtom,
@@ -340,11 +341,9 @@ impl<'a> NfaBuilder<'a> {
                 next,
             });
         }
-        // A proto's candidates are ranked and only the winner's first end is
-        // kept by the walker (ADR-0125 §3).
-        if candidates.iter().any(|(_, _, sym)| sym.is_some()) {
-            return Err(Declined);
-        }
+        // A proto is the union of its candidates, as in Rakudo's NFA
+        // (#9643). A candidate's `<sym>` was already rewritten to its own sym
+        // text when the body was resolved (`replace_sym_assertions`).
         self.stack.push(spec.lookup_sym);
         let mut bodies = Vec::with_capacity(candidates.len());
         let mut result = Ok(());
