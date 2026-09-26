@@ -60,44 +60,96 @@ pub(crate) fn try_add_parse_time_lib_path(expr: &Expr) {
 }
 
 /// Extract a concrete path from a `use lib` expression.
+///
+/// `use lib` runs at BEGIN time, so its argument must be known while the rest
+/// of the unit is still being parsed (a module it makes loadable can export
+/// types a later signature names). The argument is folded statically: string
+/// literals, and path-method chains rooted at a compile-time path —
+/// `$?FILE` (the unit's own file) or `$*PROGRAM` — through `.IO`, `.Str`,
+/// `.parent(N)`, `.add`/`.child` and `.sibling`.
 fn extract_lib_path(expr: &Expr) -> Option<String> {
+    let program = PROGRAM_PATH.with(|p| p.borrow().clone());
+    let file = parser_source_file().or_else(|| program.clone());
+    fold_use_lib_path(expr, file.as_deref(), program.as_deref())
+}
+
+/// Fold one `use lib` argument to its path, given the unit's `$?FILE` and the
+/// running `$*PROGRAM`. Shared by the parser (which must import the module a
+/// later `use` names while still parsing) and the runtime's pre-execution
+/// type check (`eval_check`), so both agree on which directories a unit adds.
+pub(crate) fn fold_use_lib_path(
+    expr: &Expr,
+    file: Option<&str>,
+    program: Option<&str>,
+) -> Option<String> {
+    static_path(expr, file, program)
+}
+
+/// Fold a path-method chain rooted at `$?FILE`, `$*PROGRAM` or a string
+/// literal to its path string (see [`extract_lib_path`]).
+fn static_path(expr: &Expr, file: Option<&str>, program: Option<&str>) -> Option<String> {
     match expr {
-        // use lib "some/path"
+        // The parser folds `$?FILE` itself to a string literal when it knows
+        // the unit's file, so a literal is a chain root too (`'t'.IO.add(..)`).
         Expr::Literal(lit) => lit.as_str().map(|s| s.to_string()),
-        // use lib $*PROGRAM.parent(N).add("path") or .add($*SPEC.catdir(<...>))
+        Expr::Var(v) if v == "*PROGRAM" => program.map(str::to_string),
+        Expr::Var(v) if v == "?FILE" => file.or(program).map(str::to_string),
         Expr::MethodCall {
             target, name, args, ..
-        } if name == "add" || name == "child" => {
-            // Extract the string argument to .add()
-            let add_arg = args.first().and_then(extract_static_string)?;
-            // Resolve the target chain ($*PROGRAM.parent(N))
-            let base = extract_program_parent(target)?;
-            let result = std::path::Path::new(&base).join(&add_arg);
-            Some(result.to_string_lossy().into_owned())
-        }
-        // use lib $*PROGRAM.sibling("path") -- a path in the same directory
-        // as the running script (the standard `t/foo.rakutest` ->
-        // `t/lib` idiom, e.g. roast/S12-traits/precomp.t). Only the direct
-        // `$*PROGRAM.sibling(...)` target is handled; sibling-of-sibling
-        // chains are not (nothing in the corpus needs them yet).
-        Expr::MethodCall {
-            target, name, args, ..
-        } if name == "sibling" => {
-            let sib_arg = args.first().and_then(extract_static_string)?;
-            if let Expr::Var(v) = target.as_ref()
-                && v == "*PROGRAM"
-            {
-                let program_path = PROGRAM_PATH.with(|p| p.borrow().clone())?;
-                let dir = std::path::Path::new(&program_path)
-                    .parent()
-                    .unwrap_or_else(|| std::path::Path::new(""));
-                Some(dir.join(&sib_arg).to_string_lossy().into_owned())
-            } else {
-                None
+        } => {
+            let base = static_path(target, file, program)?;
+            match name.as_str() {
+                // Coercions between Str and IO::Path leave the path unchanged.
+                "IO" | "Str" if args.is_empty() => Some(base),
+                "parent" => {
+                    let levels = match args.first() {
+                        None => 1,
+                        Some(Expr::Literal(lit)) => usize::try_from(lit.as_int()?).ok()?,
+                        Some(_) => return None,
+                    };
+                    Some(path_parent(base, levels))
+                }
+                "add" | "child" => {
+                    let arg = args.first().and_then(extract_static_string)?;
+                    Some(
+                        std::path::Path::new(&base)
+                            .join(&arg)
+                            .to_string_lossy()
+                            .into_owned(),
+                    )
+                }
+                "sibling" => {
+                    let arg = args.first().and_then(extract_static_string)?;
+                    let dir = std::path::Path::new(&base)
+                        .parent()
+                        .unwrap_or_else(|| std::path::Path::new(""));
+                    Some(dir.join(&arg).to_string_lossy().into_owned())
+                }
+                _ => None,
             }
         }
         _ => None,
     }
+}
+
+/// `IO::Path.parent(levels)` on a path string: a relative path climbs past
+/// `.` into `..` rather than collapsing to an empty string.
+fn path_parent(mut path_str: String, levels: usize) -> String {
+    for _ in 0..levels {
+        if path_str == "." {
+            path_str = "..".to_string();
+        } else if path_str == ".." || path_str.ends_with("/..") {
+            path_str = format!("{}/..", path_str);
+        } else if path_str == "/" {
+            break;
+        } else if let Some(par) = std::path::Path::new(&path_str).parent() {
+            let s = par.to_string_lossy().to_string();
+            path_str = if s.is_empty() { ".".to_string() } else { s };
+        } else {
+            path_str = ".".to_string();
+        }
+    }
+    path_str
 }
 
 /// Try to statically evaluate an expression to a string.
@@ -146,57 +198,6 @@ fn extract_static_string(expr: &Expr) -> Option<String> {
             }
             None
         }
-        _ => None,
-    }
-}
-
-/// Extract a directory path from `$*PROGRAM.parent(N)` or `$*PROGRAM.parent`.
-fn extract_program_parent(expr: &Expr) -> Option<String> {
-    match expr {
-        Expr::MethodCall {
-            target, name, args, ..
-        } if name == "parent" => {
-            // Get the base: should be $*PROGRAM or a chain
-            let base = match target.as_ref() {
-                Expr::Var(v) if v == "*PROGRAM" => PROGRAM_PATH.with(|p| p.borrow().clone())?,
-                other => extract_program_parent(other)?,
-            };
-            let levels = if let Some(Expr::Literal(lit)) = args.first()
-                && let Some(n) = lit.as_int()
-            {
-                n as usize
-            } else {
-                1
-            };
-            let mut path_str = base;
-            for _ in 0..levels {
-                if path_str == "." {
-                    path_str = "..".to_string();
-                } else if path_str == ".." || path_str.ends_with("/..") {
-                    path_str = format!("{}/..", path_str);
-                } else if path_str == "/" {
-                    break;
-                } else if let Some(par) = std::path::Path::new(&path_str).parent() {
-                    let s = par.to_string_lossy().to_string();
-                    if s.is_empty() {
-                        path_str = ".".to_string();
-                    } else {
-                        path_str = s;
-                    }
-                } else {
-                    path_str = ".".to_string();
-                }
-            }
-            Some(path_str)
-        }
-        Expr::MethodCall { target, name, .. } if name == "IO" => {
-            // .IO is a no-op for path resolution
-            match target.as_ref() {
-                Expr::Var(v) if v == "*PROGRAM" => PROGRAM_PATH.with(|p| p.borrow().clone()),
-                _ => None,
-            }
-        }
-        Expr::Var(v) if v == "*PROGRAM" => PROGRAM_PATH.with(|p| p.borrow().clone()),
         _ => None,
     }
 }

@@ -178,23 +178,34 @@ fn module_source_in_dirs(module: &str, dirs: &[String]) -> Option<std::path::Pat
     None
 }
 
-/// The literal paths a `use lib '...'` in this unit adds to the search path.
-fn collect_use_lib_dirs(stmts: &[Stmt], out: &mut Vec<String>) {
-    fn push_literals(expr: &crate::ast::Expr, out: &mut Vec<String>) {
+/// The paths a `use lib ...` in this unit adds to the search path: literals,
+/// and the `$?FILE`/`$*PROGRAM` path chains the parser folds too
+/// (`crate::parser::fold_use_lib_path`).
+fn collect_use_lib_dirs(
+    stmts: &[Stmt],
+    file: Option<&str>,
+    program: Option<&str>,
+    out: &mut Vec<String>,
+) {
+    fn push_paths(
+        expr: &crate::ast::Expr,
+        file: Option<&str>,
+        program: Option<&str>,
+        out: &mut Vec<String>,
+    ) {
         use crate::ast::Expr;
         match expr {
-            Expr::Literal(v) => {
-                if let ValueView::Str(s) = v.view() {
-                    out.push(s.to_string());
-                }
-            }
             Expr::ArrayLiteral(items) => {
                 for item in items {
-                    push_literals(item, out);
+                    push_paths(item, file, program, out);
                 }
             }
-            Expr::Grouped(inner) => push_literals(inner, out),
-            _ => {}
+            Expr::Grouped(inner) => push_paths(inner, file, program, out),
+            other => {
+                if let Some(path) = crate::parser::fold_use_lib_path(other, file, program) {
+                    out.push(path);
+                }
+            }
         }
     }
     for stmt in stmts {
@@ -203,9 +214,9 @@ fn collect_use_lib_dirs(stmts: &[Stmt], out: &mut Vec<String>) {
                 module,
                 arg: Some(arg),
                 ..
-            } if module == "lib" => push_literals(arg, out),
+            } if module == "lib" => push_paths(arg, file, program, out),
             Stmt::Block(body) | Stmt::SyntheticBlock(body) | Stmt::Package { body, .. } => {
-                collect_use_lib_dirs(body, out);
+                collect_use_lib_dirs(body, file, program, out);
             }
             _ => {}
         }
@@ -482,7 +493,13 @@ impl Interpreter {
         let mut packages = std::collections::HashSet::new();
         let mut classes = std::collections::HashSet::new();
         let mut lib_dirs = Vec::new();
-        collect_use_lib_dirs(stmts, &mut lib_dirs);
+        let file = self.env.get("?FILE").map(|v| v.to_string_value());
+        collect_use_lib_dirs(
+            stmts,
+            file.as_deref(),
+            self.program_path.as_deref(),
+            &mut lib_dirs,
+        );
         collect_declared_type_names_with(
             Some(self),
             &lib_dirs,

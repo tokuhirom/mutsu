@@ -692,6 +692,15 @@ pub(crate) struct RuntimeHasDeclSpec {
 /// name has no local slot in the creating frame and must be read from `env`.
 pub(crate) const NOT_A_LOCAL: u32 = u32::MAX;
 
+/// Slot marker in [`OpCode::LoadRegexClosure`]'s capture list: a kebab-case
+/// interpolated name (`$current-decimal`) that is not a local of the creating
+/// frame. It is captured only when it resolves through a routine's persisted
+/// outer-scope stores (an escaped `our sub`'s block lexical, a package-block
+/// or compunit file-scope `my`) — never from `env`, whose same-named binding
+/// the match must keep reading live (the prefix-only name scan in
+/// `CompiledCode::regex_interpolated_var_names` exists for that reason).
+pub(crate) const OUTER_STORE_ONLY: u32 = u32::MAX - 1;
+
 /// How a `when` clause's matcher was *written* at the call site.
 ///
 /// A non-matching `when` evaluates to its failed comparison's falsy result
@@ -9054,6 +9063,48 @@ impl CompiledCode {
                     i = j;
                     continue;
                 }
+            }
+            i += 1;
+        }
+        names
+    }
+
+    /// Kebab-case scalar names (`$current-decimal`) a regex pattern
+    /// interpolates, spelled in full: an identifier continues over `-`/`'`
+    /// followed by a letter or `_`, as in Raku's identifier grammar. Only the
+    /// names that actually contain such a joiner are returned — the plain ones
+    /// are [`Self::regex_interpolated_var_names`]'s. Over-approximates like it.
+    // Cost: O(p), p = pattern length.
+    pub(crate) fn regex_kebab_var_names(pattern: &str) -> Vec<String> {
+        let bytes = pattern.as_bytes();
+        let is_word = |b: u8| b.is_ascii_alphanumeric() || b == b'_';
+        let is_start = |b: u8| b.is_ascii_alphabetic() || b == b'_';
+        let mut names = Vec::new();
+        let mut i = 0;
+        while i < bytes.len() {
+            if bytes[i] == b'$' && bytes.get(i + 1).copied().is_some_and(is_start) {
+                let start = i + 1;
+                let mut j = start;
+                let mut joined = false;
+                loop {
+                    while j < bytes.len() && is_word(bytes[j]) {
+                        j += 1;
+                    }
+                    if j + 1 < bytes.len()
+                        && matches!(bytes[j], b'-' | b'\'')
+                        && is_start(bytes[j + 1])
+                    {
+                        joined = true;
+                        j += 1;
+                        continue;
+                    }
+                    break;
+                }
+                if joined {
+                    names.push(pattern[start..j].to_string());
+                }
+                i = j;
+                continue;
             }
             i += 1;
         }

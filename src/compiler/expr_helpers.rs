@@ -836,6 +836,18 @@ impl Compiler {
                 .unwrap_or(crate::opcode::NOT_A_LOCAL);
             captures.push((sym, slot));
         }
+        // The prefix-only scan above sees `$current-decimal` as `$current`.
+        // A non-local kebab-case name is captured under its full spelling,
+        // from the outer-scope stores only (see `OUTER_STORE_ONLY`).
+        for name in crate::opcode::CompiledCode::regex_kebab_var_names(&pattern) {
+            if self.local_map.contains_key(name.as_str()) {
+                continue;
+            }
+            let sym = Symbol::intern(&name);
+            if !captures.iter().any(|(s, _)| *s == sym) {
+                captures.push((sym, crate::opcode::OUTER_STORE_ONLY));
+            }
+        }
         (!captures.is_empty()).then_some(captures)
     }
 

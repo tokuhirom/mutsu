@@ -83,6 +83,19 @@ impl Interpreter {
         // assertion's sub-interpreter can still run the action method mid-parse.
         // None outside a parse, so this is a no-op there.
         target.current_grammar_actions = self.current_grammar_actions.clone();
+        // A routine the scratch calls (`/ $(format-money($n)) /`, `<{ f() }>`)
+        // reads its own module's file-scope and package-block lexicals
+        // through these stores, not through `env`; without them such a read
+        // is Nil. Shared read-only, like the registry (all but the escaped
+        // cells are `Arc`s).
+        target.unit_lexicals = Arc::clone(&self.unit_lexicals);
+        target.package_lexicals = Arc::clone(&self.package_lexicals);
+        target.module_scope_lexicals = Arc::clone(&self.module_scope_lexicals);
+        target.module_source_packages = Arc::clone(&self.module_source_packages);
+        target.unit_module_packages = Arc::clone(&self.unit_module_packages);
+        target.escaping_our_lexical_names = Arc::clone(&self.escaping_our_lexical_names);
+        target.escaped_our_sub_names = Arc::clone(&self.escaped_our_sub_names);
+        target.escaped_our_lexical_cells = self.escaped_our_lexical_cells.clone();
     }
 
     /// Snapshot the *entire* declaration registry (classes, roles, methods,
