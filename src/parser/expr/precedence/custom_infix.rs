@@ -1,6 +1,11 @@
 use super::*;
 
 pub(crate) fn parse_custom_infix_word(input: &str) -> Option<(String, usize)> {
+    // A block's `}` ending the previous line ended the statement: an
+    // operator spelled here starts a new one (`parser::stmt_ending_brace`).
+    if crate::parser::stmt_ending_brace::infix_barred_by_stmt_ending_brace(input) {
+        return None;
+    }
     // L10N infix entries are aliases of the canonical operator name. The
     // dedicated precedence parsers consume built-ins first; this fallback is
     // for list-level operators such as `minmax` and set-style names that do
@@ -73,6 +78,11 @@ pub(crate) fn parse_custom_infix_word(input: &str) -> Option<(String, usize)> {
 }
 
 pub(crate) fn parse_flipflop_infix(input: &str) -> Option<(String, usize)> {
+    // A block's `}` ending the previous line ended the statement: an
+    // operator spelled here starts a new one (`parser::stmt_ending_brace`).
+    if crate::parser::stmt_ending_brace::infix_barred_by_stmt_ending_brace(input) {
+        return None;
+    }
     if let Some((canonical, len)) = crate::parser::stmt::simple::l10n_match_infix(input)
         && matches!(
             canonical.as_str(),

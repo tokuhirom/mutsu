@@ -493,6 +493,8 @@ pub(crate) fn parse_block_body_routine_with_params<'a>(
         let (r, mut stmts) = crate::parser::stmt::stmt_list_pub(r)?;
         let (r, _) = ws_inner(r);
         let (r, _) = parse_char(r, '}')?;
+        // See `parser::stmt_ending_brace`.
+        crate::parser::stmt_ending_brace::mark_stmt_ending_brace(r);
         crate::parser::stmt::simple::prepend_anon_state_decls(&mut stmts);
         Ok((r, stmts))
     })();
@@ -538,6 +540,8 @@ fn parse_block_body_with_line_tracking(
         };
         let (r, _) = ws_inner(r);
         let (r, _) = parse_char(r, '}')?;
+        // See `parser::stmt_ending_brace`.
+        crate::parser::stmt_ending_brace::mark_stmt_ending_brace(r);
         crate::parser::stmt::simple::prepend_anon_state_decls(&mut stmts);
         Ok((r, stmts))
     })();
@@ -563,6 +567,8 @@ pub(crate) fn parse_block_body_no_self(input: &str) -> PResult<'_, Vec<crate::as
         let (r, mut stmts) = crate::parser::stmt::stmt_list_pub(r)?;
         let (r, _) = ws_inner(r);
         let (r, _) = parse_char(r, '}')?;
+        // See `parser::stmt_ending_brace`.
+        crate::parser::stmt_ending_brace::mark_stmt_ending_brace(r);
         crate::parser::stmt::simple::prepend_anon_state_decls(&mut stmts);
         Ok((r, stmts))
     })();
@@ -619,6 +625,8 @@ fn parse_block_body_with_sigilless<'a>(
         let (r, mut stmts) = crate::parser::stmt::stmt_list_pub(r)?;
         let (r, _) = ws_inner(r);
         let (r, _) = parse_char(r, '}')?;
+        // See `parser::stmt_ending_brace`.
+        crate::parser::stmt_ending_brace::mark_stmt_ending_brace(r);
         crate::parser::stmt::simple::prepend_anon_state_decls(&mut stmts);
         Ok((r, stmts))
     })();
