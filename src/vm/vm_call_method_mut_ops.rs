@@ -456,10 +456,10 @@ impl Interpreter {
         } else {
             args
         };
-        // `X::Foo.throw`/`.fail`/... on an Exception type object (compiled here
-        // because the bareword target routes through CallMethodMut) requires a
-        // concrete invocant: X::Parameter::InvalidConcreteness.
-        if let Some(err) = self.exception_concreteness_error(method, &args, &target) {
+        // `X::Foo.throw`/`.fail`/..., `IO::Path.e`/... on a type object (compiled
+        // here because the bareword target routes through CallMethodMut) require
+        // a concrete invocant: X::Parameter::InvalidConcreteness.
+        if let Some(err) = self.type_object_concreteness_error(method, &args, &target) {
             crate::vm::vm_stats::record_dispatch_entry_intercept(
                 "callmethodmut",
                 "exception-concreteness",
