@@ -745,6 +745,7 @@ mod methods_object_native_ctors_temporal;
 mod methods_pick_roll;
 mod methods_promise;
 mod methods_promise_class;
+mod methods_promise_scheduler;
 mod methods_qualified;
 mod methods_quanthash_ctor;
 mod methods_raku_dispatch;

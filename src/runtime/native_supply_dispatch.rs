@@ -502,7 +502,7 @@ impl Interpreter {
                 Ok(Value::make_instance(Symbol::intern("Supply"), new_attrs))
             }
             "Promise" => {
-                let promise = SharedPromise::new();
+                let promise = self.new_bound_promise(Symbol::intern("Promise"), None);
                 if let Some(supplier_id) = supplier_id_from_attrs(attributes) {
                     supplier_register_promise(supplier_id, promise.clone());
                 } else if let Some(reason) = attributes.get("quit_reason").cloned() {

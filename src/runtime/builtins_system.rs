@@ -381,20 +381,7 @@ impl Interpreter {
         let parent_handles_snapshot: std::collections::HashSet<usize> =
             self.io_handles().map.keys().copied().collect();
 
-        // Raku gives each start block fresh $/ and $!.
-        // Strip these from the closure's captured env so they don't override
-        // the fresh Nil values set in clone_for_thread.
-        let stripped = if let ValueView::Sub(data) = block.view() {
-            let mut new_data = (**data).clone();
-            new_data.env.remove("/");
-            new_data.env.remove("!");
-            new_data.env.remove("$/");
-            new_data.env.remove("$!");
-            Some(Value::sub_value(crate::gc::Gc::new(new_data)))
-        } else {
-            None
-        };
-        let block = stripped.unwrap_or(block);
+        let block = Self::strip_start_block_topics(block);
 
         // Pooled (ADR-0020 slice 1): `start` is the hottest spawner, and its
         // body may block (`await`) — the elastic pool reuses a warm worker or

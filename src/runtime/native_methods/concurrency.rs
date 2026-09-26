@@ -395,6 +395,12 @@ impl Interpreter {
                 }
                 Ok(Value::NIL)
             }
+            // The body of the block a user scheduler is cued with for `start`
+            // (see `promise_start_thunk`).
+            "__mutsu_run_start" => {
+                let block = args.into_iter().next().unwrap_or(Value::NIL);
+                self.run_cued_start_body(&shared, block)
+            }
             _ => Err(RuntimeError::new(format!(
                 "No native method '{}' on Promise::Vow",
                 method

@@ -3234,6 +3234,12 @@ struct PromiseState {
     /// The mutsu thread that ran the scheduled code, used in the diagnostic
     /// printed for an unobserved Broken promise.
     thread_id: i64,
+    /// The *user* scheduler this promise is bound to (ADR-0105 D1): the
+    /// `:scheduler` it was constructed with, or the user-defined
+    /// `$*SCHEDULER` in effect at construction. `None` means a built-in
+    /// scheduler, which mutsu drives natively (deadline heap / worker pool)
+    /// rather than through a `.cue` call.
+    scheduler: Option<Value>,
 }
 
 #[derive(Debug, Clone)]
