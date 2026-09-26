@@ -26,10 +26,10 @@ argument, and the QuantHash path shares it. The QuantHash helpers moved to
 A related gap remains for plain Hashes. A missing plain-Hash key still reads
 as the operator's identity, where rakudo reads `Any`. That is tracked in #9564.
 
-Test: `t/collections/set-bag-mix/hyper-quanthash-operands.t`. Closes #9482.
+Test: `t/lang/operators/hyper-quanthash-operands.t`. Closes #9482.
 
 The integer bitwise operators also read a `Bool` held in a hash or array
 element correctly now. Before, `%h<a> +| %h<a>` with `%h<a> = True` was 0,
 because `int_operand` did not see through the Scalar that holds the element.
 The Set hyper path reached that bug through `»[&infix:<+|>]«`. Test:
-`t/types/numeric/bitwise-bool-element-operand.t`.
+`t/types/numeric/bitwise-bool-scalar-operand.t`.
