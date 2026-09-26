@@ -1,5 +1,41 @@
 use super::*;
 
+/// How [`Value::eqv`] compares two instances of the same user class.
+pub(crate) enum InstanceEqv {
+    /// The answer is already known (the same object).
+    Decided(bool),
+    /// A user `raku` method rendered both sides and the strings decided it.
+    /// Everything that method renders — role attributes carried by a punned
+    /// role's mixin included — is covered by the answer.
+    Rendered(bool),
+    /// Compare attribute by attribute, skipping the listed private attribute
+    /// names: Rakudo's default `.raku` renders public attributes only, so a
+    /// private-only difference is invisible to `eqv`.
+    Public(std::rc::Rc<[String]>),
+    /// No class metadata: compare every attribute slot.
+    Structural,
+}
+
+/// Decides same-class user-instance pairs for [`Value::eqv_with`].
+pub(crate) trait EqvInstanceHook {
+    fn instance_eqv(&mut self, a: &Value, b: &Value) -> InstanceEqv;
+}
+
+/// The interpreter-free hook: every attribute slot takes part.
+pub(crate) struct StructuralInstances;
+
+impl EqvInstanceHook for StructuralInstances {
+    fn instance_eqv(&mut self, _a: &Value, _b: &Value) -> InstanceEqv {
+        InstanceEqv::Structural
+    }
+}
+
+struct EqvCtx<'h> {
+    /// Instance-identity pairs already under comparison (cycle guard).
+    pairs: std::collections::HashSet<(u64, u64)>,
+    hook: &'h mut dyn EqvInstanceHook,
+}
+
 impl Value {
     /// Type-strict structural equivalence (Raku `eqv` operator).
     /// See raku-doc: Language/operators.rakudoc "infix eqv"
@@ -10,11 +46,23 @@ impl Value {
     ///   1 eqv 1.0  → False  (Int vs Num)
     ///   `[1,2] eqv (1,2)`  → False  (Array vs List)
     pub(crate) fn eqv(&self, other: &Self) -> bool {
-        let mut seen = std::collections::HashSet::new();
+        self.eqv_with(other, &mut StructuralInstances)
+    }
+
+    /// [`Value::eqv`] with an [`EqvInstanceHook`] consulted for every pair of
+    /// same-class user instances, at any depth (inside arrays, hashes, pairs,
+    /// other instances' attributes). The VM's `infix:<eqv>` passes a hook that
+    /// applies Rakudo's `Any:D eqv Any:D` rule (same `.WHAT` and equal
+    /// `.raku`), which needs the interpreter; this pure walk cannot.
+    pub(crate) fn eqv_with(&self, other: &Self, hook: &mut dyn EqvInstanceHook) -> bool {
+        let mut seen = EqvCtx {
+            pairs: std::collections::HashSet::new(),
+            hook,
+        };
         self.eqv_inner(other, &mut seen)
     }
 
-    fn eqv_inner(&self, other: &Self, seen: &mut std::collections::HashSet<(u64, u64)>) -> bool {
+    fn eqv_inner(&self, other: &Self, seen: &mut EqvCtx<'_>) -> bool {
         // Unwrap Scalar/ContainerRef containers: eqv looks through containerization
         if let ValueView::Scalar(inner) = self.view() {
             return inner.eqv_inner(other, seen);
@@ -48,7 +96,7 @@ impl Value {
         // already-validated cycle instead of descending forever.
         if let (ValueView::Instance { id: a, .. }, ValueView::Instance { id: b, .. }) =
             (self.view(), other.view())
-            && !seen.insert((a, b))
+            && !seen.pairs.insert((a, b))
         {
             return true;
         }
@@ -503,6 +551,14 @@ impl Value {
                     ..
                 },
             ) => {
+                if a_class != b_class {
+                    return false;
+                }
+                let private = match seen.hook.instance_eqv(self, other) {
+                    InstanceEqv::Decided(answer) | InstanceEqv::Rendered(answer) => return answer,
+                    InstanceEqv::Public(private) => Some(private),
+                    InstanceEqv::Structural => None,
+                };
                 let a_map = a_attrs.to_map();
                 let b_map = b_attrs.to_map();
                 // The full object constructor materializes inherited/redeclared
@@ -516,15 +572,15 @@ impl Value {
                 let mut visible_entries = |map: &AttrMap| {
                     map.iter()
                         .filter(|(key, value)| {
-                            !is_redundant_qualified_attribute(map, key, value, seen)
+                            !is_private_attribute(key, private.as_deref())
+                                && !is_redundant_qualified_attribute(map, key, value, seen)
                         })
                         .map(|(key, value)| (*key, value.clone()))
                         .collect::<Vec<_>>()
                 };
                 let a_entries = visible_entries(&a_map);
                 let b_entries = visible_entries(&b_map);
-                a_class == b_class
-                    && a_entries.len() == b_entries.len()
+                a_entries.len() == b_entries.len()
                     && a_entries.iter().all(|(key, value)| {
                         b_entries
                             .iter()
@@ -568,9 +624,31 @@ impl Value {
             }
             // Mixin (allomorphs): compare both base values and mixin maps with eqv
             (ValueView::Mixin(a, a_mix), ValueView::Mixin(b, b_mix)) => {
-                if !a.eqv_inner(b, seen) {
-                    return false;
+                // A punned role (`R.new`) is a mixin over an instance of the
+                // role, its attribute values in the mixin map. When a user
+                // `raku` decides the pair, those values are part of what it
+                // rendered, so only the composition itself is compared below.
+                // Likewise a private role attribute is invisible to the
+                // default `.raku`, so its mixin-map slot is skipped.
+                let mode = match (a.view(), b.view()) {
+                    (
+                        ValueView::Instance { class_name: ca, .. },
+                        ValueView::Instance { class_name: cb, .. },
+                    ) if ca == cb => seen.hook.instance_eqv(a, b),
+                    _ => InstanceEqv::Structural,
+                };
+                let (rendered, private) = match mode {
+                    InstanceEqv::Rendered(answer) => (Some(answer), None),
+                    InstanceEqv::Public(private) => (None, Some(private)),
+                    InstanceEqv::Decided(_) | InstanceEqv::Structural => (None, None),
+                };
+                match rendered {
+                    Some(false) => return false,
+                    Some(true) => {}
+                    None if !a.eqv_inner(b, seen) => return false,
+                    None => {}
                 }
+                let attr_prefix = crate::runtime::meta_ns::MetaNs::Attr.prefix();
                 // Compare mixin maps (e.g. Str part of allomorphs), ignoring the
                 // `__mutsu_role_seq__` application-order and
                 // `__mutsu_role_group__` application-grouping bookkeeping
@@ -582,7 +660,14 @@ impl Value {
                 // by `mixin_identity_key` for `===` and `mixin_composition_key`
                 // for `.WHAT`; raw stamp values never match across two builds.
                 let is_role_seq = |k: &str| {
-                    k.starts_with("__mutsu_role_seq__") || k.starts_with("__mutsu_role_group__")
+                    k.starts_with("__mutsu_role_seq__")
+                        || k.starts_with("__mutsu_role_group__")
+                        || k.strip_prefix(attr_prefix).is_some_and(|name| {
+                            rendered.is_some()
+                                || private
+                                    .as_deref()
+                                    .is_some_and(|p| p.iter().any(|n| n == name))
+                        })
                 };
                 let a_relevant = a_mix.iter().filter(|(k, _)| !is_role_seq(k));
                 let a_count = a_mix.keys().filter(|k| !is_role_seq(k)).count();
@@ -600,21 +685,34 @@ impl Value {
     }
 }
 
-/// Whether a qualified instance slot is merely a constructor-generated copy of
-/// the corresponding bare public attribute. The qualified form is also used by
-/// role attributes, whose values remain semantically distinct even when their
-/// name suffix matches a bare slot.
+/// Whether an instance slot holds one of `private`'s attribute names (bare or
+/// class- or role-qualified `Owner\0name`).
+fn is_private_attribute(key: &Symbol, private: Option<&[String]>) -> bool {
+    let Some(private) = private else {
+        return false;
+    };
+    let key = key.resolve();
+    let bare = key.rsplit_once('\0').map_or(key.as_str(), |(_, bare)| bare);
+    private.iter().any(|name| name == bare)
+}
+
+/// Whether a qualified instance slot is merely a copy of the corresponding
+/// bare attribute: a constructor-generated mirror of an inherited or
+/// redeclared attribute, or a role-qualified mirror a punned role's method
+/// call leaves behind. A role slot reads back through its bare name when it
+/// is absent (`MixinOverrides::role_attribute`), so one equal to the bare slot
+/// carries no information; one with a different value stays part of eqv.
 fn is_redundant_qualified_attribute(
     map: &AttrMap,
     key: &Symbol,
     value: &Value,
-    seen: &mut std::collections::HashSet<(u64, u64)>,
+    seen: &mut EqvCtx<'_>,
 ) -> bool {
     let key = key.resolve();
     let Some((owner, bare_name)) = key.rsplit_once('\0') else {
         return false;
     };
-    if owner.is_empty() || owner.starts_with("__mutsu_role_attr__") {
+    if owner.is_empty() {
         return false;
     }
     map.get(bare_name)

@@ -815,7 +815,9 @@ impl Interpreter {
         }
         let left = self.reify_or_consume_eqv_operand(left)?;
         let right = self.reify_or_consume_eqv_operand(right)?;
-        self.eval_binary_with_junctions(left, right, |_, l, r| Ok(Value::truth(l.eqv(&r))))
+        self.eval_binary_with_junctions(left, right, |interp, l, r| {
+            interp.eqv_rakudo(&l, &r).map(Value::truth)
+        })
     }
 
     /// `eqv` of two Array/List operands without the whole-operand Proxy
@@ -852,7 +854,7 @@ impl Interpreter {
             };
             let x = self.resolve_proxies_in_value(&x)?;
             let y = self.resolve_proxies_in_value(&y)?;
-            if !x.eqv(&y) {
+            if !self.eqv_rakudo(&x, &y)? {
                 return Ok(Some(false));
             }
         }

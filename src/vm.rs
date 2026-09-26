@@ -175,6 +175,7 @@ mod vm_coerce_concat_ops;
 mod vm_comparison_container_ops;
 mod vm_comparison_ops;
 mod vm_comparison_order_ops;
+mod vm_eqv_instances;
 mod vm_operator_values;
 pub(crate) use vm_operator_values::StrCmp;
 mod vm_concat_assign;
