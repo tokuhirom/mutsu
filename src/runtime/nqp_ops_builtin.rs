@@ -644,6 +644,16 @@ impl Interpreter {
         // Read under the guard: cloning the whole map to read one key made
         // every getattr O(attributes) (#9134).
         let attrs = attributes.as_map();
+        if bare == "storage"
+            && let Some(storage) = attrs.get("__mutsu_hash_storage")
+        {
+            return Some(storage.clone());
+        }
+        if bare == "reified"
+            && let Some(storage) = attrs.get("__mutsu_array_storage")
+        {
+            return Some(storage.clone());
+        }
         attrs
             .get(bare)
             .or_else(|| if bare == name { None } else { attrs.get(name) })
