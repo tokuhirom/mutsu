@@ -3,7 +3,8 @@
 Checking #9586's new `IO::Notification.watch-path` against App::Lorea, the
 tool it was filed for, showed the watcher itself matched rakudo except in two
 details. The rest of the chain from "a file changed" to "the command ran" broke
-on four general mutsu bugs, all fixed here.
+on four general mutsu bugs: three are fixed here, and #9597 fixed the fourth
+while this was in review.
 
 **Watcher parity.** A file created and written between two polls is now
 reported the way libuv reports it: `FileRenamed` for the new entry, then
@@ -29,11 +30,11 @@ replaced the name's whole candidate list, and `self!stop` stopped resolving.
 The native `add_method` now keeps the name's private candidates, and the HOW
 protocol hands `add_method` only the public ones.
 
-**`whenever` on an object with a `Supply` method.** `whenever $source` now
-coerces any object that declares its own `Supply` method, as rakudo's
-`$source.Supply` does. Only `Supplier` and `Proc::Async` were special-cased
-before, so `whenever $stopwatch` treated the Timer::Stopwatch object as a
-single value and never subscribed to its ticks.
+**`whenever` on an object with a `Supply` method.** `whenever $stopwatch`
+treated the Timer::Stopwatch object as one value and never subscribed to its
+ticks. #9597 fixed this while this PR was open, by coercing every object source
+through `.Supply`. This PR keeps that fix and adds a regression test for the
+user-class case.
 
 **`.new` on a built-in instance.** `$proc .= new(@args)`, `$lock.new`,
 `$promise.new` and `$path.new('b')` now construct a new object of the
