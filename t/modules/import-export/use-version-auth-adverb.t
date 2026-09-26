@@ -24,6 +24,8 @@ lives-ok {
 
 # A real import tag still works alongside (negative: unknown tag still errors)
 throws-like {
-    EVAL 'use VersionedMod:ver<1.2.3>:nonesuch; ';
+    # Spaced: a tag glued to the name (`:ver<1.2.3>:nonesuch`) is an inert
+    # name adverb in rakudo, not an import tag.
+    EVAL 'use VersionedMod:ver<1.2.3> :nonesuch; ';
 }, X::Import::NoSuchTag,
     "genuine unknown import tag still rejected when mixed with :ver";

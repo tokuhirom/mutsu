@@ -127,7 +127,8 @@ pub(in crate::parser::stmt) fn use_stmt(input: &str) -> PResult<'_, Stmt> {
                 // discarded. Treating it as an import tag instead would raise
                 // "no such tag 'if'" for a program that runs fine on rakudo.
                 let is_inert_adverb = (tag_name == "if" && r.starts_with('('))
-                    || (rest.as_ptr() as usize) < name_adverbs_end;
+                    // `:from<NQP>` is a name adverb the runtime acts on.
+                    || ((rest.as_ptr() as usize) < name_adverbs_end && tag_name != "from");
                 let canonical_tag_name = if tag_name == "v" {
                     "ver"
                 } else {
