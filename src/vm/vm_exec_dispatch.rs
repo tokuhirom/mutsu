@@ -2183,6 +2183,21 @@ impl Interpreter {
                         && let Some(cell_val) = self.env().get(&name).cloned()
                         && let ValueView::ContainerRef(arc) = cell_val.view()
                     {
+                        // The cell an escaping closure's capture promoted the
+                        // variable to may still hold a deferred `HashEntryRef`
+                        // token (`my $r := @a[2]`): the first write
+                        // materializes the element -- type-checked against the
+                        // container -- and the cell then aliases it (#9488).
+                        let inner = arc.lock().unwrap().clone();
+                        if !name.starts_with(['@', '%'])
+                            && matches!(inner.view(), ValueView::HashEntryRef { .. })
+                            && let Some(terminal) = inner.hash_entry_terminal()
+                        {
+                            let cell = self.materialize_entry_cell(&terminal, val.clone())?;
+                            *arc.lock().unwrap() = Value::container_ref(cell);
+                            *ip += 1;
+                            return Ok(());
+                        }
                         self.check_container_cell_constraint(&arc, &val)?;
                         // Preserve the inner container's identity (§3): a boxed
                         // captured `@a`/`%h` whole-reassigned here must keep its

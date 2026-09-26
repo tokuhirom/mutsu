@@ -1274,8 +1274,10 @@ impl Interpreter {
                 }
             }
         }
-        // Immutable List/Range containers - prevent assignment and binding
-        if let Some(target_val) = self.env().get(&var_name) {
+        // Immutable List/Range containers - prevent assignment and binding.
+        // Read through a capture cell: `my @l := (1, 2, 3)` captured by an
+        // escaping closure is a shared `ContainerRef` (#9488).
+        if let Some(target_val) = self.env().get(&var_name).map(Value::deref_container) {
             let is_immutable = matches!(
                 target_val.view(),
                 ValueView::Array(_, crate::value::ArrayKind::List)

@@ -866,8 +866,20 @@ impl Interpreter {
         // Borrowed from the constant pool, not copied: `code` outlives the op
         // and is a distinct borrow from `&mut self`, so this probe -- which runs
         // on EVERY element store -- no longer allocates a `String` per store.
+        //
+        // The same seed/restore serves a variable an escaping closure captured
+        // (#9488), when this frame reaches it by name only -- a free variable,
+        // with no local slot here. Its env entry is the shared `ContainerRef`
+        // cell, and every env-centric check below (an immutable List/Pair/Set,
+        // a `SetHash[Str]` key type, a Map, ...) classifies the value it finds
+        // under the name, so each of them saw the cell instead of the
+        // container and let the store through. The owning frame keeps its
+        // slot-based handling: its slot holds the same cell, and the store
+        // paths that know about slots already write through it.
         let var_name_for_cell = Self::const_str(code, name_idx);
-        let unit_cell = self.unit_lexical_container_cell(var_name_for_cell);
+        let unit_cell = self
+            .unit_lexical_container_cell(var_name_for_cell)
+            .or_else(|| self.free_var_capture_cell(code, var_sym));
         let saved_env_entry = unit_cell.as_ref().map(|cell| {
             let saved = self.env().get_sym(var_sym).cloned();
             let inner = cell.lock().unwrap().clone();
@@ -895,6 +907,24 @@ impl Interpreter {
             }
         }
         result
+    }
+
+    /// The shared cell behind `var_sym` when this frame reaches the variable
+    /// by name only (no local slot of its own), i.e. a free variable of an
+    /// escaping closure that the owning frame promoted to a `ContainerRef`.
+    // Cost: O(s + d), s = the chunk's slots for the name, d = one env probe.
+    fn free_var_capture_cell(
+        &self,
+        code: &CompiledCode,
+        var_sym: Symbol,
+    ) -> Option<crate::gc::Gc<crate::value::ContainerCell>> {
+        if !code.local_slots_of(var_sym).is_empty() {
+            return None;
+        }
+        match self.env().get_sym(var_sym).map(Value::view) {
+            Some(ValueView::ContainerRef(cell)) => Some(cell.clone()),
+            _ => None,
+        }
     }
 
     /// Thin wrapper around [`Self::exec_index_assign_expr_named_op_seeded_inner`]:

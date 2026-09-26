@@ -5,9 +5,9 @@ use Test;
 # Every write through such a cell must honour the same container traits the
 # variable's own store path does (#9488): `is default`, `is Map`, element
 # types, shapes, QuantHash semantics. Each case below runs through an
-# escaping closure, in both the expression and the statement call form.
+# escaping closure (a few also through the statement call form).
 
-plan 23;
+plan 32;
 
 sub run(&c) { c() }
 
@@ -86,4 +86,44 @@ sub run(&c) { c() }
     my %h = :1a, :2b;
     run { %h<c> = 3 };
     isa-ok %h<a>.VAR, Scalar, 'hash values stay containerized through a cell';
+}
+
+{
+    my @l := (1, 2, 3);
+    my $r = dies-ok { @l[0] = 9 }, 'a bound List refuses an element store through a cell';
+    is-deeply @l, (1, 2, 3), '... and is unchanged';
+}
+
+{
+    my $p = (c => 1);
+    my $r = dies-ok { $p<c> = 9 }, 'a Pair refuses a store through a cell';
+    my $s = <a b>.Set;
+    my $r2 = dies-ok { $s<a c> = True, True }, 'an immutable Set refuses a slice store through a cell';
+}
+
+{
+    my Str @a;
+    my $v := @a[2];
+    my $r = throws-like { $v = 42 }, X::TypeCheck::Assignment,
+      'a deferred element bind written through a cell checks the element type';
+    run { $v = 's' };
+    is @a[2], 's', '... and a well-typed write materializes the element';
+}
+
+{
+    my @arr[2;2];
+    @arr[1;1] = 5;
+    my $r = dies-ok { @arr[2;0]:delete }, 'out-of-bounds multi-dim delete through a cell dies';
+    run { @arr[1;1]:delete };
+    ok @arr[1;1] === Any, '... and an in-bounds one deletes';
+}
+
+# A later sibling block's same-named declaration is a different lexical: the
+# closure's escape must not turn it into the cell the closure writes into.
+{
+    my $r = throws-like { Int = 5 }, X::Assignment::RO, 'assigning to a type object dies';
+    {
+        constant Int = 5;
+        is Int, 5, 'a later constant still shadows the type name';
+    }
 }
