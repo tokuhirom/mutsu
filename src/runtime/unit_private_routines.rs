@@ -101,7 +101,17 @@ impl Interpreter {
     /// occupants of the package-less namespace -- i.e. after its `run_block`
     /// and *before* [`Self::restore_toplevel_global_routines`] puts the loading
     /// scope's own entries back.
-    pub(crate) fn seclude_private_toplevel_routines(&mut self, source_path: &str) {
+    ///
+    /// `module` names the loaded module when known: only *its own* exports
+    /// then stay shared. Another module's export of the same name (one this
+    /// compunit perhaps also imported) does not make this compunit's own
+    /// `sub name` public (#9587). A `require` of a path has no module name and
+    /// keeps the conservative every-module union.
+    pub(crate) fn seclude_private_toplevel_routines(
+        &mut self,
+        source_path: &str,
+        module: Option<&str>,
+    ) {
         let candidates: Vec<(Symbol, String)> = self
             .registry()
             .functions
@@ -115,10 +125,19 @@ impl Interpreter {
         if candidates.is_empty() {
             return;
         }
-        let exported = self.exported_routine_names();
+        let exported = match module {
+            Some(module) => self.own_exported_routine_names(module),
+            None => self.exported_routine_names(),
+        };
         let mut secluded: Vec<(Symbol, Arc<FunctionDef>)> = Vec::new();
         for (key, name) in candidates {
             if name == "MAIN" || exported.contains(&name) {
+                continue;
+            }
+            // An export an earlier module load installed stays visible through
+            // `hide_toplevel_global_routines` (it skips these keys), so it is
+            // still here without having been declared by this body.
+            if self.module_registered_functions.contains(&key) {
                 continue;
             }
             // `our sub name {...}` in a package-less compunit IS a GLOBAL stash
@@ -168,6 +187,99 @@ impl Interpreter {
         // Invalidate name-keyed resolution caches: these names now resolve
         // differently depending on the unit asking.
         self.invalidate_fn_resolution();
+    }
+
+    /// Move the package-less routine aliases the compunit at `source_path`
+    /// imported with its own `use` statements out of the shared registry and
+    /// into that compunit's private table (#9587).
+    ///
+    /// A `use` is lexical to the compunit that says it. `import_module`
+    /// installs a plain routine under the runtime package the module body runs
+    /// in, which is `GLOBAL` for a file with no `unit` declarator and for the
+    /// pre-`unit class` window -- the very package the importer shares. Left
+    /// there, `use E; ex(1)` reaches a routine only `E` imported, and a later
+    /// compunit's own `sub ex` is rejected as a redeclaration. The module's own
+    /// bodies still resolve the name through [`Self::unit_private_routine`],
+    /// exactly like a private helper [`Self::seclude_private_toplevel_routines`]
+    /// moved.
+    ///
+    /// `aliases` is the `imported_routine_aliases` set the module body built;
+    /// only its `GLOBAL::name` members are candidates. Multi imports are left
+    /// in place (the private table holds one routine per name, and multi
+    /// candidates are additive across compunits by design), as are keys a
+    /// module load owns (`module_registered_functions`).
+    // Cost: O(a + f), a = the module's import aliases, f = registry functions
+    // (one scan for multi candidates, only when there is a candidate alias).
+    pub(crate) fn seclude_module_import_aliases(
+        &mut self,
+        aliases: &std::collections::HashSet<Symbol>,
+        source_path: &str,
+    ) {
+        let candidates: Vec<(Symbol, Symbol)> = aliases
+            .iter()
+            .filter_map(|key| {
+                let ks = key.resolve();
+                let name = Self::toplevel_global_routine_name(&ks)?;
+                if name == "MAIN" || name.contains(":<") {
+                    return None;
+                }
+                Some((*key, Symbol::intern(name)))
+            })
+            .filter(|(key, _)| {
+                self.registry().functions.contains_key(key)
+                    && !self.module_registered_functions.contains(key)
+            })
+            .collect();
+        if candidates.is_empty() {
+            return;
+        }
+        let multi_names: std::collections::HashSet<String> = self
+            .registry()
+            .functions
+            .keys()
+            .filter_map(|k| {
+                let ks = k.resolve();
+                let (head, _) = ks.split_once('/')?;
+                Self::toplevel_global_routine_name(head).map(str::to_string)
+            })
+            .collect();
+        let unit = self.unit_of_source(Some(source_path));
+        let mut moved = false;
+        for (key, name_sym) in candidates {
+            if multi_names.contains(name_sym.resolve().as_str())
+                || self.prelude_sub_names.contains(&name_sym)
+            {
+                continue;
+            }
+            let Some(def) = self.registry_mut().functions_mut().remove(&key) else {
+                continue;
+            };
+            self.registry_mut().our_scoped_functions.remove(&key);
+            crate::runtime::cow_table_mut(&mut self.unit_private_routines)
+                .entry(unit)
+                .or_default()
+                .insert(name_sym, def);
+            crate::runtime::cow_table_mut(&mut self.unit_private_names).insert(name_sym);
+            moved = true;
+        }
+        if moved {
+            self.invalidate_fn_resolution();
+        }
+    }
+
+    /// Every routine name `module` itself exports, in any form.
+    fn own_exported_routine_names(&self, module: &str) -> std::collections::HashSet<String> {
+        let mut names = std::collections::HashSet::new();
+        for table in [
+            &self.exported_subs,
+            &self.unit_module_exported_subs,
+            &self.module_owned_exports,
+        ] {
+            if let Some(exports) = table.get(module) {
+                names.extend(exports.keys().cloned());
+            }
+        }
+        names
     }
 
     /// Every routine name any loaded module has exported, in any form.
