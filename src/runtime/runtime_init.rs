@@ -3190,6 +3190,7 @@ impl Interpreter {
             skip_postcircumfix_overload: false,
             pending_dist_selectors: Vec::new(),
             pending_use_export_args: None,
+            pending_sigilless_store: None,
             pending_inner_export_subs: ValueMap::default(),
             module_export_defs: HashMap::new(),
             defined_slang_rules: Vec::new(),

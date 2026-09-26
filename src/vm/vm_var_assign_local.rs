@@ -1056,7 +1056,7 @@ impl Interpreter {
         idx: usize,
     ) -> Result<Option<()>, RuntimeError> {
         let name = &code.locals[idx];
-        if !(name.starts_with('%') || name.starts_with('@')) {
+        if !(name.starts_with('%') || name.starts_with('@') || self.take_pending_sigilless(name)) {
             return Ok(None);
         }
         let name = name.to_string();
@@ -1121,7 +1121,7 @@ impl Interpreter {
         &mut self,
         name: &str,
     ) -> Result<Option<()>, RuntimeError> {
-        if !(name.starts_with('%') || name.starts_with('@')) {
+        if !(name.starts_with('%') || name.starts_with('@') || self.take_pending_sigilless(name)) {
             return Ok(None);
         }
         let Some(raw) = self.tied_candidate_outside_slot(name) else {
@@ -1232,6 +1232,39 @@ impl Interpreter {
     /// `Mixin` a punned role is represented as.
     pub(super) fn is_tie_bindable(val: &Value) -> bool {
         Self::tied_instance_type_name(val).is_some()
+    }
+
+    /// Whether the sigilless name `name` is bound to an object that is its own
+    /// container through a user `STORE` (`my \foo = FixedInt.new`). Rakudo's
+    /// assignment falls back to `.STORE` on a non-`Scalar` target, so such a
+    /// name is assignable even though the name itself holds no container.
+    pub(super) fn sigilless_value_has_store(&mut self, code: &CompiledCode, name: &str) -> bool {
+        let value = match code.locals.iter().position(|l| l == name) {
+            Some(idx) => self.locals.get(idx).cloned(),
+            None => self.get_env_with_main_alias(name),
+        };
+        value.is_some_and(|v| self.instance_is_tied(&v.deref_container()))
+    }
+
+    /// Consume the `pending_sigilless_store` mark `CheckReadOnly` left for
+    /// `name`, reporting whether this store is that assignment.
+    ///
+    /// The expression form (`say(foo -= 1)`) emits no `CheckReadOnly`, so a
+    /// name that still carries the sigilless read-only marker counts too: only
+    /// a sigilless binding ever gets that marker, never a `$x`, so a scalar
+    /// holding such an object is still assigned as a container.
+    fn take_pending_sigilless(&mut self, name: &str) -> bool {
+        if self.pending_sigilless_store.as_deref() == Some(name) {
+            self.pending_sigilless_store = None;
+            return true;
+        }
+        crate::env::sigilless_readonly_keys_possible()
+            && matches!(
+                self.env()
+                    .get_sym(crate::runtime::sigilless_readonly_key(name))
+                    .map(Value::view),
+                Some(ValueView::Bool(true))
+            )
     }
 
     /// Pop the RHS and route it through the tied instance's `STORE`, returning
