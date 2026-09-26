@@ -617,6 +617,7 @@ mod shaped;
 mod str_scan;
 mod type_constraints;
 mod type_misc;
+mod zero_denominator;
 
 pub(crate) use char_cursor::*;
 pub(crate) use coerce_containers::*;
@@ -637,6 +638,7 @@ pub(crate) use shaped::*;
 pub(crate) use str_scan::*;
 pub(crate) use type_constraints::*;
 pub(crate) use type_misc::*;
+pub(crate) use zero_denominator::*;
 
 pub(crate) use super::sprintf::format_sprintf;
 pub(crate) use super::sprintf::format_sprintf_args;

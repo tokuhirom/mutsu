@@ -762,6 +762,19 @@ pub(super) fn dispatch(
                 // Zero-denominator Rat/FatRat .Str throws X::Numeric::DivideByZero
                 None // fall through to runtime for exception with proper context
             }
+            // A collection stringifies every element, so a zero-denominator
+            // Rational inside it dies like its own `.Str` (GH #9608). The walk
+            // runs twice only on the error path.
+            ValueView::Array(..)
+            | ValueView::Seq(..)
+            | ValueView::Slip(..)
+            | ValueView::Hash(..)
+            | ValueView::Pair(..)
+            | ValueView::ValuePair(..)
+                if crate::runtime::utils::zero_denominator_rational_error(target).is_some() =>
+            {
+                crate::runtime::utils::zero_denominator_rational_error(target).map(Err)
+            }
             // A list holding an `Instance` element needs the interpreter: the
             // element's class may define its own `Str`, which this pure
             // renderer cannot call (it would print the `ClassName()` fallback

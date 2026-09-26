@@ -185,20 +185,13 @@ fn check_unhandled_failure(v: &Value) -> Result<(), RuntimeError> {
     Ok(())
 }
 
-/// Check if a value is a Rat/FatRat/BigRat with zero denominator and throw
-/// X::Numeric::DivideByZero if so (Raku defers the error until the value is used).
+/// Throw X::Numeric::DivideByZero when `v` is, or (inside a plain aggregate)
+/// holds, a zero-denominator Rational: Raku defers the error until the value is
+/// stringified, and `say {a => 1/0}` stringifies the element (GH #9608).
 fn check_rat_divide_by_zero(v: &Value) -> Result<(), RuntimeError> {
-    match v.view() {
-        ValueView::Rat(n, 0) => Err(RuntimeError::numeric_divide_by_zero_with(Some(Value::int(
-            n,
-        )))),
-        ValueView::FatRat(n, 0) => Err(RuntimeError::numeric_divide_by_zero_with(Some(
-            Value::int(n),
-        ))),
-        ValueView::BigRat(n, d) if d.is_zero() => Err(RuntimeError::numeric_divide_by_zero_with(
-            Some(Value::from_bigint(n.clone())),
-        )),
-        _ => Ok(()),
+    match runtime::zero_denominator_rational_error(v) {
+        Some(err) => Err(err),
+        None => Ok(()),
     }
 }
 
