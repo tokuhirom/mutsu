@@ -113,7 +113,7 @@ pub(crate) fn to_set(target: Value, what: &str) -> Result<Value, RuntimeError> {
     }
     match target.view() {
         // Always return the immutable variant; the caller flips it for `.SetHash`.
-        ValueView::Set(s, _) => return Ok(Value::set_parts(s.clone(), false)),
+        ValueView::Set(..) => return Ok(target.clone().quanthash_with_mutability(false)),
         // A List `(...)` invocant flattens its elements in list context; an
         // Array `[...]` (or itemized) invocant takes each element whole.
         ValueView::Array(items, crate::value::ArrayKind::List) => {
@@ -357,7 +357,7 @@ pub(crate) fn to_bag(target: Value, what: &str) -> Result<Value, RuntimeError> {
 
     match target.view() {
         // Always return the immutable variant; the caller flips it for `.BagHash`.
-        ValueView::Bag(b, _) => return Ok(Value::bag_parts(b.clone(), false)),
+        ValueView::Bag(..) => return Ok(target.clone().quanthash_with_mutability(false)),
         ValueView::Pair(_, _) | ValueView::ValuePair(_, _) => {
             add_item(&mut counts, &mut original_keys, &target)?;
         }
@@ -672,7 +672,7 @@ pub(crate) fn to_mix(target: Value, what: &str) -> Result<Value, RuntimeError> {
     let mut original_keys: ValueMap = ValueMap::default();
     match target.view() {
         // Always return the immutable variant; the caller flips it for `.MixHash`.
-        ValueView::Mix(m, _) => return Ok(Value::mix_parts(m.clone(), false)),
+        ValueView::Mix(..) => return Ok(target.clone().quanthash_with_mutability(false)),
         // A List `(...)` invocant flattens its elements in list context; an
         // Array `[...]` (or itemized) invocant takes each element whole.
         ValueView::Array(items, crate::value::ArrayKind::List) => {
