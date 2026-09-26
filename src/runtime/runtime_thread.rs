@@ -575,6 +575,7 @@ impl Interpreter {
             output_sink: thread_output_sink,
             warn_output: String::new(),
             warn_suppression_depth: 0,
+            warn_suppression_boundaries: Vec::new(),
             surfaced_parse_warnings: std::collections::HashSet::new(),
             tap: self.tap.clone_for_thread(),
             halted: false,

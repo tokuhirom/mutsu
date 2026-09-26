@@ -2,7 +2,7 @@ use lib 'roast/packages/Test-Helpers/lib';
 use Test;
 use Test::Util;
 
-plan 4;
+plan 6;
 
 dies-ok { quietly { die "not quiet enough" } }, '"die" in "quietly" dies';
 
@@ -29,3 +29,24 @@ is_run 'quietly { note "eton" }; say "life"',
         out => "life\n",
     },
     '"note" in "quietly" works';
+
+# GH-9607: rakudo's `quietly` installs its own CONTROL that resumes any
+# CX::Warn, so a `warn` inside it never reaches a CONTROL handler installed
+# outside the `quietly` block.
+is_run 'CONTROL { when CX::Warn { say "W: ", .message; .resume } }; quietly { warn "q" }; say "end"',
+    {
+        status => 0,
+        err => "",
+        out => "end\n",
+    },
+    'an outer CONTROL never sees a warning suppressed by "quietly"';
+
+# A CONTROL declared *inside* the quietly block is nested more tightly than
+# quietly's own resume-everything handler, so it still gets first look.
+is_run 'quietly { CONTROL { when CX::Warn { say "W: ", .message; .resume } }; warn "q" }; say "end"',
+    {
+        status => 0,
+        err => "",
+        out => "W: q\nend\n",
+    },
+    'a CONTROL declared inside "quietly" still handles its own warnings';
