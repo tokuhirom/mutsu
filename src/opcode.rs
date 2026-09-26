@@ -961,6 +961,22 @@ pub(crate) enum OpCode {
     SetGlobal(u32),
     /// Like SetGlobal but skips @/% coercion (used for `constant @x` / `constant %x`).
     SetGlobalRaw(u32),
+    /// Store a call-site temporary of the subscript-argument `is rw`
+    /// writeback (`__mutsu_index_rw_arg_N` / `_orig_N` / `__mutsu_call_result_N`,
+    /// see `compile_call_arg_with_escape`) into the frame env under its
+    /// pre-interned name. Stack: `[value] -> []`.
+    ///
+    /// A raw replace: the temp is compiler-internal, so none of
+    /// [`Self::SetGlobal`]'s user-variable semantics (readonly/type/strict
+    /// checks, `our`/shared-store mirroring, write-through into a cell a
+    /// previous execution left there) apply. It still lives in `env`, because
+    /// an `is rw` callee writes its parameter back by that name
+    /// (`apply_rw_bindings_to_env`).
+    SetCallTemp(u32),
+    /// Read a temporary stored by [`Self::SetCallTemp`] (or written back into
+    /// it by an `is rw` callee), decontainerized exactly as [`Self::GetGlobal`]
+    /// hands back a variable's value. Stack: `[] -> [value]`.
+    GetCallTemp(u32),
     /// Verify that a dynamic variable (`$*x` / `@*x` / `%*x`) is in scope before a
     /// genuine assignment to it. Throws X::Dynamic::NotFound when it was never
     /// declared (`my $*x`) nor is a built-in dynamic var. Emitted only for plain
@@ -10292,6 +10308,7 @@ impl CompiledCode {
                     | OpCode::SmartMatchExpr { .. }
                     | OpCode::SetGlobal(_)
                     | OpCode::SetGlobalRaw(_)
+                    | OpCode::SetCallTemp(_)
                     | OpCode::AssignExpr(..)
                     | OpCode::TopicDotAssign(_)
                     | OpCode::AssignExprLocal(_)
