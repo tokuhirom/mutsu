@@ -476,6 +476,23 @@ impl Interpreter {
         for scope in &scopes_to_check {
             self.collect_token_defs_for_scope_dedup(scope, name, &mut defs, &mut seen);
         }
+        // A `my token` declared in a package body is registered under that
+        // package, but a method call does not switch `current_package`, so a
+        // method of the package (or of a class nested in it) would miss it.
+        // Look where the executing routine was written, then outward through
+        // the enclosing packages — the lexical scopes that body can see
+        // (Getopt::Long's `class Option` checks names against the
+        // `my rule name` of its enclosing unit).
+        if defs.is_empty()
+            && let Some(frame) = self.routine_stack_top()
+        {
+            for scope in crate::qualified::package_ancestors(frame.package) {
+                self.collect_token_defs_for_scope(scope.as_str(), name, &mut defs);
+                if !defs.is_empty() {
+                    break;
+                }
+            }
+        }
         // Also check GLOBAL
         if defs.is_empty() {
             self.collect_token_defs_for_scope("GLOBAL", name, &mut defs);

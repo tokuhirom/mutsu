@@ -627,14 +627,31 @@ fn collect_named_names_recursive(pd: &ParamDef, names: &mut Vec<String>) {
             pd.name.clone()
         };
 
-    // If this is a named param with a single sub-signature param, keep recursing
-    if pd.named
-        && let Some(ref subs) = pd.sub_signature
-        && subs.len() == 1
-    {
+    // Every named link of the chain is a name the argument can be passed by,
+    // the innermost one (`:@regex` in `:r(:@regex)`) included; a positional
+    // inner param (`$a` in `:x($a)`) is only the variable.
+    if pd.named {
         names.push(inner_name);
-        collect_named_names_recursive(&subs[0], names);
+        if let Some(ref subs) = pd.sub_signature
+            && subs.len() == 1
+        {
+            collect_named_names_recursive(&subs[0], names);
+        }
     }
+}
+
+/// The parameter that actually declares the variable: for a named alias chain
+/// (`:r(:@regex)`, `:x($a)`) the innermost link, otherwise `p` itself. Its
+/// sigil and name are what `.sigil` / `.usage-name` report.
+fn variable_param(p: &SigParam) -> &SigParam {
+    let mut current = p;
+    while current.named
+        && let Some(subs) = &current.sub_signature
+        && let [inner] = subs.as_slice()
+    {
+        current = inner;
+    }
+    current
 }
 
 /// Convert `Vec<ParamDef>` and optional return type to `SigInfo`.
@@ -786,6 +803,8 @@ fn resolve_subset_base(name: &str, interp: Option<&Interpreter>) -> Option<Strin
 
 fn build_parameter_attrs(p: &SigParam, interp: Option<&Interpreter>) -> ValueMap {
     let mut attrs = ValueMap::default();
+    // The sigil of the variable itself: `:r(:@regex)` is an `@` parameter.
+    let sigil = variable_param(p).sigil;
     // .name returns the sigiled name (e.g., "$x", "@pos", "%named")
     // For named params with aliases (:x($a)), resolve the inner variable name
     let display_name = if !p.named_names.is_empty() {
@@ -815,13 +834,13 @@ fn build_parameter_attrs(p: &SigParam, interp: Option<&Interpreter>) -> ValueMap
         }
         // A parameter that is ONLY a capture (`::T $x`) has no nominal type:
         // rakudo reports `.type` as `Any`, not the sigil's container role.
-        None if !type_captures.is_empty() && p.sigil == '$' => {
+        None if !type_captures.is_empty() && sigil == '$' => {
             Value::Package(crate::symbol::wk::any())
         }
         // `Int @x` / `Int %h` constrain the *element* type; the parameter's
         // own type is the parameterized container role.
-        Some(t) if p.sigil == '@' => Value::Package(Symbol::intern(&format!("Positional[{t}]"))),
-        Some(t) if p.sigil == '%' => Value::Package(Symbol::intern(&format!("Associative[{t}]"))),
+        Some(t) if sigil == '@' => Value::Package(Symbol::intern(&format!("Positional[{t}]"))),
+        Some(t) if sigil == '%' => Value::Package(Symbol::intern(&format!("Associative[{t}]"))),
         // A subset type is nominalized: `.type` reports the base nominal type
         // and the subset itself becomes a `.constraints` entry (rakudo:
         // `sub f(UInt :$p) {}` has `.type` Int and `.constraints` all(UInt)).
@@ -835,7 +854,7 @@ fn build_parameter_attrs(p: &SigParam, interp: Option<&Interpreter>) -> ValueMap
             Value::Package(Symbol::intern(base.as_deref().unwrap_or(t)))
         }
         // Untyped params: the sigil implies the container role.
-        None => Value::Package(Symbol::intern(match p.sigil {
+        None => Value::Package(Symbol::intern(match sigil {
             '@' => "Positional",
             '%' => "Associative",
             '&' => "Callable",
@@ -850,10 +869,10 @@ fn build_parameter_attrs(p: &SigParam, interp: Option<&Interpreter>) -> ValueMap
     // but Raku's `Parameter.slurpy` is true for all three.
     let is_slurpy_any = p.slurpy || p.double_slurpy || p.onearg;
     // Slurpy hash (*%named) is considered named in Raku
-    let is_named = p.named || (p.slurpy && p.sigil == '%');
+    let is_named = p.named || (p.slurpy && sigil == '%');
     attrs.insert("named".to_string(), Value::Bool(is_named));
     attrs.insert("slurpy".to_string(), Value::Bool(is_slurpy_any));
-    attrs.insert("sigil".to_string(), Value::str(p.sigil.to_string()));
+    attrs.insert("sigil".to_string(), Value::str(sigil.to_string()));
     attrs.insert("multi-invocant".to_string(), Value::Bool(p.multi_invocant));
 
     // readonly: true unless rw/raw/copy/sigilless
@@ -937,8 +956,9 @@ fn build_parameter_attrs(p: &SigParam, interp: Option<&Interpreter>) -> ValueMap
     // .usage-name: the variable name minus sigil and twigil (rakudo: the name
     // Cro's route-URL generator uses to build a placeholder).
     let usage_name = {
-        let twigil = extract_twigil(&p.name);
-        p.name[twigil.len()..].to_string()
+        let var = variable_param(p);
+        let twigil = extract_twigil(&var.name);
+        var.name[twigil.len()..].to_string()
     };
     attrs.insert("usage-name".to_string(), Value::str(usage_name));
 

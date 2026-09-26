@@ -5,6 +5,7 @@ pub(in crate::parser) mod control;
 pub(crate) mod decl;
 mod idents;
 pub(super) mod modifier;
+mod modifier_tail;
 mod pub_shims;
 pub(super) mod simple;
 pub(crate) mod simple_expr_stmt;
