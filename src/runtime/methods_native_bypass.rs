@@ -117,6 +117,9 @@ impl Interpreter {
                 | "set_auth"
                 | "set_api"
                 | "set_why"
+                // `Metamodel::AttributeContainer`'s `is rw` flag.
+                | "rw"
+                | "set_rw"
                 // `$type.HOW.WHY` reads back what `.^set_why` attached to the
                 // METACLASS. Routed here so it does not fall through to the
                 // ordinary `.WHY` declarator-comment lookup, which would only

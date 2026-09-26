@@ -342,6 +342,31 @@ impl Interpreter {
                     .insert(key, stored.clone());
                 Ok(stored)
             }
+            // `Metamodel::AttributeContainer`: `.^set_rw` is what the `is rw`
+            // class trait calls; `.^rw` reads the flag back as Rakudo's
+            // native int (`1` / `0`), in the same `type_metadata` slot
+            // `register_class_decl` writes for `class C is rw`.
+            // Cost: O(1).
+            "set_rw" if args.len() == 1 => {
+                let name = self.mop_receiver_owner(&args[0]);
+                crate::runtime::cow_table_mut(&mut self.type_metadata)
+                    .entry(name)
+                    .or_default()
+                    .insert("rw".to_string(), Value::TRUE);
+                Ok(Value::int(1))
+            }
+            // A role's HOW (`ParametricRoleGroupHOW`) is no
+            // AttributeContainer, so `R.^rw` falls through to NotFound.
+            // Cost: O(1).
+            "rw" if args.len() == 1 && !self.is_role_reference_value(&args[0]) => {
+                let name = self.mop_receiver_owner(&args[0]);
+                let is_rw = self
+                    .type_metadata
+                    .get(&name)
+                    .and_then(|m| m.get("rw"))
+                    .is_some_and(|v| v.truthy());
+                Ok(Value::int(i64::from(is_rw)))
+            }
             // `Metamodel::Documenting`: `.^set_why` attaches a pod object to
             // the METACLASS, so unlike an attribute write it is not blocked
             // once the type is composed. `.WHY` reads it back, both on the

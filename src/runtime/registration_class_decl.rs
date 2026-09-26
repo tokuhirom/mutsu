@@ -236,6 +236,26 @@ impl Interpreter {
             return Ok(Vec::new());
         }
 
+        // `Metamodel::AttributeContainer`'s `rw` flag: `class C is rw` is
+        // the `set_rw` trait, read back by `.^rw`. Recorded in the same
+        // `type_metadata` slot `.^set_rw` writes; a redeclaration without
+        // `is rw` clears it (a stub keeps whatever the real body set).
+        if class_is_rw {
+            crate::runtime::cow_table_mut(&mut self.type_metadata)
+                .entry(name.to_string())
+                .or_default()
+                .insert("rw".to_string(), Value::TRUE);
+        } else if !is_stub_body
+            && self
+                .type_metadata
+                .get(name)
+                .is_some_and(|m| m.contains_key("rw"))
+        {
+            crate::runtime::cow_table_mut(&mut self.type_metadata)
+                .get_mut(name)
+                .map(|m| m.remove("rw"));
+        }
+
         // Track whether this registry entry came from a `my`-scoped
         // declaration (see `Registry::lexical_classes`'s doc comment) so a
         // later bare-name `has_class` query can tell a real package-scope
