@@ -165,7 +165,7 @@ That reduction is three things at once: the thing you debug, the regression test
 step 6, and the body of the issue you file in step 5. Do not skip it and debug against the
 distribution's 124-assertion test file.
 
-`AGENTS.md`'s debugging guidance applies unchanged — `--dump-ast`, `MUTSU_TRACE`, and
+The `debugging` skill applies unchanged — `--dump-ast`, `MUTSU_TRACE`, and
 `rust-gdb -batch` before any `eprintln!`.
 
 ## 5. Decide: fix it now, or file an issue
