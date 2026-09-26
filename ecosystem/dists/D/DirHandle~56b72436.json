@@ -11,23 +11,22 @@
   "dist": "DirHandle",
   "files": [
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Undeclared routine:",
         "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 0.03,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.1,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/01-basic.rakutest",
       "raku": {
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 1.83,
+        "secs": 2.4,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -41,7 +40,7 @@
         "nok": 0,
         "ok": 6,
         "plan": 13,
-        "secs": 0.56,
+        "secs": 0.7,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -53,10 +52,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-25",
+    "date": "2026-09-26",
     "harness": 2,
-    "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "404ac78",
+    "host": "linux-x86_64",
+    "mutsu_commit": "5382520f1",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -67,13 +66,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/D/IR/DIRHANDLE/f5a2e8aca3eced547dfdd68780dd45b2933ca7f8.tar.gz"
   },
-  "status": "red",
+  "status": "green",
   "totals": {
     "baseline_assertions": 1,
     "baseline_files": 1,
-    "mutsu_assertions": 0,
-    "parity_files": 0,
-    "regressed_files": 1
+    "mutsu_assertions": 1,
+    "parity_files": 1,
+    "regressed_files": 0
   },
   "version": "0.0.10"
 }
