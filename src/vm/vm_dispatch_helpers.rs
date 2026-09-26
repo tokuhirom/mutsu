@@ -421,16 +421,21 @@ impl Interpreter {
         }
     }
 
-    /// Like [`Self::coerce_numeric_bridge_pair`], but additionally raises
-    /// X::Str::Numeric when either operand is a non-numeric string. Used by the
-    /// genuinely-numeric operators (`+ - * / % **`, `== != < > <= >= <=>`); the
-    /// generic comparators (`cmp`, `before`/`after`) use the plain bridge so they
-    /// keep comparing strings as strings.
+    /// Like [`Self::coerce_numeric_bridge_pair`], but a non-numeric string
+    /// operand makes the whole operation evaluate to a lazy `Failure` wrapping
+    /// X::Str::Numeric, returned as the inner `Err`. Used by the arithmetic
+    /// operators (`+ - * / % **`, `×`, `÷`): rakudo's `"a" / "b"` is a Failure
+    /// that only throws once it is sunk or used, so a module whose mainline
+    /// merely *stores* such a value (WWW::HorizonsEphemerisSystem's
+    /// `'AngularDegrees' / 'Seconds'`) must still load. The left operand is
+    /// checked first, matching the Failure rakudo reports for `"a" + "b"`.
+    /// The generic comparators (`cmp`, `before`/`after`) use the plain bridge
+    /// so they keep comparing strings as strings.
     pub(super) fn coerce_numeric_bridge_pair_strict(
         &mut self,
         left: Value,
         right: Value,
-    ) -> Result<(Value, Value), RuntimeError> {
+    ) -> Result<Result<(Value, Value), Value>, RuntimeError> {
         // A bare concrete-numeric type object has no infix candidate in rakudo,
         // for the arithmetic ops just as for the comparisons: `Int + 1` throws
         // X::Numeric::Uninitialized. The assignment metaop (`my Int $a; $a += 1`)
@@ -438,13 +443,16 @@ impl Interpreter {
         // has already substituted the operator's zero-argument value.
         crate::vm::vm_comparison_ops::check_type_object_in_numeric_context(&left)?;
         crate::vm::vm_comparison_ops::check_type_object_in_numeric_context(&right)?;
-        crate::runtime::utils::check_str_numeric(&left)?;
-        crate::runtime::utils::check_str_numeric(&right)?;
+        if let Some(failure) = crate::runtime::utils::str_numeric_operand_failure(&left)
+            .or_else(|| crate::runtime::utils::str_numeric_operand_failure(&right))
+        {
+            return Ok(Err(failure));
+        }
         // Any other type object (`Any`, `Str`, `Complex`, ...) warns and
         // numifies to its zero (#9359).
         let left = self.warn_uninitialized_numeric_operand(left, 0)?;
         let right = self.warn_uninitialized_numeric_operand(right, 1)?;
-        self.coerce_numeric_bridge_pair(left, right)
+        self.coerce_numeric_bridge_pair(left, right).map(Ok)
     }
 
     /// Evaluate truthiness of a value, including dispatch to user-defined Bool methods.
