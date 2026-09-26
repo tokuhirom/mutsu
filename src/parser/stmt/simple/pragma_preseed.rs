@@ -255,6 +255,19 @@ pub(crate) fn register_user_enum_value(name: &str) {
     });
 }
 
+/// Register the name of one enum value a `use`d module makes visible: a
+/// [`register_user_enum_value`] that also remembers the value was imported.
+pub(crate) fn register_imported_enum_value(name: &str) {
+    SCOPES.with(|s| {
+        let mut scopes = s.borrow_mut();
+        let outermost = scopes
+            .first_mut()
+            .expect("scope stack should never be empty");
+        outermost.user_enum_values.insert(name.to_string());
+        outermost.imported_enum_values.insert(name.to_string());
+    });
+}
+
 /// Register a sigilless value term (`constant FOO = ...`, `my \foo = ...`) a
 /// `use`d module declares. Registered in the **outermost** scope for the same
 /// reason as an enum value: a `use`d module's constants must stay visible for

@@ -211,6 +211,9 @@ impl Interpreter {
             .map(|p| self.resolved_type_capture_name(&strip_colons(p)))
             .collect();
         let parents = parents.as_slice();
+        // Source order of every parent, header and `also is` alike, before the
+        // deferred ones are split off below.
+        let source_parents = parents;
         let does_parents: Vec<String> = does_parents.iter().map(|p| strip_colons(p)).collect();
         let does_parents = does_parents.as_slice();
         let hidden_parents: Vec<String> = hidden_parents.iter().map(|p| strip_colons(p)).collect();
@@ -412,6 +415,7 @@ impl Interpreter {
                 &mut class_def,
                 &deferred_body_parents,
                 DeferredParentCx {
+                    source_parents,
                     class_lang_rev: &class_lang_rev,
                     is_hoisted_shell,
                     composed_roles_list: &mut composed_roles_list,

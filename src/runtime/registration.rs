@@ -273,6 +273,18 @@ impl Interpreter {
         false
     }
 
+    /// Whether `class_name` declares or inherits a `token`/`regex`/`rule`
+    /// (or a proto one), or a `proto method`, named `method_name`.
+    // Cost: O(m), m = the class's MRO length.
+    fn class_has_regex_or_proto_method(&mut self, class_name: &str, method_name: &str) -> bool {
+        let key =
+            crate::qualified::qualified(Symbol::intern(class_name), Symbol::intern(method_name))
+                .resolve();
+        self.resolve_token_defs(&key).is_some()
+            || self.has_proto_token(&key)
+            || self.lookup_proto_method(class_name, method_name).is_some()
+    }
+
     fn accessor_matches_stub(
         &mut self,
         class_name: &str,
@@ -412,6 +424,19 @@ impl Interpreter {
                             // NON-MULTI stub even when its signature differs.
                             if !required.is_multi
                                 && self.inherited_any_concrete_method(class_name, &method_name)
+                            {
+                                continue;
+                            }
+                            // A grammar's `token`/`regex`/`rule` and a `proto
+                            // method` are methods too, but live outside the
+                            // candidate table (`token_defs`, `MethodEntry.proto`):
+                            // an own or inherited one satisfies the stub by name
+                            // exactly like a concrete method. CSS::Module's
+                            // grammars and actions implement their
+                            // `Gen::External` role's `method number (|) {...}`
+                            // with a `token number` / `proto method length {*}`.
+                            if !required.is_multi
+                                && self.class_has_regex_or_proto_method(class_name, &method_name)
                             {
                                 continue;
                             }

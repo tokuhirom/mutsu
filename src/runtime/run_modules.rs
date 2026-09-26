@@ -1056,10 +1056,19 @@ impl Interpreter {
             // routine/attribute `WHEREFORE` (and the matching `.WHY` identity)
             // that a renderer such as `Pod::To::Man` inspects, instead of a
             // bare `Sub`/`Method`/`Attribute` type placeholder.
+            // `import_target_package` names the package THIS load imports into
+            // (a role body's `use`, #8842); it was consumed into
+            // `importer_package` above. The module's own nested `use`s import
+            // into the module, so hide it while the body runs -- left set, an
+            // operator the module imports for itself (`use CSS::Units :pt;`
+            // then `12pt`) landed in the role's package and the module's own
+            // `12pt` died with "Bogus postfix".
+            let saved_import_target = self.import_target_package.take();
             let result = match self.establish_pod_variables_from_stmts(&module_source, &stmts) {
                 Ok(()) => self.run_block(&stmts),
                 Err(err) => Err(err),
             };
+            self.import_target_package = saved_import_target;
             self.doc_comments = saved_doc_comments;
             self.doc_comment_list = saved_doc_comment_list;
             self.why_cache = saved_why_cache;

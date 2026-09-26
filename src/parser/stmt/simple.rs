@@ -82,16 +82,18 @@ pub(in crate::parser) use l10n::{l10n_vocabulary_snapshot, restore_l10n_vocabula
 pub(in crate::parser) use lib_paths::{parser_lib_paths, try_add_parse_time_lib_path};
 pub(in crate::parser) use module_exports::{
     import_inline_module_exports, note_type_index_incomplete, register_inline_module_exports,
-    register_module_exports, register_module_type_names, type_index_is_complete,
+    register_module_exports, register_module_exports_with_tags, register_module_type_names,
+    type_index_is_complete,
 };
 pub(in crate::parser) use pragma_preseed::{
     cached_type_names, current_attributes_pragma, imported_value_term_names,
     is_imported_value_term, is_user_declared_enum_type, is_user_declared_sub,
     note_import_export_hook, push_package_path, register_imported_enum_type,
-    register_imported_type, register_imported_value_term, register_user_enum_type,
-    register_user_enum_value, register_user_type, reset_package_path, set_attributes_pragma,
-    set_eval_operator_assoc_preseed, set_eval_operator_preseed, set_eval_user_sub_preseed,
-    set_eval_user_type_preseed, set_eval_user_value_term_preseed, term_keywords_shadowable,
+    register_imported_enum_value, register_imported_type, register_imported_value_term,
+    register_user_enum_type, register_user_enum_value, register_user_type, reset_package_path,
+    set_attributes_pragma, set_eval_operator_assoc_preseed, set_eval_operator_preseed,
+    set_eval_user_sub_preseed, set_eval_user_type_preseed, set_eval_user_value_term_preseed,
+    term_keywords_shadowable,
 };
 /// Crate-wide (not just `pub(in crate::parser)` like its siblings above): the
 /// compiler's `is_definite_return_spec` twin needs this parse-time enum-value
@@ -149,6 +151,9 @@ pub(in crate::parser) struct LexicalScope {
     /// which is what the `?? then !!` guard needs to know — the user-declared
     /// twin of `is_builtin_enum_value`.
     user_enum_values: HashSet<String>,
+    /// The subset of `user_enum_values` a `use` brought in (see
+    /// `module_exports/enum_values.rs`).
+    imported_enum_values: HashSet<String>,
     /// User-declared enum type names, including enum types harvested from a
     /// `use`d module. This keeps the `when` matcher gobble check precise for a
     /// qualified member such as `ConvRule::RuleType::julian-day`: the head is
