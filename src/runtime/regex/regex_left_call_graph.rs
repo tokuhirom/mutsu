@@ -44,6 +44,9 @@ use crate::runtime::regex_types::{RegexAtom, RegexPattern, RegexQuant, RegexToke
 /// A `(package, rule name)` node of the call graph, interned.
 type RuleNode = (Symbol, Symbol);
 
+/// The rules one rule can call at its start position.
+type LeftCalls = std::sync::Arc<Vec<RuleNode>>;
+
 /// Same ceiling as the full call-graph walk.
 const MAX_REACHABLE_RULES: usize = 512;
 
@@ -51,8 +54,7 @@ thread_local! {
     /// `(pkg, name) -> the rules its candidates can call at their start
     /// position`, `None` when some construct's target cannot be named. Keyed
     /// by the token generation like every other call-graph memo.
-    #[allow(clippy::type_complexity)]
-    static LEFT_CALLS: RefCell<(u64, HashMap<RuleNode, Option<std::sync::Arc<Vec<RuleNode>>>>)> =
+    static LEFT_CALLS: RefCell<(u64, HashMap<RuleNode, Option<LeftCalls>>)> =
         RefCell::new((0, HashMap::default()));
 
     /// `(pkg, name) -> proven unable to re-enter itself at the same position`.

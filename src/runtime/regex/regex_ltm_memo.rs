@@ -198,6 +198,15 @@ impl Drop for LtmMemoSlot {
     }
 }
 
+/// The identity of one `<subrule>` call for [`ltm_memo_subrule_ends`].
+pub(super) struct MemoSubruleCall<'a> {
+    pub(super) spec: &'a Arc<NamedRegexLookupSpec>,
+    pub(super) pos: usize,
+    pub(super) pkg: Symbol,
+    pub(super) first_only: bool,
+    pub(super) ignore_case: bool,
+}
+
 /// A `<subrule>` call made while a measurement is in progress, answered from
 /// the scope's memo when the same call at the same position was already
 /// walked (#9579).
@@ -216,17 +225,19 @@ impl Drop for LtmMemoSlot {
 /// in, exactly as the walk would have.
 // Cost: O(1) expected on a hit, plus cloning the stored ends; a miss costs the
 // walk itself plus one clone of its ends.
-#[allow(clippy::too_many_arguments)]
 pub(super) fn ltm_memo_subrule_ends(
     interp: &mut Interpreter,
-    spec: &Arc<NamedRegexLookupSpec>,
+    call: MemoSubruleCall<'_>,
     chars: &[char],
-    pos: usize,
-    pkg: Symbol,
-    first_only: bool,
-    ignore_case: bool,
     walk: impl FnOnce(&mut Interpreter) -> Vec<(usize, RegexCaptures)>,
 ) -> Vec<(usize, RegexCaptures)> {
+    let MemoSubruleCall {
+        spec,
+        pos,
+        pkg,
+        first_only,
+        ignore_case,
+    } = call;
     let generation =
         crate::runtime::regex_parse::TOKEN_DEFS_GEN.load(std::sync::atomic::Ordering::Relaxed);
     let key: SubruleKey = (

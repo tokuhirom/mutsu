@@ -199,33 +199,31 @@ impl Interpreter {
             && LTM_DECLARATIVE_MODE.with(std::cell::Cell::get)
             && name.spec().arg_exprs.is_empty()
         {
-            return super::regex_ltm_memo::ltm_memo_subrule_ends(
-                self,
-                name.spec(),
-                chars,
+            let call = super::regex_ltm_memo::MemoSubruleCall {
+                spec: name.spec(),
                 pos,
                 pkg,
-                subrule_first_only,
+                first_only: subrule_first_only,
                 ignore_case,
-                |interp| {
-                    let mut dyn_saved = None;
-                    let out = interp.regex_match_atom_all_with_capture_in_pkg_inner(
-                        atom,
-                        chars,
-                        pos,
-                        current_caps,
-                        pkg,
-                        ignore_case,
-                        subrule_first_only,
-                        &mut dyn_saved,
-                        None,
-                    );
-                    if let Some(saved) = dyn_saved {
-                        interp.restore_subrule_dynamic_params(saved);
-                    }
-                    out
-                },
-            );
+            };
+            return super::regex_ltm_memo::ltm_memo_subrule_ends(self, call, chars, |interp| {
+                let mut dyn_saved = None;
+                let out = interp.regex_match_atom_all_with_capture_in_pkg_inner(
+                    atom,
+                    chars,
+                    pos,
+                    current_caps,
+                    pkg,
+                    ignore_case,
+                    subrule_first_only,
+                    &mut dyn_saved,
+                    None,
+                );
+                if let Some(saved) = dyn_saved {
+                    interp.restore_subrule_dynamic_params(saved);
+                }
+                out
+            });
         }
         let mut dyn_saved = None;
         let mut preinstalled_arg_values = None;

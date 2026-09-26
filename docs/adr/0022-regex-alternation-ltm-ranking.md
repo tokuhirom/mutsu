@@ -9,6 +9,9 @@
   2026-08-11, closing the file's last failure — `longest-alternative.t` is now
   fully green (62/62) and whitelisted; Slice 4 (this ledger update) landed in the
   same PR. See `news/2026-08/adr0022-slice5-nonconstant-interpolation.md`.
+- **Implementation note** (2026-09-26, #9579): measurements are memoized per
+  outermost `ltm_prefix_len_at` call (`src/runtime/regex/regex_ltm_memo.rs`, whose
+  module docs argue why the key is sound). The ranking decision is unchanged.
 - **Amended by**: [ADR-0111](0111-ltm-stoppers-end-one-path.md) (2026-09-23) — a
   `Terminate` atom now records a fate and fails its own path instead of unwinding the
   whole walk (§4.2), so the prefix is the furthest fate, as in Rakudo's NFA.
