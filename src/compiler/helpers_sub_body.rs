@@ -693,6 +693,7 @@ impl Compiler {
                     routines: Some(&self.trir_routines),
                     fns: Some(&self.compiled_functions),
                     frame_lexicals: &frame_lexicals,
+                    captured_fatal_mode: cf.captured_fatal_mode,
                 },
             );
         }

@@ -76,23 +76,9 @@ impl Interpreter {
             return None;
         }
         let pkg = site.link.pkg;
-        // #9521: same fix as `try_call_trir` -- initialise `fatal_mode` from
-        // the callee's own declaration-site state rather than inheriting the
-        // caller's. The callee's current `CompiledFunction` may not be in
-        // THIS caller's `compiled_fns` (a module routine's own nested-sub
-        // table does not hold its siblings -- see `TrLink`'s doc comment), in
-        // which case there is nothing to capture from and `false` (never
-        // lexically fatal) is the safe default.
-        let captured_fatal_mode = compiled_fns
-            .get(&site.link.key)
-            .is_some_and(|cf| cf.captured_fatal_mode);
-        let saved_fatal_mode = self.fatal_mode;
-        self.fatal_mode = captured_fatal_mode;
-        let out = self.run_trir_from_outside(&chunk, pkg, compiled_fns, |me, frame| {
+        self.run_trir_from_outside(&chunk, pkg, compiled_fns, |me, frame| {
             me.trir_bind_from_slots(&chunk, frame, site, caller_code)
-        });
-        self.fatal_mode = saved_fatal_mode;
-        out
+        })
     }
 
     /// Run `cf`'s chunk with the arguments at `stack[args_base..]`.
@@ -115,18 +101,9 @@ impl Interpreter {
             return None;
         }
         let pkg = trir_body_package(cf);
-        // #9521: `use fatal` is lexical to the callee's OWN declaration site,
-        // not the caller's dynamic state -- initialise it from what was
-        // captured when this routine was registered (mirrors the untyped call
-        // paths' `cf.captured_fatal_mode`), then restore the caller's value
-        // once the chunk returns.
-        let saved_fatal_mode = self.fatal_mode;
-        self.fatal_mode = cf.captured_fatal_mode;
         let out = self.run_trir_from_outside(&chunk, pkg, compiled_fns, |me, frame| {
             me.trir_bind_from_stack(&chunk, frame, args_base, caller_code)
-        });
-        self.fatal_mode = saved_fatal_mode;
-        let out = out?;
+        })?;
         self.stack.truncate(args_base);
         Some(out)
     }

@@ -3310,6 +3310,7 @@ impl Interpreter {
             imported_env_aliases: HashMap::new(),
             strict_mode: false,
             fatal_mode: false,
+            lexical_fatal_mode: false,
             suppress_cross_eval_class_redeclaration_check: false,
             our_vars: rustc_hash::FxHashMap::default(),
             our_var_unqualified: rustc_hash::FxHashSet::default(),

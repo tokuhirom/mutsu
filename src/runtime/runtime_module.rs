@@ -76,6 +76,7 @@ impl Interpreter {
                 newline_mode: self.newline_mode,
                 strict_mode: self.strict_mode,
                 fatal_mode: self.fatal_mode,
+                lexical_fatal_mode: self.lexical_fatal_mode,
                 monkey_typing: self.monkey_typing,
                 scope_classes,
                 imported_env_aliases: self.imported_env_aliases.clone(),
@@ -287,6 +288,7 @@ impl Interpreter {
                 newline_mode,
                 strict_mode,
                 fatal_mode,
+                lexical_fatal_mode,
                 monkey_typing,
                 scope_classes,
             } = snapshot;
@@ -428,6 +430,7 @@ impl Interpreter {
             self.newline_mode = newline_mode;
             self.strict_mode = strict_mode;
             self.fatal_mode = fatal_mode;
+            self.lexical_fatal_mode = lexical_fatal_mode;
             self.monkey_typing = monkey_typing;
             self.imported_routine_aliases = imported_routine_aliases;
             self.imported_exported_proto_tags = imported_exported_proto_tags;
@@ -561,6 +564,7 @@ impl Interpreter {
                 self.strict_mode = true;
             } else if module == "fatal" {
                 self.fatal_mode = true;
+                self.lexical_fatal_mode = true;
             } else if module == "MONKEY-TYPING" || module == "MONKEY" {
                 self.monkey_typing = true;
             }
@@ -879,6 +883,7 @@ impl Interpreter {
                 self.strict_mode = true;
             } else if module == "fatal" {
                 self.fatal_mode = true;
+                self.lexical_fatal_mode = true;
             }
             // Remove GLOBAL:: function aliases for non-DEFAULT/non-MANDATORY
             // exports that were created by sub hoisting during module loading.

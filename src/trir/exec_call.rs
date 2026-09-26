@@ -27,12 +27,23 @@ impl Interpreter {
     /// place -- a by-variable one from the frame's slot, an evaluated one from
     /// the top of the object stack -- so nothing is popped. Native arguments
     /// are machine integers and can never be a Failure.
+    ///
+    /// Gated on `chunk_captured_fatal_mode` -- the CALLING chunk's own
+    /// `captured_fatal_mode` (#9521), baked at compile time from whether
+    /// `use fatal` was lexically active where the chunk was declared -- not
+    /// `Interpreter::fatal_mode`/`lexical_fatal_mode`, neither of which a TRIR
+    /// chunk's own execution maintains (see `lexical_fatal_mode`'s doc
+    /// comment). `require`/`defined` are exempt for the same reason
+    /// `explode_if_fatal_failure_in_arg_values` exempts them.
     fn trir_explode_fatal_args(
         &self,
         call: &super::TrInnerCall,
         frame: TrFrame,
+        chunk_captured_fatal_mode: bool,
     ) -> Result<(), RuntimeError> {
-        if !self.fatal_mode {
+        if !chunk_captured_fatal_mode
+            || matches!(call.name.resolve().as_str(), "require" | "defined")
+        {
             return Ok(());
         }
         let n_obj = call
@@ -48,7 +59,7 @@ impl Interpreter {
                 args.push(self.trir.ol[obase + *s as usize].clone());
             }
         }
-        self.explode_if_fatal_failure_in_arg_values(&call.name.resolve(), &args)
+        self.explode_if_fatal_failure_in_composite_unconditional(&args)
     }
 
     /// Execute a `CallTr` site. `Ok(None)` means the callee could not be
@@ -65,7 +76,7 @@ impl Interpreter {
         let TrCallee::Trir(link) = &call.callee else {
             return Ok(None);
         };
-        self.trir_explode_fatal_args(call, frame)?;
+        self.trir_explode_fatal_args(call, frame, chunk.captured_fatal_mode)?;
         // ADR-0110 §3.3's run-time guard, as on the outermost door.
         if self.any_routine_wrapped() && self.routine_is_wrapped(&call.name.resolve()) {
             return Ok(None);
@@ -156,18 +167,7 @@ impl Interpreter {
             self.trir.pop_frame(callee_frame);
             return Ok(None);
         }
-        // #9521: same fix as the outer doors (`try_call_trir`,
-        // `exec_call_trir_site`) -- `use fatal` is lexical to the callee's OWN
-        // declaration site, not this (TRIR) caller's dynamic state. `link.key`
-        // may not resolve in THIS caller's `compiled_fns` (a module routine's
-        // own nested-sub table does not hold its siblings), in which case
-        // `false` (never lexically fatal) is the safe default.
-        let saved_fatal_mode = self.fatal_mode;
-        self.fatal_mode = compiled_fns
-            .get(&link.key)
-            .is_some_and(|cf| cf.captured_fatal_mode);
         let outcome = self.run_trir_routine(&callee, callee_frame, compiled_fns);
-        self.fatal_mode = saved_fatal_mode;
         drop(guard);
         self.trir.pop_frame(callee_frame);
         match outcome? {
@@ -191,7 +191,7 @@ impl Interpreter {
         compiled_fns: &CompiledFns,
     ) -> Result<Option<()>, RuntimeError> {
         let call = &chunk.calls[site as usize];
-        self.trir_explode_fatal_args(call, frame)?;
+        self.trir_explode_fatal_args(call, frame, chunk.captured_fatal_mode)?;
         match self.try_trir_gen_link(chunk, site, call, frame, compiled_fns)? {
             super::gen_link::GenOutcome::Done => return Ok(Some(())),
             super::gen_link::GenOutcome::Bail => return Ok(None),

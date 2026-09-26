@@ -57,10 +57,6 @@ struct GenLink {
     ctx: GenContext,
     chunk: Arc<TrChunk>,
     pkg: Option<Symbol>,
-    /// The callee's `CompiledFunction::captured_fatal_mode` at the moment the
-    /// generic path resolved it (#9521) -- `use fatal` is lexical to the
-    /// callee's own declaration site, not this (TRIR) caller's dynamic state.
-    captured_fatal_mode: bool,
 }
 
 /// Every `CallGen` site's observed link, plus the observer the generic path
@@ -141,14 +137,12 @@ impl Interpreter {
         };
         callee.note_def_file(&cf);
         let pkg = super::entry::trir_body_package(&cf);
-        let captured_fatal_mode = cf.captured_fatal_mode;
         self.trir.gen_links.links.insert(
             (chunk.id, site),
             GenLink {
                 ctx,
                 chunk: callee,
                 pkg,
-                captured_fatal_mode,
             },
         );
     }
@@ -171,7 +165,6 @@ impl Interpreter {
         }
         let callee = link.chunk.clone();
         let callee_pkg = link.pkg;
-        let callee_captured_fatal_mode = link.captured_fatal_mode;
         if callee.params.len() != call.args.len()
             || (self.any_routine_wrapped() && self.routine_is_wrapped(&call.name.resolve()))
         {
@@ -260,13 +253,7 @@ impl Interpreter {
         // frame's operand marks, so drop them from under it.
         self.trir.os.drain(os_first..os_first + n_values);
         callee_frame.os_mark -= n_values as u32;
-        // #9521: same fix as `exec_trir_inner_call` -- initialise `fatal_mode`
-        // from the callee's own declaration-site state, restoring the
-        // caller's once the chunk returns.
-        let saved_fatal_mode = self.fatal_mode;
-        self.fatal_mode = callee_captured_fatal_mode;
         let outcome = self.run_trir_routine(&callee, callee_frame, compiled_fns);
-        self.fatal_mode = saved_fatal_mode;
         drop(guard);
         self.trir.pop_frame(callee_frame);
         super::stats::record_gen_link();

@@ -132,6 +132,12 @@ impl Interpreter {
         // (e.g. a WhateverCode created inside a `use fatal` block still throws
         // when evaluated after the block has returned).
         guard.fatal_mode = data.captured_fatal_mode;
+        // #9521: the explicit-`use fatal`-only channel (see
+        // `Interpreter::lexical_fatal_mode`'s doc comment) needs the same
+        // creation-time capture, so an argument-explosion check running
+        // inside this closure's body is gated on ITS OWN lexical state too,
+        // not the caller's.
+        guard.lexical_fatal_mode = data.captured_fatal_mode;
         let result =
             guard.call_compiled_closure_with_topic(data, cc, args, None, false, compiled_fns);
         // Under `use fatal` (active at this point, before the guard drops

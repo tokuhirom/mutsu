@@ -170,7 +170,7 @@ impl Drop for WhenMatchedGuard {
 /// borrow works.
 pub(crate) struct PragmaGuard<'a> {
     interp: &'a mut Interpreter,
-    saved: (bool, bool, crate::runtime::NewlineMode, bool),
+    saved: (bool, bool, crate::runtime::NewlineMode, bool, bool),
 }
 
 impl<'a> PragmaGuard<'a> {

@@ -755,6 +755,7 @@ impl Interpreter {
             imported_env_aliases: self.imported_env_aliases.clone(),
             strict_mode: self.strict_mode,
             fatal_mode: self.fatal_mode,
+            lexical_fatal_mode: self.lexical_fatal_mode,
             suppress_cross_eval_class_redeclaration_check: false,
             our_vars: rustc_hash::FxHashMap::default(),
             our_var_unqualified: rustc_hash::FxHashSet::default(),

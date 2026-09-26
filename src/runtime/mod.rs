@@ -3184,6 +3184,27 @@ pub struct Interpreter {
     pub(crate) imported_env_aliases: HashMap<Symbol, Symbol>,
     pub(crate) strict_mode: bool,
     pub(crate) fatal_mode: bool,
+    /// Whether the EXPLICIT `use fatal` pragma is lexically active for the
+    /// call site currently executing (#9521) — separate from `fatal_mode`,
+    /// which ALSO carries `try`'s own implicit, genuinely dynamic-scope
+    /// "fatal" marking (`vm_try_catch_ops.rs`) used by a deferred `.map`/
+    /// `.grep` `Seq`'s `SeqSource::MapGrep::fatal` capture
+    /// (`resolution_map_grep.rs`, `vm_closure_build.rs`) to decide whether a
+    /// later force explodes hard. `use fatal` itself is lexical: a routine
+    /// declared outside a `use fatal` block must not have its own
+    /// `explode_if_fatal_failure_in_*` checks fire merely because its caller
+    /// is dynamically inside one, while `try`'s marking legitimately DOES
+    /// reach into a called routine's own deferred-Seq construction
+    /// (`t/collections/transform/map-callback-runs-at-consumption.t`,
+    /// verified against `raku`). Driven by exactly the same statements that
+    /// set `fatal_mode` for `use fatal`/`no fatal` and import-scope save/
+    /// restore (`save_pragma_state`/`restore_pragma_state`,
+    /// `push_import_scope`/`pop_import_scope`) — but, unlike `fatal_mode`,
+    /// ALSO reset at every routine-call entry to the callee's own
+    /// `CompiledFunction::captured_fatal_mode` (baked at compile time from
+    /// `Compiler::fatal_pragma_active`), and never touched by `try`'s own
+    /// implicit marking or by the deferred-`Seq`-consumption pull.
+    pub(crate) lexical_fatal_mode: bool,
     /// True only on the throwaway nested `Interpreter` `eval-lives-ok`/
     /// `eval-dies-ok` construct to run their code string.
     /// Real raku's own `Test.rakumod` implements both via a helper (`sub
@@ -5018,6 +5039,7 @@ pub(crate) struct ImportScopeSnapshot {
     pub(crate) newline_mode: NewlineMode,
     pub(crate) strict_mode: bool,
     pub(crate) fatal_mode: bool,
+    pub(crate) lexical_fatal_mode: bool,
     pub(crate) monkey_typing: bool,
     /// Whether the pop also rolls the class registry back to `classes`.
     ///

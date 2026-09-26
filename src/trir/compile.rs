@@ -103,6 +103,9 @@ pub(crate) struct TrirScope<'a> {
     pub(crate) routines: Option<&'a TrirRoutineMap>,
     pub(crate) fns: Option<&'a crate::opcode::CompiledFns>,
     pub(crate) frame_lexicals: &'a [Symbol],
+    /// Mirrors `CompiledFunction::captured_fatal_mode` (#9521); see
+    /// `TrChunk::captured_fatal_mode`'s doc comment.
+    pub(crate) captured_fatal_mode: bool,
 }
 
 /// `(routine name, positional arity)` -> its `CompiledFns` key and body
@@ -125,6 +128,7 @@ impl<'a> TrirCompiler<'a> {
             routines,
             fns,
             frame_lexicals,
+            captured_fatal_mode,
         } = scope;
         if !TrChunk::enabled() {
             return None;
@@ -201,6 +205,7 @@ impl<'a> TrirCompiler<'a> {
             calls: c.calls,
             methods: c.methods,
             def_file: std::sync::OnceLock::new(),
+            captured_fatal_mode,
         })
     }
 

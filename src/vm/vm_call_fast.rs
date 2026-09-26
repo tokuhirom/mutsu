@@ -203,7 +203,7 @@ impl Interpreter {
         // captured when this routine was registered (mirrors closures'
         // `captured_fatal_mode`), so a sub declared outside a `use fatal`
         // block never inherits one merely because its caller is inside one.
-        self.fatal_mode = cf.captured_fatal_mode;
+        self.lexical_fatal_mode = cf.captured_fatal_mode;
         // Push a routine frame for the duration of the body so backtraces
         // (`die`/`fail`/type errors), `&?ROUTINE`, `CALLER::`, and `callframe`
         // see this call — see the doc comment above and `RoutineFrame`'s own.

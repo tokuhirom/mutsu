@@ -1461,6 +1461,7 @@ impl Interpreter {
             self.strict_mode = false;
         } else if module == "fatal" {
             self.fatal_mode = false;
+            self.lexical_fatal_mode = false;
         }
         Ok(())
     }
