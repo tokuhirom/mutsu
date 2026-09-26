@@ -2575,6 +2575,10 @@ pub struct Interpreter {
     /// a local before running the module body (so a transitive `use` inside the
     /// body cannot see them) and hands them to the module's `sub EXPORT`.
     pub(crate) pending_use_export_args: Option<Vec<Value>>,
+    /// A sigilless name (`my \foo = Obj.new`) whose assignment `CheckReadOnly`
+    /// let through because the bound object has a user `STORE`: the store that
+    /// follows routes through `STORE` instead of rebinding the name (#9551).
+    pub(crate) pending_sigilless_store: Option<String>,
     /// An `&EXPORT` sub a module *imported* from another module's EXPORT map
     /// (the Slangify pattern: `sub EXPORT($grammar, ...) { ...; Map.new:
     /// '&EXPORT' => &inner-EXPORT }`), keyed by the name of the module that was

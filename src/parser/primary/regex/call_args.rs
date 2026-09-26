@@ -66,6 +66,34 @@ fn finish_call_arg_group(args: Vec<Expr>) -> Vec<Expr> {
     crate::parser::primary::lift_list_infix_in_arg_list(args)
 }
 
+/// An argument that compound-assigns to a sigilless term (`is(foo -= 1, 255, ...)`).
+/// `try_parse_assign_expr` only knows sigiled targets, and the full expression
+/// grammar gives a compound assignment a list RHS (`foo -= (1, 255, ...)`), so
+/// parse it the way a listop argument is parsed: item assignment, comma-blind
+/// RHS (#9551). Declines unless the argument is exactly that assignment.
+pub(in crate::parser) fn sigilless_item_assign_arg(input: &str) -> Option<(&str, Expr)> {
+    let word_len = input
+        .bytes()
+        .take_while(|&b| crate::parser::helpers::is_ident_char(Some(b)))
+        .count();
+    if word_len == 0
+        || !crate::parser::stmt::simple::is_user_declared_value_term(&input[..word_len])
+    {
+        return None;
+    }
+    let (rest, expr) = crate::parser::expr::call_arg_expr(input).ok()?;
+    // Only a compound assignment: a plain `=` to a sigilless name is *list*
+    // assignment in rakudo (`f(foo = 3, 4)` stores `(3, 4)`), which the
+    // ordinary expression parse already does.
+    let is_assign = matches!(&expr, Expr::CompoundAssign { .. });
+    let trimmed = rest.trim_start();
+    let at_boundary = trimmed.is_empty()
+        || trimmed.starts_with(',')
+        || trimmed.starts_with(')')
+        || trimmed.starts_with(';');
+    (is_assign && at_boundary).then_some((rest, expr))
+}
+
 /// Parse comma-separated call arguments inside parens.
 /// Semicolons act as list-associative separators: each `;`-delimited group
 /// is collected into an `Array` node, producing one arg per group.
@@ -80,6 +108,8 @@ pub(in crate::parser) fn parse_call_arg_list(input: &str) -> PResult<'_, Vec<Exp
                     Ok(full) if full.0.len() < result.0.len() => full,
                     _ => result,
                 }
+            } else if let Some(result) = sigilless_item_assign_arg(input) {
+                result
             } else if let Ok((rest, assign_expr)) =
                 crate::parser::stmt::assign::try_parse_assign_expr(input)
             {

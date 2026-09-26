@@ -244,7 +244,7 @@ pub(in crate::parser::stmt) fn use_stmt(input: &str) -> PResult<'_, Stmt> {
     // rest of this compilation unit (ADR-0026 §2.1). Activation failure —
     // including an unsupported grammar-rule override — fails the parse
     // loudly; continuing in the wrong grammar would be silently wrong.
-    if let Err(msg) = super::super::simple::maybe_activate_slang_use(&module) {
+    if let Err(msg) = super::super::simple::maybe_activate_slang_use(&module, arg.as_ref()) {
         return Err(PError::fatal(msg));
     }
     // Dist selectors ride on the module name (`Name:auth<...>:ver<...>`); the

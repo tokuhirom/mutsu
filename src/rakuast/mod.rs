@@ -1004,6 +1004,7 @@ pub fn str_dot_ast_with_slang(source: &str, slang: Option<&str>) -> Result<Value
     let activation = crate::runtime::slang_activation::run_slang_activation(
         module.clone(),
         crate::parser::parser_lib_paths_for_slang(),
+        None,
     )
     .map_err(|e| RuntimeError::new(format!("Could not find {module}: {e}")))?;
 

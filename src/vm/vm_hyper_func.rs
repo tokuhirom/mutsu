@@ -21,17 +21,13 @@ impl Interpreter {
         let name = Self::const_str(code, name_idx).to_string();
         // QuantHash (Set/Bag/Mix) operands: reuse the plain-Hash hyper logic by
         // projecting each to a `key => weight` Hash, then convert the result
-        // (and any write-back value) back to the original QuantHash type. The
-        // result type/mutability follows whichever operand is a QuantHash.
-        let quant_result = Self::quanthash_kind(&left).or_else(|| Self::quanthash_kind(&right));
-        let (left, right) = if quant_result.is_some() {
-            (
-                Self::quanthash_to_hash(&left),
-                Self::quanthash_to_hash(&right),
-            )
-        } else {
-            (left, right)
-        };
+        // (and any write-back value) back to the donor operand's QuantHash
+        // type (`hyper_quanthash_result`).
+        let quant_result = Self::hyper_quanthash_result(&left, &right);
+        let (left, right) = (
+            Self::quanthash_to_hash(&left)?,
+            Self::quanthash_to_hash(&right)?,
+        );
         // Resolve a concrete code-ref value when `name` refers to a lexical
         // `&name` variable (e.g. the `&op`/`&metaop` loop variables in
         // S03-metaops/infix.t). Such calls must go through the Interpreter closure

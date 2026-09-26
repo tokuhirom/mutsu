@@ -120,6 +120,12 @@ pub(crate) fn wrap_dot_assign(target: Expr, method_call_fn: impl FnOnce(Expr) ->
             let name = format!("%{}", name);
             dot_assign_to_name(name, method_call_fn(target))
         }
+        // A sigilless term (`my \foo`): its assignments are named by the bare
+        // storage name, the same one `foo += 1` writes back to (#9551).
+        Expr::BareWord(name) if crate::parser::stmt::simple::is_user_declared_value_term(name) => {
+            let name = crate::symbol::sigilless_storage_name(name).to_string();
+            dot_assign_to_name(name, method_call_fn(target))
+        }
         Expr::Index {
             target: idx_target,
             index,
