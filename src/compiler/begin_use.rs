@@ -205,6 +205,22 @@ impl Compiler {
             self.code.emit(OpCode::PreloadModule(idx));
         }
     }
+
+    /// Push a `use`'s arguments (`use Foo "a", "b"` / `use Foo <a b c>`) on
+    /// the stack for the module's `sub EXPORT`, returning how many were
+    /// pushed. A `<a b c>` word list flattens into positional args, matching
+    /// `sub EXPORT(*@args) { ... }` seeing three items.
+    pub(super) fn compile_use_export_args(&mut self, arg: Option<&Expr>) -> u16 {
+        let arg_exprs: Vec<&Expr> = match arg {
+            Some(Expr::ArrayLiteral(items)) => items.iter().collect(),
+            Some(other) => vec![other],
+            None => vec![],
+        };
+        for e in &arg_exprs {
+            self.compile_expr(e);
+        }
+        arg_exprs.len() as u16
+    }
 }
 
 #[cfg(test)]
