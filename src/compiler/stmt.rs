@@ -4509,27 +4509,32 @@ impl Compiler {
             }
             Stmt::Whenever {
                 supply,
-                param,
-                param_type,
+                params,
+                param_defs,
                 body,
             } => {
                 self.compile_expr(supply);
-                let body_idx = self.code.add_stmt(Stmt::Block(body.clone()));
                 // A whenever block without a pointy param may still declare
                 // its parameter as a placeholder (`whenever $ch { %^content.kv
                 // }`): the emitted value binds to it, arity-1 like `-> $v`.
-                let param = param.clone().or_else(|| {
+                let params: Vec<String> = if params.is_empty() && param_defs.is_empty() {
                     crate::ast::collect_placeholders_shallow(body)
                         .into_iter()
-                        .next()
-                });
+                        .take(1)
+                        .collect()
+                } else {
+                    params.clone()
+                };
                 // Case B (cross-thread lexicals): surface the runtime-compiled
                 // body's free vars so a captured-and-mutated lexical read
                 // directly in the whenever body (`start { react { whenever $ch
                 // { ...read $gate... } } }`) is cell-promoted and sees the
                 // parent's post-registration writes. See
                 // surface_stashed_body_free_vars for the mechanism.
-                let analysis_param = vec![param.clone().unwrap_or_else(|| "$_".to_string())];
+                let mut analysis_param = params.clone();
+                if analysis_param.is_empty() {
+                    analysis_param.push("$_".to_string());
+                }
                 // LAST/QUIT callbacks are split out of the whenever body at
                 // runtime. Compile their statements inline only in the
                 // analysis copy so their outer lexical reads contribute to the
@@ -4550,18 +4555,32 @@ impl Compiler {
                 }
                 let analysis_cc_idx =
                     self.surface_stashed_body_free_vars(&analysis_param, &analysis_body);
-                let param_idx = param
-                    .as_ref()
-                    .map(|p| self.code.add_constant(Value::str(p.clone())));
-                let param_type_idx = param_type
-                    .as_ref()
-                    .map(|t| self.code.add_constant(Value::str(t.clone())));
+                // The callback's signature and body ride the stmt pool as an
+                // anonymous SubDecl, like a closure literal's, so the VM reads
+                // them back through the shared `closure_signature` cache.
+                let body_idx = self.code.add_stmt(Stmt::SubDecl {
+                    name: Symbol::intern(""),
+                    name_expr: None,
+                    params,
+                    param_defs: param_defs.clone(),
+                    return_type: None,
+                    associativity: None,
+                    precedence_trait: None,
+                    signature_alternates: Vec::new(),
+                    body: body.clone(),
+                    multi: false,
+                    is_rw: false,
+                    is_raw: false,
+                    is_export: false,
+                    export_tags: Vec::new(),
+                    is_test_assertion: false,
+                    supersede: false,
+                    custom_traits: Vec::new(),
+                });
                 self.code.emit(OpCode::WheneverScope {
                     body_idx,
                     analysis_cc_idx,
-                    param_idx,
                     yields_value: self.do_stmt_yields_value,
-                    param_type_idx,
                 });
             }
             Stmt::Let {

@@ -1695,12 +1695,14 @@ pub(crate) enum Stmt {
     },
     Whenever {
         supply: Expr,
-        param: Option<String>,
-        /// The pointy param's declared type constraint, if any
-        /// (`whenever $s -> Int $x { }`). Enforced on the emitted value at
-        /// call time via the callback's `ParamDef`, same as an ordinary
-        /// typed block parameter.
-        param_type: Option<String>,
+        /// The pointy block's parameter names (`whenever $s -> $x { }`), in
+        /// the same shape as `Expr::AnonSubParams::params`; empty for a bare
+        /// block (whose first placeholder, if any, becomes the parameter).
+        params: Vec<String>,
+        /// The pointy block's full signature, as parsed by the ordinary
+        /// pointy-block parser (types, sub-signatures, optional params).
+        /// Empty for a single untyped `-> $x`, exactly like `Expr::Lambda`.
+        param_defs: Vec<ParamDef>,
         body: Vec<Stmt>,
     },
     Last(Option<String>),

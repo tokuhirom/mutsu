@@ -438,14 +438,12 @@ fn walk_stmt(stmt: &Stmt, scan: &mut Scan) {
         }
         Stmt::Whenever {
             supply,
-            param,
+            params,
+            param_defs,
             body,
-            ..
         } => {
             walk_expr(supply, scan);
-            if let Some(p) = param {
-                scan.declare(p);
-            }
+            walk_params(params, param_defs, scan);
             walk_stmts(body, scan);
         }
         Stmt::Label { stmt, .. } => walk_stmt(stmt, scan),

@@ -280,13 +280,13 @@ fn rewrite_supply_stmt(stmt: Stmt, emitter_name: &str) -> Stmt {
         },
         Stmt::Whenever {
             supply,
-            param,
-            param_type,
+            params,
+            param_defs,
             body,
         } => Stmt::Whenever {
             supply,
-            param,
-            param_type,
+            params,
+            param_defs,
             body: rewrite_supply_body(body, emitter_name),
         },
         // A CLOSE phaser in a `supply { ... }` block registers its body as a

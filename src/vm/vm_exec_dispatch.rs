@@ -6200,19 +6200,10 @@ impl Interpreter {
             OpCode::WheneverScope {
                 body_idx,
                 analysis_cc_idx,
-                param_idx,
                 yields_value,
-                param_type_idx,
             } => {
                 self.sync_source_line(code, *ip);
-                self.exec_whenever_scope_op(
-                    code,
-                    *body_idx,
-                    *analysis_cc_idx,
-                    param_idx,
-                    *yields_value,
-                    param_type_idx,
-                )?;
+                self.exec_whenever_scope_op(code, *body_idx, *analysis_cc_idx, *yields_value)?;
                 *ip += 1;
             }
 
