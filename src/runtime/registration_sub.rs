@@ -1282,6 +1282,7 @@ impl Interpreter {
                 && !shadows_outer_eval_name
                 && !allow_lexical_shadow
                 && !imported_routine_alias
+                && !is_our_scoped
                 && !is_method_value_decl
                 && !operator_alias
             {
@@ -2200,7 +2201,16 @@ impl Interpreter {
             .functions
             .contains_key(&Symbol::intern(&key))
         {
-            return Err(RuntimeError::redeclaration_routine(name));
+            // An exported proto in a namespaced unit may be loaded lazily
+            // after its caller imported a same-named wrapper.  That wrapper
+            // occupies GLOBAL::name as an import alias, but it is not a
+            // declaration in GLOBAL and must not block the unit's own export
+            // proto.  Keep the existing callable in place: the importing
+            // lexical binding still points at it, while the new proto/multi
+            // family is recorded for qualified consumers.
+            if crate::qualified::is_global_package(self.current_package_sym()) {
+                return Err(RuntimeError::redeclaration_routine(name));
+            }
         }
         if self.registry().proto_subs_contains(&key) {
             // A proto with this name is already visible in GLOBAL. This happens

@@ -1,5 +1,5 @@
 use super::super::super::expr::expression;
-use super::super::super::helpers::ws;
+use super::super::super::helpers::{ws, ws1};
 use super::super::super::parse_result::{PError, PResult, take_while1};
 use super::super::{keyword, qualified_ident};
 use super::constant_subset::constant_decl;
@@ -10,6 +10,7 @@ use crate::parser::stmt::assign::parse_colon_args;
 use crate::symbol::Symbol;
 use crate::value::Value;
 
+use super::super::sub::parse_type_constraint_expr;
 use super::parse_assign_expr_or_comma;
 use super::parse_comma_or_expr;
 
@@ -328,7 +329,18 @@ pub(super) fn try_dot_twigil_attr<'a>(
             c.is_alphanumeric() || c == '_' || c == '-'
         })?;
         let attr_name = attr_name.to_string();
-        let (after_name, _) = ws(after_name)?;
+        let (mut after_name, _) = ws(after_name)?;
+        let mut attr_type = type_constraint.clone();
+        if attr_type.is_none()
+            && let Some(after_of) = keyword("of", after_name)
+        {
+            let (after_of, _) = ws1(after_of)?;
+            let (after_of, parsed_type) =
+                parse_type_constraint_expr(after_of).ok_or_else(|| PError::expected("type"))?;
+            let (after_of, _) = ws(after_of)?;
+            attr_type = Some(parsed_type);
+            after_name = after_of;
+        }
         // A class-level attribute may be BOUND as well as assigned:
         // `our @.operations := @operations` (Math::Symbolic, #7954) makes the
         // accessor hand back the very container on the right, so a later push
@@ -367,7 +379,7 @@ pub(super) fn try_dot_twigil_attr<'a>(
         // `HasDecl` the class-body planner compiles, never `compile_stmt`'s
         // `VarDecl` arm. The UNTYPED `our $.x` stays legal, so the test is on
         // the constraint, not on `our` plus attribute.
-        if is_our && type_constraint.is_some() {
+        if is_our && attr_type.is_some() {
             return Err(super::helpers::our_type_constraint_error());
         }
         let stmt = Stmt::HasDecl {
@@ -377,7 +389,7 @@ pub(super) fn try_dot_twigil_attr<'a>(
             handles: Vec::new(),
             is_rw: true,
             is_readonly: false,
-            type_constraint: type_constraint.clone(),
+            type_constraint: attr_type,
             type_smiley: None,
             is_required: None,
             sigil: sigil as char,
