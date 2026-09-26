@@ -10,6 +10,14 @@ use super::*;
 pub(crate) fn check_type_object_in_numeric_context(v: &Value) -> Result<(), RuntimeError> {
     if let ValueView::Package(name) = v.view() {
         let type_name = name.resolve();
+        // A built-in type whose `Numeric` is declared `:D:` (currently only
+        // `IO::Path`) dies with X::Parameter::InvalidConcreteness, not the
+        // generic numeric-uninitialized error below (#9629).
+        if let Some(err) =
+            crate::vm::vm_type_object_concreteness::io_path_numeric_concreteness_error(&type_name)
+        {
+            return Err(err);
+        }
         // Rakudo hard-errors for these concrete numeric type objects. `Complex`
         // is deliberately excluded — its infix candidates warn+coerce like the
         // generic path (verified against rakudo).

@@ -30,6 +30,22 @@ fn is_builtin_io_path_type(name: &str) -> bool {
     )
 }
 
+/// `X::Parameter::InvalidConcreteness` for numeric *context* (not an explicit
+/// method call) on a built-in `IO::Path` type object: `IO::Path + 1`,
+/// `+IO::Path`, `IO::Path * 2`. Shares `IO_PATH_CONCRETE_METHODS` with
+/// [`Interpreter::type_object_concreteness_error`] (the explicit-method-call
+/// check) rather than hardcoding "Numeric" again, so the two stay in sync —
+/// see #9629.
+pub(super) fn io_path_numeric_concreteness_error(type_name: &str) -> Option<RuntimeError> {
+    if is_builtin_io_path_type(type_name) && IO_PATH_CONCRETE_METHODS.contains(&"Numeric") {
+        Some(RuntimeError::parameter_invalid_concreteness(
+            "IO::Path", type_name, "Numeric", "", true, true,
+        ))
+    } else {
+        None
+    }
+}
+
 impl Interpreter {
     /// `X::Parameter::InvalidConcreteness` for a `:D:`-invocant built-in
     /// method called on a type object, or `None` when the call is fine.
