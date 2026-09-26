@@ -65,7 +65,12 @@ impl Interpreter {
             if args.is_empty() {
                 return Ok(Value::NIL);
             }
-            let arg = &args[0];
+            // An lvalue argument arrives tagged as a `VarRef` (the call site
+            // cannot know no user candidate wants `is rw`); the core operators
+            // below read its value. Without this `-$x` computed `-(VarRef)`,
+            // i.e. 0, whenever a user `multi prefix:<->` turned `-$x` into a
+            // call and none of its candidates took the argument.
+            let arg = args[0].unwrap_varref();
             let normalized = if op == "−" { "-" } else { op };
             return match op {
                 "!" => Ok(Value::truth(!arg.truthy())),
