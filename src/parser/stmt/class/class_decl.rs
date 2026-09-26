@@ -718,13 +718,15 @@ pub(crate) fn class_decl_body(input: &str, is_lexical: bool) -> PResult<'_, Stmt
         // global registry, so it keeps the pre-existing path here.
         stmts.push(class_stmt);
         stmts.push(export_type_stmt(&name, &export_tags));
-        return Ok((rest, Stmt::Block(stmts)));
+        return Ok((rest, Stmt::SyntheticBlock(stmts)));
     }
     if stmts.is_empty() {
         return Ok((rest, class_stmt));
     }
+    // Non-lexical: the class body's `my sub`s and `my` variables belong to the
+    // class's own scope, which a lexical `Block` would end right here.
     stmts.push(class_stmt);
-    Ok((rest, Stmt::Block(stmts)))
+    Ok((rest, Stmt::SyntheticBlock(stmts)))
 }
 
 /// Parse `also is <trait>;` statement.

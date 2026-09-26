@@ -4,10 +4,7 @@ pub(crate) fn not_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
     if input.starts_with("not")
         && !is_ident_char(input.as_bytes().get(3).copied())
         && !input[3..].starts_with('(')
-        && !{
-            let trimmed = input[3..].trim_start();
-            trimmed.starts_with("=>") && !trimmed.starts_with("==>")
-        }
+        && !followed_by_fat_arrow(&input[3..])
     {
         let r = &input[3..];
         let (r, _) = ws(r)?;
@@ -25,6 +22,7 @@ pub(crate) fn not_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
     if input.starts_with("so")
         && !is_ident_char(input.as_bytes().get(2).copied())
         && !input[2..].starts_with('(')
+        && !followed_by_fat_arrow(&input[2..])
     {
         let r = &input[2..];
         let (r, _) = ws(r)?;
@@ -172,10 +170,19 @@ pub(crate) fn or_or_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> 
 pub(crate) fn is_loose_not_or_so_prefix(input: &str) -> bool {
     (input.starts_with("not")
         && !is_ident_char(input.as_bytes().get(3).copied())
-        && !input[3..].starts_with('('))
+        && !input[3..].starts_with('(')
+        && !followed_by_fat_arrow(&input[3..]))
         || (input.starts_with("so")
             && !is_ident_char(input.as_bytes().get(2).copied())
-            && !input[2..].starts_with('('))
+            && !input[2..].starts_with('(')
+            && !followed_by_fat_arrow(&input[2..]))
+}
+
+/// `not => 1` / `so => 1`: a `=>` autoquotes the word before it, so the word
+/// is a Pair key, not the loose prefix operator.
+fn followed_by_fat_arrow(rest: &str) -> bool {
+    let trimmed = rest.trim_start();
+    trimmed.starts_with("=>") && !trimmed.starts_with("==>")
 }
 
 /// &&

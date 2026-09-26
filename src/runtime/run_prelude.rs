@@ -132,7 +132,7 @@ impl Interpreter {
     /// `__mutsu_prelude` trait. Marker traits are `__`-prefixed by convention
     /// (`__our_scoped`, `__lexical_hoist`) so registration can tell them from a
     /// user trait and never tries to apply one as a role.
-    fn mark_prelude_subs(stmts: &mut [Stmt]) {
+    pub(super) fn mark_prelude_subs(stmts: &mut [Stmt]) {
         for stmt in stmts {
             match stmt {
                 Stmt::SubDecl { custom_traits, .. } => {

@@ -26,6 +26,16 @@ use crate::opcode::LexSubFreeAlias;
 /// its own aliases, and the one bound in the live env chain answers.
 pub(crate) type LexSubAliasTable = rustc_hash::FxHashMap<Symbol, Vec<(Symbol, Symbol)>>;
 
+/// `Interpreter::lexsub_latest_cells`: (sub name, free variable env key) ->
+/// the cell the most recent activation of the declaring routine bound.
+///
+/// Rakudo's `capturelex`: each execution of the declaration re-points the
+/// sub's static outer at the running activation, so a call from code that
+/// holds none of the aliases — the sub escaped through `is export`, an `our`
+/// alias or a trait registry — still sees the latest activation's lexicals
+/// rather than whatever its caller has under the name.
+pub(crate) type LexSubLatestCells = rustc_hash::FxHashMap<(Symbol, Symbol), Value>;
+
 impl Interpreter {
     /// `RegisterDecl` of a sub plan: bind this activation's aliases.
     pub(super) fn bind_lexsub_free_aliases(&mut self, code: &CompiledCode, idx: u32) {
@@ -43,7 +53,8 @@ impl Interpreter {
             if let Some(slot) = self.locals.get_mut(a.alias_slot as usize) {
                 *slot = cell.clone();
             }
-            self.env_mut().insert_sym(a.alias, cell);
+            self.env_mut().insert_sym(a.alias, cell.clone());
+            crate::runtime::cow_table_mut(&mut self.lexsub_latest_cells).insert((sub, a.var), cell);
             let known = self
                 .lexsub_free_aliases
                 .get(&sub)
@@ -128,14 +139,47 @@ impl Interpreter {
     /// `name` (the shared cell), or `None`.
     #[inline]
     pub(crate) fn lexsub_alias_slot(&self, name: &str) -> Option<&Value> {
-        let alias = self.lexsub_alias_sym(name)?;
-        self.env().get_sym(alias)
+        match self.lexsub_alias_sym(name) {
+            Some(alias) => self.env().get_sym(alias),
+            None => self.lexsub_latest_cell(name),
+        }
+    }
+
+    /// The cell the latest activation of the running routine-nested sub's
+    /// declaring routine bound for `name`, for a call made from code that
+    /// captured none of its aliases (see [`LexSubLatestCells`]).
+    ///
+    /// Only where the ambient env has no binding of `name` at all: the table
+    /// is keyed by the sub's bare name, so it must never override a binding
+    /// the ordinary by-name resolution does find (a same-named method, or a
+    /// callback running in an env that holds the caller's own variable).
+    // Cost: O(1) expected; two hash probes.
+    #[inline]
+    fn lexsub_latest_cell(&self, name: &str) -> Option<&Value> {
+        if self.lexsub_latest_cells.is_empty() {
+            return None;
+        }
+        let frame = self.routine_stack().last()?;
+        if frame.is_block || frame.is_method {
+            return None;
+        }
+        let cell = self
+            .lexsub_latest_cells
+            .get(&(frame.name, Symbol::intern(name)))?;
+        self.env().get(name).is_none().then_some(cell)
     }
 
     /// Mutable counterpart of [`Self::lexsub_alias_slot`].
     pub(crate) fn lexsub_alias_slot_mut(&mut self, name: &str) -> Option<&mut Value> {
-        let alias = self.lexsub_alias_sym(name)?;
-        self.env_mut().get_mut_sym(alias)
+        match self.lexsub_alias_sym(name) {
+            Some(alias) => self.env_mut().get_mut_sym(alias),
+            None => {
+                self.lexsub_latest_cell(name)?;
+                let frame = self.routine_stack().last()?.name;
+                crate::runtime::cow_table_mut(&mut self.lexsub_latest_cells)
+                    .get_mut(&(frame, Symbol::intern(name)))
+            }
+        }
     }
 
     /// True when `callee`'s write to its free variable `name` went through an
@@ -148,8 +192,14 @@ impl Interpreter {
         let Some(list) = self.lexsub_free_aliases.get(&Symbol::intern(callee)) else {
             return false;
         };
-        list.iter()
-            .any(|(var, alias)| var.as_str() == name && self.env().get_sym(*alias).is_some())
+        list.iter().any(|(var, alias)| {
+            var.as_str() == name
+                && (self.env().get_sym(*alias).is_some()
+                    || (self.env().get_sym(*var).is_none()
+                        && self
+                            .lexsub_latest_cells
+                            .contains_key(&(Symbol::intern(callee), *var))))
+        })
     }
 
     /// The binding a TRIR chunk of the routine-nested sub `callee` reads for
@@ -162,6 +212,14 @@ impl Interpreter {
         list.iter()
             .filter(|(var, _)| var.as_str() == name)
             .find_map(|(_, alias)| self.env().get_sym(*alias).cloned())
+            .or_else(|| {
+                if self.env().get(name).is_some() {
+                    return None;
+                }
+                self.lexsub_latest_cells
+                    .get(&(callee, Symbol::intern(name)))
+                    .cloned()
+            })
     }
 
     /// ADR-0024 §4 for routine-nested subs: a closure created while such a

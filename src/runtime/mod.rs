@@ -794,6 +794,7 @@ pub(crate) mod nativecall_callback;
 pub(crate) mod nativecall_cast;
 pub(crate) mod nativecall_global;
 pub(crate) mod nativecall_manage;
+pub(crate) mod nqp_stat;
 mod numeric_bridge_probe;
 pub(crate) mod once_store;
 mod ops_bits;
@@ -866,6 +867,7 @@ mod run_modules;
 mod run_modules_bundled_repo;
 mod run_prelude;
 mod run_prelude_iterator;
+mod run_prelude_trait_export;
 mod run_roast_preprocess;
 mod runtime_caller_env;
 mod runtime_class_query;
@@ -3348,6 +3350,9 @@ pub struct Interpreter {
     /// first (see `vm/vm_lexsub_aliases.rs`). Empty unless a routine declared
     /// a `my sub` with free variables.
     pub(crate) lexsub_free_aliases: std::sync::Arc<crate::vm::LexSubAliasTable>,
+    /// The latest activation's cell per routine-nested sub free variable
+    /// (see `vm::LexSubLatestCells`).
+    pub(crate) lexsub_latest_cells: std::sync::Arc<crate::vm::LexSubLatestCells>,
     /// Shared cells for block lexicals captured by an `our`-scoped named sub
     /// declared inside a *bare* block (not a package block). Unlike a `my sub`, an
     /// `our sub` is installed into the package registry and stays callable after
