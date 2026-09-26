@@ -45,7 +45,7 @@ struct QuantDfsState {
     /// re-expanding it would only re-report the same ends. Without this, a
     /// recursive `regex A { '{' [ <A> | . ]*? '}' }` measured every path
     /// through the loop, which is exponential in the subject length (#9596).
-    seen: Option<HashSet<(usize, usize)>>,
+    seen: Option<rustc_hash::FxHashSet<(usize, usize)>>,
 }
 
 /// Compound atoms can expose more than one end for one quantifier iteration.
@@ -1565,7 +1565,7 @@ impl Interpreter {
             budget: QUANT_ALT_BUDGET,
             seen: super::regex_helpers::LTM_DECLARATIVE_MODE
                 .with(std::cell::Cell::get)
-                .then(HashSet::new),
+                .then(rustc_hash::FxHashSet::default),
         };
         let stop = self.walk_quant_group_candidates_dfs(
             ctx,

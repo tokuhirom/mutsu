@@ -15,6 +15,7 @@ mod regex_lr_state;
 mod regex_ltm_fate;
 pub(crate) mod regex_ltm_memo;
 mod regex_ltm_rank;
+mod regex_ltm_rank_reuse;
 mod regex_ltm_recursion;
 mod regex_match_at;
 mod regex_match_atom;
