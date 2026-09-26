@@ -1045,7 +1045,12 @@ impl Interpreter {
                         return Err(RuntimeError::new("add_role target must be a type object"));
                     }
                 };
-                let role_name = super::registration_class::type_value_name(&args[1]);
+                // A role declaration expression (`role :: { ... }`, `role R
+                // { ... }`) evaluates to its individual candidate's site key;
+                // composition is keyed by the role group, so normalise first
+                // like every other consumer of a role type object.
+                let role = self.normalize_role_type_object(&args[1]);
+                let role_name = super::registration_class::type_value_name(&role);
                 self.add_role_to_class(&class_name, &role_name)?;
                 Ok(Value::NIL)
             }

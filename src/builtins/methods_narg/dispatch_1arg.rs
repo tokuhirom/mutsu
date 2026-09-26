@@ -655,6 +655,24 @@ pub(crate) fn native_method_1arg(
                             })
                             .unwrap_or(Value::NIL)))
                     }
+                    // `Any.AT-POS`: an ordinary instance without a positional
+                    // protocol is a one-element list holding itself. User
+                    // `AT-POS` methods are resolved before this native fallback,
+                    // while the subscript opcode keeps an `AT-KEY` protocol from
+                    // being shadowed by this inherited default.
+                    ValueView::Instance { attributes, .. }
+                        if !attributes.contains_key("__mutsu_array_storage") =>
+                    {
+                        Some(Ok(if idx == 0 {
+                            target.descalarize().clone()
+                        } else {
+                            crate::value::RuntimeError::out_of_range_failure(
+                                "Index",
+                                Value::int(idx as i64),
+                                "0..0",
+                            )
+                        }))
+                    }
                     // `Any.AT-POS`: a non-Positional value is a one-element list
                     // holding itself under a positional subscript, so index 0
                     // answers the value and everything else is out of range. The

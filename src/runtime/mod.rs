@@ -584,6 +584,7 @@ mod catch_inline;
 mod control_inline;
 pub(crate) mod json;
 mod proxy_store;
+pub(crate) mod state_scope_reaper;
 pub(crate) use builtins_multidim_subscript::PositionalMissing;
 mod builtins_operators_coerce;
 mod builtins_operators_fallback;
@@ -3354,6 +3355,13 @@ pub struct Interpreter {
     /// distinguishes an un-scoped (named-sub/module-level) `state` var from one
     /// scoped to a specific closure clone.
     state_vars: HashMap<(Symbol, Option<u64>), Value>,
+    /// Keys inserted into `state_vars` since the last `start` spawn migrated
+    /// them into the cross-thread store (see `seed_unmigrated_state_vars`).
+    /// Every key whose entry existed at an earlier spawn was already seeded
+    /// then (`seed_if_absent`, so a second seed is a no-op), so the spawn only
+    /// has to visit what was inserted since: O(new keys) per spawn instead of
+    /// O(every state entry the program ever created) (#9504).
+    state_vars_unmigrated: Vec<(Symbol, Option<u64>)>,
     /// Names re-declared (`my $x` / `if ... -> $x`) in THIS thread while the
     /// cross-thread shared store is active. A re-declaration is a fresh
     /// binding shadowing the captured outer lexical, so subsequent writes to
@@ -4008,6 +4016,10 @@ pub struct Interpreter {
     /// handler via `.last()` and, if it is `resume_safe`, run it inline at the
     /// raise site (cross-frame resumable warn). See `vm::ControlHandlerEntry`.
     pub(crate) control_handlers: Vec<crate::vm::ControlHandlerEntry>,
+    /// The function table inline CATCH/CONTROL handler entries share while it
+    /// is unchanged, keyed by its `CompiledFns::id`. See
+    /// `Interpreter::shared_fns_snapshot`.
+    pub(crate) handler_fns_snapshot: Option<(u64, std::sync::Arc<crate::opcode::CompiledFns>)>,
     /// ADR-0072: active exception-absorbing regions on the dynamic call stack —
     /// every `try` and every block with a `CATCH { }`. A `die` raised deep inside
     /// a protected body consults `.last()`: when that innermost region's CATCH is
@@ -5433,6 +5445,7 @@ mod tests {
             captured_fatal_mode: false,
             param_name_syms_cache: std::sync::OnceLock::new(),
             source_file_sym_cache: std::sync::OnceLock::new(),
+            state_scope_guard: None,
         });
 
         let mut interp = Interpreter::new();

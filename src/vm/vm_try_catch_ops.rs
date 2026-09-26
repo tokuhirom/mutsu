@@ -16,7 +16,6 @@ impl Interpreter {
         is_bare_block: bool,
         traps: bool,
         catch_resume_capable: bool,
-        control_resume_capable: bool,
         ip: &mut usize,
         compiled_fns: &CompiledFns,
     ) -> Result<(), RuntimeError> {
@@ -70,7 +69,6 @@ impl Interpreter {
             control_handles_take,
             traps,
             catch_resume_capable,
-            control_resume_capable,
             ip,
             compiled_fns,
         );
@@ -91,10 +89,10 @@ impl Interpreter {
         result
     }
 
-    // Cost: O(1) plus the body, except that a resume-safe or resume-capable CONTROL or a
-    // resume-capable CATCH deep-clones the enclosing `CompiledCode` (ops +
-    // constants, c) and the `CompiledFns` table (f entries) into its handler
-    // entry on every region entry: O(c + f). Rakudo: O(1) -- see #9172.
+    // Cost: O(1) plus the body. A CONTROL or resume-capable CATCH region shares
+    // one owned copy of the enclosing `CompiledCode` (c = ops + constants) and
+    // `CompiledFns` (f entries), taken the first time: O(c + f) once per code
+    // object / table version, O(1) after.
     #[allow(clippy::too_many_arguments)]
     fn exec_try_catch_op_inner(
         &mut self,
@@ -108,7 +106,6 @@ impl Interpreter {
         control_handles_take: bool,
         traps: bool,
         catch_resume_capable: bool,
-        control_resume_capable: bool,
         ip: &mut usize,
         compiled_fns: &CompiledFns,
     ) -> Result<(), RuntimeError> {
@@ -134,7 +131,7 @@ impl Interpreter {
             self.push_control_handler(
                 code,
                 (control_begin, end),
-                (resume_safe, control_resume_capable),
+                resume_safe,
                 control_handles_take,
                 token,
                 compiled_fns,
@@ -157,10 +154,10 @@ impl Interpreter {
             let token = self.catch_handler_seq;
             let handler =
                 (has_catch && catch_resume_capable).then(|| crate::vm::CatchHandlerCode {
-                    code: std::sync::Arc::new(code.clone()),
+                    code: code.shared_snapshot(),
                     catch_begin,
                     control_begin,
-                    compiled_fns: compiled_fns.clone(),
+                    compiled_fns: self.shared_fns_snapshot(compiled_fns),
                 });
             self.catch_handlers.push(crate::vm::CatchHandlerEntry {
                 token,
@@ -444,6 +441,14 @@ impl Interpreter {
                     {
                         if tag == token && verdict == crate::value::CatchInlineVerdict::Handled {
                             pending_err.set_catch_inline_verdict(None);
+                            // The handler ran on an env reconstruction of this
+                            // frame and flushed its writes to env. A raise in
+                            // this same frame (`"a" ~ Any`) returned straight
+                            // here with no call boundary to copy them into the
+                            // live slots, so do it now.
+                            self.reconcile_caller_after_internal_dispatch(
+                                code as *const CompiledCode as usize,
+                            );
                         } else {
                             handled = false;
                         }
@@ -509,7 +514,7 @@ impl Interpreter {
                                 self.push_control_handler(
                                     code,
                                     (control_begin, end),
-                                    (resume_safe, control_resume_capable),
+                                    resume_safe,
                                     control_handles_take,
                                     token,
                                     compiled_fns,
@@ -521,10 +526,10 @@ impl Interpreter {
                             if let Some(token) = catch_token {
                                 let handler = (catch_begin < control_begin && catch_resume_capable)
                                     .then(|| crate::vm::CatchHandlerCode {
-                                        code: std::sync::Arc::new(code.clone()),
+                                        code: code.shared_snapshot(),
                                         catch_begin,
                                         control_begin,
-                                        compiled_fns: compiled_fns.clone(),
+                                        compiled_fns: self.shared_fns_snapshot(compiled_fns),
                                     });
                                 self.catch_handlers.push(crate::vm::CatchHandlerEntry {
                                     token,

@@ -127,6 +127,13 @@ impl Interpreter {
         let compiled_fns = compiled_code
             .as_ref()
             .and_then(|cc| cc.compiled_fns.clone());
+        let id = crate::value::next_instance_id();
+        // A body with `state` variables gets a guard that reaps this clone's
+        // state entries once the clone is dead (#9504).
+        let state_scope_guard = compiled_code
+            .as_ref()
+            .filter(|cc| !cc.state_locals.is_empty())
+            .map(|_| crate::runtime::state_scope_reaper::StateScopeGuard::new(id));
         Value::sub_value(crate::gc::Gc::new(crate::value::SubData {
             package: self.lexical_closure_package_sym(),
             name: spec.name,
@@ -139,7 +146,7 @@ impl Interpreter {
             env,
             assumed_positional: Vec::new(),
             assumed_named: ValueMap::default(),
-            id: crate::value::next_instance_id(),
+            id,
             is_bare_block: spec.is_bare_block,
             owned_captures,
             authoritative_captures,
@@ -165,6 +172,7 @@ impl Interpreter {
             captured_fatal_mode: self.fatal_mode,
             param_name_syms_cache: std::sync::OnceLock::new(),
             source_file_sym_cache: std::sync::OnceLock::new(),
+            state_scope_guard,
         }))
     }
 

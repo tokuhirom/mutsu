@@ -1060,6 +1060,29 @@ impl Interpreter {
                 }
                 *ip += 1;
             }
+            // Cost: O(1) amortized, one env insert under the pre-interned temp name.
+            OpCode::SetCallTemp(name_idx) => {
+                let val = self.stack.pop().unwrap_or(Value::NIL);
+                self.env_mut().insert_sym(code.const_sym(*name_idx), val);
+                *ip += 1;
+            }
+            // Cost: O(1) amortized, one env lookup under the pre-interned temp name.
+            OpCode::GetCallTemp(name_idx) => {
+                let val = self
+                    .env()
+                    .get_sym(code.const_sym(*name_idx))
+                    .cloned()
+                    .unwrap_or(Value::NIL);
+                let val = if val.is_lazy_thunk_value()
+                    && let ValueView::LazyThunk(thunk_data) = val.view()
+                {
+                    self.force_lazy_thunk(&thunk_data)?
+                } else {
+                    val
+                };
+                self.stack.push(val.into_deref());
+                *ip += 1;
+            }
             // Cost: O(1) + O(a) per store, a = aliases recorded for this variable (the
             // reverse-alias propagation probes each candidate from
             // `sigilless_alias_index`; 0 in a program that never binds one); plus O(e)
@@ -5180,9 +5203,9 @@ impl Interpreter {
             }
 
             // -- Exception handling --
-            // Cost: O(1) plus the body, except a resume-capable CATCH / CONTROL: O(c +
-            // f) per entry, c = ops + constants of the enclosing CompiledCode, f = compiled
-            // functions (both deep-cloned into the handler entry). Rakudo: O(1) -- see #9172.
+            // Cost: O(1) plus the body. A CONTROL or resume-capable CATCH region pays
+            // O(c + f) once per code object / function-table version for its shared
+            // handler copy, c = ops + constants, f = compiled functions.
             OpCode::TryCatch {
                 catch_start,
                 control_start,
@@ -5194,7 +5217,6 @@ impl Interpreter {
                 is_bare_block,
                 traps,
                 catch_resume_capable,
-                control_resume_capable,
             } => {
                 self.sync_source_line(code, *ip);
                 self.exec_try_catch_op(
@@ -5209,7 +5231,6 @@ impl Interpreter {
                     *is_bare_block,
                     *traps,
                     *catch_resume_capable,
-                    *control_resume_capable,
                     ip,
                     compiled_fns,
                 )?;
