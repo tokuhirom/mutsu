@@ -68,4 +68,4 @@ gives a self-captured declaration its cell and exempts it from the emit-time bak
 is one of the initializer's own, so its capture can only be this declaration.
 
 Pinned by `t/concurrency/supply/supply-on-demand-producer-async-emit.t` and
-`t/routines/closure/closure-self-capture-call-arg-cross-thread.t`.
+`t/concurrency/thread-lock/closure-self-capture-call-arg-cross-thread.t`.
