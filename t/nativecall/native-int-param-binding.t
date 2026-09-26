@@ -9,7 +9,7 @@ use Test;
 # unchanged comes back unwrapped (its optimizer inlines the literal), so every
 # case here passes the argument through a variable or uses the parameter.
 
-plan 17;
+plan 19;
 
 enum E <Zero One Two>;
 
@@ -50,3 +50,13 @@ my int8 $y = Two;
 is $y, 2, 'my int8 $y = <enum> stores the value';
 my uint8 @a = Two, One;
 is @a.raku, 'array[uint8].new(2, 1)', 'native array stores enum values';
+
+# An `is rw` native parameter still binds the caller's container.
+sub bump(int $p is rw) { $p = $p + 1 }
+my int $q = 1;
+bump($q);
+is $q, 2, 'int $p is rw writes back to the caller';
+class D { method bump(int $p is rw) { $p = $p + 1 } }
+my int $r = 5;
+D.bump($r);
+is $r, 6, 'method: int $p is rw writes back to the caller';
