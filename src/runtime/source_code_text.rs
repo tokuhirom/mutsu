@@ -48,6 +48,21 @@ impl<'a> CodeText<'a> {
     pub(crate) fn contains(&self, needle: &str) -> bool {
         self.0.contains(needle)
     }
+
+    /// Whether the code contains `needle` as a whole name: not followed by an
+    /// identifier character or a `::` package separator. `class Iterator {`
+    /// matches `class Iterator`; `class Iterator::Chunked` and
+    /// `class IteratorX` do not.
+    pub(crate) fn contains_name(&self, needle: &str) -> bool {
+        self.0.match_indices(needle).any(|(at, _)| {
+            let rest = &self.0[at + needle.len()..];
+            !rest.starts_with("::")
+                && !rest
+                    .chars()
+                    .next()
+                    .is_some_and(|c| c.is_alphanumeric() || c == '_' || c == '-' || c == '\'')
+        })
+    }
 }
 
 /// Cheap pre-check: a source with no `#` and no line starting with `=` has no
