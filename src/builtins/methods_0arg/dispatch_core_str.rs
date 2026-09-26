@@ -318,6 +318,11 @@ pub(super) fn dispatch(
             {
                 return Some(Some(Err(crate::value::seq_consumed_error())));
             }
+            // `.join` stringifies every element, so a zero-denominator Rational
+            // among them dies like its own `.Str` (GH #9621).
+            if let Err(err) = crate::runtime::utils::check_str_coercion_zero_denominator(target) {
+                return Some(Some(Err(err)));
+            }
             // Uni is a Positional[uint32], so its default `.join` separator
             // joins the numeric codepoints rather than stringifying the Uni
             // as a whole. The one-argument path has the same rule in

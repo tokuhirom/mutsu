@@ -719,6 +719,9 @@ impl Interpreter {
             if let Some(err) = self.failure_to_runtime_error_if_unhandled(&v) {
                 return Err(err);
             }
+            // Likewise a zero-denominator Rational: `"{1/0}"` dies like
+            // `(1/0).Str` instead of rendering `Inf` (GH #9621).
+            crate::runtime::utils::check_str_coercion_zero_denominator(&v)?;
             // Interpolating Nil (`"{Nil}"`, `"$x"` with $x holding Nil) stringifies
             // via `.Str`: warns ("Use of Nil in string context") and resumes with
             // the empty string, matching Rakudo.

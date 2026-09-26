@@ -53,9 +53,36 @@ impl RuntimeError {
         numerator: Option<Value>,
         using: Option<&str>,
     ) -> Self {
+        Self::numeric_divide_by_zero_build(numerator, using, None)
+    }
+
+    /// The `X::Numeric::DivideByZero` a zero-denominator Rational throws when
+    /// it is stringified (`.Str`, `.gist`, `~`, interpolation, `join`, `say`):
+    /// Rakudo's `Rational.Str` passes `details => 'when coercing Rational to
+    /// Str'`, so the message reads `Attempt to divide 1 by zero when coercing
+    /// Rational to Str`.
+    pub(crate) fn rational_to_str_divide_by_zero(numerator: Value) -> Self {
+        Self::numeric_divide_by_zero_build(
+            Some(numerator),
+            None,
+            Some("when coercing Rational to Str"),
+        )
+    }
+
+    // Rakudo's message is `"Attempt to divide{" $.numerator" if $.numerator}
+    // by zero{" using $.using" if $.using}{" $_" with $.details}"`: a zero
+    // numerator (`0/0`, `0 div 0`) is left out of the text but kept as the
+    // attribute.
+    fn numeric_divide_by_zero_build(
+        numerator: Option<Value>,
+        using: Option<&str>,
+        details: Option<&str>,
+    ) -> Self {
         let mut attrs = HashMap::new();
         let mut msg = "Attempt to divide".to_string();
-        if let Some(ref n) = numerator {
+        if let Some(ref n) = numerator
+            && n.truthy()
+        {
             msg.push_str(&format!(" {} by zero", n.to_string_value()));
         } else {
             msg.push_str(" by zero");
@@ -63,6 +90,10 @@ impl RuntimeError {
         if let Some(u) = using {
             msg.push_str(&format!(" using {}", u));
             attrs.insert("using".to_string(), Value::str_from(u));
+        }
+        if let Some(d) = details {
+            msg.push_str(&format!(" {}", d));
+            attrs.insert("details".to_string(), Value::str_from(d));
         }
         attrs.insert("message".to_string(), Value::str_from(&msg));
         if let Some(n) = numerator {

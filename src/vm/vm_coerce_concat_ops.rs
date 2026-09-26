@@ -315,6 +315,9 @@ impl Interpreter {
         if let Some(err) = self.failure_to_runtime_error_if_unhandled(&v) {
             return Err(err);
         }
+        // So does a zero-denominator Rational: `"a" ~ 1/0` and `1/0 eq "x"`
+        // die like `(1/0).Str` (GH #9621).
+        crate::runtime::utils::check_str_coercion_zero_denominator(&v)?;
         // A Nil operand in a string context (infix `~`, `eq`/`lt`/… string
         // comparisons) warns and resumes with the empty string, matching
         // Rakudo — once per Nil operand (so `Nil ~ Nil` warns twice).

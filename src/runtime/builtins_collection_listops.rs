@@ -139,6 +139,17 @@ impl Interpreter {
                 crate::builtins::flat_val(v, &mut flat_items, true);
             }
         }
+        // `join_flat` below rejects a zero-denominator Rational itself; the
+        // Junction-threading render bypasses it, so check that path here.
+        if flat_items
+            .iter()
+            .any(|v| matches!(v.view(), ValueView::Junction { .. }))
+            && let Some(err) = flat_items
+                .iter()
+                .find_map(crate::runtime::utils::zero_denominator_rational_error)
+        {
+            return Err(err);
+        }
         if let Some(threaded) = crate::builtins::thread_junctions_in_items(&flat_items, &|c| {
             Value::str(
                 c.iter()
@@ -149,9 +160,10 @@ impl Interpreter {
         }) {
             return Ok(threaded);
         }
-        Ok(Value::str(
-            crate::builtins::join_flat(&sep, &rendered).unwrap_or_default(),
-        ))
+        match crate::builtins::join_flat(&sep, &rendered) {
+            Some(joined) => Ok(Value::str(joined?)),
+            None => Ok(Value::str(String::new())),
+        }
     }
 
     /// Replace every element `join` will stringify that carries a *user*

@@ -253,6 +253,10 @@ impl Interpreter {
                 return Ok(());
             }
         }
+        // With no user `prefix:<~>` candidate, a zero-denominator Rational (on
+        // its own or inside a rendered aggregate) dies as its `.Str` does
+        // (GH #9621).
+        crate::runtime::utils::check_str_coercion_zero_denominator(&val)?;
         // `~$s` on a plain Str (no user `prefix:<~>` candidate took it above)
         // is the Str itself: share it rather than copy the payload.
         if val.is_str_value() {
