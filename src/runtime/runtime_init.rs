@@ -3320,6 +3320,7 @@ impl Interpreter {
             unit_lexicals: std::sync::Arc::new(PackageLexicals::default()),
             mainline_lexical_subs: Default::default(),
             lexsub_free_aliases: Default::default(),
+            lexsub_latest_cells: Default::default(),
             escaped_our_lexical_cells: ValueMap::default(),
             escaping_our_lexical_names: Default::default(),
             escaped_our_sub_names: Default::default(),

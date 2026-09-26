@@ -300,6 +300,30 @@ impl Interpreter {
                 }
             }
         }
+        // A routine declared `is export` inside the scope escapes it through
+        // the package's EXPORT stash: Rakudo exports it at compile time,
+        // whether or not (and however often) the enclosing routine runs. So
+        // one this scope newly registered -- e.g. a `multi trait_mod:<is>`
+        // declared inside `sub EXPORT` (the `Exportable` idiom) -- and its
+        // `EXPORT::<tag>` mirror keys survive the restore.
+        let new_exported: Vec<(Symbol, std::sync::Arc<FunctionDef>)> =
+            if is_eval || self.exported_subs.is_empty() {
+                Vec::new()
+            } else {
+                let registry = self.registry();
+                touched_keys
+                    .iter()
+                    .filter(|key| !functions.contains_key(key))
+                    .filter_map(|key| registry.functions.get(key).map(|def| (*key, def.clone())))
+                    .filter(|(key, def)| {
+                        key.with_str(|k| k.starts_with("EXPORT::") || k.contains("::EXPORT::"))
+                            || self
+                                .exported_subs
+                                .get(&def.package.resolve())
+                                .is_some_and(|names| names.contains_key(&def.name.resolve()))
+                    })
+                    .collect()
+            };
         let mut guard = self.registry_mut();
         // Every write below is to the routine/token tables, never to the four
         // type maps, so the lexical type-name index survives the restore.
@@ -339,6 +363,9 @@ impl Interpreter {
                 touched_keys.push(key);
                 registry.functions_mut().insert(key, def);
             }
+        }
+        for (key, def) in new_exported {
+            registry.functions_mut().insert(key, def);
         }
         drop(guard);
         // The routine registry just changed: a lexical (`my sub`) registered

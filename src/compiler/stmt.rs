@@ -2259,9 +2259,13 @@ impl Compiler {
                     self.code.emit(OpCode::Pop);
                     return;
                 }
+                // `&foo = ...` on a routine name is read-only, but a `my &k`
+                // declared in an enclosing frame is an ordinary Callable
+                // container that a closure may assign through.
                 if name.starts_with('&')
                     && !name.contains("::")
                     && !self.local_map.contains_key(name.as_str())
+                    && !self.enclosing_local_names.contains(name.as_str())
                     && !self.class_body_static_code_vars.contains(name)
                     && !name.starts_with("&!")
                 {
@@ -3944,11 +3948,10 @@ impl Compiler {
                 // cannot tell one declaring scope's `$a` from another's.
                 let free_var_decl_slots = self.bake_sub_decl_free_var_slots(&compiled_routine_keys);
                 // mutsu#9111: a sub declared inside a routine binds its free
-                // variables per activation of the routine.
-                let lexsub_free_aliases = if name_expr.is_none()
-                    && !*multi
-                    && !custom_traits.iter().any(|(t, _)| t == "__our_scoped")
-                {
+                // variables per activation of the routine. That holds for an
+                // `our` sub and a `multi` candidate too: both are one static
+                // code object whose outer is the latest activation.
+                let lexsub_free_aliases = if name_expr.is_none() {
                     let fp = self.code.sub_decl_plan_fingerprint(idx);
                     self.alloc_lexsub_free_aliases(&name_str, fp, &compiled_routine_keys)
                 } else {

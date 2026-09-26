@@ -517,5 +517,5 @@ pub(crate) fn role_decl_with_keyword<'a>(input: &'a str, kw: &str) -> PResult<'a
         return Ok((rest, role_stmt));
     }
     meta_stmts.push(role_stmt);
-    Ok((rest, Stmt::Block(meta_stmts)))
+    Ok((rest, Stmt::SyntheticBlock(meta_stmts)))
 }

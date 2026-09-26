@@ -895,6 +895,7 @@ impl Interpreter {
         Self::inject_trait_mod_does_prelude(&code, &mut stmts);
         Self::inject_trait_mod_is_prelude(&code, &mut stmts);
         Self::inject_trait_mod_is_default_prelude(&code, &mut stmts);
+        Self::inject_trait_mod_is_export_prelude(&code, &mut stmts);
         Self::inject_metamodel_role_prelude(&code, &mut stmts);
         Self::inject_enumeration_prelude(&code, &mut stmts);
         Self::inject_iterator_role_prelude(&code, &mut stmts);
