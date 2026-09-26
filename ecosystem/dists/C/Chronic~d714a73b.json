@@ -14,7 +14,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.05,
+        "secs": 0.11,
         "skip": 1,
         "todo": 0,
         "verdict": "pass"
@@ -24,7 +24,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.32,
+        "secs": 0.4,
         "skip": 1,
         "todo": 0,
         "verdict": "pass"
@@ -36,7 +36,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.1,
+        "secs": 0.12,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -46,7 +46,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.97,
+        "secs": 2.49,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -58,7 +58,7 @@
         "nok": 0,
         "ok": 26,
         "plan": 26,
-        "secs": 0.24,
+        "secs": 0.38,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -68,7 +68,7 @@
         "nok": 0,
         "ok": 26,
         "plan": 26,
-        "secs": 0.55,
+        "secs": 0.7,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -80,7 +80,7 @@
         "nok": 0,
         "ok": 27,
         "plan": 27,
-        "secs": 0.18,
+        "secs": 0.25,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -90,7 +90,7 @@
         "nok": 0,
         "ok": 27,
         "plan": 27,
-        "secs": 0.43,
+        "secs": 0.57,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -102,7 +102,7 @@
         "nok": 0,
         "ok": 27,
         "plan": 27,
-        "secs": 0.2,
+        "secs": 0.23,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -112,30 +112,29 @@
         "nok": 0,
         "ok": 27,
         "plan": 27,
-        "secs": 0.44,
+        "secs": 0.89,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "SWEEP-TIMEOUT",
         "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 240.1,
+        "ok": 4,
+        "plan": 4,
+        "secs": 6.19,
         "skip": 0,
         "todo": 0,
-        "verdict": "timeout"
+        "verdict": "pass"
       },
       "path": "t/040-at.t",
       "raku": {
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 6.35,
+        "secs": 6.53,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -147,10 +146,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-25",
+    "date": "2026-09-26",
     "harness": 2,
-    "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "404ac78",
+    "host": "linux-x86_64",
+    "mutsu_commit": "db7c018c",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -161,13 +160,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/C/HR/CHRONIC/4931e79d9032c59f67167223d59afca26dcce912.tar.gz"
   },
-  "status": "partial",
+  "status": "green",
   "totals": {
     "baseline_assertions": 86,
     "baseline_files": 6,
-    "mutsu_assertions": 82,
-    "parity_files": 5,
-    "regressed_files": 1
+    "mutsu_assertions": 86,
+    "parity_files": 6,
+    "regressed_files": 0
   },
   "version": "0.0.14"
 }
