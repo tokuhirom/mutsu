@@ -795,7 +795,7 @@ impl Interpreter {
     /// A name declared by more than one class in the MRO keeps its
     /// most-derived position (rakudo lists both copies; mutsu's instance
     /// attribute map is keyed by bare name, so only one slot exists).
-    pub(super) fn collect_class_attributes_display_order(
+    pub(crate) fn collect_class_attributes_display_order(
         &mut self,
         class_name: &str,
     ) -> Vec<ClassAttributeDef> {
@@ -858,7 +858,7 @@ impl Interpreter {
     /// Collect attributes from a role and all its composed parent roles.
     /// Used when the role has been punned (instantiated via mixin) and we need
     /// to check attribute metadata (e.g. `is rw`).
-    pub(super) fn collect_role_attributes_for_class(
+    pub(crate) fn collect_role_attributes_for_class(
         &self,
         role_name: &str,
     ) -> Vec<ClassAttributeDef> {
