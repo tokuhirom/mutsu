@@ -684,6 +684,13 @@ impl Interpreter {
                 def_file,
             );
         }
+        if !cc.is_routine {
+            crate::runtime::return_target::record_block_return_target(
+                self.env_mut(),
+                &data.env,
+                data.id,
+            );
+        }
         self.env_mut()
             .insert_sym(crate::symbol::wk::callable_id(), Value::int(data.id as i64));
 
@@ -1195,10 +1202,10 @@ impl Interpreter {
                             || data.env.contains_key("__mutsu_callable_id");
                         if has_target {
                             if e.return_target_callable_id().is_none()
-                                && let Some(ValueView::Int(id)) =
-                                    data.env.get("__mutsu_callable_id").map(Value::view)
+                                && let Some(id) =
+                                    crate::runtime::return_target::return_target_in_env(&data.env)
                             {
-                                e.set_return_target_callable_id(Some(id as u64));
+                                e.set_return_target_callable_id(Some(id));
                             }
                             loan_env!(self, restore_let_saves(let_mark));
                             handled_let_saves = true;

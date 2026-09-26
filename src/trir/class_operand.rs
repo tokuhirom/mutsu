@@ -91,7 +91,7 @@ impl crate::runtime::Interpreter {
     /// Execute a [`ClassOperandSite`]: the bareword's value, from the site's
     /// memo when the registry has not been written since it was resolved.
     // Cost: O(1) on a hit; a miss costs one bareword resolution.
-    pub(super) fn trir_class_operand(
+    pub(crate) fn trir_class_operand(
         &mut self,
         site: &ClassOperandSite,
         compiled_fns: &crate::opcode::CompiledFns,

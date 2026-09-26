@@ -405,6 +405,7 @@ impl Compiler {
         // positionals passed"). Compile it as the `&f(...)` form, which already
         // has an opcode (`CallOnCodeVar`).
         if name.with_str(|n| self.amp_binding_in_active_scope(n)) {
+            self.note_amp_shadowed_call(*name);
             let target = Expr::CodeVar(name.resolve());
             self.compile_expr_call_on(&target, args);
             return;
@@ -423,6 +424,7 @@ impl Compiler {
             && let Some(callee) = callee.as_str()
             && self.amp_binding_in_active_scope(callee)
         {
+            self.note_amp_shadowed_call(crate::symbol::Symbol::intern(callee));
             let rewritten = [
                 Expr::CodeVar(callee.to_string()),
                 args[1].clone(),

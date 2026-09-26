@@ -28,7 +28,7 @@ impl Interpreter {
     ///
     /// Loop-control signals (`done` / `next` / `last`) surface as `Err`, so the
     /// drive loop's signal mapping (`run_react_consumer` etc.) is unchanged.
-    pub(super) fn call_react_callback(
+    pub(crate) fn call_react_callback(
         &mut self,
         cb: &Value,
         args: Vec<Value>,

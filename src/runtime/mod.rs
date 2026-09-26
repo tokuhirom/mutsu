@@ -857,6 +857,7 @@ mod resolution_map_grep_rw;
 mod resolution_method;
 mod resolution_private_method;
 mod resolution_sequence;
+pub(crate) mod return_target;
 pub(crate) mod routine_stack;
 mod run;
 mod run_dist;

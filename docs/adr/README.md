@@ -149,3 +149,4 @@ The role of an ADR is to preserve the *context of the judgment* — something th
 | [0122](0122-repl-compiler-object-and-eval-contexts.md) | `nqp::getcomp("Raku")` is a Raku-level compiler object, and a REPL context is a captured unit environment plus its lexical routines | Accepted (implemented) |
 | [0123](0123-bounded-user-thread-stack-reservations.md) | User-thread stacks are reserved against an address-space budget, and the pool queues rather than grows past it | Accepted (implemented) |
 | [0124](0124-parse-time-export-probe-for-computed-export-stashes.md) | A module that binds its export stash under computed keys is run at parse time (fresh interpreter, fresh thread) to learn the exported names | Proposed (implemented) |
+| [0125](0125-ltm-declarative-prefix-nfa.md) | Measure an LTM declarative prefix with a compiled NFA | Accepted (Phase 1 implemented: `\|` ranking from a real match) |

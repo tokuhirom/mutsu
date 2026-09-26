@@ -1182,6 +1182,12 @@ pub(crate) struct Compiler {
     /// it learns its target name too late to be answered any other way. Empty for a
     /// compilation unit's own compiler. See [`lex_scope::LexScopeChain`].
     enclosing_scopes: Vec<lex_scope::ScopeFrame>,
+    /// The lexical frame a role's parameter list (`role R[&f, $x]`) opens
+    /// around its body, set only while that role's method bodies compile.
+    /// Method bodies compile on a fresh compiler with no enclosing scopes, so
+    /// without this a bare `f()` in `method g { f() }` would not know `&f` is
+    /// a lexical and would dispatch to an outer `sub f` instead.
+    role_param_scope: Option<lex_scope::ScopeFrame>,
     /// Index (within `local_scopes`) of this compilation UNIT's outermost scope —
     /// the scope `UNIT::` names. 0 for a file's own compiler; an `EVAL`'d unit
     /// (`mark_as_eval_unit`) pushes an empty wrapper frame first so that
@@ -1765,6 +1771,7 @@ impl Compiler {
             // Frame 0 = compilation-unit / routine top level; never popped.
             local_scopes: vec![HashMap::new()],
             enclosing_scopes: Vec::new(),
+            role_param_scope: None,
             unit_root_scope: 0,
             in_lexical_scope: false,
             lexical_dup_routines: HashSet::new(),

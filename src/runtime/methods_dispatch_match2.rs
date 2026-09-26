@@ -83,24 +83,24 @@ impl Interpreter {
             }
             "List" if args.is_empty() => Some(self.dispatch_list_coercion(target)),
             "Set" | "SetHash" if args.is_empty() => {
-                let mut result = match self.dispatch_to_set_with_what(target, method) {
+                let result = match self.dispatch_to_set_with_what(target, method) {
                     Ok(r) => r,
                     Err(e) => return Some(Err(e)),
                 };
                 // If SetHash, ensure the mutable flag is set
                 if method == "SetHash" {
-                    result.with_set_mut(|_, is_mut| *is_mut = true);
+                    return Some(Ok(result.quanthash_with_mutability(true)));
                 }
                 Some(Ok(result))
             }
             "Bag" | "BagHash" if args.is_empty() => {
-                let mut result = match self.dispatch_to_bag_with_what(target, method) {
+                let result = match self.dispatch_to_bag_with_what(target, method) {
                     Ok(r) => r,
                     Err(e) => return Some(Err(e)),
                 };
                 // If BagHash, ensure the mutable flag is set
                 if method == "BagHash" {
-                    result.with_bag_mut(|_, is_mut| *is_mut = true);
+                    return Some(Ok(result.quanthash_with_mutability(true)));
                 }
                 Some(Ok(result))
             }
@@ -132,10 +132,8 @@ impl Interpreter {
                             Ok(r) => r,
                             Err(e) => return Some(Err(e)),
                         };
-                        if cn == "BagHash"
-                            && let ValueView::Bag(items, _) = result.view()
-                        {
-                            return Some(Ok(Value::bag_parts(items.clone(), true)));
+                        if cn == "BagHash" {
+                            return Some(Ok(result.quanthash_with_mutability(true)));
                         }
                         return Some(Ok(result));
                     }

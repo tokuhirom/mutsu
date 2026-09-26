@@ -2189,6 +2189,37 @@ impl Interpreter {
                     return Ok(());
                 }
             }
+            // `SetHash.set`/`.unset` and the QuantHash `.grab`/`.grabpairs`:
+            // like `add`/`remove` above they mutate the shared node in place
+            // (`builtins::quanthash_mutators`), so an attribute (`$!q.grab`)
+            // sees the change too; the writeback only re-seats the dual store.
+            "set" | "unset" | "grab" | "grabpairs" => {
+                if let Some(receiver) =
+                    crate::builtins::quanthash_mutators::quanthash_mutator_receiver(&target, method)
+                {
+                    let receiver = receiver.clone();
+                    let args = crate::builtins::quanthash_mutators::resolve_callable_count(
+                        &receiver,
+                        method,
+                        args.clone(),
+                        |f, a| self.vm_call_sub_value(f, a, false),
+                    )?;
+                    let result = crate::builtins::quanthash_mutators::apply_quanthash_mutator(
+                        &receiver, method, &args,
+                    )?;
+                    if !target_name.is_empty() {
+                        self.env_mut()
+                            .insert(target_name.to_string(), target.clone());
+                        self.update_local_if_exists(code, target_name, &target);
+                    }
+                    crate::vm::vm_stats::record_dispatch_entry_intercept(
+                        "callmethodmut",
+                        "quanthash-mutator",
+                    );
+                    self.stack.push(result);
+                    return Ok(());
+                }
+            }
             // `@a.BIND-POS($i, $x)` binds element `$i` to the caller variable
             // `$x` as a shared `ContainerRef` cell — the array analog of
             // BIND-KEY above. A later `$x = ...` writes through to `@a[$i]` (and

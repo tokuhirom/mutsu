@@ -296,6 +296,9 @@ impl Interpreter {
         }
         let mut compiler = crate::compiler::Compiler::new();
         compiler.lexically_in_routine = lexically_in_routine;
+        if let Some(origin) = data.compiled_code.as_deref() {
+            compiler.seed_amp_shadowed_calls_from(origin);
+        }
         let (mut code, mut fns) = compiler.compile(normalized_body);
         if let Some(origin) = data.compiled_code.as_deref() {
             crate::compiler::frame_lexical_inherit::inherit_frame_lexical_routines(
@@ -842,10 +845,10 @@ impl Interpreter {
                             // the enclosing routine has exited.
                             if e.is_return()
                                 && e.return_target_callable_id().is_none()
-                                && let Some(ValueView::Int(id)) =
-                                    data.env.get("__mutsu_callable_id").map(Value::view)
+                                && let Some(id) =
+                                    crate::runtime::return_target::return_target_in_env(&data.env)
                             {
-                                e.set_return_target_callable_id(Some(id as u64));
+                                e.set_return_target_callable_id(Some(id));
                             }
                             return Err(e);
                         }
@@ -1202,10 +1205,10 @@ impl Interpreter {
                             // ordinary closure-call path does this at its
                             // call boundary.
                             if e.return_target_callable_id().is_none()
-                                && let Some(ValueView::Int(id)) =
-                                    data.env.get("__mutsu_callable_id").map(Value::view)
+                                && let Some(id) =
+                                    crate::runtime::return_target::return_target_in_env(&data.env)
                             {
-                                e.set_return_target_callable_id(Some(id as u64));
+                                e.set_return_target_callable_id(Some(id));
                             }
                             return Err(e);
                         }

@@ -2398,6 +2398,16 @@ pub(crate) enum OpCode {
         /// Operand count on the stack. `u8` because the widest nqp op takes 5.
         arity: u8,
     },
+    /// `nqp::getattr` / `bindattr` (and their `_i`/`_n`/`_s` forms, and
+    /// `p6bindattrinvres`) whose attribute-name operand is a string literal
+    /// (ADR-0121 D3). The name was interned and twigil-stripped when the site
+    /// was compiled, so no operand of the stack is the name: a read pops the
+    /// class operand and the object, a bind pops the value, the class operand
+    /// and the object. The class operand is evaluated for its effects and
+    /// ignored, as the generic op ignores it; a bareword class operand is not
+    /// on the stack at all but resolved by the site, which remembers it. Otherwise the same work as
+    /// [`OpCode::NqpOp`], which is what every other attribute-op site keeps.
+    NqpAttrC(Box<crate::runtime::nqp_attr::NqpAttrCSite>),
     /// Expression-level function call whose literal named args travel
     /// out-of-band: `arity` values on the stack, of which the positions
     /// listed in `CompiledCode::named_arg_specs[spec_idx]` are named-arg
@@ -3483,7 +3493,8 @@ pub(crate) enum OpCode {
     /// topic writes through to its element). `$/` and the capture variables
     /// are set. The result is the `Match`; under `:g`, `:x` or a multi-value
     /// `:nth` it is a `List` of Matches (possibly empty); a non-list form
-    /// that matched nothing pushes `False` (Rakudo: `Nil`; see #9515).
+    /// that matched nothing pushes `Nil`, as in Rakudo (`$x ~~ s///` reports
+    /// that failure as `False`).
     /// Runs `exec_subst_op` → `run_subst`, shared with
     /// [`Self::NonDestructiveSubst`].
     Subst {
@@ -6545,6 +6556,13 @@ pub(crate) struct CompiledCode {
     /// Empty for almost every chunk, so the call handlers' probe is one
     /// `is_empty` test.
     pub(crate) lexical_routines: Vec<FrameLexicalRef>,
+    /// Bare call names (`f(...)`) this chunk compiled as a call on the code
+    /// variable `&f` because a `my &f` binding (or `&f` parameter) in scope
+    /// shadows any routine of that name. A runtime path that compiles this
+    /// chunk's AST again on a fresh compiler (the inline `map`/`grep` path, a
+    /// sequence generator) has no scope chain, so it re-seeds these names to
+    /// reach the same binding instead of the outer routine.
+    pub(crate) amp_shadowed_calls: Vec<Symbol>,
     /// True when this chunk or one of its nested closures has
     /// `lexical_routines`. A closure created from such a chunk registers its
     /// body with the interpreter, so a runtime recompile of that body (the
@@ -7504,6 +7522,7 @@ impl CompiledCode {
             free_var_container_writes: Vec::new(),
             named_sub_captures: Vec::new(),
             lexical_routines: Vec::new(),
+            amp_shadowed_calls: Vec::new(),
             lexical_subtree: false,
             nested_routine_free_reads: Vec::new(),
             needs_cell_named_sub: Vec::new(),

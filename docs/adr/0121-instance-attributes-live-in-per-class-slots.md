@@ -1,6 +1,6 @@
 # ADR-0121: Instance attributes live in per-class slots, and each access site resolves its slot once
 
-- **Status**: Accepted (user approval 2026-09-24; D1, D2, and the `$!x`, accessor and TRIR literal-name `getattr`/`bindattr` parts of D3 implemented, see §5)
+- **Status**: Accepted (user approval 2026-09-24; D1, D2, and the `$!x`, accessor and literal-name `getattr`/`bindattr` parts of D3 implemented, see §5)
 - **Deciders**: tokuhirom, Claude
 - **Context**: [#9291](https://github.com/tokuhirom/mutsu/issues/9291) (the measurements),
   [#9134](https://github.com/tokuhirom/mutsu/issues/9134) group 1 and `create` (the `nqp::`
@@ -261,10 +261,17 @@ probe and the lock.
   registry write generation, and the alias attributes are collected into the
   plan (`P.new(...)` ~33,640 → ~26,960 instructions). See
   `news/2026-09/bareword-terms-and-construction-probes-stop-re-resolving.md`.
+- **D3, literal-name attribute ops on the untyped VM (landed).** A
+  `getattr` / `bindattr` / `p6bindattrinvres` site with a literal name
+  compiles to `OpCode::NqpAttrC`, which carries an `NqpAttrSite`. A bareword
+  class operand that compiled to a lone `GetBareWord` is folded into it as a
+  `ClassOperandSite`. The shared instance fast path now leaves `$!storage` /
+  `$!reified` to the generic body, which a Map/List subclass needs. In
+  callgrind instructions per op above a mainline loop: `getattr(obj)` 4,796 →
+  1,625, `bindattr(obj)` 4,709 → 1,541. See
+  `news/2026-09/literal-attribute-names-resolve-once-per-untyped-site.md`.
 - **D3, the rest:** not started. That covers a per-site layout cache for
-  the TRIR attribute ops, the same resolution for the untyped
-  `OpCode::NqpOp` path (including `OpCode::GetBareWord`), and `Array` /
-  `Hash` `$!descriptor`.
+  the attribute ops, and `Array` / `Hash` `$!descriptor`.
 - **D4:** not started.
 
 ## 6. Reproduction
