@@ -477,3 +477,26 @@ must place `vendor/zef` at `<prefix>/share/mutsu/zef` next to `bin/mutsu` and
   `Zef/Service/Shell/tar.rakumod` `extract` (print the `archive`/`-C` it hands
   `tar` — a `.lock` suffix on the archive is the closure-capture leak).
 - Use a **release** build for anything touching populate (debug is minutes).
+
+## Working rules for the two binaries and the distribution
+
+(Moved here from `AGENTS.md`.)
+
+- **Two binaries ship, not one.** `src/main.rs` builds `mutsu` (the interpreter); `src/bin/mzef.rs`
+  builds `mzef` (the bundled package manager). When you add a `[[bin]]`/test or touch CLI wiring,
+  remember both — `cargo build` and `make test` build/exercise both, and `tests/mzef_shim.rs` pins
+  the shim's path resolution.
+- **`vendor/zef/` is vendored upstream Zef (Artistic-2.0) — do NOT hand-edit it.** It is a runtime
+  dependency shipped with mutsu (zef is also the compat north star: fix mutsu, not zef). To bump it,
+  re-vendor per `vendor/README.md` (an `rsync` recipe), not by editing files in place.
+- **`mzef` is a thin re-exec shim** (`mutsu -I vendor/zef/lib vendor/zef/bin/zef <args>`). To run zef
+  under mutsu locally, prefer `target/release/mzef <args>`; it resolves the vendored tree
+  exe-relative (or `$MZEF_ZEF_HOME`) and the sibling `mutsu` (`$MZEF_MUTSU_BIN`). The full pipeline
+  tracker is `docs/mzef-install-pipeline.md`.
+- **Distribution** (`.github/workflows/release.yml` on `v*` tags, `docker.yml` to GHCR): the release
+  tarball and the container both place `bin/mutsu`, `bin/mzef`, and the zef tree at
+  `share/mutsu/zef` so `mzef` finds it via `../share/mutsu/zef` with zero config (mise installs both
+  onto PATH). **All four targets (Linux x64/arm64, macOS x64/arm64) are required.** macOS arm64 was
+  `continue-on-error` until the vendored-libffi bump (ADR-0012) fixed its Mach-O CFI build; that was
+  verified green via a `workflow_dispatch` run, so `optional` was dropped and a macOS regression now
+  fails the release loudly. Do not "fix" macOS by weakening the Linux path.

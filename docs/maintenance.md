@@ -10,7 +10,8 @@ deliberate, periodic refresh:
 
 Neither updates itself. This document is the checklist for keeping them current.
 It complements [`docs/vendoring.md`](vendoring.md) (the mechanics of the vendored
-trees) and the AGENTS.md "mzef … / Distribution" notes (the zef tree).
+trees) and the "Working rules" section of
+[`docs/mzef-install-pipeline.md`](mzef-install-pipeline.md) (the zef tree).
 
 ## Suggested cadence
 

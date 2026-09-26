@@ -135,8 +135,8 @@ moves:
   **the unit of work is one named remainder, not the issue.**
 - **A single deep problem** has no design yet — one bug or feature too big for a PR. Here the first
   deliverable is usually a `Proposed` ADR, or a narrower issue recording what you learned, **not
-  code**. Shipping an undersized fix to look productive is the failure mode; `AGENTS.md`'s "Working
-  on complex features" governs once a design exists.
+  code**. Shipping an undersized fix to look productive is the failure mode; `AGENTS.md`'s "Refactor
+  boldly" governs once a design exists.
 
 ### The slice loop for a campaign issue
 

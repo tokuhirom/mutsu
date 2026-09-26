@@ -122,7 +122,7 @@ move the original expression directly). After a batch in one file:
   signal, not a false positive in the lint, and means that specific hit should be left alone).
 - Re-run the clippy command scoped to that file to confirm the warnings are gone:
   `cargo clippy --all-targets -- -W clippy::redundant_clone 2>&1 | grep -A2 '<path>'`.
-- `cargo fmt` and `make lint` before committing, per AGENTS.md's Conventions section — a
+- `cargo fmt` and `make lint` before committing, per AGENTS.md's "Before publishing a PR" — a
   mechanical clone removal can still touch formatting/import warnings across the four lint
   configurations `make lint` gates on.
 - This is Rust-internal code quality work, not a Raku-compat change, so it does not need a new

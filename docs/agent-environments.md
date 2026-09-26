@@ -73,7 +73,7 @@ Two consequences worth spelling out:
   does. Remotely there is no shell command to block on, so use `subscribe_pr_activity` and let CI
   results and review comments wake the session. Re-reading `pull_request_read`/`get_check_runs` on a
   run that is still going buys nothing and is subject to the 30-minute polling floor in
-  [AGENTS.md](../AGENTS.md#waiting-for-a-long-job--the-30-minute-polling-floor); the same floor
+  [AGENTS.md](../AGENTS.md#waiting-for-long-jobs--the-30-minute-polling-floor); the same floor
   governs `cargo build`, `make test` and `make roast`, which is where the cost actually is.
 
 ## Provisioning: rust, raku, the native C libraries and the sandbox
@@ -110,7 +110,7 @@ grows a `rust-toolchain.toml`.
 
 ## Cores, parallelism and sub-agents
 
-The concurrency numbers in `AGENTS.md` ("at most 3 concurrent agents that build") were measured on
+The concurrency numbers in `AGENTS.md` and the `issue-backlog-pipeline` skill ("at most 3 concurrent agents that build") were measured on
 the 12-core local box. **They are a ratio, not a constant** — on a 4-core remote container, roughly
 one building agent is the equivalent, and running the batch inline in the main session is usually
 better than paying for worktree copies of `target/`. Check `nproc`, `uptime` and `pgrep -c -x rustc`
