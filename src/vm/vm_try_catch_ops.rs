@@ -133,10 +133,8 @@ impl Interpreter {
             let token = self.catch_handler_seq;
             self.push_control_handler(
                 code,
-                control_begin,
-                end,
-                resume_safe,
-                control_resume_capable,
+                (control_begin, end),
+                (resume_safe, control_resume_capable),
                 control_handles_take,
                 token,
                 compiled_fns,
@@ -510,10 +508,8 @@ impl Interpreter {
                             if let Some(token) = control_token {
                                 self.push_control_handler(
                                     code,
-                                    control_begin,
-                                    end,
-                                    resume_safe,
-                                    control_resume_capable,
+                                    (control_begin, end),
+                                    (resume_safe, control_resume_capable),
                                     control_handles_take,
                                     token,
                                     compiled_fns,

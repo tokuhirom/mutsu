@@ -49,18 +49,19 @@ impl Interpreter {
     // Cost: O(1), except an inline-eligible handler deep-clones the enclosing
     // `CompiledCode` (c = ops + constants) and `CompiledFns` (f entries): O(c + f).
     // Rakudo: O(1) -- see #9172.
-    #[allow(clippy::too_many_arguments)]
+    /// `range` is the handler's `control_begin..end` op range; `resume` is
+    /// `(resume_safe, resume_capable)` from the region's `OpCode::TryCatch`.
     pub(crate) fn push_control_handler(
         &mut self,
         code: &CompiledCode,
-        control_begin: usize,
-        end: usize,
-        resume_safe: bool,
-        resume_capable: bool,
+        range: (usize, usize),
+        resume: (bool, bool),
         handles_take: bool,
         token: u64,
         compiled_fns: &CompiledFns,
     ) {
+        let (control_begin, end) = range;
+        let (resume_safe, resume_capable) = resume;
         self.control_handler_depth += 1;
         let handler = (resume_safe || resume_capable).then(|| crate::vm::ControlHandlerCode {
             code: std::sync::Arc::new(code.clone()),
