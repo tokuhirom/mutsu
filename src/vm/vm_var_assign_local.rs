@@ -1258,13 +1258,16 @@ impl Interpreter {
             self.pending_sigilless_store = None;
             return true;
         }
-        crate::env::sigilless_readonly_keys_possible()
+        // A constant term is marked the same way through the readonly set
+        // (`constant term:<$x> = Obj.new`, #9566).
+        (crate::env::sigilless_readonly_keys_possible()
             && matches!(
                 self.env()
                     .get_sym(crate::runtime::sigilless_readonly_key(name))
                     .map(Value::view),
                 Some(ValueView::Bool(true))
-            )
+            ))
+            || self.readonly_kind(name) == Some(crate::ast::ReadonlyKind::ImmutableValue)
     }
 
     /// Pop the RHS and route it through the tied instance's `STORE`, returning

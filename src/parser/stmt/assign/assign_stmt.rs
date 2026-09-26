@@ -3,6 +3,17 @@ use super::*;
 pub(in crate::parser) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
     let sigil = input.as_bytes().first().copied().unwrap_or(0);
     let is_sigiled = sigil == b'$' || sigil == b'@' || sigil == b'%' || sigil == b'&';
+    // A term whose own name carries the sigil (`constant term:<$bar> = ...`)
+    // is not a variable: leave its assignment to the expression grammar,
+    // which reads `$bar` as that term (#9566).
+    if is_sigiled
+        && matches!(
+            crate::parser::stmt::simple::match_user_declared_term_symbol(input),
+            Some((_, _, false))
+        )
+    {
+        return Err(PError::expected("assignment"));
+    }
 
     // Try bare identifier assignment for sigilless variables: a = expr
     if !is_sigiled {
@@ -307,6 +318,18 @@ pub(in crate::parser) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
         // The loose word-logicals bind looser than the compound assignment:
         // `$x += 5 and 6` is `($x += 5) and 6`. Parse the RHS no-word-logical and
         // re-attach a trailing tail below.
+        // Unless the base operator is as loose as the comma (`,=`), a
+        // compound assignment has item-assignment precedence: `$x += 1, 2` is
+        // `($x += 1), 2`. That is a comma-list statement, which the
+        // expression grammar builds (#9566) -- so decline here.
+        if !matches!(op, CompoundAssignOp::Comma)
+            && let Ok((after_item, _)) = crate::parser::expr::item_level_expr(rest)
+            && let Ok((after_ws, _)) = ws(after_item)
+            && after_ws.starts_with(',')
+            && !after_ws.starts_with(",,")
+        {
+            return Err(PError::expected("assignment"));
+        }
         let (rest, rhs) =
             parse_assign_expr_or_comma_no_word_logical(rest).map_err(|err| PError {
                 messages: merge_expected_messages(

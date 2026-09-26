@@ -57,7 +57,8 @@ pub(crate) use feed::{feed_leftmost_operand_mut, lower_feed_node};
 // ---- Internal cross-submodule helper re-exports (so `use super::*` reaches them) ----
 pub(crate) use assign::{
     assign_to_target_expr, build_compound_assign_target_expr, list_lvalue_assign_expr,
-    parse_assignment_rhs_mode, single_target_list_lvalue_expr, unwrap_grouped_lvalue,
+    parse_assignment_rhs_mode, parse_compound_assign_rhs_mode, single_target_list_lvalue_expr,
+    unwrap_grouped_lvalue,
 };
 pub(crate) use chain_cmp::{make_chain_cmp, wrap_smartmatch_rhs};
 pub(crate) use comparison::comparison_expr_mode;

@@ -329,6 +329,12 @@ pub(in crate::parser) fn expression_no_sequence(input: &str) -> PResult<'_, Expr
 /// a Whatever-curried expression becomes a lambda, and an invoked curried
 /// chain (`*.split("-").("a-b-c").List`) wraps only the callable part so the
 /// invocation still runs (`try_wrap_whatevercode_call_chain`).
+/// Parse one item-level expression: everything tighter than the comma (and
+/// the list-infix operators), item assignment included.
+pub(in crate::parser) fn item_level_expr(input: &str) -> PResult<'_, Expr> {
+    precedence::item_expr(input, operators::ExprMode::Full)
+}
+
 pub(in crate::parser) fn wrap_finished_expr(expr: Expr) -> Expr {
     let expr = wrap_composition_operands(expr);
     if !should_wrap_whatevercode(&expr) {

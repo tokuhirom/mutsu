@@ -493,6 +493,25 @@ pub(crate) fn single_target_list_lvalue_expr(items: Vec<Expr>, rhs: Expr) -> Opt
     })
 }
 
+/// The right-hand side of a compound assignment `op=` in expression position.
+///
+/// Rakudo gives the assignment metaop item-assignment precedence -- tighter
+/// than the comma -- whenever its base operator is tighter than the comma, so
+/// `($x += 5, 9)` is `(($x += 5), 9)`, `f($x //= 1, 2)` passes two arguments,
+/// and `@a += 5, 9` adds 5, whatever the lvalue's sigil. Only a base operator
+/// as loose as the comma itself (`,=`) takes the comma list as its operand.
+pub(crate) fn parse_compound_assign_rhs_mode(
+    input: &str,
+    comma_level: bool,
+    mode: ExprMode,
+) -> PResult<'_, Expr> {
+    if comma_level {
+        parse_assignment_rhs_mode(input, mode)
+    } else {
+        item_expr(input, mode)
+    }
+}
+
 pub(crate) fn parse_assignment_rhs_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
     // Parse each comma element at the *list-infix* level (`list_infix_top`):
     // everything tighter than the comma plus the list-infix operators (`Z`/`X`/
