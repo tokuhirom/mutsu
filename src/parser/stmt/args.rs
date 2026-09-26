@@ -726,6 +726,12 @@ fn parse_single_call_arg_mode(input: &str, listop: bool) -> PResult<'_, CallArg>
         return Ok((rest, CallArg::Positional(seq)));
     }
 
+    // An assignment to a sigilless term (`is(foo -= 1, 255, ...)`) is one
+    // argument whose RHS stops at the comma (#9551).
+    if let Some((rest, expr)) = crate::parser::primary::regex::sigilless_item_assign_arg(input) {
+        return Ok((rest, CallArg::Positional(expr)));
+    }
+
     // Positional argument — try assignment expression first ($x = expr).
     // But do not consume a prefix before a fat-arrow chain (e.g. `2 => "x" => {...}`).
     // In listop (no-paren) context, parse at list-prefix precedence so the loose

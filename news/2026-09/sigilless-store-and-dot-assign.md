@@ -21,6 +21,15 @@ term is a variable, not a type object, so it now parses like `$x.=meth`.
 `wrap_dot_assign` gives it the same bare storage name that `foo += 1` already
 writes back to.
 
+The same argument list also exposed a third gap. The full expression grammar
+gives a compound assignment a *list* RHS, so `is(foo -= 1, 255, 'msg')` parsed
+as `is(foo -= (1, 255, 'msg'))`: one argument. The `$x` form never hit this,
+because the call-argument parser tries `try_parse_assign_expr` first and that
+path uses item precedence, but it only knows sigiled targets. An argument that
+starts with a sigilless term now parses the way a listop argument does
+(`call_arg_expr`: item assignment, with a comma-blind RHS), in both the
+parenthesized and the statement-call argument parsers.
+
 **Runtime.** Assigning to a sigilless name bound to a non-container raised
 "Cannot modify an immutable value". Rakudo's assignment falls back to calling
 `.STORE` on a target that is not a `Scalar`, so an object with a user `STORE`

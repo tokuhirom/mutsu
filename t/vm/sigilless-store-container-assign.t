@@ -5,7 +5,7 @@ use Test;
 # target), and `name.=meth` on a sigilless name parses as a call argument
 # (#9551; FixedInt's `is(foo.=ror(2), 131, ...)`).
 
-plan 10;
+plan 12;
 
 class Fixed {
     has $!var handles <Str Numeric gist> = 0;
@@ -33,3 +33,7 @@ my $c = -3;
 my \alias = $c;
 is (alias.=abs), 3, '.= on a sigilless alias of a container, as an expression';
 is $c, 3, '... writes through to the aliased container';
+
+my \bar = Fixed.new;
+is f(bar -= 1, 255, 'm'), '255,255,m', 'a compound assignment argument stops at the comma';
+is f(bar = 3, 4), '2', 'a plain assignment argument is list assignment (STORE gets the list)';
