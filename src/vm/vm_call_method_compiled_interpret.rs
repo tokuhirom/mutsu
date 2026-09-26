@@ -206,6 +206,14 @@ impl Interpreter {
             self.method_dispatch_pure = true;
             return result;
         }
+        // `IO::Notification.watch-path` (#9586): starts a watcher thread and
+        // returns its live Supply; reads only the VM-owned cwd.
+        if let Some(class_name) = package_sym
+            && let Some(result) = self.try_io_notification_class_method(class_name, method, &args)
+        {
+            self.method_dispatch_pure = true;
+            return result;
+        }
         if let ValueView::Instance { class_name, .. } = target.view() {
             let class = class_name.as_str();
             // Interpreter-native pure-handle IO dispatch (PLAN.md ③ native IO PR-C/PR-D):
@@ -319,6 +327,11 @@ impl Interpreter {
                 && let ValueView::Instance { attributes, .. } = target.view()
                 && let Some(result) = self.try_io_path_comb(&attributes.as_map(), method, &args)
             {
+                return result;
+            }
+            // `IO::Path.watch` and `IO::Notification::Change.IO`/`.gist` (#9586).
+            // Single impls shared with the interpreter's native-class dispatch.
+            if let Some(result) = self.try_io_notification_instance_method(&target, method) {
                 return result;
             }
             // Array-subclass instance delegation: when the class inherits from

@@ -4,6 +4,7 @@ mod canonpath;
 mod helpers;
 mod io_cathandle;
 mod io_handle;
+mod io_notification;
 mod io_path_lexical;
 mod io_path_mutate;
 mod io_path_read;

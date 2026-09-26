@@ -200,6 +200,7 @@ mod vm_for_loop_intrange;
 mod vm_for_loop_lazy;
 mod vm_given_when_ops;
 pub(crate) mod vm_handler_snapshot;
+mod vm_hash_key_bind_assign;
 mod vm_hash_subclass_delegate;
 mod vm_helpers;
 mod vm_helpers_junction;

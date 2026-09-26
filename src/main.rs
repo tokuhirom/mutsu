@@ -342,6 +342,12 @@ fn run_main() {
     }
     let e_source = (program_name == "-e").then_some(input.as_str());
     interpreter.set_compiling_options(e_source, &lib_paths, &preload_modules);
+    // `-I` and `MUTSULIB` repositories head `$*REPO`'s chain in search order,
+    // as Rakudo's `-I` and `RAKULIB` do, so `$*REPO.repo-chain` reports them
+    // (a test forwards `$*REPO.repo-chain.map(*.path-spec)` to a child `-I`).
+    for path in lib_paths.iter().rev() {
+        interpreter.chain_repo_in_front(&Interpreter::strip_file_repo_spec(path.clone()));
+    }
     for path in lib_paths {
         interpreter.add_lib_path(path);
     }

@@ -870,6 +870,12 @@ pub struct ContainerCell {
     /// so generic consumers can retain the lvalue without flattening that
     /// operation into a normal cell store.
     quanthash_weight: Mutex<Option<QuantHashWeightRef>>,
+    /// Set on a cell that stands for an element BOUND to a bare value rather
+    /// than to a container (`%h.BIND-KEY($k, 42)`): raku stores the value
+    /// itself there, so a later assignment to that element dies with
+    /// "Cannot assign to an immutable value". The flag lives on the cell so it
+    /// travels with the entry and disappears with it on delete/reassign.
+    readonly: std::sync::atomic::AtomicBool,
 }
 
 #[derive(Debug, Clone)]
@@ -910,7 +916,22 @@ impl ContainerCell {
             value: Mutex::new(value),
             constraint: Mutex::new(None),
             quanthash_weight: Mutex::new(None),
+            readonly: std::sync::atomic::AtomicBool::new(false),
         }
+    }
+
+    /// A cell holding a bare value bound into an element (see `readonly`).
+    pub fn new_readonly(value: Value) -> Self {
+        READONLY_CELL_SEEN.store(true, std::sync::atomic::Ordering::Relaxed);
+        let cell = Self::new(value);
+        cell.readonly
+            .store(true, std::sync::atomic::Ordering::Relaxed);
+        cell
+    }
+
+    /// Whether assignment through this cell must be refused.
+    pub fn is_readonly(&self) -> bool {
+        self.readonly.load(std::sync::atomic::Ordering::Relaxed)
     }
 
     pub fn lock(&self) -> std::sync::LockResult<std::sync::MutexGuard<'_, Value>> {
@@ -920,6 +941,19 @@ impl ContainerCell {
     pub fn get_mut(&mut self) -> std::sync::LockResult<&mut Value> {
         self.value.get_mut()
     }
+}
+
+/// Set once any [`ContainerCell::new_readonly`] cell has been created, so the
+/// hot element-assignment paths skip probing for one in the common program
+/// that never binds a bare value into an element.
+static READONLY_CELL_SEEN: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+/// Whether a read-only element cell may exist anywhere. See
+/// [`READONLY_CELL_SEEN`].
+#[inline]
+pub fn readonly_cells_possible() -> bool {
+    READONLY_CELL_SEEN.load(std::sync::atomic::Ordering::Relaxed)
 }
 
 /// Mark a transient cell yielded by a mutable QuantHash `.values` view.

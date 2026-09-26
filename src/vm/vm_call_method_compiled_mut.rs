@@ -129,6 +129,14 @@ impl Interpreter {
             self.method_dispatch_pure = true;
             return result;
         }
+        // `IO::Notification.watch-path` (#9586): starts a watcher thread and
+        // returns its live Supply; reads only the VM-owned cwd.
+        if let Some(class_name) = package_sym
+            && let Some(result) = self.try_io_notification_class_method(class_name, method, &args)
+        {
+            self.method_dispatch_pure = true;
+            return result;
+        }
         // Native `bless` (mut path twin — `self.bless(...)` has a variable
         // receiver, so it lands here): route straight to the interpreter's
         // single `dispatch_bless` impl, skipping the generic method-dispatch
@@ -258,6 +266,11 @@ impl Interpreter {
                 && let ValueView::Instance { attributes, .. } = target.view()
                 && let Some(result) = self.try_io_path_comb(&attributes.as_map(), method, &args)
             {
+                return result;
+            }
+            // `IO::Path.watch` and `IO::Notification::Change.IO`/`.gist` (#9586).
+            // Single impls shared with the interpreter's native-class dispatch.
+            if let Some(result) = self.try_io_notification_instance_method(&target, method) {
                 return result;
             }
             // A user-defined subclass of a builtin type may override an inherited

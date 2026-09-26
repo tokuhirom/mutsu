@@ -226,9 +226,34 @@ impl Interpreter {
         // doubling the entry and chaining `$*REPO` twice. A path merely present
         // deeper in the chain is still promoted — `use lib` outranks `-I` and
         // `MUTSULIB`.
+        let path = Self::strip_file_repo_spec(path);
         if self.lib_path_is_front(&path) {
             return Ok(());
         }
+        self.chain_repo_in_front(&path);
+        // Prepended, mirroring the `$*REPO` chaining just above: a `use lib` path
+        // takes precedence over `-I`, `MUTSULIB` and the installed repositories.
+        self.prepend_lib_path(path);
+        Ok(())
+    }
+
+    /// A `file#PATH` repository spec names the same CompUnit::Repository::FileSystem
+    /// as the bare `PATH` (Rakudo's `-I`, `RAKULIB` and `use lib` all accept
+    /// both, and `$*REPO.repo-chain.map(*.path-spec)` prints the prefixed form,
+    /// which is how a test forwards its own include path to a child process).
+    // Cost: O(1).
+    pub fn strip_file_repo_spec(spec: String) -> String {
+        match spec.strip_prefix("file#") {
+            Some(path) if !path.is_empty() => path.to_string(),
+            _ => spec,
+        }
+    }
+
+    /// Put the repository a lib spec names at the front of `$*REPO`'s chain:
+    /// an `inst#PREFIX` spec is a CompUnit::Repository::Installation, anything
+    /// else a CompUnit::Repository::FileSystem on that directory.
+    // Cost: O(p), p = length of the path (one canonicalize).
+    pub fn chain_repo_in_front(&mut self, path: &str) {
         // An `inst#PREFIX` spec selects a CompUnit::Repository::Installation as
         // the current `$*REPO`, chained in front of whatever was there before.
         if let Some(prefix) = path.strip_prefix("inst#") {
@@ -241,8 +266,8 @@ impl Interpreter {
             self.env_mut().insert("*REPO".to_string(), repo);
         } else {
             let prev = self.env().get("*REPO").cloned().unwrap_or(Value::NIL);
-            let canonical_prefix = std::fs::canonicalize(&path)
-                .unwrap_or_else(|_| std::path::PathBuf::from(&path))
+            let canonical_prefix = std::fs::canonicalize(path)
+                .unwrap_or_else(|_| std::path::PathBuf::from(path))
                 .to_string_lossy()
                 .to_string();
             let mut attrs = std::collections::HashMap::new();
@@ -259,10 +284,6 @@ impl Interpreter {
                 Value::make_instance(Symbol::intern("CompUnit::Repository::FileSystem"), attrs);
             self.env_mut().insert("*REPO".to_string(), repo);
         }
-        // Prepended, mirroring the `$*REPO` chaining just above: a `use lib` path
-        // takes precedence over `-I`, `MUTSULIB` and the installed repositories.
-        self.prepend_lib_path(path);
-        Ok(())
     }
 
     pub(super) fn exec_register_var_export_op(

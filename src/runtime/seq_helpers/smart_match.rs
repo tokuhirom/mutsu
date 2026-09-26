@@ -148,6 +148,7 @@ impl Interpreter {
     /// atom, not off a `Value`) and has no `Value` to call
     /// `regex_closure_scope` on.
     pub(crate) fn install_env_scope(&mut self, scope: &ValueMap) -> Vec<RegexClosureBinding> {
+        crate::runtime::regex::regex_ltm_memo::note_env_scope_change();
         let saved: Vec<RegexClosureBinding> = scope
             .iter()
             .map(|(k, v)| RegexClosureBinding {
@@ -172,6 +173,7 @@ impl Interpreter {
         saved: Option<Vec<RegexClosureBinding>>,
     ) {
         let Some(saved) = saved else { return };
+        crate::runtime::regex::regex_ltm_memo::note_env_scope_change();
         for b in saved {
             let rebound = self
                 .env

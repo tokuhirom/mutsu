@@ -130,6 +130,11 @@ impl Interpreter {
         cell: &crate::gc::Gc<crate::value::ContainerCell>,
         val: &Value,
     ) -> Result<(), RuntimeError> {
+        // An element bound to a bare value (`%h.BIND-KEY($k, 42)`) has no
+        // container to assign into.
+        if cell.is_readonly() {
+            return Err(RuntimeError::immutable_value());
+        }
         if let Some(c) = crate::value::lookup_cell_constraint(cell)
             && !matches!(c.ty.as_str(), "Any" | "Mu")
             && !val.is_nil()

@@ -191,6 +191,40 @@ impl Interpreter {
         ignore_case: bool,
         subrule_first_only: bool,
     ) -> Vec<(usize, RegexCaptures)> {
+        // #9579: inside a measurement, an argument-less `<subrule>` call is
+        // walked once per position (`regex_ltm_memo`). It opens no grammar
+        // frame under measurement (see below); a defaulted `$*` parameter is
+        // still installed for the walk and torn down after it.
+        if let RegexAtom::Named(name) = atom
+            && LTM_DECLARATIVE_MODE.with(std::cell::Cell::get)
+            && name.spec().arg_exprs.is_empty()
+        {
+            let call = super::regex_ltm_memo::MemoSubruleCall {
+                spec: name.spec(),
+                pos,
+                pkg,
+                first_only: subrule_first_only,
+                ignore_case,
+            };
+            return super::regex_ltm_memo::ltm_memo_subrule_ends(self, call, chars, |interp| {
+                let mut dyn_saved = None;
+                let out = interp.regex_match_atom_all_with_capture_in_pkg_inner(
+                    atom,
+                    chars,
+                    pos,
+                    current_caps,
+                    pkg,
+                    ignore_case,
+                    subrule_first_only,
+                    &mut dyn_saved,
+                    None,
+                );
+                if let Some(saved) = dyn_saved {
+                    interp.restore_subrule_dynamic_params(saved);
+                }
+                out
+            });
+        }
         let mut dyn_saved = None;
         let mut preinstalled_arg_values = None;
         // A named atom is one grammar-rule invocation. Keep its declaration
@@ -743,10 +777,16 @@ impl Interpreter {
                 // loop sound: a body that cannot invoke a named rule cannot
                 // re-enter this key, so no cut-short walk can hide a
                 // left-recursive re-entry (`regex_subrule_lazy`).
+                // A body that does call rules is just as safe when none of
+                // those calls can come back to this rule at this position
+                // (`regex_left_call_graph`, #9579): the seed is then never
+                // consulted by a rule call, whether or not the walk stops early.
                 let mut first_only = subrule_first_only
-                    && candidates.iter().all(|(parsed, _, _)| {
+                    && (candidates.iter().all(|(parsed, _, _)| {
                         super::regex_subrule_lazy::pattern_is_rule_call_free(parsed)
-                    });
+                    }) || (arg_values.is_empty()
+                        && !custom_how
+                        && self.subrule_cannot_left_reenter(spec.lookup_sym, pkg)));
 
                 loop {
                     // Evaluate all candidates' patterns directly (unwrapped).

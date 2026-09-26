@@ -227,6 +227,7 @@ impl Interpreter {
     /// not-yet-started `Proc::Async` instance. No `&self` — the process is only
     /// spawned later, by `.start`. The interpreter's `dispatch_new` arm delegates
     /// here so the native VM fast path is byte-identical.
+    // Cost: O(a), a = command elements after slurpy flattening.
     pub(crate) fn build_native_proc_async_value(
         class_name: Symbol,
         args: &[Value],
@@ -257,7 +258,13 @@ impl Interpreter {
                 // matching Rakudo (`Proc::Async.new("echo", ("x" => 1)).args`
                 // keeps the pair).
                 ValueView::Pair(..) => {}
-                _ => positional.push(arg.clone()),
+                // The command is the slurpy `*@args`, so a List among the
+                // positionals contributes its elements (`'-I' «~« @dirs`,
+                // `|@cmd`, a Seq) exactly as it would bind to any `*@` param.
+                _ => crate::runtime::types::flatten_into_slurpy(
+                    std::slice::from_ref(arg),
+                    &mut positional,
+                ),
             }
         }
         // Proc::Async.new requires at least one positional command element

@@ -443,6 +443,8 @@ impl Interpreter {
                 // this is 0 once the scheduler is idle.
                 Ok(Value::int(state_scheduler::scheduler_loads() as i64))
             }
+            // Cost: O(1), cores = the process CPU count.
+            "max_threads" => Ok(Value::int(crate::runtime::worker_pool::max_threads() as i64)),
             _ => Err(RuntimeError::new(format!(
                 "No native method '{}' on Scheduler",
                 method
