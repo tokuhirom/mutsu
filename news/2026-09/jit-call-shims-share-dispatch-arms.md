@@ -13,6 +13,6 @@ Each opcode's whole per-site behavior now lives in one function in
 `exec_call_method_mut_site`, `exec_return_site` and the `*_taken` jump
 conditions). The dispatch arm only advances `ip`, and the shim is a thin
 `extern "C"` adapter that maps the result to a status, so the two cannot
-diverge again. `t/vm/codegen/jit-call-shims-share-dispatch-arms.t` compares
+diverge again. `t/vm/codegen/jit-call-shims-on-off-parity.t` compares
 JIT-on and JIT-off output for `use fatal` arguments and a call-heavy program
 (#9452).
