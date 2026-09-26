@@ -128,6 +128,15 @@ impl Interpreter {
         &self.routine_stack
     }
 
+    /// An immutable snapshot of the routine stack (see
+    /// [`super::routine_stack::RoutineStack::snapshot`]).
+    // Cost: O(1) amortized.
+    pub(crate) fn routine_stack_snapshot(
+        &self,
+    ) -> Option<std::sync::Arc<super::routine_stack::FrameNode>> {
+        self.routine_stack.snapshot()
+    }
+
     /// Package that owns the lexical context of a private-method call.
     ///
     /// A top-level sub declared in a `unit class` runs with a `GLOBAL` runtime

@@ -183,6 +183,8 @@ mod vm_core_helpers;
 mod vm_data_io_ops;
 pub(crate) use vm_data_io_ops::OutputKind;
 mod vm_attr_share;
+mod vm_backtrace;
+mod vm_backtrace_lazy;
 mod vm_closure_build;
 mod vm_data_ops;
 mod vm_data_push_ops;

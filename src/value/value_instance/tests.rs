@@ -129,3 +129,73 @@ fn delta_commit_survives_real_concurrency() {
         }
     }
 }
+
+/// A lazy source that counts how often it is asked.
+#[derive(Debug, Default)]
+struct CountingSource(std::sync::atomic::AtomicUsize);
+
+impl super::super::lazy_attrs::LazyAttrSource for CountingSource {
+    fn materialize(&self) -> Vec<(&'static str, Value)> {
+        self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        vec![("lazy", Value::int(7)), ("eager", Value::int(0))]
+    }
+}
+
+fn lazy_attrs(source: &Arc<CountingSource>) -> InstanceAttrs {
+    let mut map = AttrMap::new();
+    map.insert("eager", Value::int(1));
+    InstanceAttrs::new_lazy(Symbol::intern("T"), map, 2, source.clone())
+}
+
+fn calls(source: &Arc<CountingSource>) -> usize {
+    source.0.load(std::sync::atomic::Ordering::SeqCst)
+}
+
+/// The deferred attributes appear on first access, once, and never
+/// overwrite an attribute the object was built with.
+#[test]
+fn lazy_attributes_materialize_once_on_first_read() {
+    let source = Arc::new(CountingSource::default());
+    let obj = lazy_attrs(&source);
+    assert_eq!(calls(&source), 0);
+    // The GC's raw view does not materialize.
+    assert!(obj.as_map_raw().get("lazy").is_none());
+    assert_eq!(calls(&source), 0);
+    assert_eq!(
+        obj.as_map().get("lazy").map(|v| v.to_string_value()),
+        Some("7".into())
+    );
+    assert_eq!(
+        obj.as_map().get("eager").map(|v| v.to_string_value()),
+        Some("1".into())
+    );
+    assert!(obj.contains_key("lazy"));
+    assert_eq!(calls(&source), 1);
+}
+
+/// A write before any read still sees the deferred attributes afterwards.
+#[test]
+fn a_write_first_materializes_too() {
+    let source = Arc::new(CountingSource::default());
+    let obj = lazy_attrs(&source);
+    obj.insert("other", Value::int(3));
+    assert_eq!(calls(&source), 1);
+    assert!(obj.as_map().get("lazy").is_some());
+    assert!(obj.as_map().get("other").is_some());
+}
+
+/// An independent copy and a reblessed alias both carry the deferred
+/// attributes.
+#[test]
+fn clone_and_rebless_carry_lazy_attributes() {
+    let source = Arc::new(CountingSource::default());
+    let obj = lazy_attrs(&source);
+    let copy = obj.clone();
+    assert!(copy.as_map().get("lazy").is_some());
+    let source2 = Arc::new(CountingSource::default());
+    let obj2 = lazy_attrs(&source2);
+    let alias = obj2.with_class(Symbol::intern("U"));
+    assert!(alias.as_map().get("lazy").is_some());
+    assert!(obj2.as_map().get("lazy").is_some());
+    assert_eq!(calls(&source2), 1);
+}

@@ -55,10 +55,10 @@ impl Interpreter {
                 // CATCH re-throws what it did not handle, and an implicit wrapper
                 // around a block that merely *contains* a phaser is not a trap
                 // either — only a genuine `try` swallows.
-                let err_val = e.exception_value_with_backtrace(
+                let err_val = e.exception_value_with_backtrace(|| {
                     e.backtrace()
-                        .map(|bt| Self::backtrace_value_from_string_with_runtime(bt, true)),
-                );
+                        .map(|bt| Self::backtrace_value_from_string_with_runtime(bt, true))
+                });
                 self.env_mut().insert("!".to_string(), err_val);
                 self.stack.truncate(saved_depth);
                 if explicit_catch || !traps {
@@ -130,12 +130,11 @@ impl Interpreter {
             .exception
             .as_deref()
             .is_some_and(|ex| self.type_matches_value("X::Comp", ex));
-        let bt_value = match e.backtrace() {
+        let err_val = e.exception_value_with_backtrace(|| match e.backtrace() {
             Some(bt) => Some(Self::backtrace_value_from_string_with_runtime(bt, !is_comp)),
             None if is_comp => Some(self.build_backtrace_value_with_runtime(false)),
             None => None,
-        };
-        let err_val = e.exception_value_with_backtrace(bt_value);
+        });
         let saved_topic = self.env().get("_").cloned();
         // Per Raku semantics `$!` is only *updated* to the exception when it
         // propagates out of the `try` unhandled (swallowed by the implicit

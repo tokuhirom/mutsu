@@ -66,7 +66,7 @@ impl Clone for InstanceAttrs {
     /// share the cell — sharing flows through `crate::gc::Gc<InstanceAttrs>`. The copy does
     /// not participate in DESTROY refcounting (`queue_destroy = false`).
     fn clone(&self) -> Self {
-        let mut map = read_attrs(&self.attributes).clone();
+        let mut map = read_attrs(self.cell()).clone();
         // Snapshot any `ContainerRef`-promoted slot (a `:=`-bound attribute):
         // an independent copy must not alias the original's attribute cell.
         // Likewise detach Array/Hash attribute values: element mutations write
@@ -88,9 +88,13 @@ impl Clone for InstanceAttrs {
             // user-`WHICH` identity is the same string — but in its own cell,
             // since the copy is a separate object whose later mutations must
             // not retag the original.
-            which_memo: Arc::new(RwLock::new(self.which_memo())),
+            side: Arc::new(RwLock::new(super::lazy_attrs::InstanceSide {
+                which: self.which_memo(),
+                lazy: None,
+            })),
             id: self.id,
             queue_destroy: false,
+            lazy_pending: std::sync::atomic::AtomicBool::new(false),
             finalized: std::sync::atomic::AtomicBool::new(false),
         }
     }
@@ -117,11 +121,68 @@ impl InstanceAttrs {
         Self {
             class_name: std::sync::atomic::AtomicU32::new(class_name.raw()),
             attributes: cell,
-            which_memo: Arc::new(RwLock::new(None)),
+            side: Arc::new(RwLock::new(Default::default())),
             id,
             queue_destroy,
+            lazy_pending: std::sync::atomic::AtomicBool::new(false),
             finalized: std::sync::atomic::AtomicBool::new(false),
         }
+    }
+
+    /// [`Self::new`] for an object whose `source` attributes are computed on
+    /// first access (see `lazy_attrs.rs`).
+    pub(crate) fn new_lazy(
+        class_name: Symbol,
+        attributes: AttrMap,
+        id: u64,
+        source: Arc<dyn super::lazy_attrs::LazyAttrSource>,
+    ) -> Self {
+        let mut attrs = Self::new(class_name, attributes, id, true);
+        attrs.side = Arc::new(RwLock::new(super::lazy_attrs::InstanceSide {
+            which: None,
+            lazy: Some(source),
+        }));
+        attrs.lazy_pending = std::sync::atomic::AtomicBool::new(true);
+        attrs
+    }
+
+    /// The attribute cell, with any lazy attributes materialized into it. Every
+    /// access to the attribute map goes through here, so the deferred
+    /// attributes are indistinguishable from eagerly built ones.
+    // Cost: O(1) once materialized; the first access costs the source's
+    // `materialize`.
+    #[inline]
+    fn cell(&self) -> &AttrCell {
+        if self.lazy_pending.load(std::sync::atomic::Ordering::Acquire) {
+            self.materialize_lazy();
+        }
+        &self.attributes
+    }
+
+    /// Move the lazy source's attributes into the cell. The side lock is held
+    /// across the insertion, so a concurrent reader that finds the flag still
+    /// set waits here instead of reading the map half-filled.
+    #[cold]
+    fn materialize_lazy(&self) {
+        let Ok(mut side) = self.side.write() else {
+            return;
+        };
+        if let Some(source) = side.lazy.take() {
+            let entries = source.materialize();
+            let mut map = write_attrs(&self.attributes);
+            for (key, value) in entries {
+                map.entry(key).or_insert(value);
+            }
+        }
+        self.lazy_pending
+            .store(false, std::sync::atomic::Ordering::Release);
+    }
+
+    /// The attribute map as it stands, WITHOUT materializing lazy attributes:
+    /// for the GC, which must not allocate while it traces. A pending source
+    /// holds no `Value`, so the map is the object's whole edge set.
+    pub(crate) fn as_map_raw(&self) -> AttrReadGuard<'_> {
+        read_attrs(&self.attributes)
     }
 
     /// Build an `InstanceAttrs` that shares an existing cell (used by the cell
@@ -129,7 +190,7 @@ impl InstanceAttrs {
     fn from_cell(
         class_name: Symbol,
         cell: AttrCell,
-        which_memo: Arc<RwLock<Option<Arc<str>>>>,
+        side: Arc<RwLock<super::lazy_attrs::InstanceSide>>,
         id: u64,
         queue_destroy: bool,
     ) -> Self {
@@ -139,9 +200,11 @@ impl InstanceAttrs {
         Self {
             class_name: std::sync::atomic::AtomicU32::new(class_name.raw()),
             attributes: cell,
-            which_memo,
+            side,
             id,
             queue_destroy,
+            // An alias built after its source materialized has nothing to do.
+            lazy_pending: std::sync::atomic::AtomicBool::new(false),
             finalized: std::sync::atomic::AtomicBool::new(false),
         }
     }
@@ -149,14 +212,14 @@ impl InstanceAttrs {
     /// The cached user-`WHICH` identity of this object, if the interpreter has
     /// deposited one (see the `which_memo` field doc).
     pub(crate) fn which_memo(&self) -> Option<Arc<str>> {
-        self.which_memo.read().ok().and_then(|m| m.clone())
+        self.side.read().ok().and_then(|m| m.which.clone())
     }
 
     /// Deposit (or refresh) this object's user-`WHICH` identity. Called only by
     /// the interpreter, which is the only layer that can run the user's method.
     pub(crate) fn set_which_memo(&self, which: Arc<str>) {
-        if let Ok(mut slot) = self.which_memo.write() {
-            *slot = Some(which);
+        if let Ok(mut slot) = self.side.write() {
+            slot.which = Some(which);
         }
     }
 
@@ -183,7 +246,7 @@ impl InstanceAttrs {
 
     /// Take a read lock over the attribute map. The guard derefs to `&HashMap`.
     pub(crate) fn as_map(&self) -> AttrReadGuard<'_> {
-        read_attrs(&self.attributes)
+        read_attrs(self.cell())
     }
 
     /// An owned clone of the backing map.
@@ -202,7 +265,7 @@ impl InstanceAttrs {
 
     /// In-place insert through the shared cell (visible to all aliases).
     pub(crate) fn insert<K: AttrKey>(&self, key: K, value: Value) -> Option<Value> {
-        write_attrs(&self.attributes).insert(key, value)
+        write_attrs(self.cell()).insert(key, value)
     }
 
     /// Store (`Some`) or remove (`None`) several keys under one write lock.
@@ -210,7 +273,7 @@ impl InstanceAttrs {
     /// [`Self::commit_attrs`] queues one, rather than self-deadlocking.
     // Cost: O(k), k = keys written.
     pub(crate) fn write_keys(&self, ops: Vec<(Symbol, Option<Value>)>) {
-        write_cell_respecting_reads(&self.attributes, PendingWrite::Delta(ops));
+        write_cell_respecting_reads(self.cell(), PendingWrite::Delta(ops));
     }
 
     /// Drop every attribute (breaking any `Gc` edge out of this object) — the
@@ -219,6 +282,13 @@ impl InstanceAttrs {
     /// (Stacked-Borrows-sound) write.
     pub(crate) fn clear_gc_edges(&self) {
         write_attrs(&self.attributes).clear();
+        // A pending source holds no edges; dropping it keeps a severed object
+        // from growing attributes back.
+        if let Ok(mut side) = self.side.write() {
+            side.lazy = None;
+        }
+        self.lazy_pending
+            .store(false, std::sync::atomic::Ordering::Release);
     }
 
     /// Mutate one attribute in place under the write lock, returning the
@@ -229,14 +299,14 @@ impl InstanceAttrs {
         key: K,
         f: impl FnOnce(&mut Value) -> R,
     ) -> Option<R> {
-        let mut guard = write_attrs(&self.attributes);
+        let mut guard = write_attrs(self.cell());
         guard.get_mut(key).map(f)
     }
 
     /// Insert `value` only if `key` is absent (the `entry(..).or_insert(..)`
     /// idiom), in place under the write lock.
     pub(crate) fn insert_if_absent<K: AttrKey>(&self, key: K, value: Value) {
-        write_attrs(&self.attributes).entry(key).or_insert(value);
+        write_attrs(self.cell()).entry(key).or_insert(value);
     }
 
     /// Assign `value` at `key` the way [`AttrMap::insert_through`] does (through
@@ -248,14 +318,14 @@ impl InstanceAttrs {
     /// back -- O(attributes) per bind for a one-key write (#9134).
     // Cost: O(1).
     pub(crate) fn bind_attr_through<K: AttrKey + Copy>(&self, key: K, value: Value) {
-        let addr = cell_addr(&self.attributes);
+        let addr = cell_addr(self.cell());
         if HELD_READ_CELLS.with(|c| c.borrow().contains(&addr)) {
             let mut map = self.to_map();
             map.insert_through(key, value);
             self.commit_attrs(map);
             return;
         }
-        write_attrs(&self.attributes).insert_through(key, value);
+        write_attrs(self.cell()).insert_through(key, value);
     }
 
     /// Store `value` in declared slot `slot` of an instance laid out by layout
@@ -271,7 +341,7 @@ impl InstanceAttrs {
         slot: usize,
         value: Value,
     ) -> Result<Symbol, Value> {
-        let mut guard = write_attrs(&self.attributes);
+        let mut guard = write_attrs(self.cell());
         let Some(key) = guard
             .layout()
             .filter(|l| l.id() == layout_id)
@@ -310,7 +380,7 @@ impl InstanceAttrs {
     /// observing the attribute. Replacing the slot instead would silently
     /// disconnect every one of them at the first internal write.
     pub(crate) fn store_through_container<K: AttrKey + Copy>(&self, key: K, value: Value) {
-        let mut guard = write_attrs(&self.attributes);
+        let mut guard = write_attrs(self.cell());
         match guard.get_mut(key) {
             Some(slot) => {
                 if let ValueView::ContainerRef(cell) = slot.view()
@@ -335,7 +405,7 @@ impl InstanceAttrs {
     /// accessor result container identity: writes through the accessor and reads
     /// through the bound alias observe the same slot.
     pub(crate) fn promote_attr_to_container<K: AttrKey + Copy>(&self, key: K) -> Value {
-        let mut guard = write_attrs(&self.attributes);
+        let mut guard = write_attrs(self.cell());
         match guard.get_mut(key) {
             Some(slot) => {
                 // An itemized cell is a `$obj.w = @src` VALUE share (Slice 2e,
@@ -378,7 +448,7 @@ impl InstanceAttrs {
     /// (`overwrite_instance_bindings_by_identity` / `update_instance_cell`), which
     /// computed an updated `HashMap` and looked the cell up by id.
     pub(crate) fn commit_attrs(&self, map: AttrMap) {
-        write_cell_respecting_reads(&self.attributes, PendingWrite::Replace(map));
+        write_cell_respecting_reads(self.cell(), PendingWrite::Replace(map));
     }
 
     /// Commit only what actually changed, instead of replacing the whole map.
@@ -429,7 +499,7 @@ impl InstanceAttrs {
         if ops.is_empty() {
             return;
         }
-        write_cell_respecting_reads(&self.attributes, PendingWrite::Delta(ops));
+        write_cell_respecting_reads(self.cell(), PendingWrite::Delta(ops));
     }
 
     /// Phase 3 cell-CAS: atomically compare-and-swap one attribute under a
@@ -444,7 +514,7 @@ impl InstanceAttrs {
         matches: impl FnOnce(&Value) -> bool,
         new: Value,
     ) -> (Value, bool) {
-        let mut guard = write_attrs(&self.attributes);
+        let mut guard = write_attrs(self.cell());
         let current = guard.get(key).cloned().unwrap_or(Value::Nil);
         let swapped = matches(&current);
         if swapped {
@@ -461,7 +531,7 @@ impl InstanceAttrs {
         key: K,
         f: impl FnOnce(&Value) -> Result<Value, RuntimeError>,
     ) -> Result<(Value, Value), RuntimeError> {
-        let mut guard = write_attrs(&self.attributes);
+        let mut guard = write_attrs(self.cell());
         let current = guard.get(key).cloned().unwrap_or(Value::Nil);
         let next = f(&current)?;
         guard.insert(key, next.clone());
@@ -474,8 +544,8 @@ impl InstanceAttrs {
     pub(super) fn with_class(&self, class_name: Symbol) -> Self {
         Self::from_cell(
             class_name,
-            Arc::clone(&self.attributes),
-            Arc::clone(&self.which_memo),
+            Arc::clone(self.cell()),
+            Arc::clone(&self.side),
             self.id,
             self.queue_destroy,
         )
@@ -487,7 +557,7 @@ impl PartialEq for InstanceAttrs {
         if Arc::ptr_eq(&self.attributes, &other.attributes) {
             return true;
         }
-        *read_attrs(&self.attributes) == *read_attrs(&other.attributes)
+        *read_attrs(self.cell()) == *read_attrs(other.cell())
     }
 }
 

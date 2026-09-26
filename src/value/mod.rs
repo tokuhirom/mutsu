@@ -521,6 +521,7 @@ mod guards;
 pub mod hash_key;
 /// `Hash for Value`: the declaration-identity hash the AST fingerprints use.
 mod identity_hash;
+pub(crate) mod lazy_attrs;
 pub mod user_key_map;
 pub use hash_key::HashKey;
 pub use user_key_map::ValueMap;
@@ -626,6 +627,7 @@ pub(crate) use display::note_user_declared_type_name;
 pub(crate) use display::user_facing_type_name;
 pub(crate) use display::with_quanthash_render_guard;
 pub use display::{format_complex, tclc_str, wordcase_segments, wordcase_str};
+pub(crate) use error::LazyBacktraceText;
 pub(crate) use error::expected_type_object;
 pub use error::{CatchInlineVerdict, Control, RuntimeError, RuntimeErrorCode};
 // SubData is re-exported so callers can destructure Value::Sub(data)
@@ -836,9 +838,16 @@ pub(crate) struct InstanceAttrs {
     /// Shared through the same `Arc` as the attribute cell (see
     /// `InstanceAttrs::with_class`), so a reblessed alias of the same object
     /// sees the same identity.
-    which_memo: Arc<RwLock<Option<Arc<str>>>>,
+    ///
+    /// The same shared side state holds the object's not-yet-materialized
+    /// attributes, if it was built with a [`lazy_attrs::LazyAttrSource`].
+    side: Arc<RwLock<lazy_attrs::InstanceSide>>,
     id: u64,
     queue_destroy: bool,
+    /// Whether `side` may still hold a lazy attribute source: the cheap test
+    /// every attribute access makes before touching the cell (see
+    /// `InstanceAttrs::cell`). Cleared once the source is materialized.
+    lazy_pending: std::sync::atomic::AtomicBool,
     /// Once-guard for DESTROY queueing: `Trace::finalize` (GC-on refcount
     /// death / cycle reclaim) and Rust `Drop` (GC-off, and the eventual memory
     /// drop of a GC node) funnel into the same `finalize_destroy`; whichever

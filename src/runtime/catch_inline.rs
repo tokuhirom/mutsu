@@ -190,10 +190,10 @@ impl Interpreter {
         fns: &CompiledFns,
         err: RuntimeError,
     ) -> Result<(), (CatchInlineVerdict, RuntimeError)> {
-        let bt_value = err
-            .backtrace()
-            .map(|bt| Self::backtrace_value_from_string_with_runtime(bt, true));
-        let err_val = err.exception_value_with_backtrace(bt_value);
+        let err_val = err.exception_value_with_backtrace(|| {
+            err.backtrace()
+                .map(|bt| Self::backtrace_value_from_string_with_runtime(bt, true))
+        });
 
         let saved_topic = self.env().get("_").cloned();
         // Per Raku semantics the handler sees its own `$!`, starting out `Nil`:

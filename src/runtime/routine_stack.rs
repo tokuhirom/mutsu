@@ -16,7 +16,52 @@
 //! would recompute it. With `frames` private, the compiler finds every
 //! mutation instead.
 
+//!
+//! It also hands out O(1)-amortized immutable snapshots of itself
+//! ([`RoutineStack::snapshot`]) for a lazily rendered backtrace: a `die`
+//! captures the stack it was thrown from, but only a reader of `.backtrace`
+//! pays for rendering it (#9172).
+
 use super::RoutineFrame;
+use std::cell::RefCell;
+use std::sync::Arc;
+
+/// One frame of an immutable stack snapshot, linked to the frame below it.
+/// Snapshots taken at different depths share their common prefix.
+#[derive(Debug)]
+pub(crate) struct FrameNode {
+    pub(crate) frame: RoutineFrame,
+    pub(crate) parent: Option<Arc<FrameNode>>,
+}
+
+impl FrameNode {
+    /// The frames of the snapshot ending at `top`, outermost first.
+    // Cost: O(s), s = the snapshot's depth.
+    pub(crate) fn frames(top: Option<&Arc<FrameNode>>) -> Vec<RoutineFrame> {
+        let mut frames = Vec::new();
+        let mut node = top;
+        while let Some(n) = node {
+            frames.push(n.frame);
+            node = n.parent.as_ref();
+        }
+        frames.reverse();
+        frames
+    }
+}
+
+impl Drop for FrameNode {
+    /// Unlink iteratively: dropping the last handle on a deep snapshot would
+    /// otherwise recurse once per frame.
+    fn drop(&mut self) {
+        let mut parent = self.parent.take();
+        while let Some(node) = parent {
+            match Arc::try_unwrap(node) {
+                Ok(mut owned) => parent = owned.parent.take(),
+                Err(_) => break,
+            }
+        }
+    }
+}
 
 /// The interpreter's routine/block frame stack.
 #[derive(Debug, Default)]
@@ -27,6 +72,12 @@ pub(crate) struct RoutineStack {
     /// Maintained by the three mutators below, which are the only ways the
     /// `Vec` can change — see the module comment.
     lexical_package_frames: usize,
+    /// Snapshot nodes for a prefix of `frames`: `nodes[i]` is the node of
+    /// `frames[i]`, linked to `nodes[i - 1]`. Built on demand by
+    /// [`Self::snapshot`] and cut back by `pop`/`truncate`, so it never runs
+    /// past `frames` and a node always describes the live frame at its index
+    /// (a frame is never modified in place — there is no `DerefMut`).
+    nodes: RefCell<Vec<Arc<FrameNode>>>,
 }
 
 impl RoutineStack {
@@ -48,6 +99,7 @@ impl RoutineStack {
 
     pub(crate) fn pop(&mut self) -> Option<RoutineFrame> {
         let frame = self.frames.pop()?;
+        self.cut_nodes();
         if frame.lexical_package.is_some() {
             self.lexical_package_frames -= 1;
         }
@@ -68,6 +120,36 @@ impl RoutineStack {
             .count();
         self.lexical_package_frames -= dropped;
         self.frames.truncate(len);
+        self.cut_nodes();
+    }
+
+    /// Drop the snapshot nodes of frames that are no longer live.
+    #[inline]
+    fn cut_nodes(&mut self) {
+        let nodes = self.nodes.get_mut();
+        if nodes.len() > self.frames.len() {
+            nodes.truncate(self.frames.len());
+        }
+    }
+
+    /// An immutable snapshot of the live frames, as the innermost frame's
+    /// node (`None` for an empty stack).
+    ///
+    /// Only the frames pushed since the last snapshot get a node: the prefix
+    /// already built is shared, so each frame is copied at most once per
+    /// lifetime and the cost is charged to its push.
+    // Cost: O(1) amortized (O(k), k = frames pushed since the last snapshot
+    // that are still live).
+    pub(crate) fn snapshot(&self) -> Option<Arc<FrameNode>> {
+        let mut nodes = self.nodes.borrow_mut();
+        for frame in &self.frames[nodes.len()..] {
+            let node = Arc::new(FrameNode {
+                frame: *frame,
+                parent: nodes.last().cloned(),
+            });
+            nodes.push(node);
+        }
+        nodes.last().cloned()
     }
 }
 
@@ -111,6 +193,63 @@ mod tests {
         assert_eq!(stack.any_lexical_package(), by_scan);
         let counted = stack.iter().filter(|f| f.lexical_package.is_some()).count();
         assert_eq!(stack.lexical_package_frames, counted);
+    }
+
+    fn named(name: &str) -> RoutineFrame {
+        RoutineFrame {
+            name: Symbol::intern(name),
+            ..frame(false)
+        }
+    }
+
+    fn names(top: Option<&Arc<FrameNode>>) -> Vec<String> {
+        FrameNode::frames(top)
+            .iter()
+            .map(|f| f.name.resolve())
+            .collect()
+    }
+
+    #[test]
+    fn a_snapshot_is_the_stack_it_was_taken_from() {
+        let mut stack = RoutineStack::default();
+        assert!(stack.snapshot().is_none());
+        stack.push(named("a"));
+        stack.push(named("b"));
+        let first = stack.snapshot();
+        assert_eq!(names(first.as_ref()), ["a", "b"]);
+        // Popping and pushing a different frame must not leak the old node.
+        stack.pop();
+        stack.push(named("c"));
+        stack.push(named("d"));
+        let second = stack.snapshot();
+        assert_eq!(names(second.as_ref()), ["a", "c", "d"]);
+        // The earlier snapshot is immutable.
+        assert_eq!(names(first.as_ref()), ["a", "b"]);
+        // The shared prefix is one node.
+        let a_of = |top: &Option<Arc<FrameNode>>| {
+            let mut n = top.clone().unwrap();
+            while let Some(p) = n.parent.clone() {
+                n = p;
+            }
+            n
+        };
+        assert!(Arc::ptr_eq(&a_of(&first), &a_of(&second)));
+        stack.truncate(1);
+        stack.push(named("e"));
+        assert_eq!(names(stack.snapshot().as_ref()), ["a", "e"]);
+        stack.truncate(0);
+        assert!(stack.snapshot().is_none());
+    }
+
+    #[test]
+    fn dropping_a_deep_snapshot_does_not_recurse() {
+        let mut stack = RoutineStack::default();
+        for _ in 0..200_000 {
+            stack.push(frame(false));
+        }
+        let snap = stack.snapshot();
+        stack.truncate(0);
+        drop(snap);
     }
 
     #[test]

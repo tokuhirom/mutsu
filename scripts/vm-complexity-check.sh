@@ -65,7 +65,9 @@ CASES=(
     # --- per-op cost vs the size of its operand / the program ---------------
     '?@a.grep (Bool of a Seq)|10000|1|my @a = ^NN; my $s;|for ^200 { $s = ?@a.grep(* >= 0) }'
     '@a === @a|20000|1|my @a = ^NN; my $r = 0;|for ^2000 { $r++ if @a === @a }'
-    'die at call depth NN|1000|1|sub r($n) { if $n == 0 { for ^500 { try { die "x" } }; return 0 }; 1 + r($n - 1) };|r(NN)'
+    # The recursion to depth NN is itself O(NN); enough throws keep it a small
+    # share of the body, so a flat per-throw cost reads as a ratio near 1.
+    'die at call depth NN|1000|1|sub r($n) { if $n == 0 { for ^20000 { try { die "x" } }; return 0 }; 1 + r($n - 1) };|r(NN)'
     'method call vs MRO depth|40|1|CLASSES our @objs = C''NN''.new; my $s = 0;|for ^20000 { $s += @objs[0].m }'
     'sub call vs frame locals (control)|500|1|sub f($x) { $x + 1 }; LOCALS my $s = 0;|for ^20000 { $s = f($s) }'
     '@a[5]++ vs array size (control)|100000|1|my @a = ^NN;|for ^20000 { @a[5]++ }'

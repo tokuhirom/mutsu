@@ -700,6 +700,26 @@ impl Value {
         Self::make_instance_with_id(class_name, attributes, id)
     }
 
+    /// [`Self::make_instance`] for an object whose `source` attributes are
+    /// computed on first access (see `lazy_attrs.rs`).
+    pub(crate) fn make_instance_lazy(
+        class_name: Symbol,
+        attributes: impl Into<AttrMap>,
+        source: std::sync::Arc<dyn super::lazy_attrs::LazyAttrSource>,
+    ) -> Self {
+        let id = next_instance_id();
+        Value::from_repr(ValueRepr::Instance {
+            class_name,
+            attributes: crate::gc::Gc::new(InstanceAttrs::new_lazy(
+                class_name,
+                attributes.into(),
+                id,
+                source,
+            )),
+            id,
+        })
+    }
+
     pub(crate) fn make_instance_without_destroy(
         class_name: Symbol,
         attributes: impl Into<AttrMap>,
