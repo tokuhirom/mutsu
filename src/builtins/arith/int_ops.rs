@@ -35,6 +35,11 @@ pub(crate) fn int_operand(v: &Value) -> Value {
             Value::from_bigint(v.to_bigint())
         }
         ValueView::Mixin(inner, _) => int_operand(inner),
+        // A Scalar or element cell is transparent. Its content has to go
+        // through this match -- `runtime::to_int` has no `Bool` arm, so a
+        // hash element holding `True` came out as 0 (`%h<a> +| %h<a>` was 0).
+        ValueView::Scalar(inner) => int_operand(inner),
+        ValueView::ContainerRef(_) => int_operand(&v.deref_container()),
         // A Str (and anything else Cool) numifies first, the way `+$x` does,
         // so `"0x10" +& 3` sees 16.
         ValueView::Str(_) | ValueView::Bool(_) => {
