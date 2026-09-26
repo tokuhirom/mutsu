@@ -502,42 +502,6 @@ impl Interpreter {
         Ok(Some(out))
     }
 
-    /// `fail`/`die`/`throw`/`rethrow`/`resume` require a concrete (instance)
-    /// invocant. Calling one on an Exception *type object* (e.g. `X::NYI.throw`)
-    /// is `X::Parameter::InvalidConcreteness`, not "no such method". Shared by the
-    /// CallMethod and CallMethodMut dispatch paths (a bareword-target method call
-    /// like `X::NYI.throw` compiles to CallMethodMut).
-    pub(super) fn exception_concreteness_error(
-        &self,
-        method: &str,
-        args: &[Value],
-        target: &Value,
-    ) -> Option<RuntimeError> {
-        if !matches!(method, "fail" | "die" | "throw" | "rethrow" | "resume") || !args.is_empty() {
-            return None;
-        }
-        let ValueView::Package(type_name) = target.view() else {
-            return None;
-        };
-        let name = type_name.resolve();
-        let is_exc = name == "Exception"
-            || name.starts_with("X::")
-            || name.starts_with("CX::")
-            || self.class_inherits_from_exception(&name);
-        if is_exc {
-            Some(RuntimeError::parameter_invalid_concreteness(
-                "Exception",
-                &name,
-                method,
-                "",
-                true,
-                true,
-            ))
-        } else {
-            None
-        }
-    }
-
     pub(super) fn exec_call_method_op(
         &mut self,
         code: &CompiledCode,
@@ -1032,10 +996,9 @@ impl Interpreter {
         } else {
             target
         };
-        // `fail`/`die`/`throw`/`rethrow`/`resume` require a concrete (instance)
-        // invocant. Calling one on an Exception *type object* (e.g. `X::NYI.throw`)
-        // is X::Parameter::InvalidConcreteness, not "no such method".
-        if let Some(err) = self.exception_concreteness_error(method, &args, &target) {
+        // A `:D:`-invocant built-in method on a type object (`X::NYI.throw`,
+        // `IO::Path.e`) is X::Parameter::InvalidConcreteness, not "no such method".
+        if let Some(err) = self.type_object_concreteness_error(method, &args, &target) {
             crate::vm::vm_stats::record_dispatch_entry_intercept(
                 "callmethod",
                 "exception-concreteness",
