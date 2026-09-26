@@ -70,8 +70,8 @@ impl Interpreter {
                 .filter_map(|(k, v)| Some((*k, container_contents(v)?.detach_shared_container())))
                 .collect()
         } else {
-            names.sort_unstable();
-            names.dedup();
+            let mut unique = rustc_hash::FxHashSet::default();
+            names.retain(|k| unique.insert(*k));
             names
                 .into_iter()
                 .filter_map(|k| {

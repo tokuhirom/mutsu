@@ -162,6 +162,20 @@ impl Interpreter {
         )
     }
 
+    /// The receiver a gist renderer (`.gist`, `.say`, `.note`) actually
+    /// reads: a long list cut down to its rendered head (see
+    /// [`crate::runtime::utils::gist_head`]), so the Proxy scan and the render
+    /// that follow never walk elements that are not printed. Any other method
+    /// gets `target` back unchanged.
+    // Cost: O(1) for a non-gist method; O(k), k = the rendered head, otherwise.
+    pub(crate) fn gist_receiver(method: &str, target: Value) -> Value {
+        if matches!(method, "gist" | "say" | "note") {
+            crate::runtime::utils::gist_head(&target)
+        } else {
+            target
+        }
+    }
+
     /// Whether `value` is a *container* holding a `Proxy` somewhere inside it,
     /// as opposed to being a `Proxy` itself.
     ///

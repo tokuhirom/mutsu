@@ -5,7 +5,7 @@ use super::*;
 impl Interpreter {
     /// Whether `.first` can read `target`'s items in place (a List or a
     /// reified Seq; a mutable Array goes through its element cells instead).
-    pub(super) fn first_borrows(target: &Value) -> bool {
+    pub(crate) fn first_borrows(target: &Value) -> bool {
         matches!(
             target.descalarize().view(),
             ValueView::Array(..)
@@ -29,6 +29,21 @@ impl Interpreter {
         target: &Value,
         func: Option<Value>,
         from_end: bool,
+    ) -> Result<Option<(usize, Value)>, RuntimeError> {
+        self.find_first_match_chunked_with(target, from_end, |interp, items, from_end| {
+            interp.find_first_match_over_items(func.clone(), items, from_end)
+        })
+    }
+
+    /// [`Interpreter::find_first_match_chunked`] with the per-chunk scan
+    /// supplied by the caller (the VM's native `.first` uses its own matcher).
+    /// `scan` answers the index of the hit within the chunk it is handed.
+    // Cost: O(i + log i) plus the scans, i = elements scanned before the hit.
+    pub(crate) fn find_first_match_chunked_with(
+        &mut self,
+        target: &Value,
+        from_end: bool,
+        mut scan: impl FnMut(&mut Self, &[Value], bool) -> Result<Option<(usize, Value)>, RuntimeError>,
     ) -> Result<Option<(usize, Value)>, RuntimeError> {
         let as_cells = Self::promotable_array_len(target).is_some();
         let current_len = |t: &Value| {
@@ -55,9 +70,7 @@ impl Interpreter {
             while hi > 0 {
                 let lo = hi.saturating_sub(chunk);
                 let items = fetch(target, lo, hi);
-                if let Some((i, v)) =
-                    self.find_first_match_over_items(func.clone(), &items, true)?
-                {
+                if let Some((i, v)) = scan(self, &items, true)? {
                     return Ok(Some((lo + i, v)));
                 }
                 hi = lo.min(current_len(target));
@@ -72,9 +85,7 @@ impl Interpreter {
                 }
                 let hi = lo.saturating_add(chunk).min(len);
                 let items = fetch(target, lo, hi);
-                if let Some((i, v)) =
-                    self.find_first_match_over_items(func.clone(), &items, false)?
-                {
+                if let Some((i, v)) = scan(self, &items, false)? {
                     return Ok(Some((lo + i, v)));
                 }
                 lo = hi;

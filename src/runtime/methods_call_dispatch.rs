@@ -409,6 +409,7 @@ impl Interpreter {
         // Cost: `value_has_proxy` is an allocation-free scan that stops at the
         // first Proxy, and the render path already runs a scan of exactly this
         // shape (`needs_method_dispatch`) on every `say`.
+        let target = Self::gist_receiver(method, target);
         if Self::renders_receiver_elements(method) && Self::holds_nested_proxy(&target) {
             let resolved = self.resolve_proxies_in_value(&target)?;
             return self.call_method_with_values_inner(resolved, method, args, reify_seq);
