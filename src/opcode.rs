@@ -9755,16 +9755,30 @@ impl CompiledCode {
                 // would then catch the closure's writes (`{ Int = 5 }` stored
                 // into it instead of dying). Unbaked chunks keep the old
                 // name-only answer.
-                let declared_at_emit = nested
-                    .free_var_parent_slots
-                    .get(fv_i)
-                    .is_none_or(Option::is_some);
+                // A self-capturing declaration's closure is emitted inside the
+                // declaration's own initializer, before the declaration binds its
+                // slot, so the bake is `None` there too -- but the name it
+                // captures IS that declaration (the self-capture scan above
+                // matched it against this very store), not a later sibling.
+                let self_captured = self_capture_decl.contains(sym);
+                let declared_at_emit = self_captured
+                    || nested
+                        .free_var_parent_slots
+                        .get(fv_i)
+                        .is_none_or(Option::is_some);
                 if is_own && escapes && declared_at_emit {
                     escaping_captured_own.insert(*sym);
                 }
                 if is_own && self_mutated.contains(sym) {
                     captured_mutated.insert(*sym);
-                    if escapes && declared_at_emit {
+                    // A self-capturing declaration (`my $t = $s.tap({ $t.close
+                    // })`) needs the cell even when its closure is only a call
+                    // argument: the closure can only observe `$t` after the
+                    // store it was created before, and a callee that keeps it
+                    // (a tap, a scheduler, another thread) calls it later, so
+                    // the "a call argument is invoked immediately" premise of
+                    // the escape analysis does not hold for it (#9493).
+                    if (escapes || self_captured) && declared_at_emit {
                         needs_cell.insert(*sym);
                     }
                 }
