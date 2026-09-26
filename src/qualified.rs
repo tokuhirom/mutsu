@@ -90,6 +90,26 @@ pub(crate) fn qualified_attr_key(owner: Symbol, attr: Symbol) -> Symbol {
     sym
 }
 
+/// The six variable names an attribute is read under inside a method —
+/// `!x`, `.x`, `@!x`, `@.x`, `%!x`, `%.x` — as interned `Symbol`s, built once
+/// per attribute.
+// Cost: O(1) amortized (one memo probe; the first call per attribute interns).
+pub(crate) fn attr_twigil_names(attr: Symbol) -> [Symbol; 6] {
+    thread_local! {
+        static NAMES: std::cell::RefCell<rustc_hash::FxHashMap<Symbol, [Symbol; 6]>> =
+            std::cell::RefCell::new(rustc_hash::FxHashMap::default());
+    }
+    if let Some(names) = NAMES.with(|c| c.borrow().get(&attr).copied()) {
+        return names;
+    }
+    let bare = attr.as_str();
+    let names = ["!", ".", "@!", "@.", "%!", "%."].map(|t| Symbol::intern(&format!("{t}{bare}")));
+    NAMES.with(|c| {
+        c.borrow_mut().insert(attr, names);
+    });
+    names
+}
+
 /// `pkg` with its last `::` segment removed, or `None` when it has only one.
 ///
 /// This is `rsplit_once("::")` decided once per package rather than per walk

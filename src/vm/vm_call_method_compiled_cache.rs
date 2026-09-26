@@ -165,6 +165,21 @@ impl Interpreter {
                     raw.clone()
                 }
             };
+            // A `ContainerRef` argument (a variable boxed into a shared cell,
+            // e.g. one a closure captured) type-checks by its CONTENTS
+            // (`args_match_param_types_inner`), exactly like the plain value,
+            // so it keys by its contents too. The one thing only a container
+            // can do -- satisfy an `is rw` parameter -- never reaches this key:
+            // a candidate set with an `is rw` parameter is refused wholesale by
+            // `multi_dispatch_type_cacheable` / `func_multi_dispatch_type_cacheable`.
+            // Refusing to key it made a Text::CSV field push (`$!csv-row.push:
+            // $f` with `$f` captured by the parser's `keep` closure) re-run the
+            // whole candidate walk on every call (#9494).
+            let a = if a.is_container_ref() {
+                a.deref_container()
+            } else {
+                a
+            };
             let a = &a;
             let key = match a.view() {
                 ValueView::Instance { class_name, .. } => class_name,
@@ -234,8 +249,8 @@ impl Interpreter {
             // both key as `Int`, and an empty `Slip` keys the same as a full one.
             // Append the marker so those land in different buckets. Cheap and
             // side-effect free -- `value_is_defined` is a pure view match, and
-            // the views it would have to lock through (`ContainerRef`, `Mixin`)
-            // already returned `None` above.
+            // the views it would have to lock through were unwrapped
+            // (`ContainerRef`) or already returned `None` (`Mixin`) above.
             if !crate::runtime::types::value_is_defined(a) {
                 keys.push(key_syms::undefined_arg());
             }
@@ -259,14 +274,33 @@ impl Interpreter {
     /// candidates) be cached at all — before it, one smiley anywhere in the
     /// candidate set made every call re-run the whole candidate walk.
     /// Everything else that reads a value stays value-dependent: a coercion
-    /// (`Int(Str)`), an enum-value or otherwise `::`-qualified refinement, the
+    /// (`Int(Str)`), an enum-value or otherwise `::`-qualified refinement (a
+    /// qualified name that declares a class or role is nominal, not one), the
     /// value-refining numeric pseudo-types, and a subset (an implicit `where`).
     pub(crate) fn type_constraint_is_value_dependent(&self, tc: &str) -> bool {
         let (base, _smiley) = crate::runtime::types::strip_type_smiley(tc);
         // A `Int:D()` coercion-with-smiley keeps its `(` here, so it is still
         // caught: only the trailing smiley is peeled.
-        if base.contains(':') || base.contains('(') {
+        if base.contains('(') {
             return true;
+        }
+        // A `::`-qualified name is a refinement when it names an enum value
+        // (`Order::Less`), but a plain nominal type when it names a declared
+        // class or role (`CSV::Field`) -- as nominal as an unqualified one.
+        // Treating every qualified name as value-dependent kept every multi
+        // over a module's own classes out of the resolution caches: Text::CSV's
+        // three `CSV::Row.push` candidates re-ran the whole candidate walk on
+        // every field pushed (#9494).
+        if base.contains(':') {
+            let plain_qualified = base
+                .split("::")
+                .all(|segment| !segment.is_empty() && !segment.contains(':'));
+            let registry = self.registry();
+            let names_a_type =
+                registry.classes.contains_key(base) || registry.roles.contains_key(base);
+            if !(plain_qualified && names_a_type) {
+                return true;
+            }
         }
         if matches!(base, "Inf" | "NaN" | "-Inf" | "UInt") {
             return true;

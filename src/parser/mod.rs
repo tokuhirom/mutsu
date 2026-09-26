@@ -209,6 +209,8 @@ fn take_suppress_sink_warnings() -> bool {
 /// clears the warning buffer up front, an unguarded nested parse also *dropped*
 /// the enclosing unit's real warnings, so they are saved and restored here.
 pub(crate) fn parse_fragment(input: &str) -> Result<(Vec<Stmt>, Option<String>), RuntimeError> {
+    // See the matching call in `parse_program`.
+    crate::opcode::note_dispatcher_mention(input);
     let saved_warnings = PARSE_WARNINGS.with(|w| std::mem::take(&mut *w.borrow_mut()));
     let saved_markers = VCS_CONFLICT_MARKERS.with(|m| std::mem::take(&mut *m.borrow_mut()));
     let saved_source_state = primary::snapshot_source_state();
@@ -612,6 +614,12 @@ pub(crate) fn parse_program(input: &str) -> Result<(Vec<Stmt>, Option<String>), 
     // Re-entrant (a nested EVAL or module load parses from inside a running
     // program), which the claim-at-exit rule handles without a depth counter.
     let _region = crate::profile::enter(crate::profile::Region::Parse);
+    // A unit that mentions a deferral builtin needs method dispatch frames
+    // from here on — decided on the source text, before any of its routines
+    // can be called (a method body compiled only on demand would otherwise
+    // reach the constant-pool check after its first call already skipped
+    // the frame). See `opcode::dispatcher_possible`.
+    crate::opcode::note_dispatcher_mention(input);
     // Clear any stale parse warnings from previous/backtracked parses
     PARSE_WARNINGS.with(|w| w.borrow_mut().clear());
     VCS_CONFLICT_MARKERS.with(|m| m.borrow_mut().clear());

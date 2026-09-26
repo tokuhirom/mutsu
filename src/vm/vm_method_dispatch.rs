@@ -787,15 +787,7 @@ impl Interpreter {
                     attr_name,
                 );
                 if let Some(def) = default_val {
-                    // Register for $!attr and $.attr variable names
-                    self.set_var_default(&format!("!{}", attr_name), def.clone());
-                    self.set_var_default(&format!(".{}", attr_name), def.clone());
-                    // Also register for @!attr/@.attr and %!attr/%.attr so
-                    // .VAR.default works on array/hash attributes.
-                    self.set_var_default(&format!("@!{}", attr_name), def.clone());
-                    self.set_var_default(&format!("@.{}", attr_name), def.clone());
-                    self.set_var_default(&format!("%!{}", attr_name), def.clone());
-                    self.set_var_default(&format!("%.{}", attr_name), def);
+                    self.set_attr_var_defaults(attr_name, def);
                 }
             }
         }
@@ -1532,7 +1524,8 @@ impl Interpreter {
     /// that was already a ContainerRef before this call started predates it
     /// and must not be adopted, even though it now reads as overlay-owned.
     // Cost: O(l + o + r * l), l = the frame's local slots, o = its env overlay
-    // entries, r = those slots/entries holding a ContainerRef (almost always 0).
+    // entries (its logged writes, once flattened), r = those slots/entries
+    // holding a ContainerRef (almost always 0).
     fn frame_container_refs<'a>(&self, code: &'a CompiledCode) -> Vec<(&'a str, Value)> {
         let mut refs = Vec::new();
         for (slot, name) in code.locals.iter().enumerate() {
@@ -1543,7 +1536,19 @@ impl Interpreter {
                 refs.push((name.as_str(), v.clone()));
             }
         }
-        for (sym, v) in self.env().overlay_iter() {
+        // After a flatten "the overlay" is the whole visible scope; only the
+        // names this frame wrote (its frame-write log) are its own entries --
+        // the rest are inherited copies, which the overlay-only rule above
+        // already excludes. See `merge_method_env`.
+        let env = self.env();
+        let overlay: Box<dyn Iterator<Item = (&Symbol, &Value)> + '_> = match env.frame_writes() {
+            Some(log) => Box::new(
+                log.iter()
+                    .filter_map(|k| env.overlay_get_sym(*k).map(|v| (k, v))),
+            ),
+            None => Box::new(env.overlay_iter()),
+        };
+        for (sym, v) in overlay {
             if !v.is_container_ref() {
                 continue;
             }
@@ -2221,12 +2226,7 @@ impl Interpreter {
                     attr_name,
                 );
                 if let Some(def) = default_val {
-                    self.set_var_default(&format!("!{}", attr_name), def.clone());
-                    self.set_var_default(&format!(".{}", attr_name), def.clone());
-                    self.set_var_default(&format!("@!{}", attr_name), def.clone());
-                    self.set_var_default(&format!("@.{}", attr_name), def.clone());
-                    self.set_var_default(&format!("%!{}", attr_name), def.clone());
-                    self.set_var_default(&format!("%.{}", attr_name), def);
+                    self.set_attr_var_defaults(attr_name, def);
                 }
             }
         }
@@ -2697,8 +2697,23 @@ fn merge_method_env(
     is_method_local: &dyn Fn(&str) -> bool,
     is_unwritten_capture: &dyn Fn(Symbol, &Value) -> bool,
 ) -> (Env, bool, Vec<Symbol>) {
-    let writes: Vec<(Symbol, Value)> = current
-        .overlay_iter()
+    // A full method dispatch in the body flattens the frame's scoped env
+    // (`flatten_scoped_env`), after which "the overlay" is the whole visible
+    // scope -- every caller lexical and global -- rather than the frame's own
+    // writes, so scanning it cost O(scope) on every return of a method that
+    // called another one (#9494: ~117 entries per Text::CSV field method).
+    // The flatten leaves the frame's writes behind as a log, and every entry
+    // not in it is still the value inherited at the flatten, which the
+    // `cheaply_unchanged` test below would drop anyway; drive the merge from
+    // the log instead, exactly as the light-call return merge does (#7630).
+    let entries: Box<dyn Iterator<Item = (&Symbol, &Value)> + '_> = match current.frame_writes() {
+        Some(log) => Box::new(
+            log.iter()
+                .filter_map(|k| current.overlay_get_sym(*k).map(|v| (k, v))),
+        ),
+        None => Box::new(current.overlay_iter()),
+    };
+    let writes: Vec<(Symbol, Value)> = entries
         .filter_map(|(k, v)| {
             // A key the frame received from `method_def.captured_env` (the
             // method's own DEFINING lexical scope) and never wrote is frame

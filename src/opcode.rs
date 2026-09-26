@@ -30,20 +30,49 @@ pub(crate) fn reflective_name_access_possible() -> bool {
 /// Process-global latch: set once any compiled chunk anywhere in the program
 /// calls `callsame`/`nextsame`/`callwith`/`nextwith` (see
 /// [`CompiledCode::uses_dispatcher`], which answers the same question for one
-/// chunk).
+/// chunk), or merely names one of those or `nextcallee`/`lastcall` in its
+/// constant pool (see [`note_dispatcher_mention`]).
 ///
-/// Method dispatch uses it to decide whether a name whose only remaining MRO
-/// candidate is a NATIVE base — `new`, whose base candidate is `Mu.new` —
-/// must establish a dispatch frame at all. A program that never defers pays
-/// nothing; one that does pays an MRO walk on the affected calls. The flag is
-/// monotonic and global, so an over-set only ever forces the (correct) frame.
+/// Only those six builtins ever read a method dispatch frame, so method
+/// dispatch uses the latch to decide whether to build one at all: a program
+/// that never defers skips the per-call candidate expansion, argument
+/// matching and frame push entirely (#9494 — a multi-method call on a class
+/// with three `push` candidates spent half its time building a frame nothing
+/// would read). The flag is monotonic and global, so an over-set only ever
+/// forces the (correct) frame.
 static DISPATCHER_SEEN: AtomicBool = AtomicBool::new(false);
 
-/// True if any compiled code in this program calls `callsame`/`nextsame`/
-/// `callwith`/`nextwith`. See [`DISPATCHER_SEEN`].
+/// True if any compiled code in this program may defer to the next dispatch
+/// candidate. See [`DISPATCHER_SEEN`].
 #[inline]
 pub(crate) fn dispatcher_possible() -> bool {
     DISPATCHER_SEEN.load(Ordering::Relaxed)
+}
+
+/// Set [`DISPATCHER_SEEN`] when `s` mentions a dispatch-frame builtin. Called
+/// on every compilation unit's source text before it is parsed (or served from
+/// the precompilation cache), and on every string entering a constant pool —
+/// every call of one reaches the pool as its name (a call, a bare word, an
+/// `&callsame` reference). Text that merely contains one of the names (a
+/// comment, a string) trips it too; that is a harmless over-set.
+// Cost: O(n), n = bytes of `s` (only while the latch is still unset).
+#[inline]
+pub(crate) fn note_dispatcher_mention(s: &str) {
+    if !dispatcher_possible()
+        && (s.contains("call") || s.contains("next"))
+        && [
+            "callsame",
+            "callwith",
+            "nextsame",
+            "nextwith",
+            "nextcallee",
+            "lastcall",
+        ]
+        .iter()
+        .any(|name| s.contains(name))
+    {
+        DISPATCHER_SEEN.store(true, Ordering::Relaxed);
+    }
 }
 
 /// Which bracket a subscript was written with. Carried in bits 8-9 of the
@@ -10845,6 +10874,11 @@ impl CompiledCode {
             && s.contains("%_")
         {
             self.may_observe_named_slurpy = true;
+        }
+        if !dispatcher_possible()
+            && let ValueView::Str(s) = value.view()
+        {
+            note_dispatcher_mention(&s);
         }
         let Some(key) = ConstKey::of(&value) else {
             let idx = self.constants.len() as u32;

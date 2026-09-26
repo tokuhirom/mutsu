@@ -658,6 +658,32 @@ impl Interpreter {
         self.var_defaults.insert(name.to_string(), value);
     }
 
+    /// Register `value` as the `is default(...)` of attribute `attr_name` under
+    /// every name a method body reads it by (`$!x`, `$.x`, and the `@`/`%`
+    /// forms, so `.VAR.default` works on container attributes too).
+    ///
+    /// Method dispatch re-registers the receiver class's attribute defaults on
+    /// every call, and the value is nearly always the one already registered,
+    /// so an unchanged entry is left alone: re-inserting it built and dropped
+    /// six key strings per defaulted attribute per call — Text::CSV's
+    /// `CSV::Field` (five `is default` attributes) paid ~30 of them on each of
+    /// the dozens of method calls a parsed CSV field makes (#9494).
+    // Cost: O(1) expected (six hash probes; an insert only on a changed value).
+    pub(crate) fn set_attr_var_defaults(&mut self, attr_name: &str, value: Value) {
+        let names = crate::qualified::attr_twigil_names(crate::symbol::Symbol::intern(attr_name));
+        for name in names {
+            let name = name.as_str();
+            if self
+                .var_defaults
+                .get(name)
+                .is_some_and(|old| crate::vm::vm_method_dispatch::cheaply_unchanged(old, &value))
+            {
+                continue;
+            }
+            self.var_defaults.insert(name.to_string(), value.clone());
+        }
+    }
+
     /// Whether any variable in this program carries an `is default(...)` trait.
     /// When false, no store has a default to substitute for a `Nil` and no
     /// declaration has a stale one to clear — the gate the plain-scalar store

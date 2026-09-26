@@ -1372,10 +1372,11 @@ impl Interpreter {
         })
     }
 
-    // Cost: O(1) amortized before the single-candidate fast path returns (every
-    // MRO probe on the way is memoized per `(class, method)` for one registry
-    // write generation); a multi-candidate deferral frame is O(c) in the
-    // candidates it collects.
+    // Cost: O(1) in a program that names no deferral builtin; otherwise O(1)
+    // amortized before the single-candidate fast path returns (every MRO probe
+    // on the way is memoized per `(class, method)` for one registry write
+    // generation); a multi-candidate deferral frame is O(c) in the candidates
+    // it collects.
     pub(crate) fn push_method_dispatch_frame(
         &mut self,
         receiver_class: &str,
@@ -1390,6 +1391,13 @@ impl Interpreter {
             args,
             Some(invocant.clone()),
         );
+        // Only the deferral builtins (`callsame` & co., `nextcallee`,
+        // `lastcall`) read a dispatch frame, so a program that names none of
+        // them anywhere never needs one — skip the candidate expansion and
+        // argument matching below outright. See `dispatcher_possible`.
+        if !crate::opcode::dispatcher_possible() {
+            return false;
+        }
         // A user-overridden grammar `parse`/`subparse`/`parsefile` needs an MRO frame
         // even with a single user candidate, so a `nextsame`/`nextwith` inside it can
         // defer to the NATIVE grammar parse — the base candidate that is not a
