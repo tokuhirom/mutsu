@@ -2374,7 +2374,8 @@ impl Interpreter {
         self.apply_pending_caller_var_writeback_slow(code);
     }
 
-    /// The search runs **frame-locals outwards**, not pending-sources inwards:
+    /// When the pending set is at least as large as the frame, the search runs
+    /// **frame-locals outwards**, not pending-sources inwards:
     /// walk this frame's `code.locals` once and ask the pending set about each,
     /// rather than asking `find_local_slot` — a linear `code.locals` scan — about
     /// each pending source. Same answer (a source names one variable, so no two
@@ -2398,44 +2399,77 @@ impl Interpreter {
     /// writeback (`my $r := substr-rw($s, 0, 5); $r = "..."`) is recorded while a
     /// `code` without the slot is current and is claimed by a later drain in the
     /// very same frame (`t/substr-rw-lvalue-writeback-coherence.t`).
+    ///
+    /// Whichever side is smaller drives the search. The pending set is usually
+    /// a handful of names while a frame can have dozens of locals, and this
+    /// runs on every call return while the set is non-empty: asking the set
+    /// about every local of a Text::CSV `parse` frame (two hash probes per
+    /// local, per method call it makes) was ~3% of parsing a CSV file (#9494).
+    /// Looking the few pending names up in `code.locals` instead reaches the
+    /// same first-slot-per-name matches, applied in the same slot order.
+    // Cost: O(min(p, l) * l), p = pending names, l = the frame's live locals
+    // (the locals-side scan is O(l) hash probes; the pending-side one O(p * l)
+    // name compares, taken only when p < l).
     #[inline(never)]
     fn apply_pending_caller_var_writeback_slow(&mut self, code: &CompiledCode) {
         // `code.locals` can in principle outrun the frame's live slot region; only
         // slots that exist are writable, and a name past the end stays pending.
-        let live = self.locals.len();
-        for (slot, name) in code.locals.iter().enumerate().take(live) {
-            // `remove` is the membership test and the "matched -> do not retain"
-            // step in one: a source is applied at most once, at the first slot
-            // bearing its name.
-            let baked_owner = self
-                .pending_rw_writeback_slots
-                .get(name.as_str())
-                .copied()
-                .map(|(slot, owner_depth)| (slot as usize, owner_depth));
-            if baked_owner.is_some_and(|(slot, owner_depth)| {
-                owner_depth != self.call_frames.len()
-                    || code.locals.get(slot).is_none_or(|local| local != name)
-            }) {
-                continue;
+        let live = self.locals.len().min(code.locals.len());
+        if self.pending_caller_var_writeback.len() < live {
+            let locals = &code.locals[..live];
+            let mut slots: Vec<usize> = self
+                .pending_caller_var_writeback
+                .iter()
+                .filter_map(|pending| locals.iter().position(|n| n == pending))
+                .collect();
+            slots.sort_unstable();
+            for slot in slots {
+                self.claim_pending_caller_var_writeback(code, slot);
             }
-            if !self.pending_caller_var_writeback.remove(name.as_str()) {
-                continue;
+        } else {
+            for slot in 0..live {
+                self.claim_pending_caller_var_writeback(code, slot);
             }
-            if baked_owner.is_some() {
-                self.pending_rw_writeback_slots.remove(name.as_str());
-            }
-            if !matches!(self.locals[slot].view(), ValueView::HashEntryRef { .. })
-                && let Some(val) = self.env().get(name).cloned()
-            {
-                self.locals[slot] = val;
-            }
-            // Keep the runtime-name list in step: once the frame that owns the
-            // slot has absorbed the value there is nothing left to carry across
-            // further frame exits, and leaving the entry behind would keep
-            // replaying a stale value upward.
-            if !self.pending_runtime_name_writes.is_empty() {
-                self.pending_runtime_name_writes.retain(|n| n != name);
-            }
+        }
+    }
+
+    /// Apply the pending caller-var writeback for `code.locals[slot]`, if its
+    /// name is pending and this frame owns it (see
+    /// [`Self::apply_pending_caller_var_writeback`]).
+    // Cost: O(1) expected, plus O(r) when r runtime-name writes are pending.
+    fn claim_pending_caller_var_writeback(&mut self, code: &CompiledCode, slot: usize) {
+        let name = &code.locals[slot];
+        // `remove` is the membership test and the "matched -> do not retain"
+        // step in one: a source is applied at most once, at the first slot
+        // bearing its name.
+        let baked_owner = self
+            .pending_rw_writeback_slots
+            .get(name.as_str())
+            .copied()
+            .map(|(slot, owner_depth)| (slot as usize, owner_depth));
+        if baked_owner.is_some_and(|(slot, owner_depth)| {
+            owner_depth != self.call_frames.len()
+                || code.locals.get(slot).is_none_or(|local| local != name)
+        }) {
+            return;
+        }
+        if !self.pending_caller_var_writeback.remove(name.as_str()) {
+            return;
+        }
+        if baked_owner.is_some() {
+            self.pending_rw_writeback_slots.remove(name.as_str());
+        }
+        if !matches!(self.locals[slot].view(), ValueView::HashEntryRef { .. })
+            && let Some(val) = self.env().get(name).cloned()
+        {
+            self.locals[slot] = val;
+        }
+        // Keep the runtime-name list in step: once the frame that owns the
+        // slot has absorbed the value there is nothing left to carry across
+        // further frame exits, and leaving the entry behind would keep
+        // replaying a stale value upward.
+        if !self.pending_runtime_name_writes.is_empty() {
+            self.pending_runtime_name_writes.retain(|n| n != name);
         }
     }
 

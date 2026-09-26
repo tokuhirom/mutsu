@@ -17,6 +17,18 @@ impl Interpreter {
     /// data: assign (sigil-coerced) named args to attributes and evaluate
     /// attribute defaults.
     pub(crate) fn is_native_default_constructible(&self, cn_resolved: &str) -> bool {
+        self.is_native_default_constructible_with(cn_resolved, false)
+    }
+
+    /// [`Self::is_native_default_constructible`], optionally disregarding user
+    /// `new` candidates: with `allow_user_new`, a class qualifies when the
+    /// default constructor is the one that runs once no user `new` candidate
+    /// accepts the call (see [`Self::user_new_declines`]).
+    pub(crate) fn is_native_default_constructible_with(
+        &self,
+        cn_resolved: &str,
+        allow_user_new: bool,
+    ) -> bool {
         // A parametric type name (`Hash[Int,Str]`, `array[int]`) needs the
         // interpreter's parametric construction machinery — keep it out.
         if cn_resolved.contains('[') {
@@ -94,7 +106,7 @@ impl Interpreter {
             // class-typed attribute also falls through at build time (it may be
             // set by BUILD, which the conservative native path does not assume).
             let simple = registry.user_method_overloads(&cls, "BUILDALL").is_none()
-                && registry.user_method_overloads(&cls, "new").is_none()
+                && (allow_user_new || registry.user_method_overloads(&cls, "new").is_none())
                 && class_def.native_methods.is_empty()
                 // An `is built(Bool)` trait only flips whether an attribute is
                 // assigned from a named arg — the native builder already honours
@@ -279,6 +291,8 @@ impl Interpreter {
         let is_cunion = self.registry().cunion_classes.contains(cn_resolved);
         let registered = self.registry().classes.contains_key(cn_resolved);
         let eligible = !is_cunion && self.is_native_default_constructible(cn_resolved);
+        let eligible_when_user_new_declines =
+            !is_cunion && !eligible && self.is_native_default_constructible_with(cn_resolved, true);
         // The class shape (attribute defs, BUILD/TWEAK/smiley probes) is
         // computed for EVERY registered class, not just natively-constructible
         // ones: `dispatch_bless` consumes it too, and bless has no
@@ -373,14 +387,10 @@ impl Interpreter {
             // the receiver class name only, so a key with a matching class is
             // the exact necessary-and-sufficient condition for it to do work.
             let registry = self.registry();
-            let has_container_defaults = registry
-                .class_attribute_defaults
-                .keys()
-                .any(|(c, _)| c == cn_resolved)
+            let has_container_defaults = registry.class_attribute_defaults.has_class(cn_resolved)
                 || registry
                     .class_attribute_default_exprs
-                    .keys()
-                    .any(|(c, _)| c == cn_resolved);
+                    .has_class(cn_resolved);
             drop(registry);
             (
                 class_attrs,
@@ -505,6 +515,7 @@ impl Interpreter {
             alias_attributes,
             is_cunion,
             eligible,
+            eligible_when_user_new_declines,
             class_attrs,
             attr_syms,
             type_constraints,
@@ -592,10 +603,33 @@ impl Interpreter {
         if plan.is_cunion {
             return Some(self.construct_cunion_instance(class_name.as_str(), args));
         }
-        if !plan.eligible {
+        if !plan.eligible
+            && !(plan.eligible_when_user_new_declines && self.user_new_declines(class_name, args))
+        {
             return None;
         }
         self.build_native_default_instance(class_name, class_name.as_str(), args, &plan)
+    }
+
+    /// True when a `.new(args)` on the type object `class_name` would find no
+    /// user `new` candidate that accepts `args` and so fall back to the
+    /// default constructor (`Mu.new(*%attrinit)`, always the last candidate) —
+    /// `dispatch_new`'s no-match fall-through, decided up front. Only the
+    /// all-named argument shape falls back: a positional argument makes that
+    /// fall-through die instead, and an explicit `proto method new` owns
+    /// dispatch outright, so both keep the full path. Text::CSV's
+    /// `CSV::Field.new` (its one `new` candidate takes a `Str(Cool)`) is this
+    /// shape, once per parsed field (#9494).
+    // Cost: O(m * c), m = MRO length, c = `new` candidates (the resolution).
+    fn user_new_declines(&mut self, class_name: Symbol, args: &[Value]) -> bool {
+        let cn = class_name.as_str();
+        args.iter()
+            .all(|a| matches!(a.view(), ValueView::Pair(..) | ValueView::ValuePair(..)))
+            && self.lookup_proto_method(cn, "new").is_none()
+            && self.has_visible_user_method(cn, "new")
+            && self
+                .resolve_method_with_owner_invocant(cn, "new", args, &Value::package(class_name))
+                .is_none()
     }
 
     /// Apply `has $.x does Role` attribute traits: mix each declared role into

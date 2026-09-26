@@ -323,7 +323,7 @@ pub(crate) struct Registry {
     /// Per-attribute `BUILD` override: (class, attr) -> builder value.
     pub(crate) attribute_build_overrides: HashMap<(String, String), Value>,
     /// Per-attribute default value: (class, attr) -> default value.
-    pub(crate) class_attribute_defaults: HashMap<(String, String), Value>,
+    pub(crate) class_attribute_defaults: super::class_attr_table::ClassAttrTable<Value>,
     /// Per-attribute `is default(...)` expression for a parametric role, where the
     /// value cannot be evaluated until the role is composed and its type params
     /// are bound: (role-base, attr) -> expr. Evaluated at instance construction
@@ -339,7 +339,7 @@ pub(crate) struct Registry {
     /// parametric role onto a consuming class: (class, attr) -> expr. Evaluated at
     /// construction with the class's role type-param bindings in scope.
     pub(crate) class_attribute_default_exprs:
-        HashMap<(String, String), crate::opcode::DeclTraitArg>,
+        super::class_attr_table::ClassAttrTable<crate::opcode::DeclTraitArg>,
     /// Per-attribute declared type: (class, attr) -> type name.
     pub(crate) class_attribute_is_types: HashMap<(String, String), String>,
     /// Per-attribute `is Type` container trait declared on a *role* attribute:

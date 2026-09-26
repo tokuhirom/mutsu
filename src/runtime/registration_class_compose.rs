@@ -359,8 +359,7 @@ impl Interpreter {
         for (attr, arg) in role_default_exprs {
             self.registry_mut()
                 .class_attribute_default_exprs
-                .entry((cx.name.to_string(), attr))
-                .or_insert(arg);
+                .insert_if_absent(&cx.name, &attr, arg);
         }
         // Carry each composed-role attribute's `is Type` container trait
         // (`has @.a is Array[TV]`, `has @.a is G::A`) onto the consuming

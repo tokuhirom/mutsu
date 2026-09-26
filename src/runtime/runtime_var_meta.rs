@@ -695,7 +695,7 @@ impl Interpreter {
     ) -> Option<Value> {
         self.registry()
             .class_attribute_defaults
-            .get(&(class_name.to_string(), attr_name.to_string()))
+            .get(class_name, attr_name)
             .cloned()
     }
 
@@ -723,7 +723,7 @@ impl Interpreter {
                 let arg = self
                     .registry()
                     .class_attribute_default_exprs
-                    .get(&(class_name.to_string(), attr_name.to_string()))
+                    .get(class_name, attr_name)
                     .cloned()?;
                 self.eval_decl_trait_arg(&arg).ok()
             })
@@ -809,7 +809,7 @@ impl Interpreter {
                     let arg = self
                         .registry()
                         .class_attribute_default_exprs
-                        .get(&(class_name.to_string(), attr_name.clone()))
+                        .get(class_name, attr_name)
                         .cloned()?;
                     self.eval_decl_trait_arg(&arg).ok()
                 });

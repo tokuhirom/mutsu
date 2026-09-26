@@ -768,26 +768,24 @@ impl Interpreter {
 
         // Register `is default(...)` values for attribute variables so that
         // .VAR.default returns the correct value inside methods. Gated on the
-        // program declaring ANY attribute default: the common no-default case
-        // otherwise paid 2 lookups (each allocating a (String, String) key)
-        // per attribute on every method call.
-        let any_attr_defaults = !self.registry().class_attribute_defaults.is_empty()
-            || !self.registry().class_attribute_default_exprs.is_empty();
-        if any_attr_defaults {
+        // owner or receiver class declaring ANY attribute default: otherwise
+        // every call paid two lookups per attribute of the receiver for
+        // nothing, which is what a class with many attributes (#9494) felt.
+        let (owner_has_defaults, receiver_has_defaults) =
+            self.attr_default_classes(owner_class, receiver_class_name);
+        if owner_has_defaults || receiver_has_defaults {
             for attr_name in attributes.keys() {
                 let attr_name = attr_name.as_str();
                 if attr_name.contains('\0') || attr_name.starts_with(ATTR_ALIAS_META_PREFIX) {
                     continue;
                 }
                 // Check both the owner class and the receiver class for defaults
-                let default_val = self
-                    .class_attribute_default_with_role_fallback(owner_class, attr_name)
-                    .or_else(|| {
-                        self.class_attribute_default_with_role_fallback(
-                            receiver_class_name,
-                            attr_name,
-                        )
-                    });
+                let default_val = self.attr_default_for_call(
+                    owner_class,
+                    receiver_class_name,
+                    (owner_has_defaults, receiver_has_defaults),
+                    attr_name,
+                );
                 if let Some(def) = default_val {
                     // Register for $!attr and $.attr variable names
                     self.set_var_default(&format!("!{}", attr_name), def.clone());
@@ -1361,30 +1359,38 @@ impl Interpreter {
         param_defs: &[crate::ast::ParamDef],
     ) -> Option<AttrMap> {
         let cell = self.method_attr_cell(base, owner_class)?;
-        // Cheap pre-check: a `:=` attr override can only be observed as a
-        // ContainerRef value in THIS frame's locals or env overlay (the bind
-        // op writes it there). No ContainerRef anywhere -> skip the per-attr
-        // candidate scan below (7 `format!`s + env lookups per attribute key,
-        // ~5% of method-heavy profiles) entirely. Deliberately overlay-only:
-        // a caller-frame ContainerRef (e.g. a boxed loop capture that happens
-        // to share an attribute's bare name) is NOT a binding made by this
-        // method and must not be adopted as one.
-        let frame_has_container_ref = self
-            .locals
-            .iter()
-            .any(|v| matches!(v.view(), ValueView::ContainerRef(_)))
-            || self
-                .env()
-                .overlay_iter()
-                .any(|(_, v)| matches!(v.view(), ValueView::ContainerRef(_)));
-        if !frame_has_container_ref {
+        // A `:=` attr override can only be observed as a ContainerRef value in
+        // THIS frame's locals or env overlay (the bind op writes it there).
+        // Deliberately overlay-only: a caller-frame ContainerRef (e.g. a boxed
+        // loop capture that happens to share an attribute's bare name) is NOT a
+        // binding made by this method and must not be adopted as one.
+        //
+        // The scan runs from the ContainerRef side: collect the frame's
+        // ContainerRef-valued names first (usually none, occasionally a
+        // handful), then match each attribute key against them by bare name.
+        // Going the other way — building the seven twigil spellings of every
+        // attribute and probing env/locals for each — cost seven `format!`s
+        // and seven lookups per attribute on every method exit that had any
+        // ContainerRef in scope, so a method call on a class with many
+        // attributes (Text::CSV has ~45) paid for all of them (#9494).
+        let frame_refs = self.frame_container_refs(code);
+        if frame_refs.is_empty() {
             return None;
         }
-        // Scan for `:=`-bound attributes: their authoritative value is the
-        // shared ContainerRef in env/locals, not the cell. Key iteration runs
-        // under the cell's read guard (attr_env_or_local touches only
-        // env/locals, never the cell), so no map clone is materialized when —
-        // as in the overwhelmingly common case — no `:=` binding exists.
+        // Each ContainerRef name, read as each attribute spelling it could be:
+        // (bare attribute name, candidate rank, value). The rank is the
+        // candidate order the per-attribute scan used to probe — bare, `!x`,
+        // `.x`, `@!x`, `@.x`, `%!x`, `%.x` — and the lowest-ranked match wins.
+        const TWIGILS: [&str; 6] = ["!", ".", "@!", "@.", "%!", "%."];
+        let mut readings: Vec<(&str, usize, &Value)> = Vec::new();
+        for (name, v) in &frame_refs {
+            readings.push((name, 0, v));
+            for (i, twigil) in TWIGILS.iter().enumerate() {
+                if let Some(bare) = name.strip_prefix(twigil) {
+                    readings.push((bare, i + 1, v));
+                }
+            }
+        }
         let mut overrides: Vec<(crate::symbol::Symbol, Value)> = Vec::new();
         {
             let cell_map = cell.as_map();
@@ -1394,69 +1400,67 @@ impl Interpreter {
                     continue;
                 }
                 let bare = ks.rsplit('\0').next().unwrap_or(ks);
-                // The BARE candidate is the dangerous one: unlike `!x`/`@.x`, it
-                // is a name an ordinary lexical or parameter can also have, and
-                // an `is rw`/`is raw` scalar parameter binds through a shared
-                // `ContainerRef` cell — exactly the shape this scan reads as a
-                // `:=` attribute binding. Two ways it went wrong, both of which
-                // *replaced the attribute* for the rest of the object's life:
-                //
-                //   * the frame's own parameter (`method !f(P $pol is rw)` in a
-                //     class with `has P $.pol`);
-                //   * a CALLER's variable of that name, reachable because the
-                //     callee env is the flattened caller env — the very hazard
-                //     the `frame_has_container_ref` gate above documents but
-                //     cannot catch, since the flattened copy is in the overlay.
-                //
-                // Cro::HTTP::Client hits both: `!assemble-request(…
-                // Cro::Policy::Timeout $timeout-policy is rw)` against its own
-                // `has $.timeout-policy`. The first request left the attribute
-                // holding the parameter's cell and the second died with "Type
-                // check failed in assignment to $timeout-policy".
-                //
-                // A third: the frame's own `my` lexical of that name, boxed into
-                // a cell by passing it to an rw parameter — `method go() { my T
-                // $pol; self!f($pol) }` in a class with `has T $.pol`, which is
-                // how `Cro::HTTP::Client.request`'s `my Cro::Policy::Timeout
-                // $timeout-policy` reached the attribute.
-                //
-                // So the bare form is honoured only for a name this frame itself
-                // owns as a slot (how a sigilless `has $x` is seeded) that the
-                // frame did NOT declare as a parameter or a `my`. The twigil
-                // forms keep the env fallback: no lexical can be called `!x`.
-                // The signature is consulted through `param_defs`, not the
-                // flat `params` name list: a named parameter written in the
-                // alias form (`:d(:$directed)`) declares the lexical
-                // `$directed` inside its sub-signature while the flat list
-                // carries only the external key `d`. Reading the flat list
-                // made every such parameter look like a name the frame does
-                // NOT own, so an `is copy` alias parameter that had been boxed
-                // into a `ContainerRef` (by ending up in a list, say
-                // `given ($directed, $!directed)`) was adopted as a `:=`
-                // binding for the same-named attribute and written into the
-                // receiver's cell on exit — `Graph.directed-graph()` corrupting
-                // the graph it was cloning from (#9007).
-                let bare_owned = code.locals.iter().any(|n| n == bare)
-                    && !crate::ast::param_defs_declare_lexical(param_defs, bare)
-                    && !code
-                        .my_declared_sym
-                        .contains(&crate::symbol::Symbol::intern(bare));
-                let candidates = [
-                    bare_owned.then(|| bare.to_string()),
-                    Some(format!("!{}", bare)),
-                    Some(format!(".{}", bare)),
-                    Some(format!("@!{}", bare)),
-                    Some(format!("@.{}", bare)),
-                    Some(format!("%!{}", bare)),
-                    Some(format!("%.{}", bare)),
-                ];
-                for key in candidates.into_iter().flatten() {
-                    if let Some(v) = self.attr_env_or_local(code, &key)
-                        && v.is_container_ref()
-                    {
-                        overrides.push((*k, v));
-                        break;
+                let mut best: Option<(usize, &Value)> = None;
+                for &(rbare, rank, v) in &readings {
+                    if rbare != bare || best.is_some_and(|(b, _)| b <= rank) {
+                        continue;
                     }
+                    // The BARE candidate is the dangerous one: unlike `!x`/`@.x`,
+                    // it is a name an ordinary lexical or parameter can also
+                    // have, and an `is rw`/`is raw` scalar parameter binds
+                    // through a shared `ContainerRef` cell — exactly the shape
+                    // this scan reads as a `:=` attribute binding. Two ways it
+                    // went wrong, both of which *replaced the attribute* for the
+                    // rest of the object's life:
+                    //
+                    //   * the frame's own parameter (`method !f(P $pol is rw)` in
+                    //     a class with `has P $.pol`);
+                    //   * a CALLER's variable of that name, reachable because the
+                    //     callee env is the flattened caller env — the very
+                    //     hazard the overlay-only rule above documents but cannot
+                    //     catch, since the flattened copy is in the overlay.
+                    //
+                    // Cro::HTTP::Client hits both: `!assemble-request(…
+                    // Cro::Policy::Timeout $timeout-policy is rw)` against its
+                    // own `has $.timeout-policy`. The first request left the
+                    // attribute holding the parameter's cell and the second died
+                    // with "Type check failed in assignment to $timeout-policy".
+                    //
+                    // A third: the frame's own `my` lexical of that name, boxed
+                    // into a cell by passing it to an rw parameter — `method go()
+                    // { my T $pol; self!f($pol) }` in a class with `has T $.pol`,
+                    // which is how `Cro::HTTP::Client.request`'s `my
+                    // Cro::Policy::Timeout $timeout-policy` reached the attribute.
+                    //
+                    // So the bare form is honoured only for a name this frame
+                    // itself owns as a slot (how a sigilless `has $x` is seeded)
+                    // that the frame did NOT declare as a parameter or a `my`. The
+                    // twigil forms keep the env fallback: no lexical can be called
+                    // `!x`. The signature is consulted through `param_defs`, not
+                    // the flat `params` name list: a named parameter written in
+                    // the alias form (`:d(:$directed)`) declares the lexical
+                    // `$directed` inside its sub-signature while the flat list
+                    // carries only the external key `d`. Reading the flat list
+                    // made every such parameter look like a name the frame does
+                    // NOT own, so an `is copy` alias parameter that had been
+                    // boxed into a `ContainerRef` (by ending up in a list, say
+                    // `given ($directed, $!directed)`) was adopted as a `:=`
+                    // binding for the same-named attribute and written into the
+                    // receiver's cell on exit — `Graph.directed-graph()`
+                    // corrupting the graph it was cloning from (#9007).
+                    if rank == 0
+                        && !(code.locals.iter().any(|n| n == bare)
+                            && !crate::ast::param_defs_declare_lexical(param_defs, bare)
+                            && !code
+                                .my_declared_sym
+                                .contains(&crate::symbol::Symbol::intern(bare)))
+                    {
+                        continue;
+                    }
+                    best = Some((rank, v));
+                }
+                if let Some((_, v)) = best {
+                    overrides.push((*k, v.clone()));
                 }
             }
         }
@@ -1470,12 +1474,52 @@ impl Interpreter {
         Some(attributes)
     }
 
-    /// Read the current value of `name` from the method's local slot if present,
-    /// else from this frame's env overlay. Deliberately overlay-only (not the
-    /// full env chain): a `:=` bind executed by THIS method writes into its own
-    /// locals/overlay, so legitimate recoveries still see it; a caller frame's
-    /// materialized value of the same name (reachable only through the parent
-    /// chain) is invisible, matching frame_has_container_ref's stated contract.
+    /// Whether `owner_class` and `receiver_class` each declare any attribute
+    /// `is default(...)` (evaluated, or deferred from a parametric role).
+    // Cost: O(1) expected (four hash probes).
+    fn attr_default_classes(&self, owner_class: &str, receiver_class: &str) -> (bool, bool) {
+        let registry = self.registry();
+        let has = |class: &str| {
+            registry.class_attribute_defaults.has_class(class)
+                || registry.class_attribute_default_exprs.has_class(class)
+        };
+        (has(owner_class), has(receiver_class))
+    }
+
+    /// `attr_name`'s `is default(...)` for a method call: the owner class's,
+    /// else the receiver class's. `has_defaults` is
+    /// [`Self::attr_default_classes`] for the same pair, so a class with no
+    /// defaults at all is not asked per attribute.
+    // Cost: O(1) expected, plus evaluating a deferred role default expression.
+    fn attr_default_for_call(
+        &mut self,
+        owner_class: &str,
+        receiver_class: &str,
+        has_defaults: (bool, bool),
+        attr_name: &str,
+    ) -> Option<Value> {
+        let from_owner = if has_defaults.0 {
+            self.class_attribute_default_with_role_fallback(owner_class, attr_name)
+        } else {
+            None
+        };
+        from_owner.or_else(|| {
+            if has_defaults.1 {
+                self.class_attribute_default_with_role_fallback(receiver_class, attr_name)
+            } else {
+                None
+            }
+        })
+    }
+
+    /// Every name whose current value in this frame is a ContainerRef, read the
+    /// way a `:=` attribute bind writes it: from the method's local slot if the
+    /// name has one (the first slot of that name wins, holding a ContainerRef
+    /// or not), else from this frame's env overlay. Deliberately overlay-only
+    /// (not the full env chain): a `:=` bind executed by THIS method writes into
+    /// its own locals/overlay, so legitimate recoveries still see it; a caller
+    /// frame's materialized value of the same name (reachable only through the
+    /// parent chain) is invisible, matching `reconcile_attrs`' stated contract.
     ///
     /// Overlay-only alone is not enough when this method's compiled code
     /// declares inner closures: the caller then skips installing a fresh
@@ -1487,21 +1531,38 @@ impl Interpreter {
     /// call's entry snapshot (`call_frames.last().saved_env`): a candidate
     /// that was already a ContainerRef before this call started predates it
     /// and must not be adopted, even though it now reads as overlay-owned.
-    fn attr_env_or_local(&self, code: &CompiledCode, name: &str) -> Option<Value> {
-        if let Some(slot) = code.locals.iter().position(|n| n == name) {
-            return Some(self.locals[slot].clone());
+    // Cost: O(l + o + r * l), l = the frame's local slots, o = its env overlay
+    // entries, r = those slots/entries holding a ContainerRef (almost always 0).
+    fn frame_container_refs<'a>(&self, code: &'a CompiledCode) -> Vec<(&'a str, Value)> {
+        let mut refs = Vec::new();
+        for (slot, name) in code.locals.iter().enumerate() {
+            if let Some(v) = self.locals.get(slot)
+                && v.is_container_ref()
+                && !code.locals[..slot].contains(name)
+            {
+                refs.push((name.as_str(), v.clone()));
+            }
         }
-        let val = self.env().overlay_get(name)?.clone();
-        if !code.closure_compiled_codes.is_empty()
-            && let Some(frame) = self.call_frames.last()
-            && matches!(
-                frame.saved_env.get(name).map(|v| v.view()),
-                Some(ValueView::ContainerRef(_))
-            )
-        {
-            return None;
+        for (sym, v) in self.env().overlay_iter() {
+            if !v.is_container_ref() {
+                continue;
+            }
+            let name = sym.as_str();
+            if code.locals.iter().any(|n| n == name) {
+                continue;
+            }
+            if !code.closure_compiled_codes.is_empty()
+                && let Some(frame) = self.call_frames.last()
+                && matches!(
+                    frame.saved_env.get(name).map(|v| v.view()),
+                    Some(ValueView::ContainerRef(_))
+                )
+            {
+                continue;
+            }
+            refs.push((name, v.clone()));
         }
-        Some(val)
+        refs
     }
 
     /// Phase 3 Stage 2c (i): mirror attributive parameters (`$!x`/`@!a`/`%!h`)
@@ -2095,8 +2156,11 @@ impl Interpreter {
                         }
                         // Private attribute: !attr_name
                         else if let Some(attr_name) = name.strip_prefix('!') {
-                            let qualified_key = format!("{}\0{}", owner_class, attr_name);
-                            attr_get(&qualified_key)
+                            let qualified_key = crate::qualified::qualified_attr_key(
+                                owner_sym,
+                                crate::symbol::Symbol::intern(attr_name),
+                            );
+                            attr_get(qualified_key.as_str())
                                 .or_else(|| attr_get(attr_name))
                                 .unwrap_or(Value::NIL)
                         }
@@ -2137,10 +2201,12 @@ impl Interpreter {
         }
 
         // Register `is default(...)` values for attribute variables. Gated on
-        // the program declaring ANY attribute default (see the slow path).
-        let any_attr_defaults = !self.registry().class_attribute_defaults.is_empty()
-            || !self.registry().class_attribute_default_exprs.is_empty();
-        if any_attr_defaults && let Some(cell) = &attrs_cell {
+        // the owner or receiver class declaring ANY attribute default (see the
+        // slow path).
+        let has_defaults = self.attr_default_classes(owner_class, receiver_class_name);
+        if (has_defaults.0 || has_defaults.1)
+            && let Some(cell) = &attrs_cell
+        {
             let attr_names: Vec<&'static str> = cell
                 .as_map()
                 .keys()
@@ -2148,14 +2214,12 @@ impl Interpreter {
                 .filter(|k| !k.contains('\0') && !k.starts_with(ATTR_ALIAS_META_PREFIX))
                 .collect();
             for attr_name in &attr_names {
-                let default_val = self
-                    .class_attribute_default_with_role_fallback(owner_class, attr_name)
-                    .or_else(|| {
-                        self.class_attribute_default_with_role_fallback(
-                            receiver_class_name,
-                            attr_name,
-                        )
-                    });
+                let default_val = self.attr_default_for_call(
+                    owner_class,
+                    receiver_class_name,
+                    has_defaults,
+                    attr_name,
+                );
                 if let Some(def) = default_val {
                     self.set_var_default(&format!("!{}", attr_name), def.clone());
                     self.set_var_default(&format!(".{}", attr_name), def.clone());

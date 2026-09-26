@@ -70,6 +70,26 @@ pub(crate) fn qualified(pkg: Symbol, name: Symbol) -> Symbol {
     sym
 }
 
+/// `<owner>\0<attr>` as an interned `Symbol`, built once per pair: the key an
+/// instance stores a private attribute under when it is qualified by its
+/// declaring class (so a subclass's same-named `$!x` is a distinct slot).
+// Cost: O(1) amortized (one memo probe; the first call per pair interns).
+pub(crate) fn qualified_attr_key(owner: Symbol, attr: Symbol) -> Symbol {
+    thread_local! {
+        static PAIRS: std::cell::RefCell<rustc_hash::FxHashMap<(Symbol, Symbol), Symbol>> =
+            std::cell::RefCell::new(rustc_hash::FxHashMap::default());
+    }
+    let pair = (owner, attr);
+    if let Some(sym) = PAIRS.with(|c| c.borrow().get(&pair).copied()) {
+        return sym;
+    }
+    let sym = Symbol::intern(&format!("{}\0{}", owner.as_str(), attr.as_str()));
+    PAIRS.with(|c| {
+        c.borrow_mut().insert(pair, sym);
+    });
+    sym
+}
+
 /// `pkg` with its last `::` segment removed, or `None` when it has only one.
 ///
 /// This is `rsplit_once("::")` decided once per package rather than per walk

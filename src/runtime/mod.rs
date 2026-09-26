@@ -601,6 +601,7 @@ mod builtins_unbase;
 mod call_helpers;
 mod calls;
 mod class;
+mod class_attr_table;
 mod class_dispatch;
 mod class_introspection;
 mod code_frame;
@@ -1405,6 +1406,11 @@ impl MethodClassFrame {
 pub(crate) struct NativeCtorPlan {
     pub(crate) is_cunion: bool,
     pub(crate) eligible: bool,
+    /// Not `eligible` only because the class (or an ancestor) declares a
+    /// user `new`: when no such candidate accepts a call's arguments, the
+    /// call falls back to the default constructor, which the native builder
+    /// then serves exactly as for an `eligible` class.
+    pub(crate) eligible_when_user_new_declines: bool,
     pub(crate) class_attrs: Arc<Vec<ClassAttributeDef>>,
     /// Interned attribute names, same order as `class_attrs`. Construction
     /// inserts attributes by Symbol so the per-bless per-attribute

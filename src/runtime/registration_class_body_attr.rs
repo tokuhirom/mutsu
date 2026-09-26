@@ -351,7 +351,7 @@ impl Interpreter {
                 }
                 self.registry_mut()
                     .class_attribute_defaults
-                    .insert((cx.name.to_string(), attr_name_str.clone()), val);
+                    .insert(&cx.name, &attr_name_str, val);
             }
         } else if decl.default.is_some() {
             // No explicit `is default(X)`, but there IS a `default` expr.

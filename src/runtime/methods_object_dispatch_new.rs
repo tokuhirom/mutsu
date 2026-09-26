@@ -1853,15 +1853,39 @@ impl Interpreter {
                     {
                         result.map(|v| (v, AttrMap::new()))
                     } else {
-                        let empty_attrs = AttrMap::new();
-                        self.run_instance_method_at(
-                            "newdispatch",
-                            &class_name.resolve(),
-                            empty_attrs,
-                            "new",
-                            args.clone(),
-                            None,
-                        )
+                        let cn = class_name.resolve();
+                        // No user `new` candidate taking these arguments, and no
+                        // explicit proto owning dispatch: the `Err` arm below
+                        // falls through to the default constructor and drops the
+                        // error. Hand it the plain no-match error instead of
+                        // letting the dispatcher format every candidate signature
+                        // and the argument profile into a message nobody reads
+                        // (#9494: Text::CSV's `CSV::Field.new`, whose only
+                        // candidate takes a `Str(Cool)`, once per parsed field).
+                        if self.lookup_proto_method(&cn, "new").is_none()
+                            && self.has_visible_user_method(&cn, "new")
+                            && self
+                                .resolve_method_with_owner_invocant(
+                                    &cn,
+                                    "new",
+                                    &args,
+                                    &Value::package(*class_name),
+                                )
+                                .is_none()
+                        {
+                            Err(super::methods_signature_errors::make_multi_no_match_error(
+                                "new",
+                            ))
+                        } else {
+                            self.run_instance_method_at(
+                                "newdispatch",
+                                &cn,
+                                AttrMap::new(),
+                                "new",
+                                args.clone(),
+                                None,
+                            )
+                        }
                     };
                     match dispatched {
                         Ok((result, _updated)) => return Ok(result),
