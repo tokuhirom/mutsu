@@ -1,3 +1,4 @@
+use super::vm_call_method_ops::MethodName;
 use super::*;
 use crate::symbol::Symbol;
 use crate::value::ValueMap;
@@ -28,6 +29,75 @@ impl Interpreter {
         }
     }
 
+    /// Take the run-time method name out of a dynamic call's operands
+    /// (`[.., target, name, args...]` becomes `[.., target, args...]`) and
+    /// decide how it dispatches. `None` means the name is a Callable to invoke
+    /// with the target as its first argument (`$obj.$code(...)`,
+    /// `$obj."&f"`-style Sub values); the value is then returned in `Err`.
+    ///
+    /// Cost: O(a), a = arguments (the name slot is removed from under them).
+    fn take_dynamic_method_name(
+        &mut self,
+        arity: usize,
+        quoted: bool,
+        opcode: &str,
+    ) -> Result<Result<String, Value>, RuntimeError> {
+        let Some(name_pos) = self.stack.len().checked_sub(arity + 1).filter(|&p| p >= 1) else {
+            return Err(RuntimeError::new(format!(
+                "Interpreter stack underflow in {opcode}"
+            )));
+        };
+        let name_val = self.stack.remove(name_pos);
+        let is_callable = (!quoted && !matches!(name_val.view(), ValueView::Package(_)))
+            || matches!(
+                name_val.view(),
+                ValueView::Sub(_) | ValueView::WeakSub(_) | ValueView::Routine { .. }
+            );
+        Ok(if is_callable {
+            Err(name_val)
+        } else {
+            Ok(Self::dynamic_method_name(&name_val))
+        })
+    }
+
+    /// `$obj.$code(args)` / `$obj.&code(args)`: call `callable` with the
+    /// receiver as its first positional argument. Stack: `[.., target,
+    /// args...]`. The `.+`/`.*` modifiers wrap the single result in an Array.
+    fn exec_dynamic_callable_method(
+        &mut self,
+        code: &CompiledCode,
+        callable: Value,
+        arity: usize,
+        modifier_idx: Option<u32>,
+        arg_sources_idx: Option<u32>,
+    ) -> Result<(), RuntimeError> {
+        crate::vm::vm_stats::record_method_dispatch();
+        let start = self.stack.len() - arity;
+        let raw_args: Vec<Value> = self.stack.drain(start..).collect();
+        // ADR-0054 S3: spread only the `|EXPR` positions.
+        let (args, _arg_sources) =
+            Self::spread_call_args_by_syntax(code, raw_args, arg_sources_idx, None);
+        let target = self.stack.pop().ok_or_else(|| {
+            RuntimeError::new("Interpreter stack underflow in dynamic method call target")
+        })?;
+        let mut call_args = Vec::with_capacity(args.len() + 1);
+        call_args.push(Self::invocant_as_positional(target));
+        call_args.extend(args);
+        let result = self.vm_call_on_value(callable, call_args, None)?;
+        match modifier_idx.map(|idx| Self::const_str(code, idx)) {
+            Some("+") | Some("*") => self.stack.push(Value::array(vec![result])),
+            _ => self.stack.push(result),
+        }
+        Ok(())
+    }
+
+    /// `OpCode::CallMethodDynamic` (`$obj."$name"(...)`, `$obj.$code(...)`).
+    /// Owns only the name resolution: a Callable is invoked on the receiver,
+    /// and a method name dispatches through the `CallMethod` body with the
+    /// run-time spelling, so the two forms cannot drift (#9454). A run-time
+    /// name is never a compile-time macro, so it dispatches as a quoted name
+    /// (`$obj."$m"()` with `$m = "WHAT"` calls a user `WHAT` method, as
+    /// `$obj."WHAT"()` does).
     pub(super) fn exec_call_method_dynamic_op(
         &mut self,
         code: &CompiledCode,
@@ -36,369 +106,27 @@ impl Interpreter {
         quoted: bool,
         arg_sources_idx: Option<u32>,
     ) -> Result<(), RuntimeError> {
-        crate::vm::vm_stats::record_method_dispatch();
-        self.flatten_scoped_env();
-        let modifier = modifier_idx.map(|idx| Self::const_str(code, idx));
-        let arity = arity as usize;
-        if self.stack.len() < arity + 2 {
-            return Err(RuntimeError::new(
-                "Interpreter stack underflow in CallMethodDynamic",
-            ));
+        match self.take_dynamic_method_name(arity as usize, quoted, "CallMethodDynamic")? {
+            Err(callable) => self.exec_dynamic_callable_method(
+                code,
+                callable,
+                arity as usize,
+                modifier_idx,
+                arg_sources_idx,
+            ),
+            Ok(method) => self.exec_call_method_named_op(
+                code,
+                MethodName::dynamic(&method),
+                arity,
+                modifier_idx,
+                arg_sources_idx,
+            ),
         }
-        let start = self.stack.len() - arity;
-        let raw_args: Vec<Value> = self.stack.drain(start..).collect();
-        // ADR-0054 S3: spread only the `|EXPR` positions -- this opcode has
-        // never tracked rw-arg sources, so the decoded name list is
-        // discarded (it exists solely to keep the slip-position decoder
-        // in the shared helper).
-        let (args, _arg_sources) =
-            Self::spread_call_args_by_syntax(code, raw_args, arg_sources_idx, None);
-        let name_val = self.stack.pop().ok_or_else(|| {
-            RuntimeError::new("Interpreter stack underflow in CallMethodDynamic name")
-        })?;
-        let target = self.stack.pop().ok_or_else(|| {
-            RuntimeError::new("Interpreter stack underflow in CallMethodDynamic target")
-        })?;
-        if !quoted && !matches!(name_val.view(), ValueView::Package(_)) {
-            let mut call_args = Vec::with_capacity(args.len() + 1);
-            call_args.push(Self::invocant_as_positional(target));
-            call_args.extend(args);
-            let result = self.vm_call_on_value(name_val, call_args, None);
-            match modifier {
-                Some("+") | Some("*") => self.stack.push(Value::array(vec![result?])),
-                _ => self.stack.push(result?),
-            }
-            return Ok(());
-        }
-        // Reify/consume a deferred Seq (ADR-0034 §2.3) for non-lazy-preserving
-        // methods before dispatch.
-        let method_name_str = Self::dynamic_method_name(&name_val);
-        let method = Self::rewrite_method_name(&method_name_str, modifier);
-        // The spelling is dynamic, but it is stable for this dispatch. Intern it
-        // once at the opcode boundary so every native/cache probe below shares
-        // the same key instead of re-hashing it independently.
-        let method_sym = Symbol::intern(&method);
-        let target = match self.take_seq_prefix(&target, &method, &args)? {
-            Some(prefix) => prefix,
-            None => target,
-        };
-        let target = self.reify_or_consume_seq_target(target, &method)?;
-        if method == "message"
-            && args.is_empty()
-            && let ValueView::Instance { attributes, .. } = target.view()
-            && let Some(msg) = attributes.as_map().get("__mutsu_thrown_message")
-        {
-            self.stack.push(msg.clone());
-            return Ok(());
-        }
-        // Handle .* and .+ modifiers
-        match modifier {
-            Some("+") => {
-                crate::vm::vm_stats::record_dispatch_entry_intercept(
-                    "callmethoddynamic",
-                    "modifier-plus",
-                );
-                let vals = self.call_method_all_with_fallback(&target, &method, &args, false)?;
-                self.stack.push(Value::array(vals));
-                return Ok(());
-            }
-            Some("*") => {
-                crate::vm::vm_stats::record_dispatch_entry_intercept(
-                    "callmethoddynamic",
-                    "modifier-star",
-                );
-                match self.call_method_all_with_fallback(&target, &method, &args, false) {
-                    Ok(vals) => self.stack.push(Value::array(vals)),
-                    Err(e) if Self::is_method_not_found_error(&e) => {
-                        self.stack.push(Value::array(vec![]))
-                    }
-                    Err(e) => return Err(e),
-                }
-                return Ok(());
-            }
-            _ => {}
-        }
-        // A quoted dynamic method name is still ordinary method dispatch. In
-        // particular, a user method on an Instance must shadow the native
-        // method with the same name. The static CallMethod path already
-        // applies this precedence, but this dynamic entry used to probe the
-        // native table first. That made `self."$name"(...)` call the native
-        // `Str`/`Array`/`Hash` coercion instead of the user's method.
-        let user_method = match target.view() {
-            ValueView::Package(_) => {
-                self.package_has_applicable_user_method(&target, &method, &args)
-            }
-            ValueView::Instance { class_name, .. } => {
-                self.has_user_method(&class_name.resolve(), &method)
-            }
-            _ => self.native_lever_a_user_override_sym(&target, method_sym),
-        };
-        let call_result = if matches!(
-            name_val.view(),
-            ValueView::Sub(_) | ValueView::WeakSub(_) | ValueView::Routine { .. }
-        ) {
-            crate::vm::vm_stats::record_dispatch_entry_intercept(
-                "callmethoddynamic",
-                "call-sub-value",
-            );
-            let mut call_args = Vec::with_capacity(args.len() + 1);
-            call_args.push(Self::invocant_as_positional(target));
-            call_args.extend(args);
-            self.vm_call_on_value(name_val, call_args, None)
-        } else {
-            // .return method: triggers a return from the enclosing sub
-            if method == "return" && args.is_empty() {
-                crate::vm::vm_stats::record_dispatch_entry_intercept("callmethoddynamic", "return");
-                let mut err = RuntimeError::new("return");
-                err.return_value = Some(target);
-                return Err(err);
-            }
-            // .hyper/.race with named arguments: validate, then create HyperSeq/RaceSeq
-            if matches!(method.as_str(), "hyper" | "race") {
-                crate::vm::vm_stats::record_dispatch_entry_intercept(
-                    "callmethoddynamic",
-                    "hyper-race-config",
-                );
-                // Extract batch/degree for validation
-                let mut batch: Option<i64> = None;
-                let mut degree: Option<i64> = None;
-                for arg in &args {
-                    let (key, val) = match arg.view() {
-                        ValueView::Pair(k, v) => (k.clone(), crate::runtime::to_int(v)),
-                        ValueView::ValuePair(k, v) => {
-                            (k.to_string_value(), crate::runtime::to_int(v))
-                        }
-                        _ => continue,
-                    };
-                    match key.as_str() {
-                        "batch" => batch = Some(val),
-                        "degree" => degree = Some(val),
-                        _ => {}
-                    }
-                }
-                if let Some(b) = batch
-                    && b <= 0
-                {
-                    let mut attrs = ValueMap::default();
-                    attrs.insert("method".to_string(), Value::str(method.clone()));
-                    attrs.insert("name".to_string(), Value::str("batch".to_string()));
-                    attrs.insert("value".to_string(), Value::int(b));
-                    attrs.insert(
-                        "message".to_string(),
-                        Value::str(format!("Invalid value '{}' for 'batch' on '{}'", b, method)),
-                    );
-                    return Err(RuntimeError::typed("X::Invalid::Value", attrs));
-                }
-                if let Some(d) = degree
-                    && d <= 0
-                {
-                    let mut attrs = ValueMap::default();
-                    attrs.insert("method".to_string(), Value::str(method.clone()));
-                    attrs.insert("name".to_string(), Value::str("degree".to_string()));
-                    attrs.insert("value".to_string(), Value::int(d));
-                    attrs.insert(
-                        "message".to_string(),
-                        Value::str(format!(
-                            "Invalid value '{}' for 'degree' on '{}'",
-                            d, method
-                        )),
-                    );
-                    return Err(RuntimeError::typed("X::Invalid::Value", attrs));
-                }
-                // Create HyperSeq/RaceSeq
-                let items = crate::runtime::value_to_list(&target);
-                let body = crate::value::SeqBody::reified(items);
-                // Remember the requested batch/degree so `.configuration` can
-                // report them (the HyperSeq/RaceSeq does not carry the config).
-                body.set_hyper_config(batch, degree);
-                let result = if method == "hyper" {
-                    Value::hyper_seq_body(body)
-                } else {
-                    Value::race_seq_body(body)
-                };
-                self.stack.push(result);
-                return Ok(());
-            }
-            // HyperSeq/RaceSeq: delegate methods
-            if matches!(
-                target.view(),
-                ValueView::HyperSeq(_) | ValueView::RaceSeq(_)
-            ) {
-                let is_hyper = matches!(target.view(), ValueView::HyperSeq(_));
-                let items_arc = match target.view() {
-                    ValueView::HyperSeq(items) | ValueView::RaceSeq(items) => items.clone(),
-                    _ => unreachable!(),
-                };
-                match method.as_str() {
-                    "hyper" => {
-                        crate::vm::vm_stats::record_dispatch_entry_intercept(
-                            "callmethoddynamic",
-                            "hyperseq-hyper",
-                        );
-                        self.stack.push(Value::hyper_seq_body(items_arc));
-                        return Ok(());
-                    }
-                    "race" => {
-                        crate::vm::vm_stats::record_dispatch_entry_intercept(
-                            "callmethoddynamic",
-                            "hyperseq-race",
-                        );
-                        self.stack.push(Value::race_seq_body(items_arc));
-                        return Ok(());
-                    }
-                    "is-lazy" => {
-                        crate::vm::vm_stats::record_dispatch_entry_intercept(
-                            "callmethoddynamic",
-                            "hyperseq-is-lazy",
-                        );
-                        self.stack.push(Value::FALSE);
-                        return Ok(());
-                    }
-                    "configuration" if args.is_empty() => {
-                        // `HyperSeq.configuration` — expose the `.batch`/`.degree`
-                        // the sequence was hyperized with (defaults otherwise).
-                        // Used by the `hyperize` dist.
-                        crate::vm::vm_stats::record_dispatch_entry_intercept(
-                            "callmethoddynamic",
-                            "hyperseq-configuration",
-                        );
-                        let (batch, degree) = items_arc.hyper_config().unwrap_or((None, None));
-                        self.stack
-                            .push(Interpreter::make_hyper_configuration(batch, degree));
-                        return Ok(());
-                    }
-                    "^name" => {
-                        crate::vm::vm_stats::record_dispatch_entry_intercept(
-                            "callmethoddynamic",
-                            "hyperseq-name",
-                        );
-                        self.stack.push(Value::str(
-                            if is_hyper { "HyperSeq" } else { "RaceSeq" }.to_string(),
-                        ));
-                        return Ok(());
-                    }
-                    "WHAT" => {
-                        crate::vm::vm_stats::record_dispatch_entry_intercept(
-                            "callmethoddynamic",
-                            "hyperseq-what",
-                        );
-                        self.stack.push(Value::package(Symbol::intern(if is_hyper {
-                            "HyperSeq"
-                        } else {
-                            "RaceSeq"
-                        })));
-                        return Ok(());
-                    }
-                    "defined" => {
-                        crate::vm::vm_stats::record_dispatch_entry_intercept(
-                            "callmethoddynamic",
-                            "hyperseq-defined",
-                        );
-                        self.stack.push(Value::TRUE);
-                        return Ok(());
-                    }
-                    "map" | "grep" => {
-                        crate::vm::vm_stats::record_dispatch_entry_intercept(
-                            "callmethoddynamic",
-                            "hyperseq-map-grep",
-                        );
-                        let array_target = Value::array_with_kind(
-                            crate::value::Value::array_arc(items_arc.to_vec()),
-                            crate::value::ArrayKind::List,
-                        );
-                        let call_result = if let Some(nr) =
-                            self.try_native_method(&array_target, method_sym, &args)
-                        {
-                            nr
-                        } else {
-                            self.try_compiled_method_or_interpret(array_target, &method, args)
-                        };
-                        let result_val = call_result?;
-                        // ADR-0058: the delegated `.map`/`.grep` -- and each
-                        // element the block itself produced with a `.map` --
-                        // hands back a Seq whose callback has not run, while
-                        // `value_to_list` and every later reader of the
-                        // HyperSeq (`.flat`, `.gist`) are pure and would see
-                        // ADR-0034's empty seed. A HyperSeq is eager by
-                        // construction, so this is where they get run. Twin
-                        // of the `exec_call_method_mut_op_impl` arm below.
-                        self.reify_map_grep_seq(&result_val)?;
-                        let result_items = crate::runtime::value_to_list(&result_val);
-                        self.reify_map_grep_seq_args(&result_items)?;
-                        let wrapped = if is_hyper {
-                            Value::hyper_seq(result_items)
-                        } else {
-                            Value::race_seq(result_items)
-                        };
-                        self.stack.push(wrapped);
-                        return Ok(());
-                    }
-                    _ => {
-                        // Convert to array and delegate
-                        crate::vm::vm_stats::record_dispatch_entry_intercept(
-                            "callmethoddynamic",
-                            "hyperseq-delegate",
-                        );
-                        let array_target = Value::array_with_kind(
-                            crate::value::Value::array_arc(items_arc.to_vec()),
-                            crate::value::ArrayKind::List,
-                        );
-                        let call_result = if let Some(nr) =
-                            self.try_native_method(&array_target, method_sym, &args)
-                        {
-                            nr
-                        } else {
-                            self.try_compiled_method_or_interpret(array_target, &method, args)
-                        };
-                        self.stack.push(call_result?);
-                        return Ok(());
-                    }
-                }
-            }
-            // An `is Array`/`is List` subclass instance answers through its
-            // backing storage, so the native probe must not answer FOR the
-            // instance first (`.elems` on the Instance is 1, not its element
-            // count). The `CallMethod` opcode takes its delegation before its
-            // own native probe for the same reason; falling through here reaches
-            // the shared one in `call_method_with_values`.
-            if !user_method
-                && !self.delegates_to_array_storage(&target, &method)
-                && let Some(native_result) = self.try_native_method(&target, method_sym, &args)
-            {
-                crate::vm::vm_stats::record_dispatch_entry_outcome("callmethoddynamic", "native");
-                native_result
-            } else {
-                crate::vm::vm_stats::record_dispatch_entry_outcome("callmethoddynamic", "user");
-                self.try_compiled_method_or_interpret_sym(target, method_sym, args)
-            }
-        };
-        match modifier {
-            Some("?") => match call_result {
-                Ok(val) => self.stack.push(val),
-                Err(e) if Self::is_method_not_found_error(&e) => {
-                    crate::vm::vm_stats::record_dispatch_entry_outcome(
-                        "callmethoddynamic",
-                        "notfound",
-                    );
-                    self.stack.push(Value::NIL)
-                }
-                Err(e) => return Err(e),
-            },
-            _ => {
-                if let Err(e) = &call_result
-                    && Self::is_method_not_found_error(e)
-                {
-                    crate::vm::vm_stats::record_dispatch_entry_outcome(
-                        "callmethoddynamic",
-                        "notfound",
-                    );
-                }
-                self.stack.push(call_result?);
-            }
-        }
-        Ok(())
     }
 
+    /// `OpCode::CallMethodDynamicMut` (`$var."$name"(...)` on a named
+    /// receiver): as [`Self::exec_call_method_dynamic_op`], delegating a method
+    /// name to the `CallMethodMut` body.
     pub(super) fn exec_call_method_dynamic_mut_op(
         &mut self,
         code: &CompiledCode,
@@ -408,136 +136,23 @@ impl Interpreter {
         quoted: bool,
         arg_sources_idx: Option<u32>,
     ) -> Result<(), RuntimeError> {
-        crate::vm::vm_stats::record_method_dispatch();
-        self.flatten_scoped_env();
-        let target_name = Self::const_str(code, target_name_idx).to_string();
-        let modifier = modifier_idx.map(|idx| Self::const_str(code, idx));
-        let arity = arity as usize;
-        if self.stack.len() < arity + 2 {
-            return Err(RuntimeError::new(
-                "Interpreter stack underflow in CallMethodDynamicMut",
-            ));
+        match self.take_dynamic_method_name(arity as usize, quoted, "CallMethodDynamicMut")? {
+            Err(callable) => self.exec_dynamic_callable_method(
+                code,
+                callable,
+                arity as usize,
+                modifier_idx,
+                arg_sources_idx,
+            ),
+            Ok(method) => self.exec_call_method_mut_named_op(
+                code,
+                MethodName::dynamic(&method),
+                arity,
+                target_name_idx,
+                modifier_idx,
+                arg_sources_idx,
+            ),
         }
-        let start = self.stack.len() - arity;
-        let raw_args: Vec<Value> = self.stack.drain(start..).collect();
-        // ADR-0054 S3: spread only the `|EXPR` positions (see the matching
-        // comment in `exec_call_method_dynamic_op`).
-        let (args, _arg_sources) =
-            Self::spread_call_args_by_syntax(code, raw_args, arg_sources_idx, None);
-        let name_val = self.stack.pop().ok_or_else(|| {
-            RuntimeError::new("Interpreter stack underflow in CallMethodDynamicMut")
-        })?;
-        let target = self.stack.pop().ok_or_else(|| {
-            RuntimeError::new("Interpreter stack underflow in CallMethodDynamicMut")
-        })?;
-        if !quoted && !matches!(name_val.view(), ValueView::Package(_)) {
-            let mut call_args = Vec::with_capacity(args.len() + 1);
-            call_args.push(Self::invocant_as_positional(target));
-            call_args.extend(args);
-            let result = self.vm_call_on_value(name_val, call_args, None);
-            match modifier {
-                Some("+") | Some("*") => self.stack.push(Value::array(vec![result?])),
-                _ => self.stack.push(result?),
-            }
-            return Ok(());
-        }
-        let method_name_str = Self::dynamic_method_name(&name_val);
-        let method = Self::rewrite_method_name(&method_name_str, modifier);
-        // ADR-0040's store boundary, Proxy half — the same hook the statically
-        // named mutator dispatch applies (`@a."$name"($p)` stores the FETCHed
-        // value too).
-        let args = self.fetch_proxy_mutator_args(&method, args)?;
-        if method == "message"
-            && args.is_empty()
-            && let ValueView::Instance { attributes, .. } = target.view()
-            && let Some(msg) = attributes.as_map().get("__mutsu_thrown_message")
-        {
-            self.stack.push(msg.clone());
-            return Ok(());
-        }
-        // Handle .* and .+ modifiers
-        match modifier {
-            Some("+") => {
-                crate::vm::vm_stats::record_dispatch_entry_intercept(
-                    "callmethoddynamicmut",
-                    "modifier-plus",
-                );
-                let vals = self.call_method_all_with_fallback(&target, &method, &args, false)?;
-                self.stack.push(Value::array(vals));
-                return Ok(());
-            }
-            Some("*") => {
-                crate::vm::vm_stats::record_dispatch_entry_intercept(
-                    "callmethoddynamicmut",
-                    "modifier-star",
-                );
-                match self.call_method_all_with_fallback(&target, &method, &args, false) {
-                    Ok(vals) => self.stack.push(Value::array(vals)),
-                    Err(e) if Self::is_method_not_found_error(&e) => {
-                        self.stack.push(Value::array(vec![]))
-                    }
-                    Err(e) => return Err(e),
-                }
-                return Ok(());
-            }
-            _ => {}
-        }
-        // Preserve the caller's env `self` across the dispatch: a dynamic method
-        // call (`$obj."$name"()`) binds `self` to `$obj` for the callee, and the
-        // mut dispatch path does not restore it. Without this, a later `self` read
-        // in an enclosing nested sub (resolved from env via `GetSelfOrNoSelf`)
-        // would see `$obj` leaked in. See try_compiled_method_or_interpret.
-        let saved_self = self.get_env_self();
-        let saved_topic = self.get_env_with_main_alias("_");
-        let call_result = if matches!(
-            name_val.view(),
-            ValueView::Sub(_) | ValueView::WeakSub(_) | ValueView::Routine { .. }
-        ) {
-            crate::vm::vm_stats::record_dispatch_entry_intercept(
-                "callmethoddynamicmut",
-                "call-sub-value",
-            );
-            let mut call_args = Vec::with_capacity(args.len() + 1);
-            call_args.push(Self::invocant_as_positional(target));
-            call_args.extend(args);
-            self.vm_call_on_value(name_val, call_args, None)
-        } else if modifier.is_none()
-            && let Some(result) = self.try_native_buf_mut(&target_name, &target, &method, &args)
-        {
-            // Native fast path for mutating Buf write methods (`write-int*`/`write-uint*`/
-            // `write-num*`/`write-bits`) reached via a *dynamic* method name
-            // (`$buf."$write"(...)`) on a mutable Buf instance — mirror the static
-            // CallMethodMut path (ledger §D(b)). Type-object / non-Buf receivers and
-            // bad arity fall through to the generic fork unchanged.
-            crate::vm::vm_stats::record_dispatch_entry_outcome("callmethoddynamicmut", "native");
-            result
-        } else {
-            // TODO: compile to bytecode — generic mut method fork (ledger §1).
-            crate::vm::vm_stats::record_dispatch_entry_outcome("callmethoddynamicmut", "user");
-            // ADR-0067 slice 3b: the runtime method-name spelling reaches the
-            // same binders, and rawness is only knowable here anyway, so the
-            // arrival channel is armed the same way the statically named
-            // dispatch arms it.
-            let armed = self.arm_raw_invocant_arrival(code, &target_name, &target, &method, &args);
-            let r = self.vm_call_method_mut_with_values(&target_name, target, &method, args);
-            self.disarm_raw_invocant_arrival(armed);
-            r
-        };
-        match saved_self {
-            Some(s) => self.set_env_with_main_alias("self", s),
-            None => {
-                self.env_mut().remove("self");
-            }
-        }
-        match saved_topic {
-            Some(t) => self.set_env_with_main_alias("_", t),
-            None => {
-                self.env_mut().remove("_");
-            }
-        }
-        let call_result = call_result?;
-        self.stack.push(call_result);
-        Ok(())
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -551,6 +166,29 @@ impl Interpreter {
         quoted: bool,
         arg_sources_idx: Option<u32>,
     ) -> Result<(), RuntimeError> {
+        self.exec_call_method_mut_named_op(
+            code,
+            MethodName::from_const(code, name_idx, quoted),
+            arity,
+            target_name_idx,
+            modifier_idx,
+            arg_sources_idx,
+        )
+    }
+
+    /// The `CallMethodMut` body for an already-resolved method name (see
+    /// `exec_call_method_named_op`; `CallMethodDynamicMut` owns only the name
+    /// resolution). Stack: `[.., target, args...]`.
+    pub(super) fn exec_call_method_mut_named_op(
+        &mut self,
+        code: &CompiledCode,
+        name: MethodName<'_>,
+        arity: u32,
+        target_name_idx: u32,
+        modifier_idx: Option<u32>,
+        arg_sources_idx: Option<u32>,
+    ) -> Result<(), RuntimeError> {
+        let quoted = name.quoted;
         // Whether the receiver is `Nil`, read before the impl consumes the
         // operands (the stack is `[.., target, args...]` here, so the target is
         // `arity` slots below the top). Used for the Nil-absorb fallback below.
@@ -562,7 +200,7 @@ impl Interpreter {
             .is_some_and(Value::is_nil);
         let result = self.exec_call_method_mut_op_impl(
             code,
-            name_idx,
+            name,
             arity,
             target_name_idx,
             modifier_idx,
@@ -606,7 +244,7 @@ impl Interpreter {
     fn exec_call_method_mut_op_impl(
         &mut self,
         code: &CompiledCode,
-        name_idx: u32,
+        name: MethodName<'_>,
         arity: u32,
         target_name_idx: u32,
         modifier_idx: Option<u32>,
@@ -621,7 +259,7 @@ impl Interpreter {
             && modifier_idx.is_none()
             && !quoted
             && !self.accessor_ref_pending
-            && let Some(val) = self.try_accessor_lane(code.const_sym(name_idx))
+            && let Some(val) = self.try_accessor_lane(name.sym)
         {
             crate::vm::vm_stats::record_dispatch_entry_outcome("callmethodmut", "accessor");
             self.stack.pop();
@@ -635,7 +273,7 @@ impl Interpreter {
         let decoded_sources = self.decode_arg_sources(code, arg_sources_idx);
         crate::alloc_scope_end!(_sc_cmm_dec);
         crate::alloc_scope_named!(_sc_cmm_names, "cmm:names");
-        let method_raw = Self::const_str(code, name_idx);
+        let method_raw = name.raw;
         let target_name: &str = Self::const_str(code, target_name_idx);
         let modifier = modifier_idx.map(|idx| Self::const_str(code, idx));
         // `rewrite_method_name` allocated a fresh `String` for the method name on
@@ -651,7 +289,7 @@ impl Interpreter {
         // constant-symbol table, so the hot path pays no re-intern.
         let method_sym = match modifier {
             Some("^") | Some("!") => crate::symbol::Symbol::intern(method),
-            _ => code.const_sym(name_idx),
+            _ => name.sym,
         };
         crate::alloc_scope_end!(_sc_cmm_names);
         crate::alloc_scope_named!(_sc_cmm_args, "cmm:args");

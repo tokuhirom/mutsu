@@ -2,7 +2,6 @@
 use super::*;
 use crate::runtime::meta_ns::MetaNs;
 use crate::symbol::Symbol;
-use crate::value::ValueMap;
 
 impl Interpreter {
     /// A parameter may carry a trait the signature machinery does not know
@@ -91,6 +90,8 @@ impl Interpreter {
         Ok(())
     }
 
+    /// `OpCode::MakeLambda`: a pointy block or a WhateverCode. See
+    /// [`Interpreter::build_closure`].
     pub(super) fn exec_make_lambda_op(
         &mut self,
         code: &CompiledCode,
@@ -98,199 +99,73 @@ impl Interpreter {
         cc_idx: Option<u32>,
         is_whatever_code: bool,
     ) -> Result<(), RuntimeError> {
-        // See `closures_created` doc comment.
-        self.closures_created += 1;
-        let stmt = &code.stmt_pool[idx as usize];
-        if let Stmt::SubDecl {
+        let Stmt::SubDecl {
             param_defs,
             return_type,
-            // See `closure_body_arc` / `closure_signature`: the body AND the
-            // signature are shared, not cloned out here.
-            params: _,
-            body: _,
             is_rw,
             is_raw,
             ..
-        } = stmt
-        {
-            self.check_param_custom_traits(param_defs)?;
-            let signature = code.closure_signature(idx as usize);
-            let compiled_code = Self::resolve_closure_code(code, cc_idx);
-            self.note_frame_lexical_closure_body(code, idx, &compiled_code);
-            self.box_captured_lexicals(code, &compiled_code);
-            if compiled_code
-                .as_ref()
-                .is_some_and(|cc| cc.is_supply_block_body)
-            {
-                self.box_supply_container_captures(code, &compiled_code);
-            }
-            let owned_captures = self.compute_owned_captures(&compiled_code);
-            let authoritative_captures = self.compute_authoritative_captures(&compiled_code);
-            let upvalues = self.capture_upvalues(code, &compiled_code);
-            // Upvalue snapshot (single-store Slice E); see `capture_closure_env`.
-            let mut env = self.capture_closure_env(code, &compiled_code);
-            // A return type belongs to the routine that declared it and is never
-            // inherited lexically. The captured env may carry the *enclosing*
-            // routine's `__mutsu_return_type`, which would then be enforced on
-            // this block's own return (`sub f(--> blob32) { ({ $^a + $^b })[0](…) }`
-            // reported the inner block's Int as a bad `blob32` return).
-            // Symbol-keyed: this runs on EVERY closure creation, and the
-            // `String`-keyed twins would allocate the literal, re-hash it in the
-            // intern memo and re-scan it in `note_env_key` (which sets no flag
-            // for either of these names) each time. See `symbol::well_known`.
-            env.remove_sym(crate::symbol::well_known::return_type());
-            if let Some(rt) = return_type {
-                env.insert_sym(
-                    crate::symbol::well_known::return_type(),
-                    Value::str(rt.clone()),
-                );
-            }
-            if is_whatever_code {
-                env.insert_sym(
-                    crate::symbol::well_known::callable_type(),
-                    Value::str_from("WhateverCode"),
-                );
-            }
-            let cc_source_line = compiled_code
-                .as_ref()
-                .and_then(|cc| cc.source_line)
-                .map(|l| l as u32)
-                .or_else(|| self.current_source_line());
-            let compiled_fns = compiled_code
-                .as_ref()
-                .and_then(|cc| cc.compiled_fns.clone());
-            let id = crate::value::next_instance_id();
-            let state_scope_guard = compiled_code
-                .as_ref()
-                .filter(|cc| !cc.state_locals.is_empty())
-                .map(|_| crate::runtime::state_scope_reaper::StateScopeGuard::new(id));
-            let val = Value::sub_value(crate::gc::Gc::new(crate::value::SubData {
-                package: self.lexical_closure_package_sym(),
-                name: crate::symbol::well_known::anon(),
-                empty_sig: signature.params.is_empty() && signature.param_defs.is_empty(),
-                params: signature.params,
-                param_defs: signature.param_defs,
-                body: code.closure_body_arc(idx as usize),
-                is_rw: *is_rw,
-                is_raw: *is_raw,
-                env,
-                assumed_positional: Vec::new(),
-                assumed_named: ValueMap::default(),
-                id,
-                // A pointy block (`-> $x {...}`) is a `Block`, not a `Sub` — mark it
-                // so `.WHAT`/`.^name`/smartmatch report `Block`. Named anonymous subs
-                // (`sub {...}`) have `is_pointy_block == false` and stay `Sub`.
-                is_bare_block: compiled_code.as_ref().is_some_and(|cc| cc.is_pointy_block),
-                owned_captures,
-                authoritative_captures,
-                upvalues,
-                compiled_code,
-                compiled_fns,
-                compiled_routine: None,
-                is_decl_expr_thunk: false,
-                deprecated_message: None,
-                source_line: cc_source_line,
-                // Not `current_source_file()`: that reads the dynamically-scoped
-                // `?FILE` env var, which only tracks the unit currently being
-                // *loaded*, so a closure literal built each time an
-                // already-loaded module's routine RUNS was stamped with the
-                // caller's file. `executing_source_file()` reads the file baked
-                // onto the innermost enclosing routine frame instead, and stays
-                // correct regardless of who is calling — exactly as the
-                // `MakeAnonSub`/`MakeAnonSubParams` arms already do
-                // (`vm_register_ops.rs`). A `-> $v {...}` handed to `.tap` from
-                // inside a module is the shape that made this visible: the
-                // block could not reach its own compunit's private routines.
-                source_file: self.executing_source_file(),
-                captured_fatal_mode: self.fatal_mode,
-                param_name_syms_cache: std::sync::OnceLock::new(),
-                source_file_sym_cache: std::sync::OnceLock::new(),
-                state_scope_guard,
-            }));
-            self.stack.push(val);
-            Ok(())
-        } else {
-            Err(RuntimeError::new("MakeLambda expects SubDecl"))
-        }
+        } = &code.stmt_pool[idx as usize]
+        else {
+            return Err(RuntimeError::new("MakeLambda expects SubDecl"));
+        };
+        self.check_param_custom_traits(param_defs)?;
+        // See `closure_signature`: the signature is shared, not cloned out here.
+        let signature = code.closure_signature(idx as usize);
+        let is_pointy =
+            cc_idx.is_some_and(|i| code.closure_compiled_codes[i as usize].is_pointy_block);
+        let spec = crate::vm::vm_closure_build::ClosureSpec {
+            name: crate::symbol::well_known::anon(),
+            empty_sig: signature.params.is_empty() && signature.param_defs.is_empty(),
+            signature,
+            is_rw: *is_rw,
+            is_raw: *is_raw,
+            // A pointy block (`-> $x {...}`) is a `Block`, not a `Sub` -- so
+            // `.WHAT`/`.^name`/smartmatch report `Block`.
+            is_bare_block: is_pointy,
+            return_type: return_type.as_deref(),
+            callable_type: is_whatever_code.then_some("WhateverCode"),
+            capture_match_var: false,
+            // A pointy callback's captures are commonly mutated through method
+            // calls the freeze cannot see; see `vm_closure_build`.
+            freeze_readonly_captures: false,
+        };
+        let val = self.build_closure(code, idx, cc_idx, spec);
+        self.stack.push(val);
+        Ok(())
     }
 
+    /// `OpCode::MakeBlockClosure`: a placeholder block reached as an
+    /// expression. It takes no signature of its own (the shared empty one
+    /// avoids an `Arc` control-block allocation per creation). See
+    /// [`Interpreter::build_closure`].
     pub(super) fn exec_make_block_closure_op(
         &mut self,
         code: &CompiledCode,
         idx: u32,
         cc_idx: Option<u32>,
     ) -> Result<(), RuntimeError> {
-        // See `closures_created` doc comment.
-        self.closures_created += 1;
-        let stmt = &code.stmt_pool[idx as usize];
-        if let Stmt::Block(_body) = stmt {
-            let compiled_code = Self::resolve_closure_code(code, cc_idx);
-            self.note_frame_lexical_closure_body(code, idx, &compiled_code);
-            self.box_captured_lexicals(code, &compiled_code);
-            let owned_captures = self.compute_owned_captures(&compiled_code);
-            let authoritative_captures = self.compute_authoritative_captures(&compiled_code);
-            let upvalues = self.capture_upvalues(code, &compiled_code);
-            let cc_source_line = compiled_code
-                .as_ref()
-                .and_then(|cc| cc.source_line)
-                .map(|l| l as u32)
-                .or_else(|| self.current_source_line());
-            let compiled_fns = compiled_code
-                .as_ref()
-                .and_then(|cc| cc.compiled_fns.clone());
-            let id = crate::value::next_instance_id();
-            let state_scope_guard = compiled_code
-                .as_ref()
-                .filter(|cc| !cc.state_locals.is_empty())
-                .map(|_| crate::runtime::state_scope_reaper::StateScopeGuard::new(id));
-            let val = Value::sub_value(crate::gc::Gc::new(crate::value::SubData {
-                package: self.lexical_closure_package_sym(),
-                name: crate::symbol::well_known::anon(),
-                // A block closure takes no signature at all; the shared empty
-                // avoids an `Arc` control-block allocation per creation.
+        let Stmt::Block(_) = &code.stmt_pool[idx as usize] else {
+            return Err(RuntimeError::new("MakeBlockClosure expects Block"));
+        };
+        let spec = crate::vm::vm_closure_build::ClosureSpec {
+            name: crate::symbol::well_known::anon(),
+            signature: crate::opcode::ClosureSignature {
                 params: crate::value::empty_params(),
                 param_defs: crate::value::empty_param_defs(),
-                body: code.closure_body_arc(idx as usize),
-                is_rw: false,
-                is_raw: false,
-                // Upvalue snapshot (single-store Slice E); see capture_closure_env.
-                env: self.capture_closure_env(code, &compiled_code),
-                assumed_positional: Vec::new(),
-                assumed_named: ValueMap::default(),
-                id,
-                empty_sig: false,
-                is_bare_block: true,
-                owned_captures,
-                authoritative_captures,
-                upvalues,
-                compiled_code,
-                compiled_fns,
-                compiled_routine: None,
-                is_decl_expr_thunk: false,
-                deprecated_message: None,
-                source_line: cc_source_line,
-                // Not `current_source_file()`: that reads the dynamically-scoped
-                // `?FILE` env var, which only tracks the unit currently being
-                // *loaded*, so a closure literal built each time an
-                // already-loaded module's routine RUNS was stamped with the
-                // caller's file. `executing_source_file()` reads the file baked
-                // onto the innermost enclosing routine frame instead, and stays
-                // correct regardless of who is calling — exactly as the
-                // `MakeAnonSub`/`MakeAnonSubParams` arms already do
-                // (`vm_register_ops.rs`). A `-> $v {...}` handed to `.tap` from
-                // inside a module is the shape that made this visible: the
-                // block could not reach its own compunit's private routines.
-                source_file: self.executing_source_file(),
-                captured_fatal_mode: self.fatal_mode,
-                param_name_syms_cache: std::sync::OnceLock::new(),
-                source_file_sym_cache: std::sync::OnceLock::new(),
-                state_scope_guard,
-            }));
-            self.stack.push(val);
-            Ok(())
-        } else {
-            Err(RuntimeError::new("MakeBlockClosure expects Block"))
-        }
+            },
+            empty_sig: false,
+            is_rw: false,
+            is_raw: false,
+            is_bare_block: true,
+            return_type: None,
+            callable_type: None,
+            capture_match_var: true,
+            freeze_readonly_captures: false,
+        };
+        let val = self.build_closure(code, idx, cc_idx, spec);
+        self.stack.push(val);
+        Ok(())
     }
 
     pub(super) fn exec_register_sub_op(

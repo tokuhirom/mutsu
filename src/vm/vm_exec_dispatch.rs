@@ -4390,24 +4390,16 @@ impl Interpreter {
                 // `use fatal`: see the comment on the `CallFunc` arm above. A
                 // method can never be `require` (a bareword sub), so pass "".
                 self.explode_if_fatal_failure_in_call_args("", *arity as usize)?;
-                // ADR-0067's subscript-receiver producer, dynamic spelling:
-                // `@a[0]."$name"()` reaches the same raw-invocant contract, and
-                // the receiver is already a container when `IndexInvocantRef`
-                // produced one. Armed here rather than inside the op because
-                // that function returns from a dozen places.
-                let armed_raw_invocant = self.arm_raw_invocant_arrival_from_dynamic_receiver(
-                    *arity,
-                    modifier_idx.map(|idx| Self::const_str(code, idx)),
-                );
-                let dynamic_result = self.exec_call_method_dynamic_op(
+                // ADR-0067's raw-invocant arrival (`@a[0]."$name"()`) is armed
+                // by the `CallMethod` body this delegates to, once the name is
+                // resolved.
+                match self.exec_call_method_dynamic_op(
                     code,
                     *arity,
                     *modifier_idx,
                     *quoted,
                     *arg_sources_idx,
-                );
-                self.disarm_raw_invocant_arrival(armed_raw_invocant);
-                match dynamic_result {
+                ) {
                     Ok(()) => {}
                     Err(e) => {
                         // Record a resume point so a method that raises a
@@ -4426,37 +4418,8 @@ impl Interpreter {
             }
             // Cost: as CallMethodDynamic, O(a + d) plus the body; the attribute snapshot/mirror is
             // O(1) for a non-attribute receiver. Rakudo: O(a) -- see #9172.
-            OpCode::CallMethodDynamicMut {
-                arity,
-                target_name_idx,
-                modifier_idx,
-                quoted,
-                arg_sources_idx,
-            } => {
-                self.sync_source_line(code, *ip);
-                // `use fatal`: see the comment on the `CallFunc` arm above. A
-                // method can never be `require` (a bareword sub), so pass "".
-                self.explode_if_fatal_failure_in_call_args("", *arity as usize)?;
-                let pre = self.attr_env_snapshot(code, *target_name_idx);
-                match self.exec_call_method_dynamic_mut_op(
-                    code,
-                    *arity,
-                    *target_name_idx,
-                    *modifier_idx,
-                    *quoted,
-                    *arg_sources_idx,
-                ) {
-                    Ok(()) => {}
-                    Err(e) => {
-                        if !e.is_resume() && self.resume_ip.is_none() {
-                            self.resume_ip = Some((Self::resume_code_fp(code), *ip + 1));
-                        }
-                        return Err(e);
-                    }
-                }
-                self.apply_pending_rw_writeback(code);
-                self.drain_pending_local_updates_after_call(code);
-                self.mirror_attr_env_to_cell(code, *target_name_idx, pre);
+            OpCode::CallMethodDynamicMut { .. } => {
+                self.exec_call_method_mut_site(code, *ip)?;
                 *ip += 1;
             }
             // Cost: O(1) amortized, O(e) after a shift/unshift left a head offset (see

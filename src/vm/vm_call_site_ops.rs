@@ -149,50 +149,81 @@ impl Interpreter {
         Ok(())
     }
 
-    /// `OpCode::CallMethodMut` at `code.ops[ip]`.
+    /// `OpCode::CallMethodMut` / `OpCode::CallMethodDynamicMut` at
+    /// `code.ops[ip]`.
     pub(super) fn exec_call_method_mut_site(
         &mut self,
         code: &CompiledCode,
         ip: usize,
     ) -> Result<(), RuntimeError> {
-        let OpCode::CallMethodMut {
-            name_idx,
-            arity,
-            target_name_idx,
-            modifier_idx,
-            quoted,
-            arg_sources_idx,
-        } = &code.ops[ip]
-        else {
-            unreachable!("exec_call_method_mut_site on a non-CallMethodMut opcode")
-        };
+        match &code.ops[ip] {
+            OpCode::CallMethodMut {
+                name_idx,
+                arity,
+                target_name_idx,
+                modifier_idx,
+                quoted,
+                arg_sources_idx,
+            } => self.call_method_mut_site_around(code, ip, *arity, *target_name_idx, |vm| {
+                vm.exec_call_method_mut_op(
+                    code,
+                    *name_idx,
+                    *arity,
+                    *target_name_idx,
+                    *modifier_idx,
+                    *quoted,
+                    *arg_sources_idx,
+                )
+            }),
+            // The run-time-named spelling (`$var."$name"(...)`) shares every
+            // step around the dispatch -- above all the rebound-receiver
+            // writeback, without which a delegated `push` on an `is Array`
+            // instance never reached the caller's slot (#9454).
+            OpCode::CallMethodDynamicMut {
+                arity,
+                target_name_idx,
+                modifier_idx,
+                quoted,
+                arg_sources_idx,
+            } => self.call_method_mut_site_around(code, ip, *arity, *target_name_idx, |vm| {
+                vm.exec_call_method_dynamic_mut_op(
+                    code,
+                    *arity,
+                    *target_name_idx,
+                    *modifier_idx,
+                    *quoted,
+                    *arg_sources_idx,
+                )
+            }),
+            _ => unreachable!("exec_call_method_mut_site on a non-CallMethodMut opcode"),
+        }
+    }
+
+    /// Everything a mutating method call on a named receiver does around its
+    /// dispatch `f`: see `exec_call_method_mut_site`.
+    fn call_method_mut_site_around(
+        &mut self,
+        code: &CompiledCode,
+        ip: usize,
+        arity: u32,
+        target_name_idx: u32,
+        f: impl FnOnce(&mut Self) -> Result<(), RuntimeError>,
+    ) -> Result<(), RuntimeError> {
         self.sync_source_line(code, ip);
         crate::alloc_scope_named!(_sc_cmm_pre, "op:CallMethodMut:pre");
         // `use fatal`: see `exec_call_method_site`.
-        self.explode_if_fatal_failure_in_call_args("", *arity as usize)?;
-        let pre = self.attr_env_snapshot(code, *target_name_idx);
+        self.explode_if_fatal_failure_in_call_args("", arity as usize)?;
+        let pre = self.attr_env_snapshot(code, target_name_idx);
         // The receiver's env binding before the call, so the writeback below
         // can tell whether this method actually rebound it (see there).
         // Compared with `same_binding` -- O(1), and it never walks container
         // contents the way `PartialEq` would.
-        let receiver_before: Option<Option<Value>> =
-            (!Self::const_str(code, *target_name_idx).is_empty()).then(|| {
-                self.env()
-                    .get_sym(code.const_sym(*target_name_idx))
-                    .cloned()
-            });
+        let receiver_before: Option<Option<Value>> = (!Self::const_str(code, target_name_idx)
+            .is_empty())
+        .then(|| self.env().get_sym(code.const_sym(target_name_idx)).cloned());
         crate::alloc_scope_end!(_sc_cmm_pre);
         crate::alloc_scope_named!(_sc_cmm_disp, "op:CallMethodMut:dispatch");
-        self.exec_call_method_mut_op(
-            code,
-            *name_idx,
-            *arity,
-            *target_name_idx,
-            *modifier_idx,
-            *quoted,
-            *arg_sources_idx,
-        )
-        .inspect_err(|e| self.record_call_resume_point(code, ip, e))?;
+        f(self).inspect_err(|e| self.record_call_resume_point(code, ip, e))?;
         // Slice F (env<->locals coherence): a mutating method updates the
         // receiver in env by name (`$s.push` on an `is Array`-backed instance
         // reassigns `env[$s]`; the ~15 `env_mut().insert(target, ..)` branches
@@ -228,7 +259,7 @@ impl Interpreter {
         crate::alloc_scope_end!(_sc_cmm_disp);
         crate::alloc_scope_named!(_sc_cmm_post, "op:CallMethodMut:post");
         if let Some(before) = receiver_before {
-            let after = self.env().get_sym(code.const_sym(*target_name_idx));
+            let after = self.env().get_sym(code.const_sym(target_name_idx));
             let rebound = match (&before, after) {
                 (Some(b), Some(a)) => !b.same_binding(a),
                 (None, None) => false,
@@ -236,12 +267,12 @@ impl Interpreter {
             };
             if rebound {
                 self.pending_rw_writeback_sources
-                    .push(Self::const_str(code, *target_name_idx).to_string());
+                    .push(Self::const_str(code, target_name_idx).to_string());
             }
         }
         self.apply_pending_rw_writeback(code);
         self.drain_pending_local_updates_after_call(code);
-        self.mirror_attr_env_to_cell(code, *target_name_idx, pre);
+        self.mirror_attr_env_to_cell(code, target_name_idx, pre);
         crate::alloc_scope_end!(_sc_cmm_post);
         Ok(())
     }

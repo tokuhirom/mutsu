@@ -630,6 +630,8 @@ impl Interpreter {
             .collect()
     }
 
+    /// `OpCode::MakeAnonSub`: a bare block (`is_block`) or a parameterless
+    /// routine body. See [`Interpreter::build_closure`].
     pub(super) fn exec_make_anon_sub_op(
         &mut self,
         code: &CompiledCode,
@@ -637,138 +639,32 @@ impl Interpreter {
         cc_idx: Option<u32>,
         is_block: bool,
     ) -> Result<(), RuntimeError> {
-        // See `closures_created` doc comment: a routine-registry restore gate
-        // consults this to detect a closure literal escaping via a side
-        // channel (not just the return value).
-        self.closures_created += 1;
-        let stmt = &code.stmt_pool[idx as usize];
-        if let Stmt::Block(_) = stmt {
-            // Shared per pool slot (`closure_signature`): the block's implicit
-            // placeholder parameters are a pure function of its body, but the
-            // walk-and-sort that derives them used to run on every creation.
-            let signature = code.closure_signature(idx as usize);
-            let compiled_code = Self::resolve_closure_code(code, cc_idx);
-            self.note_frame_lexical_closure_body(code, idx, &compiled_code);
-            // A bare block that performs a regex match is not a routine
-            // boundary: its `$/` belongs to the lexical scope where it was
-            // written, even when another routine invokes the block. Only such
-            // blocks capture the match variable: capturing it for every callback
-            // lets an unrelated nested routine's match shadow grammar-action
-            // `$/` bindings (YAMLish is a representative failure).
-            let block_writes_match = is_block
-                && compiled_code.as_ref().is_some_and(|cc| {
-                    cc.ops.iter().any(|op| {
-                        matches!(
-                            op,
-                            OpCode::SmartMatchExpr {
-                                rhs_pure_regex: true,
-                                ..
-                            }
-                        )
-                    })
-                });
-            if block_writes_match && !self.env().get("/").is_some_and(Value::is_container_ref) {
-                let slash = self
-                    .env()
-                    .get("/")
-                    .cloned()
-                    .unwrap_or(Value::NIL)
-                    .into_container_ref();
-                self.env_mut().insert("/".to_string(), slash.clone());
-                // `$/` can also occupy a local slot in the defining compiled
-                // frame. Keep that slot on the same cell; otherwise a later
-                // caller-return reconciliation would restore its stale Match
-                // value over the captured binding.
-                for (slot, name) in code.locals.iter().enumerate() {
-                    if name == "/" && slot < self.locals.len() {
-                        self.locals[slot] = slash.clone();
-                    }
-                }
-            }
-            self.box_captured_lexicals(code, &compiled_code);
-            let owned_captures = self.compute_owned_captures(&compiled_code);
-            let authoritative_captures = self.compute_authoritative_captures(&compiled_code);
-            let mut upvalues = self.capture_upvalues(code, &compiled_code);
-            let mut captured_env = self.capture_closure_env(code, &compiled_code);
-            self.freeze_readonly_owned_captures(
-                code,
-                &compiled_code,
-                &owned_captures,
-                &mut captured_env,
-                &mut upvalues,
-            );
-            // A bare block never declares a return type of its own, so a
-            // lexically-inherited `__mutsu_return_type` (from the routine or
-            // pointy block it is written inside) must not be enforced on the
-            // block's own result — the same guard the `MakeLambda` /
-            // `MakeAnonSubParams` arms already apply. Without it, a block
-            // argument written inside e.g. `-> $x --> Pair { (@k.map({ … })
-            // .join: $sep) => $x }` failed the *outer* `Pair` check on its own
-            // inner value.
-            captured_env.remove("__mutsu_return_type");
-            let cc_source_line = compiled_code
-                .as_ref()
-                .and_then(|cc| cc.source_line)
-                .map(|l| l as u32)
-                .or_else(|| self.current_source_line());
-            let compiled_fns = compiled_code
-                .as_ref()
-                .and_then(|cc| cc.compiled_fns.clone());
-            let id = crate::value::next_instance_id();
-            let state_scope_guard = compiled_code
-                .as_ref()
-                .filter(|cc| !cc.state_locals.is_empty())
-                .map(|_| crate::runtime::state_scope_reaper::StateScopeGuard::new(id));
-            let val = Value::sub_value(crate::gc::Gc::new(crate::value::SubData {
-                package: self.lexical_closure_package_sym(),
-                // Pre-interned like its `MakeLambda` twin: re-interning the
-                // empty literal on every block creation hashed a string for a
-                // constant answer.
-                name: crate::symbol::well_known::anon(),
-                params: signature.params,
-                param_defs: signature.param_defs,
-                body: code.closure_body_arc(idx as usize),
-                is_rw: false,
-                is_raw: false,
-                // Upvalue snapshot (single-store Slice E): capture only free vars,
-                // shadow-meta, and system names; see `capture_closure_env`.
-                env: captured_env,
-                assumed_positional: Vec::new(),
-                assumed_named: ValueMap::default(),
-                id,
-                empty_sig: false,
-                is_bare_block: is_block,
-                owned_captures,
-                authoritative_captures,
-                upvalues,
-                compiled_code,
-                compiled_fns,
-                compiled_routine: None,
-                is_decl_expr_thunk: false,
-                deprecated_message: None,
-                source_line: cc_source_line,
-                // Not `current_source_file()`: that reads the dynamically-scoped
-                // `?FILE` env var, which only tracks the unit currently being
-                // *loaded* (see `run_modules.rs`) — correct for a closure built
-                // while its module loads, but wrong for one built later, each
-                // time an already-loaded module's routine runs and constructs
-                // this literal afresh (`?FILE` has reverted to the caller's own
-                // file by then). `executing_source_file()` instead reads the
-                // file baked onto the innermost enclosing routine frame's own
-                // `def_file`, which stays correct regardless of who is calling.
-                source_file: self.executing_source_file(),
-                captured_fatal_mode: self.fatal_mode,
-                param_name_syms_cache: std::sync::OnceLock::new(),
-                source_file_sym_cache: std::sync::OnceLock::new(),
-                state_scope_guard,
-            }));
-            self.stack.push(val);
-            Ok(())
-        } else {
-            Err(RuntimeError::new("MakeAnonSub expects Block"))
-        }
+        let Stmt::Block(_) = &code.stmt_pool[idx as usize] else {
+            return Err(RuntimeError::new("MakeAnonSub expects Block"));
+        };
+        // Shared per pool slot (`closure_signature`): the block's implicit
+        // placeholder parameters are a pure function of its body.
+        let signature = code.closure_signature(idx as usize);
+        let spec = crate::vm::vm_closure_build::ClosureSpec {
+            name: crate::symbol::well_known::anon(),
+            signature,
+            empty_sig: false,
+            is_rw: false,
+            is_raw: false,
+            is_bare_block: is_block,
+            return_type: None,
+            callable_type: None,
+            capture_match_var: is_block,
+            freeze_readonly_captures: true,
+        };
+        let val = self.build_closure(code, idx, cc_idx, spec);
+        self.stack.push(val);
+        Ok(())
     }
 
+    /// `OpCode::MakeAnonSubParams`: a routine literal with a signature
+    /// (`sub ($x) {...}`, `anon sub NAME`, a method literal, a WhateverCode),
+    /// then its custom `is` traits. See [`Interpreter::build_closure`].
     pub(super) fn exec_make_anon_sub_params_op(
         &mut self,
         code: &CompiledCode,
@@ -776,19 +672,12 @@ impl Interpreter {
         cc_idx: Option<u32>,
         is_whatever_code: bool,
     ) -> Result<(), RuntimeError> {
-        // See `closures_created` doc comment.
-        self.closures_created += 1;
         let stmt = &code.stmt_pool[idx as usize];
         if let Stmt::SubDecl {
             name,
             custom_traits,
             param_defs,
             return_type,
-            // The body and the signature both come from the shared per-pool-slot
-            // caches (`closure_body_arc` / `closure_signature`) rather than being
-            // deep-cloned out of the pool here.
-            params: _,
-            body: _,
             is_rw,
             is_raw,
             ..
@@ -796,106 +685,39 @@ impl Interpreter {
         {
             self.check_param_custom_traits(param_defs)?;
             let signature = code.closure_signature(idx as usize);
-            let compiled_code = Self::resolve_closure_code(code, cc_idx);
-            self.note_frame_lexical_closure_body(code, idx, &compiled_code);
-            self.box_captured_lexicals(code, &compiled_code);
-            let owned_captures = self.compute_owned_captures(&compiled_code);
-            let authoritative_captures = self.compute_authoritative_captures(&compiled_code);
-            let mut upvalues = self.capture_upvalues(code, &compiled_code);
-            // Upvalue snapshot (single-store Slice E); see `capture_closure_env`.
-            let mut env = self.capture_closure_env(code, &compiled_code);
-            self.freeze_readonly_owned_captures(
-                code,
-                &compiled_code,
-                &owned_captures,
-                &mut env,
-                &mut upvalues,
-            );
-            // See the note in `vm_register_sub_ops`: a lexically-inherited
-            // `__mutsu_return_type` would be enforced on this closure's return.
-            // Symbol-keyed, like the `MakeLambda` twin in `vm_register_sub_ops`:
-            // this runs on every closure creation and the `String`-keyed forms
-            // would allocate and re-hash the literal each time.
-            env.remove_sym(crate::symbol::well_known::return_type());
-            if let Some(rt) = return_type {
-                env.insert_sym(
-                    crate::symbol::well_known::return_type(),
-                    Value::str(rt.clone()),
-                );
-            }
-            if is_whatever_code {
-                env.insert_sym(
-                    crate::symbol::well_known::callable_type(),
-                    Value::str_from("WhateverCode"),
-                );
-            }
             // A `method`/`submethod` literal compiles down this same routine
             // path; the declarator the parser recorded reaches here as a
             // marker on the pooled decl, and is what makes the closure answer
             // `Method`/`Submethod` rather than the `Sub` every other routine
-            // literal is.
-            if let Some(callable_type) = custom_traits.iter().find_map(|(t, _)| match t.as_str() {
-                crate::ast::METHOD_LITERAL_MARKER => Some("Method"),
-                crate::ast::SUBMETHOD_LITERAL_MARKER => Some("Submethod"),
-                _ => None,
-            }) {
-                env.insert_sym(
-                    crate::symbol::well_known::callable_type(),
-                    Value::str(callable_type.to_string()),
-                );
-            }
-            let cc_source_line = compiled_code
-                .as_ref()
-                .and_then(|cc| cc.source_line)
-                .map(|l| l as u32)
-                .or_else(|| self.current_source_line());
-            let compiled_fns = compiled_code
-                .as_ref()
-                .and_then(|cc| cc.compiled_fns.clone());
-            let id = crate::value::next_instance_id();
-            let state_scope_guard = compiled_code
-                .as_ref()
-                .filter(|cc| !cc.state_locals.is_empty())
-                .map(|_| crate::runtime::state_scope_reaper::StateScopeGuard::new(id));
-            let mut val = Value::sub_value(crate::gc::Gc::new(crate::value::SubData {
-                package: self.lexical_closure_package_sym(),
+            // literal is. It wins over `WhateverCode`.
+            let callable_type = custom_traits
+                .iter()
+                .find_map(|(t, _)| match t.as_str() {
+                    crate::ast::METHOD_LITERAL_MARKER => Some("Method"),
+                    crate::ast::SUBMETHOD_LITERAL_MARKER => Some("Submethod"),
+                    _ => None,
+                })
+                .or(is_whatever_code.then_some("WhateverCode"));
+            let is_pointy =
+                cc_idx.is_some_and(|i| code.closure_compiled_codes[i as usize].is_pointy_block);
+            let spec = crate::vm::vm_closure_build::ClosureSpec {
                 // Anonymous closures pool a SubDecl with an empty name; a
                 // named `anon sub NAME` decl carries its name through here.
                 name: *name,
                 empty_sig: signature.params.is_empty() && signature.param_defs.is_empty(),
-                params: signature.params,
-                param_defs: signature.param_defs,
-                body: code.closure_body_arc(idx as usize),
+                signature,
                 is_rw: *is_rw,
                 is_raw: *is_raw,
-                env,
-                assumed_positional: Vec::new(),
-                assumed_named: ValueMap::default(),
-                id,
-                // A pointy block (`-> $x {...}`) is a `Block`, not a `Sub`. Named
-                // anonymous subs (`sub {...}`) have `is_pointy_block == false` and
-                // stay `Sub`. (`WhateverCode` already overrides via callable_type.)
-                is_bare_block: compiled_code.as_ref().is_some_and(|cc| cc.is_pointy_block),
-                owned_captures,
-                authoritative_captures,
-                upvalues,
-                captured_fatal_mode: self.fatal_mode,
-                compiled_code,
-                compiled_fns,
-                compiled_routine: None,
-                is_decl_expr_thunk: false,
-                deprecated_message: None,
-                source_line: cc_source_line,
-                // See the comment on the equivalent `MakeAnonSub` arm above:
-                // `executing_source_file()` (not `current_source_file()`)
-                // keeps this correct for a closure literal that is (re)built
-                // each time an already-loaded module's routine runs, after
-                // the module's own `?FILE` scope has long since reverted.
-                source_file: self.executing_source_file(),
-                param_name_syms_cache: std::sync::OnceLock::new(),
-                source_file_sym_cache: std::sync::OnceLock::new(),
-                state_scope_guard,
-            }));
+                // A pointy block (`-> $x {...}`) is a `Block`, not a `Sub`.
+                // Named anonymous subs (`sub {...}`) stay `Sub`. (`WhateverCode`
+                // already overrides via callable_type.)
+                is_bare_block: is_pointy,
+                return_type: return_type.as_deref(),
+                callable_type,
+                capture_match_var: false,
+                freeze_readonly_captures: true,
+            };
+            let mut val = self.build_closure(code, idx, cc_idx, spec);
             // Anonymous routine literals carry their custom `is` traits in the
             // pooled declaration just like named subs do. Apply them after the
             // closure value exists so traits such as `Sub::Memoized` can wrap

@@ -545,6 +545,28 @@ impl Interpreter {
         quoted: bool,
         arg_sources_idx: Option<u32>,
     ) -> Result<(), RuntimeError> {
+        self.exec_call_method_named_op(
+            code,
+            MethodName::from_const(code, name_idx, quoted),
+            arity,
+            modifier_idx,
+            arg_sources_idx,
+        )
+    }
+
+    /// The `CallMethod` body for a method name that is already resolved:
+    /// a constant for `CallMethod` itself, the run-time spelling for
+    /// `CallMethodDynamic` (which owns only the name resolution, #9454).
+    /// Stack: `[.., target, args...]`.
+    pub(super) fn exec_call_method_named_op(
+        &mut self,
+        code: &CompiledCode,
+        name: MethodName<'_>,
+        arity: u32,
+        modifier_idx: Option<u32>,
+        arg_sources_idx: Option<u32>,
+    ) -> Result<(), RuntimeError> {
+        let quoted = name.quoted;
         // ADR-0067's subscript-receiver producer: when the receiver on the stack
         // is already a container (`IndexInvocantRef` put it there), arm slice
         // 3b's arrival channel around this dispatch so a callee that binds its
@@ -562,21 +584,15 @@ impl Interpreter {
                 receiver_idx,
                 receiver_idx + 1,
                 &Self::rewrite_method_name_cow(
-                    Self::const_str(code, name_idx),
+                    name.raw,
                     modifier_idx.map(|idx| Self::const_str(code, idx)),
                 ),
             )
         } else {
             false
         };
-        let result = self.exec_call_method_op_impl(
-            code,
-            name_idx,
-            arity,
-            modifier_idx,
-            quoted,
-            arg_sources_idx,
-        );
+        let result =
+            self.exec_call_method_op_impl(code, name, arity, modifier_idx, quoted, arg_sources_idx);
         self.disarm_raw_invocant_arrival(armed_raw_invocant);
         // The pending arg-source names/slots are scoped to THIS dispatch: a
         // callee signature bind consumes them, but a native/builtin dispatch
@@ -712,7 +728,7 @@ impl Interpreter {
     fn exec_call_method_op_impl(
         &mut self,
         code: &CompiledCode,
-        name_idx: u32,
+        name: MethodName<'_>,
         arity: u32,
         modifier_idx: Option<u32>,
         quoted: bool,
@@ -724,14 +740,14 @@ impl Interpreter {
         // emitted immediately before this opcode and scoped to this one dispatch.
         let want_ref = std::mem::take(&mut self.accessor_ref_pending);
         let decoded_sources = self.decode_arg_sources(code, arg_sources_idx);
-        let method_raw = Self::const_str(code, name_idx);
+        let method_raw = name.raw;
         let modifier = modifier_idx.map(|idx| Self::const_str(code, idx));
         let method_cow = Self::rewrite_method_name_cow(method_raw, modifier);
         let method = &*method_cow;
         // Interned once per call: the unmodified (borrowed) name comes from the
         // per-chunk constant-symbol table, so the hot path pays no re-intern.
         let method_sym = match &method_cow {
-            std::borrow::Cow::Borrowed(_) => code.const_sym(name_idx),
+            std::borrow::Cow::Borrowed(_) => name.sym,
             std::borrow::Cow::Owned(m) => crate::symbol::Symbol::intern(m),
         };
         let arity = arity as usize;
@@ -1308,14 +1324,23 @@ impl Interpreter {
             return Ok(());
         }
 
-        // When the method name was quoted (e.g. ."DEFINITE"()), skip the native
-        // pseudo-method fast path so user-defined methods are called instead.
+        // When the method name was quoted (e.g. ."DEFINITE"()) and the receiver
+        // has a user-defined method of that name, skip the native pseudo-method
+        // fast path so the user method is called instead. Without such a
+        // method the quoted call is the ordinary built-in (`42."WHAT"()` is
+        // `(Int)`), so the native path must still answer it.
         let mut skip_native = method == "VAR"
             || (quoted
                 && matches!(
                     method,
-                    "DEFINITE" | "WHAT" | "WHO" | "HOW" | "WHY" | "WHICH" | "WHERE" | "VAR"
-                ));
+                    "DEFINITE" | "WHAT" | "WHO" | "HOW" | "WHY" | "WHICH" | "WHERE"
+                )
+                && match target.view() {
+                    ValueView::Instance { class_name, .. } | ValueView::Package(class_name) => {
+                        self.grammar_has_user_method_memo(class_name, method_sym)
+                    }
+                    _ => false,
+                });
         let is_junction_target = match target.view() {
             ValueView::Junction { .. } => true,
             ValueView::Scalar(inner) => matches!(inner.view(), ValueView::Junction { .. }),
@@ -2444,5 +2469,39 @@ impl Interpreter {
             }
         }
         Ok(())
+    }
+}
+
+/// A method name resolved for dispatch: its spelling and its interned symbol.
+/// The static call opcodes build it from their constant (`from_const`, no
+/// re-intern); the dynamic ones from the run-time name value, once per call.
+#[derive(Clone, Copy)]
+pub(super) struct MethodName<'a> {
+    pub(super) raw: &'a str,
+    pub(super) sym: crate::symbol::Symbol,
+    /// Spelled as a string (`."name"()`, or any run-time name), so a MOP
+    /// pseudo-method name (`WHAT`, `DEFINITE`, ...) is an ordinary method
+    /// rather than a macro.
+    pub(super) quoted: bool,
+}
+
+impl<'a> MethodName<'a> {
+    #[inline]
+    pub(super) fn from_const(code: &'a CompiledCode, idx: u32, quoted: bool) -> Self {
+        Self {
+            raw: Interpreter::const_str(code, idx),
+            sym: code.const_sym(idx),
+            quoted,
+        }
+    }
+
+    /// A method name only known at run time (`$obj."$name"()`); never a
+    /// compile-time macro, so it dispatches as a quoted name.
+    pub(super) fn dynamic(raw: &'a str) -> Self {
+        Self {
+            raw,
+            sym: crate::symbol::Symbol::intern(raw),
+            quoted: true,
+        }
     }
 }
