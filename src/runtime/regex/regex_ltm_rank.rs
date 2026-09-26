@@ -453,7 +453,12 @@ impl Interpreter {
         pos: usize,
         pkg: Symbol,
     ) -> (usize, usize) {
-        let (plen, _stopped) = self.ltm_prefix_len_at(alt, chars, pos, pkg);
+        // ADR-0125: a measurement started from a real match runs the branch's
+        // NFA when it has one.
+        let plen = match self.ltm_nfa_prefix_len(alt, chars, pos, pkg) {
+            Some(plen) => plen,
+            None => self.ltm_prefix_len_at(alt, chars, pos, pkg).0,
+        };
         let mut seen = HashSet::new();
         let litlen = self.ltm_litlen_at(alt, chars, pos, pkg, &mut seen, 0);
         // A nested sequential alternation can expose its epsilon bypass to the

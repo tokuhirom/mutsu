@@ -696,6 +696,24 @@ impl Interpreter {
                 return None;
             }
         }
+        self.match_consuming_atom(atom, chars, pos, pkg, ignore_case)
+    }
+
+    /// The one-grapheme (or `\r\n`) atoms: literals, `.`, classes, `\n`/`\N`,
+    /// Unicode properties, and the literal fallback of an unresolved `<name>`.
+    /// Shared by the prober above and the LTM NFA's leaves (ADR-0125), which
+    /// call it directly: none of these atoms needs a subrule frame or a
+    /// measurement-mode check.
+    // Cost: O(g), g = the length of the grapheme at `pos` (plus the class's
+    // item count for a character class).
+    pub(super) fn match_consuming_atom(
+        &mut self,
+        atom: &RegexAtom,
+        chars: &[char],
+        pos: usize,
+        pkg: Symbol,
+        ignore_case: bool,
+    ) -> Option<usize> {
         if pos >= chars.len() {
             return None;
         }
