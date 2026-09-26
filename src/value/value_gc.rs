@@ -956,6 +956,24 @@ mod tests {
     }
 
     #[test]
+    fn shared_hash_entry_ref_is_not_traced_only_unique_is() {
+        // The root `Gc` lives in one `Arc` box shared by every clone of the
+        // word, so only a sole holder may claim the edge — otherwise N holders
+        // trial-decrement a node that holds one handle for all of them.
+        let hash = crate::gc::Gc::new(HashData::default());
+        let value = Value::from_repr(crate::value::ValueRepr::HashEntryRef {
+            root: crate::value::EntryRoot::Hash(hash),
+            path: vec![crate::value::EntryStep::Key("k".to_string())],
+            eager: false,
+        });
+        assert_eq!(gc_trace_node_count(&value), 1);
+        let shared = value.clone();
+        assert_eq!(gc_trace_node_count(&value), 0);
+        drop(shared);
+        assert_eq!(gc_trace_node_count(&value), 1);
+    }
+
+    #[test]
     fn hash_entry_ref_traces_an_array_root() {
         // An out-of-range `:=` bind (`my @a = 1, 2; my $r := @a[5]`) anchors a
         // deferred token on the array itself. It holds a strong

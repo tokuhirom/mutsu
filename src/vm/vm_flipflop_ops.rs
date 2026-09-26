@@ -313,7 +313,10 @@ impl Interpreter {
             "\u{00F7}" => false,
             _ => return Ok(None),
         };
-        let (l, r) = self.coerce_numeric_bridge_pair_strict(left.clone(), right.clone())?;
+        let (l, r) = match self.coerce_numeric_bridge_pair_strict(left.clone(), right.clone())? {
+            Ok(pair) => pair,
+            Err(failure) => return Ok(Some(failure)),
+        };
         let result = if multiply {
             crate::builtins::arith_mul(l, r)
         } else {

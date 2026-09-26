@@ -23,10 +23,10 @@ pub(crate) fn str_numeric_error(source: &str, pos: usize, reason: &str) -> Runti
 }
 
 /// Raise `X::Str::Numeric` if `value` is a `Str` (or allomorph wrapping one)
-/// that cannot be parsed as a number. Used by the genuinely-numeric operators
-/// (`+ - * / % **`, `== != < > <= >= <=>`) so `"5 foo" + 8` fails the way Raku
-/// requires. The generic comparators (`cmp`, `before`/`after`, `min`/`max`) do
-/// NOT call this — they compare strings as strings.
+/// that cannot be parsed as a number. The arithmetic operators do NOT call
+/// this — they evaluate to the lazy Failure of [`str_numeric_operand_failure`]
+/// instead — and neither do the generic comparators (`cmp`, `before`/`after`,
+/// `min`/`max`), which compare strings as strings.
 pub(crate) fn check_str_numeric(value: &Value) -> Result<(), RuntimeError> {
     // Hot path: only a bare or Mixin-wrapped Str can fail; everything else
     // (Int/Num/Rat/...) returns immediately without cloning or parsing.
@@ -42,6 +42,23 @@ pub(crate) fn check_str_numeric(value: &Value) -> Result<(), RuntimeError> {
         return Err(str_numeric_error(&s, pos, &reason));
     }
     Ok(())
+}
+
+/// The lazy `Failure` (wrapping X::Str::Numeric) an arithmetic operator
+/// evaluates to when `value` is a `Str` (or allomorph wrapping one) that
+/// cannot be parsed as a number; `None` for every other operand.
+/// Cost: O(n), n = length of a Str operand; O(1) otherwise.
+pub(crate) fn str_numeric_operand_failure(value: &Value) -> Option<Value> {
+    let s = match value.view() {
+        ValueView::Str(s) => s,
+        ValueView::Mixin(inner, _) => match inner.view() {
+            ValueView::Str(s) => s,
+            _ => return None,
+        },
+        _ => return None,
+    };
+    crate::runtime::str_numeric::str_numeric_failure(&s)?;
+    Some(crate::builtins::methods_0arg::str_numeric_failure(&s))
 }
 
 pub(crate) fn coerce_numeric(left: Value, right: Value) -> (Value, Value) {

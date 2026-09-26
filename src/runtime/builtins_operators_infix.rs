@@ -512,11 +512,16 @@ impl Interpreter {
                 rhs = self.coerce_stringy_operand(rhs)?;
             }
             if self.infix_uses_numeric_bridge(op) {
-                // Genuinely-numeric ops reject non-numeric strings; the generic
-                // comparators (cmp/before/after/min/max) compare them as strings.
-                if Self::infix_is_strictly_numeric(op) {
-                    crate::runtime::utils::check_str_numeric(&lhs)?;
-                    crate::runtime::utils::check_str_numeric(&rhs)?;
+                // The arithmetic ops evaluate to a lazy X::Str::Numeric Failure
+                // on a non-numeric string, like their opcodes
+                // (`coerce_numeric_bridge_pair_strict`); the generic comparators
+                // (cmp/before/after/min/max) compare them as strings.
+                if Self::infix_is_strictly_numeric(op)
+                    && let Some(failure) = crate::runtime::utils::str_numeric_operand_failure(&lhs)
+                        .or_else(|| crate::runtime::utils::str_numeric_operand_failure(&rhs))
+                {
+                    acc = failure;
+                    continue;
                 }
                 lhs = self.coerce_infix_operand_numeric(lhs)?;
                 rhs = self.coerce_infix_operand_numeric(rhs)?;
