@@ -314,6 +314,14 @@ pub(crate) fn comparison_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, E
             // SmartMatch suppresses top-level WhateverCode wrapping, but the LHS
             // should still be curried when it contains Whatever.
             if crate::parser::expr::should_wrap_whatevercode(&left) {
+                if matches!(op, ComparisonOp::SmartNotMatch) {
+                    let sm_expr = Expr::Binary {
+                        left: Box::new(left),
+                        op: op.token_kind(),
+                        right: Box::new(right),
+                    };
+                    return Ok((r, Expr::WhateverCurry(Box::new(sm_expr))));
+                }
                 left = Expr::WhateverCurry(Box::new(left));
             }
             // Bare `* ~~ Type` curries to WhateverCode `{ $_ ~~ Type }`.
