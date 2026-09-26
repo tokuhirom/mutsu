@@ -1066,7 +1066,10 @@ impl Interpreter {
                 .truncate(saved_pending_rw_writeback_len);
             self.strict_mode = saved_strict_mode;
             let imported = std::mem::replace(&mut self.module_imported_names, saved_imports);
-            self.imported_routine_aliases = saved_imported_routine_aliases;
+            let module_routine_aliases = std::mem::replace(
+                &mut self.imported_routine_aliases,
+                saved_imported_routine_aliases,
+            );
             self.imported_env_aliases = saved_imported_env_aliases;
             module_scope_names = self.collect_module_scope_names(&before_env_keys);
             // Hook-installed sigilless terms the env diff may have missed (see
@@ -1338,7 +1341,12 @@ impl Interpreter {
                 // scope's own entries come back. See
                 // `runtime/unit_private_routines.rs`.
                 let module_path = source_path.to_string_lossy().to_string();
-                self.seclude_private_toplevel_routines(&module_path);
+                // Import aliases first: a same-named private `sub` an earlier
+                // compunit declared marks the name my-scoped, which would let
+                // the private-routine pass claim the alias for the provider's
+                // unit instead of this one.
+                self.seclude_module_import_aliases(&module_routine_aliases, &module_path);
+                self.seclude_private_toplevel_routines(&module_path, Some(module));
             }
             // See `hide_toplevel_global_routines`: restore the loading scope's
             // own top-level routines regardless of whether the module's body

@@ -4,7 +4,9 @@ use lib 't/lib';
 use NestedUnitOuter;
 use NestedUnitInner;
 
-plan 1;
+plan 2;
 
 is nested-probe(), 'helper',
-    'a nested unit module keeps an already-loaded dependency alias visible';
+    'a dependency loaded before a nested unit module stays visible to its own importer';
+nok inner-sees-helper(),
+    "a module does not see a routine only its dependency's own `use` imported";

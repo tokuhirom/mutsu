@@ -308,4 +308,39 @@ impl Interpreter {
         self.register_exported_var(self.current_package(), name, tags);
         Ok(())
     }
+
+    /// `package EXPORT::<tag> { our &f = ...; our $v = ... }` -- the manual
+    /// export-stash idiom (`Cro::Uri` re-exports `decode-percents` this way).
+    /// The stash's `our` symbols ARE the module's export list for `<tag>`, so
+    /// publish the just-stored value the same way an `OUR::{'&f'} := ...`
+    /// binding in that stash is published.
+    // Cost: O(m), m = modules on the load stack (the export mirrors in `register_exported_var`).
+    pub(super) fn exec_publish_export_stash_var_op(&mut self, code: &CompiledCode, name_idx: u32) {
+        let package = self.current_package();
+        if Self::export_stash_tag(&package).is_none() {
+            return;
+        }
+        let name = Self::const_str(code, name_idx).to_string();
+        let (sigil, bare) = match name.as_bytes().first() {
+            Some(b'$' | b'&' | b'@' | b'%') => (&name[..1], &name[1..]),
+            _ => ("", name.as_str()),
+        };
+        // A nested name is rejected by `publish_our_pseudo_stash_symbol`.
+        if bare.is_empty() {
+            return;
+        }
+        let qualified = format!("{sigil}{package}::{bare}");
+        let Some(value) = self
+            .env()
+            .get(&qualified)
+            .cloned()
+            .or_else(|| self.get_our_var(&qualified).cloned())
+        else {
+            return;
+        };
+        // `publish_our_pseudo_stash_symbol` takes the compiler's pseudo-var
+        // spelling: a scalar sigil-less, every other sigil leading.
+        let sigil = if sigil == "$" { "" } else { sigil };
+        self.publish_our_pseudo_stash_symbol(&format!("{sigil}OUR::{bare}"), &value);
+    }
 }

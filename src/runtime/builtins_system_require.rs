@@ -205,7 +205,7 @@ impl Interpreter {
             // did not export is lexical to that file's compunit, not a shared
             // global. Move it out of the registry before the loading scope's
             // own entries come back. See `runtime/unit_private_routines.rs`.
-            self.seclude_private_toplevel_routines(&path.to_string_lossy());
+            self.seclude_private_toplevel_routines(&path.to_string_lossy(), None);
         }
         self.restore_toplevel_global_routines(hidden_toplevel);
         // Invalidate name-keyed resolution caches.
