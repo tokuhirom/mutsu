@@ -67,6 +67,12 @@ pub(crate) fn sub_decl_body_pub(input: &str) -> PResult<'_, Stmt> {
     sub::sub_decl_body(input, false, false, false)
 }
 
+/// Public accessor for a named `method NAME ...` in expression position (after
+/// the declarator keyword and whitespace).
+pub(crate) fn expr_position_method_decl_pub(input: &str, is_submethod: bool) -> PResult<'_, Stmt> {
+    expr_position_method_decl(input, is_submethod)
+}
+
 /// Public accessor for constant declaration parser (used by primary.rs in expression context).
 pub(crate) fn constant_decl_pub(input: &str) -> PResult<'_, Stmt> {
     decl::constant_decl(input)

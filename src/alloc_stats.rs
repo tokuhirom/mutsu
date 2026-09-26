@@ -18,7 +18,7 @@
 //! a change either reduces the number of allocations per `bless` or it does
 //! not — the same property that makes the `MUTSU_VM_STATS` counters useful for
 //! the dual-store work (see the "Build profiles and benchmark numbers" section
-//! of CLAUDE.md).
+//! of AGENTS.md).
 //!
 //! # Usage
 //!

@@ -10,7 +10,8 @@ deliberate, periodic refresh:
 
 Neither updates itself. This document is the checklist for keeping them current.
 It complements [`docs/vendoring.md`](vendoring.md) (the mechanics of the vendored
-trees) and the CLAUDE.md "mzef … / Distribution" notes (the zef tree).
+trees) and the "Working rules" section of
+[`docs/mzef-install-pipeline.md`](mzef-install-pipeline.md) (the zef tree).
 
 ## Suggested cadence
 
@@ -67,7 +68,7 @@ For each crate a **major** behind, decide case by case — do **not** bump blind
    and any MSRV bump as separate PRs so a regression is easy to bisect and
    revert. Dependency PRs are `chore(deps):` and take a patch bump at the next
    release (the version is chosen by hand — see "Cutting a release" in
-   `CLAUDE.md`).
+   `AGENTS.md`).
 
 Worked examples from the 2026-07 refresh:
 

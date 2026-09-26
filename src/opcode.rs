@@ -898,10 +898,7 @@ pub(crate) enum OpCode {
     /// two context flags before running the identical `SetLocal` body, so the
     /// semantics are unchanged. Fusion happens in `emit()`, which can only see —
     /// and therefore only ever rewrite — a marker pair it just emitted itself.
-    SetLocalDecl {
-        slot: u32,
-        explicit_init: bool,
-    },
+    SetLocalDecl { slot: u32, explicit_init: bool },
     /// `our $x = <expr>` for a plain untyped scalar (no `:=` bind, no type
     /// constraint, no container sigil, not a `constant`): installs ONE shared
     /// `ContainerRef` cell under the lexical local slot, the bare env name,
@@ -915,10 +912,7 @@ pub(crate) enum OpCode {
     /// sequence for exactly this case; every other `our` shape (typed,
     /// `@`/`%`/`&`-sigiled, `constant`, `:=` bound, or shadowing an outer
     /// `constant`) keeps the old sequence unchanged.
-    DeclareOurScalar {
-        slot: u32,
-        qualified_idx: u32,
-    },
+    DeclareOurScalar { slot: u32, qualified_idx: u32 },
     /// Read a variable by name. Stack: `[] → [value]`.
     ///
     /// The operand is the constant-pool index of the variable's env key
@@ -946,10 +940,7 @@ pub(crate) enum OpCode {
     /// phaser, nested-register run — that did not install this closure's upvalue
     /// array), execution falls back to a `GetGlobal(name_idx)` env lookup. Env is
     /// retained as the capture source, so the fallback is always correct.
-    GetUpvalue {
-        index: u32,
-        name_idx: u32,
-    },
+    GetUpvalue { index: u32, name_idx: u32 },
     /// Load `self` from the captured environment for a `$.attr` accessor.
     /// Raises X::Syntax::NoSelf (the operand is the constant index of the
     /// accessor's display name, e.g. `$.a`) when `self` is unavailable.
@@ -1040,10 +1031,7 @@ pub(crate) enum OpCode {
     /// env), so the constraint cannot leak onto a same-named variable in
     /// another frame
     /// (`news/2026-09/type-constraint-global-side-table-retired.md`).
-    SetVarTypeScoped {
-        name_idx: u32,
-        tc_idx: u32,
-    },
+    SetVarTypeScoped { name_idx: u32, tc_idx: u32 },
     /// The block-entry PRE-registration of a `my TYPE $x` that appears later in
     /// the same block (`Compiler::hoist_typed_var_decls`), implementing Raku's
     /// "declarations are in effect at block start" rule. `scoped` selects the
@@ -1155,18 +1143,12 @@ pub(crate) enum OpCode {
     /// name in the constant pool and `fallback_idx` the folded constant to use
     /// when nothing shadows it, which is also the answer whenever the hook
     /// installed some other set of names.
-    GetShadowableTerm {
-        name_idx: u32,
-        fallback_idx: u32,
-    },
+    GetShadowableTerm { name_idx: u32, fallback_idx: u32 },
     /// The run-time half of `Expr::ExportTermOrCall` (#9339): when a
     /// `sub EXPORT` hook installed a sigilless term under the constant-pool
     /// name `name_idx`, push it and jump to `end`, skipping the zero-arg call
     /// compiled right after this op; otherwise fall through into that call.
-    GetExportTermOrJump {
-        name_idx: u32,
-        end: u32,
-    },
+    GetExportTermOrJump { name_idx: u32, end: u32 },
     /// Materialize a pseudo-package or package stash as a hash. Stack:
     /// `[] → [stash]`.
     ///
@@ -1211,28 +1193,99 @@ pub(crate) enum OpCode {
     PushLastRegisteredRole,
 
     // -- Arithmetic --
+    /// Infix `+`. Stack: `[left, right] → [result]` (right on top).
+    ///
+    /// Fast paths first: `Int + Int` that does not overflow, `Num + Num` and
+    /// two big integers are computed inline, unless a user `infix:<+>` is in
+    /// scope (a user candidate may override even native addition). Everything
+    /// else goes through the generic Junction threading
+    /// (`eval_binary_with_junctions`), then a user `infix:<+>` candidate,
+    /// `Range` arithmetic, temporal (`Instant`/`Duration`/`Date`) operands, and
+    /// finally the numeric coercion of both operands into
+    /// `crate::builtins::arith_add` (`src/builtins/arith/add_sub.rs`), the
+    /// one implementation every `+` form shares (ADR-0118).
     Add,
+    /// Infix `-`. Stack: `[left, right] → [result]` (right on top).
+    ///
+    /// The twin of [`Self::Add`]: the same fast paths, the same user
+    /// `infix:<->` override check, Junction threading, `Range` and temporal
+    /// operand handling, and `crate::builtins::arith_sub` for the rest.
     Sub,
+    /// Infix `*`. Stack: `[left, right] → [result]` (right on top).
+    ///
+    /// Same structure as [`Self::Add`] (inline `Int`/`Num`/big-integer fast
+    /// paths unless a user `infix:<*>` exists, then Junction threading and a
+    /// user candidate), ending in `crate::builtins::arith_mul`
+    /// (`src/builtins/arith/mul_div_mod.rs`).
     Mul,
     /// Add, subtract, or multiply operands that the compiler knows are native
     /// integers. `unsigned` selects the machine `u64` operation; the native
     /// declaration's narrower width is enforced when the value is stored.
-    NativeIntArithmetic {
-        op: CompoundBaseOp,
-        unsigned: bool,
-    },
+    NativeIntArithmetic { op: CompoundBaseOp, unsigned: bool },
+    /// Infix `/`. Stack: `[left, right] → [result]` (right on top).
+    ///
+    /// No inline fast path: both operands go through Junction threading and
+    /// a user `infix:</>` candidate, then `crate::builtins::arith_div`
+    /// (`src/builtins/arith/mul_div_mod.rs`). Two integers give a `Rat`;
+    /// `1/0` is a zero-denominator `Rat`, which only throws
+    /// `X::Numeric::DivideByZero` once it is used as a number.
     Div,
+    /// Infix `%` (modulo). Stack: `[left, right] → [result]` (right on top).
+    ///
+    /// Junction threading and a user `infix:<%>` candidate, then
+    /// `crate::builtins::arith_mod` (`src/builtins/arith/mul_div_mod.rs`), the
+    /// same routine [`Self::IntMod`] and [`Self::DivisibleBy`] use: floored
+    /// for integers, exact for rationals. Temporal operands are handled
+    /// before the numeric coercion.
     Mod,
+    /// Infix `**`. Stack: `[left, right] → [result]` (right on top).
+    ///
+    /// Skips its fast path when a user `infix:<**>` is in scope, then
+    /// Junction threading, a user candidate, and `crate::builtins::arith_pow`
+    /// (`src/builtins/arith/pow_negate.rs`). `Int ** Int` stays an `Int`
+    /// (big when needed) for a non-negative exponent.
     Pow,
+    /// Prefix `-` (numeric negation). Stack: `[v] → [-v]`.
+    ///
+    /// A `Str` operand is numified first (`X::Str::Numeric` when it is not
+    /// a number; an empty string negates to `0`). A type object warns and
+    /// resumes with its negated numeric zero (`-Int` is `0`, `-Num` is
+    /// `-0e0`), except `Mu`, which has no candidate, and a class with a user
+    /// `Numeric` method, which is called first. The result comes from
+    /// `crate::builtins::arith_negate` (`src/builtins/arith/pow_negate.rs`).
+    /// A Junction operand is not threaded here.
     Negate,
-    IntBitNeg,  // +^ prefix: integer bitwise negation
-    BoolBitNeg, // ?^ prefix: boolean bitwise negation
-    StrBitNeg,  // ~^ prefix: string/buffer bitwise negation
-    MakeSlip,   // | prefix: convert array/list to Slip for flattening
-    DeSlip,     // demote a top-level Slip VALUE to a Seq so it is NOT flattened
-    // by a `**@`-slurpy consumer (say/put/print/note). A `|EXPR` pipe-slip is
-    // left untouched (still flattens); an ordinary `.Slip`/`slip(...)` value is
-    // kept whole. See exec_say_op / flatten_slip_args.
+    /// Prefix `+^` (integer bitwise negation, two's complement). Stack:
+    /// `[v] → [+^v]`. The operand is numified, then negated by
+    /// `crate::builtins::int_bitneg`.
+    IntBitNeg,
+    /// Prefix `?^` (boolean bitwise negation). Stack: `[v] → [Bool]`: the
+    /// opposite of the operand's truthiness.
+    BoolBitNeg,
+    /// Prefix `~^` (string bitwise negation). Stack: `[v] → [result]`.
+    ///
+    /// A `Buf`/`Blob`/`utf8` operand has each byte inverted and keeps its
+    /// type. Anything else is
+    /// stringified and its UTF-8 bytes are inverted, decoded lossily back
+    /// into a `Str`.
+    StrBitNeg,
+    /// Prefix `|` (slip). Stack: `[v] → [Slip]`.
+    ///
+    /// The operand is decontainerized first, so `|$x` flattens an itemized
+    /// list. A deferred `Seq` is pulled (and consumed), a `gather` is forced
+    /// with its side effects (a `lazy gather` stays lazy), and a list,
+    /// array, range or hash is turned into a `Slip` of its elements. Emitted
+    /// for prefix `|EXPR` and for the `name |capture` listop form.
+    MakeSlip,
+    /// Demote a top-level `Slip` VALUE to a `Seq`, so a `**@`-slurpy
+    /// consumer (`say`, `put`, `print`, `note`) does not flatten it. Stack:
+    /// `[v] → [v']`; anything that is not a `Slip` passes through.
+    ///
+    /// Emitted for each argument of those I/O routines that is not written
+    /// as `|EXPR`: a `.Slip`/`slip(...)` value is data and stays one
+    /// argument (gisting as `(...)`), while a `|EXPR` pipe-slip skips this
+    /// op and still flattens. See `exec_say_op` / `flatten_slip_args`.
+    DeSlip,
     /// Read a `ContainerRef` on the stack top through its cell, pushing the
     /// plain value it holds (a no-op for everything else). Emitted where a
     /// compiler-synthesized temp must hold a *value snapshot* rather than an
@@ -1241,8 +1294,15 @@ pub(crate) enum OpCode {
     /// the next iteration of a loop, be written *through* by `SetGlobal`,
     /// storing the cell into itself.
     DerefContainer,
-    Decont, // strip ONE level of Scalar for slurpy flattening (NOT the
-    // recursive Value::descalarize; touches no ArrayKind flag — see decont family note)
+    /// Strip ONE level of `Scalar` itemization. Stack: `[v] → [v']`; a value
+    /// that is not a `Scalar` wrapper passes through.
+    ///
+    /// Deliberately shallow: it is not the recursive `Value::descalarize` and
+    /// does not touch an Array's itemized `ArrayKind` flag (see the decont
+    /// family note in `value/mod.rs` §3). Emitted after a call argument that
+    /// needs its container stripped for slurpy flattening, and for a bind
+    /// target that returns an aggregate.
+    Decont,
     /// Snapshot a list's elements to plain VALUES: pop a list/array and push a
     /// fresh real array where every element is read through its `ContainerRef`
     /// cell (`:=` / list-element container alias) and descalarized. Used by
@@ -1284,17 +1344,25 @@ pub(crate) enum OpCode {
     FlattenSlurpy,
 
     // -- Logic / coercion --
+    /// Prefix `!` / `not`. Stack: `[v] → [Bool]`: the negated truthiness.
+    ///
+    /// Truthiness is Raku's `.Bool`, so a user `Bool` method is called. A
+    /// `Failure` operand is marked handled (testing it defuses it). Also
+    /// emitted to negate an `until` loop condition.
     Not,
+    /// Prefix `?` / `so`. Stack: `[v] → [Bool]`: the operand's truthiness.
+    ///
+    /// A bare regex (a `Regex` value, or a regex routine) is matched against
+    /// the current topic `$_` instead of being tested for definedness, as
+    /// Raku's `Regex.Bool` does. A `Failure` operand is marked handled. A
+    /// not-yet-run `.map`/`.grep` Seq is forced to see whether it is empty.
     BoolCoerce,
     /// Tag the top-of-stack value with the variable name it was read from
     /// (`name_idx` constant), for `is rw`/`is raw`/`:=` aliasing and
     /// list-element container capture. `slot` is the emitting frame's local
     /// slot for that name at this site (shadow-slot-exact), or `u32::MAX`
     /// when the source is not a local of this frame.
-    WrapVarRef {
-        name_idx: u32,
-        slot: u32,
-    },
+    WrapVarRef { name_idx: u32, slot: u32 },
     /// Resolve a `WrapVarRef`-tagged top-of-stack value to the *shared cell* of
     /// the variable it names, boxing the variable's local slot into a
     /// `ContainerRef` if it is not one already (`capture_var_cell_inner` with
@@ -1441,10 +1509,7 @@ pub(crate) enum OpCode {
     /// only for a zero-argument read of a public `is rw` scalar attribute
     /// accessor and ignores the flag otherwise — so a multi with any
     /// container-binding candidate at that position passes the gate.
-    MarkRwArgRefContext {
-        callee_idx: u32,
-        positional: u32,
-    },
+    MarkRwArgRefContext { callee_idx: u32, positional: u32 },
     /// ADR-0067, the argument producer for a callee that has **no
     /// compile-time name**: a method call, whose invocant's class is only known
     /// at run time (`$s.take($c.v)`), and a call through a code value
@@ -1485,20 +1550,78 @@ pub(crate) enum OpCode {
     MarkElementShare,
 
     // -- String --
+    /// Infix `~` (string concatenation). Stack: `[left, right] → [result]` (right on top).
+    ///
+    /// Junction operands are threaded left-first (unlike the arithmetic
+    /// ops). Each operand is stringified through `.Stringy` (falling back to
+    /// `.Str`; a user method is called, a `Proxy` is FETCHed, a `Nil`
+    /// operand warns and counts as `""`, an unhandled `Failure` throws), and
+    /// the strings are joined by `crate::builtins::str_prim::concat`. An
+    /// unshared left `Str` is grown in place. `infix_concat` is the one
+    /// implementation shared with the `[~]` reduction.
     Concat,
 
     // -- Numeric comparison --
+    /// Infix `==` (numeric equality). Stack: `[left, right] → [Bool]` (right on top).
+    ///
+    /// Shares `num_eq_values` with `&infix:<==>` (the form `cmp-ok` calls),
+    /// so both answer alike. Junction operands are threaded, a user
+    /// `infix:<==>` candidate gets first refusal, a numeric type-object
+    /// operand is an error, and two positional operands (arrays, lists,
+    /// ranges, Seqs) compare their element *counts*. Everything else is
+    /// compared after the numeric coercion bridge.
     NumEq,
+    /// Infix `!=`. Stack: `[left, right] → [Bool]` (right on top).
+    ///
+    /// `!==` spelled short: it evaluates `==` (threading Junctions through
+    /// [`Self::NumEq`]'s body) and negates the collapsed result, so it always
+    /// pushes a plain `Bool`. A user `infix:<!=>` candidate is tried first.
+    /// See [`Self::NumNeNative`] for the native-integer form.
     NumNe,
     /// Native-int-aware `!=`.  Flags encode signedness of each operand:
     /// bit 0 = left is unsigned, bit 1 = right is unsigned.
     /// When cross-signed and the signed operand is negative, returns False
     /// (matching Rakudo's MoarVM behaviour for native int registers).
     NumNeNative(u8),
+    /// Infix `<` (numeric). Stack: `[left, right] → [Bool]` (right on top).
+    ///
+    /// Shares its body with the routine form (`&infix:<<>`), so both answer
+    /// alike: Junction operands are threaded, a user `infix:<<>` candidate
+    /// gets first refusal, an undefined operand warns and counts as `0`, and
+    /// both operands go through the numeric coercion bridge (a list numifies
+    /// to its element count).
     NumLt,
+    /// Infix `<=` (numeric). Stack: `[left, right] → [Bool]` (right on top).
+    ///
+    /// Shares its body with the routine form (`&infix:<<=>`), so both answer
+    /// alike: Junction operands are threaded, a user `infix:<<=>` candidate
+    /// gets first refusal, an undefined operand warns and counts as `0`, and
+    /// both operands go through the numeric coercion bridge (a list numifies
+    /// to its element count).
     NumLe,
+    /// Infix `>` (numeric). Stack: `[left, right] → [Bool]` (right on top).
+    ///
+    /// Shares its body with the routine form (`&infix:<>>`), so both answer
+    /// alike: Junction operands are threaded, a user `infix:<>>` candidate
+    /// gets first refusal, an undefined operand warns and counts as `0`, and
+    /// both operands go through the numeric coercion bridge (a list numifies
+    /// to its element count).
     NumGt,
+    /// Infix `>=` (numeric). Stack: `[left, right] → [Bool]` (right on top).
+    ///
+    /// Shares its body with the routine form (`&infix:<>=>`), so both answer
+    /// alike: Junction operands are threaded, a user `infix:<>=>` candidate
+    /// gets first refusal, an undefined operand warns and counts as `0`, and
+    /// both operands go through the numeric coercion bridge (a list numifies
+    /// to its element count).
     NumGe,
+    /// Infix `=~=` / `≅` (approximately equal). Stack: `[left, right] → [Bool]` (right on top).
+    ///
+    /// The tolerance is `$*TOLERANCE` (default `1e-15`, relative). Two
+    /// operands compare by relative difference, or by absolute difference
+    /// when either is zero, and must be *strictly* within it
+    /// (`$*TOLERANCE = 0` makes every comparison false). Shared with the
+    /// hyper and meta forms (`»=~=«`) through `approx_eq_values`.
     ApproxEq,
     /// Container identity (`=:=`).
     /// The `u8` flags encode containerisation of operands:
@@ -1521,9 +1644,7 @@ pub(crate) enum OpCode {
     /// never its container, so the two are the same container only when the
     /// named side has no container of its own either (a `:=` binding).
     /// `name_idx` names the *other* (non-`.self`) operand.
-    ContainerEqDeconted {
-        name_idx: u32,
-    },
+    ContainerEqDeconted { name_idx: u32 },
     /// Container identity (`=:=`) when one or both operands are array/hash
     /// index expressions.  Carries encoded source names (e.g. "@a\0idx\01")
     /// for both sides.  The VM checks if one side has a binding sentinel
@@ -1538,27 +1659,94 @@ pub(crate) enum OpCode {
     ContainerEqRaw,
 
     // -- String comparison --
+    /// Infix `eq` (string equality). Stack: `[left, right] → [Bool]` (right on top).
+    ///
+    /// All six string comparisons share `str_cmp_values`. Both operands are
+    /// coerced through `.Stringy` (a user `Str` method is called, a `utf8`
+    /// decodes, a `Proxy` is FETCHed), Junctions are threaded, and two Blobs
+    /// compare bytewise. `eq` and `ne` answer in O(1) when the lengths
+    /// differ.
     StrEq,
+    /// Infix `ne`. Stack: `[left, right] → [Bool]` (right on top). `!eq`: it threads `eq` over Junctions and negates
+    /// the collapsed result, so it always pushes a plain `Bool`. See
+    /// [`Self::StrEq`] for the shared coercion.
     StrNe,
+    /// Infix `lt` (string less than, by codepoint). Stack: `[left, right] → [Bool]` (right on top). See
+    /// [`Self::StrEq`] for the shared coercion and Junction threading.
     StrLt,
+    /// Infix `gt`. Stack: `[left, right] → [Bool]` (right on top). See [`Self::StrEq`].
     StrGt,
+    /// Infix `le`. Stack: `[left, right] → [Bool]` (right on top). See [`Self::StrEq`].
     StrLe,
+    /// Infix `ge`. Stack: `[left, right] → [Bool]` (right on top). See [`Self::StrEq`].
     StrGe,
 
     // -- Generic ordering (cmp-based) --
+    /// Infix `before`: whether `left cmp right` is `Less`. Stack: `[left, right] → [Bool]` (right on top).
+    ///
+    /// Uses the generic `cmp` order (numbers numerically, Blobs bytewise,
+    /// everything else as [`Self::Cmp`] would), through
+    /// `before_after_values`.
     Before,
+    /// Infix `after`: whether `left cmp right` is `More`. Stack: `[left, right] → [Bool]` (right on top). See
+    /// [`Self::Before`].
     After,
 
     // -- Three-way comparison --
+    /// Infix `<=>` (numeric three-way comparison). Stack: `[left, right] → [Order]` (right on top): an `Order` enum value (`Less`, `Same`, `More`), not an `Int`.
+    ///
+    /// Numeric, unlike [`Self::Cmp`]: a numeric type-object operand throws
+    /// `X::Numeric::Uninitialized`, and both operands go through the
+    /// numeric coercion bridge. A `NaN` on either side yields `Nil`
+    /// (unordered). A `Complex` operand whose imaginary part is within
+    /// `$*TOLERANCE` compares by its real part; otherwise it is an error.
+    /// Junction operands are threaded.
     Spaceship,
+    /// Infix `cmp` (generic three-way comparison). Stack: `[left, right] → [Order]` (right on top): an `Order` enum value (`Less`, `Same`, `More`), not an `Int`.
+    ///
+    /// A user `infix:<cmp>` candidate gets first refusal. The native
+    /// candidate, shared with `&infix:<cmp>`, orders numbers numerically,
+    /// strings by codepoint, and lists, pairs and ranges structurally, and
+    /// compares an object through its user `Str`/`Stringy` method.
     Cmp,
+    /// Infix `coll` (collation-aware three-way comparison). Stack: `[left, right] → [Order]` (right on top): an `Order` enum value (`Less`, `Same`, `More`), not an `Int`.
+    ///
+    /// Both operands are stringified and compared by the Unicode Collation
+    /// Algorithm with the levels set by `$*COLLATION`
+    /// (`crate::builtins::collation::coll_compare`).
     Coll,
+    /// Infix `unicmp` (Unicode collation comparison). Stack: `[left, right] → [Order]` (right on top): an `Order` enum value (`Less`, `Same`, `More`), not an `Int`.
+    ///
+    /// As [`Self::Coll`], but always with the default collation settings:
+    /// `$*COLLATION` is not consulted.
     Unicmp,
+    /// Infix `leg` (string three-way comparison, "less, equal, greater").
+    /// Stack: `[left, right] → [Order]` (right on top): an `Order` enum value (`Less`, `Same`, `More`), not an `Int`.
+    ///
+    /// Compares the operands' `.Stringy` by codepoint
+    /// (`crate::builtins::str_prim::str_order`), with the same coercion and
+    /// Junction threading as [`Self::StrEq`]. A Blob operand dies, as in
+    /// Rakudo, which has no Blob candidate for `leg`.
     Leg,
 
     // -- Identity/value equality --
+    /// Infix `===` (value identity). Stack: `[left, right] → [Bool]` (right on top).
+    ///
+    /// `$a.WHICH eq $b.WHICH`, so a class that overrides `WHICH` decides its
+    /// own identity: value types compare by value, and containers and
+    /// objects by identity. Shares `identical_values` with the routine form.
     StrictEq,
+    /// Infix `!==`. Stack: `[left, right] → [Bool]` (right on top). Threads [`Self::StrictEq`] over Junctions and
+    /// negates the collapsed result.
     StrictNe,
+    /// Infix `eqv` (structural equivalence). Stack: `[left, right] → [Bool]` (right on top).
+    ///
+    /// Same type and same structure, compared recursively by the pure
+    /// `Value::eqv`. Before that comparison, `eqv_values` (shared with
+    /// `&infix:<eqv>`) applies the lazy-iterable rules (two lazy operands
+    /// throw instead of iterating forever), resolves `Proxy` elements,
+    /// short-cuts the same Seq, and reifies and consumes a Seq operand (so a
+    /// consumed Seq raises `X::Seq::Consumed`).
     Eqv,
     /// Smart match with compiled RHS expression at [ip+1..rhs_end).
     SmartMatchExpr {
@@ -1592,23 +1780,100 @@ pub(crate) enum OpCode {
     ScalarizeRegexMatchResult,
 
     // -- Divisibility --
+    /// Infix `%%` (is divisible by). Stack: `[left, right] → [result]` (right on top).
+    ///
+    /// Computes `left % right` with `crate::builtins::arith_mod` (so `Rat`,
+    /// `Num` and big-integer operands work) and pushes whether the remainder
+    /// is zero. A zero divisor pushes a soft `Failure`
+    /// (`X::Numeric::DivideByZero`, from `infix:<%%>`) instead of throwing,
+    /// so `grep * %% 0` sees it as false. Junction operands are threaded.
     DivisibleBy,
+    /// Infix `!%%` (is not divisible by). Stack: `[left, right] → [result]` (right on top).
+    ///
+    /// The negation of [`Self::DivisibleBy`]. A zero-divisor `Failure` is
+    /// marked handled and reads as false, so `6 !%% 0` is `True` rather than
+    /// an exception. Junction operands are threaded.
     NotDivisibleBy,
 
     // -- Keyword math --
+    /// Infix `div` (integer division, floored). Stack: `[left, right] → [result]` (right on top).
+    ///
+    /// Junction threading, then a user `infix:<div>` candidate (ADR-0071),
+    /// then `crate::builtins::int_div` (`src/builtins/arith/int_ops.rs`), the
+    /// one floored integer division every `div` form shares (ADR-0118).
     IntDiv,
+    /// Infix `mod`. Stack: `[left, right] → [result]` (right on top).
+    ///
+    /// Junction threading, a user `infix:<mod>` candidate (ADR-0071), then
+    /// `crate::builtins::arith_mod`, the same routine as [`Self::Mod`]:
+    /// floored for integers, exact for rationals (`7.5 mod 2` is `1.5`).
     IntMod,
+    /// Infix `gcd` (greatest common divisor). Stack: `[left, right] → [result]` (right on top).
+    ///
+    /// A user `infix:<gcd>` candidate first (the only way to give `gcd` a
+    /// non-`Int` meaning, e.g. Gaussian integers), otherwise both operands
+    /// are reduced to `Int` by `crate::builtins::int_gcd`
+    /// (`src/builtins/arith/int_ops.rs`). Junctions are not threaded here.
     Gcd,
+    /// Infix `lcm` (least common multiple). Stack: `[left, right] → [result]` (right on top).
+    ///
+    /// As [`Self::Gcd`], with a user `infix:<lcm>` candidate and
+    /// `crate::builtins::int_lcm`.
     Lcm,
+    /// Infix `min`. Stack: `[left, right] → [result]` (right on top).
+    ///
+    /// Shares `min_max_values` with the `[min]` reduction and the routine
+    /// form: a user `infix:<min>` candidate first (ADR-0071), an `Any` type
+    /// object yields the other operand, a `Failure` operand is passed
+    /// through, and otherwise the `cmp` order decides, the left operand
+    /// winning a tie.
     InfixMin,
+    /// Infix `max`. Stack: `[left, right] → [result]` (right on top).
+    ///
+    /// The twin of [`Self::InfixMin`] (same `min_max_values` body, the
+    /// larger operand by `cmp`, the left one on a tie).
     InfixMax,
 
     // -- Repetition --
+    /// Infix `x` (string repetition). Stack: `[string, count] → [Str]`.
+    ///
+    /// The left operand is stringified through `.Str` (a user `Str` method
+    /// is called); the count is coerced to `Int` and clamped at 0. A bare
+    /// `Int` type object as the count warns about an uninitialized value;
+    /// `Inf` raises `X::Numeric::CannotConvert`; a `*` count builds a
+    /// `WhateverCode`. The result is built by
+    /// `crate::builtins::str_prim::repeat`, which returns a repeat strand
+    /// rather than copying (ADR-0120).
     StringRepeat,
+    /// Infix `xx` (list repetition). Stack: `[item, count] → [Seq]`.
+    ///
+    /// The compiler wraps a left operand that must be re-evaluated per
+    /// repetition (a call-like operand such as `rand xx 3` or
+    /// `@a.shift xx 2`; literals and lists are not thunked) in a bare-block
+    /// thunk, which this op calls once per repetition; `@a.shift xx N` /
+    /// `@a.pop xx N` drain the array in bulk. Otherwise the value is
+    /// repeated as is. A finite count up to 10**6 is built eagerly; a
+    /// larger one or `xx *` yields a lazy sequence.
     ListRepeat,
+    /// Infix `o` / `∘` (function composition). Stack: `[f, g] → [f∘g]`.
+    ///
+    /// Pushes a new callable that calls `g` and passes its result to `f`
+    /// (`compose_callables`). The `∘` spelling is normalized to `o` by the
+    /// parser.
     FunctionCompose,
 
     // -- Mixin --
+    /// Infix `but`: a copy of the left operand with the right one mixed in.
+    /// Stack: `[value, mixin] → [result]`.
+    ///
+    /// The right operand is a role (plain, parametric or anonymous), or a
+    /// value such as `True` or `42`, which mixes in a role that makes the
+    /// matching method return it. The role's `submethod BUILD`/`TWEAK` run,
+    /// and a write they make to a caller's lexical is drained back. A class
+    /// type object on the left gives a mixin type object (`Int but R` is
+    /// `Int+{R}`); mixing a role into a role type object, or a role into a
+    /// built-in type object, is an error. `but (R1, R2)` compiles to
+    /// [`Self::ButMixinTupleElem`] per element instead.
     ButMixin,
     /// Like ButMixin but checks for duplicate type conflicts (used for
     /// per-element tuple expansion: `True but (1, "x")`).
@@ -1619,11 +1884,29 @@ pub(crate) enum OpCode {
     /// give, and the two are different types. The compiler splits the tuple
     /// into one op per element, so the flag is what lets the runtime stamp them
     /// all with a single application group.
-    ButMixinTupleElem {
-        first: bool,
-    },
+    ButMixinTupleElem { first: bool },
     // -- Type check --
+    /// Infix `isa`: whether the left operand's class has the right operand
+    /// in its nominal hierarchy. Stack: `[left, right] → [Bool]` (right on top).
+    ///
+    /// The right operand is taken as a type name (`Value::isa_check`). Only
+    /// the class MRO counts: a role the value merely does is `False` here,
+    /// unlike `~~` / `.does`. The compiler's binary-operator table maps an
+    /// `isa` infix to this op, but Raku has no such infix and the parser
+    /// never produces one (`5 isa Int` is "Two terms in a row", as in
+    /// Rakudo), so in practice the op is unreachable; `.isa(T)` is a method
+    /// call.
     Isa,
+    /// Infix `does` in expression position: mix a role into a value, in
+    /// place. Stack: `[target, role] → [result]`.
+    ///
+    /// Composes the role (or a list of roles) into the target. A
+    /// `ContainerRef` target (`$obj.attr.VAR does R`) is composed inside
+    /// the cell, so every alias of the container sees the mixin, and the
+    /// container itself is pushed. Mixing into a built-in type object is
+    /// `X::Does::TypeObject`. Writes a `submethod BUILD`/`TWEAK` makes to a
+    /// caller's lexical are drained back. A `does` whose target is a
+    /// variable compiles to [`Self::DoesVar`] instead.
     Does,
     /// `$x does R` in-place mixin. `.0` = constant index of the target variable
     /// name; `.1` = compiler-baked local slot for that name (§1.5), `None` when the
@@ -1655,44 +1938,195 @@ pub(crate) enum OpCode {
     ContainerizePair,
 
     // -- Bitwise --
+    /// Infix `+&` (integer bitwise AND). Stack: `[left, right] → [Int]` (right on top).
+    ///
+    /// A `Failure` operand throws its exception rather than coercing to 0.
+    /// The operands are numified and combined by `crate::builtins::int_bitop`
+    /// (`src/builtins/arith/int_ops.rs`, ADR-0118), two's complement on big
+    /// integers too. Junctions are not threaded here.
     BitAnd,
+    /// Infix `+|` (integer bitwise OR). Stack: `[left, right] → [Int]` (right on top). As [`Self::BitAnd`].
     BitOr,
+    /// Infix `+^` (integer bitwise XOR). Stack: `[left, right] → [Int]` (right on top). As [`Self::BitAnd`].
     BitXor,
+    /// Infix `+<` (integer shift left). Stack: `[left, right] → [Int]` (right on top).
+    ///
+    /// `crate::builtins::int_shift_left`: an `Int` left shift always goes
+    /// through a big integer, so it never overflows. A `Failure` operand
+    /// throws.
     BitShiftLeft,
+    /// Infix `+>` (integer arithmetic shift right). Stack: `[left, right] → [Int]` (right on top).
+    /// `crate::builtins::int_shift_right`; a `Failure` operand throws.
     BitShiftRight,
+    /// Infix `?|` (boolean OR, both operands evaluated). Stack: `[left, right] → [Bool]` (right on top).
     BoolBitOr,
+    /// Infix `?&` (boolean AND, both operands evaluated). Stack: `[left, right] → [Bool]` (right on top).
     BoolBitAnd,
+    /// Infix `?^` (boolean XOR). Stack: `[left, right] → [Bool]` (right on top).
     BoolBitXor,
+    /// Infix `~&` (string bitwise AND). Stack: `[left, right] → [Str]`.
+    ///
+    /// ANDs corresponding *codepoints* (not bytes), truncating to the shorter
+    /// operand, with NFC normalization; two `Buf` operands are combined
+    /// bytewise. Shares `str_bitwise_op` with the `infix:<~&>` routine.
     StrBitAnd,
+    /// Infix `~|` (string bitwise OR). Stack: `[left, right] → [Str]`. As
+    /// [`Self::StrBitAnd`], but padding to the longer operand.
     StrBitOr,
+    /// Infix `~^` (string bitwise XOR). Stack: `[left, right] → [Str]`. As
+    /// [`Self::StrBitAnd`], but padding to the longer operand.
     StrBitXor,
+    /// Infix `~<` (string shift left). Stack: `[string, count] → [Str]`.
+    ///
+    /// Treats the left operand's bytes as a big-endian bit string and
+    /// shifts it left by `count` bits, appending zero bits (`"a" ~< 8` is
+    /// `"a\0"`). A negative count counts as 0. Reached only through the
+    /// compound assignment `$s ~<= 8`: the bare `~<` infix does not parse
+    /// (Rakudo reports it as not yet implemented).
     StrShiftLeft,
+    /// Infix `~>` (string shift right). Stack: `[string, count] → [Str]`.
+    /// As [`Self::StrShiftLeft`], dropping the low-order `count` bits
+    /// (`"aa" ~> 8` is `"a"`). Reached only through `$s ~>= 8`.
     StrShiftRight,
 
     // -- Set operations --
+    /// Infix `∈` / `(elem)`: whether the left operand is an element of the
+    /// right one. Stack: `[left, right] → [Bool]` (right on top).
+    ///
+    /// Junction operands are threaded and a user `infix:<(elem)>` candidate
+    /// gets first refusal. The membership test is `set_contains`: a key
+    /// lookup on a `Set`/`Bag`/`Mix`/`Hash` right operand, and a scan (by
+    /// `===` identity) of any other list-like right operand.
     SetElem,
+    /// Infix `∋` / `(cont)`: whether the left operand contains the right one.
+    /// Stack: `[left, right] → [Bool]` (right on top). [`Self::SetElem`] with the operands swapped (a user
+    /// `infix:<(cont)>` candidate is tried first).
     SetCont,
+    /// Infix `∪` / `(|)` (union: the larger weight of each key). Stack: `[left, right] → [QuantHash]` (right on top).
+    ///
+    /// The six binary set operators share one body,
+    /// `runtime::set_op_values` (`src/runtime/utils/set_algebra.rs`), which
+    /// the `[op]` reduction and `&infix:<op>` use too (#9451). A user
+    /// candidate under either spelling is tried first (ADR-0071). Both
+    /// operands are promoted to the higher of their levels, `Set` < `Bag` <
+    /// `Mix`, and the result takes that level and the left operand's
+    /// mutability (a `SetHash` operand gives a `SetHash`).
     SetUnion,
+    /// Infix `⊎` / `(+)` (baggy addition: the sum of the weights). Stack: `[left, right] → [QuantHash]` (right on top).
+    ///
+    /// The six binary set operators share one body,
+    /// `runtime::set_op_values` (`src/runtime/utils/set_algebra.rs`), which
+    /// the `[op]` reduction and `&infix:<op>` use too (#9451). A user
+    /// candidate under either spelling is tried first (ADR-0071). Both
+    /// operands are promoted to the higher of their levels, `Set` < `Bag` <
+    /// `Mix`, and the result takes that level and the left operand's
+    /// mutability (a `SetHash` operand gives a `SetHash`). `(+)` starts at `Bag`, so two `Set`s give a `Bag`.
     SetAddition,
+    /// Infix `∩` / `(&)` (intersection: the smaller weight of each key both
+    /// sides hold). Stack: `[left, right] → [QuantHash]` (right on top).
+    ///
+    /// The six binary set operators share one body,
+    /// `runtime::set_op_values` (`src/runtime/utils/set_algebra.rs`), which
+    /// the `[op]` reduction and `&infix:<op>` use too (#9451). A user
+    /// candidate under either spelling is tried first (ADR-0071). Both
+    /// operands are promoted to the higher of their levels, `Set` < `Bag` <
+    /// `Mix`, and the result takes that level and the left operand's
+    /// mutability (a `SetHash` operand gives a `SetHash`).
     SetIntersect,
+    /// Infix `⊍` / `(.)` (baggy multiplication: the product of the weights
+    /// of each key both sides hold). Stack: `[left, right] → [QuantHash]` (right on top).
+    ///
+    /// The six binary set operators share one body,
+    /// `runtime::set_op_values` (`src/runtime/utils/set_algebra.rs`), which
+    /// the `[op]` reduction and `&infix:<op>` use too (#9451). A user
+    /// candidate under either spelling is tried first (ADR-0071). Both
+    /// operands are promoted to the higher of their levels, `Set` < `Bag` <
+    /// `Mix`, and the result takes that level and the left operand's
+    /// mutability (a `SetHash` operand gives a `SetHash`). `(.)` starts at `Bag`, like `(+)`.
     SetMultiply,
+    /// Infix `∖` / `(-)` (set difference: the left weight less the right
+    /// one). Stack: `[left, right] → [QuantHash]` (right on top).
+    ///
+    /// The six binary set operators share one body,
+    /// `runtime::set_op_values` (`src/runtime/utils/set_algebra.rs`), which
+    /// the `[op]` reduction and `&infix:<op>` use too (#9451). A user
+    /// candidate under either spelling is tried first (ADR-0071). Both
+    /// operands are promoted to the higher of their levels, `Set` < `Bag` <
+    /// `Mix`, and the result takes that level and the left operand's
+    /// mutability (a `SetHash` operand gives a `SetHash`).
     SetDiff,
+    /// Infix `⊖` / `(^)` (symmetric difference: the distance between the
+    /// weights). Stack: `[left, right] → [QuantHash]` (right on top).
+    ///
+    /// The six binary set operators share one body,
+    /// `runtime::set_op_values` (`src/runtime/utils/set_algebra.rs`), which
+    /// the `[op]` reduction and `&infix:<op>` use too (#9451). A user
+    /// candidate under either spelling is tried first (ADR-0071). Both
+    /// operands are promoted to the higher of their levels, `Set` < `Bag` <
+    /// `Mix`, and the result takes that level and the left operand's
+    /// mutability (a `SetHash` operand gives a `SetHash`).
     SetSymDiff,
+    /// Infix `⊆` / `(<=)` (subset or equal). Stack: `[left, right] → [Bool]` (right on top).
+    ///
+    /// Both operands are read as QuantHashes (`quant_hash_subset`), weights
+    /// included: every key of the left side must be on the right side with
+    /// at least the same weight. Junctions are not threaded here.
     SetSubset,
+    /// Infix `⊇` / `(>=)` (superset or equal). Stack: `[left, right] → [Bool]` (right on top). [`Self::SetSubset`]
+    /// with the operands swapped.
     SetSuperset,
+    /// Infix `⊂` / `(<)` (strict subset). Stack: `[left, right] → [Bool]` (right on top). As [`Self::SetSubset`], and
+    /// the two sides must differ.
     SetStrictSubset,
+    /// Infix `⊃` / `(>)` (strict superset). Stack: `[left, right] → [Bool]` (right on top). [`Self::SetStrictSubset`]
+    /// with the operands swapped.
     SetStrictSuperset,
+    /// Build a two-element `any` junction. Stack: `[left, right] →
+    /// [Junction]`.
+    ///
+    /// Never flattens a junction operand: `merge_junction` wraps exactly the
+    /// two values. Emitted for a two-operand infix `a | b` and for the
+    /// sequential metaoperator `S|`; a chain of three or more (`a | b | c`)
+    /// compiles to [`Self::JunctionAnyN`] instead, which is also the only
+    /// form that consults a user `infix:<|>`.
     JunctionAny,
+    /// Build a two-element `all` junction, as [`Self::JunctionAny`]: infix
+    /// `a & b` and `S&`; longer chains use [`Self::JunctionAllN`].
     JunctionAll,
+    /// Build a two-element `one` junction, as [`Self::JunctionAny`]: infix
+    /// `a ^ b` and `S^`; longer chains use [`Self::JunctionOneN`].
     JunctionOne,
-    /// Multi-operand junction: pop `count` values, check for user-defined
-    /// infix:<|>/<&>/<^> override (list-associative), or build junction.
+    /// Infix `|` over a chain of three or more operands (`a | b | c`):
+    /// build an `any` junction.
+    /// Stack: `[v1, …, vN] → [Junction]`.
+    ///
+    /// The operand is `N`, the number of chain operands the compiler
+    /// flattened; that many values are popped (the first operand deepest).
+    /// When a user `infix:<|>` candidate matches, it is called ONCE with all
+    /// `N` values (list associativity) and its result is pushed; otherwise
+    /// the junction holds the values in order.
     JunctionAnyN(u32),
+    /// Infix `&` over a whole chain: build an `all` junction from the `N`
+    /// popped values, or call a user `infix:<&>` once with all of them. See
+    /// [`Self::JunctionAnyN`].
     JunctionAllN(u32),
+    /// Infix `^` over a whole chain: build a `one` junction from the `N`
+    /// popped values, or call a user `infix:<^>` once with all of them. See
+    /// [`Self::JunctionAnyN`].
     JunctionOneN(u32),
 
     // -- Sequence --
+    /// Infix `…` / `...` (and `…^` / `...^`): the sequence operator. Stack:
+    /// `[seeds, limit] → [Seq]`.
+    ///
+    /// The left operand holds the seed values and any generator closure; the
+    /// right one is the end point or end matcher (`*` for none). Both are
+    /// handed to `eval_sequence_values`, which deduces an arithmetic or
+    /// geometric progression from the seeds, or runs the closure. The
+    /// result is normally a lazy `Seq`; a finite sequence it answers eagerly
+    /// is wrapped into one.
     Sequence {
+        /// `true` for `...^`, which leaves out the end point.
         exclude_end: bool,
     },
 
@@ -1798,17 +2232,49 @@ pub(crate) enum OpCode {
     ThrowIfFailure,
 
     // -- Range creation --
+    /// Infix `..` (inclusive range). Stack: `[min, max] → [Range]`.
+    ///
+    /// `build_range_value`, shared with the metaop forms (`Z..`, `X..`),
+    /// picks the representation from the endpoints: a compact integer range,
+    /// or a generic range that keeps `Num`/`Rat`/`Str` endpoints (a `-Inf`
+    /// start stays a `Num`). A list endpoint numifies to its element count,
+    /// so `0 .. @a` ends at `@a.elems`.
     MakeRange,
+    /// Infix `..^` (excluding the end point). Stack: `[min, max] → [Range]`.
+    /// As [`Self::MakeRange`].
     MakeRangeExcl,
+    /// Infix `^..` (excluding the start point). Stack: `[min, max] →
+    /// [Range]`. As [`Self::MakeRange`].
     MakeRangeExclStart,
+    /// Infix `^..^` (excluding both end points). Stack: `[min, max] →
+    /// [Range]`. As [`Self::MakeRange`].
     MakeRangeExclBoth,
 
     // -- Composite --
+    /// Build a `List` from `n` stack values. Stack: `[v1, …, vn] → [List]`.
+    ///
+    /// The operand is the number of values popped (the first element
+    /// deepest). Emitted for a comma list, `(a, b, c)`, and for compiler
+    /// lists (`start … xx N`, shape dimensions, the keys of a subscript).
+    /// A user list-associative `infix:<,>` is called with all the values
+    /// instead, when one is in scope. A `Slip` element is spliced in, a
+    /// scalar variable element keeps its container (so the List aliases it),
+    /// and a lone lazy element keeps the list lazy. See
+    /// [`Self::MakeRealArray`] for the `[...]` form.
     MakeArray(u32),
     /// Like MakeArray but creates a true Array (from [...] literals) instead of a List.
     MakeRealArray(u32),
     /// Like MakeRealArray but never flattens a single element (from `[x,]` trailing comma).
     MakeRealArrayNoFlatten(u32),
+    /// Build a `Hash` from `n` key/value pairs pushed flat. Stack:
+    /// `[k1, v1, …, kn, vn] → [Hash]`.
+    ///
+    /// The operand is the number of *pairs*, so `2 * n` values are popped.
+    /// Emitted for a hash literal whose keys are known at compile time
+    /// (`{ a => 1, :b }`; a bare `:b` has value `True`). A type-object key
+    /// warns and stringifies; each value is itemized into its own `Scalar`,
+    /// and a `Proxy` value is FETCHed. Under `use fatal` a `Failure` among the
+    /// keys or values throws.
     MakeHash(u32),
     /// Build a Hash from `count` Pair values on the stack (from `%(k=>v, ...)` syntax).
     MakeHashFromPairs(u32),
@@ -1817,9 +2283,26 @@ pub(crate) enum OpCode {
     MakeCapture(u32),
 
     // -- I/O --
+    /// The `say` statement. Stack: `[a1, …, an] → []` (`n` = the operand, the
+    /// number of argument expressions).
+    ///
+    /// Each argument is followed by [`Self::DeSlip`], so a Slip value stays one
+    /// argument. All four output ops call `render_output`, the renderer the
+    /// routine forms (`&say(...)`) share: Slips are flattened and Proxies FETCHed,
+    /// an unhandled `Failure` throws, and `say`/`note` render `.gist` while
+    /// `put`/`print` render `.Str`. `say` writes to `$*OUT` with a trailing
+    /// newline.
     Say(u32),
+    /// The `put` statement: `.Str` of each argument to `$*OUT`, plus a newline.
+    /// Stack: `[a1, …, an] → []`. See [`Self::Say`]. A lone Junction argument
+    /// prints one line per eigenstate.
     Put(u32),
+    /// The `print` statement: `.Str` of each argument to `$*OUT`, with no
+    /// newline. Stack: `[a1, …, an] → []`. See [`Self::Say`].
     Print(u32),
+    /// The `note` statement: `.gist` of each argument to `$*ERR`, plus a newline;
+    /// with no arguments it prints `Noted`. Stack: `[a1, …, an] → []`. See
+    /// [`Self::Say`].
     Note(u32),
 
     // -- Calls (args compiled to bytecode, dispatch delegated to interpreter) --
@@ -1927,6 +2410,20 @@ pub(crate) enum OpCode {
         /// container itself, not a snapshot. `None` for scalar / expression args.
         value_source_idx: Option<u32>,
     },
+    /// A method call whose invocant is a named variable: `$x.m(...)`,
+    /// `@a.push(...)`, `%h.m`, `&f.m`, a bareword or `(my $x).m`. Stack:
+    /// `[target, a1, …, an] → [result]` (`n` = `arity`, last argument on top).
+    ///
+    /// Despite the name it is used for every call on a variable, not only
+    /// mutating ones: knowing the receiver's name (`target_name_idx`) is what
+    /// lets a method that rebinds or mutates the variable (`.push`, `.=`, an
+    /// `is rw` invocant) write through to it. Dispatch tries the accessor lane,
+    /// then native mutator fast paths (Array/Hash/Buf `push`/`pop`/...), then
+    /// compiled-method dispatch, and finally the runtime slow path
+    /// `call_method_mut_with_values`. After the call the receiver's slot is
+    /// refreshed from `env` only if the call actually rebound it. A method not
+    /// found on a `Nil` receiver yields `Nil`. `@a[i].pop` stores the element in
+    /// a temporary first and names that temporary as the receiver.
     CallMethodMut {
         name_idx: u32,
         arity: u32,
@@ -1959,27 +2456,21 @@ pub(crate) enum OpCode {
         /// names) baked the same way `CallMethodMut`'s does.
         arg_sources_idx: Option<u32>,
     },
-    /// Statement-level call with positional/named values encoded as Pair.
+    /// Run a block as a scope with its phasers: a statement-position bare
+    /// `{ ... }`, synthesized `if`/loop bodies, phaser-bearing blocks and routine
+    /// bodies. Stack: `[] → []` plus whatever the body leaves.
     ///
-    /// ADR-0054 Slice 4: `arg_sources_idx` is the SAME per-argument-position
-    /// descriptor `CallFunc`/`CallMethod`/etc. carry (see their doc comments
-    /// and `decode_arg_slip_positions`) — a `|EXPR` position is a `TRUE`
-    /// entry. Those — and only those — spread into the argument list: a Slip
-    /// an ordinary argument merely evaluated to (`is-deeply $s.Slip,
-    /// $t.Slip, 'name'`) stays one argument, as in Rakudo. Before Slice 4
-    /// this carried a dedicated `slip_positions_idx` (a constant array of
-    /// bare integer positions, decoded by the now-deleted
-    /// `spread_slip_positions`); it collapsed into this table so a call site
-    /// has exactly one syntax descriptor instead of two. `keep_value` (tail
-    /// position: the call's value is the body's result) pushes the call
-    /// result onto the stack; plain statement position leaves the stack
-    /// untouched.
-    ExecCallPairs {
-        name_idx: u32,
-        arity: u32,
-        arg_sources_idx: Option<u32>,
-        keep_value: bool,
-    },
+    /// Layout, all absolute op indices, with execution resuming at `end`:
+    /// `[ip+1, pre_end)` PRE, `[pre_end, enter_end)` ENTER,
+    /// `[enter_end, body_end)` the body, `[keep_start, undo_start)` the success
+    /// queue (LEAVE and KEEP, reverse textual order), `[undo_start, post_start)`
+    /// the failure queue (LEAVE and UNDO), `[post_start, end)` POST. A plain block
+    /// has all phaser ranges empty. The op opens a block env tier (merging back
+    /// only by-name writes), resets the slots the block declared (`state` slots
+    /// excepted), restores the routine registry, sets `$!` for LEAVE/UNDO and
+    /// `$_`/`$!` for POST, and re-raises the body's error after the phasers run.
+    /// `is_bare_block` pushes an anonymous call frame so backtraces show the
+    /// block.
     BlockScope {
         pre_end: u32,
         enter_end: u32,
@@ -2023,9 +2514,7 @@ pub(crate) enum OpCode {
     /// `BlockLocalScope` (when there is one) still does that. It runs
     /// `ip+1 .. body_end` and absorbs a succeed signal, resetting the
     /// `when_matched` flag so an enclosing `given` does not break out of its body.
-    SucceedBarrier {
-        body_end: u32,
-    },
+    SucceedBarrier { body_end: u32 },
     /// Drop the `state` variables initialized in `ip+1 .. body_end` from the
     /// state store, so their declarations re-run their initializers.
     ///
@@ -2039,9 +2528,7 @@ pub(crate) enum OpCode {
     /// block has neither, hence this op at its entry. Emitted only when the body
     /// declares a `state` at its own level — a nested loop/if/block inside it
     /// resets through its own entry.
-    ResetStateLocals {
-        body_end: u32,
-    },
+    ResetStateLocals { body_end: u32 },
     /// Check the top-of-stack value; if falsy, throw X::Phaser::PrePost.
     /// `is_pre` distinguishes PRE (true) from POST (false). `condition_idx` is
     /// the constant index of the condition's source text (e.g. `0`), used for
@@ -2054,9 +2541,7 @@ pub(crate) enum OpCode {
     /// KEEP/UNDO queue. `next` points to the start of the next LEAVE
     /// phaser (or the end of the queue). Used by the VM to continue
     /// running remaining LEAVE phasers when one throws an exception.
-    LeaveGuard {
-        next: u32,
-    },
+    LeaveGuard { next: u32 },
     /// Pop the top of the value stack and push it onto the ENTER-result stack.
     /// Emitted at the end of the ENTER section for an ENTER phaser that is the
     /// textually-last statement of its block, so the phaser's entry-time value
@@ -2068,6 +2553,16 @@ pub(crate) enum OpCode {
     /// statement is an ENTER phaser, materializing its captured value as the
     /// block result.
     LoadEnterResult,
+    /// A block in value position: `do { ... }`, a block used as a term, and a
+    /// `"{...}"` interpolation. Stack: `[] → [value]`.
+    ///
+    /// The body `[ip+1, body_end)` is compiled inline and leaves exactly one
+    /// value; execution resumes at `body_end`. A `leave` signal whose label
+    /// matches (or that has none) ends the block with the leave value (an empty
+    /// `Slip` by default), and a `succeed` ends it with the succeed value; any
+    /// other error propagates. `label` is the block label `leave` matches
+    /// against. `scope_routines` snapshots and restores the routine registry,
+    /// because the body declares a sub or proto.
     DoBlockExpr {
         body_end: u32,
         label: Option<String>,
@@ -2086,22 +2581,33 @@ pub(crate) enum OpCode {
         /// is the overwhelmingly common case.
         scope_routines: bool,
     },
-    OnceExpr {
-        body_end: u32,
-    },
+    /// `once { ... }`: run the body the first time, and push the remembered
+    /// value every time after. Stack: `[] → [value]`.
+    ///
+    /// The body `[ip+1, body_end)` is compiled inline (`Nil` when it leaves no
+    /// value); execution resumes at `body_end`. The value is memoized in the
+    /// shared cross-thread `once` store under a key built from this op's ip and
+    /// its scope: the method (`m<pkg>::<name>`), the closure clone
+    /// (`c<callable id>`) or the once-scope id, so each closure clone runs its
+    /// own `once`. An error in the body abandons the claim, so a later execution
+    /// runs it again.
+    OnceExpr { body_end: u32 },
     /// A `BEGIN <expr>` whose value the phaser lifter could not hoist out of its
     /// enclosing routine (module bodies are not lifted at all — see
     /// `compile_expr_phaser`). The body still runs at most once: the result is
     /// memoized in the `once` store under a compile-time site id, so unlike
     /// `OnceExpr` the memo is shared by every clone of the enclosing code object,
     /// which is what BEGIN means (one value, baked in at compile time).
-    BeginOnceExpr {
-        body_end: u32,
-        site_id: u64,
-    },
-    DoGivenExpr {
-        body_end: u32,
-    },
+    BeginOnceExpr { body_end: u32, site_id: u64 },
+    /// `given` in value position (`do given X { ... }`, and the `with`/
+    /// `without`/`given` statement-modifier desugars). Stack: `[topic] → [value]`.
+    ///
+    /// The value-position twin of [`Self::Given`]: pops the topic, binds it as
+    /// `$_` for the body `[ip+1, body_end)`, and pushes the body's last value or
+    /// the value a matching `when`/`default` succeeded with (`Nil` otherwise).
+    /// `$_` and the topic-source bookkeeping are restored afterwards, and a topic
+    /// that is an element (`given @a[i]`) has its final value written back.
+    DoGivenExpr { body_end: u32 },
     /// Create a lazy gather list from `stmt_pool[.0]`. `.1` indexes the
     /// analysis-only escaping closure compiled from the same body
     /// (`surface_stashed_body_free_vars`): exec boxes the captured-and-mutated
@@ -2111,6 +2617,13 @@ pub(crate) enum OpCode {
     MakeGather(u32, Option<u32>),
     /// Force eager evaluation of the top-of-stack value (LazyList → Array)
     Eager,
+    /// Call a computed callee: `$f(1)`, `$f.(1)`, `{ ... }(7)`, `%h<k>()`.
+    /// Stack: `[callee, a1, …, an] → [result]` (`n` = `arity`).
+    ///
+    /// A `HashEntryRef` callee is resolved and a weak Sub upgraded (a dead one
+    /// calls as `Nil`), then `vm_call_on_value` makes the call and an `is rw`
+    /// argument is written back. The op records its resume point, so
+    /// `CONTROL { .resume }` works for a call like `my $w = &warn; $w("x")`.
     CallOnValue {
         arity: u32,
         arg_sources_idx: Option<u32>,
@@ -2124,6 +2637,14 @@ pub(crate) enum OpCode {
         /// through. Consumed via `Interpreter::pending_call_topic_bare`.
         bare_args: bool,
     },
+    /// Call a code variable by name, `&name(args)`. Stack: `[a1, …, an] →
+    /// [result]`; there is no callee on the stack.
+    ///
+    /// `name_idx` is the constant-pool index of the name WITHOUT the `&`
+    /// (`foo`, `!attr`, `Pkg::f`). The callee is resolved through
+    /// `resolve_code_var`, the frame's `&name` slot, a module-scope lexical, and
+    /// a `!attr` on `self`; when all of those are empty the name is called as a
+    /// sub (native function, then compiled function, then the by-name call).
     CallOnCodeVar {
         name_idx: u32,
         arity: u32,
@@ -2137,13 +2658,21 @@ pub(crate) enum OpCode {
     MakeAnonSubParams(u32, Option<u32>, bool),
     /// Third field: true when generated by Whatever-currying (WhateverCode).
     MakeLambda(u32, Option<u32>, bool),
+    /// Build a bare-block closure. Stack: `[] → [Sub]`.
+    ///
+    /// `.0` indexes `CompiledCode::stmt_pool` (a `Stmt::Block`) and `.1`
+    /// `closure_compiled_codes` (its precompiled body). The Sub is marked as a
+    /// bare block with no parameters, and captures its environment:
+    /// captured-and-mutated lexicals are boxed into shared cells first, then the
+    /// upvalues are taken. Emitted by `compile_expr_block` for an `Expr::Block`
+    /// whose body uses placeholders; a placeholder-free block is inlined, and a
+    /// source `{ $^a + $^b }` term compiles to [`Self::MakeAnonSubParams`], so
+    /// this op is rarely reached from source.
     MakeBlockClosure(u32, Option<u32>),
     // -- Indexing --
     /// `is_positional` is true when the subscript was `[...]` (positional),
     /// false when `{...}` or `<...>` (associative).
-    Index {
-        is_positional: bool,
-    },
+    Index { is_positional: bool },
     /// [`OpCode::Index`] emitted as the *receiver* of a method call
     /// (`@a[0].mut`, `%h<a>.mut`) — ADR-0067's subscript-receiver producer.
     ///
@@ -2160,9 +2689,7 @@ pub(crate) enum OpCode {
     /// process-global mirror slice 3b uses: a program that declares no
     /// raw-invocant method anywhere pays one relaxed atomic load and then runs
     /// `Index` verbatim.
-    IndexInvocantRef {
-        is_positional: bool,
-    },
+    IndexInvocantRef { is_positional: bool },
     /// ADR-0067's subscript-ARGUMENT producer: the twin of
     /// [`Self::IndexInvocantRef`] one position over. `$b(@a[0])`,
     /// `$obj.m(@a[0])` and `&g(@a[0])` must hand the element's own container to
@@ -2195,9 +2722,7 @@ pub(crate) enum OpCode {
     /// `{...}` / `<...>`. It is what the deferred token's path step records, so
     /// a positional step over a not-yet-existent container walk-creates an
     /// `Array` rather than a `Hash` keyed by the stringified index.
-    IndexAutovivifyLazy {
-        is_positional: bool,
-    },
+    IndexAutovivifyLazy { is_positional: bool },
     /// Like IndexAutovivifyLazy, but the index is the TERMINAL element of a `:=`
     /// bind RHS. A container-valued (Array/Hash) leaf is promoted to a
     /// `ContainerRef` cell — not kept as a traversal back-reference.
@@ -2239,6 +2764,14 @@ pub(crate) enum OpCode {
     /// slot instead of a by-name `code.locals` search — docs/lexical-scope-slot-
     /// campaign.md). `None` for a non-local / EVAL-carrier container.
     DeleteIndexNamed(u32, Option<u32>),
+    /// Delete from a computed container, `[target, index] → [deleted]`.
+    ///
+    /// Only emitted for the `:exists:delete` combination on a container that is
+    /// not a named variable (`(expr)<k>:exists:delete`); the target and index are
+    /// compiled a second time for it, after `ExistsIndexAdv` has produced the
+    /// exists result, and the deleted value is then popped. The index may be a
+    /// single key or index, a Whatever, an Array or a Range. An immutable `Map`
+    /// refuses. Named containers use [`Self::DeleteIndexNamed`].
     DeleteIndexExpr,
     /// Multi-dimensional indexing: @a[$x;$y;$z]
     /// Stack: `[target, dim0, dim1, ..., dimN] → [result]`
@@ -2246,10 +2779,7 @@ pub(crate) enum OpCode {
     /// `is_positional` records the bracket kind — see `MultiDimIndexAssign`.
     /// An associative multi-dim read is a slice even when every dimension is a
     /// single key, so it hands back a `List` (`%h{1;2}` is `(5,)`).
-    MultiDimIndex {
-        ndims: u32,
-        is_positional: bool,
-    },
+    MultiDimIndex { ndims: u32, is_positional: bool },
     /// Multi-dimensional index assignment: @a[$x;$y;$z] = value
     /// Stack: [value, dim0, dim1, ..., dimN] (target by name)
     ///
@@ -2281,10 +2811,7 @@ pub(crate) enum OpCode {
     },
     /// Multi-dimensional index assignment (generic target)
     /// Stack: [target, dim0, ..., dimN, value]
-    MultiDimIndexAssignGeneric {
-        ndims: u32,
-        is_positional: bool,
-    },
+    MultiDimIndexAssignGeneric { ndims: u32, is_positional: bool },
     /// Multi-dimensional index as an lvalue (`:=` bind RHS, or a raw `\target` /
     /// `is rw` argument). Descends the nested array/hash through all (scalar)
     /// dimensions, promoting the leaf to a shared `ContainerRef` cell so a later
@@ -2298,6 +2825,22 @@ pub(crate) enum OpCode {
     HyperSlice(u8),
 
     // -- String interpolation --
+    /// Join the parts of an interpolating string, `"a $x b"` /
+    /// `"{expr}"`. Stack: `[p1, …, pn] → [Str]`.
+    ///
+    /// The operand is `n`, the number of parts on the stack (first part
+    /// deepest), not a pool index. The compiler pushes each literal chunk
+    /// and interpolated value in order; an `@a` part is compiled as
+    /// `join(" ", @a)` and a `%h` part as `~%h`. A single part that is
+    /// already a `Str` is left in place untouched.
+    ///
+    /// Each part is stringified here: a `Proxy` is FETCHed and a container
+    /// read through, a deferred `.map` Seq is run, `Nil` warns and counts as
+    /// `""`, a `Regex` warns and counts as `""`, an unhandled `Failure`
+    /// throws, and a non-`utf8` Blob dies (`X::Buf::AsStr`). An instance
+    /// (or a type object) with a user method goes through `.Stringy` /
+    /// `.Str` method dispatch, and a write that method makes to a caller's
+    /// lexical is reconciled afterwards.
     StringConcat(u32),
 
     // -- Loop control --
@@ -2383,8 +2926,31 @@ pub(crate) enum OpCode {
     UndefineAggregate(u32),
 
     // -- Unary coercion --
+    /// Prefix `+` (numeric coercion). Stack: `[v] → [Numeric]`.
+    ///
+    /// A `Proxy` is FETCHed first, and a Junction is threaded element by
+    /// element. A list, array or `Seq` numifies to its element count (a
+    /// deferred `.map` is run first; a lazy list yields an `X::Cannot::Lazy`
+    /// Failure); a `Range` to its element count; a `Str` is parsed as a Raku
+    /// number (`X::Str::Numeric` Failure when it is not one); an instance
+    /// dispatches its `Numeric` method (a role's, for a punned mixin). A type
+    /// object warns and yields its numeric zero (`+Int` is `0`), except `Mu`,
+    /// which is an error.
     NumCoerce,
+    /// Prefix `~` (string coercion). Stack: `[v] → [Str]`.
+    ///
+    /// A `Proxy` is FETCHed and a `ContainerRef` is read through first; a
+    /// deferred `.map` Seq is run. An instance dispatches its user `Str`
+    /// method; lists stringify element by element, space-separated. `~Nil`
+    /// and `~/regex/` warn and yield `""`, `~Mu` is an error, and an
+    /// unhandled `Failure` throws. Also emitted for the `~~=` assignment.
     StrCoerce,
+    /// Prefix `^` (the up-to range). Stack: `[n] → [Range]`: `0 ..^ n`.
+    ///
+    /// A non-numeric operand is numified first (so `^@a` ranges over the
+    /// indices of `@a`). An `Int` gives the integer range; a `Num`, `Rat` or
+    /// big integer gives a range with that end point; anything that is not
+    /// numeric at all gives the empty range `0..^0`.
     UptoRange,
 
     /// METAOP_ASSIGN identity substitution for the LHS of `$x OP= $y`: replace a
@@ -2395,16 +2961,62 @@ pub(crate) enum OpCode {
     MetaAssignIdentity(crate::token_kind::MetaAssignIdentity),
 
     // -- Prefix increment/decrement (returns NEW value) --
-    // Optional second field: the compile-time-resolved local slot for the named
-    // scalar (§1.5, mirrors PostIncrement/PostDecrement — docs/lexical-scope-slot-
-    // campaign.md). `None` for a non-local / temp-value target (env-by-name).
+    /// Prefix `++$x` on a named scalar. Stack: `[] → [new value]`.
+    ///
+    /// The first operand is the constant-pool index of the variable name;
+    /// the second is its compile-time-resolved local slot (§1.5,
+    /// `docs/lexical-scope-slot-campaign.md`), or `None` for a non-local
+    /// target (global, `our`, dynamic, a temp value), which is stepped in
+    /// `env` by name.
+    ///
+    /// The variable is read, stepped with `.succ` semantics
+    /// (`crate::builtins::value_succ`: `Int`, magic string increment
+    /// `"a9"` → `"b0"`, a user `succ` method on an instance), type-checked
+    /// against its declared constraint, and written back through whatever
+    /// holds it (a local slot, a shared `ContainerRef` cell, a `Proxy`, an
+    /// attribute cell, `$CALLER::x`), with the new value carried along the
+    /// sigilless alias chain. An undefined variable counts from `0`. A
+    /// read-only operand raises `X::Multi::NoMatch` naming `prefix:<++>`.
+    /// All four scalar `++`/`--` ops share one body, `exec_scalar_incdec_op`
+    /// (#9450).
     PreIncrement(u32, Option<u32>),
+    /// Prefix `--$x` on a named scalar. Stack: `[] → [new value]`. As
+    /// [`Self::PreIncrement`], stepping with `.pred` semantics
+    /// (`crate::builtins::value_pred`).
     PreDecrement(u32, Option<u32>),
+    /// Prefix `++` on a subscripted element, `++@a[$i]` / `++%h<k>`. Stack:
+    /// `[index] → [new value]`.
+    ///
+    /// The first operand is the constant-pool index of the container
+    /// variable's name; the second is the *base container's* local slot
+    /// (see [`Self::PostIncrementIndex`] for why it is needed), or `None`.
+    /// The element is autovivified when missing (a typed array fills with
+    /// its element type), stepped, and written back; `@!attr` elements reach
+    /// the attribute's cell. The indexed forms share `exec_inc_dec_index_op`.
     PreIncrementIndex(u32, Option<u32>),
+    /// Prefix `--` on a subscripted element, `--@a[$i]` / `--%h<k>`. Stack:
+    /// `[index] → [new value]`. As [`Self::PreIncrementIndex`].
     PreDecrementIndex(u32, Option<u32>),
 
     // -- Variable access --
+    /// Read a named capture, `$<name>`. Stack: `[] → [value]`.
+    ///
+    /// The operand is the constant-pool index of the key wrapped in angle
+    /// brackets (`<name>`). The value is taken from an `env` binding of that key,
+    /// else from `$/` (a Hash is indexed, any other Match gets `AT-KEY`), else
+    /// `Nil`. A multi-key `$<a b>` emits one op per key followed by
+    /// [`Self::MakeArray`]. Positional captures (`$0`) are plain
+    /// [`Self::GetGlobal`] reads.
     GetCaptureVar(u32),
+    /// Read a code variable, `&foo` (including `&?ROUTINE`, `&?BLOCK`,
+    /// `&!attr` and `&Pkg::f`). Stack: `[] → [Code]`.
+    ///
+    /// The operand is the constant-pool index of the name WITHOUT the `&`. It
+    /// resolves through the frame's `&name` slot, the frame's lexical routines,
+    /// the runtime `resolve_code_var`, a module-scope lexical, the block stack
+    /// (`?BLOCK`) and `self`'s attribute (`!attr`). An unresolved name is `Nil`,
+    /// the `Any` type object when it is `::`-qualified, and
+    /// `X::Undeclared::Symbols` inside an `EVAL`.
     GetCodeVar(u32),
 
     // -- Postfix operators --
@@ -2414,7 +3026,14 @@ pub(crate) enum OpCode {
     // ambiguous once a name occupies several slots — docs/lexical-scope-slot-
     // campaign.md). `None` for a non-local (global / `our` / dynamic / a temp
     // value target), where the writeback stays env-by-name.
+    /// Postfix `$x++` on a named scalar. Stack: `[] → [old value]`.
+    ///
+    /// Operands and semantics as [`Self::PreIncrement`], except that the
+    /// expression's value is the value *before* the step. An undefined
+    /// variable is normalized to `0` first, so `my $x; $x++` yields `0`.
     PostIncrement(u32, Option<u32>),
+    /// Postfix `$x--` on a named scalar. Stack: `[] → [old value]`. As
+    /// [`Self::PostIncrement`], stepping with `.pred` semantics.
     PostDecrement(u32, Option<u32>),
     /// `$c[i]++` / `%h<k>--`. The optional second field is the same §1.5
     /// compile-time-resolved local slot as `PostIncrement`'s: the *base
@@ -2424,6 +3043,9 @@ pub(crate) enum OpCode {
     /// (a bare block, which shares the enclosing frame's locals) incremented the
     /// OUTER array's element.
     PostIncrementIndex(u32, Option<u32>),
+    /// Postfix `--` on a subscripted element, `@a[$i]--` / `%h<k>--`. Stack:
+    /// `[index] → [old value]`. Operands as [`Self::PostIncrementIndex`];
+    /// shares `exec_inc_dec_index_op` with the other indexed forms.
     PostDecrementIndex(u32, Option<u32>),
     /// Named index assignment: `var[idx] = value` where `var` is a known
     /// variable name. `is_positional` records whether the subscript was
@@ -2452,6 +3074,14 @@ pub(crate) enum OpCode {
         /// container's reference first and grow the buffer in place.
         concat_append: bool,
     },
+    /// Assign through a pseudo-stash with a literal key: `MY::<$x> = v`,
+    /// `PROCESS::<$x> = v`. Stack: `[value] → [value]`.
+    ///
+    /// `stash_name_idx` is the constant-pool index of `MY::` or `PROCESS::`, and
+    /// `key_name_idx` that of the key with its sigil. `PROCESS::` sets the
+    /// process-level dynamic variable; `MY::` assigns the named lexical (its slot
+    /// when it has one, else `env`, with the usual `@`/`%` coercion, read-only
+    /// and type checks). Any other stash is an error.
     IndexAssignPseudoStashNamed {
         stash_name_idx: u32,
         key_name_idx: u32,
@@ -2459,9 +3089,7 @@ pub(crate) enum OpCode {
     /// Runtime-key variant of `IndexAssignPseudoStashNamed` (e.g.
     /// `PROCESS::{$k} = v`, how a `//=`/`||=` compound assign desugars the
     /// subscript into a temp). Stack: `[..., value, key]`.
-    IndexAssignPseudoStashKeyed {
-        stash_name_idx: u32,
-    },
+    IndexAssignPseudoStashKeyed { stash_name_idx: u32 },
     /// Element-for-mutation load for `@a[i].push(...)` / `%h<k>.pop` etc.:
     /// read the element like a plain subscript; with `autoviv` set (push/
     /// append/unshift/prepend), a missing element (Nil / Any / Mu hole) is
@@ -2557,6 +3185,13 @@ pub(crate) enum OpCode {
         /// its positional element cells.
         is_positional: bool,
     },
+    /// Raise `X::Assignment::RO` ("Cannot modify an immutable value"). Stack:
+    /// `[] → …`; the op never falls through, and the right-hand side is not
+    /// evaluated.
+    ///
+    /// Emitted for an assignment the compiler already knows is to a read-only
+    /// target: `&foo = sub { ... }` for a routine that is not a local or an
+    /// attribute, and assignment to `$*PID`.
     AssignReadOnly,
     /// Check if a variable is readonly; throw if so (for assignment to readonly params).
     CheckReadOnly(u32),
@@ -2733,10 +3368,23 @@ pub(crate) enum OpCode {
     },
 
     // -- Environment variable access --
+    /// Read an environment variable, `%*ENV<KEY>` with a literal key. Stack:
+    /// `[] → [value]`.
+    ///
+    /// The operand is the constant-pool index of the key. `%*ENV` is consulted
+    /// first; a key it lacks (or a `%*ENV` that is not a Hash) falls back to the
+    /// process environment, whose value is `val()`-coerced into an allomorph. A
+    /// missing key reads as `Nil`.
     GetEnvIndex(u32),
 
     // -- Exists check --
+    /// `%*ENV<KEY>:exists` with a literal key and no other adverb. Stack:
+    /// `[] → [Bool]`. True when `%*ENV` or the process environment has the key,
+    /// so a key deleted from `%*ENV` but still set in the process still exists.
     ExistsEnvIndex(u32),
+    /// Plain `:exists` on a term that is not a subscript. Stack: `[value] →
+    /// [Bool]`: the value's truthiness. Subscripted forms use
+    /// [`Self::ExistsIndexAdv`] and friends.
     ExistsExpr,
     /// Rich :exists adverb with flags.
     /// Stack: `[target, index]` or `[target, index, arg]` or `[target]` (zen).
@@ -2755,10 +3403,7 @@ pub(crate) enum OpCode {
     /// consults the deleted-index tracker so `:delete` can report a slot
     /// as missing even though the slot still holds a type-object hole.
     /// Layout: (name_idx, flags) — same flag encoding as ExistsIndexAdv.
-    ExistsIndexNamedAdv {
-        name_idx: u32,
-        flags: u32,
-    },
+    ExistsIndexNamedAdv { name_idx: u32, flags: u32 },
 
     // -- Reduction ([+] @arr) --
     /// The operand indexes [`CompiledCode::reduction_specs`], NOT the constant
@@ -2769,63 +3414,155 @@ pub(crate) enum OpCode {
     Reduction(u32),
 
     // -- Magic variables --
+    /// Push the enclosing routine (`&?ROUTINE`). Stack: `[] → [Routine]`.
+    ///
+    /// Emitted only for `Expr::RoutineMagic`, which the parser no longer builds:
+    /// `&?ROUTINE` compiles to [`Self::GetCodeVar`] (`?ROUTINE`), so the op is
+    /// unreachable from source. It pushes the innermost non-pointy routine
+    /// frame's code object, or throws "Undeclared name" when there is none.
     RoutineMagic,
+    /// Push the enclosing block (`&?BLOCK`). Stack: `[] → [Block]`.
+    ///
+    /// Like [`Self::RoutineMagic`], emitted only for an `Expr` variant the parser
+    /// no longer builds (`&?BLOCK` compiles to [`Self::GetCodeVar`]), so it is
+    /// unreachable from source.
     BlockMagic,
 
     // -- Substitution (s///) --
+    /// Destructive substitution on the topic: `s/pat/repl/`,
+    /// `s[pat] = EXPR` and `ss/.../.../`. Stack: `[] → [result]`.
+    ///
+    /// The subject is always `$_`; `$x ~~ s///` topicalizes `$x` around the
+    /// op and writes it back. `$_` is written only when something matched
+    /// (a read-only topic raises `X::Assignment::RO`; an aliased `for`
+    /// topic writes through to its element). `$/` and the capture variables
+    /// are set. The result is the `Match`; under `:g`, `:x` or a multi-value
+    /// `:nth` it is a `List` of Matches (possibly empty); a non-list form
+    /// that matched nothing pushes `False` (Rakudo: `Nil`; see #9515).
+    /// Runs `exec_subst_op` → `run_subst`, shared with
+    /// [`Self::NonDestructiveSubst`].
     Subst {
+        /// Constant-pool index of the regex source text. `:i`, `:m`, `:s`
+        /// and `:ratchet` are not fields: the parser prepends them to this
+        /// text as inline adverbs.
         pattern_idx: u32,
+        /// Constant-pool index of the raw replacement source text, parsed at
+        /// run time as a `qq` string (cached) and, when it interpolates,
+        /// evaluated once per match with `$/` bound to that match.
         replacement_idx: u32,
+        /// `:ii` / `:samecase`: give the replacement the case pattern of the
+        /// matched text.
         samecase: bool,
+        /// `:s` / `ss///`: passed to the replacement transform too.
         sigspace: bool,
+        /// `:mm` / `:samemark`.
         samemark: bool,
+        /// `:ss` / `:samespace`.
         samespace: bool,
+        /// `:g` / `:global`.
         global: bool,
+        /// Constant-pool index of the raw `:nth` spec string, or `None`.
         nth_idx: Option<u32>,
         /// Constant-pool index of the raw `:x` spec string (`"3"` / `"1..3"`),
         /// or `None` when `:x` is absent.
         x_idx: Option<u32>,
+        /// `:P5`: the pattern is matched verbatim by the Perl 5 engine.
         perl5: bool,
     },
 
     // -- Non-destructive substitution (S///) --
+    /// Non-destructive substitution, `S/pat/repl/` and `S[pat] = EXPR`.
+    /// Stack: `[] → [Str]`.
+    ///
+    /// Same operands and matching as [`Self::Subst`], but `$_` is only
+    /// read: the substituted text is pushed (the unchanged subject when
+    /// nothing matched). `$/` and the capture variables are still set, and
+    /// unlike `s///` a literal left of `~~` never raises
+    /// `X::Assignment::RO`.
     NonDestructiveSubst {
+        /// Constant-pool index of the regex source text. `:i`, `:m`, `:s`
+        /// and `:ratchet` are not fields: the parser prepends them to this
+        /// text as inline adverbs.
         pattern_idx: u32,
+        /// Constant-pool index of the raw replacement source text, parsed at
+        /// run time as a `qq` string (cached) and, when it interpolates,
+        /// evaluated once per match with `$/` bound to that match.
         replacement_idx: u32,
+        /// `:ii` / `:samecase`: give the replacement the case pattern of the
+        /// matched text.
         samecase: bool,
+        /// `:s` / `ss///`: passed to the replacement transform too.
         sigspace: bool,
+        /// `:mm` / `:samemark`.
         samemark: bool,
+        /// `:ss` / `:samespace`.
         samespace: bool,
+        /// `:g` / `:global`.
         global: bool,
+        /// Constant-pool index of the raw `:nth` spec string, or `None`.
         nth_idx: Option<u32>,
         /// Constant-pool index of the raw `:x` spec string (`"3"` / `"1..3"`),
         /// or `None` when `:x` is absent.
         x_idx: Option<u32>,
+        /// `:P5`: the pattern is matched verbatim by the Perl 5 engine.
         perl5: bool,
     },
 
     // -- Transliteration (tr///) --
+    /// Transliteration of the topic, `tr/from/to/` and `TR/from/to/`.
+    /// Stack: `[] → [result]`.
+    ///
+    /// Runs the pure `crate::builtins::transliterate::transliterate` on `$_`.
+    /// `tr///` writes the result back to `$_` (`X::Assignment::RO` for a
+    /// read-only topic outside a smartmatch) and pushes a `StrDistance`
+    /// (`before`/`after`, stringifying to the new text); `TR///` pushes the
+    /// new `Str` and writes `$_` only as the right side of `~~`, so
+    /// `$v ~~ TR///` updates `$v`. On a smartmatch right side the op marks its
+    /// result so `~~` returns it instead of comparing.
     Transliterate {
+        /// Constant-pool index of the raw from-spec (ranges such as `a..z`
+        /// are expanded at run time).
         from_idx: u32,
+        /// Constant-pool index of the raw to-spec.
         to_idx: u32,
+        /// `:d`: delete from-characters that have no counterpart.
         delete: bool,
+        /// `:c`: complement the from-set.
         complement: bool,
+        /// `:s`: squash runs of the same replacement character.
         squash: bool,
+        /// `true` for `TR///`.
         non_destructive: bool,
     },
 
     // -- Take (gather/take) --
+    /// The `take EXPR` / `take-rw EXPR` statement. Stack: `[value] → []`.
+    ///
+    /// Inside a `gather` the value is appended to the gather's result
+    /// directly (`Interpreter::take_value`; a `Slip` is flattened in). With
+    /// no enclosing gather, or when the innermost `CONTROL` handler can take
+    /// `CX::Take`, it raises the `CX::Take` control signal instead. For
+    /// `take-rw $x` the operand was loaded with [`Self::GetScalarContainer`],
+    /// so the gathered item is the variable's container. `take |EXPR` and a
+    /// `take` used for its value (`(take 5)`) compile to a call of the
+    /// `take` builtin instead. The op records its resume point, so
+    /// `CONTROL { .resume }` and a suspended lazy gather continue after it.
     Take,
 
     // -- Package scope --
-    PackageScope {
-        name_idx: u32,
-        body_end: u32,
-    },
+    /// The body of a `package` / `module` / `grammar` block (not a `unit`
+    /// declaration). Stack: `[] → []`.
+    ///
+    /// `name_idx` is the constant-pool index of the fully qualified package
+    /// name, made current for the body `[ip+1, body_end)`; execution resumes at
+    /// `body_end`. On exit `env` and the locals are restored, keeping
+    /// `::`-qualified writes and writes to outer non-`our` variables, and the
+    /// block's new plain lexicals are recorded in `package_lexicals` so the
+    /// package's subs can still read them. The declaration ops
+    /// (`RegisterPackage`, `SetPackageKind`, ...) are emitted before this op.
+    PackageScope { name_idx: u32, body_end: u32 },
     /// Register a package name so it's accessible as a Package value.
-    RegisterPackage {
-        name_idx: u32,
-    },
+    RegisterPackage { name_idx: u32 },
     /// Record the declarator keyword (`package`/`module`/`grammar`) of a bare
     /// `Stmt::Package` so `.HOW` reports the matching metaclass.
     SetPackageKind {
@@ -2835,34 +3572,23 @@ pub(crate) enum OpCode {
     /// Register a lexically-scoped (`my`) package type object.
     /// Same as RegisterPackage but marks the name as block-declared
     /// so it is cleaned up when the enclosing block scope exits.
-    RegisterPackageMy {
-        name_idx: u32,
-    },
+    RegisterPackageMy { name_idx: u32 },
     /// Register a package as a stub (body is `...`, `!!!`, or `???`).
-    RegisterPackageStub {
-        name_idx: u32,
-    },
+    RegisterPackageStub { name_idx: u32 },
     /// Clear a package stub when the package is redefined with a real body.
-    ClearPackageStub {
-        name_idx: u32,
-    },
+    ClearPackageStub { name_idx: u32 },
     /// Switch the runtime `current_package` for the rest of the compilation
     /// unit, mirroring what the compiler does to its own `current_package` at a
     /// `unit module Foo;` / `unit package Foo;` declaration. Routine and package
     /// registration is keyed off the *runtime* package, so without this a unit
     /// module's routines register as `GLOBAL::name` and stay callable by their
     /// bare name from every consumer, `is export` or not (PLAN 8.22).
-    SetCurrentPackage {
-        name_idx: u32,
-    },
+    SetCurrentPackage { name_idx: u32 },
 
     // -- Phaser --
     /// Register an END phaser. `site_id` ensures register-once semantics
     /// for END phasers inside closures that may be called repeatedly.
-    PhaserEnd {
-        idx: u32,
-        site_id: u64,
-    },
+    PhaserEnd { idx: u32, site_id: u64 },
     /// Marks the start of a CHECK phaser body. If an error occurs before
     /// the matching `CheckPhaserEnd`, it is wrapped in X::Comp::BeginTime.
     CheckPhaserStart {
@@ -2873,10 +3599,30 @@ pub(crate) enum OpCode {
     CheckPhaserEnd,
 
     // -- HyperMethodCall (».method) --
+    /// `@a».foo(args)` / `@a>>.foo`: call a method on every element. Stack:
+    /// `[target, a1, …, an] → [result]` (`n` = `arity`, last argument on
+    /// top).
+    ///
+    /// The result mirrors the target's shape: a list of per-element results
+    /// (recursing into nested lists by the nodal/deepmap rules), a Hash with
+    /// the same keys, or a rebuilt QuantHash when the target is a
+    /// Set/Bag/Mix (hypered over its weights). A Seq target is consumed.
+    /// Hyper postfix forms arrive here as method names too: `@a»++` is
+    /// `postfix:<++>`, `@a>>[0]` is `AT-POS`, and `@a>>[]` is the internal
+    /// `__mutsu_hyper_zen`. Per element, a native method is tried first,
+    /// then the interpreter's method dispatch (`call_method_*_with_temp_target`);
+    /// target-level introspectors (`.WHAT`, `.HOW`, ...) run once on the whole
+    /// target. In-place element mutations are written back to the variable.
     HyperMethodCall {
+        /// Constant-pool index of the method name.
         name_idx: u32,
+        /// Number of positional argument values on the stack.
         arity: u32,
+        /// Constant-pool index of the method-call modifier (`?`, `+`, `*`,
+        /// `^`, `!`), or `None` for a plain call.
         modifier_idx: Option<u32>,
+        /// The name was written quoted (`».'WHAT'()`), so an introspector
+        /// name is dispatched per element rather than once on the target.
         quoted: bool,
         /// The lvalue variable name when the hyper target is a plain `@`/`%`
         /// variable (`@a>>++`), so a mutating hyper writes back *precisely* to
@@ -2888,8 +3634,19 @@ pub(crate) enum OpCode {
         /// `arg_sources_idx` is.
         arg_sources_idx: Option<u32>,
     },
+    /// `@a».$m(args)` / `@a».&code`: a hyper method call whose method is a
+    /// runtime value. Stack: `[target, method, a1, …, an] → [result]`.
+    ///
+    /// When the value is callable (a Sub, a Routine, or an instance with
+    /// `CALL-ME`) it is applied to each element (`vm_call_on_value`), deeply
+    /// unless the callable's name is a nodal builtin such as `elems`;
+    /// otherwise it is stringified and dispatched by name as in
+    /// [`Self::HyperMethodCall`], with the same result shapes.
     HyperMethodCallDynamic {
+        /// Number of positional argument values on the stack.
         arity: u32,
+        /// Constant-pool index of the method-call modifier, as in
+        /// [`Self::HyperMethodCall`].
         modifier_idx: Option<u32>,
         /// ADR-0054 S3: `|EXPR` positions, baked the same way `CallMethod`'s
         /// `arg_sources_idx` is.
@@ -2897,19 +3654,47 @@ pub(crate) enum OpCode {
     },
 
     // -- HyperOp (>>op<<) --
+    /// Infix hyper operator, `@a »+« @b` (and `>>op<<`, `»op»`, `«op«`,
+    /// `«op»`). Stack: `[left, right] → [result]`.
+    ///
+    /// Walks both operands in parallel (`hyper_op_pair`): nested lists,
+    /// Hashes (the dwim side picks the key set) and Pairs recurse, and each
+    /// leaf pair goes to the shared infix evaluator `eval_infix_shape`, after
+    /// a user `infix:<op>` candidate when an operand is an instance. A length
+    /// mismatch on a non-dwim side raises `X::HyperOp::NonDWIM`; a lazy
+    /// operand that sets the length raises `X::HyperOp::Infinite`. Assignment
+    /// hypers (`@a »+=» 1`) emit this op with the base operator, followed by
+    /// a store back into the left variable.
     HyperOp {
         /// The inner operator's canonical spelling, interned by the compiler
         /// (`crate::compiled_operator`) rather than pooled as a string the VM
         /// re-allocates per execution.
         op: Symbol,
+        /// The left delimiter is `«` / `<<`, pointing at the left operand:
+        /// that side is dwimmy, cycled or extended to the other side's length
+        /// (`(1,2,3) «+« 1` is an error, `1 «+« (1,2,3)` is not).
         dwim_left: bool,
+        /// The right delimiter is `»` / `>>`, pointing at the right operand:
+        /// that side is dwimmy (`(1,2,3) »+» 1` is `(2 3 4)`).
         dwim_right: bool,
     },
 
     // -- HyperFuncOp (>>[&func]<<) --
+    /// Hyper over a named function, `@a »[&f]« @b`. Stack: `[left, right] →
+    /// [result]`, plus the (possibly mutated) left value on top when
+    /// `writeback` is set.
+    ///
+    /// Each element pair is passed to the function, looked up as a lexical
+    /// `&name` first (`dispatch_hyper_func_call`); Hash operands pair by key.
+    /// Two scalar operands give a scalar result. A length mismatch is a plain
+    /// error here, not `X::HyperOp::NonDWIM`.
     HyperFuncOp {
+        /// Constant-pool index of the function name (a leading `&` is
+        /// optional).
         name_idx: u32,
+        /// As [`Self::HyperOp`]'s `dwim_left`.
         dwim_left: bool,
+        /// As [`Self::HyperOp`]'s `dwim_right`.
         dwim_right: bool,
         /// When true, the left operand is a mutable lvalue: bind each element
         /// `rw` so a mutating code-ref (e.g. `&[+=]`) writes back, and push the
@@ -2919,10 +3704,22 @@ pub(crate) enum OpCode {
     },
 
     // -- MetaOp (Rop, Xop, Zop) --
+    /// A binary `R`, `X` or `Z` meta-operator: `$a R- $b`, `@a X* @b`,
+    /// `@a Z+ @b`, and bare `X`/`Z`. Stack: `[left, right] → [result]`.
+    ///
+    /// `R` applies the inner operator with the operands swapped; `X` builds
+    /// the cross product and `Z` zips, each leaf going to `eval_infix_shape`,
+    /// and both push a `Seq` (a lazy pipe stage when an operand is
+    /// unbounded). With `meta = Reduce` it applies the operator once; that
+    /// form is emitted for a `$x [op]= y` the parser cannot lower to an
+    /// ordinary compound assignment, not for list reduction `[+] @a`. Chains
+    /// of three or more `X`/`Z` operands use [`Self::MetaOpNary`].
     MetaOp {
         /// Which structural meta-operator wraps `op`. Typed, so the VM does
         /// not re-`match` a pooled `"R"` / `"X"` / `"Z"` string.
         meta: crate::compiled_operator::MetaKind,
+        /// The inner infix's interned spelling (`""` or `","` for plain
+        /// tuples).
         op: Symbol,
     },
 
@@ -2933,6 +3730,15 @@ pub(crate) enum OpCode {
     // assignment values, bottom) and the mutated left container (top). The
     // compiler always pairs this with a store of the mutated container back
     // into the left lvalue, leaving the result Seq as the expression value.
+    /// `X` or `Z` over an in-place assignment operator: `@a X[+=] @b`,
+    /// `@a Z[+=] @b`. Stack: `[left, right] → [results, mutated_left]`.
+    ///
+    /// `op` is the full assignment spelling (`+=`, `min=`); the base operator
+    /// is applied pair by pair through `eval_infix_shape`, `X` with the left
+    /// index varying slowest and `Z` up to the shorter length. Operands are
+    /// read eagerly. The compiler stores the top value (the mutated left
+    /// value) back into the lvalue, which leaves the result `Seq` as the
+    /// expression's value.
     MetaOpAssign {
         meta: crate::compiled_operator::MetaKind,
         op: Symbol,
@@ -2942,6 +3748,16 @@ pub(crate) enum OpCode {
     // Pops `count` operands off the stack and combines them in a single
     // n-ary cross (X) or zip (Z) so the result is flat n-tuples rather than
     // left-nested pairs.
+    /// A chain of one `X` or `Z` meta-operator over three or more operands,
+    /// `a X b X c` / `@a Z+ @b Z+ @c`. Stack: `[o1, …, on] → [Seq]`
+    /// (`n` = `count`, first operand deepest).
+    ///
+    /// The compiler flattens the chain (`collect_meta_chain`) so the result
+    /// is flat n-tuples or an n-way fold, not left-nested pairs. `X` varies
+    /// the last operand fastest; each row is combined by folding the inner
+    /// operator left to right (`(1,2) X+ (3,4) X+ (10)` is
+    /// `(14 15 15 16)`). A lazy pipe stage is pushed when an operand is
+    /// unbounded.
     MetaOpNary {
         meta: crate::compiled_operator::MetaKind,
         op: Symbol,
@@ -2949,9 +3765,31 @@ pub(crate) enum OpCode {
     },
 
     // -- InfixFunc (atan2, sprintf) --
+    /// An infix call by routine name: `1 [&foo] 2`, a user-declared
+    /// operator (`sub infix:<zz>`), a string-bitwise or other operator with
+    /// no dedicated opcode, and a list-associative chain whose junction
+    /// operator is user-defined. Stack: `[left, r1, …, rn] → [result]`
+    /// (`n` = `right_arity`).
+    ///
+    /// `atan2` and `sprintf` are handled inline. Otherwise the name is
+    /// resolved as `infix:<name>`: a lexical `&infix:<name>` is called
+    /// directly, a chaining operator with more than two arguments folds
+    /// pairwise into a `Bool`, and the rest goes through `try_user_infix`
+    /// and `call_infix_fallback`. Operands are compiled as call arguments, so
+    /// an `is rw` parameter binds the caller's container. The `R` modifier
+    /// swaps the two arguments; the `Z` modifier is currently ignored
+    /// (`3 Z[&foo] 4` calls `foo(3, 4)` once, where Rakudo zips; see
+    /// #9464).
     InfixFunc {
+        /// Constant-pool index of the operator or function name, without
+        /// the `infix:<…>` wrapper.
         name_idx: u32,
+        /// Number of right-hand operands: 1 normally, more for a
+        /// list-associative chain, `X[&f] a, b, c`, or trailing colonpair
+        /// adverbs (appended as named arguments).
         right_arity: u32,
+        /// Constant-pool index of the meta modifier `"R"`, `"X"` or `"Z"`,
+        /// or `None`.
         modifier_idx: Option<u32>,
     },
     /// Stateful scalar flip-flop (ff/fff) with lazily evaluated lhs/rhs bytecode spans.
@@ -3018,6 +3856,14 @@ pub(crate) enum OpCode {
         /// it without re-running the handler. Computed at compile time by
         /// scanning the emitted CATCH op range (the runtime cannot see the AST).
         catch_resume_capable: bool,
+        /// #9469: true when this block's CONTROL handler lexically *contains* a
+        /// `.resume` call without being provably `resume_safe`. Like
+        /// `catch_resume_capable`, such a handler runs INLINE at a deep `warn`
+        /// raise site; when it does not resume, the raise site tags the warn
+        /// with this region's verdict so the region applies it without running
+        /// the handler again (`Interpreter::try_control_inline`). Computed at
+        /// compile time by scanning the emitted CONTROL op range.
+        control_resume_capable: bool,
     },
 
     /// Bracket `[ip+1..body_end)` with a routine-registry save/restore, so a
@@ -3034,17 +3880,13 @@ pub(crate) enum OpCode {
     /// The value the range leaves on the stack is untouched, and the restore
     /// runs on the error path too, so `return`/`die` escaping the body still
     /// unwinds the registry.
-    RoutineScope {
-        body_end: u32,
-    },
+    RoutineScope { body_end: u32 },
 
     /// Bracket a callable body with a lexical import scope. A use inside a
     /// routine or closure is executed at call time in mutsu, so the registry
     /// changes must be restored when the body returns, including a non-local
     /// return or exception.
-    ImportScope {
-        body_end: u32,
-    },
+    ImportScope { body_end: u32 },
 
     /// Push an anonymous block callframe onto the routine stack. Emitted around a
     /// genuine bare block `{ ... }` that the compiler *inlines* (tail-position
@@ -3059,6 +3901,13 @@ pub(crate) enum OpCode {
     PopBlockFrame,
 
     // -- Error handling --
+    /// `die EXPR`, and compiler-generated diagnostics. Stack: `[payload] → …`.
+    ///
+    /// Pops the exception payload; `die()` with no argument rethrows `$!` when it
+    /// is set, else dies with "Died". The error carries a backtrace and records
+    /// its resume point. See `user_throw` for when execution can continue. `die`
+    /// used as an expression (`$x // die "..."`) compiles to a `CallFunc`, not to
+    /// this op.
     Die {
         /// ADR-0072: emitted for a user `die` *statement* (`Stmt::Die`), which is
         /// in sink position and pushes nothing. Only such a site is eligible for
@@ -3069,6 +3918,12 @@ pub(crate) enum OpCode {
         /// value short.
         user_throw: bool,
     },
+    /// `fail EXPR`. Stack: `[payload] → …`; the op never falls through.
+    ///
+    /// Pops the payload (a `Failure` is unwrapped to its exception), builds the
+    /// exception with its backtrace, `line` and `file`, and raises it as a `fail`
+    /// error, which the enclosing routine turns into a returned `Failure`. `fail`
+    /// in expression position compiles to a `CallFunc` instead.
     Fail,
 
     /// A `has`-attribute declaration that reaches runtime (mainline / EVAL'd
@@ -3077,6 +3932,16 @@ pub(crate) enum OpCode {
     RuntimeHasDecl(Box<RuntimeHasDeclSpec>),
 
     // -- Functions --
+    /// `return EXPR` inside a routine body. Stack: `[value] → …`; the op never
+    /// falls through.
+    ///
+    /// Pops the return value and raises the return control signal, which the
+    /// enclosing routine call catches (stamped with the EVAL-with-context target
+    /// when this is such a unit). Outside a routine the compiler emits
+    /// [`Self::ReturnFromNonRoutine`] instead, and `return |EXPR` is preceded by
+    /// [`Self::NormalizeReturnSlip`]. The one exception to "never falls through":
+    /// when `&return` has been lexically rebound to a Sub, that callable is
+    /// called with the value, its result pushed, and execution continues.
     Return,
     /// Normalize the `Slip` produced by a `return |EXPR` before the return
     /// signal is raised. A pipe in a return expression is list flattening, not
@@ -3103,7 +3968,20 @@ pub(crate) enum OpCode {
     /// still needs `out-of-dynamic-scope` set and rakudo's fuller wording,
     /// exactly like a signal that genuinely escaped every frame.
     ReturnFromNonRoutine(bool, bool),
+    /// Register a routine or type declaration: `sub`, `method`, `token`,
+    /// `rule`, `proto`, `class`, `role` (and sub hoisting). Stack: `[] → []`.
+    ///
+    /// The operand indexes `CompiledCode::decl_plans`, a tagged
+    /// `CompiledDeclPlanRef` that selects the compile-time plan it registers:
+    /// `sub_decl_plans`, `class_decl_plans`, `role_decl_plans`,
+    /// `proto_decl_plans` or `token_decl_plans` (or a proto token). A class or
+    /// role plan carrying the `__hoisted` trait swallows its registration errors.
     RegisterDecl(u32),
+    /// Register an `enum` declaration. Stack: `[] → []`.
+    ///
+    /// The operand indexes `CompiledCode::stmt_pool` (a `Stmt::EnumDecl`), which
+    /// is handed to the runtime `register_enum_decl`. A `my enum`'s name and
+    /// values are added to the enclosing block's declared names.
     RegisterEnum(u32),
     /// `augment class X { ... }`. `site_id` is a compile-time hash of the
     /// declaring package, source line and body (same recipe as
@@ -3115,14 +3993,34 @@ pub(crate) enum OpCode {
     /// runtime statement). `exec_augment_class_op` claims `site_id` in the
     /// `once` store and skips re-applying an already-claimed site instead of
     /// hitting the class's own redeclaration check.
-    AugmentClass {
-        idx: u32,
-        site_id: u64,
-    },
+    AugmentClass { idx: u32, site_id: u64 },
+    /// Register a `subset X of Y where ...`, and the anonymous subset a
+    /// `where` clause on a scalar declaration creates (`my Int $x where * > 0`).
+    /// Stack: `[] → []`.
+    ///
+    /// The operand indexes `CompiledCode::stmt_pool` (a `Stmt::SubsetDecl`),
+    /// handed to the runtime `register_subset_decl`. A subset declared in a
+    /// class body is scoped to that class.
     RegisterSubset(u32),
-    ReactScope {
-        body_end: u32,
-    },
+    /// `react { ... }`. Stack: `[] → []`.
+    ///
+    /// Runs the body `[ip+1, body_end)` (typically `whenever`s, which register
+    /// their taps), then runs the react event loop until every tap is done; a
+    /// `done` raised by the body skips straight to draining. The `done` signal
+    /// is swallowed here; an error from the loop is wrapped as the react's own
+    /// death. Locals the react changed through `env` are copied back afterwards.
+    ReactScope { body_end: u32 },
+    /// `whenever SUPPLY -> $p { ... }`. Stack: `[supply] → []`, or
+    /// `[supply] → [Tap]` when `yields_value` (the `whenever` is the operand of
+    /// `do`).
+    ///
+    /// Taps the supply with the body as its callback (the runtime
+    /// `run_whenever_with_value`). `body_idx` indexes `CompiledCode::stmt_pool`
+    /// (a `Stmt::Block`); `param_idx` is the constant-pool index of the pointy
+    /// parameter's name (or the first placeholder), and `param_type_idx` its
+    /// declared type. Inside a `supply { }` block the block's own lexicals are
+    /// first promoted to shared cells, so the callback and the block see one
+    /// variable.
     WheneverScope {
         body_idx: u32,
         /// Analysis-only compiled form of the stmt-pool body. It is never
@@ -3138,6 +4036,15 @@ pub(crate) enum OpCode {
         /// (`whenever $s -> Int $x { }`), if any.
         param_type_idx: Option<u32>,
     },
+    /// `use Module ...`. Stack: `[a1, …, an] → []` (`n` = `arg_count`).
+    ///
+    /// Loads the module on first use and imports its exports into the current
+    /// scope (the runtime `use_module_with_tags`). `name_idx` is the
+    /// constant-pool index of the module name; `tags_idx` that of an Array of
+    /// the `:TAG` strings to import. The popped `use` arguments are handed to the
+    /// module's `sub EXPORT`. A `use` with an empty import list compiles to
+    /// [`Self::NeedModule`], and a `use` nested in a block is also preloaded at
+    /// BEGIN time by [`Self::PreloadModule`].
     UseModule {
         name_idx: u32,
         tags_idx: Option<u32>,
@@ -3146,10 +4053,16 @@ pub(crate) enum OpCode {
         /// the VM and handed to the module's `sub EXPORT`, if any.
         arg_count: u16,
     },
+    /// `import Module :TAGS`: import the exports of an already-loaded module.
+    /// Stack: `[] → []`. Operands as [`Self::UseModule`]; runs the runtime
+    /// `import_module`.
     ImportModule {
         name_idx: u32,
         tags_idx: Option<u32>,
     },
+    /// `no Module` / `no pragma`. Stack: `[] → []`. The operand is the
+    /// constant-pool index of the name; the runtime `no_module` switches a
+    /// pragma off or unimports a module.
     NoModule(u32),
     /// `need Module;` — load module without importing exports.
     NeedModule(u32),
@@ -3166,6 +4079,14 @@ pub(crate) enum OpCode {
     /// never-run block referring to an absent module stays as non-fatal as it is
     /// today.
     PreloadModule(u32),
+    /// `use lib EXPR`. Stack: `[paths] → []`.
+    ///
+    /// Pops one path, or an Array/Seq/Slip of paths, and prepends each to the
+    /// module search path: an `inst#` spec becomes a
+    /// `CompUnit::Repository::Installation`, anything else a
+    /// `CompUnit::Repository::FileSystem`, chained in front of `$*REPO`. An empty
+    /// string throws `X::LibEmpty`; a path already at the front is skipped. A bare
+    /// `use lib` compiles to nothing.
     UseLibPath,
     /// Save current function/class registries for lexical import scoping.
     PushImportScope,
@@ -3216,6 +4137,10 @@ pub(crate) enum OpCode {
         /// existing binding when an initializer fails.
         reset_binding: bool,
     },
+    /// Register a variable declared `is export`, after its value has been
+    /// stored. Stack: `[] → []`. `name_idx` is the constant-pool index of the
+    /// variable name, and `tags_idx` that of an Array of export tags (`None`
+    /// means `DEFAULT`). Runs `register_exported_var` for the current package.
     RegisterVarExport {
         name_idx: u32,
         tags_idx: Option<u32>,
@@ -3235,10 +4160,7 @@ pub(crate) enum OpCode {
     /// Get a variable from the caller's scope ($CALLER::varname).
     /// name_idx = constant index for the bare variable name (without CALLER:: prefix).
     /// depth = number of CALLER:: levels (1 for $CALLER::x, 2 for $CALLER::CALLER::x).
-    GetCallerVar {
-        name_idx: u32,
-        depth: u32,
-    },
+    GetCallerVar { name_idx: u32, depth: u32 },
 
     /// Get a variable through `$CALLERS::` — the "any caller scope" twin of
     /// [`GetCallerVar`](Self::GetCallerVar). A `$*`-twigil dynamic name cascades outward through the
@@ -3251,10 +4173,7 @@ pub(crate) enum OpCode {
     },
 
     /// Set a variable in the caller's scope ($CALLER::varname = value).
-    SetCallerVar {
-        name_idx: u32,
-        depth: u32,
-    },
+    SetCallerVar { name_idx: u32, depth: u32 },
 
     /// Bind a variable in the caller's scope to a local variable ($CALLER::target := $source).
     /// This creates an alias so that changes to source are reflected in target.
@@ -3309,10 +4228,7 @@ pub(crate) enum OpCode {
     /// `scopes_idx` indexes [`CompiledCode::lex_scopes`] for the lexical scope chain
     /// visible at this site, which the popped name needs when it turns out to spell
     /// an `OUTER::` / `OUTERS::` lookup.
-    SymbolicDeref {
-        sigil_idx: u32,
-        scopes_idx: u32,
-    },
+    SymbolicDeref { sigil_idx: u32, scopes_idx: u32 },
 
     /// Symbolic variable dereference store: pop value and name from stack, store value into variable.
     /// The u32 indexes the constant pool for the sigil string ("$", "@", or "%").
@@ -3342,17 +4258,11 @@ pub(crate) enum OpCode {
     /// re-evaluates the container after the assignment and saves the element
     /// with [`OpCode::LetSaveElemVivified`].
     /// `is_positional`: `[...]` rather than `{...}` / `<...>`.
-    LetSaveElem {
-        is_temp: bool,
-        is_positional: bool,
-    },
+    LetSaveElem { is_temp: bool, is_positional: bool },
     /// Second half of a [`OpCode::LetSaveElem`] that found no container: the
     /// assignment has vivified the path, so save the element as holding `Any`.
     /// Stack: `[container, key] -> []`.
-    LetSaveElemVivified {
-        is_temp: bool,
-        is_positional: bool,
-    },
+    LetSaveElemVivified { is_temp: bool, is_positional: bool },
 
     /// Block with `let` scope management. Executes body, then decides from the
     /// block's own value whether to restore the `let` saves (the block failed)
@@ -3369,10 +4279,7 @@ pub(crate) enum OpCode {
     ///   consume, so the success test peeks the stack top instead. Routing it
     ///   through the topic here would clobber `$_` for the enclosing scope,
     ///   which a `do { ... }` must not do.
-    LetBlock {
-        body_end: u32,
-        value_on_stack: bool,
-    },
+    LetBlock { body_end: u32, value_on_stack: bool },
 }
 
 #[cfg(test)]
@@ -5592,7 +6499,7 @@ pub(crate) struct CompiledCode {
     /// a `let`-restored variable; same-named `my` locals share one slot).
     pub(crate) named_sub_captures: Vec<(Vec<Symbol>, Vec<Symbol>)>,
     /// Frame-lexical routines (ADR-0113) this chunk calls by bare name. A
-    /// `CallFunc`/`CallFuncNamed`/`ExecCallPairs` whose callee is
+    /// `CallFunc`/`CallFuncNamed` whose callee is
     /// listed here dispatches straight to that routine, never through the
     /// name-keyed resolution: the routine is not in the registry at all.
     /// Empty for almost every chunk, so the call handlers' probe is one
@@ -7582,7 +8489,7 @@ impl CompiledCode {
             });
             // A frame that installs a *resume-safe* CONTROL handler
             // (`CONTROL { default { $out ~= .Str; .resume } }`) has its handler run
-            // INLINE at a deep `warn` raise site (`try_resume_safe_control_inline`),
+            // INLINE at a deep `warn` raise site (`try_control_inline`),
             // which reconstructs the installing frame's locals FROM ENV by name (the
             // cross-frame store) because `self.locals` is the deep raise-site frame.
             // Under the gate a plain `my $out = ''` in this frame skips its env
@@ -7611,6 +8518,14 @@ impl CompiledCode {
                         control_start,
                         ..
                     } if catch_start < control_start
+                ) || matches!(
+                    op,
+                    OpCode::TryCatch {
+                        control_resume_capable: true,
+                        control_start,
+                        body_end,
+                        ..
+                    } if control_start < body_end
                 )
             });
             // A frame that constructs a regex value which interpolates a lexical
@@ -7742,12 +8657,10 @@ impl CompiledCode {
                 | OpCode::SymbolicDeref { .. }
                 | OpCode::SymbolicDerefStore(_)
                 | OpCode::IndirectCodeLookup(_) => true,
-                // `EVAL`/`EVALFILE` are reflective regardless of which call
-                // shape the call site compiled to: a statement-position call
-                // (`EVAL q[...];`, whose value is discarded) may reach
-                // `ExecCallPairs`, not just the tail/expression
-                // forms `CallFunc`/`CallFuncNamed`. Missing the statement
-                // forms here left the READ side of EVAL's caller-lexical
+                // `EVAL`/`EVALFILE` are reflective whichever call shape the
+                // call site compiled to. A statement-position call once had
+                // its own opcodes (`ExecCall`/`ExecCallPairs`, since retired);
+                // missing those here left the READ side of EVAL's caller-lexical
                 // visibility working only when an EVAL happened to also
                 // appear in tail position somewhere in the same compiled
                 // chunk (see `todo/tickets/repl-routine-unimplemented.md` /
@@ -7758,9 +8671,7 @@ impl CompiledCode {
                 // against `env`, having no compile-time knowledge of the
                 // caller's local slots -- read the stale placeholder instead
                 // of the live value.
-                OpCode::CallFunc { name_idx, .. }
-                | OpCode::CallFuncNamed { name_idx, .. }
-                | OpCode::ExecCallPairs { name_idx, .. } => {
+                OpCode::CallFunc { name_idx, .. } | OpCode::CallFuncNamed { name_idx, .. } => {
                     matches!(
                         self.constants.get(*name_idx as usize).map(Value::view),
                         Some(ValueView::Str(name)) if name.as_str() == "EVAL" || name.as_str() == "EVALFILE"
@@ -8356,6 +9267,22 @@ impl CompiledCode {
             std::collections::HashSet::new();
         let mut pending_decl = false;
         for op in &self.ops {
+            // `S///` / `s///` / `tr///` work on the implicit topic without
+            // naming it, so they reference `$_` exactly as an explicit `$_`
+            // does. Unrecorded, a closure such as `{ S{$^a} = 'X' }` -- whose
+            // placeholder leaves the OUTER `$_` its topic -- read whatever `$_`
+            // the frame that finally ran it had instead: a lazy `.map` reified
+            // inside `is-deeply` substituted into the callee's `$_` (roast
+            // S05-substitution/subst.t 189-192).
+            if matches!(
+                op,
+                OpCode::NonDestructiveSubst { .. }
+                    | OpCode::Subst { .. }
+                    | OpCode::Transliterate { .. }
+            ) && !own.contains("_")
+            {
+                free.insert(Symbol::intern("_"));
+            }
             // Read+write free-var set (names referenced from an enclosing scope).
             if let Some(idx) = Self::op_name_const_idx(op)
                 && let Some(ValueView::Str(name)) =
@@ -9344,7 +10271,6 @@ impl CompiledCode {
                     | OpCode::CallMethodMut { .. }
                     | OpCode::CallMethodDynamic { .. }
                     | OpCode::CallMethodDynamicMut { .. }
-                    | OpCode::ExecCallPairs { .. }
                     | OpCode::CallOnValue { .. }
                     | OpCode::CallOnCodeVar { .. }
                     | OpCode::HyperMethodCall { .. }
@@ -9370,7 +10296,7 @@ impl CompiledCode {
         }
         // NOTE the sigil: `GetArrayVar`'s constant is the SIGILED name `"@_"`,
         // unlike the topic, whose env key is a bare `"_"` (which is exactly the
-        // trap `CLAUDE.md`'s debugging section records — do not guess the key).
+        // trap `AGENTS.md`'s debugging section records — do not guess the key).
         if !self.reads_args_array
             && let OpCode::GetArrayVar(idx) = &op
             && let Some(ValueView::Str(name)) = self.constants.get(*idx as usize).map(Value::view)
@@ -9418,7 +10344,6 @@ impl CompiledCode {
                     | OpCode::CallMethodMut { .. }
                     | OpCode::CallMethodDynamic { .. }
                     | OpCode::CallMethodDynamicMut { .. }
-                    | OpCode::ExecCallPairs { .. }
                     | OpCode::HyperMethodCall { .. }
                     | OpCode::HyperMethodCallDynamic { .. }
                     | OpCode::BlockScope { .. }
@@ -9798,6 +10723,16 @@ impl CompiledCode {
                 }
                 _ => false,
             })
+    }
+
+    pub(crate) fn patch_try_control_resume_capable(&mut self, idx: usize, capable: bool) {
+        match &mut self.ops[idx] {
+            OpCode::TryCatch {
+                control_resume_capable,
+                ..
+            } => *control_resume_capable = capable,
+            _ => panic!("patch_try_control_resume_capable on non-TryCatch opcode"),
+        }
     }
 
     pub(crate) fn patch_try_control_start(&mut self, idx: usize) {

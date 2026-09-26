@@ -106,7 +106,6 @@ pub(super) fn step_supported(op: &OpCode) -> bool {
             | OpCode::NormalizeReturnSlip
             // Calls through a code variable (re-entrant, like CallMethod)
             | OpCode::CallOnCodeVar { .. }
-            | OpCode::ExecCallPairs { .. }
             // An `nqp::` value op. Re-entrant like a call (an op can reach an
             // `AT-KEY` override), straight-line like one: its `exec_one` arm
             // only ever advances `ip` by one. It has to be here rather than

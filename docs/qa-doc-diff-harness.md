@@ -143,4 +143,4 @@ throw `X::Cannot::Lazy`.
 The harness is a **discovery** tool: its deliverable is a ranked backlog of minimal
 repros grouped by root cause. Interpreter fixes are a separate, controlled step — do
 not let a breadth-first pass bolt on slow-path fallbacks or special-cased outputs just
-to make a diff go green (see the standing rules in CLAUDE.md).
+to make a diff go green (see the standing rules in AGENTS.md).

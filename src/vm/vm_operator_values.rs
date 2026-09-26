@@ -11,7 +11,7 @@
 //! Each function here is the operator. The opcode handler pops its operands
 //! and calls it; the metaop leaf and the routine form call it directly. This is
 //! the same arrangement `num_eq_values` and friends already have for the
-//! numeric comparisons (CLAUDE.md: a primitive has exactly one
+//! numeric comparisons (AGENTS.md: a primitive has exactly one
 //! implementation).
 
 use super::*;

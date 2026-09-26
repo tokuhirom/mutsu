@@ -67,7 +67,7 @@ real one:
 ### Stars and last commit via `gh`
 
 Once you have `OWNER/REPO`, `gh` (already authenticated in this environment —
-see `CLAUDE.md`'s GitHub-operations note) returns both signals in one call:
+see `AGENTS.md`'s "Where this session is running") returns both signals in one call:
 
 ```
 gh repo view OWNER/REPO --json url,stargazerCount,pushedAt,isArchived \

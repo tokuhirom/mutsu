@@ -2,7 +2,7 @@
 
 Every built-in method, routine and `nqp::` op implementation carries one
 comment stating its per-call time complexity (the project rule in
-`CLAUDE.md` "Conventions", adopted 2026-09-23). The comment always has the
+`AGENTS.md` "Code rules", adopted 2026-09-23). The comment always has the
 same grep-able form:
 
 ```text

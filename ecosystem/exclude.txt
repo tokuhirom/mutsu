@@ -10,7 +10,7 @@
 #
 # An entry belongs here only when the distribution was investigated and found
 # permanently unfixable without a decision the project has already made and
-# does not intend to revisit -- a decision CLAUDE.md reserves for the user, or
+# does not intend to revisit -- a decision AGENTS.md reserves for the user, or
 # a superseding ADR -- never because it "looks hard". This is NOT the same as
 # `no_baseline` (rakudo fails it too, so it is already excluded from the KPI on
 # its own): every entry here is a distribution rakudo passes and mutsu,

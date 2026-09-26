@@ -143,7 +143,7 @@ Failed to parse module 'TOML::NQP': Confused. parse error ...
 Supporting arbitrary `nqp::` op syntax in general is not a bounded fix for
 this one module — it is the same class of problem as `NativeCall`'s "needs
 `QAST:from<NQP>`, MoarVM dispatch programs, and 61 missing `nqp::` ops" case
-(`todo/deep/nativecall-cannot-be-vendored.md`), which CLAUDE.md already
+(`todo/deep/nativecall-cannot-be-vendored.md`), which AGENTS.md already
 documents as **measured and not currently retirable**. Per
 [BATTERIES.md §2](../../BATTERIES.md#2-selection-criteria), "proven behaviour
 on mutsu" — "a candidate that already `use`s cleanly beats a 'better' one

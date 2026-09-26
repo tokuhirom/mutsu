@@ -27,7 +27,7 @@ use Test::Util;
 # on the *caller's* lexical, and an env-based -- not local-slot-based --
 # read of it back in the caller; see the investigation notes referenced from
 # the PR this test shipped with). Pinning against the real vendored
-# Cro::HTTP::Client instead, per CLAUDE.md's testing conventions, is the
+# Cro::HTTP::Client instead, per AGENTS.md's testing conventions, is the
 # fallback when a minimal repro proves elusive.
 #
 # Requires the vendored Cro::HTTP dist tree under tmp/cro-work/ (built by a

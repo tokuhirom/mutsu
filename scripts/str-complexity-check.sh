@@ -74,6 +74,7 @@ CASES=(
     'subst regex + closure|1000|my $s = "a" x NN;|$s.subst(/a+/, { "b" })|once'
     'subst literal :x(*)|10000|my $s = "a," x NN;|$s.subst(",", ";", :x(*))|once'
     'split, two separators|10000|my $s = "a," x NN;|$s.split([",", ";"])|once'
+    'split, regex + string separators|5000|my $s = "a," x NN;|$s.split([/","/, ";"])|once'
     'comb(regex, :match)|2500|my $s = "a," x NN;|$s.comb(/a/, :match)|once'
     'match :p loop|10000|my $s = "a," x NN; my $p = 0;|while $s.match(/.","/, :p($p)) -> $m { $p = $m.to }|once'
     # A hit at the front, so the body measures the per-call setup alone: a

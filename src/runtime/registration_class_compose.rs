@@ -106,15 +106,30 @@ impl Interpreter {
             // argument in this parent's bracket would trigger it, skip the
             // chunk path for the WHOLE application and fall back to the
             // string path, which already handles it correctly.
-            let has_type_expr_arg = resolved_parent_name
-                .find('[')
-                .map(|start| {
-                    let args_str = &resolved_parent_name[start + 1..resolved_parent_name.len() - 1];
-                    parse_role_type_args(args_str)
+            // Arguments that arrive as already-evaluated values (a run-time
+            // `$obj does R[...]` / `but R[...]` pun) are never re-read from the
+            // pun name's text, whose stringified values (`model\tA::B`) are
+            // not source and must not be classified as one.
+            let pre_evaluated = parent_pre_args
+                .get(i)
+                .copied()
+                .flatten()
+                .is_some_and(|chunks| {
+                    chunks
                         .iter()
-                        .any(|a| should_treat_role_arg_as_type_expr(a))
-                })
-                .unwrap_or(false);
+                        .all(|c| matches!(c, crate::opcode::DeclTraitArg::Literal(_)))
+                });
+            let has_type_expr_arg = !pre_evaluated
+                && resolved_parent_name
+                    .find('[')
+                    .map(|start| {
+                        let args_str =
+                            &resolved_parent_name[start + 1..resolved_parent_name.len() - 1];
+                        parse_role_type_args(args_str)
+                            .iter()
+                            .any(|a| should_treat_role_arg_as_type_expr(a))
+                    })
+                    .unwrap_or(false);
             let pre_args = if has_type_expr_arg {
                 None
             } else {

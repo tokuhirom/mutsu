@@ -75,6 +75,9 @@ impl Interpreter {
             saved_frame_owned: std::mem::take(&mut self.frame_owned),
             saved_active_loop_param_names: Some(self.active_loop_param_names.push_frame()),
             saved_active_loop_rw_param_names: Some(self.active_loop_rw_param_names.push_frame()),
+            saved_pending_caller_var_writeback: std::mem::take(
+                &mut self.pending_caller_var_writeback,
+            ),
         };
         // A call-site "the topic argument is a bare literal" flag
         // (`OpCode::CallOnValue`'s `bare_args`) belongs to exactly one call.
@@ -108,6 +111,9 @@ impl Interpreter {
             saved_frame_owned: std::mem::take(&mut self.frame_owned),
             saved_active_loop_param_names: Some(self.active_loop_param_names.push_frame()),
             saved_active_loop_rw_param_names: Some(self.active_loop_rw_param_names.push_frame()),
+            saved_pending_caller_var_writeback: std::mem::take(
+                &mut self.pending_caller_var_writeback,
+            ),
         };
         self.call_frames.push(frame);
     }
@@ -146,6 +152,13 @@ impl Interpreter {
             self.active_loop_rw_param_names.pop_frame(caller);
         }
         self.exit_readonly_frame(frame.readonly_mark);
+        // Unclaimed writebacks recorded in this frame belong further up; put
+        // them back beside the caller's.
+        let outer = std::mem::take(&mut frame.saved_pending_caller_var_writeback);
+        let inner = std::mem::replace(&mut self.pending_caller_var_writeback, outer);
+        if !inner.is_empty() {
+            self.pending_caller_var_writeback.extend(inner);
+        }
         frame
     }
 
@@ -1809,145 +1822,6 @@ impl Interpreter {
             s
         });
         written
-    }
-
-    /// Resolve the env value backing local `name` (with the sigil-stripped
-    /// fallback the blanket reconcile uses). Raw — no type filter.
-    fn carrier_env_value(&self, name: &str) -> Option<Value> {
-        self.env().get(name).cloned().or_else(|| {
-            name.strip_prefix('$')
-                .or_else(|| name.strip_prefix('@'))
-                .or_else(|| name.strip_prefix('%'))
-                .or_else(|| name.strip_prefix('&'))
-                .and_then(|b| self.env().get(b).cloned())
-        })
-    }
-
-    /// Whether the carrier writeback may overwrite a slot *currently* holding `v`.
-    /// Eligibility is keyed on what the slot WOULD LOSE, not on the incoming value
-    /// (so an `Int` slot that a carrier turns into a `Mixin` via `does` is fine).
-    /// Excludes the binding cells (`HashEntryRef`/`ContainerRef`) and a plain
-    /// `Array`/`Hash` slot — env may hold a COW-detached copy whose write would
-    /// clobber a live interior `:=` element cell. Scalars, Set/Bag/Mix, Mixin,
-    /// Instance and the rest are safe targets (the whole slot value is replaced).
-    /// (Note: an Instance mutated *in place* through its shared `Arc<RwLock>`
-    /// attribute cell snapshots equal pre/post, so the diff never fires for it —
-    /// only a genuine value/type change writes through.)
-    fn slot_carrier_overwritable(v: &Value) -> bool {
-        !matches!(
-            v.view(),
-            ValueView::HashEntryRef { .. }
-                | ValueView::ContainerRef(_)
-                | ValueView::Array(..)
-                | ValueView::Hash(..)
-        )
-    }
-
-    /// Snapshot the slot-backing env values before a `lives-ok`/`dies-ok` carrier
-    /// runs. Overwritable slots use it for the changed-value diff; plain
-    /// Array/Hash slots also snapshot (their writeback additionally requires
-    /// the pre-carrier env to have been in sync with the slot — see
-    /// `carrier_writeback_changed_aggregates`). `None` entries (binding cells,
-    /// `!attr`, absent env keys) are never written back.
-    pub(super) fn snapshot_carrier_overwritable_env(
-        &self,
-        code: &CompiledCode,
-    ) -> Vec<Option<Value>> {
-        code.locals
-            .iter()
-            .enumerate()
-            .map(|(i, name)| {
-                if name.starts_with('!')
-                    || matches!(
-                        self.locals[i].view(),
-                        ValueView::HashEntryRef { .. } | ValueView::ContainerRef(_)
-                    )
-                {
-                    None
-                } else {
-                    self.carrier_env_value(name)
-                }
-            })
-            .collect()
-    }
-
-    /// Post-carrier (`lives-ok { … }` / block Test fn) precise writeback: for each
-    /// overwritable slot whose env value changed during the carrier, write the new
-    /// env value through to the slot. The double-OFF replacement for the blanket
-    /// reconcile, restricted to slots that carry no live `:=` cell.
-    pub(super) fn carrier_writeback_changed_aggregates(
-        &mut self,
-        code: &CompiledCode,
-        pre_env: &[Option<Value>],
-    ) {
-        for (i, name) in code.locals.iter().enumerate() {
-            if name.starts_with('!')
-                || matches!(
-                    self.locals[i].view(),
-                    ValueView::HashEntryRef { .. } | ValueView::ContainerRef(_)
-                )
-            {
-                continue;
-            }
-            let Some(cur) = self.carrier_env_value(name) else {
-                continue;
-            };
-            if !Self::slot_carrier_overwritable(&self.locals[i]) {
-                // A plain Array/Hash slot: overwriting from env normally risks
-                // clobbering a live interior `:=` element cell (env may hold a
-                // COW-detached copy). Two safe cases:
-                // - a *type change away* from the container (`$a does Role`
-                //   turns a Hash `$a` into a `Mixin`), discarding the old
-                //   container wholesale;
-                // - a clean observed REBIND: the slot and env were in sync
-                //   before the carrier and the carrier produced a different
-                //   value (`lives-ok { $parsed = %h{$k} }` re-run — the second
-                //   Hash assignment was silently dropped, JSON::Marshal
-                //   t/030-trait.t / t/080-type-constraints.t). A pre-carrier
-                //   divergence (a live-cell copy) keeps the skip.
-                //
-                // The type-change write must additionally require that env
-                // genuinely CHANGED during the carrier (mechanism #3, the `(B)`
-                // per-store env-write gate): with the gate ON a plain-lexical
-                // store leaves env stale (the slot is authoritative), so a
-                // preceding `my $l = List.new` leaves `env<l>` at its `Any` decl
-                // seed while the slot holds the List. Without the `env_changed`
-                // guard, any Test-fn carrier (`isa-ok $l, …`) would read that
-                // stale `Any` as a "type change away" and clobber the live List.
-                // Gate OFF this is byte-identical: env tracks the slot, so a
-                // fired type-change here always had `prev != cur` anyway.
-                let env_changed = match pre_env.get(i) {
-                    Some(Some(prev)) => {
-                        !crate::vm::vm_method_dispatch::cheaply_unchanged(prev, &cur)
-                    }
-                    // No prior env value snapshotted (a name the carrier
-                    // introduced): treat as a genuine change.
-                    _ => true,
-                };
-                if env_changed && !self.locals[i].same_variant(&cur) {
-                    self.locals[i] = cur;
-                } else if let Some(Some(prev)) = pre_env.get(i)
-                    && crate::vm::vm_method_dispatch::cheaply_unchanged(prev, &self.locals[i])
-                    && !crate::vm::vm_method_dispatch::cheaply_unchanged(prev, &cur)
-                {
-                    self.locals[i] = cur;
-                }
-                continue;
-            }
-            // "Changed" must catch a *variant* change even when `PartialEq` treats
-            // the two values as equal: `Mixin(Int(0), …)` compares EQUAL to
-            // `Int(0)` (Mixin PartialEq delegates to its inner value), so a
-            // `$a does Role` that turns an `Int` slot into an allomorphic `Mixin`
-            // would otherwise be missed. The identity-aware helper handles this
-            // case without descending into potentially cyclic heap values.
-            let changed = match pre_env.get(i) {
-                Some(Some(prev)) => !crate::vm::vm_method_dispatch::cheaply_unchanged(prev, &cur),
-                _ => true,
-            };
-            if changed {
-                self.locals[i] = cur;
-            }
-        }
     }
 
     /// A local value that is safe to overwrite from env during a carrier

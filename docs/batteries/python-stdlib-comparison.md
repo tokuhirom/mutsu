@@ -250,7 +250,7 @@ no bundled Raku equivalent (**Gap**) — not prioritized.
 
 | Python | Raku / mutsu | Status | Notes |
 | --- | --- | --- | --- |
-| `ensurepip` / `venv` / `zipapp` | `mzef` (vendored Zef) | mutsu native | mutsu ships its own package manager binary — the direct analogue of `pip` (and, via per-project module paths, much of what `venv` gets used for). See `CLAUDE.md`'s "mzef package manager and distribution" section. |
+| `ensurepip` / `venv` / `zipapp` | `mzef` (vendored Zef) | mutsu native | mutsu ships its own package manager binary — the direct analogue of `pip` (and, via per-project module paths, much of what `venv` gets used for). See `AGENTS.md`'s "mzef package manager and distribution" section. |
 
 ## Python Runtime Services
 

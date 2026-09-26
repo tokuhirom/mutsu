@@ -272,7 +272,13 @@ impl Compiler {
     }
 
     pub(super) fn compile_expr_call(&mut self, name: &Symbol, args: &[Expr]) {
+        let positional_closures_nonescaping =
+            std::mem::take(&mut self.stmt_call_positional_closures_nonescaping);
         self.fold_lexical_sub_free_vars(name);
+        if positional_closures_nonescaping {
+            self.compile_expr_call_inner_with(name, args, false, true);
+            return;
+        }
         if let Some(named) = Self::named_sub_lvalue_with_target_var(name, args) {
             self.compile_expr_call_inner(name, &named, false);
             return;
@@ -345,6 +351,19 @@ impl Compiler {
         name: &Symbol,
         args: &[Expr],
         suppress_listop_rewrite: bool,
+    ) {
+        self.compile_expr_call_inner_with(name, args, suppress_listop_rewrite, false);
+    }
+
+    /// [`Compiler::compile_expr_call_inner`], optionally compiling positional
+    /// closure-literal arguments non-escaping (see
+    /// `stmt_call_positional_closures_nonescaping`).
+    fn compile_expr_call_inner_with(
+        &mut self,
+        name: &Symbol,
+        args: &[Expr],
+        suppress_listop_rewrite: bool,
+        positional_closures_nonescaping: bool,
     ) {
         // nqp:: control-flow ops (`nqp::if`/`nqp::while`/`nqp::stmts`/...) are
         // special forms whose operands must not be eagerly evaluated as call
@@ -464,7 +483,12 @@ impl Compiler {
                 op: crate::token_kind::TokenKind::FatArrow,
                 right: Box::new(Expr::Literal(Value::int(self.callframe_block_depth as i64))),
             });
-            self.compile_expr_call_inner(name, &new_args, suppress_listop_rewrite);
+            self.compile_expr_call_inner_with(
+                name,
+                &new_args,
+                suppress_listop_rewrite,
+                positional_closures_nonescaping,
+            );
             return;
         }
         // Parser-rewritten atomic-op forms (`⚛$x`, `$x ⚛= v`, `$x⚛++`) arrive
@@ -1343,6 +1367,34 @@ impl Compiler {
             };
             self.compile_expr(&method_call);
         }
+        // The SUB forms of `push`/`append`/`unshift`/`prepend` take no named
+        // arguments: `push @a, a => 52` dies in Rakudo ("Cannot resolve caller
+        // push(Array:D, :a(Int))"), whereas the METHOD form that every rewrite
+        // below produces ignores one through its implicit `*%_`. Die here
+        // rather than let the rewrite drop the argument silently.
+        else if matches!(
+            name.resolve().as_str(),
+            "push" | "unshift" | "append" | "prepend"
+        ) && !suppress_listop_rewrite
+            && let Some(key) = args.iter().skip(1).find_map(|arg| match arg {
+                Expr::Binary {
+                    op: TokenKind::FatArrow,
+                    left,
+                    ..
+                } => match left.as_ref() {
+                    Expr::Literal(lit) => lit.as_str().map(str::to_string),
+                    _ => None,
+                },
+                _ => None,
+            })
+        {
+            self.compile_expr(&Expr::Call {
+                name: Symbol::intern("die"),
+                args: vec![Expr::Literal(Value::str(format!(
+                    "Unexpected named argument '{key}' passed"
+                )))],
+            });
+        }
         // Rewrite push($obj.attr, val...)/unshift/append/prepend on method call targets.
         // Compile as __mutsu_push_through_accessor($obj, "attr", "push", vals...) so the
         // mutation propagates to all instances sharing the same array container.
@@ -1960,7 +2012,10 @@ impl Compiler {
                     // `start` keeps marking EVERY argument escaping, exactly as
                     // before; other calls mark only a closure literal.
                     let value_expr = Self::unwrap_named_arg_value(arg);
-                    let escaping_args = is_start || Self::is_closure_literal_arg(value_expr);
+                    let is_named = !std::ptr::eq(value_expr, arg);
+                    let escaping_args = is_start
+                        || (Self::is_closure_literal_arg(value_expr)
+                            && (is_named || !positional_closures_nonescaping));
                     if let Expr::Binary {
                         op: TokenKind::FatArrow,
                         left,

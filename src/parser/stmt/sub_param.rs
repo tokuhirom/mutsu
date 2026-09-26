@@ -29,7 +29,8 @@ pub(crate) use helpers::{fold_parenthesised_pointy_params, make_param};
 // These were pub(super) in the original file (visible within `stmt`).
 pub(super) use helpers::{is_anonymous_sigil_param, starts_with_sigil_param};
 pub(super) use method_decl::{
-    mark_params_as_invocant, method_decl, method_decl_body, method_decl_body_my, submethod_decl,
+    expr_position_method_decl, mark_params_as_invocant, method_decl, method_decl_body,
+    method_decl_body_my, submethod_decl,
 };
 pub(super) use param_inner::parse_single_param;
 pub(super) use type_constraint::{

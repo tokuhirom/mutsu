@@ -6,7 +6,7 @@
 # accidentally open a pull request or file an issue against the upstream Raku
 # repositories from this workspace. A plain copy has no upstream remote, so
 # that mistake cannot happen. (Project policy forbids PRs/Issues against Raku
-# org repos from this workspace — see CLAUDE.md.)
+# org repos from this workspace — see AGENTS.md.)
 #
 # This file records exactly which upstream commit each vendored tree was
 # imported from, so the version is auditable and reproducible.

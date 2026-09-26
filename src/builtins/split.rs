@@ -232,11 +232,15 @@ fn split_by_string(
 }
 
 /// Split a string by multiple string splitters (list form).
-// Cost: O(s*n*k) worst, n = chars of the invocant, s = separators, k = pieces:
-// every piece re-scans each separator from the piece start, so a separator
-// that is rare or absent is searched to the end once per piece.
-// Rakudo: O(s*n + k) -- see #9145.
-fn split_by_strings(
+///
+/// At each cursor position the earliest occurrence of any splitter wins, the
+/// longest splitter on a tie. Each splitter's next occurrence is cached and
+/// only searched again once the cursor has moved past it, so every splitter
+/// scans each char of the invocant at most once over the whole call (a k-way
+/// merge of the per-splitter find streams).
+// Cost: O(n*m + k), n = chars of the invocant, m = total chars of the
+// separators, k = pieces produced (naive char-window search per splitter).
+pub(crate) fn split_by_strings(
     text: &str,
     splitters: &[String],
     limit: Option<usize>,
@@ -253,6 +257,11 @@ fn split_by_strings(
     }
 
     let splitter_chars: Vec<Vec<char>> = splitters.iter().map(|s| s.chars().collect()).collect();
+    // Per splitter: `Some(Some(p))` = next occurrence starts at `p`,
+    // `Some(None)` = no occurrence at or after the last search start (so none
+    // ever again), `None` = not searched yet. A cached `p` stays valid while
+    // `p >= pos`: it is the first occurrence at or after an earlier cursor.
+    let mut next: Vec<Option<Option<usize>>> = vec![None; splitter_chars.len()];
     let max_splits = limit.map(|l| if l > 0 { l - 1 } else { 0 });
     let mut splits_done = 0;
     let mut pos = 0;
@@ -272,18 +281,22 @@ fn split_by_strings(
             if sep_len == 0 {
                 continue;
             }
-            if pos + sep_len <= chars.len() {
-                for start in pos..=(chars.len() - sep_len) {
-                    if chars[start..start + sep_len] == sep_chars[..] {
-                        let is_better = match best {
-                            None => true,
-                            Some((bp, bl, _)) => start < bp || (start == bp && sep_len > bl),
-                        };
-                        if is_better {
-                            best = Some((start, sep_len, idx));
-                        }
-                        break;
-                    }
+            let found = match next[idx] {
+                Some(Some(p)) if p >= pos => Some(p),
+                Some(None) => None,
+                _ => {
+                    let f = find_chars(&chars, sep_chars, pos);
+                    next[idx] = Some(f);
+                    f
+                }
+            };
+            if let Some(start) = found {
+                let is_better = match best {
+                    None => true,
+                    Some((bp, bl, _)) => start < bp || (start == bp && sep_len > bl),
+                };
+                if is_better {
+                    best = Some((start, sep_len, idx));
                 }
             }
         }
@@ -313,6 +326,16 @@ fn split_by_strings(
             }
         }
     }
+}
+
+/// First start index `>= from` where `needle` occurs in `hay`.
+// Cost: O((n - from) * m), n = chars of `hay`, m = chars of `needle`.
+pub(crate) fn find_chars(hay: &[char], needle: &[char], from: usize) -> Option<usize> {
+    let m = needle.len();
+    if from + m > hay.len() {
+        return None;
+    }
+    (from..=hay.len() - m).find(|&start| hay[start..start + m] == *needle)
 }
 
 /// Create a separator value: the engine-built Match object for regex splits,

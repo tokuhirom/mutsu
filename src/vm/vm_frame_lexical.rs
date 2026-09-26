@@ -35,7 +35,8 @@ pub(crate) type FrameLexicalClosureBodies =
 pub(super) struct FrameLexicalCallSite {
     pub(super) arity: u32,
     pub(super) arg_sources_idx: Option<u32>,
-    /// `ExecCallPairs` never tracked rw-argument sources.
+    /// Whether the call site tracks rw-argument sources (a TRIR site's
+    /// fallback call does not).
     pub(super) track_sources: bool,
     pub(super) call_has_named: bool,
 }

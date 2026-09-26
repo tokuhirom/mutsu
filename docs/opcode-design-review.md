@@ -12,7 +12,7 @@ size; `OpCode` size is a separate axis, addressed here).
 
 ## Snapshot at audit time
 
-- ~340 `OpCode` variants (CLAUDE.md's "~100" was stale). Biggest families:
+- ~340 `OpCode` variants (AGENTS.md's "~100" was stale). Biggest families:
   calls (27), variables (23+), type checking (21+4), functions (21), set ops
   (18), arithmetic (18).
 - Dispatch: one big `match &code.ops[*ip]` (`exec_one`), fetch by reference,

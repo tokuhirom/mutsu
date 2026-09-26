@@ -93,8 +93,7 @@ Never quarantine:
   cause. Investigate first; quarantine is a decision made after understanding,
   never instead of it.
 
-This mirrors the triage protocol in CLAUDE.md ("Triaging a suspected-flaky
-failure"), which has a track record: `t/wrap.t`, `t/placeholder.t` and
+This mirrors the triage protocol in §8 below, which has a track record: `t/wrap.t`, `t/placeholder.t` and
 `t/tail-function.t` all sat mislabelled "flaky" for months and all three turned
 out to be deterministic correctness bugs.
 
@@ -164,7 +163,7 @@ back, the survey will show it.
 
 ## 6. Prose lists are not a mechanism
 
-CLAUDE.md's "Known flaky tests" section stays as *context* — it explains the
+§7 below (formerly AGENTS.md's "Known flaky tests" section) stays as *context* — it explains the
 mechanism behind each historical flake and records the de-flaked ones, which is
 genuinely useful. But it is not, and must not become, the thing CI consults.
 The 2026-07-23 survey found that section had drifted from reality in both
@@ -173,3 +172,35 @@ concurrency tests", while the tests that actually cost re-runs
 (`roast/S17-promise/nonblocking-await.t`, `t/supply-on-demand-closing-tap.t`,
 the `gc::gc_ptr` unit test) were not in it at all. A machine-readable ledger
 with review dates cannot drift that way without CI saying so.
+
+## 7. Flake history — context, not the ledger
+
+The prose list here is *context* (why each historical flake happened, and the de-flaked ones), NOT the thing CI consults — that is `flaky-tests.txt`. Some tests are genuinely non-deterministic (concurrency/timing/CI-load sensitive) and fail intermittently. When a `make roast` / `make test` failure is **only** in the list below and your change is unrelated (e.g. an operator/parser fix), treat it as flaky: re-run the single file a few times before assuming a regression. Do **not** remove it from the whitelist.
+
+- `S17-*` concurrency tests — may fail occasionally under heavy parallel load, pass on retry. (A 2026-07-05 audit ran all 97 whitelisted S17 files ×7 `-j4` release sweeps: the only repeat offender was `batch.t`, root-caused and fixed — see below.)
+
+**De-flaked (do NOT treat a failure here as flaky — it's a regression):**
+
+- `roast/S02-types/bag.t`, `roast/S02-types/baghash.t`, `roast/S02-types/mixhash.t` — the Binomial(100, 1/3) `.roll` bounds that made these three statistically flaky by design were **fixed upstream**: the 2026-09-11 roast re-vendor (commit `85a8790`, upstream "Make more statistical tests less likely to fail") raises every sample from 100 to 100000 rolls and scales the bounds with it, putting the assertions ~100 standard deviations from the mean. All three were dropped from `flaky-tests.txt` in that PR (3/3 green locally, ~1-2s each on release). A failure here is real again.
+- `roast/S04-exceptions/exceptions-alternatives.t` — the 2026-07-15 "occasional jit-stress timeout" (exit 124, "planned 3 ran 2") was NOT load noise: subtest 3's `JSON::Tiny::Grammar.parse` of the subprocess's JSON stderr took ~12.6s (raku: 2ms) because ratcheted separated quantifiers (`rule pairlist { <pair> * % \, }`) backtracked exponentially, leaving only a slim margin under the 30s budget. Fixed the same day: ratcheted `* %` is possessive now (Rakudo semantics) and the whole file runs in ~1s. Pin: `t/regex-sep-quantifier-ratchet.t`. A timeout here is real again.
+- `t/lock.t` "Lock::Async protects shared array pushes" — was a real lost-update race (listop `push` inside `protect` wrote the base shared_vars key, which a parent-thread stale env sync clobbered wholesale). Fixed in #4167 by routing all plain-lexical shared-array pushes through the `__mutsu_atomic_arr::` store.
+- `roast/S17-supply/batch.t` "we can batch by time and elems" — was a deterministic logic bug, not load flakiness: `batch(:seconds)` anchored its time window to tap-registration `Instant` instead of absolute `time div $seconds` periods, firing a spurious 1-element flush when the tap was registered just after a period boundary. Pin: `t/supply-batch-period.t` (forces the boundary alignment).
+- `roast/S02-names-vars/perl.t` — the historical "typed-container alloc/hash-order" mid-run abort no longer reproduces (2026-07-05: 72 clean runs, debug+release, under 12× CPU contention); re-whitelisted.
+- `roast/S02-types/hash.t`, `roast/S09-typed-arrays/hashes.t` — the "CI-load-sensitive timeout" label is stale: both complete in ~0.3s on a release build now. A failure here is real — see triage below.
+- `t/io-socket-recv-limit.t` — the "fails under `-j4` load" label was wrong: it was a deterministic **port collision**. `IO::Socket::Async.listen(host, 0)` did not let the OS assign an ephemeral port; it substituted one from a process-local counter seeded identically in every process, so concurrent mutsu processes all asked for the same port and whichever bound second died. On top of that, this file and `t/io-socket-async-bin.t` both hardcoded 19995 (serial: 5/5 PASS, `-j2`: 5/5 FAIL). Fixed in #4512 — port 0 now reaches `bind()`, and the test asks the tap for the port it got. **Never hardcode a port in a new test**: listen on 0 and read `.socket-port`.
+
+`make roast` removes `temp-file-RT-126006-test` before starting: a stale copy
+left by an interrupted `roast/S32-io/spurt.t` would otherwise make that test
+abort with "cannot run test while file ... exists".
+
+## 8. Triaging a suspected-flaky failure — don't mislabel a real bug
+
+"Flaky" is a claim about *non-determinism*; verify it before trusting it. A failure that reproduces every run is a real bug to fix, not noise to skip. `t/wrap.t`, `t/placeholder.t`, and `t/tail-function.t` sat here for months labeled "flaky / pre-existing" when all three were **deterministic correctness bugs** (closure-capture env writeback, scope-lost Seq iterator, missing `%_` placeholder capture — fixed in #2629 / #2630 / #2632). Before adding or trusting a flaky label:
+
+1. **Re-run the single file ~5× in a release build** (`cargo build --release && prove -e target/release/mutsu <file>`). Fails every time → deterministic → fix it, don't skip it.
+2. **Read the failure shape.** A *timeout* / `exit 255` with `Failed: 0` (bad plan, ran fewer than planned) is plausibly load/timing. A *concrete subtest* failure (`Failed: N`, a real `not ok` assertion) is almost always a logic bug — even on a "known flaky" file. Investigate the subtest.
+   - **BUT `exit 255` + `Failed: 0` is NOT automatically flaky.** "Ran N of M, Failed: 0" also happens when your *own* change throws an unexpected exception **mid-file** (e.g. a false-positive `X::Redeclaration` / `X::Assignment::RO`), which aborts the rest of the file with `Runtime error: Test failures` — looking exactly like a timeout. **The tell:** it reproduces *deterministically* on your branch but NOT on `main`, and the `(N+1)`th test is precisely the construct your change touches. Before declaring flaky, run the exact file on your branch vs `main` (`prove -e target/debug/mutsu <file>`); if your branch aborts and `main` completes, it is a real regression you introduced — fix it, do not re-trigger CI. (Seen in Tier-2: a sigil-blind `constant` redeclaration check aborted `S06-operator-overloading/sub.t`; a literal-LHS `s///` RO check aborted `S05-metasyntax/regex.t` on `TR///`.)
+3. **debug vs release.** A debug-only timeout on a heavy test can be load; a failure that reproduces in *release* is real (CI uses release).
+4. Only label flaky if it actually **passes on retry**; note the pass/fail ratio when you do.
+
+The `t/` TAP suite is **fatal** in CI (`prove ... t/`, no `|| echo` fallback) — a deterministic `t/` failure fails the CI job, same as roast.

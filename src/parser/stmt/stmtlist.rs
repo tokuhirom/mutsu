@@ -64,7 +64,14 @@ pub(crate) fn package_body_block(input: &str) -> PResult<'_, Vec<Stmt>> {
         parse_char(input, '{').map_err(|_| PError::expected_at(MISSING_BLOCK, input))?;
     simple::push_scope();
     simple::clear_current_scope_self_available();
+    hoisted_methods::push_frame();
     let mut result = block_inner(input);
+    // Named methods declared in expression position inside the body
+    // (`has @.x = method TOP ($/) { ... }`) are the package's methods too.
+    let hoisted = hoisted_methods::pop_frame();
+    if let Ok((_, body)) = &mut result {
+        body.extend(hoisted);
+    }
     simple::finish_block_anon_states(&mut result);
     simple::pop_scope();
     result

@@ -605,7 +605,7 @@ impl Interpreter {
     /// named argument (a literal `key => value` / `:key(value)` written
     /// directly in an argument list, or a Capture literal's named-lane
     /// element `\(:$a)`) — preserving the in-band named marker those sites
-    /// need to reach the callee's binder / `ExecCallPairs`.
+    /// need to reach the callee's binder.
     pub(super) fn exec_make_named_arg_op(&mut self, code: &crate::opcode::CompiledCode) {
         let (left, right) = self.pop_pair_operands_capturing(code);
         // Preserve the original key type for `.key` to return the correct type.

@@ -1135,6 +1135,7 @@ impl Compiler {
             traps,
             // Patched below, once the CATCH op range exists (ADR-0072).
             catch_resume_capable: false,
+            control_resume_capable: false,
         });
         // Compile main body (last Stmt::Expr/Call leaves value on stack)
         let mut main_leaves_value = false;
@@ -1278,9 +1279,21 @@ impl Compiler {
             .patch_try_catch_resume_capable(try_idx, resume_capable);
         // Compile control block.
         if let Some(ref control_body) = control_stmts {
+            let control_range_start = self.code.ops.len();
             for stmt in control_body {
                 self.compile_stmt(stmt);
             }
+            // #9469: a CONTROL block that calls `.resume` somewhere but is not
+            // provably resume-safe still runs INLINE at a deep `warn` raise
+            // site, so `.resume` reaches the raise site. When it does not
+            // resume, the raise site hands this region its verdict instead.
+            let control_range_end = self.code.ops.len();
+            let control_capable = !resume_safe
+                && self
+                    .code
+                    .range_calls_resume(control_range_start, control_range_end);
+            self.code
+                .patch_try_control_resume_capable(try_idx, control_capable);
             // control result is Nil
             self.code.emit(OpCode::LoadNil);
         }
@@ -1294,22 +1307,12 @@ impl Compiler {
     }
 
     /// Compile a tail-position statement call (`Stmt::Call` as the last
-    /// statement of a body) so its value stays on the stack — the body's
-    /// result. Positional-only calls reuse the expression path
-    /// (`Expr::Call`, whose `CallFunc` op spreads only `|EXPR` positions,
-    /// same as `ExecCallPairs` below -- ADR-0054 Slices 1-3); calls with
-    /// named/slip args compile exactly like the statement path
-    /// (`MakeNamedArg` pairs, `MakeSlip`) and dispatch via `ExecCallPairs {
-    /// keep_value: true }`, which pushes the call's value. That routing is
-    /// needed ONLY to satisfy `keep_value` now: `ExecCallPairs`'s
-    /// syntax-accurate `|EXPR` tracking is no longer a reason to prefer it
-    /// over `Expr::Call`, since `CallFunc` tracks call-site syntax
-    /// identically (ADR-0054 Slice 4 collapsed both call ops onto the same
-    /// `arg_sources_idx` descriptor). Without the `keep_value` routing, a
-    /// tail call with named args fell to the value-less statement op and
-    /// the routine returned its topic instead (JSON::Marshal's
-    /// `to-json($ret, :$sorted-keys, :$pretty)` tail made `marshal` return
-    /// Any on the interpreter path).
+    /// statement of a body) so its value stays on the stack -- the body's
+    /// result. It is exactly the expression form's call (`CallFunc` /
+    /// `CallFuncNamed`), whose value is the real return value. (A tail call
+    /// with named args once fell to a value-less statement op and the routine
+    /// returned its topic instead: JSON::Marshal's `to-json($ret,
+    /// :$sorted-keys, :$pretty)` tail made `marshal` return Any.)
     pub(super) fn compile_tail_stmt_call_value(
         &mut self,
         name: crate::symbol::Symbol,
@@ -1325,85 +1328,15 @@ impl Compiler {
             return;
         }
         let rewritten_args = Self::rewrite_stmt_call_args(&name.resolve(), args);
-        let positional_only = rewritten_args
+        // See `stmt_call_positional_closures_nonescaping`.
+        self.stmt_call_positional_closures_nonescaping = !rewritten_args
             .iter()
             .all(|arg| matches!(arg, CallArg::Positional(_)));
-
-        if positional_only {
-            let expr_args: Vec<Expr> = rewritten_args
-                .iter()
-                .filter_map(|arg| match arg {
-                    CallArg::Positional(expr) => Some(expr.clone()),
-                    _ => None,
-                })
-                .collect();
-            self.compile_expr(&Expr::Call {
-                name,
-                args: expr_args,
-            });
-            return;
-        }
-
-        let wb_base = self.index_rw_writeback_base();
-        for arg in &rewritten_args {
-            match arg {
-                // A closure literal NAMED-argument value escapes exactly as it
-                // does for a plain call's named-args branch
-                // (`compile_expr_call_inner`, and the identical fix in
-                // `compile_stmt`'s `Stmt::Call` arm): the callee may store it
-                // rather than invoke it immediately, and this stmt-call shape
-                // (a listop-style tail call whose callee is not statically
-                // known, e.g. an imported routine — see `Stmt::Call`) is
-                // otherwise indistinguishable from a plain call at the syntax
-                // level. Without this, a closure literal's captured-and-mutated
-                // free variables never get boxed into a shared cell, so a
-                // same-named parameter in the callee's own call chain can
-                // shadow the closure's own captured lexical when it is later
-                // invoked from a nested block
-                // (todo/deep/closure-capture-shadowed-by-colliding-callee-parameter.md).
-                //
-                // Positional args deliberately keep `compile_call_arg`'s
-                // unconditional non-escaping treatment — see the identical
-                // note in `compile_stmt`'s `Stmt::Call` arm
-                // (t/bind-alias-chain.t regressed when this was widened).
-                CallArg::Positional(expr) => self.compile_call_arg(expr),
-                CallArg::Named {
-                    name,
-                    value: Some(expr),
-                } => {
-                    self.compile_expr(&Expr::Literal(Value::str(name.clone())));
-                    let escaping = Self::is_closure_literal_arg(expr);
-                    self.with_escape(escaping, |s| s.compile_expr(expr));
-                    self.code.emit(OpCode::MakeNamedArg);
-                }
-                CallArg::Named { name, value: None } => {
-                    self.compile_expr(&Expr::Literal(Value::str(name.clone())));
-                    self.compile_expr(&Expr::Literal(Value::TRUE));
-                    self.code.emit(OpCode::MakeNamedArg);
-                }
-                // `|EXPR` interpolates into the argument list: MakeSlip builds
-                // the Slip and the slip side table spreads exactly these
-                // positions.
-                CallArg::Slip(expr) => {
-                    self.compile_expr(expr);
-                    self.code.emit(OpCode::MakeSlip);
-                }
-                CallArg::Invocant(_) => unreachable!(),
-            }
-        }
-        let name_idx = self.code.add_constant(Value::str(name.resolve()));
-        let arg_sources_idx = self.add_call_arg_sources_constant(&rewritten_args);
-        self.code.emit(OpCode::ExecCallPairs {
-            name_idx,
-            arity: rewritten_args.len() as u32,
-            arg_sources_idx,
-            keep_value: true,
+        self.compile_expr(&Expr::Call {
+            name,
+            args: Self::call_args_to_expr_args(&rewritten_args),
         });
-        // This dispatch shape has no writeback emit point (see
-        // `index_rw_writeback_base`). Drop what this call's own arguments
-        // queued rather than leaving it for the next call to emit around ITS
-        // result.
-        self.pending_index_rw_writebacks.truncate(wb_base);
+        self.stmt_call_positional_closures_nonescaping = false;
     }
 
     /// Classify a CONTROL block as "resume-safe": it always `.resume`s and

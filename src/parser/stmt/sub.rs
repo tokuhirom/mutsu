@@ -57,10 +57,10 @@ pub(super) use return_type::{
 // --- Re-exports forwarded from the sibling `sub_param` module. ---
 
 pub(super) use super::sub_param::{
-    is_anonymous_sigil_param, mark_params_as_invocant, parse_implicit_invocant_marker,
-    starts_with_sigil_param,
+    expr_position_method_decl, method_decl, method_decl_body, method_decl_body_my, submethod_decl,
 };
 pub(super) use super::sub_param::{
-    method_decl, method_decl_body, method_decl_body_my, submethod_decl,
+    is_anonymous_sigil_param, mark_params_as_invocant, parse_implicit_invocant_marker,
+    starts_with_sigil_param,
 };
 pub(super) use super::sub_param::{parse_single_param, parse_type_constraint_expr};
