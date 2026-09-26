@@ -1034,6 +1034,12 @@ impl Interpreter {
         // method paths resolved it after the env had been restored, which left
         // the literal `T` as the expected type (#7984).
         let effective_return_spec = method_def.return_type.as_deref().map(|spec| {
+            // A definite return (`--> Empty`, `--> Nil`, `--> 42`) names a
+            // value, never a type: resolving it first would turn the CORE term
+            // `Empty` into any loaded `Foo::Empty` class (#9530).
+            if self.is_definite_return_spec(spec) {
+                return spec.to_string();
+            }
             let spec = loan_env!(self, resolved_type_capture_name(spec));
             self.resolve_method_type_name(owner_class, &spec)
         });
@@ -2311,6 +2317,12 @@ impl Interpreter {
         // Resolve a capture-valued `--> T` before the env teardown below (see
         // the slow path's note, #7984).
         let effective_return_spec = method_def.return_type.as_deref().map(|spec| {
+            // A definite return (`--> Empty`, `--> Nil`, `--> 42`) names a
+            // value, never a type: resolving it first would turn the CORE term
+            // `Empty` into any loaded `Foo::Empty` class (#9530).
+            if self.is_definite_return_spec(spec) {
+                return spec.to_string();
+            }
             let spec = loan_env!(self, resolved_type_capture_name(spec));
             self.resolve_method_type_name(owner_class, &spec)
         });
