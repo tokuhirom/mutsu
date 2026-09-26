@@ -19,23 +19,23 @@
   "dist": "Web::Scraper",
   "files": [
     {
-      "cmp": "regression",
+      "cmp": "partial",
       "mutsu": {
-        "first_failure": "thread 'mutsu-main' (3) has overflowed its stack",
-        "nok": 0,
+        "first_failure": "tarray hash equality",
+        "nok": 17,
         "ok": 0,
-        "plan": null,
-        "secs": 10.61,
+        "plan": 20,
+        "secs": 1.25,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "fail"
       },
       "path": "t/01_basic.t",
       "raku": {
         "nok": 0,
         "ok": 20,
         "plan": 20,
-        "secs": 29.31,
+        "secs": 31.88,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -56,23 +56,23 @@
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "partial",
       "mutsu": {
-        "first_failure": "thread 'mutsu-main' (3) has overflowed its stack",
-        "nok": 0,
+        "first_failure": "check item id: 0",
+        "nok": 1,
         "ok": 0,
-        "plan": null,
-        "secs": 11.72,
+        "plan": 6,
+        "secs": 0.79,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "fail"
       },
       "path": "t/03_chain.t",
       "raku": {
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 1.07,
+        "secs": 1.08,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -84,10 +84,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-25",
+    "date": "2026-09-26",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "404ac78",
+    "mutsu_commit": "199f95e",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",

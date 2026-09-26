@@ -31,7 +31,7 @@
 </style>
 <rect class="bg" width="100%" height="100%"/>
 <text class="title" x="78" y="34">mutsu ecosystem parity against rakudo</text>
-<text class="subtitle" x="78" y="55">latest sweep 2026-09-25  ·  1630 of 1637 distributions measured  ·  7 blocked on dependencies  ·  baseline rakudo 2026.07</text>
+<text class="subtitle" x="78" y="55">latest sweep 2026-09-26  ·  1630 of 1637 distributions measured  ·  7 blocked on dependencies  ·  baseline rakudo 2026.07</text>
 <line class="grid" x1="78" y1="548.0" x2="1070" y2="548.0"/>
 <text class="tick" x="68" y="552.0" text-anchor="end">0%</text>
 <line class="grid" x1="78" y1="500.6" x2="1070" y2="500.6"/>
@@ -57,71 +57,74 @@
 <line class="axis" x1="78" y1="548" x2="1070" y2="548"/>
 <line class="axis" x1="78" y1="74" x2="78" y2="548"/>
 <text class="tick" x="78.0" y="570" text-anchor="middle">2026-09-11</text>
-<text class="tick" x="148.9" y="570" text-anchor="middle">2026-09-12</text>
-<text class="tick" x="290.6" y="570" text-anchor="middle">2026-09-14</text>
-<text class="tick" x="432.3" y="570" text-anchor="middle">2026-09-16</text>
-<text class="tick" x="644.9" y="570" text-anchor="middle">2026-09-19</text>
-<text class="tick" x="786.6" y="570" text-anchor="middle">2026-09-21</text>
-<text class="tick" x="928.3" y="570" text-anchor="middle">2026-09-23</text>
-<text class="tick" x="1070.0" y="570" text-anchor="middle">2026-09-25</text>
-<polyline class="series-a" points="78.0,352.7 78.0,353.2 148.9,341.3 219.7,341.3 290.6,336.6 361.4,331.9 432.3,312.9 503.1,304.8 574.0,301.0 644.9,294.9 715.7,286.8 786.6,276.9 857.4,269.3 928.3,262.7 999.1,257.9 1070.0,247.5" fill="none" stroke-width="3.2" stroke-linejoin="round" stroke-linecap="round"/>
+<text class="tick" x="144.1" y="570" text-anchor="middle">2026-09-12</text>
+<text class="tick" x="342.5" y="570" text-anchor="middle">2026-09-15</text>
+<text class="tick" x="474.8" y="570" text-anchor="middle">2026-09-17</text>
+<text class="tick" x="607.1" y="570" text-anchor="middle">2026-09-19</text>
+<text class="tick" x="739.3" y="570" text-anchor="middle">2026-09-21</text>
+<text class="tick" x="937.7" y="570" text-anchor="middle">2026-09-24</text>
+<text class="tick" x="1070.0" y="570" text-anchor="middle">2026-09-26</text>
+<polyline class="series-a" points="78.0,352.7 78.0,353.2 144.1,341.3 210.3,341.3 276.4,336.6 342.5,331.9 408.7,312.9 474.8,304.8 540.9,301.0 607.1,294.9 673.2,286.8 739.3,276.9 805.5,269.3 871.6,262.7 937.7,257.9 1003.9,247.5 1070.0,237.1" fill="none" stroke-width="3.2" stroke-linejoin="round" stroke-linecap="round"/>
 <circle class="series-a" cx="78.0" cy="352.7" r="3.4" stroke="none"/>
 <circle class="series-a" cx="78.0" cy="353.2" r="3.4" stroke="none"/>
-<circle class="series-a" cx="148.9" cy="341.3" r="3.4" stroke="none"/>
-<circle class="series-a" cx="219.7" cy="341.3" r="3.4" stroke="none"/>
-<circle class="series-a" cx="290.6" cy="336.6" r="3.4" stroke="none"/>
-<circle class="series-a" cx="361.4" cy="331.9" r="3.4" stroke="none"/>
-<circle class="series-a" cx="432.3" cy="312.9" r="3.4" stroke="none"/>
-<circle class="series-a" cx="503.1" cy="304.8" r="3.4" stroke="none"/>
-<circle class="series-a" cx="574.0" cy="301.0" r="3.4" stroke="none"/>
-<circle class="series-a" cx="644.9" cy="294.9" r="3.4" stroke="none"/>
-<circle class="series-a" cx="715.7" cy="286.8" r="3.4" stroke="none"/>
-<circle class="series-a" cx="786.6" cy="276.9" r="3.4" stroke="none"/>
-<circle class="series-a" cx="857.4" cy="269.3" r="3.4" stroke="none"/>
-<circle class="series-a" cx="928.3" cy="262.7" r="3.4" stroke="none"/>
-<circle class="series-a" cx="999.1" cy="257.9" r="3.4" stroke="none"/>
-<circle class="series-a" cx="1070.0" cy="247.5" r="3.4" stroke="none"/>
-<text class="value series-a" x="1079.0" y="251.5" stroke="none">63.4%</text>
+<circle class="series-a" cx="144.1" cy="341.3" r="3.4" stroke="none"/>
+<circle class="series-a" cx="210.3" cy="341.3" r="3.4" stroke="none"/>
+<circle class="series-a" cx="276.4" cy="336.6" r="3.4" stroke="none"/>
+<circle class="series-a" cx="342.5" cy="331.9" r="3.4" stroke="none"/>
+<circle class="series-a" cx="408.7" cy="312.9" r="3.4" stroke="none"/>
+<circle class="series-a" cx="474.8" cy="304.8" r="3.4" stroke="none"/>
+<circle class="series-a" cx="540.9" cy="301.0" r="3.4" stroke="none"/>
+<circle class="series-a" cx="607.1" cy="294.9" r="3.4" stroke="none"/>
+<circle class="series-a" cx="673.2" cy="286.8" r="3.4" stroke="none"/>
+<circle class="series-a" cx="739.3" cy="276.9" r="3.4" stroke="none"/>
+<circle class="series-a" cx="805.5" cy="269.3" r="3.4" stroke="none"/>
+<circle class="series-a" cx="871.6" cy="262.7" r="3.4" stroke="none"/>
+<circle class="series-a" cx="937.7" cy="257.9" r="3.4" stroke="none"/>
+<circle class="series-a" cx="1003.9" cy="247.5" r="3.4" stroke="none"/>
+<circle class="series-a" cx="1070.0" cy="237.1" r="3.4" stroke="none"/>
+<text class="value series-a" x="1079.0" y="241.1" stroke="none">65.6%</text>
 <line class="series-a" x1="1094" y1="80.0" x2="1118" y2="80.0" stroke-width="3.2"/>
 <text class="legend" x="1124" y="84.0">dist parity (published)</text>
-<polyline class="series-b" points="78.0,293.9 78.0,294.9 148.9,294.4 219.7,287.3 290.6,283.0 361.4,275.5 432.3,270.2 503.1,264.5 574.0,261.2 644.9,252.7 715.7,244.2 786.6,236.1 857.4,229.0 928.3,216.7 999.1,208.1 1070.0,202.0" fill="none" stroke-width="2.0" stroke-linejoin="round" stroke-linecap="round"/>
+<polyline class="series-b" points="78.0,293.9 78.0,294.9 144.1,294.4 210.3,287.3 276.4,283.0 342.5,275.5 408.7,270.2 474.8,264.5 540.9,261.2 607.1,252.7 673.2,244.2 739.3,236.1 805.5,229.0 871.6,216.7 937.7,208.1 1003.9,202.0 1070.0,202.9" fill="none" stroke-width="2.0" stroke-linejoin="round" stroke-linecap="round"/>
 <circle class="series-b" cx="78.0" cy="293.9" r="2.6" stroke="none"/>
 <circle class="series-b" cx="78.0" cy="294.9" r="2.6" stroke="none"/>
-<circle class="series-b" cx="148.9" cy="294.4" r="2.6" stroke="none"/>
-<circle class="series-b" cx="219.7" cy="287.3" r="2.6" stroke="none"/>
-<circle class="series-b" cx="290.6" cy="283.0" r="2.6" stroke="none"/>
-<circle class="series-b" cx="361.4" cy="275.5" r="2.6" stroke="none"/>
-<circle class="series-b" cx="432.3" cy="270.2" r="2.6" stroke="none"/>
-<circle class="series-b" cx="503.1" cy="264.5" r="2.6" stroke="none"/>
-<circle class="series-b" cx="574.0" cy="261.2" r="2.6" stroke="none"/>
-<circle class="series-b" cx="644.9" cy="252.7" r="2.6" stroke="none"/>
-<circle class="series-b" cx="715.7" cy="244.2" r="2.6" stroke="none"/>
-<circle class="series-b" cx="786.6" cy="236.1" r="2.6" stroke="none"/>
-<circle class="series-b" cx="857.4" cy="229.0" r="2.6" stroke="none"/>
-<circle class="series-b" cx="928.3" cy="216.7" r="2.6" stroke="none"/>
-<circle class="series-b" cx="999.1" cy="208.1" r="2.6" stroke="none"/>
-<circle class="series-b" cx="1070.0" cy="202.0" r="2.6" stroke="none"/>
-<text class="value series-b" x="1079.0" y="206.0" stroke="none">73.0%</text>
+<circle class="series-b" cx="144.1" cy="294.4" r="2.6" stroke="none"/>
+<circle class="series-b" cx="210.3" cy="287.3" r="2.6" stroke="none"/>
+<circle class="series-b" cx="276.4" cy="283.0" r="2.6" stroke="none"/>
+<circle class="series-b" cx="342.5" cy="275.5" r="2.6" stroke="none"/>
+<circle class="series-b" cx="408.7" cy="270.2" r="2.6" stroke="none"/>
+<circle class="series-b" cx="474.8" cy="264.5" r="2.6" stroke="none"/>
+<circle class="series-b" cx="540.9" cy="261.2" r="2.6" stroke="none"/>
+<circle class="series-b" cx="607.1" cy="252.7" r="2.6" stroke="none"/>
+<circle class="series-b" cx="673.2" cy="244.2" r="2.6" stroke="none"/>
+<circle class="series-b" cx="739.3" cy="236.1" r="2.6" stroke="none"/>
+<circle class="series-b" cx="805.5" cy="229.0" r="2.6" stroke="none"/>
+<circle class="series-b" cx="871.6" cy="216.7" r="2.6" stroke="none"/>
+<circle class="series-b" cx="937.7" cy="208.1" r="2.6" stroke="none"/>
+<circle class="series-b" cx="1003.9" cy="202.0" r="2.6" stroke="none"/>
+<circle class="series-b" cx="1070.0" cy="202.9" r="2.6" stroke="none"/>
+<text class="value series-b" x="1079.0" y="206.9" stroke="none">72.8%</text>
 <line class="series-b" x1="1094" y1="101.0" x2="1118" y2="101.0" stroke-width="2.0"/>
 <text class="legend" x="1124" y="105.0">file parity (steers the work)</text>
-<polyline class="series-c" points="78.0,252.2 78.0,248.9 148.9,242.3 219.7,231.8 290.6,229.9 361.4,229.0 432.3,226.2 503.1,224.7 574.0,223.8 644.9,219.0 715.7,216.7 786.6,212.9 857.4,186.8 928.3,180.2 999.1,153.2 1070.0,150.3" fill="none" stroke-width="2.0" stroke-linejoin="round" stroke-linecap="round"/>
+<polyline class="series-c" points="78.0,252.2 78.0,248.9 144.1,242.3 210.3,231.8 276.4,229.9 342.5,229.0 408.7,226.2 474.8,224.7 540.9,223.8 607.1,219.0 673.2,216.7 739.3,212.9 805.5,186.8 871.6,180.2 937.7,153.2 1003.9,150.3 1070.0,152.2" fill="none" stroke-width="2.0" stroke-linejoin="round" stroke-linecap="round"/>
 <circle class="series-c" cx="78.0" cy="252.2" r="2.6" stroke="none"/>
 <circle class="series-c" cx="78.0" cy="248.9" r="2.6" stroke="none"/>
-<circle class="series-c" cx="148.9" cy="242.3" r="2.6" stroke="none"/>
-<circle class="series-c" cx="219.7" cy="231.8" r="2.6" stroke="none"/>
-<circle class="series-c" cx="290.6" cy="229.9" r="2.6" stroke="none"/>
-<circle class="series-c" cx="361.4" cy="229.0" r="2.6" stroke="none"/>
-<circle class="series-c" cx="432.3" cy="226.2" r="2.6" stroke="none"/>
-<circle class="series-c" cx="503.1" cy="224.7" r="2.6" stroke="none"/>
-<circle class="series-c" cx="574.0" cy="223.8" r="2.6" stroke="none"/>
-<circle class="series-c" cx="644.9" cy="219.0" r="2.6" stroke="none"/>
-<circle class="series-c" cx="715.7" cy="216.7" r="2.6" stroke="none"/>
-<circle class="series-c" cx="786.6" cy="212.9" r="2.6" stroke="none"/>
-<circle class="series-c" cx="857.4" cy="186.8" r="2.6" stroke="none"/>
-<circle class="series-c" cx="928.3" cy="180.2" r="2.6" stroke="none"/>
-<circle class="series-c" cx="999.1" cy="153.2" r="2.6" stroke="none"/>
-<circle class="series-c" cx="1070.0" cy="150.3" r="2.6" stroke="none"/>
-<text class="value series-c" x="1079.0" y="154.3" stroke="none">83.9%</text>
+<circle class="series-c" cx="144.1" cy="242.3" r="2.6" stroke="none"/>
+<circle class="series-c" cx="210.3" cy="231.8" r="2.6" stroke="none"/>
+<circle class="series-c" cx="276.4" cy="229.9" r="2.6" stroke="none"/>
+<circle class="series-c" cx="342.5" cy="229.0" r="2.6" stroke="none"/>
+<circle class="series-c" cx="408.7" cy="226.2" r="2.6" stroke="none"/>
+<circle class="series-c" cx="474.8" cy="224.7" r="2.6" stroke="none"/>
+<circle class="series-c" cx="540.9" cy="223.8" r="2.6" stroke="none"/>
+<circle class="series-c" cx="607.1" cy="219.0" r="2.6" stroke="none"/>
+<circle class="series-c" cx="673.2" cy="216.7" r="2.6" stroke="none"/>
+<circle class="series-c" cx="739.3" cy="212.9" r="2.6" stroke="none"/>
+<circle class="series-c" cx="805.5" cy="186.8" r="2.6" stroke="none"/>
+<circle class="series-c" cx="871.6" cy="180.2" r="2.6" stroke="none"/>
+<circle class="series-c" cx="937.7" cy="153.2" r="2.6" stroke="none"/>
+<circle class="series-c" cx="1003.9" cy="150.3" r="2.6" stroke="none"/>
+<circle class="series-c" cx="1070.0" cy="152.2" r="2.6" stroke="none"/>
+<text class="value series-c" x="1079.0" y="156.2" stroke="none">83.5%</text>
 <line class="series-c" x1="1094" y1="122.0" x2="1118" y2="122.0" stroke-width="2.0"/>
 <text class="legend" x="1124" y="126.0">assertion parity</text>
 </svg>

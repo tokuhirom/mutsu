@@ -22,11 +22,34 @@
     "unresolved": []
   },
   "dist": "BuildToolchainRepo",
-  "files": [],
+  "files": [
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 9,
+        "plan": 9,
+        "secs": 0.22,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/00-use.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 9,
+        "plan": 9,
+        "secs": 11.71,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
   "load": {
     "BuildToolchainRepo::Lang::C": "ok",
     "BuildToolchainRepo::Lang::C::GCC": "ok",
-    "BuildToolchainRepo::Lang::CProbeHelpers": "SWEEP-TIMEOUT",
+    "BuildToolchainRepo::Lang::CProbeHelpers": "ok",
     "BuildToolchainRepo::Lang::CProbeResult": "ok",
     "BuildToolchainRepo::Lang::CRepo": "ok",
     "BuildToolchainRepo::OS": "ok",
@@ -37,10 +60,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-25",
+    "date": "2026-09-26",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "404ac78",
+    "mutsu_commit": "199f95e",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -51,12 +74,12 @@
     "index": "fez",
     "url": "https://360.zef.pm/B/UI/BUILDTOOLCHAINREPO/6c2535963f17ea75bac271ef1230c8c718e15527.tar.gz"
   },
-  "status": "blocked_load",
+  "status": "green",
   "totals": {
-    "baseline_assertions": 0,
-    "baseline_files": 0,
-    "mutsu_assertions": 0,
-    "parity_files": 0,
+    "baseline_assertions": 9,
+    "baseline_files": 1,
+    "mutsu_assertions": 9,
+    "parity_files": 1,
     "regressed_files": 0
   },
   "version": "0.0.2"

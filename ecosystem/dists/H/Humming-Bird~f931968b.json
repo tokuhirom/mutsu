@@ -50,23 +50,22 @@
   "dist": "Humming-Bird",
   "files": [
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "No such method 'path' for invocant of type 'Any'",
         "nok": 0,
-        "ok": 0,
+        "ok": 8,
         "plan": 8,
-        "secs": 0.65,
+        "secs": 0.67,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/01-basic.rakutest",
       "raku": {
         "nok": 0,
         "ok": 8,
         "plan": 8,
-        "secs": 2.16,
+        "secs": 2.31,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -78,7 +77,7 @@
         "nok": 0,
         "ok": 22,
         "plan": 22,
-        "secs": 0.56,
+        "secs": 0.67,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -88,7 +87,7 @@
         "nok": 0,
         "ok": 22,
         "plan": 22,
-        "secs": 1.2,
+        "secs": 1.48,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -100,7 +99,7 @@
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 0.6,
+        "secs": 0.58,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -110,30 +109,29 @@
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 0.91,
+        "secs": 0.93,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "No such method 'middlewares' for invocant of type 'Any'",
         "nok": 0,
-        "ok": 1,
+        "ok": 6,
         "plan": 6,
-        "secs": 0.72,
+        "secs": 0.85,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/04-middleware.rakutest",
       "raku": {
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 3.61,
+        "secs": 4.4,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -145,7 +143,7 @@
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 0.54,
+        "secs": 0.68,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -155,99 +153,95 @@
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 1.04,
+        "secs": 1.14,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "partial",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Is redirect location OK?",
-        "nok": 1,
-        "ok": 0,
+        "nok": 0,
+        "ok": 6,
         "plan": 6,
-        "secs": 0.52,
+        "secs": 0.58,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "pass"
       },
       "path": "t/06-redirect.rakutest",
       "raku": {
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 0.84,
+        "secs": 1.27,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "No such method 'write' for invocant of type 'Humming-Bird::Glue::Request'",
         "nok": 0,
-        "ok": 1,
+        "ok": 3,
         "plan": 3,
-        "secs": 0.49,
+        "secs": 0.55,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/07-advice.rakutest",
       "raku": {
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 0.83,
+        "secs": 0.91,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "partial",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Is route OK?",
-        "nok": 2,
-        "ok": 0,
+        "nok": 0,
+        "ok": 6,
         "plan": 6,
-        "secs": 0.57,
+        "secs": 0.56,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "pass"
       },
       "path": "t/08-static.rakutest",
       "raku": {
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 1.07,
+        "secs": 0.81,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "partial",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Is root response body OK?",
-        "nok": 1,
-        "ok": 4,
+        "nok": 0,
+        "ok": 9,
         "plan": 9,
-        "secs": 0.51,
+        "secs": 0.59,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "pass"
       },
       "path": "t/09-routers.rakutest",
       "raku": {
         "nok": 0,
         "ok": 9,
         "plan": 9,
-        "secs": 0.89,
+        "secs": 1.31,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -259,7 +253,7 @@
         "nok": 0,
         "ok": 7,
         "plan": 7,
-        "secs": 0.52,
+        "secs": 0.56,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -269,7 +263,7 @@
         "nok": 0,
         "ok": 7,
         "plan": 7,
-        "secs": 1.02,
+        "secs": 1.0,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -281,7 +275,7 @@
         "nok": 0,
         "ok": 12,
         "plan": 12,
-        "secs": 0.52,
+        "secs": 0.67,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -291,7 +285,7 @@
         "nok": 0,
         "ok": 12,
         "plan": 12,
-        "secs": 1.07,
+        "secs": 1.3,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -313,30 +307,29 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 1.01,
+        "secs": 1.21,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Plugin: Humming-Bird::Plugin::Config \u001b[32m✓\u001b[0m",
         "nok": 0,
-        "ok": 5,
+        "ok": 8,
         "plan": 8,
-        "secs": 0.73,
+        "secs": 0.68,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/13-plugin.rakutest",
       "raku": {
         "nok": 0,
         "ok": 8,
         "plan": 8,
-        "secs": 6.58,
+        "secs": 8.07,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -348,7 +341,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.54,
+        "secs": 0.63,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -358,7 +351,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 1.06,
+        "secs": 1.25,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -370,7 +363,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 0.98,
+        "secs": 1.01,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -380,7 +373,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 1.99,
+        "secs": 2.31,
         "skip": 2,
         "todo": 0,
         "verdict": "pass"
@@ -393,7 +386,7 @@
         "nok": 0,
         "ok": 5,
         "plan": 9,
-        "secs": 1.06,
+        "secs": 1.15,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -403,7 +396,7 @@
         "nok": 0,
         "ok": 9,
         "plan": 9,
-        "secs": 1.11,
+        "secs": 1.05,
         "skip": 9,
         "todo": 0,
         "verdict": "pass"
@@ -427,10 +420,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-25",
+    "date": "2026-09-26",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "404ac78",
+    "mutsu_commit": "199f95e",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -445,9 +438,9 @@
   "totals": {
     "baseline_assertions": 114,
     "baseline_files": 16,
-    "mutsu_assertions": 75,
-    "parity_files": 8,
-    "regressed_files": 8
+    "mutsu_assertions": 110,
+    "parity_files": 15,
+    "regressed_files": 1
   },
   "version": "4.1.0"
 }

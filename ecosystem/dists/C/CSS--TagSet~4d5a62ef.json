@@ -38,89 +38,19 @@
     "unresolved": []
   },
   "dist": "CSS::TagSet",
-  "files": [
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "Cannot convert value to native integer type 'uint8'",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 2.44,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/tag-set-pango.t",
-      "raku": {
-        "nok": 0,
-        "ok": 22,
-        "plan": 22,
-        "secs": 70.35,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "Cannot convert value to native integer type 'uint8'",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 2.35,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/tag-set-pdf.t",
-      "raku": {
-        "nok": 0,
-        "ok": 11,
-        "plan": 11,
-        "secs": 12.17,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "Cannot convert value to native integer type 'uint8'",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 2.45,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/tag-set-xhtml.t",
-      "raku": {
-        "nok": 0,
-        "ok": 12,
-        "plan": 12,
-        "secs": 7.85,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    }
-  ],
+  "files": [],
   "load": {
     "CSS::TagSet": "ok",
-    "CSS::TagSet::Pango": "ok",
-    "CSS::TagSet::TaggedPDF": "ok",
-    "CSS::TagSet::XHTML": "ok"
+    "CSS::TagSet::Pango": "raku_also_fails",
+    "CSS::TagSet::TaggedPDF": "Could not instantiate role 'CSS::TagSet' because it died with X::Comp::BeginTime; exception details:",
+    "CSS::TagSet::XHTML": "Could not instantiate role 'CSS::TagSet' because it died with X::Comp::BeginTime; exception details:"
   },
   "measured": {
     "attempts": 3,
     "date": "2026-09-26",
     "harness": 2,
-    "host": "linux-x86_64",
-    "mutsu_commit": "71239304",
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "199f95e",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -131,13 +61,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/C/SS/CSS_TAGSET/095dbd2cdc57ece26ec7cdf31726aabd1d0a88df.tar.gz"
   },
-  "status": "red",
+  "status": "blocked_load",
   "totals": {
-    "baseline_assertions": 45,
-    "baseline_files": 3,
+    "baseline_assertions": 0,
+    "baseline_files": 0,
     "mutsu_assertions": 0,
     "parity_files": 0,
-    "regressed_files": 3
+    "regressed_files": 0
   },
   "version": "0.1.4"
 }

@@ -26,7 +26,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.66,
+        "secs": 0.67,
         "skip": 1,
         "todo": 0,
         "verdict": "pass"
@@ -48,7 +48,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 2.72,
+        "secs": 2.82,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -61,7 +61,7 @@
         "nok": 1,
         "ok": 33,
         "plan": 34,
-        "secs": 0.41,
+        "secs": 0.39,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -71,7 +71,7 @@
         "nok": 0,
         "ok": 34,
         "plan": 34,
-        "secs": 1.25,
+        "secs": 0.9,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -80,11 +80,11 @@
     {
       "cmp": "partial",
       "mutsu": {
-        "first_failure": "Level 1 Examples",
-        "nok": 4,
-        "ok": 0,
+        "first_failure": "Level 2 Examples",
+        "nok": 3,
+        "ok": 1,
         "plan": 4,
-        "secs": 4.84,
+        "secs": 1.46,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -94,7 +94,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 3.74,
+        "secs": 3.38,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -103,11 +103,11 @@
     {
       "cmp": "partial",
       "mutsu": {
-        "first_failure": "3.2.1 Variable Expansion",
-        "nok": 9,
-        "ok": 0,
+        "first_failure": "3.2.2 Simple String Expansion",
+        "nok": 7,
+        "ok": 2,
         "plan": 9,
-        "secs": 7.21,
+        "secs": 2.24,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -117,7 +117,7 @@
         "nok": 0,
         "ok": 9,
         "plan": 9,
-        "secs": 1.04,
+        "secs": 1.4,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -127,10 +127,10 @@
       "cmp": "partial",
       "mutsu": {
         "first_failure": "Additional Examples 1",
-        "nok": 3,
-        "ok": 1,
+        "nok": 2,
+        "ok": 2,
         "plan": 4,
-        "secs": 1.72,
+        "secs": 0.88,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -140,30 +140,29 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 1.02,
+        "secs": 1.03,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Unknown function: encoder",
         "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 0.18,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.19,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/060-synopsis.t",
       "raku": {
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.57,
+        "secs": 0.62,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -175,7 +174,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 0.22,
+        "secs": 0.21,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -185,7 +184,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 0.63,
+        "secs": 0.78,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -197,10 +196,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-25",
+    "date": "2026-09-26",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "404ac78",
+    "mutsu_commit": "199f95e",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -215,9 +214,9 @@
   "totals": {
     "baseline_assertions": 56,
     "baseline_files": 8,
-    "mutsu_assertions": 38,
-    "parity_files": 3,
-    "regressed_files": 5
+    "mutsu_assertions": 43,
+    "parity_files": 4,
+    "regressed_files": 4
   },
   "version": "0.0.11"
 }
