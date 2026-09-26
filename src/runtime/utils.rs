@@ -598,6 +598,7 @@ pub(crate) fn version_cmp(
     }
 }
 
+mod char_cursor;
 mod coerce_containers;
 mod compare;
 mod errors;
@@ -616,6 +617,7 @@ mod str_scan;
 mod type_constraints;
 mod type_misc;
 
+pub(crate) use char_cursor::*;
 pub(crate) use coerce_containers::*;
 pub(crate) use compare::*;
 pub(crate) use errors::*;

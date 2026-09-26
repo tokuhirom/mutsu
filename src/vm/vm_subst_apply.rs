@@ -8,10 +8,12 @@ impl Interpreter {
     /// Create a Match object for a substitution match, including its positional
     /// (`$0`, `$1`, ...) and named (`$<name>`) captures, so the post-`s///` `$/`
     /// exposes them like a plain `m//` match does.
-    // Cost: O(n), n = chars of `text`: a fresh MatchTarget (copy of the string
-    // and its chars) per Match. Rakudo: O(1) -- see #9143.
+    /// Every Match of one substitution shares `target`, the subject built once
+    /// per call: a fresh target per Match copied the subject and its chars for
+    /// every match, and `$/` kept all r copies alive (#9143).
+    // Cost: O(captures), a refcount bump of the shared `target`.
     pub(super) fn make_subst_match(
-        text: &str,
+        target: &crate::runtime::MatchTarget,
         start: usize,
         end: usize,
         caps: &SubstMatchCaps,
@@ -21,7 +23,7 @@ impl Interpreter {
             end as i64,
             &caps.positional,
             &caps.named,
-            crate::runtime::MatchTarget::new(text),
+            target.clone(),
         )
     }
 
@@ -41,7 +43,8 @@ impl Interpreter {
             for &n in &nth_list {
                 if n <= all_matches.len() {
                     let range = all_matches[n - 1];
-                    if !selected.contains(&range) {
+                    // The list is validated ascending, so a repeat is adjacent.
+                    if selected.last() != Some(&range) {
                         selected.push(range);
                     }
                 }
@@ -155,8 +158,8 @@ impl Interpreter {
         Ok(out)
     }
 
-    // Cost: O(n*r), n = chars of `text`, r = ranges: `char_idx_to_byte` rescans
-    // from the start for both ends of every range. Rakudo: O(n + r) -- see #9143.
+    // Cost: O(n + r) plus the replacement text, n = chars of `text`, r = ranges
+    // (ascending, converted to bytes by one forward cursor).
     pub(super) fn apply_substitutions(
         text: &str,
         ranges: &[(usize, usize)],
@@ -166,11 +169,12 @@ impl Interpreter {
         samemark: bool,
         samespace: bool,
     ) -> String {
-        let mut out = String::new();
+        let mut out = String::with_capacity(text.len());
         let mut prev_end_b = 0usize;
+        let mut cursor = runtime::CharByteCursor::new(text);
         for (start, end) in ranges {
-            let start_b = runtime::char_idx_to_byte(text, *start);
-            let end_b = runtime::char_idx_to_byte(text, *end);
+            let start_b = cursor.byte_of(*start);
+            let end_b = cursor.byte_of(*end);
             out.push_str(&text[prev_end_b..start_b]);
             let matched_text = &text[start_b..end_b];
             let repl = apply_subst_case_transforms(
@@ -194,12 +198,12 @@ impl Interpreter {
     /// match -- which is what makes `$0`, `$<name>`, `%h{$/}` and `{ ... }`
     /// blocks see the right capture values.
     #[allow(clippy::too_many_arguments)]
-    // Cost: O(n*r) plus one replacement evaluation per range, n = chars of
-    // `text`, r = ranges: per-range `char_idx_to_byte` rescans, plus a per-match
-    // MatchTarget when the replacement reads `$/`. Rakudo: O(n + r) -- see #9143.
+    // Cost: O(n + r) plus one replacement evaluation per range, n = chars of
+    // `text`, r = ranges; every per-match `$/` shares `target`.
     pub(super) fn apply_substitutions_dynamic(
         &mut self,
         text: &str,
+        target: &crate::runtime::MatchTarget,
         ranges: &[(usize, usize)],
         body: &[Stmt],
         cache_id: u64,
@@ -218,13 +222,14 @@ impl Interpreter {
             })
             .collect();
 
-        let mut out = String::new();
+        let mut out = String::with_capacity(text.len());
         let mut prev_end_b = 0usize;
+        let mut cursor = runtime::CharByteCursor::new(text);
         let empty = SubstMatchCaps::default();
         let mut result = Ok(());
         for (i, (start, end)) in ranges.iter().enumerate() {
-            let start_b = runtime::char_idx_to_byte(text, *start);
-            let end_b = runtime::char_idx_to_byte(text, *end);
+            let start_b = cursor.byte_of(*start);
+            let end_b = cursor.byte_of(*end);
             out.push_str(&text[prev_end_b..start_b]);
             let matched_text = &text[start_b..end_b];
 
@@ -238,7 +243,7 @@ impl Interpreter {
                     // replacement's *string* half reads through `$/`; one written
                     // inside an embedded `{ ... }` block is an ordinary variable
                     // lookup, so the numbered captures are also published by name.
-                    let match_obj = Self::make_subst_match(text, *start, *end, caps);
+                    let match_obj = Self::make_subst_match(target, *start, *end, caps);
                     self.env_mut().insert("/".to_string(), match_obj);
                     for (n, (name, _)) in saved_caps.iter().enumerate() {
                         match caps.positional.get(n) {
