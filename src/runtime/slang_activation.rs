@@ -101,9 +101,45 @@ fn handle_instance(class: &str, kind: &str, roles: Vec<Value>) -> Value {
     Value::make_instance(crate::symbol::Symbol::intern(class), attrs)
 }
 
+/// A literal `use` argument (`use L10N::BG 'no-slangification'`) carried to the
+/// activation thread. Plain data rather than a `Value`: the value is built on
+/// the activation thread, whose interpreter owns it.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) enum SlangUseArg {
+    Str(String),
+    Int(i64),
+    Num(f64),
+    Bool(bool),
+}
+
+impl SlangUseArg {
+    /// The argument for a literal `value`, or `None` when it is not a plain
+    /// string, number or boolean.
+    pub(crate) fn from_literal(value: &Value) -> Option<Self> {
+        Some(match value.view() {
+            ValueView::Str(s) => SlangUseArg::Str(s.to_string()),
+            ValueView::Int(n) => SlangUseArg::Int(n),
+            ValueView::Num(f) => SlangUseArg::Num(f),
+            ValueView::Bool(b) => SlangUseArg::Bool(b),
+            _ => return None,
+        })
+    }
+
+    fn into_value(self) -> Value {
+        match self {
+            SlangUseArg::Str(s) => Value::str(s),
+            SlangUseArg::Int(n) => Value::int(n),
+            SlangUseArg::Num(f) => Value::num(f),
+            SlangUseArg::Bool(b) => Value::truth(b),
+        }
+    }
+}
+
 /// Run `use <module>` in a fresh interpreter on a fresh thread with `$*LANG`
 /// bound, and return the grammar-rule names its slang registration overrode.
-/// `lib_paths` is the parser's current module search path list.
+/// `lib_paths` is the parser's current module search path list, and `use_args`
+/// the `use` statement's literal arguments (`None` when it has none, or when
+/// one of them is not a literal).
 ///
 /// Spawned via `spawn_user_thread` (not a raw `std::thread::Builder::spawn`):
 /// this closure builds an `Interpreter` and runs a module's mainline, i.e. it
@@ -117,6 +153,7 @@ fn handle_instance(class: &str, kind: &str, roles: Vec<Value>) -> Value {
 pub(crate) fn run_slang_activation(
     module: String,
     lib_paths: Vec<String>,
+    use_args: Option<Vec<SlangUseArg>>,
 ) -> Result<SlangActivation, String> {
     let handle = crate::runtime::builtins_system::try_spawn_user_thread(
         ACTIVATION_THREAD_NAME,
@@ -127,6 +164,14 @@ pub(crate) fn run_slang_activation(
                 interp.add_lib_path(path);
             }
             interp.env.insert("*LANG".to_string(), comp_lang_instance());
+            // The `use` statement's literal arguments reach the module's
+            // `sub EXPORT`, as they do at run time: an EXPORT that declines to
+            // slang when given one (`use L10N::BG 'no-slangification'`) must not
+            // slang the importing unit here either (#9550).
+            if let Some(args) = use_args {
+                interp.pending_use_export_args =
+                    Some(args.into_iter().map(SlangUseArg::into_value).collect());
+            }
             interp
                 .use_module(&module)
                 .map_err(|e| e.message.to_string())?;
