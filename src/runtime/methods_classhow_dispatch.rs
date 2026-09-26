@@ -1154,11 +1154,13 @@ impl Interpreter {
                         )
                         .filter(|defs| defs.iter().any(|d| d.is_multi))
                 })();
-                // A plain block passed to `^add_method` receives the invocant
-                // as its first positional argument. Unlike a `method` literal,
-                // that parameter is visible in the block's signature
-                // (`A.^add_method('m', -> $x {...})` has `($x)`, not an
-                // implicit `self` plus `$x`). Turn that first block parameter
+                // A plain block -- or a `sub` -- passed to `^add_method`
+                // receives the invocant as its first positional argument.
+                // Unlike a `method` literal, that parameter is visible in the
+                // code's signature (`A.^add_method('m', -> $x {...})` and
+                // `sub ($x) {...}` have `($x)`, not an implicit `self` plus
+                // `$x`). PDF::COS::Tie installs every entry accessor as
+                // `sub (\obj) is rw {...}` (#9479). Turn that first block parameter
                 // into the same body-local alias as a named method invocant:
                 // the method binder owns the receiver, while `$x` remains
                 // available to the recompiled body. Keeping it in
@@ -1166,11 +1168,25 @@ impl Interpreter {
                 // binder consume it without installing the block's `$x`
                 // binding. Ordinary method literals retain the existing
                 // implicit-invocant filtering.
-                let is_plain_block = sub_data.is_bare_block
-                    || sub_data
-                        .compiled_code
-                        .as_ref()
-                        .is_some_and(|code| code.is_pointy_block);
+                // A method -- a `method`/`submethod` literal, a `^find_method`
+                // carrier, or any code declaring an invocant parameter -- keeps
+                // the implicit-invocant handling; every other code object takes
+                // the invocant positionally. The positional form works by
+                // prepending an alias to the code's AST body (below), so a
+                // DECLARED routine (`&named-sub`, whose bytecode lives in
+                // `compiled_routine` with no AST) cannot take it yet.
+                // TODO: bind a declared routine's first parameter to the
+                // invocant at dispatch instead of rewriting the body, so
+                // `^add_method('m', &named-sub)` works too (#9549).
+                let is_method_code = matches!(
+                    sub_data
+                        .env
+                        .get_sym(crate::symbol::well_known::callable_type())
+                        .map(Value::view),
+                    Some(ValueView::Str(kind)) if matches!(kind.as_str(), "Method" | "Submethod")
+                ) || sub_data.env.get("__mutsu_lookup_class").is_some()
+                    || sub_data.param_defs.iter().any(|pd| pd.is_invocant);
+                let is_plain_block = !is_method_code && sub_data.compiled_routine.is_none();
                 let block_invocant: Option<String> = is_plain_block
                     .then(|| {
                         sub_data

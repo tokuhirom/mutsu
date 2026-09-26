@@ -19,6 +19,11 @@ pub(crate) struct InfixTermOp {
 }
 
 pub(crate) fn parse_infix_term_op(input: &str) -> Option<InfixTermOp> {
+    // A block's `}` ending the previous line ended the statement: an
+    // operator spelled here starts a new one (`parser::stmt_ending_brace`).
+    if crate::parser::stmt_ending_brace::infix_barred_by_stmt_ending_brace(input) {
+        return None;
+    }
     let (modifier, rest) = match input.as_bytes().first()? {
         m @ (b'R' | b'X' | b'Z') => (Some(*m as char), &input[1..]),
         _ => (None, input),

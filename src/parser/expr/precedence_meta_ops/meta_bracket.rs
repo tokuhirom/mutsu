@@ -52,6 +52,11 @@ pub(crate) fn block_newline_terminates(
 }
 
 pub(crate) fn parse_infix_func_op(input: &str) -> Option<(Option<String>, String, usize)> {
+    // A block's `}` ending the previous line ended the statement: an
+    // operator spelled here starts a new one (`parser::stmt_ending_brace`).
+    if crate::parser::stmt_ending_brace::infix_barred_by_stmt_ending_brace(input) {
+        return None;
+    }
     let (modifier, bracket_start) = if input.starts_with("R[&") {
         (Some("R".to_string()), 1)
     } else if input.starts_with("X[&") {
@@ -361,6 +366,11 @@ fn cannot_meta_error(
 
 /// Parse meta operator: R-, X+, Zcmp, R[+], Z[~], R[R[R-]], RR[R-], etc.
 pub(crate) fn parse_meta_op(input: &str) -> Option<(String, String, usize)> {
+    // A block's `}` ending the previous line ended the statement: an
+    // operator spelled here starts a new one (`parser::stmt_ending_brace`).
+    if crate::parser::stmt_ending_brace::infix_barred_by_stmt_ending_brace(input) {
+        return None;
+    }
     let meta = if input.starts_with('R') {
         "R"
     } else if input.starts_with('X') {
@@ -523,6 +533,11 @@ pub(crate) enum BracketInfix {
 }
 
 pub(crate) fn parse_bracket_infix_op(input: &str) -> Option<BracketInfix> {
+    // A block's `}` ending the previous line ended the statement: an
+    // operator spelled here starts a new one (`parser::stmt_ending_brace`).
+    if crate::parser::stmt_ending_brace::infix_barred_by_stmt_ending_brace(input) {
+        return None;
+    }
     if !input.starts_with('[') {
         return None;
     }

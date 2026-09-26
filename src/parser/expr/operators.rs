@@ -186,6 +186,11 @@ impl MultiplicativeOp {
 
 /// Parse only the pure concatenation operator (~), not x/xx/o.
 pub(super) fn parse_pure_concat_op(r: &str) -> Option<(ConcatOp, usize)> {
+    // A block's `}` ending the previous line ended the statement: an
+    // operator spelled here starts a new one (`parser::stmt_ending_brace`).
+    if crate::parser::stmt_ending_brace::infix_barred_by_stmt_ending_brace(r) {
+        return None;
+    }
     if r.starts_with('~')
         && !r.starts_with("~~")
         && !r.starts_with("~=")
@@ -201,6 +206,11 @@ pub(super) fn parse_pure_concat_op(r: &str) -> Option<(ConcatOp, usize)> {
 
 /// Parse replication operators (x, xx, o) — higher precedence than ~.
 pub(super) fn parse_replication_op(r: &str) -> Option<(ConcatOp, usize)> {
+    // A block's `}` ending the previous line ended the statement: an
+    // operator spelled here starts a new one (`parser::stmt_ending_brace`).
+    if crate::parser::stmt_ending_brace::infix_barred_by_stmt_ending_brace(r) {
+        return None;
+    }
     if let Some((canonical, len)) = crate::parser::stmt::simple::l10n_match_infix(r) {
         return match canonical.as_str() {
             "x" => Some((ConcatOp::Repeat, len)),
@@ -229,6 +239,11 @@ pub(super) fn parse_replication_op(r: &str) -> Option<(ConcatOp, usize)> {
 }
 
 pub(super) fn parse_additive_op(r: &str) -> Option<(AdditiveOp, usize)> {
+    // A block's `}` ending the previous line ended the statement: an
+    // operator spelled here starts a new one (`parser::stmt_ending_brace`).
+    if crate::parser::stmt_ending_brace::infix_barred_by_stmt_ending_brace(r) {
+        return None;
+    }
     // Unicode: − (U+2212 MINUS SIGN) subtraction
     if r.starts_with('\u{2212}') {
         return Some((AdditiveOp::Sub, '\u{2212}'.len_utf8()));
@@ -281,6 +296,11 @@ fn word_infix_at(r: &str, kw: &str) -> bool {
 }
 
 pub(super) fn parse_multiplicative_op(r: &str) -> Option<(MultiplicativeOp, usize)> {
+    // A block's `}` ending the previous line ended the statement: an
+    // operator spelled here starts a new one (`parser::stmt_ending_brace`).
+    if crate::parser::stmt_ending_brace::infix_barred_by_stmt_ending_brace(r) {
+        return None;
+    }
     if let Some((canonical, len)) = crate::parser::stmt::simple::l10n_match_infix(r) {
         return match canonical.as_str() {
             "div" => Some((MultiplicativeOp::IntDiv, len)),
@@ -589,6 +609,11 @@ pub(super) fn parse_prefix_unary_op(input: &str) -> Option<(PrefixUnaryOp, usize
 }
 
 pub(super) fn parse_feed_op(r: &str) -> Option<(FeedOp, usize)> {
+    // A block's `}` ending the previous line ended the statement: an
+    // operator spelled here starts a new one (`parser::stmt_ending_brace`).
+    if crate::parser::stmt_ending_brace::infix_barred_by_stmt_ending_brace(r) {
+        return None;
+    }
     if r.starts_with("==>>") {
         Some((FeedOp::AppendRight, 4))
     } else if r.starts_with("<<==") {
@@ -613,6 +638,11 @@ pub(super) fn parse_postfix_update_op(input: &str) -> Option<(PostfixUpdateOp, u
 }
 
 pub(super) fn parse_junctive_op(input: &str) -> Option<(JunctiveOp, usize)> {
+    // A block's `}` ending the previous line ended the statement: an
+    // operator spelled here starts a new one (`parser::stmt_ending_brace`).
+    if crate::parser::stmt_ending_brace::infix_barred_by_stmt_ending_brace(input) {
+        return None;
+    }
     // Leave the boolean-bitwise compound-assignment forms (`?|=`, `?&=`, `?^=`)
     // for the assignment parser so an indexed lvalue reaches it as the operand.
     if input.starts_with("?|") && !input.starts_with("?|=") {
@@ -662,6 +692,11 @@ pub(super) fn parse_junction_infix_op_after(
     input: &str,
     glued_left: bool,
 ) -> Option<(JunctionInfixOp, usize)> {
+    // A block's `}` ending the previous line ended the statement: an
+    // operator spelled here starts a new one (`parser::stmt_ending_brace`).
+    if crate::parser::stmt_ending_brace::infix_barred_by_stmt_ending_brace(input) {
+        return None;
+    }
     // | but not || or |=
     if input.starts_with('|') && !input.starts_with("||") && !input.starts_with("|=") {
         Some((JunctionInfixOp::Any, 1))
@@ -710,6 +745,11 @@ fn starts_with_caret_flipflop(input: &str) -> bool {
 }
 
 pub(super) fn parse_or_or_op(input: &str) -> Option<(LogicalOp, usize)> {
+    // A block's `}` ending the previous line ended the statement: an
+    // operator spelled here starts a new one (`parser::stmt_ending_brace`).
+    if crate::parser::stmt_ending_brace::infix_barred_by_stmt_ending_brace(input) {
+        return None;
+    }
     if let Some((canonical, len)) = crate::parser::stmt::simple::l10n_match_infix(input) {
         return match canonical.as_str() {
             "min" => Some((LogicalOp::Min, len)),
@@ -742,6 +782,11 @@ pub(super) fn parse_or_or_op(input: &str) -> Option<(LogicalOp, usize)> {
 }
 
 pub(super) fn parse_and_and_op(input: &str) -> Option<(LogicalOp, usize)> {
+    // A block's `}` ending the previous line ended the statement: an
+    // operator spelled here starts a new one (`parser::stmt_ending_brace`).
+    if crate::parser::stmt_ending_brace::infix_barred_by_stmt_ending_brace(input) {
+        return None;
+    }
     if input.starts_with("&&") && !input.starts_with("&&=") {
         Some((LogicalOp::AndAnd, 2))
     } else {
@@ -752,6 +797,11 @@ pub(super) fn parse_and_and_op(input: &str) -> Option<(LogicalOp, usize)> {
 /// Parse negated logical operator: `!||`, `!^^`, `!&&`
 /// Returns (inner_op, total_len) where total_len includes the `!` prefix.
 pub(super) fn parse_negated_logical_op(input: &str) -> Option<(LogicalOp, usize)> {
+    // A block's `}` ending the previous line ended the statement: an
+    // operator spelled here starts a new one (`parser::stmt_ending_brace`).
+    if crate::parser::stmt_ending_brace::infix_barred_by_stmt_ending_brace(input) {
+        return None;
+    }
     let inner = input.strip_prefix('!')?;
     if let Some((op, len)) = parse_or_or_op(inner) {
         // Only negate ||, ^^; not // or min/max
@@ -766,6 +816,11 @@ pub(super) fn parse_negated_logical_op(input: &str) -> Option<(LogicalOp, usize)
 }
 
 pub(in crate::parser) fn parse_word_logical_op(input: &str) -> Option<(LogicalOp, usize)> {
+    // A block's `}` ending the previous line ended the statement: an
+    // operator spelled here starts a new one (`parser::stmt_ending_brace`).
+    if crate::parser::stmt_ending_brace::infix_barred_by_stmt_ending_brace(input) {
+        return None;
+    }
     if let Some((canonical, len)) = crate::parser::stmt::simple::l10n_match_infix(input) {
         return match canonical.as_str() {
             "or" => Some((LogicalOp::Or, len)),

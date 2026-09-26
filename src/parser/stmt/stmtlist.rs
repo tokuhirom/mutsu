@@ -82,6 +82,9 @@ pub(crate) fn block_inner(input: &str) -> PResult<'_, Vec<Stmt>> {
     let (input, _) = ws(input)?;
     let (input, _) =
         parse_char(input, '}').map_err(|_| PError::expected_at(MISSING_BLOCK, input))?;
+    // A block's `}` at end of line terminates the statement: whatever the next
+    // line starts with is a new statement, not an infix (`parser::stmt_ending_brace`).
+    crate::parser::stmt_ending_brace::mark_stmt_ending_brace(input);
     Ok((input, stmts))
 }
 
