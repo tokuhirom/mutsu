@@ -25,16 +25,30 @@ mod broadcast;
 use super::SupplyEvent;
 use crate::value::waker::ReactWaker;
 use broadcast::{Broadcast, Signal, SubQueue, WakerSet, notify_all};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex, Weak};
+
+/// Process-wide send sequence shared by every channel-backed source.
+///
+/// Each event is stamped when it is sent, so a drive loop polling several
+/// receivers can deliver their events in true send order instead of receiver
+/// index order (issue #9611: a `whenever $p.start { done }` firing before a
+/// `$p.stdout` chunk that had been sent earlier dropped that chunk). If send A
+/// happens-before send B, `seq(A) < seq(B)`; concurrent sends are unordered,
+/// and either order is correct for them.
+static SEND_SEQ: AtomicU64 = AtomicU64::new(1);
+
+fn next_send_seq() -> u64 {
+    SEND_SEQ.fetch_add(1, Ordering::Relaxed)
+}
 
 /// Sending half. Cloneable like `mpsc::Sender`; every clone shares the
 /// receiving end's waker set. Dropping the last live clone also pokes the
 /// wakers so a drive loop notices the disconnect promptly.
 #[derive(Debug)]
 pub(crate) struct SupplySender {
-    tx: mpsc::Sender<SupplyEvent>,
+    tx: mpsc::Sender<(u64, SupplyEvent)>,
     wakers: WakerSet,
     closed: Arc<AtomicBool>,
     broadcast: Weak<Broadcast>,
@@ -68,7 +82,11 @@ impl SupplySender {
         if broadcast.as_ref().is_some_and(|b| b.all_taps_gone()) {
             return Err(mpsc::SendError(event));
         }
-        self.tx.send(event)?;
+        // Stamped immediately before the send, so a sequence is never
+        // visible out of happens-before order.
+        self.tx
+            .send((next_send_seq(), event))
+            .map_err(|mpsc::SendError((_, event))| mpsc::SendError(event))?;
         if let Some(broadcast) = broadcast {
             notify_all(&self.wakers, &broadcast.signal);
         }
@@ -181,11 +199,18 @@ impl SupplyReceiver {
         self.queue.get_or_init(|| self.broadcast.subscribe())
     }
 
-    fn pop(&self) -> Option<SupplyEvent> {
+    fn pop(&self) -> Option<(u64, SupplyEvent)> {
         self.own_queue().events.lock().ok()?.pop_front()
     }
 
+    // Cost: O(k), k = events pending upstream (distributed into every tap).
     pub(crate) fn try_recv(&self) -> Result<SupplyEvent, mpsc::TryRecvError> {
+        self.try_recv_seq().map(|(_, event)| event)
+    }
+
+    /// [`Self::try_recv`], also returning the event's global send sequence.
+    // Cost: O(k), k = events pending upstream (distributed into every tap).
+    pub(crate) fn try_recv_seq(&self) -> Result<(u64, SupplyEvent), mpsc::TryRecvError> {
         self.own_queue();
         self.broadcast.pump();
         if let Some(event) = self.pop() {
@@ -200,6 +225,16 @@ impl SupplyReceiver {
             return Err(mpsc::TryRecvError::Disconnected);
         }
         Err(mpsc::TryRecvError::Empty)
+    }
+
+    /// The send sequence of the next event this handle would receive, without
+    /// consuming it. Waits for a concurrent pumper, so every event whose send
+    /// happened-before this call is accounted for.
+    // Cost: O(k), k = events pending upstream (distributed into every tap).
+    pub(crate) fn peek_seq(&self) -> Option<u64> {
+        let queue = self.own_queue();
+        self.broadcast.pump_blocking();
+        queue.events.lock().ok()?.front().map(|(seq, _)| *seq)
     }
 
     /// Bounded slice of a blocking wait. Keeping each nap short means a
@@ -469,6 +504,28 @@ mod tests {
         let _ = template.subscribe();
         drop(template);
         assert!(tx.is_retired());
+    }
+
+    #[test]
+    fn events_carry_a_send_sequence_ordered_across_channels() {
+        // Issue #9611: a drive loop merging several receivers orders their
+        // events by this sequence, not by receiver index.
+        let (tx_a, a) = supply_event_channel();
+        let (tx_b, b) = supply_event_channel();
+        emit(&tx_a, 1);
+        emit(&tx_b, 2);
+        emit(&tx_a, 3);
+        let a1 = a.peek_seq().unwrap();
+        let b1 = b.peek_seq().unwrap();
+        assert!(a1 < b1);
+        // Peeking does not consume.
+        assert_eq!(a.peek_seq(), Some(a1));
+        let (s1, _) = a.try_recv_seq().unwrap();
+        assert_eq!(s1, a1);
+        let a2 = a.peek_seq().unwrap();
+        assert!(b1 < a2);
+        assert_eq!(drain(&a), vec![3]);
+        assert_eq!(a.peek_seq(), None);
     }
 
     #[test]

@@ -10,14 +10,14 @@
 //! react and lost events when `Supplier.done` reset the registry state before
 //! the loop's next poll (roast S17: `react whenever $s { }` hung forever when
 //! `$s.done` raced the poll).
+use super::vm_react_receiver::ReceiverFlow;
 use super::*;
 use crate::runtime::native_methods::{
-    PromiseCombinator, SupplyEvent, supplier_sink_unregister, supplier_sinks_register_batch,
+    PromiseCombinator, supplier_sink_unregister, supplier_sinks_register_batch,
     take_promise_combinator_sources,
 };
 use crate::runtime::react_whenever::{ReactSubscription, SupplyDrivePolicy};
 use crate::value::waker::{ReactWaker, SinkEvent};
-use std::sync::mpsc;
 use std::time::Duration;
 
 /// Idle-wait cap for one drive-loop round. Every source now wakes the loop
@@ -34,7 +34,7 @@ impl Interpreter {
     /// may synchronously emit more. Sets `*progressed` when at least one
     /// event was dispatched. Returns `Ok(true)` if a consumer raised react
     /// `done`; propagates `Err` for an unhandled supplier `quit`.
-    fn dispatch_waker_events(
+    pub(super) fn dispatch_waker_events(
         &mut self,
         waker: &ReactWaker,
         react_subs: &mut [ReactSubscription],
@@ -380,7 +380,7 @@ impl Interpreter {
 
     /// Is this value one of the 5-element `[source, body, [LAST…], [QUIT…], id]`
     /// arrays `whenever` registers, rather than a value a supply body emitted?
-    fn is_whenever_subscription_marker(value: &Value) -> bool {
+    pub(super) fn is_whenever_subscription_marker(value: &Value) -> bool {
         let ValueView::Array(items, ..) = value.view() else {
             return false;
         };
@@ -720,159 +720,21 @@ impl Interpreter {
                     continue;
                 }
                 // Poll the receiver without blocking: the idle wait at the end
-                // of the round provides the pacing. The `Result` is owned, so
-                // the borrow of the receiver ends on this line — freeing
-                // `react_subs` for the pre-drain below.
-                let poll = react_subs[si].receiver.as_ref().map(|r| r.try_recv());
-                // Raku ordering guarantee: values `emit`ted into a supplier
-                // *before* the event this receiver just delivered are causally
-                // earlier and must reach their `whenever`s first — even when that
-                // event's callback ends the react (e.g. `whenever start { emit … }`
-                // finishing while a sibling `whenever` calls `done`, so the sibling
-                // supplier's already-emitted values would otherwise be lost). Drain
-                // the waker queue before running this receiver's consumer, so
-                // their pending values are delivered in source order.
-                if matches!(poll, Some(Ok(SupplyEvent::Emit(_))))
-                    && matches!(policy, SupplyDrivePolicy::React)
-                    && self.dispatch_waker_events(waker, react_subs, &mut progressed, &policy)?
-                {
-                    break 'react_loop;
-                }
-                let sub = &mut react_subs[si];
-                match poll {
-                    Some(Ok(SupplyEvent::Emit(value))) => {
-                        progressed = true;
-                        match &mut policy {
-                            SupplyDrivePolicy::Promise {
-                                promise,
-                                last_value,
-                                ..
-                            } => {
-                                // Capture values the whenever block `emit`s so a
-                                // later `done` resolves the promise with the last one.
-                                self.supply_emit_buffer.push(Vec::new());
-                                let cb_result =
-                                    self.call_react_callback(&sub.callback.clone(), vec![value]);
-                                let emitted = self.supply_emit_buffer.pop().unwrap_or_default();
-                                for item in emitted {
-                                    // A `whenever` nested in this body registered
-                                    // its subscription marker into the same
-                                    // frame. It is not a value the supply
-                                    // emitted: hand it to the adoption queue
-                                    // instead of letting it become the promise's
-                                    // result.
-                                    if Self::is_whenever_subscription_marker(&item) {
-                                        self.pending_react_subscriptions.push(item);
-                                    } else {
-                                        *last_value = item;
-                                    }
-                                }
-                                if promise.is_resolved() {
-                                    return Ok(());
-                                }
-                                if let Err(err) = cb_result {
-                                    // `done`/`last` inside the whenever complete the
-                                    // supply: keep the promise with the last emitted
-                                    // value immediately rather than spinning to the
-                                    // deadline.
-                                    if err.is_react_done()
-                                        || err.is_last()
-                                        || err.is_supply_body_done()
-                                    {
-                                        promise.keep(
-                                            last_value.clone(),
-                                            String::new(),
-                                            String::new(),
-                                        );
-                                        return Ok(());
-                                    }
-                                    // `next`/`redo` are loop control, not completion.
-                                    if !err.is_next() && !err.is_redo() {
-                                        // A `die` quits the supply: break with the cause.
-                                        let cause =
-                                            err.exception.as_deref().cloned().unwrap_or_else(
-                                                || Value::str(err.message.to_string()),
-                                            );
-                                        promise.break_with(cause, String::new(), String::new());
-                                        return Ok(());
-                                    }
-                                }
-                            }
-                            SupplyDrivePolicy::React => {
-                                if sub.is_lines {
-                                    let chunk = value.to_string_value();
-                                    sub.line_buffer.push_str(&chunk);
-                                    while let Some(pos) = sub.line_buffer.find('\n') {
-                                        let line = sub.line_buffer[..pos].to_string();
-                                        sub.line_buffer = sub.line_buffer[pos + 1..].to_string();
-                                        if self.run_react_consumer(sub, Value::str(line))? {
-                                            break 'react_loop;
-                                        }
-                                        if sub.done {
-                                            break;
-                                        }
-                                    }
-                                } else if self.run_react_consumer(sub, value)? {
-                                    break 'react_loop;
-                                }
-                            }
-                        }
-                    }
-                    Some(Ok(SupplyEvent::Done)) => {
-                        progressed = true;
-                        if matches!(policy, SupplyDrivePolicy::Promise { .. }) {
-                            // Inner supply done: the promise resolves through the
-                            // supplier registry, not the channel close — just
-                            // retire this receiver.
-                            sub.done = true;
-                        } else {
-                            if sub.is_lines && !sub.line_buffer.is_empty() {
-                                let remaining = std::mem::take(&mut sub.line_buffer);
-                                match self.call_react_callback(
-                                    &sub.callback.clone(),
-                                    vec![Value::str(remaining)],
-                                ) {
-                                    Err(e) if e.is_react_done() => break 'react_loop,
-                                    other => {
-                                        other?;
-                                    }
-                                }
-                            }
-                            for callback in &sub.last_callbacks {
-                                self.call_react_callback(&callback.clone(), Vec::new())?;
-                            }
-                            sub.done = true;
-                        }
-                    }
-                    Some(Ok(SupplyEvent::Quit(error))) => {
-                        progressed = true;
-                        if matches!(policy, SupplyDrivePolicy::Promise { .. }) {
-                            // On the await path an inner quit just retires the
-                            // receiver; the promise is resolved/broken elsewhere.
-                            sub.done = true;
-                        } else {
-                            let mut handled = false;
-                            for quit_cb in &sub.quit_callbacks {
-                                self.call_supply_quit_handler(quit_cb.clone(), error.clone())?;
-                                handled = true;
-                            }
-                            sub.done = true;
-                            if !handled {
-                                let ch_quit_err =
-                                    crate::runtime::Interpreter::runtime_error_from_supply_reason(
-                                        error,
-                                    );
-                                return Err(crate::runtime::Interpreter::wrap_react_died(
-                                    ch_quit_err,
-                                ));
-                            }
-                        }
-                    }
-                    Some(Err(mpsc::TryRecvError::Empty)) | None => {}
-                    Some(Err(mpsc::TryRecvError::Disconnected)) => {
-                        sub.done = true;
-                        progressed = true;
-                    }
+                // of the round provides the pacing.
+                let Some(poll) = react_subs[si].receiver.as_ref().map(|r| r.try_recv_seq()) else {
+                    continue;
+                };
+                match self.deliver_receiver_poll_ordered(
+                    react_subs,
+                    si,
+                    poll,
+                    &mut policy,
+                    waker,
+                    &mut progressed,
+                )? {
+                    ReceiverFlow::Continue => {}
+                    ReceiverFlow::EndReact => break 'react_loop,
+                    ReceiverFlow::Return => return Ok(()),
                 }
             }
             // A whenever body dispatched just above (Phase 1's `dispatch_waker_events`

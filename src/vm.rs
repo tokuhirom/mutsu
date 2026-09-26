@@ -270,6 +270,7 @@ pub(crate) mod vm_raw_invocant_arrival;
 mod vm_raw_invocant_lvalue;
 mod vm_react_callback;
 mod vm_react_loop;
+mod vm_react_receiver;
 mod vm_react_subscriptions;
 mod vm_react_supply_helpers;
 mod vm_regex_bool;
