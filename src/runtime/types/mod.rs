@@ -16,6 +16,7 @@ mod type_matching_static;
 mod type_registry;
 
 // Re-export public items from submodules
+pub(crate) use binding_signature::param_display_name;
 pub(crate) use coercion::{
     coerce_impossible_error, diagnostic_type_name, is_coercion_constraint, parse_coercion_type,
 };

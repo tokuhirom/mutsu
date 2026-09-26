@@ -213,6 +213,29 @@ impl Interpreter {
                         if let Some(ref tc) = cf.param_defs[i].type_constraint
                             && !Self::fast_type_check(&val, tc)
                         {
+                            // A sized native-int parameter only reaches this
+                            // path since #9506; keep the general binder's error
+                            // for it.
+                            if tc != "int" && crate::runtime::native_types::is_native_int_type(tc) {
+                                let pd = &cf.param_defs[i];
+                                bind_err =
+                                    Some(match crate::runtime::types::wrap_native_int_for_binding(
+                                        tc,
+                                        val.clone(),
+                                    ) {
+                                        // A type object: the binder's own "Cannot unbox" error.
+                                        Err(e) => e,
+                                        Ok(_) => {
+                                            RuntimeError::typecheck_binding_parameter_with_repr(
+                                                &crate::runtime::types::param_display_name(pd),
+                                                tc,
+                                                &val,
+                                            )
+                                            .with_parameter_object(pd, Some(&*self))
+                                        }
+                                    });
+                                break 'bind;
+                            }
                             let got = runtime::value_type_name(&val);
                             let msg = format!(
                                 "Type check failed in binding ${}: expected {}, got {}",
@@ -234,19 +257,21 @@ impl Interpreter {
                         // Bool-unbox/range-check/wrap the general binder
                         // applies (#8686 Phase 0). Can still fail on an
                         // out-of-range `BigInt`.
-                        let val =
-                            if matches!(cf.param_defs[i].type_constraint.as_deref(), Some("int")) {
-                                match crate::runtime::types::wrap_native_int_for_binding("int", val)
-                                {
-                                    Ok(v) => v,
-                                    Err(e) => {
-                                        bind_err = Some(e);
-                                        break 'bind;
-                                    }
+                        let val = if let Some(tc) = cf.param_defs[i].type_constraint.as_deref()
+                            && crate::runtime::native_types::is_native_int_type(tc)
+                        {
+                            // Under the parameter's own spelling, so a sized
+                            // type wraps to its width (#9506).
+                            match crate::runtime::types::wrap_native_int_for_binding(tc, val) {
+                                Ok(v) => v,
+                                Err(e) => {
+                                    bind_err = Some(e);
+                                    break 'bind;
                                 }
-                            } else {
-                                val
-                            };
+                            }
+                        } else {
+                            val
+                        };
                         // See the identical native-type env-metadata write in
                         // `vm_call_light.rs`'s positional-light bind loop for
                         // why this is needed for `int`/`str`/`num` specifically
@@ -257,8 +282,9 @@ impl Interpreter {
                         // erase most of the fast path's point for a body that
                         // never introspects the parameter).
                         if cf.code.mentions_native_scalar_type_name
-                            && let Some(base @ ("int" | "str" | "num")) =
-                                cf.param_defs[i].type_constraint.as_deref()
+                            && let Some(base) = cf.param_defs[i].type_constraint.as_deref()
+                            && (matches!(base, "int" | "str" | "num")
+                                || crate::runtime::native_types::is_native_int_type(base))
                         {
                             let name_sym = match cf.param_name_syms.get(i) {
                                 Some(&sym) => sym,
