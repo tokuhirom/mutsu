@@ -55,12 +55,19 @@ test: check-pipefail check-value-wall check-flaky-list check-t-layout check-magi
 # (the `test` job) misses both the Cranelift-less feature set the Miri job and
 # the release fallback use, and the wasm32 lib the npm package is built from
 # (the `lint-configs` job), plus rustdoc, whose intra-doc link resolution and
-# Markdown parse no other configuration performs. Needs the wasm target:
-#   rustup target add wasm32-unknown-unknown
+# Markdown parse no other configuration performs. The wasm32 pass runs only
+# when the target is installed (`rustup target add wasm32-unknown-unknown`):
+# it recompiles the whole dependency tree for another triple, which is the
+# slowest step on a small box, and CI's `lint-configs` job always runs it.
 lint:
 	cargo clippy --workspace --all-targets -- -D warnings
 	cargo clippy --no-default-features --features native --all-targets -- -D warnings
-	cargo clippy --target wasm32-unknown-unknown --no-default-features --features wasm --lib -- -D warnings
+	@if rustup target list --installed 2>/dev/null | grep -qx wasm32-unknown-unknown; then \
+	  echo "cargo clippy --target wasm32-unknown-unknown --no-default-features --features wasm --lib -- -D warnings"; \
+	  cargo clippy --target wasm32-unknown-unknown --no-default-features --features wasm --lib -- -D warnings; \
+	else \
+	  echo "lint: wasm32-unknown-unknown target not installed; skipping the wasm32 clippy pass (CI lint-configs runs it)"; \
+	fi
 	RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --document-private-items
 
 check-value-wall:

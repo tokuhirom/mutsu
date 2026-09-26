@@ -136,7 +136,9 @@ work, so free space with the `reclaim-disk` skill and continue.
   `cargo fmt` and the *default* clippy only, so **a green hook is not a green CI**: rustdoc alone
   checks intra-doc links (resolved against the enclosing *module* — inside `impl Compiler` write
   ``[`Compiler::method`]``), and a type whose shape differs per feature can make any file lint
-  differently in a configuration you did not compile. Needs `rustup target add wasm32-unknown-unknown`.
+  differently in a configuration you did not compile. The wasm32 pass is skipped (with a message)
+  when `wasm32-unknown-unknown` is not installed — CI's `lint-configs` always runs it, so a wasm-only
+  warning is fixed forward; install the target only when touching `#[cfg]`-gated platform code.
 - `raku` is the reference oracle: `raku -e '<code>'` whenever expected behavior is unclear, and run
   a roast file under `raku` before comparing mutsu's output. `docs/raku-doc-guide.md` indexes the
   vendored docs; `old-design-docs/` holds the original synopses.
