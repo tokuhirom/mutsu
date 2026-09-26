@@ -38,6 +38,6 @@ The ADR-0072 amendment records the design.
 
 Still open: a handler with no `.resume` at all (`when CX::Warn { say "x" }`)
 still unwinds, so an op-raised warning in a callee under such a handler is lost
-instead of reaching it. That is a separate issue.
+instead of reaching it. That is #9510.
 
 Pin: `t/exceptions/control-conditional-resume-inline.t`.

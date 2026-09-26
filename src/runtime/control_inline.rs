@@ -108,10 +108,15 @@ impl Interpreter {
             let control_begin = handler.control_begin;
             let end = handler.end;
             let fns = handler.compiled_fns.clone();
-            // The handler runs with only the handlers outside it active, so a
-            // `warn` inside it goes outward rather than back into itself.
+            // The handler runs with only the handlers outside it registered, so
+            // a `warn` inside it goes outward rather than back into itself.
+            // `control_handler_depth` deliberately stays put: the run loop
+            // prints-and-resumes a warn signal on the spot when the depth is 0,
+            // which would swallow a `.rethrow` inside this handler instead of
+            // letting it reach the outcome below. A `warn` raised in the handler
+            // with no outer handler registered reaches the default handler at
+            // the end of this function.
             let inner = self.control_handlers.split_off(idx);
-            self.control_handler_depth -= inner.len() as u32;
             let outcome = self.run_control_handler_inline(
                 &code,
                 control_begin,
@@ -120,7 +125,6 @@ impl Interpreter {
                 message,
                 resume_safe,
             );
-            self.control_handler_depth += inner.len() as u32;
             self.control_handlers.extend(inner);
             match outcome {
                 ControlInlineOutcome::Resumed => return Some(Ok(Value::NIL)),
@@ -133,8 +137,8 @@ impl Interpreter {
                 ControlInlineOutcome::Raised(e) => return Some(Err(e)),
             }
         }
-        // Every handler declined: the default handler prints and resumes.
-        declined?;
+        // Every handler declined (or, inside a handler run, none is registered
+        // outside it): the default handler prints and resumes.
         if !self.warning_suppressed() {
             self.write_warn_to_stderr(message);
         }

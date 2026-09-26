@@ -236,4 +236,4 @@ always done that, and an op-raised warning has no `resume_ip` to fall back on.
 an op-raised warning in a callee under it is lost at the call boundary (the
 resume value in `return_value` is read as a `return`). Running *every* CONTROL
 handler inline would fix that, but it would pay the per-entry `CompiledCode`
-clone (#9172) on every CONTROL region.
+clone (#9172) on every CONTROL region. Tracked as #9510.
