@@ -381,16 +381,22 @@ impl Interpreter {
         let rest = &dims[1..];
         let terminal = rest.is_empty();
 
-        // Hash level: an explicit key (or key list) selects entries by name.
-        // A `*` dimension over a hash falls back to the plain read — hash
-        // iteration order is unspecified, so a positional `target = values`
-        // distribution over it would be meaningless.
+        // Hash level: an explicit key, key list, or `*` selects entries by
+        // name.  Hash iteration order is intentionally arbitrary, but the
+        // selected cells remain individually addressable, so no positional
+        // distribution is involved here.
         if matches!(cur.view(), ValueView::Hash(..)) {
             let keys: Vec<String> = match dim.view() {
-                ValueView::Whatever => return None,
+                ValueView::Whatever => cur.with_deref(|value| match value.view() {
+                    ValueView::Hash(map, ..) => map.keys().cloned().collect(),
+                    _ => Vec::new(),
+                }),
                 ValueView::Array(idxs, ..) => idxs.iter().map(Value::hash_key_encode).collect(),
                 _ => vec![Value::hash_key_encode(&dim)],
             };
+            if keys.is_empty() && matches!(dim.view(), ValueView::Whatever) {
+                return Some(());
+            }
             for key in keys {
                 if terminal {
                     let slot = cur.hash_slot_ref(&key, true)?;

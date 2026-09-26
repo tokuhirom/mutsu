@@ -786,7 +786,49 @@ impl Compiler {
             });
             return;
         }
-        self.compile_expr(target);
+        // A method on a multidimensional slice receives the selected elements
+        // as writable containers.  Cookie::Jar and similar code use
+        // `%hash{*;*}.map({ $_ = ... })` to normalize values in place; a plain
+        // read here would decontainerize the slice before `map` sees it.
+        match target {
+            Expr::MultiDimIndex {
+                target: index_target,
+                dimensions,
+                is_positional: false,
+            } if dimensions
+                .iter()
+                .all(|dimension| matches!(dimension, Expr::Whatever)) =>
+            {
+                self.compile_expr(index_target);
+                for dimension in dimensions {
+                    self.compile_expr(dimension);
+                }
+                self.code
+                    .emit(OpCode::MultiDimIndexBindRef(dimensions.len() as u32));
+            }
+            // The parser represents a one-dimensional static slice such as
+            // `%h<a b>` or `.{*;*;*}` as an Index whose index is an
+            // ArrayLiteral. Lower the associative form through the same
+            // container-producing opcode as a MultiDimIndex so a following
+            // mutating method receives writable element cells.
+            Expr::Index {
+                target: index_target,
+                index,
+                is_positional: false,
+            } if let Expr::ArrayLiteral(dimensions) = index.as_ref()
+                && dimensions
+                    .iter()
+                    .all(|dimension| matches!(dimension, Expr::Whatever)) =>
+            {
+                self.compile_expr(index_target);
+                for dimension in dimensions {
+                    self.compile_expr(dimension);
+                }
+                self.code
+                    .emit(OpCode::MultiDimIndexBindRef(dimensions.len() as u32));
+            }
+            _ => self.compile_expr(target),
+        }
         // ADR-0067's subscript-receiver producer: a raw invocant parameter binds
         // the caller's container, and for `@a[0].mut` / `%h<a>.mut` the only
         // place that container can come from is the subscript itself — the

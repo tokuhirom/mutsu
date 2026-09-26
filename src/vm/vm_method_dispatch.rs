@@ -1835,9 +1835,27 @@ impl Interpreter {
                 if pd.is_some_and(|pd| pd.traits.iter().any(|t| t == "copy")) {
                     val = val.detach_shared_container();
                 }
-                if let Some(constraint) = pd.and_then(|pd| pd.type_constraint.as_ref())
-                    && !self.type_matches_value(&self.resolved_type_capture_name(constraint), &val)
-                {
+                if let Some(constraint) = pd.and_then(|pd| pd.type_constraint.as_ref()) {
+                    let resolved_constraint = self.resolved_type_capture_name(constraint);
+                    if self.type_matches_value(&resolved_constraint, &val) {
+                        param_values.push((binding_name, val));
+                        arg_idx += 1;
+                        continue;
+                    }
+                    let (base_type, smiley) =
+                        crate::runtime::types::strip_type_smiley(&resolved_constraint);
+                    let invalid_concreteness = smiley.is_some_and(|s| matches!(s, ":D" | ":U"))
+                        && self.type_matches_value(base_type, &val);
+                    let got_type = if let ValueView::Package(pkg) = val.view() {
+                        pkg.resolve().to_string()
+                    } else {
+                        crate::runtime::utils::value_type_name(&val).to_string()
+                    };
+                    let expected = if smiley.is_some() {
+                        base_type
+                    } else {
+                        resolved_constraint.as_str()
+                    };
                     // Type mismatch — fall back to slow path for proper error
                     self.restore_var_bindings(saved_var_bindings);
                     if cc.uses_dispatcher {
@@ -1853,12 +1871,22 @@ impl Interpreter {
                     }
                     let frame = self.pop_call_frame();
                     self.set_env(frame.saved_env);
-                    return Err(RuntimeError::typecheck_binding_parameter(
-                        param_name,
-                        constraint,
-                        crate::runtime::value_type_name(&val),
-                        None,
-                    ));
+                    if invalid_concreteness {
+                        return Err(RuntimeError::parameter_invalid_concreteness(
+                            base_type,
+                            &got_type,
+                            method_name,
+                            param_name,
+                            smiley == Some(":D"),
+                            pd.is_some_and(|pd| pd.is_invocant),
+                        ));
+                    }
+                    return Err(RuntimeError::typecheck_binding_parameter_with_repr(
+                        &crate::runtime::types::param_display_name(pd.unwrap()),
+                        expected,
+                        &val,
+                    )
+                    .with_parameter_object(pd.unwrap(), Some(&*self)));
                 }
                 param_values.push((binding_name, val));
                 arg_idx += 1;

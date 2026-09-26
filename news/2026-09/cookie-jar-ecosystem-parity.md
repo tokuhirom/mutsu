@@ -1,0 +1,3 @@
+# Cookie::Jar passes its ecosystem suite
+
+Cookie::Jar 0.1.3 now reaches parity with Rakudo across all four baseline test files in the ecosystem ledger, covering all 39 measured assertions. The fix compiles associative multidimensional slices as writable cell selections, preserves nested hash writeback through `for` bindings and mutating methods, materializes deferred key sequences for `:delete`, and reports compiled-method parameter errors with the correct Raku exception details. The optional `t/public-suffix.t` file remains outside the baseline because its PublicSuffix dependency is unavailable to both interpreters.
