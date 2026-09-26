@@ -339,6 +339,7 @@ impl Interpreter {
                     captured_fatal_mode: false,
                     param_name_syms_cache: std::sync::OnceLock::new(),
                     source_file_sym_cache: std::sync::OnceLock::new(),
+                    state_scope_guard: None,
                 };
                 meta.insert(
                     "build".to_string(),

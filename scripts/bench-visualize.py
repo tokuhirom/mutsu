@@ -170,6 +170,11 @@ def build_model(rows, det_rows=()):
     return {
         "commits": commit_meta,
         "benches": out,
+        # When the newest measurement was recorded -- the latest row date across
+        # both series, not the last commit's first-seen date, which a re-run of an
+        # already-recorded commit would leave behind. Shown in the page header so
+        # a stale deploy is visible at a glance.
+        "updated": max(r["date"] for r in list(rows) + list(det_rows)),
         # Drives whether the "instructions" metric button is offered at all: a
         # checkout whose bench-data has no deterministic history yet would
         # otherwise show a button that renders nothing.
@@ -278,6 +283,7 @@ __CHROME_NAV__
   <div class="title">
     <h1>Benchmark trend</h1>
     <span class="sub" id="meta"></span>
+    <time class="sub" id="updated"></time>
   </div>
   <div class="controls">
     <span class="ctl-label">Metric</span>
@@ -620,6 +626,15 @@ adoptHash();
 const last = commits[N - 1], first = commits[0];
 document.getElementById('meta').textContent =
   `${N} commits · ${first.date.slice(0,10)} → ${last.date.slice(0,10)} · latest ${last.sha}`;
+// Last-updated stamp: the ISO timestamp is shown in UTC so it matches the
+// bench-data rows verbatim; the viewer's local time rides along as a tooltip.
+{
+  const updated = document.getElementById('updated');
+  const at = new Date(DATA.updated);
+  updated.textContent = `updated ${DATA.updated.slice(0,10)} ${DATA.updated.slice(11,16)} UTC`;
+  updated.setAttribute('datetime', DATA.updated);
+  if (!isNaN(at)) updated.title = at.toLocaleString();
+}
 document.getElementById('foot').innerHTML =
   `Each chart has an independent y-axis (small multiples), fitted to the data by default; ` +
   `<b>Y axis: from 0</b> anchors every axis at zero instead. Values are the median of 7 runs; ` +

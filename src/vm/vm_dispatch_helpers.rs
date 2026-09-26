@@ -366,6 +366,35 @@ impl Interpreter {
         ))
     }
 
+    /// Ordering operators also accept a concrete object's user-defined `Real`
+    /// method even when the class does not compose the `Real` role. This is the
+    /// coercion path used by Rakudo's `(Real, Real)` comparison candidates;
+    /// arithmetic and equality deliberately keep using the stricter
+    /// `Numeric`/`Bridge` bridge above.
+    pub(super) fn coerce_ordering_real_methods_pair(
+        &mut self,
+        left: Value,
+        right: Value,
+    ) -> Result<(Value, Value), RuntimeError> {
+        let left = self.coerce_ordering_real_method(left)?;
+        let right = self.coerce_ordering_real_method(right)?;
+        self.coerce_numeric_bridge_pair(left, right)
+    }
+
+    fn coerce_ordering_real_method(&mut self, value: Value) -> Result<Value, RuntimeError> {
+        let ValueView::Instance { class_name, .. } = value.view() else {
+            return Ok(value);
+        };
+        let class_name = class_name.resolve();
+        if self.type_matches_value("Real", &value) || !self.has_user_method(&class_name, "Real") {
+            return Ok(value);
+        }
+        let caller_code = self.current_code;
+        let result = self.try_compiled_method_or_interpret(value, "Real", vec![]);
+        self.reconcile_caller_after_internal_dispatch(caller_code);
+        result
+    }
+
     /// A user-defined object that does the `Real` role — the operand that makes
     /// rakudo pick the generic `(Real, Real)` infix candidate over a built-in
     /// numeric one. Deliberately restricted to `Instance` values: the built-in

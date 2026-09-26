@@ -5,7 +5,7 @@ use Test;
 # below asserts the *type* as well as the value: several of these bugs produced
 # a right-looking number of the wrong type.
 
-plan 98;
+plan 100;
 
 # --------------------------------------------------------------------------
 # 1. Generic `Real` arithmetic goes through `.Bridge` on BOTH operands.
@@ -51,6 +51,15 @@ class TN is Real {
     method Numeric { 999 }
 }
 is (TN.new(1/2) + TN.new(1/4)), 0.75, 'Real subclass adds via Bridge, not Numeric';
+
+# Bench 0.2.1's Bench::Time defines Real without composing the Real role. The
+# ordering candidates still use that method, while arithmetic remains strict.
+class RealMethodOnly { method Real { 4.75 } }
+my $real-method-only = RealMethodOnly.new;
+ok 4.5 < $real-method-only < 5.5,
+    'ordering comparisons use a user Real method without the Real role';
+is $real-method-only <=> 4.75, Same,
+    'spaceship comparison uses a user Real method without the Real role';
 
 # A plain (non-Real) object with `method Numeric` is NOT part of that rule:
 # it numifies through `.Numeric` and leaves the other operand exact.

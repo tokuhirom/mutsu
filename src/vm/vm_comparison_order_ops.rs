@@ -388,7 +388,7 @@ impl Interpreter {
             // operand throws X::Numeric::Uninitialized, matching rakudo.
             crate::vm::vm_comparison_ops::check_type_object_in_numeric_context(&l)?;
             crate::vm::vm_comparison_ops::check_type_object_in_numeric_context(&r)?;
-            let (l, r) = vm.coerce_numeric_bridge_pair(l, r)?;
+            let (l, r) = vm.coerce_ordering_real_methods_pair(l, r)?;
             // NaN <=> anything produces Nil (unordered)
             if is_nan_value(&l) || is_nan_value(&r) {
                 return Ok(Value::NIL);
