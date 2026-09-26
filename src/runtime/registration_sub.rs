@@ -707,6 +707,13 @@ impl Interpreter {
         adapted.is_raw = def.is_raw;
         adapted.source_file.clone_from(&def.source_file);
         adapted.stamp_source_file(def.source_file.clone());
+        // `captured_fatal_mode` (#9521) is already correct on `compiled` --
+        // baked in at compile time (`Compiler::fatal_pragma_active`) -- and
+        // `compiled.clone()` above carries it over unchanged. It must NOT be
+        // re-captured here from the live interpreter: this function also runs
+        // for a HOISTED registration (`hoist_sub_decls`), which executes
+        // before the declaring statement's own `use fatal;` (if any, earlier
+        // in the same scope) has run, and would wrongly bake in `false`.
         adapted.precompute_param_local_slots();
         adapted.precompute_named_call_plan();
         adapted.precompute_param_name_syms();

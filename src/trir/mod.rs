@@ -238,6 +238,13 @@ pub(crate) struct TrChunk {
     /// The file the routine was declared in, for its `routine_stack` frame
     /// (`routine_frame.rs`). Known only once the function is stamped.
     pub(crate) def_file: std::sync::OnceLock<crate::symbol::Symbol>,
+    /// Mirrors `CompiledFunction::captured_fatal_mode` (#9521): whether `use
+    /// fatal` is lexically active where this routine is declared, baked at
+    /// compile time from `Compiler::fatal_pragma_active`. Read directly by
+    /// `trir_explode_fatal_args` for a call site inside this chunk's own
+    /// body -- a TRIR chunk's execution does not maintain
+    /// `Interpreter::lexical_fatal_mode` (see that field's doc comment).
+    pub(crate) captured_fatal_mode: bool,
 }
 
 /// The next chunk identity. Wrapping is unreachable in practice (a program

@@ -100,12 +100,15 @@ impl Interpreter {
     /// compilation unit.  mutsu approximates this at runtime: save on entry,
     /// restore on exit, so `use fatal` inside a sub never outlives that sub.
     #[inline]
-    pub(super) fn save_pragma_state(&self) -> (bool, bool, crate::runtime::NewlineMode, bool) {
+    pub(super) fn save_pragma_state(
+        &self,
+    ) -> (bool, bool, crate::runtime::NewlineMode, bool, bool) {
         (
             self.fatal_mode,
             self.strict_mode,
             self.newline_mode,
             self.monkey_typing,
+            self.lexical_fatal_mode,
         )
     }
 
@@ -113,12 +116,13 @@ impl Interpreter {
     #[inline]
     pub(super) fn restore_pragma_state(
         &mut self,
-        state: (bool, bool, crate::runtime::NewlineMode, bool),
+        state: (bool, bool, crate::runtime::NewlineMode, bool, bool),
     ) {
         self.fatal_mode = state.0;
         self.strict_mode = state.1;
         self.newline_mode = state.2;
         self.monkey_typing = state.3;
+        self.lexical_fatal_mode = state.4;
     }
 
     /// Enforce a `ContainerRef` cell's registered `of`-type constraint before a

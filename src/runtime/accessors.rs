@@ -261,15 +261,36 @@ impl Interpreter {
     /// `MakeHash`/`MakeHashFromPairs`) collects its element values off the
     /// stack, before the composite becomes a stored value.
     ///
-    /// Gated on `self.fatal_mode` first so the common (non-fatal) case pays
-    /// only a single bool check, not a scan of every element.
+    /// Gated on `self.lexical_fatal_mode` first so the common (non-fatal)
+    /// case pays only a single bool check, not a scan of every element. See
+    /// [`crate::runtime::Interpreter::lexical_fatal_mode`]'s doc comment for
+    /// why this is the LEXICAL channel, not the fully dynamic `fatal_mode`
+    /// (#9521): a Failure-in-composite/call-argument explosion is governed by
+    /// whether `use fatal` is lexically active where the composite/call is
+    /// written, not by whatever dynamic state a caller several frames up
+    /// happens to be in.
     pub(crate) fn explode_if_fatal_failure_in_composite(
         &self,
         values: &[Value],
     ) -> Result<(), RuntimeError> {
-        if !self.fatal_mode {
+        if !self.lexical_fatal_mode {
             return Ok(());
         }
+        self.explode_if_fatal_failure_in_composite_unconditional(values)
+    }
+
+    /// The scan behind [`Self::explode_if_fatal_failure_in_composite`], with
+    /// no `lexical_fatal_mode` gate of its own -- for a caller that already
+    /// decided fatal-ness from a source other than the live interpreter flag.
+    /// `trir_explode_fatal_args` is the one such caller: a TRIR chunk's own
+    /// `captured_fatal_mode` (baked at compile time), not whatever
+    /// `lexical_fatal_mode` happens to hold while the chunk runs (that field
+    /// is only maintained across the untyped call paths — see
+    /// `Interpreter::lexical_fatal_mode`'s doc comment).
+    pub(crate) fn explode_if_fatal_failure_in_composite_unconditional(
+        &self,
+        values: &[Value],
+    ) -> Result<(), RuntimeError> {
         if let Some(err) = values
             .iter()
             .find_map(|v| self.failure_to_runtime_error_if_unhandled_in_composite_elem(v))
@@ -325,14 +346,15 @@ impl Interpreter {
     /// match either of these).
     ///
     /// Delegates to `explode_if_fatal_failure_in_composite`, which is gated
-    /// on `self.fatal_mode` first, so the common (non-fatal) case pays only a
-    /// single bool check plus a saturating-sub, not a scan of the stack.
+    /// on `self.lexical_fatal_mode` first, so the common (non-fatal) case
+    /// pays only a single bool check plus a saturating-sub, not a scan of the
+    /// stack.
     pub(crate) fn explode_if_fatal_failure_in_call_args(
         &self,
         name: &str,
         arity: usize,
     ) -> Result<(), RuntimeError> {
-        if !self.fatal_mode {
+        if !self.lexical_fatal_mode {
             return Ok(());
         }
         let start = self.stack.len().saturating_sub(arity);
@@ -349,7 +371,7 @@ impl Interpreter {
         name: &str,
         args: &[Value],
     ) -> Result<(), RuntimeError> {
-        if !self.fatal_mode || matches!(name, "require" | "defined") {
+        if !self.lexical_fatal_mode || matches!(name, "require" | "defined") {
             return Ok(());
         }
         self.explode_if_fatal_failure_in_composite(args)
