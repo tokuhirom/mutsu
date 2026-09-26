@@ -271,7 +271,7 @@ verify it is deconted there (a complement of the same shape as the `deref_contai
      a fresh plain Scalar cell, so `$x = 5` rebinds the attribute and leaves `@src` alone;
      `store_through_cell` no longer peels an itemized nested holder, and `into_deref` takes the
      itemization of the LAST holder in a chain (as `with_deref` already did), so the alias still reads
-     `$[...]`. pin=`t/oo/attribute/scalar-attr-shares-assigned-container.t`.
+     `$[...]`. pin=`t/vm/writeback/scalar-attr-shares-assigned-container.t`.
    - **Not covered**: `$x := $obj.w` followed by a SECOND `$obj.w = @other` store (the plain bind
      cell receives the value by copy, as before this slice). Construction (`T.new(w => @src)`)
      already shared before this slice.
