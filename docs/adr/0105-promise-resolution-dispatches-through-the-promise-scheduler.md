@@ -335,7 +335,7 @@ order without stacking.
   today.
 - **S1 — D1.** The field, every binding site, the accessor. *(Landed:
   `PromiseState::scheduler`, `src/runtime/methods_promise_scheduler.rs`,
-  pinned by `t/concurrency/thread-lock/promise-scheduler-binding.t`. The
+  pinned by `t/concurrency/promise/promise-scheduler-binding.t`. The
   `start` thunk breaks its own promise rather than passing Rakudo's
   `:catch`, since a synthesized block has no parameter list.)*
 - **S2 — D2.** Resolution via the scheduler; `await` parks on its own wake

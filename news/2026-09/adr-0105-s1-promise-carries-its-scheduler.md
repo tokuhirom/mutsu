@@ -14,7 +14,7 @@ Under a user `$*SCHEDULER`, a `start` body is now cued through that scheduler's
 decides when the block runs; `Promise.start(:scheduler($orig), ...)` escapes it,
 which is how `Test::Time`'s `:auto-advance` loop is written.
 
-Pinned by `t/concurrency/thread-lock/promise-scheduler-binding.t`; the S0
+Pinned by `t/concurrency/promise/promise-scheduler-binding.t`; the S0
 oracle test's `Promise.scheduler` and `start` assertions are no longer `todo`.
 Promise resolution still does not dispatch through the bound scheduler — that
 is slice S2.
