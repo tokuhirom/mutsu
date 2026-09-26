@@ -585,13 +585,11 @@ impl Interpreter {
     }
 
     /// Subset of [`Self::infix_uses_numeric_bridge`] for which a non-numeric string
-    /// operand is an X::Str::Numeric error rather than a silent 0-coercion.
-    /// Restricted to the arithmetic operators: numeric *comparison* (`==`/`<`/
-    /// `<=>` …) is intentionally NOT strict because mutsu still models some
-    /// enums (e.g. PromiseStatus `Broken`/`Kept`) as bare strings, so
-    /// `$status == Broken` must keep comparing them leniently. Arithmetic on a
-    /// non-numeric string is far rarer and is the case the spec exercises
-    /// (`"5 foo" + 8`).
+    /// operand is an X::Str::Numeric Failure rather than a silent 0-coercion:
+    /// the arithmetic operators. The generic comparators left in the bridge
+    /// (`cmp`, `before`/`after`, `min`/`max`) compare strings as strings; the
+    /// numeric comparisons (`==`, `<`, ...) never reach this bridge and carry
+    /// the same check in their operator bodies (`num_eq_values` etc.).
     fn infix_is_strictly_numeric(op: &str) -> bool {
         matches!(op, "+" | "-" | "*" | "/" | "%" | "**")
     }

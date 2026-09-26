@@ -54,6 +54,17 @@ pub(crate) fn int_operand(v: &Value) -> Value {
     }
 }
 
+/// The lazy X::Str::Numeric `Failure` an integer operator evaluates to when
+/// either operand is a Str that cannot be numified (rakudo's `"a" +| 1` and
+/// `"a" gcd 2` are Failures, not the `0`-coerced answer), the left operand
+/// checked first; `None` otherwise.
+///
+/// Cost: O(n), n = length of a Str operand; O(1) otherwise.
+fn str_operand_failure(left: &Value, right: &Value) -> Option<Value> {
+    crate::runtime::utils::str_numeric_operand_failure(left)
+        .or_else(|| crate::runtime::utils::str_numeric_operand_failure(right))
+}
+
 fn is_zero(v: &Value) -> bool {
     match v.view() {
         ValueView::Int(i) => i == 0,
@@ -110,10 +121,15 @@ pub(crate) enum BitOp {
     Xor,
 }
 
-/// `$a +& $b`, `$a +| $b`, `$a +^ $b` on the operands' `Int` coercions.
+/// `$a +& $b`, `$a +| $b`, `$a +^ $b` on the operands' `Int` coercions; a
+/// non-numeric Str operand makes it an X::Str::Numeric `Failure`.
 ///
-/// Cost: O(1) for i64 operands; O(n) in the operand digits for BigInts.
+/// Cost: O(1) for i64 operands; O(n) in the operand digits for BigInts (or
+/// the characters of a Str operand).
 pub(crate) fn int_bitop(left: &Value, right: &Value, op: BitOp) -> Value {
+    if let Some(failure) = str_operand_failure(left, right) {
+        return failure;
+    }
     let (l, r) = (int_operand(left), int_operand(right));
     if let (ValueView::Int(a), ValueView::Int(b)) = (l.view(), r.view()) {
         return Value::int(match op {
@@ -146,18 +162,28 @@ fn shift_count(v: &Value) -> i64 {
     }
 }
 
-/// `$a +< $b` (a negative count shifts right).
+/// `$a +< $b` (a negative count shifts right); a non-numeric Str operand
+/// makes it an X::Str::Numeric `Failure`.
 ///
-/// Cost: O(n + b) in the operand's digits and the shift count.
+/// Cost: O(n + b) in the operand's digits (or a Str operand's characters)
+/// and the shift count.
 pub(crate) fn int_shift_left(left: &Value, right: &Value) -> Value {
+    if let Some(failure) = str_operand_failure(left, right) {
+        return failure;
+    }
     shift(int_operand(left), shift_count(right))
 }
 
 /// `$a +> $b` (a negative count shifts left). Right shifts are arithmetic:
-/// a negative operand rounds toward negative infinity.
+/// a negative operand rounds toward negative infinity. A non-numeric Str
+/// operand makes it an X::Str::Numeric `Failure`.
 ///
-/// Cost: O(n + b) in the operand's digits and the shift count.
+/// Cost: O(n + b) in the operand's digits (or a Str operand's characters)
+/// and the shift count.
 pub(crate) fn int_shift_right(left: &Value, right: &Value) -> Value {
+    if let Some(failure) = str_operand_failure(left, right) {
+        return failure;
+    }
     shift(int_operand(left), shift_count(right).saturating_neg())
 }
 
@@ -218,20 +244,28 @@ pub(crate) fn int_abs_value(v: &Value) -> Value {
 }
 
 /// `$a gcd $b`: the non-negative greatest common divisor of the operands'
-/// `Int` coercions (`0 gcd 0` is 0).
+/// `Int` coercions (`0 gcd 0` is 0); a non-numeric Str operand makes it an
+/// X::Str::Numeric `Failure`.
 ///
 /// Cost: O(n^2) in the operand digits (Euclid on BigInts).
 pub(crate) fn int_gcd(left: &Value, right: &Value) -> Value {
+    if let Some(failure) = str_operand_failure(left, right) {
+        return failure;
+    }
     let a = int_operand(left).to_bigint();
     let b = int_operand(right).to_bigint();
     Value::from_bigint(num_integer::Integer::gcd(&a, &b))
 }
 
 /// `$a lcm $b`: the non-negative least common multiple of the operands'
-/// `Int` coercions; 0 when either operand is 0.
+/// `Int` coercions; 0 when either operand is 0. A non-numeric Str operand
+/// makes it an X::Str::Numeric `Failure`.
 ///
 /// Cost: O(n^2) in the operand digits.
 pub(crate) fn int_lcm(left: &Value, right: &Value) -> Value {
+    if let Some(failure) = str_operand_failure(left, right) {
+        return failure;
+    }
     let a = num_traits::Signed::abs(&int_operand(left).to_bigint());
     let b = num_traits::Signed::abs(&int_operand(right).to_bigint());
     if a.is_zero() || b.is_zero() {

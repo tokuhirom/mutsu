@@ -235,27 +235,19 @@ pub(crate) fn is_builtin_enum_value(name: &str) -> bool {
         std::sync::OnceLock::new();
     NAMES
         .get_or_init(|| {
-            let mut names: std::collections::HashSet<String> = [
+            [
                 crate::runtime::Interpreter::endian_enum_variants(),
                 crate::runtime::Interpreter::protocol_family_enum_variants(),
                 crate::runtime::Interpreter::order_enum_variants(),
                 crate::runtime::Interpreter::seek_type_enum_variants(),
                 crate::runtime::Interpreter::signal_enum_variants(),
                 crate::runtime::Interpreter::file_change_event_enum_variants(),
+                crate::runtime::Interpreter::promise_status_enum_variants(),
             ]
             .into_iter()
             .flatten()
             .map(|(key, _)| key)
-            .collect();
-            // PromiseStatus is the one built-in enum that is NOT in the
-            // registry: mutsu represents `Promise.status` as a bare string
-            // (see roast/packages/Test-Helpers/lib/Test/Util.rakumod's
-            // `given $promise.status { when Kept { ... } }`), so its value
-            // names have to be listed here.
-            for extra in ["Planned", "Kept", "Broken"] {
-                names.insert(extra.to_string());
-            }
-            names
+            .collect::<std::collections::HashSet<String>>()
         })
         .contains(name)
 }

@@ -632,36 +632,8 @@ impl Interpreter {
                 };
                 Ok(super::make_order(ord))
             }
-            "gcd" => {
-                use num_bigint::BigInt;
-                use num_traits::Zero;
-                let mut a: BigInt = left.to_bigint().abs();
-                let mut b: BigInt = right.to_bigint().abs();
-                while !b.is_zero() {
-                    let t = b.clone();
-                    b = &a % &b;
-                    a = t;
-                }
-                Ok(Value::from_bigint(a))
-            }
-            "lcm" => {
-                use num_bigint::BigInt;
-                use num_traits::Zero;
-                let a: BigInt = left.to_bigint().abs();
-                let b: BigInt = right.to_bigint().abs();
-                if a.is_zero() && b.is_zero() {
-                    Ok(Value::int(0))
-                } else {
-                    let mut ga = a.clone();
-                    let mut gb = b.clone();
-                    while !gb.is_zero() {
-                        let t = gb.clone();
-                        gb = &ga % &gb;
-                        ga = t;
-                    }
-                    Ok(Value::from_bigint((&a / &ga) * &b))
-                }
-            }
+            "gcd" => Ok(crate::builtins::int_gcd(left, right)),
+            "lcm" => Ok(crate::builtins::int_lcm(left, right)),
             "^^" => {
                 let lt = left.truthy();
                 let rt = right.truthy();

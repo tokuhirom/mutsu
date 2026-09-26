@@ -334,10 +334,12 @@ impl Interpreter {
     ) -> Result<Value, RuntimeError> {
         match method {
             "result" => Ok(attributes.get("result").cloned().unwrap_or(Value::NIL)),
-            "status" => Ok(attributes
-                .get("status")
-                .cloned()
-                .unwrap_or(Value::str_from("Planned"))),
+            "status" => Ok(Self::promise_status_value(
+                &attributes
+                    .get("status")
+                    .map(|s| s.to_string_value())
+                    .unwrap_or_default(),
+            )),
             "then" => {
                 let block = args.first().cloned().unwrap_or(Value::NIL);
                 let status = attributes

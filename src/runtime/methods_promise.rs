@@ -197,7 +197,8 @@ impl Interpreter {
                     Ok(result)
                 }
             }
-            "status" => Ok(Value::str(shared.status())),
+            // Cost: O(1).
+            "status" => Ok(Self::promise_status_value(&shared.status())),
             // Cost: O(1).
             "scheduler" => Ok(self.promise_scheduler_value(shared)),
             "then" => {
