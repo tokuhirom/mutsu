@@ -51,11 +51,58 @@ impl Interpreter {
     /// A no-op — and, for the overwhelmingly common case of a class that does
     /// not override `WHICH`, only a type-tag check plus an MRO probe — for
     /// everything else.
-    /// Cost: O(t), t = elements of a list-shaped `value` counted recursively to
-    /// depth 16 (each is visited even when no class overrides `WHICH`), O(d) for
-    /// an instance, d = MRO depth. Rakudo: O(1) for `===` -- see #9172.
+    ///
+    /// This is the warm for a consumer that keys every *element* (building a
+    /// Set/Bag/Mix, an object-hash subscript); `===` uses the shallower
+    /// [`Self::warm_which_identity_for_identity`].
+    // Cost: O(t), t = elements of a list-shaped `value` counted recursively to
+    // depth 16 (the caller is about to key each of them anyway), O(d) for an
+    // instance, d = MRO depth.
     pub(crate) fn warm_which_identity(&mut self, value: &Value) {
         self.warm_which_identity_depth(value, 0);
+    }
+
+    /// The warm `===` needs: only the parts of `value` that
+    /// [`crate::runtime::utils::values_identical`] actually consults. A
+    /// list-shaped operand (Array/List/Seq/Slip/Hash) is compared by
+    /// container identity there, so its elements' `WHICH` can never change
+    /// the answer and are not visited — `@a === @b` stays O(1) whatever the
+    /// arrays hold. Still descended: a container's value, a mixin's base, a
+    /// Pair's key and value, and a Capture's elements (a Capture's `WHICH` is
+    /// built from its elements, so the comparison walks them itself).
+    // Cost: O(1) for a list-shaped operand or scalar; O(d) for an instance,
+    // d = MRO depth (`has_user_method`); O(k) for a Capture, k = its elements,
+    // which the comparison itself walks too.
+    pub(crate) fn warm_which_identity_for_identity(&mut self, value: &Value) {
+        self.warm_which_identity_shallow(value, 0);
+    }
+
+    fn warm_which_identity_shallow(&mut self, value: &Value, depth: u32) {
+        if depth > 16 || COMPUTING_WHICH.with(|c| c.get()) {
+            return;
+        }
+        match value.view() {
+            ValueView::Instance { .. } => self.warm_which_identity_depth(value, depth),
+            ValueView::ContainerRef(_) => {
+                let inner = value.deref_container();
+                self.warm_which_identity_shallow(&inner, depth + 1);
+            }
+            ValueView::Mixin(inner, _) => self.warm_which_identity_shallow(inner, depth + 1),
+            ValueView::Pair(_, v) => self.warm_which_identity_shallow(v, depth + 1),
+            ValueView::ValuePair(k, v) => {
+                self.warm_which_identity_shallow(k, depth + 1);
+                self.warm_which_identity_shallow(v, depth + 1);
+            }
+            ValueView::Capture { positional, named } => {
+                for item in positional.iter() {
+                    self.warm_which_identity_shallow(item, depth + 1);
+                }
+                for item in named.values() {
+                    self.warm_which_identity_shallow(item, depth + 1);
+                }
+            }
+            _ => {}
+        }
     }
 
     /// The identity key of `value`, resolving a user-defined `WHICH` first.

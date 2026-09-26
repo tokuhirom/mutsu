@@ -145,17 +145,17 @@ impl Interpreter {
     /// `===` (and `!==` when `negate`): `$a.WHICH eq $b.WHICH`, so a class
     /// that overrides `WHICH` decides its own identity. `!==` autothreads
     /// `===` and negates the collapsed result.
-    // Cost: O(t1 + t2), t = elements of a list-shaped operand counted
-    // recursively to depth 16 (`warm_which_identity` visits each one looking for
-    // a user `WHICH`), O(1) for scalars. Rakudo: O(1) -- see #9172.
+    // Cost: O(1) for scalars and list-shaped operands (compared by container
+    // identity; their elements are never visited), O(d) for an instance,
+    // d = MRO depth (the user-`WHICH` probe), O(k) for a Capture, k = elements.
     pub(crate) fn identical_values(
         &mut self,
         negate: bool,
         left: Value,
         right: Value,
     ) -> Result<Value, RuntimeError> {
-        self.warm_which_identity(&left);
-        self.warm_which_identity(&right);
+        self.warm_which_identity_for_identity(&left);
+        self.warm_which_identity_for_identity(&right);
         let result = self.eval_binary_with_junctions(left, right, |_, l, r| {
             Ok(Value::truth(runtime::values_identical(&l, &r)))
         })?;

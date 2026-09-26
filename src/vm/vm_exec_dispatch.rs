@@ -3268,16 +3268,13 @@ impl Interpreter {
             }
 
             // -- Identity/value equality --
-            // Cost: O(t1 + t2), t = elements of a list-shaped operand, counted
-            // recursively to depth 16 (warm_which_identity walks them all before
-            // the pointer compare); O(1) for scalars (see exec_strict_eq_op).
-            // Rakudo: O(1) -- see #9172.
+            // Cost: O(1) for scalars and list-shaped operands, O(d) for an
+            // instance, d = MRO depth (see exec_strict_eq_op / identical_values).
             OpCode::StrictEq => {
                 self.exec_strict_eq_op()?;
                 *ip += 1;
             }
-            // Cost: O(t1 + t2), as StrictEq (see exec_strict_ne_op). Rakudo:
-            // O(1) -- see #9172.
+            // Cost: as StrictEq (see exec_strict_ne_op).
             OpCode::StrictNe => {
                 self.exec_strict_ne_op()?;
                 *ip += 1;

@@ -647,7 +647,7 @@ impl Interpreter {
         })
     }
 
-    // Cost: as `identical_values`. Rakudo: O(1) -- see #9172.
+    // Cost: as `identical_values`.
     pub(super) fn exec_strict_eq_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
@@ -656,7 +656,7 @@ impl Interpreter {
         Ok(())
     }
 
-    // Cost: as `identical_values`. Rakudo: O(1) -- see #9172.
+    // Cost: as `identical_values`.
     pub(super) fn exec_strict_ne_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
