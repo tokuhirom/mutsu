@@ -183,9 +183,12 @@ impl Interpreter {
         // directly (argument binding, assignment writeback) without routing
         // back through this dispatcher, so the only method name that must see
         // the wrapper itself here is `VAR`, handled below via `varref_parts`.
-        if let ValueView::VarRef { value, .. } = target.view()
+        if let ValueView::VarRef { name, value, .. } = target.view()
             && method != "VAR"
         {
+            if method == "name" && args.is_empty() {
+                return Ok(Value::str(name.resolve().to_string()));
+            }
             let inner = value.clone();
             return self.call_method_with_values(inner, method, args);
         }
@@ -4516,7 +4519,15 @@ impl Interpreter {
             && args.is_empty()
             && let Some(source_name) = Self::var_target_from_meta_value(&target)
         {
-            let source_value = self.env.get(&source_name).cloned().unwrap_or(Value::NIL);
+            let source_value = self
+                .get_env_with_main_alias(&source_name)
+                .or_else(|| match target.view() {
+                    ValueView::Instance { attributes, .. } => {
+                        attributes.as_map().get("__mutsu_var_value").cloned()
+                    }
+                    _ => None,
+                })
+                .unwrap_or(Value::NIL);
             return Ok(Value::varref(
                 Symbol::intern(&source_name),
                 source_value,

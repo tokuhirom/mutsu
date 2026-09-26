@@ -78,8 +78,12 @@ impl Interpreter {
         args: &[Value],
     ) -> bool {
         let raw_parameter = self.method_binds_raw_invocant(target, method, args);
-        let implicit_self =
-            !raw_parameter && is_aggregate_target_name(target_name) && is_role_mixed_array(target);
+        // Native mixin mutators update their shared array node directly.
+        // Passing a synthetic ContainerRef for their implicit `self` would
+        // make the call site mistake the method's final value (`Any`, `Bool`,
+        // or another expression result) for a rebinding of the array. Other
+        // role methods still need the ordinary aggregate self channel.
+        let implicit_self = !raw_parameter && !is_native_mixin_array_mutator(target, method);
         if !raw_parameter && !implicit_self {
             return false;
         }
@@ -185,6 +189,30 @@ impl Interpreter {
         }
         self.pending_raw_invocant.take().map(|p| p.cell)
     }
+}
+
+fn is_native_mixin_array_mutator(target: &Value, method: &str) -> bool {
+    let ValueView::Mixin(inner, _) = target.view() else {
+        return false;
+    };
+    matches!(inner.view(), ValueView::Array(..))
+        && matches!(
+            method,
+            "push"
+                | "append"
+                | "prepend"
+                | "unshift"
+                | "pop"
+                | "shift"
+                | "splice"
+                | "ASSIGN-POS"
+                | "BIND-POS"
+                | "DELETE-POS"
+                | "ASSIGN-KEY"
+                | "BIND-KEY"
+                | "DELETE-KEY"
+                | "STORE"
+        )
 }
 
 fn is_aggregate_target_name(name: &str) -> bool {
