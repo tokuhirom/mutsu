@@ -66,7 +66,8 @@ pub(super) fn compile_range(code: &CompiledCode, start: usize, end: usize) -> Op
             | OpCode::CallFunc { .. }
             | OpCode::CallFuncNamed { .. }
             | OpCode::CallMethod { .. }
-            | OpCode::CallMethodMut { .. } => {}
+            | OpCode::CallMethodMut { .. }
+            | OpCode::Return => {}
             OpCode::Jump(t)
             | OpCode::JumpIfFalse(t)
             | OpCode::JumpIfTrue(t)
@@ -534,6 +535,20 @@ fn build(
                 let status = call_helper(&mut b, sigs.s_code_u32, f, &[interp, codep, opidx])?;
                 check_status(&mut b, status);
             }
+            OpCode::Return => {
+                // OK status = a rebound `&return` ran and execution falls
+                // through; otherwise the parked return signal exits the
+                // native body via the status check. The shim needs the chunk
+                // for the EVAL-context return target (ADR-0037 Slice 4).
+                let opidx = b.ins().iconst(types::I32, i as i64);
+                let status = call_helper(
+                    &mut b,
+                    sigs.s_code_u32,
+                    helpers::ret as *const () as usize,
+                    &[interp, codep, opidx],
+                )?;
+                check_status(&mut b, status);
+            }
             OpCode::Jump(t) => {
                 let t = *t as usize;
                 if t <= i {
@@ -641,10 +656,7 @@ fn build(
                         fnsp,
                     );
                 } else if let Some(f) = noarg_shim(op) {
-                    // Dedicated payload-free shim (arith / compare / Return —
-                    // for Return, OK status = a rebound `&return` ran and
-                    // execution falls through; otherwise the parked return
-                    // signal exits the native body via the status check).
+                    // Dedicated payload-free shim (arith / compare).
                     let status = call_helper(&mut b, sigs.s1, f, &[interp])?;
                     check_status(&mut b, status);
                 } else if step_supported(op) {

@@ -8,7 +8,7 @@ use super::vm_jit_helpers as helpers;
 use super::*;
 
 /// Payload-free fallible opcodes with a dedicated `(interp) -> status` shim
-/// (the hot arith / compare / string family, plus `Return`). Returns the shim
+/// (the hot arith / compare / string family). Returns the shim
 /// address for emission, `None` when the opcode is not in this family.
 pub(super) fn noarg_shim(op: &OpCode) -> Option<usize> {
     let f: unsafe extern "C" fn(*mut Interpreter) -> u32 = match op {
@@ -36,7 +36,6 @@ pub(super) fn noarg_shim(op: &OpCode) -> Option<usize> {
         OpCode::BitShiftLeft => helpers::bit_shift_left,
         OpCode::BitShiftRight => helpers::bit_shift_right,
         OpCode::IntBitNeg => helpers::int_bit_neg,
-        OpCode::Return => helpers::ret,
         _ => return None,
     };
     Some(f as *const () as usize)
