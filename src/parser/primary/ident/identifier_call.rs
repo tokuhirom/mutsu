@@ -1328,6 +1328,18 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
             } else if r.starts_with('{') {
                 let (r, body) = parse_block_body_routine(r)?;
                 return Ok((r, make_anon_method(body, declarator)));
+            } else if r.starts_with(|c: char| c.is_alphabetic() || c == '_')
+                && let Ok((r_decl, stmt)) = crate::parser::stmt::expr_position_method_decl_pub(
+                    r,
+                    matches!(declarator, RoutineDeclarator::Submethod),
+                )
+            {
+                // A *named* method in expression position
+                // (`has @.x = method TOP ($/) { ... }`) is still a declaration:
+                // inside a package body it installs `TOP` as a method there,
+                // and the expression evaluates to the method object.
+                crate::parser::stmt::hoisted_methods::record(r, &stmt);
+                return Ok((r_decl, Expr::DoStmt(Box::new(stmt))));
             }
         }
         "token" | "regex" | "rule" => {

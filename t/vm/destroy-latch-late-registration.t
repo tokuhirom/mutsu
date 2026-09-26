@@ -19,9 +19,11 @@ class Early { has $.x }
 quietly $*VM.request-garbage-collection;
 is-deeply @events, [], "no DESTROY registered anywhere yet: nothing fires";
 
-# Arm the latch through the metamodel, after those deaths.
-my $late = method DESTROY { @events.push("early") };
+# Arm the latch through the metamodel, after those deaths. (`anon`: a named
+# `method` in the mainline is a useless has-scoped declaration.)
+my $late = anon method DESTROY { @events.push("early") };
 Early.^add_method('DESTROY', $late);
+Early.^compose;
 
 { my $e = Early.new(x => 3); }
 quietly $*VM.request-garbage-collection;
