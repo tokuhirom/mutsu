@@ -31,8 +31,22 @@ struct WalkCtx<'a> {
 }
 
 /// Node budget for the full-backtracking quantifier expansion over a
-/// variable-length alternation (mirrors the old 20k candidate bound).
+/// multi-candidate atom (mirrors the old 20k candidate bound).
 const QUANT_ALT_BUDGET: u32 = 20_000;
+
+/// Shared state of one `walk_quant_group_candidates` expansion.
+struct QuantDfsState {
+    /// Nodes left before the expansion gives up (`QUANT_ALT_BUDGET`).
+    budget: u32,
+    /// `(position, iteration-count class)` states already expanded, kept only
+    /// while measuring a declarative prefix (ADR-0022). A measurement collects
+    /// every end and executes nothing, so what the rest of the pattern can
+    /// reach from a state does not depend on the path that led there;
+    /// re-expanding it would only re-report the same ends. Without this, a
+    /// recursive `regex A { '{' [ <A> | . ]*? '}' }` measured every path
+    /// through the loop, which is exponential in the subject length (#9596).
+    seen: Option<HashSet<(usize, usize)>>,
+}
 
 /// Compound atoms can expose more than one end for one quantifier iteration.
 /// A quantifier over one of these must let its continuation request the next
@@ -927,13 +941,14 @@ impl Interpreter {
                     return stop;
                 }
                 if !token.ratchet && atom_contains_alternation(&token.atom) {
-                    // Full greedy backtracking so a later constraint can
-                    // force a shorter per-iteration alternative. Ratchet
-                    // skips this: it commits to the per-iteration
-                    // highest-priority choice, which is exactly the linear
-                    // chain (the expansion would enumerate an exponential
-                    // tree only to keep its first leaf).
-                    return self.walk_quant_alt(ctx, idx, pos, 0, store, matches);
+                    // Full backtracking so a later constraint can force a
+                    // shorter per-iteration alternative. Ratchet skips this:
+                    // it commits to the per-iteration highest-priority
+                    // choice, which is exactly the linear chain (the
+                    // expansion would enumerate an exponential tree only to
+                    // keep its first leaf).
+                    return self
+                        .walk_quant_group_candidates(ctx, idx, pos, 0, None, true, store, matches);
                 }
                 self.walk_quant_chain(ctx, idx, pos, 0, None, true, store, matches)
             }
@@ -945,7 +960,8 @@ impl Interpreter {
                     // Full greedy backtracking (`+` of a variable-length
                     // alternation): explore every per-iteration choice so a
                     // later constraint can force a shorter one.
-                    return self.walk_quant_alt(ctx, idx, pos, 1, store, matches);
+                    return self
+                        .walk_quant_group_candidates(ctx, idx, pos, 1, None, true, store, matches);
                 }
                 self.walk_quant_chain(ctx, idx, pos, 1, None, true, store, matches)
             }
@@ -1519,6 +1535,13 @@ impl Interpreter {
     /// must be requested before the matcher advances to the next start
     /// position. Drive the atom through the same continuation-based producer
     /// used by `One`/`ZeroOrOne` so those ends are tried in regex priority order.
+    ///
+    /// A non-ratcheted `*`/`+` over an atom containing an alternation
+    /// (`[ <A> | . ]*?`, `(a | bc)+`) comes here too. Each iteration's
+    /// candidates are produced on demand, highest priority first, whether the
+    /// quantifier is greedy or frugal, so a recursive `<A>` is asked for its
+    /// next end only after the continuation rejected the previous one instead
+    /// of having every end of every nested call enumerated up front (#9596).
     #[allow(clippy::too_many_arguments)]
     fn walk_quant_group_candidates(
         &mut self,
@@ -1538,7 +1561,12 @@ impl Interpreter {
         for name in Self::collect_quantified_names_for_token(token) {
             store.insert_named_quantified(name);
         }
-        let mut budget = QUANT_ALT_BUDGET;
+        let mut walk = QuantDfsState {
+            budget: QUANT_ALT_BUDGET,
+            seen: super::regex_helpers::LTM_DECLARATIVE_MODE
+                .with(std::cell::Cell::get)
+                .then(HashSet::new),
+        };
         let stop = self.walk_quant_group_candidates_dfs(
             ctx,
             idx,
@@ -1549,7 +1577,7 @@ impl Interpreter {
             pos_base,
             stride,
             hash_per_iter,
-            &mut budget,
+            &mut walk,
             store,
             matches,
         );
@@ -1569,11 +1597,19 @@ impl Interpreter {
         pos_base: usize,
         stride: usize,
         hash_per_iter: bool,
-        budget: &mut u32,
+        walk: &mut QuantDfsState,
         store: &mut CapStore,
         matches: &mut MatchSink<'_>,
     ) -> bool {
-        if *budget == 0 {
+        if walk.budget == 0 {
+            return false;
+        }
+        // Past `min` (and with no `max`), the iteration count no longer
+        // changes what the rest of the walk can do from `current`.
+        let count_class = if max.is_none() { count.min(min) } else { count };
+        if let Some(seen) = walk.seen.as_mut()
+            && !seen.insert((current, count_class))
+        {
             return false;
         }
         let token = &ctx.pattern.tokens[idx];
@@ -1601,10 +1637,11 @@ impl Interpreter {
                             store: &mut CapStore,
                             end: usize,
                             delta: RegexCaptures| {
-                if (end == current && !zero_width_iter_counts(count, min, max)) || *budget == 0 {
+                if (end == current && !zero_width_iter_counts(count, min, max)) || walk.budget == 0
+                {
                     return false;
                 }
-                *budget -= 1;
+                walk.budget -= 1;
                 let iter_pos_base = store.caps().positional.len();
                 let mark = store.mark();
                 store.merge_delta(delta);
@@ -1628,7 +1665,7 @@ impl Interpreter {
                     pos_base,
                     stride,
                     hash_per_iter,
-                    budget,
+                    walk,
                     store,
                     matches,
                 );
@@ -1657,158 +1694,5 @@ impl Interpreter {
         count >= min
             && !token.frugal
             && self.descend_folded(ctx, idx, current, pos_base, stride, store, matches)
-    }
-
-    /// Full-backtracking quantifier over a variable-length alternation atom
-    /// (`(a | b | bc | cde)+»`): explores every per-iteration alternative so a
-    /// later constraint can force a shorter choice. Greedy priority: at each
-    /// position the highest-priority atom match is tried first, and within a
-    /// match *more* iterations (deeper) outrank stopping there. Frugal is the
-    /// exact mirror. Bounded to avoid catastrophic backtracking.
-    fn walk_quant_alt(
-        &mut self,
-        ctx: &WalkCtx,
-        idx: usize,
-        pos: usize,
-        min: usize,
-        store: &mut CapStore,
-        matches: &mut MatchSink<'_>,
-    ) -> bool {
-        let token = &ctx.pattern.tokens[idx];
-        let pos_base = store.caps().positional.len();
-        let stride = count_capture_groups(&token.atom);
-        let m_quant = store.mark();
-        for n in Self::collect_quantified_names_for_token(token) {
-            store.insert_named_quantified(n);
-        }
-        let mut budget = QUANT_ALT_BUDGET;
-        let stop = if token.frugal {
-            // Frugal: zero iterations first, then shallow-before-deep.
-            (min == 0 && self.descend_folded(ctx, idx, pos, pos_base, stride, store, matches))
-                || self.quant_alt_dfs(
-                    ctx,
-                    idx,
-                    pos,
-                    0,
-                    min,
-                    pos_base,
-                    stride,
-                    true,
-                    &mut budget,
-                    store,
-                    matches,
-                )
-        } else {
-            // Greedy: deep-before-shallow, zero iterations last.
-            self.quant_alt_dfs(
-                ctx,
-                idx,
-                pos,
-                0,
-                min,
-                pos_base,
-                stride,
-                false,
-                &mut budget,
-                store,
-                matches,
-            ) || (min == 0 && self.descend_folded(ctx, idx, pos, pos_base, stride, store, matches))
-        };
-        store.rewind(m_quant);
-        stop
-    }
-
-    /// DFS worker for `walk_quant_alt`. At each node, applies one atom
-    /// candidate, then (greedy) recurses deeper before descending past the
-    /// quantifier at this length — or the mirror order for frugal.
-    #[allow(clippy::too_many_arguments)]
-    fn quant_alt_dfs(
-        &mut self,
-        ctx: &WalkCtx,
-        idx: usize,
-        current: usize,
-        count: usize,
-        min: usize,
-        pos_base: usize,
-        stride: usize,
-        frugal: bool,
-        budget: &mut u32,
-        store: &mut CapStore,
-        matches: &mut MatchSink<'_>,
-    ) -> bool {
-        if *budget == 0 {
-            return false;
-        }
-        let token = &ctx.pattern.tokens[idx];
-        let suppress_padding = atom_contains_alternation(&token.atom);
-        let prior_quantified = suppress_padding.then(|| {
-            super::regex_helpers::IN_QUANTIFIED_ALTERNATION_MATCH.with(|flag| flag.replace(true))
-        });
-        let cands = self.regex_match_atom_all_with_capture_in_pkg(
-            &token.atom,
-            ctx.chars,
-            current,
-            store.caps(),
-            ctx.pkg,
-            ctx.pattern.ignore_case,
-        );
-        if let Some(prior) = prior_quantified {
-            super::regex_helpers::IN_QUANTIFIED_ALTERNATION_MATCH.with(|flag| flag.set(prior));
-        }
-        // Candidates come lowest-priority first: greedy iterates highest
-        // first, frugal keeps the producer order.
-        let iter: Box<dyn Iterator<Item = (usize, RegexCaptures)>> = if frugal {
-            Box::new(cands.into_iter())
-        } else {
-            Box::new(cands.into_iter().rev())
-        };
-        for (next, delta) in iter {
-            // A zero-width iteration counts only while it is needed to reach
-            // the minimum; beyond that it would loop forever.
-            if next == current && !zero_width_iter_counts(count, min, None) {
-                continue;
-            }
-            if *budget == 0 {
-                return false;
-            }
-            *budget -= 1;
-            let iter_pos_base = store.caps().positional.len();
-            let m = store.mark();
-            store.merge_delta(delta);
-            Self::store_apply_named_capture(store, token, current, next, pos_base);
-            Self::store_apply_hash_capture(store, ctx.chars, token, current, next, iter_pos_base);
-            // Greedy: recurse deeper first, then stop at this length.
-            // Frugal: the mirror — stop here first, then grow deeper.
-            let mut stop = false;
-            let order: [bool; 2] = if frugal { [true, false] } else { [false, true] };
-            for stop_here in order {
-                stop = if stop_here {
-                    count + 1 >= min
-                        && self.descend_folded(ctx, idx, next, pos_base, stride, store, matches)
-                } else {
-                    self.quant_alt_dfs(
-                        ctx,
-                        idx,
-                        next,
-                        count + 1,
-                        min,
-                        pos_base,
-                        stride,
-                        frugal,
-                        budget,
-                        store,
-                        matches,
-                    )
-                };
-                if stop {
-                    break;
-                }
-            }
-            store.rewind(m);
-            if stop {
-                return true;
-            }
-        }
-        false
     }
 }
