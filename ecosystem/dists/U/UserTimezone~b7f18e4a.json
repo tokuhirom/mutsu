@@ -7,17 +7,85 @@
     "unresolved": []
   },
   "dist": "UserTimezone",
-  "files": [],
+  "files": [
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.09,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/00-sanity.t",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.94,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "not ok 1 -",
+        "nok": 1,
+        "ok": 1,
+        "plan": 2,
+        "secs": 0.09,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/01-override.t",
+      "raku": {
+        "nok": 0,
+        "ok": 2,
+        "plan": 2,
+        "secs": 0.37,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.08,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/02-fallback.t",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.33,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
   "load": {
-    "Intl::UserTimezone": "expected statement: expected expected statement: expected use statement or import statement or no statement or need statement or unit statement or ... [at lib/User/Timezone.rakumod:117]",
-    "User::Timezone": "expected statement: expected expected statement: expected use statement or import statement or no statement or need statement or unit statement or ... [at lib/User/Timezone.rakumod:117]"
+    "Intl::UserTimezone": "ok",
+    "User::Timezone": "ok"
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-25",
+    "date": "2026-09-26",
     "harness": 2,
-    "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "404ac78",
+    "host": "linux-x86_64",
+    "mutsu_commit": "d4db93cf9",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -28,13 +96,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/U/SE/USERTIMEZONE/b1f9539e97fe816117076b4c6b7d26a414b4fc66.tar.gz"
   },
-  "status": "blocked_load",
+  "status": "partial",
   "totals": {
-    "baseline_assertions": 0,
-    "baseline_files": 0,
-    "mutsu_assertions": 0,
-    "parity_files": 0,
-    "regressed_files": 0
+    "baseline_assertions": 4,
+    "baseline_files": 3,
+    "mutsu_assertions": 3,
+    "parity_files": 2,
+    "regressed_files": 1
   },
   "version": "0.3.1"
 }
