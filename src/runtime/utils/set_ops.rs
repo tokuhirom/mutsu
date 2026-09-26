@@ -34,13 +34,10 @@ pub(crate) fn set_sym_diff_mutability(left: &Value, right: &Value) -> bool {
 }
 
 /// Overlay the given mutability onto a freshly-built set-operator result.
-pub(crate) fn with_set_mutability(mut result: Value, mutable: bool) -> Value {
-    if result.with_set_mut(|_, m| *m = mutable).is_none()
-        && result.with_bag_mut(|_, m| *m = mutable).is_none()
-    {
-        result.with_mix_mut(|_, m| *m = mutable);
-    }
-    result
+/// A flip never leaves the node shared with an operand (see
+/// [`Value::quanthash_with_mutability`]).
+pub(crate) fn with_set_mutability(result: Value, mutable: bool) -> Value {
+    result.quanthash_with_mutability(mutable)
 }
 
 /// Multi-arg symmetric difference: for each key, result = max_weight - second_max_weight.

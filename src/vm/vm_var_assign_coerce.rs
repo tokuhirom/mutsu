@@ -430,8 +430,8 @@ impl Interpreter {
         {
             let result = runtime::utils::coerce_value_to_quanthash(&value);
             // SetHash should be mutable
-            if let ValueView::Set(items, _) = result.view() {
-                let coerced = Value::set_parts(items.clone(), true);
+            if let ValueView::Set(..) = result.view() {
+                let coerced = result.quanthash_with_mutability(true);
                 return Ok(self.quanthash_store_preserving_identity(name, coerced));
             }
             return Ok(result);

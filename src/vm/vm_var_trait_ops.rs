@@ -405,21 +405,8 @@ impl Interpreter {
                     );
                     if already_target {
                         // Ensure mutability flag matches the trait
-                        match init_val.view() {
-                            ValueView::Mix(data, _) => {
-                                let mutable = base_trait == "MixHash";
-                                Value::mix_parts(data.clone(), mutable)
-                            }
-                            ValueView::Bag(data, _) => {
-                                let mutable = base_trait == "BagHash";
-                                Value::bag_parts(data.clone(), mutable)
-                            }
-                            ValueView::Set(data, _) => {
-                                let mutable = base_trait == "SetHash";
-                                Value::set_parts(data.clone(), mutable)
-                            }
-                            _ => init_val,
-                        }
+                        let mutable = matches!(base_trait, "MixHash" | "BagHash" | "SetHash");
+                        init_val.quanthash_with_mutability(mutable)
                     } else {
                         // Convert initial values to the target QuantHash type
                         self.try_compiled_method_or_interpret(init_val, base_trait, vec![])?

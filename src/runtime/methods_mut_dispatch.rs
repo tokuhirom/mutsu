@@ -7,8 +7,6 @@ use crate::value::ValueView;
 use crate::value::value_buf::{
     buf_elem_width, buf_raw_bytes_in, buf_raw_bytes_or_empty, set_buf_raw_bytes,
 };
-use num_bigint::BigInt;
-use num_traits::Signed;
 impl Interpreter {
     pub(crate) fn call_method_mut_with_values(
         &mut self,
@@ -498,45 +496,26 @@ impl Interpreter {
             return Ok(result);
         }
 
-        // SetHash.set(*@keys) / SetHash.unset(*@keys) — add/remove keys in
-        // place (JSON::Unmarshal's `$used-json-keys.set($json-name)`).
-        if matches!(method, "set" | "unset")
-            && let ValueView::Set(data, true) = target.view()
+        // SetHash.set/.unset and the QuantHash .grab/.grabpairs mutate the
+        // shared node in place (`builtins::quanthash_mutators`), so there is
+        // no variable to write back: every holder already sees the change.
+        if let Some(receiver) =
+            crate::builtins::quanthash_mutators::quanthash_mutator_receiver(&target, method)
         {
             crate::vm::vm_stats::record_dispatch_entry_intercept(
                 "callmethodmutwithvalues",
-                "sethash-set-unset",
+                "quanthash-mutator",
             );
-            let mut elements = data.elements.clone();
-            // Preserve the recorded element objects of untouched keys.
-            let mut originals = data.original_keys.clone().unwrap_or_default();
-            for arg in &args {
-                let keys: Vec<Value> = match arg.view() {
-                    ValueView::Array(items, _) => items.to_vec(),
-                    ValueView::Seq(items) => items.to_vec(),
-                    ValueView::Slip(items) => items.to_vec(),
-                    _ => vec![arg.clone()],
-                };
-                for key in keys {
-                    let (k, elem) = crate::runtime::utils::quanthash_elem_entry(&key);
-                    if method == "set" {
-                        crate::runtime::utils::record_quanthash_original(&mut originals, &k, &elem);
-                        elements.insert(k);
-                    } else {
-                        elements.remove(&k);
-                        originals.remove(&k);
-                    }
-                }
-            }
-            let mut new_data = crate::value::SetData::with_original_keys(elements, originals);
-            new_data.value_type = data.value_type.clone();
-            new_data.key_type = data.key_type.clone();
-            new_data.declared_type = data.declared_type.clone();
-            self.env.insert(
-                target_var.to_string(),
-                Value::set_parts(crate::gc::Gc::new(new_data), true),
+            let receiver = receiver.clone();
+            let args = crate::builtins::quanthash_mutators::resolve_callable_count(
+                &receiver,
+                method,
+                args,
+                |f, a| self.call_sub_value(f, a, false),
+            )?;
+            return crate::builtins::quanthash_mutators::apply_quanthash_mutator(
+                &receiver, method, &args,
             );
-            return Ok(Value::NIL);
         }
 
         if let ValueView::Instance {
@@ -2145,311 +2124,6 @@ impl Interpreter {
                 fatal: self.fatal_mode,
                 mode: crate::value::MapGrepMode::MapRw(target.clone()),
             }));
-        }
-
-        // SetHash.grab / SetHash.grabpairs: remove random elements, mutating the Set
-        if matches!(target.view(), ValueView::Set(_, true))
-            && matches!(method, "grab" | "grabpairs")
-        {
-            crate::vm::vm_stats::record_dispatch_entry_intercept(
-                "callmethodmutwithvalues",
-                "sethash-grab",
-            );
-            // Resolve Callable args: call with .elems to get count
-            let args = if !args.is_empty() && args[0].as_sub().is_some() {
-                let callable = args[0].clone();
-                let input = self.call_method_with_values(target.clone(), "elems", vec![])?;
-                let count = self.call_sub_value(callable, vec![input], false)?;
-                let count_int = match count.view() {
-                    ValueView::Int(n) => Value::int(n),
-                    ValueView::Num(f) => Value::int(f as i64),
-                    ValueView::Rat(n, d) if d != 0 => Value::int(n / d),
-                    _ => count.clone(),
-                };
-                vec![count_int]
-            } else {
-                args
-            };
-            // NaN check for grab count
-            if !args.is_empty()
-                && let ValueView::Num(f) = args[0].view()
-                && f.is_nan()
-            {
-                return Err(RuntimeError::new(
-                    "Cannot .grab from a SetHash with NaN elements",
-                ));
-            }
-            let set_data = match target.view() {
-                ValueView::Set(s, _) => (**s).clone(),
-                _ => unreachable!(),
-            };
-            let mut elements: Vec<String> = set_data.elements.iter().cloned().collect();
-            let count = if args.is_empty() {
-                1usize
-            } else {
-                match args[0].view() {
-                    ValueView::Whatever => elements.len(),
-                    _ => args[0].to_f64().max(0.0) as usize,
-                }
-            };
-            if elements.is_empty() || count == 0 {
-                if method == "grab" && args.is_empty() {
-                    return Ok(Value::NIL);
-                }
-                return Ok(Value::seq(Vec::new()));
-            }
-            use crate::builtins::rng::builtin_rand;
-            let mut grabbed = Vec::new();
-            for _ in 0..count {
-                if elements.is_empty() {
-                    break;
-                }
-                let idx = (builtin_rand() * elements.len() as f64) as usize % elements.len();
-                let key = elements.remove(idx);
-                let elem = set_data.typed_key(&key);
-                if method == "grabpairs" {
-                    grabbed.push(crate::runtime::utils::quanthash_typed_pair(
-                        elem,
-                        Value::TRUE,
-                    ));
-                } else {
-                    grabbed.push(elem);
-                }
-            }
-            let new_elements: std::collections::HashSet<String> = elements.into_iter().collect();
-            let mut new_originals = set_data.original_keys.unwrap_or_default();
-            new_originals.retain(|k, _| new_elements.contains(k));
-            let new_set = Value::set_parts(
-                crate::gc::Gc::new(crate::value::SetData::with_original_keys(
-                    new_elements,
-                    new_originals,
-                )),
-                true,
-            );
-            self.env.insert(target_var.to_string(), new_set);
-            return Ok(
-                if grabbed.len() == 1 && args.is_empty() && method == "grab" {
-                    grabbed.into_iter().next().unwrap()
-                } else {
-                    Value::seq(grabbed)
-                },
-            );
-        }
-
-        // BagHash.grab / BagHash.grabpairs: remove random elements, mutating the Bag
-        if matches!(target.view(), ValueView::Bag(_, true))
-            && matches!(method, "grab" | "grabpairs")
-        {
-            crate::vm::vm_stats::record_dispatch_entry_intercept(
-                "callmethodmutwithvalues",
-                "baghash-grab",
-            );
-            // Resolve Callable args: call with .total (grab) or .elems (grabpairs)
-            let args = if !args.is_empty() && args[0].as_sub().is_some() {
-                let callable = args[0].clone();
-                let input = if method == "grabpairs" {
-                    self.call_method_with_values(target.clone(), "elems", vec![])?
-                } else {
-                    self.call_method_with_values(target.clone(), "total", vec![])?
-                };
-                let count = self.call_sub_value(callable, vec![input], false)?;
-                let count_int = match count.view() {
-                    ValueView::Int(n) => Value::int(n),
-                    ValueView::Num(f) => Value::int(f as i64),
-                    ValueView::Rat(n, d) if d != 0 => Value::int(n / d),
-                    _ => count.clone(),
-                };
-                vec![count_int]
-            } else {
-                args
-            };
-            // NaN check for grab/grabpairs count
-            if !args.is_empty()
-                && let ValueView::Num(f) = args[0].view()
-                && f.is_nan()
-            {
-                return Err(RuntimeError::new("Cannot convert NaN to Int"));
-            }
-            let bag_data = match target.view() {
-                ValueView::Bag(b, _) => (**b).clone(),
-                _ => unreachable!(),
-            };
-            let bag = bag_data.counts.clone();
-            let count = if args.is_empty() {
-                1usize
-            } else {
-                match args[0].view() {
-                    ValueView::Whatever => {
-                        if method == "grabpairs" {
-                            bag.len()
-                        } else {
-                            crate::runtime::utils::bigint_to_i128_sat(&bag.values().sum::<BigInt>())
-                                .max(0) as usize
-                        }
-                    }
-                    _ => args[0].to_f64().max(0.0) as usize,
-                }
-            };
-            let keys: Vec<String> = bag.keys().cloned().collect();
-            if keys.is_empty() || count == 0 {
-                if method == "grab" && args.is_empty() {
-                    return Ok(Value::NIL);
-                }
-                return Ok(Value::seq(Vec::new()));
-            }
-            use crate::builtins::rng::builtin_rand;
-            let mut grabbed = Vec::new();
-            let mut remaining = bag;
-            if method == "grabpairs" {
-                for _ in 0..count {
-                    if remaining.is_empty() {
-                        break;
-                    }
-                    let ks: Vec<String> = remaining.keys().cloned().collect();
-                    let idx = (builtin_rand() * ks.len() as f64) as usize % ks.len();
-                    let key = ks[idx].clone();
-                    let val = remaining.remove(&key).unwrap_or_default();
-                    grabbed.push(crate::runtime::utils::quanthash_typed_pair(
-                        bag_data.typed_key(&key),
-                        Value::from_bigint(val),
-                    ));
-                }
-            } else {
-                // grab: pick weighted random elements one at a time
-                for _ in 0..count {
-                    if remaining.is_empty() {
-                        break;
-                    }
-                    let total: i128 = remaining
-                        .values()
-                        .map(crate::runtime::utils::bigint_to_i128_sat)
-                        .sum();
-                    if total <= 0 {
-                        break;
-                    }
-                    let r = (builtin_rand() * total as f64) as i128;
-                    let mut cumulative = 0i128;
-                    let mut chosen_key = String::new();
-                    for (k, v) in &remaining {
-                        cumulative += crate::runtime::utils::bigint_to_i128_sat(v);
-                        if r < cumulative {
-                            chosen_key = k.clone();
-                            break;
-                        }
-                    }
-                    if let Some(c) = remaining.get_mut(&chosen_key) {
-                        *c -= BigInt::from(1);
-                        if !c.is_positive() {
-                            remaining.remove(&chosen_key);
-                        }
-                    }
-                    grabbed.push(bag_data.typed_key(&chosen_key));
-                }
-            }
-            // Update the original variable (keep the surviving element objects)
-            let mut new_originals = bag_data.original_keys.unwrap_or_default();
-            new_originals.retain(|k, _| remaining.contains_key(k));
-            let new_bag = Value::bag_parts(
-                crate::gc::Gc::new(crate::value::BagData::with_original_keys(
-                    remaining,
-                    new_originals,
-                )),
-                true,
-            );
-            self.env.insert(target_var.to_string(), new_bag);
-            return Ok(if grabbed.len() == 1 && args.is_empty() {
-                grabbed.into_iter().next().unwrap()
-            } else {
-                Value::seq(grabbed)
-            });
-        }
-
-        // MixHash.grabpairs: remove random pairs and return them, mutating the Mix
-        if matches!(target.view(), ValueView::Mix(_, _)) && matches!(method, "grabpairs" | "grab") {
-            crate::vm::vm_stats::record_dispatch_entry_intercept(
-                "callmethodmutwithvalues",
-                "mixhash-grab",
-            );
-            // Resolve Callable args
-            let args = if !args.is_empty() && args[0].as_sub().is_some() {
-                let callable = args[0].clone();
-                let input = if method == "grabpairs" {
-                    self.call_method_with_values(target.clone(), "elems", vec![])?
-                } else {
-                    self.call_method_with_values(target.clone(), "total", vec![])?
-                };
-                let count = self.call_sub_value(callable, vec![input], false)?;
-                let count_int = match count.view() {
-                    ValueView::Int(n) => Value::int(n),
-                    ValueView::Num(f) => Value::int(f as i64),
-                    ValueView::Rat(n, d) if d != 0 => Value::int(n / d),
-                    _ => count.clone(),
-                };
-                vec![count_int]
-            } else {
-                args
-            };
-            let mix = match target.view() {
-                ValueView::Mix(m, _) => (**m).clone(),
-                _ => unreachable!(),
-            };
-            let count = if method == "grabpairs" {
-                if args.is_empty() {
-                    1usize
-                } else {
-                    match args[0].view() {
-                        ValueView::Whatever => mix.len(),
-                        _ => args[0].to_f64().max(0.0) as usize,
-                    }
-                }
-            } else {
-                // grab
-                if args.is_empty() {
-                    1usize
-                } else {
-                    match args[0].view() {
-                        ValueView::Whatever => mix.len(),
-                        _ => args[0].to_f64().max(0.0) as usize,
-                    }
-                }
-            };
-            let keys: Vec<String> = mix.keys().cloned().collect();
-            if keys.is_empty() || count == 0 {
-                return Ok(Value::seq(Vec::new()));
-            }
-            use crate::builtins::rng::builtin_rand;
-            let mut grabbed = Vec::new();
-            let mut remaining = mix;
-            for _ in 0..count {
-                if remaining.is_empty() {
-                    break;
-                }
-                let ks: Vec<String> = remaining.keys().cloned().collect();
-                let idx = (builtin_rand() * ks.len() as f64) as usize % ks.len();
-                let key = ks[idx].clone();
-                let elem = remaining.typed_key(&key);
-                let weight = remaining.remove(&key).unwrap_or(0.0);
-                if let Some(ok) = remaining.original_keys.as_mut() {
-                    ok.remove(&key);
-                }
-                if method == "grabpairs" {
-                    let weight_val = crate::value::mix_weight_to_value(weight);
-                    grabbed.push(crate::runtime::utils::quanthash_typed_pair(
-                        elem, weight_val,
-                    ));
-                } else {
-                    // grab: return the element object
-                    grabbed.push(elem);
-                }
-            }
-            // Update the original variable
-            let new_mix = Value::mix_parts(crate::gc::Gc::new(remaining), true);
-            self.env.insert(target_var.to_string(), new_mix);
-            return Ok(if grabbed.len() == 1 && args.is_empty() {
-                grabbed.into_iter().next().unwrap()
-            } else {
-                Value::seq(grabbed)
-            });
         }
 
         // SharedPromise/SharedChannel are internally mutable — delegate to immutable dispatch

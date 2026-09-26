@@ -786,7 +786,7 @@ impl Interpreter {
             // weights.  Build the native QuantHash first, then wrap it in a
             // user subclass such as AccountableBagHash so its protocol methods
             // remain available.
-            let mut storage = match base {
+            let storage = match base {
                 "Set" | "SetHash" => crate::builtins::quanthash_coerce::to_set(value, base)?,
                 "Bag" | "BagHash" => crate::builtins::quanthash_coerce::to_bag(value, base)?,
                 "Mix" | "MixHash" => crate::builtins::quanthash_coerce::to_mix(value, base)?,
@@ -796,11 +796,10 @@ impl Interpreter {
                     )));
                 }
             };
-            match base {
-                "SetHash" => storage.with_set_mut(|_, mutable| *mutable = true),
-                "BagHash" => storage.with_bag_mut(|_, mutable| *mutable = true),
-                "MixHash" => storage.with_mix_mut(|_, mutable| *mutable = true),
-                _ => None,
+            let storage = if matches!(base, "SetHash" | "BagHash" | "MixHash") {
+                storage.quanthash_with_mutability(true)
+            } else {
+                storage
             };
             if type_name == base {
                 Ok(storage)
