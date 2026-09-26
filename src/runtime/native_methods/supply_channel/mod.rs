@@ -82,12 +82,10 @@ impl SupplySender {
     ///
     /// A producer registry that outlives its producers (the signal watcher's,
     /// which a `signal()` supply is entered in for the process's whole life)
-    /// uses this to drop its dead entries instead of walking them forever.
+    /// uses this to drop its dead entries instead of walking them forever, and
+    /// a polling producer (the `watch-path` watcher) to retire between events.
     /// A supply that has never been tapped is *not* retired: its first tap may
     /// still be coming.
-    // The signal watcher is the only caller, and it is unix-only: on the wasm32
-    // lib this compiles with no call site at all.
-    #[cfg_attr(not(unix), allow(dead_code))]
     pub(crate) fn is_retired(&self) -> bool {
         if self.closed.load(Ordering::Acquire) {
             return true;
@@ -96,6 +94,16 @@ impl SupplySender {
             None => true,
             Some(broadcast) => broadcast.all_taps_gone(),
         }
+    }
+
+    /// Whether any tap has subscribed yet. A producer whose stream only makes
+    /// sense from the moment of the tap (a filesystem watcher: rakudo starts
+    /// watching when the Supply is tapped) keeps re-reading its baseline until
+    /// then, rather than queueing what happened before anyone listened.
+    pub(crate) fn ever_subscribed(&self) -> bool {
+        self.broadcast
+            .upgrade()
+            .is_some_and(|b| b.ever_subscribed.load(Ordering::Acquire))
     }
 }
 

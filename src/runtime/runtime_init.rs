@@ -2581,6 +2581,9 @@ impl Interpreter {
         // Field-by-field init rather than `Registry { .. }` struct
         // update: `proto_subs`/`proto_gen` are private (their
         // mutations must flow through the gen-bumping accessors).
+        for (name, class_def) in Self::io_notification_class_defs() {
+            classes.insert(name, class_def);
+        }
         let mut registry = Registry::default();
         registry.classes = classes;
         registry.seed_builtin_method_entries();
@@ -3576,6 +3579,7 @@ impl Interpreter {
             Self::init_protocol_family_enum(&mut enum_base);
             Self::init_signal_enum(&mut enum_base);
             Self::init_seek_type_enum(&mut enum_base);
+            Self::init_file_change_event_enum(&mut enum_base);
             // Hoist the immutable process-constant magic/dynamic vars out of every
             // per-frame env overlay into the shared base tier (docs/vm-dual-store.md
             // 4c "natural extension"). These are set once at interpreter start and

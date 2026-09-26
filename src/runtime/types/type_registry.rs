@@ -292,7 +292,8 @@ impl Interpreter {
     }
 
     /// Record the process-constant built-in enum types (`Endian`,
-    /// `ProtocolFamily`, `Order`, `SeekType`, `Signal`) in a registry.
+    /// `ProtocolFamily`, `Order`, `SeekType`, `Signal`, `FileChangeEvent`) in
+    /// a registry.
     ///
     /// Called while BUILDING the shared built-in registry template, not per
     /// interpreter: these five entries are identical in every interpreter, but
@@ -316,6 +317,10 @@ impl Interpreter {
         registry
             .enum_types
             .insert("Signal".to_string(), Self::signal_enum_variants());
+        registry.enum_types.insert(
+            "FileChangeEvent".to_string(),
+            Self::file_change_event_enum_variants(),
+        );
     }
 
     /// Get signal number — use the POSIX default value on all platforms.

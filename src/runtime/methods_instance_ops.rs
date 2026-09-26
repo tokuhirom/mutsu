@@ -2127,6 +2127,11 @@ impl Interpreter {
             // `Compiler.id` is callable on the bare type object (it identifies the
             // build, not an instance), matching Rakudo. Other Compiler methods are
             // attribute accessors that legitimately need an instance.
+            // `IO::Notification.watch-path` -- shared with the VM's native
+            // class-method lane.
+            if let Some(result) = self.try_io_notification_class_method(name, method, &args) {
+                return result;
+            }
             if name == "Compiler" && method == "id" {
                 return Ok(Value::str(Self::compiler_id()));
             }
