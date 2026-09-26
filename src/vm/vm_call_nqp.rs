@@ -212,6 +212,28 @@ impl Interpreter {
         Ok(())
     }
 
+    /// `OpCode::NqpCreateC` — `nqp::create` whose class operand is a bareword
+    /// the site resolves, through its memo. The bookkeeping is
+    /// [`Self::exec_nqp_op`]'s (the one-shot callsite-line clear, the
+    /// dispatch tally, the `literal_native_args` save); a type object has no
+    /// `VarRef` or `Proxy` to normalize.
+    pub(super) fn exec_nqp_create_op(
+        &mut self,
+        code: &CompiledCode,
+        site: &crate::trir::class_operand::ClassOperandSite,
+        compiled_fns: &CompiledFns,
+    ) -> Result<(), RuntimeError> {
+        let ty = self.trir_class_operand(site, compiled_fns)?;
+        self.apply_pending_rw_writeback(code);
+        loan_env!(self, set_pending_callsite_line(None));
+        crate::vm::vm_stats::record_function_dispatch();
+        let saved_literals = std::mem::replace(&mut self.literal_native_args, 0);
+        let result = self.nqp_create(ty);
+        self.literal_native_args = saved_literals;
+        self.stack.push(result?);
+        Ok(())
+    }
+
     /// FETCH any `Proxy` operand in place. The general call path rebuilt the
     /// whole argument list to do this (`auto_fetch_proxy_args`); an nqp op's
     /// operands are almost never `Proxy`, so probe and only write back the

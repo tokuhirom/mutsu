@@ -350,103 +350,10 @@ impl Interpreter {
                 }
                 Ok(Value::int(n))
             }
-            // nqp::create($type) — allocate an instance of `$type` with NO
-            // constructor run: attributes stay uninitialized and `BUILD` is
-            // never called, which is exactly Raku's `.CREATE`. nqp code uses
-            // it both for a native array (`nqp::create(array[uint32])`) and to
-            // hand-build an iterator (`nqp::create(self)` followed by
-            // `bindattr`), so it must not go anywhere near `new`.
-            // Cost: O(a) + CREATE/new dispatch, a = attributes of the class (the cached slot template is copied).
-            "create" => {
-                let ty = args.first().cloned().unwrap_or(Value::NIL);
-                // A native array / Buf / Blob is allocated with its REPR's
-                // empty storage, which for mutsu means `.new`: `CREATE` hands
-                // back a value with no element storage at all, so the
-                // `nqp::push_i` that invariably follows
-                // (`nqp::strtocodes($s, NFC, nqp::create(array[uint32]))`)
-                // had nothing to push onto. Everything else takes `CREATE`,
-                // whose whole point here is to skip the constructor.
-                // Both names are `'static` (the interner's, or a builtin
-                // type's), so this allocates nothing.
-                let name: &'static str = match ty.view() {
-                    ValueView::Package(sym) => sym.as_str(),
-                    _ => crate::runtime::utils::value_type_name(&ty),
-                };
-                // `nqp::create(Uni)` (and the NFC/NFD/NFKC/NFKD forms) must
-                // hand back an EMPTY codepoint store, which nqp code then
-                // fills with `nqp::push_i` / `nqp::strtocodes`. `CREATE` would
-                // answer with a bare type object instead, since a Uni's
-                // content is not a Raku attribute.
-                if matches!(name, "Uni" | "NFC" | "NFD" | "NFKC" | "NFKD") {
-                    let form = if name == "Uni" {
-                        String::new()
-                    } else {
-                        name.to_string()
-                    };
-                    return Some(Ok(Value::uni_from_codepoints(form, std::iter::empty())));
-                }
-                // A bare VM storage class (`is repr('VMArray')` /
-                // `is repr('VMHash')`) has no attributes at all — its whole
-                // content is the store — so `CREATE` would hand back something
-                // `nqp::bindpos`/`nqp::bindkey` cannot write to. Allocate
-                // mutsu's own array/hash, which IS that store.
-                {
-                    // Both sets are keyed by short name (see
-                    // `register_vm_storage_class`), which is what this matched
-                    // by when it scanned them.
-                    // A type object's short name is memoized per symbol;
-                    // building a `StrSearcher` for `rsplit("::")` on every
-                    // call cost ~215 instructions of each `create` (#9291).
-                    let short: &str = match ty.view() {
-                        ValueView::Package(sym) => crate::qualified::unqualified_part(sym).as_str(),
-                        _ => name.rsplit("::").next().unwrap_or(name),
-                    };
-                    let reg = self.registry();
-                    let holds = |set: &rustc_hash::FxHashSet<String>| set.contains(short);
-                    if holds(&reg.vmhash_classes) {
-                        return Some(Ok(Value::hash_with_data(Value::hash_arc(
-                            ValueMap::default(),
-                        ))));
-                    }
-                    if holds(&reg.vmarray_classes) {
-                        return Some(Ok(Value::real_array(Vec::new())));
-                    }
-                }
-                // A Map/Hash/List/Array is, in mutsu, indistinguishable from
-                // its own storage — the identity `nqp_attr_value` already
-                // answers a `'$!storage'` read with — so `CREATE` has to
-                // allocate that storage, because nqp code creates one of these
-                // and then builds it with `nqp::bindkey` / `nqp::push`, or
-                // installs a separately built store into it. `Mu.CREATE` hands
-                // back an attribute-less instance, which none of those reach;
-                // `.new` with no arguments is the empty store, correctly
-                // tagged (a `Map` is a Hash flagged immutable, a `List` an
-                // Array flagged immutable).
-                let method = if name.starts_with("array[")
-                    || name == "array"
-                    || matches!(name, "Map" | "Hash" | "List" | "Array")
-                    || crate::runtime::utils::is_buf_or_blob_class(name)
-                {
-                    "new"
-                } else {
-                    "CREATE"
-                };
-                // `nqp::create` is the REPR-level allocation: it never runs a
-                // user `CREATE` method (rakudo prints nothing for a class whose
-                // `method CREATE` says something). Allocate directly rather
-                // than through `call_method_with_values`, whose resolution
-                // walk before its own `CREATE` arm cost ~20K instructions a
-                // call (#9122).
-                if method == "CREATE"
-                    && let Some(result) = self.dispatch_create(&ty)
-                {
-                    return Some(result);
-                }
-                Ok(match self.call_method_with_values(ty, method, vec![]) {
-                    Ok(v) => v,
-                    Err(e) => return Some(Err(e)),
-                })
-            }
+            // nqp::create($type): allocate with no constructor run (see
+            // `nqp_create.rs`).
+            // Cost: O(a), a = attributes of the class (the cached slot template is copied).
+            "create" => self.nqp_create(args.first().cloned().unwrap_or(Value::NIL)),
 
             // nqp::getattr($obj, $class, '$!name') and the typed reads —
             // straight attribute access, with the class operand ignored

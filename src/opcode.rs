@@ -2408,6 +2408,12 @@ pub(crate) enum OpCode {
     /// on the stack at all but resolved by the site, which remembers it. Otherwise the same work as
     /// [`OpCode::NqpOp`], which is what every other attribute-op site keeps.
     NqpAttrC(Box<crate::runtime::nqp_attr::NqpAttrCSite>),
+    /// `nqp::create(Bareword)` (ADR-0121 D3): the class operand compiled to a
+    /// lone `GetBareWord` and is resolved by the site, which remembers a type
+    /// object named by the bareword's own spelling for one registry write
+    /// generation. Nothing is on the stack. Otherwise the same work as
+    /// [`OpCode::NqpOp`], which every other `create` site keeps.
+    NqpCreateC(Box<crate::trir::class_operand::ClassOperandSite>),
     /// Expression-level function call whose literal named args travel
     /// out-of-band: `arity` values on the stack, of which the positions
     /// listed in `CompiledCode::named_arg_specs[spec_idx]` are named-arg

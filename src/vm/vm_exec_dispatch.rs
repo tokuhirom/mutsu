@@ -4386,6 +4386,20 @@ impl Interpreter {
                 }
                 *ip += 1;
             }
+            // Cost: O(a), a = attributes of the class (a cached slot template is copied; see
+            // src/runtime/nqp_create.rs).
+            OpCode::NqpCreateC(site) => {
+                self.sync_source_line(code, *ip);
+                if let Err(e) = self.exec_nqp_create_op(code, site, compiled_fns) {
+                    // As for `NqpOp`: a `New` type's `.new` can reach user code
+                    // that raises a resumable control signal.
+                    if !e.is_resume() && self.resume_ip.is_none() {
+                        self.resume_ip = Some((Self::resume_code_fp(code), *ip + 1));
+                    }
+                    return Err(e);
+                }
+                *ip += 1;
+            }
             // Cost: O(a) plus the callee's body, a = arguments including named pairs (see
             // exec_call_func_named_op).
             OpCode::CallFuncNamed { .. } => {

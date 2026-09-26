@@ -1029,6 +1029,7 @@ impl Interpreter {
             accessor_lane: rustc_hash::FxHashMap::default(),
             native_ctor_plan_cache: rustc_hash::FxHashMap::default(),
             user_method_probe_memo: Default::default(),
+            create_memo: Default::default(),
             multi_resolve_cache: rustc_hash::FxHashMap::default(),
             multi_type_cacheable: rustc_hash::FxHashMap::default(),
             native_lever_a_override_cache: rustc_hash::FxHashMap::default(),

@@ -355,7 +355,7 @@ impl Compiler {
         let Some(id) = crate::runtime::nqp_op_ids::nqp_op_id(op) else {
             return false;
         };
-        if self.try_compile_nqp_attr_op(op, args) {
+        if self.try_compile_nqp_attr_op(op, args) || self.try_compile_nqp_create(op, args) {
             return true;
         }
         for arg in args {
@@ -391,23 +391,9 @@ impl Compiler {
         self.compile_expr(&args[0]);
         let before = self.code.ops.len();
         self.compile_expr(&args[1]);
-        let bareword = match self.code.ops.get(before..) {
-            Some([OpCode::GetBareWord(idx)]) => match self.code.constants[*idx as usize].view() {
-                // A no-paren `nqp::` term is an op call, not a name to resolve.
-                crate::value::ValueView::Str(s) if !s.starts_with("nqp::") => {
-                    Some(crate::symbol::Symbol::intern(&s))
-                }
-                _ => None,
-            },
-            _ => None,
-        };
-        let class = bareword.map(|sym| {
-            // `op_lines` runs parallel to `ops`. Nothing jumps to the popped
-            // op: it was the whole of the operand, emitted just now.
-            self.code.ops.pop();
-            self.code.op_lines.pop();
-            crate::trir::class_operand::ClassOperandSite::new(sym)
-        });
+        let class = self
+            .take_lone_bareword(before)
+            .map(crate::trir::class_operand::ClassOperandSite::new);
         if let Some(val) = args.get(3) {
             self.compile_expr(val);
         }
@@ -415,5 +401,48 @@ impl Compiler {
             crate::runtime::nqp_attr::NqpAttrCSite { site, class },
         )));
         true
+    }
+
+    /// `nqp::create(Bareword)` compiles to [`OpCode::NqpCreateC`]: the
+    /// bareword is resolved by the site, which remembers a type object named
+    /// by its own spelling for one registry write generation, as TRIR's
+    /// `ClassOperand` term does. Any other operand compiles to the generic
+    /// [`OpCode::NqpOp`].
+    fn try_compile_nqp_create(&mut self, op: &str, args: &[Expr]) -> bool {
+        if op != "create" || args.len() != 1 {
+            return false;
+        }
+        let before = self.code.ops.len();
+        self.compile_expr(&args[0]);
+        match self.take_lone_bareword(before) {
+            Some(sym) => self.code.emit(OpCode::NqpCreateC(Box::new(
+                crate::trir::class_operand::ClassOperandSite::term(sym),
+            ))),
+            None => self.code.emit(OpCode::NqpOp {
+                id: crate::runtime::nqp_op_ids::nqp_op_id(op).expect("create is an nqp op"),
+                arity: 1,
+            }),
+        };
+        true
+    }
+
+    /// When the ops emitted since `before` are exactly one `GetBareWord` of a
+    /// name (not a no-paren `nqp::` term, which is an op call), pop it and
+    /// answer the name.
+    fn take_lone_bareword(&mut self, before: usize) -> Option<crate::symbol::Symbol> {
+        let sym = match self.code.ops.get(before..) {
+            Some([OpCode::GetBareWord(idx)]) => match self.code.constants[*idx as usize].view() {
+                crate::value::ValueView::Str(s) if !s.starts_with("nqp::") => {
+                    crate::symbol::Symbol::intern(&s)
+                }
+                _ => return None,
+            },
+            _ => return None,
+        };
+        // `op_lines` runs parallel to `ops`. Nothing jumps to the popped op:
+        // it was the whole of the operand, emitted just now.
+        self.code.ops.pop();
+        self.code.op_lines.pop();
+        Some(sym)
     }
 }
