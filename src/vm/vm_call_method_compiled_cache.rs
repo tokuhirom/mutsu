@@ -292,13 +292,8 @@ impl Interpreter {
         // three `CSV::Row.push` candidates re-ran the whole candidate walk on
         // every field pushed (#9494).
         if base.contains(':') {
-            let plain_qualified = base
-                .split("::")
-                .all(|segment| !segment.is_empty() && !segment.contains(':'));
             let registry = self.registry();
-            let names_a_type =
-                registry.classes.contains_key(base) || registry.roles.contains_key(base);
-            if !(plain_qualified && names_a_type) {
+            if !(registry.classes.contains_key(base) || registry.roles.contains_key(base)) {
                 return true;
             }
         }

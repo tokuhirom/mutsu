@@ -404,21 +404,28 @@ impl Interpreter {
     /// type. Lexical types use an opaque NUL-suffixed registry key, so the
     /// package-item marker cannot be queried with the unmangled spelling that
     /// appears in source (`M::State`).
+    // Cost: O(1) expected, or O(t), t = registered type keys, for a name that
+    // has lexically scoped (NUL-mangled) registrations.
     pub(crate) fn is_my_scoped_type_name(&self, fq_name: &str) -> bool {
         if !fq_name.contains("::") {
             return false;
         }
         let registry = self.registry();
-        // The scan can only match a key that is either `fq_name` itself or
-        // carries `fq_name` before its first NUL. When neither exists there is
-        // nothing to find, and this runs on every `has_type` of a qualified
-        // name — see `Registry::has_lexical_type_key_for`.
-        if !registry.has_lexical_type_key_for(fq_name)
-            && !registry.classes.contains_key(fq_name)
-            && !registry.roles.contains_key(fq_name)
-            && !registry.enum_types.contains_key(fq_name)
-            && !registry.subsets.contains_key(fq_name)
-        {
+        // A match is a key that is either `fq_name` itself or carries
+        // `fq_name` before its first NUL, and this runs on every `has_type` of
+        // a qualified name. The exact key is one probe per table; only a name
+        // that has mangled (NUL-suffixed) keys needs the scan below — see
+        // `Registry::has_lexical_type_key_for`. Scanning every type key for a
+        // plain `CSV::Field` (with a `format!` to build the prefix) was an
+        // O(types) cost on each type check of a module's own class (#9494).
+        let exact_key = registry.classes.contains_key(fq_name)
+            || registry.roles.contains_key(fq_name)
+            || registry.enum_types.contains_key(fq_name)
+            || registry.subsets.contains_key(fq_name);
+        if exact_key && self.is_my_scoped_package_item(fq_name) {
+            return true;
+        }
+        if !registry.has_lexical_type_key_for(fq_name) {
             return false;
         }
         let prefix = format!("{fq_name}\u{0}");
@@ -428,10 +435,7 @@ impl Interpreter {
             .chain(registry.roles.keys())
             .chain(registry.enum_types.keys())
             .chain(registry.subsets.keys())
-            .any(|key| {
-                (key.starts_with(&prefix) || key.as_str() == fq_name)
-                    && self.is_my_scoped_package_item(key)
-            })
+            .any(|key| key.starts_with(&prefix) && self.is_my_scoped_package_item(key))
     }
 
     /// Whether a lexically scoped type's source-facing name is visible from
