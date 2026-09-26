@@ -182,6 +182,7 @@ mod vm_control_ops;
 mod vm_core_helpers;
 mod vm_data_io_ops;
 pub(crate) use vm_data_io_ops::OutputKind;
+mod vm_closure_build;
 mod vm_data_ops;
 mod vm_data_push_ops;
 mod vm_dispatch_helpers;

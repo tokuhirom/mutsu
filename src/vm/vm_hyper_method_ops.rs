@@ -530,7 +530,31 @@ impl Interpreter {
         target_name_idx: Option<u32>,
         arg_sources_idx: Option<u32>,
     ) -> Result<(), RuntimeError> {
-        let method_raw = Self::const_str(code, name_idx);
+        self.exec_hyper_method_call_named_op(
+            code,
+            Self::const_str(code, name_idx),
+            arity,
+            modifier_idx,
+            quoted,
+            target_name_idx,
+            arg_sources_idx,
+        )
+    }
+
+    /// The `HyperMethodCall` body for an already-resolved method name;
+    /// `HyperMethodCallDynamic` delegates a run-time method name here and owns
+    /// only the Callable form (#9454). Stack: `[.., target, args...]`.
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn exec_hyper_method_call_named_op(
+        &mut self,
+        code: &CompiledCode,
+        method_raw: &str,
+        arity: u32,
+        modifier_idx: Option<u32>,
+        quoted: bool,
+        target_name_idx: Option<u32>,
+        arg_sources_idx: Option<u32>,
+    ) -> Result<(), RuntimeError> {
         let target_var: Option<String> =
             target_name_idx.map(|idx| Self::const_str(code, idx).to_string());
         let modifier = modifier_idx.map(|idx| Self::const_str(code, idx));
@@ -1354,9 +1378,76 @@ impl Interpreter {
         }
     }
 
+    /// Whether a dynamic hyper call's name operand is a Callable (`>>.&f`,
+    /// `>>.$code`, a `CALL-ME` instance) rather than a method name, and the
+    /// callable's name when it is (empty for an anonymous one).
+    fn hyper_dynamic_callable_name(&mut self, name_val: &Value) -> Option<String> {
+        method_value_callable_name(name_val).or_else(|| {
+            // An instance that provides CALL-ME is callable even though it has
+            // no Sub/Routine name to extract. Keep it on the callable hyper
+            // path instead of stringifying the instance into a method name.
+            let ValueView::Instance { class_name, .. } = name_val.view() else {
+                return None;
+            };
+            let class_name = class_name.resolve();
+            self.class_has_method(&class_name, "CALL-ME")
+                .then(String::new)
+        })
+    }
+
+    /// `OpCode::HyperMethodCallDynamic` (`@a>>."$name"()`, `@a>>.&f`). Owns
+    /// only the name resolution: a method name dispatches through the
+    /// `HyperMethodCall` body with the run-time spelling (as a quoted name --
+    /// a run-time name is never a compile-time macro), so the two cannot
+    /// drift (#9454); a Callable is applied here. Stack: `[.., target, name,
+    /// args...]`.
     pub(super) fn exec_hyper_method_call_dynamic_op(
         &mut self,
         code: &CompiledCode,
+        arity: u32,
+        modifier_idx: Option<u32>,
+        arg_sources_idx: Option<u32>,
+    ) -> Result<(), RuntimeError> {
+        let Some(name_pos) = self
+            .stack
+            .len()
+            .checked_sub(arity as usize + 1)
+            .filter(|&p| p >= 1)
+        else {
+            return Err(RuntimeError::new(
+                "Interpreter stack underflow in HyperMethodCallDynamic",
+            ));
+        };
+        let name_val = self.stack[name_pos].clone();
+        if let Some(callable_name) = self.hyper_dynamic_callable_name(&name_val) {
+            return self.exec_hyper_callable_call(
+                code,
+                callable_name,
+                arity,
+                modifier_idx,
+                arg_sources_idx,
+            );
+        }
+        self.stack.remove(name_pos);
+        let method = name_val.to_string_value();
+        self.exec_hyper_method_call_named_op(
+            code,
+            &method,
+            arity,
+            modifier_idx,
+            true,
+            None,
+            arg_sources_idx,
+        )
+    }
+
+    /// `@a>>.&callable(args)`: apply a Callable to each element (deepmap, or
+    /// node level for a nodal callable). Stack: `[.., target, callable,
+    /// args...]`.
+    fn exec_hyper_callable_call(
+        &mut self,
+        code: &CompiledCode,
+        callable_name: String,
         arity: u32,
         modifier_idx: Option<u32>,
         arg_sources_idx: Option<u32>,
@@ -1420,183 +1511,54 @@ impl Interpreter {
             elems
         });
         let mut results = Vec::with_capacity(items.len());
-        let name_val_callable_name = method_value_callable_name(&name_val).or_else(|| {
-            // An instance that provides CALL-ME is callable even though it has
-            // no Sub/Routine name to extract. Keep it on the callable hyper
-            // path instead of stringifying the instance into a method name.
-            let ValueView::Instance { class_name, .. } = name_val.view() else {
-                return None;
-            };
-            let class_name = class_name.resolve();
-            self.class_has_method(&class_name, "CALL-ME")
-                .then(String::new)
-        });
-        let method = name_val_callable_name.is_none().then(|| {
-            let method_raw = name_val.to_string_value();
-            Self::rewrite_method_name(&method_raw, modifier)
-        });
-        // A dynamic hyper call has one runtime spelling for its entire target.
-        // Intern it before the item loop: native probes below used to hash that
-        // same spelling once per element.
-        let method_sym = method.as_deref().map(Symbol::intern);
-        for (idx, item) in items.iter_mut().enumerate() {
+        for item in items.iter_mut() {
             let item_args = args.clone();
-            if let Some(callable_name) = &name_val_callable_name {
-                // A `>>.&callable` hyper descends to the leaves (deepmap) UNLESS the
-                // callable is *nodal* (`>>.&elems`, `>>.&reverse`, ...), which applies
-                // at the node level like `>>.elems`. A block or a plain sub is not
-                // nodal and always descends. Nodality follows Raku's `is nodal` trait;
-                // mutsu does not yet store that trait on a user `Sub` (it is parsed
-                // and discarded), so we approximate it by name: a callable whose name
-                // is in the nodal built-in set is treated as nodal. This gets the
-                // built-in routines and the `sub elems is nodal` shadow right; an
-                // anonymous block has an empty name and always descends.
-                // TODO: store the `is nodal` trait on SubData and read it here, so a
-                // plain `sub foo` never counts as nodal and a custom `sub bar is
-                // nodal` (non-builtin name) does.
-                let callable_is_nodal = is_nodal_list_method(callable_name);
-                if callable_is_nodal {
-                    crate::vm::vm_stats::record_dispatch_entry_intercept(
-                        "hypermethodcalldynamic",
-                        "callable-nodal",
-                    );
-                    // Node level: apply the callable to each top-level element.
-                    let mut call_args = Vec::with_capacity(item_args.len() + 1);
-                    call_args.push(item.clone());
-                    call_args.extend(item_args);
-                    let val = match modifier {
-                        Some("?") => self
-                            .vm_call_on_value(name_val.clone(), call_args, None)
-                            .unwrap_or_else(|_| Value::package(crate::symbol::wk::any())),
-                        Some("+") => Value::array(vec![self.vm_call_on_value(
-                            name_val.clone(),
-                            call_args,
-                            None,
-                        )?]),
-                        Some("*") => {
-                            match self.vm_call_on_value(name_val.clone(), call_args, None) {
-                                Ok(v) => Value::array(vec![v]),
-                                Err(_) => Value::array(vec![]),
-                            }
-                        }
-                        _ => self.vm_call_on_value(name_val.clone(), call_args, None)?,
-                    };
-                    results.push(val);
-                    continue;
-                }
+            // A `>>.&callable` hyper descends to the leaves (deepmap) UNLESS the
+            // callable is *nodal* (`>>.&elems`, `>>.&reverse`, ...), which applies
+            // at the node level like `>>.elems`. A block or a plain sub is not
+            // nodal and always descends. Nodality follows Raku's `is nodal` trait;
+            // mutsu does not yet store that trait on a user `Sub` (it is parsed
+            // and discarded), so we approximate it by name: a callable whose name
+            // is in the nodal built-in set is treated as nodal. This gets the
+            // built-in routines and the `sub elems is nodal` shadow right; an
+            // anonymous block has an empty name and always descends.
+            // TODO: store the `is nodal` trait on SubData and read it here, so a
+            // plain `sub foo` never counts as nodal and a custom `sub bar is
+            // nodal` (non-builtin name) does.
+            let callable_is_nodal = is_nodal_list_method(&callable_name);
+            if callable_is_nodal {
                 crate::vm::vm_stats::record_dispatch_entry_intercept(
                     "hypermethodcalldynamic",
-                    "callable-descend",
+                    "callable-nodal",
                 );
-                let r = self.hyper_sub_apply_recursive(&name_val, item, &item_args, modifier)?;
-                push_hyper_result(&mut results, itemize_if_descended(item, r));
+                // Node level: apply the callable to each top-level element.
+                let mut call_args = Vec::with_capacity(item_args.len() + 1);
+                call_args.push(item.clone());
+                call_args.extend(item_args);
+                let val = match modifier {
+                    Some("?") => self
+                        .vm_call_on_value(name_val.clone(), call_args, None)
+                        .unwrap_or_else(|_| Value::package(crate::symbol::wk::any())),
+                    Some("+") => Value::array(vec![self.vm_call_on_value(
+                        name_val.clone(),
+                        call_args,
+                        None,
+                    )?]),
+                    Some("*") => match self.vm_call_on_value(name_val.clone(), call_args, None) {
+                        Ok(v) => Value::array(vec![v]),
+                        Err(_) => Value::array(vec![]),
+                    },
+                    _ => self.vm_call_on_value(name_val.clone(), call_args, None)?,
+                };
+                results.push(val);
                 continue;
             }
-            let method = method
-                .as_ref()
-                .expect("method string exists for non-callables");
-            let method_sym = method_sym.ok_or_else(|| {
-                RuntimeError::new("missing method symbol for dynamic hyper dispatch")
-            })?;
-            match modifier {
-                Some("?") => {
-                    let val = if let Some(native_result) =
-                        self.try_native_method(item, method_sym, &item_args)
-                    {
-                        crate::vm::vm_stats::record_dispatch_entry_outcome(
-                            "hypermethodcalldynamic",
-                            "native",
-                        );
-                        native_result.unwrap_or(Value::package(crate::symbol::wk::any()))
-                    } else {
-                        crate::vm::vm_stats::record_dispatch_entry_outcome(
-                            "hypermethodcalldynamic",
-                            "user",
-                        );
-                        match self.call_method_mut_with_temp_target(item, method, item_args, idx) {
-                            Ok((v, updated)) => {
-                                *item = updated;
-                                v
-                            }
-                            Err(_) => Value::package(crate::symbol::wk::any()),
-                        }
-                    };
-                    results.push(val);
-                }
-                Some("+") => {
-                    let vals = if let Some(native_result) =
-                        self.try_native_method(item, method_sym, &item_args)
-                    {
-                        crate::vm::vm_stats::record_dispatch_entry_outcome(
-                            "hypermethodcalldynamic",
-                            "native",
-                        );
-                        let r = native_result?;
-                        let count = self.builtin_mro_method_candidate_count(item, method);
-                        vec![r; count]
-                    } else {
-                        crate::vm::vm_stats::record_dispatch_entry_outcome(
-                            "hypermethodcalldynamic",
-                            "user",
-                        );
-                        let (v, updated) =
-                            self.call_method_all_with_temp_target(item, method, item_args, idx)?;
-                        *item = updated;
-                        v
-                    };
-                    results.push(Value::array(vals));
-                }
-                Some("*") => {
-                    if let Some(native_result) =
-                        self.try_native_method(item, method_sym, &item_args)
-                    {
-                        crate::vm::vm_stats::record_dispatch_entry_outcome(
-                            "hypermethodcalldynamic",
-                            "native",
-                        );
-                        match native_result {
-                            Ok(v) => {
-                                let count = self.builtin_mro_method_candidate_count(item, method);
-                                results.push(Value::array(vec![v; count]))
-                            }
-                            Err(_) => results.push(Value::array(vec![])),
-                        }
-                    } else {
-                        crate::vm::vm_stats::record_dispatch_entry_outcome(
-                            "hypermethodcalldynamic",
-                            "user",
-                        );
-                        match self.call_method_all_with_temp_target(item, method, item_args, idx) {
-                            Ok((vals, updated)) => {
-                                *item = updated;
-                                results.push(Value::array(vals));
-                            }
-                            Err(_) => results.push(Value::real_array(vec![])),
-                        }
-                    }
-                }
-                _ => {
-                    let val = if let Some(native_result) =
-                        self.try_native_method(item, method_sym, &item_args)
-                    {
-                        crate::vm::vm_stats::record_dispatch_entry_outcome(
-                            "hypermethodcalldynamic",
-                            "native",
-                        );
-                        native_result?
-                    } else {
-                        crate::vm::vm_stats::record_dispatch_entry_outcome(
-                            "hypermethodcalldynamic",
-                            "user",
-                        );
-                        let (v, updated) =
-                            self.call_method_mut_with_temp_target(item, method, item_args, idx)?;
-                        *item = updated;
-                        v
-                    };
-                    results.push(val);
-                }
-            }
+            crate::vm::vm_stats::record_dispatch_entry_intercept(
+                "hypermethodcalldynamic",
+                "callable-descend",
+            );
+            let r = self.hyper_sub_apply_recursive(&name_val, item, &item_args, modifier)?;
+            push_hyper_result(&mut results, itemize_if_descended(item, r));
         }
         if let ValueView::Array(existing, kind) = target.view() {
             // In-place write back through the target's `crate::gc::Gc<ArrayData>` so a

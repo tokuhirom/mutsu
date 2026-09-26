@@ -239,23 +239,4 @@ impl Interpreter {
         ));
         true
     }
-
-    /// The `CallMethodDynamic` spelling (`@a[0]."$name"()`), whose stack frame
-    /// is `[receiver, method-name, args..]`. The name is a runtime value, so
-    /// the gate reads it off the stack rather than from the constant pool.
-    pub(super) fn arm_raw_invocant_arrival_from_dynamic_receiver(
-        &mut self,
-        arity: u32,
-        modifier: Option<&str>,
-    ) -> bool {
-        if !crate::runtime::raw_invocant::any_raw_invocant_method_possible() {
-            return false;
-        }
-        let Some(receiver_idx) = self.stack.len().checked_sub(arity as usize + 2) else {
-            return false;
-        };
-        let name_val = self.stack[receiver_idx + 1].clone();
-        let method = Self::rewrite_method_name(&Self::dynamic_method_name(&name_val), modifier);
-        self.arm_raw_invocant_arrival_from_receiver(receiver_idx, receiver_idx + 2, &method)
-    }
 }
