@@ -25,7 +25,7 @@ distribution's own bug, which rakudo also fails, is `no_baseline` and belongs to
 repository, not to `Raku/roast`, `Raku/doc` or `rakudo/rakudo`, not to a dependency's repository —
 no matter how clearly the bug looks like theirs, and no matter how small the patch. This holds for
 issues, pull requests, comments, labels and closes alike. An AI has actually mis-filed a mutsu issue
-into a Raku-org repository before, which is why `CLAUDE.md` states it as an absolute and why it is
+into a Raku-org repository before, which is why `AGENTS.md` states it as an absolute and why it is
 repeated here: this loop reads more third-party repositories than any other, so it is where the
 mistake is easiest to make. If a finding genuinely belongs upstream, record it in a
 `tokuhirom/mutsu` issue and stop — reporting it upstream is the user's call, not yours.
@@ -52,10 +52,10 @@ the mapping table in [docs/agent-environments.md](../../../docs/agent-environmen
    is a *measurement subject*. Editing it to bisect which construct dies is good debugging; shipping
    anything from it is not a deliverable, and neither is a patch upstream. The fix goes in mutsu.
 4. **Never special-case the distribution inside mutsu.** No hardcoded outputs, no "if the module is
-   `String::Utils`" branches, no stubs. `CLAUDE.md`'s rule for roast holds here verbatim: every fix
+   `String::Utils`" branches, no stubs. `AGENTS.md`'s rule for roast holds here verbatim: every fix
    is a genuine, general-purpose improvement.
 5. **Do not answer a hard distribution by bundling it.** Vendoring the module into `modules/` or
-   reimplementing it natively is BATTERIES.md rung 3, **banned by user decision** — see `CLAUDE.md`.
+   reimplementing it natively is BATTERIES.md rung 3, **banned by user decision** — see `AGENTS.md`.
    Grow the interpreter until the real, upstream module runs verbatim, or file the issue.
 6. **Dependencies arrive only as `-I` paths.** Never `mzef install` them into a site repo: mutsu's
    bundled batteries would then supply something rakudo lacks and the comparison stops being one.
@@ -165,7 +165,7 @@ That reduction is three things at once: the thing you debug, the regression test
 step 6, and the body of the issue you file in step 5. Do not skip it and debug against the
 distribution's 124-assertion test file.
 
-`CLAUDE.md`'s debugging guidance applies unchanged — `--dump-ast`, `MUTSU_TRACE`, and
+The `debugging` skill applies unchanged — `--dump-ast`, `MUTSU_TRACE`, and
 `rust-gdb -batch` before any `eprintln!`.
 
 ## 5. Decide: fix it now, or file an issue
@@ -183,7 +183,7 @@ run.
 
 **File an issue instead** — this is what "複雑な機能が必要なら" means — when the fix needs:
 
-- a new or superseding **ADR**, or a decision `CLAUDE.md` reserves for the user;
+- a new or superseding **ADR**, or a decision `AGENTS.md` reserves for the user;
 - **deep machinery**: `nqp::` ops, Metamodel/MOP, `EXPORTHOW`, slangs, precompilation, `NativeCall`
   guts — the `guts` / `native` axis;
 - a **cross-cutting invariant** across execution layers (container semantics, laziness, the
@@ -224,7 +224,7 @@ dead-end case", so a future random draw does not re-spend an investigation on th
 
 ## 6. Fix, and pin it in `t/`
 
-The change goes where `CLAUDE.md` says it goes: implement in `compiler/` and `vm/`, never a new
+The change goes where `AGENTS.md` says it goes: implement in `compiler/` and `vm/`, never a new
 `runtime/methods.rs` slow-path fallback. When the spec is unclear, `raku -e` is the oracle and
 `raku-doc/` is the reference.
 

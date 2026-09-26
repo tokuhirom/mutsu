@@ -305,7 +305,7 @@ It has overlapping territory with element-element-bind-plan.md, so land that sli
 3. `make test` all green (Grep `tmp/make-test.log`).
 4. **Release-roast main-vs-branch comparison** (mandatory; element-change leaks are release-only).
 5. The final perf measurement is **`int.t` wall-clock in release** (mandatory for slice 2).
-6. PR → auto-merge → background CI watch (CLAUDE.md PR workflow).
+6. PR → auto-merge → background CI watch (AGENTS.md PR workflow).
 
 ---
 

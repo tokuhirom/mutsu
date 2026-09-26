@@ -328,9 +328,17 @@ pub(crate) struct ControlHandlerEntry {
     /// `resume_safe`). When false, `handler` is `None` and a deep warn falls
     /// back to the unwinding path.
     pub resume_safe: bool,
-    /// Present only for `resume_safe` handlers: the bytecode + range + function
-    /// table needed to run the handler INLINE at a deep `warn` raise site.
+    /// Present for `resume_safe` handlers and for handlers that merely
+    /// *contain* a `.resume` (`OpCode::TryCatch::control_resume_capable`): the
+    /// bytecode + range + function table needed to run the handler INLINE at a
+    /// deep `warn` raise site.
     pub handler: Option<ControlHandlerCode>,
+    /// Identifies this activation of the region (drawn from the same counter
+    /// as `CatchHandlerEntry::token`). A capable handler that ran inline and
+    /// did not resume stamps it into the warn signal, so the region applies the
+    /// recorded verdict instead of running the handler again (#9469). Nested
+    /// active regions always carry increasing tokens, innermost largest.
+    pub token: u64,
     /// Whether this handler has an arm that can match a `CX::Take` (see
     /// `OpCode::TryCatch::control_handles_take`). Read by `exec_take_op` to
     /// decide whether a `take` inside a `gather` must raise the control
@@ -453,6 +461,15 @@ pub(crate) struct VmCallFrame {
     /// The caller frame's `active_loop_rw_param_names` stack — saved and
     /// restored exactly like `saved_active_loop_param_names`.
     pub saved_active_loop_rw_param_names: Option<crate::runtime::scope_stack::ScopeFrame>,
+    /// The caller's pending caller-var writebacks, hidden while this frame
+    /// runs. Each names a caller lexical that some write changed; the first
+    /// frame whose `code` has a local of that name refreshes its slot from
+    /// env. A frame entered after the write cannot own that variable, but it
+    /// can have a local of the same name -- Test's `proclaim($cond, $desc is
+    /// copy)` took the `$desc` a `lives-ok { $desc = ... }` block had just
+    /// written and the caller kept its old value. `pop_call_frame` merges the
+    /// frame's own unclaimed writebacks back over these.
+    pub saved_pending_caller_var_writeback: rustc_hash::FxHashSet<String>,
 }
 
 // CP-3 collapse: the bytecode Interpreter has been fully dissolved into the `Interpreter`

@@ -96,7 +96,7 @@ Dist-level `status`: `green` · `partial` · `red` · `no_baseline` · `blocked_
 published, only what `ecosystem-dist-roulette`/`ecosystem-sweep.py --all` offer automatically. A
 distribution lands there once, and only once, a run has shown its record can never move (rakudo
 passes, mutsu deliberately and permanently cannot) without reversing a decision already made
-elsewhere (an ADR, or a call `CLAUDE.md` reserves for the user) — never for "looks hard" or for
+elsewhere (an ADR, or a call `AGENTS.md` reserves for the user) — never for "looks hard" or for
 `no_baseline`, which is already excluded from the KPI on its own.
 
 ## 2. The fairness contract

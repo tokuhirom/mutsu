@@ -299,11 +299,11 @@ make roast               # Run official Raku spec tests
 Source -> Parser (src/parser/) -> Compiler (src/compiler/) -> VM (src/vm/) -> Output
 ```
 
-mutsu uses a bytecode VM architecture. Source code is parsed into an AST, compiled to bytecode (`OpCode` instructions), and executed by the VM. See [CLAUDE.md](CLAUDE.md) for detailed architecture documentation.
+mutsu uses a bytecode VM architecture. Source code is parsed into an AST, compiled to bytecode (`OpCode` instructions), and executed by the VM. See [AGENTS.md](AGENTS.md) for detailed architecture documentation.
 
 ## Contributing
 
-See [CLAUDE.md](CLAUDE.md) for development conventions, architecture details, and working agreements. See [PLAN.md](PLAN.md) for the project roadmap.
+See [AGENTS.md](AGENTS.md) for development conventions, architecture details, and working agreements. See [PLAN.md](PLAN.md) for the project roadmap.
 
 ## License
 

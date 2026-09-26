@@ -120,6 +120,20 @@ impl Interpreter {
     /// identity (its stored `SubData.name` does not match `name`) — either
     /// because it's an anonymous block passed as `&foo`, or because it's a
     /// different sub with the same parameter name.
+    /// Whether `callable` was declared in the compilation unit `code` belongs
+    /// to. A `sub EXPORT`-installed `&name` is a lexical import of the
+    /// *importing* unit (#8746); inside the exporting module itself the bare
+    /// name keeps its own lexical meaning, so a wrapper `-> |c { name(|c) }`
+    /// around a same-named inner import calls that import, not itself.
+    fn callable_declared_in_unit_of(callable: &Value, code: &CompiledCode) -> bool {
+        match (callable.view(), code.source_file) {
+            (ValueView::Sub(sub), Some(file)) => {
+                sub.source_file.as_deref() == Some(file.resolve().as_str())
+            }
+            _ => false,
+        }
+    }
+
     pub(crate) fn env_callable_is_lexical_override(val: &Value, name: &str) -> bool {
         if let ValueView::Sub(sub) = val.view() {
             let stored = sub.name.resolve();
@@ -1167,9 +1181,11 @@ impl Interpreter {
                         // method with a same-named `&` parameter can recursively
                         // replace the callback's own bare `name(...)` call.
                         let sym = Symbol::intern(ampname);
-                        (is_export_override || code.free_var_syms.contains(&sym))
+                        let captured = code.free_var_syms.contains(&sym);
+                        (is_export_override || captured)
                             .then(|| self.env().get(ampname).cloned())
                             .flatten()
+                            .filter(|v| captured || !Self::callable_declared_in_unit_of(v, code))
                     })
                 });
                 candidate.filter(|v| Self::env_callable_is_lexical_override(v, name_str))
@@ -1342,20 +1358,22 @@ impl Interpreter {
             }
         }
         // Check if there's a CALL-ME override from trait_mod mixin
-        let call_me_override =
-            dispatch_key::with_amp_name(&name, |amp| self.env().get(amp).cloned()).and_then(
-                |callable| {
-                    let has_call_me = if let ValueView::Mixin(_, mixins) = callable.view() {
-                        mixins.keys().any(|key| {
-                            key.strip_prefix("__mutsu_role__")
-                                .is_some_and(|rn| self.role_has_method(rn, "CALL-ME"))
-                        })
-                    } else {
-                        false
-                    };
-                    if has_call_me { Some(callable) } else { None }
-                },
-            );
+        // `Symbol::lookup`, not `intern`: an env key is always an interned
+        // symbol, so a `&name` that was never interned cannot be bound.
+        let call_me_override = dispatch_key::with_amp_name(&name, |amp| {
+            Symbol::lookup(amp).and_then(|sym| self.env().get_sym(sym).cloned())
+        })
+        .and_then(|callable| {
+            let has_call_me = if let ValueView::Mixin(_, mixins) = callable.view() {
+                mixins.keys().any(|key| {
+                    key.strip_prefix("__mutsu_role__")
+                        .is_some_and(|rn| self.role_has_method(rn, "CALL-ME"))
+                })
+            } else {
+                false
+            };
+            if has_call_me { Some(callable) } else { None }
+        });
         // Junction auto-threading for function call arguments:
         // If any positional arg is a Junction and the function parameter doesn't accept
         // Junction (i.e., not typed as Mu or Junction), auto-thread over the junction.
@@ -1485,8 +1503,7 @@ impl Interpreter {
         // untouched). Under the `(B)` per-store env-write gate a preceding
         // `my $f = Failure.new` leaves `env<f>` at its `Any` decl seed, so an
         // unconditional pull would clobber the live instance slot with that stale
-        // `Any`. Mirrors the mechanism-#3 `env_changed` guard in
-        // `carrier_writeback_changed_aggregates`.
+        // `Any`.
         let lvalue_writeback_pre = lvalue_writeback_target
             .as_ref()
             .map(|t| self.env().get(t).cloned());

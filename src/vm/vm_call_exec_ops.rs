@@ -10,9 +10,8 @@ impl Interpreter {
     /// EXPORT::all::{'&f'}:p)`) whose candidates live only under the
     /// exporting module's package, so name-based resolution cannot find them
     /// even though a `proto` of that bare name is registered. Every call form
-    /// -- `CallFunc` and the statement-position `ExecCallPairs` --
     /// must dispatch through the installed value instead; the statement forms
-    /// used to fall through to the registry and die with "Cannot resolve
+    /// (then their own opcodes) used to fall through to the registry and die with "Cannot resolve
     /// caller" on any call carrying a named argument (#9261). Ordinary exports
     /// (JSON::Tiny's `from-json`) keep the normal dispatch precedence because
     /// they do have a registered package routine.
@@ -26,17 +25,17 @@ impl Interpreter {
 
     /// A statement-level call discards its value, so that value is *sunk* —
     /// and sinking an unhandled `Failure` throws, exactly as `OpCode::SinkPop`
-    /// does for the call shapes that leave their result on the stack.
-    /// `OpCode::ExecCallPairs` leaves nothing on the stack, so it
-    /// never reached `SinkPop` and swallowed the Failure instead: `EVAL 'use
-    /// fatal; "foo"[2]';` ran on to the next statement where raku throws.
+    /// does for the call shapes that leave their result on the stack. A call
+    /// that discards its value without going through `SinkPop` (a supply's tap
+    /// callback) must sink it here, or it swallows the Failure: `EVAL
+    /// 'use fatal; "foo"[2]';` once ran on to the next statement where raku
+    /// throws.
     ///
     /// A deferred `LazyList`/`LazyIoLines` (e.g. a bare `gather { ... }` as an
     /// `EVAL`'d snippet's tail statement) must also be *forced* here, exactly
     /// as `SinkPop` forces one — otherwise `EVAL 'gather { return 1 }';`
     /// never runs the body at all, so `throws-like`'s own `EVAL $code, context
-    /// => $ctx;` call (a statement-level call with named args, routed through
-    /// `ExecCallPairs`) never sees the escaping `return`.
+    /// => $ctx;` call never sees the escaping `return`.
     pub(crate) fn sink_discarded_call_value(&mut self, value: &Value) -> Result<(), RuntimeError> {
         match value.view() {
             // A `.cache`-returned view or a `$s = SEQ`-itemized value must not
@@ -63,161 +62,6 @@ impl Interpreter {
                     return Err(err);
                 }
             }
-        }
-        Ok(())
-    }
-
-    pub(super) fn exec_exec_call_pairs_op(
-        &mut self,
-        code: &CompiledCode,
-        compiled_fns: &CompiledFns,
-        name_idx: u32,
-        arity: u32,
-        arg_sources_idx: Option<u32>,
-        keep_value: bool,
-    ) -> Result<(), RuntimeError> {
-        // See `exec_exec_call_op`: the pre-interned form of the same constant.
-        let name_sym = code.const_sym(name_idx);
-        // ADR-0113: a frame-lexical callee is resolved at compile time. The
-        // named arguments already travel as Pairs.
-        if let Some(r) = code.lexical_routine(name_sym)
-            && let Some(value) = self.exec_frame_lexical_call(
-                code,
-                r,
-                FrameLexicalCallSite {
-                    arity,
-                    arg_sources_idx,
-                    track_sources: false,
-                    call_has_named: true,
-                },
-                compiled_fns,
-            )?
-        {
-            if keep_value {
-                self.stack.push(value);
-            } else {
-                self.sink_discarded_call_value(&value)?;
-            }
-            return Ok(());
-        }
-        let name = Self::const_str(code, name_idx).to_string();
-        let arity = arity as usize;
-        if self.stack.len() < arity {
-            return Err(RuntimeError::new(
-                "Interpreter stack underflow in ExecCallPairs",
-            ));
-        }
-        let start = self.stack.len() - arity;
-        let args: Vec<Value> = self.stack.drain(start..).collect();
-        // ADR-0054 Slice 4: `ExecCallPairs` never tracked rw-arg sources, so
-        // it only needs the spread `|EXPR` positions from
-        // `spread_call_args_by_syntax` — pass `None` for `decoded_sources`
-        // and discard the (always-`None`) returned source list.
-        let (args, _) = Self::spread_call_args_by_syntax(code, args, arg_sources_idx, None);
-        // Auto-FETCH Proxy args
-        let args = if self.in_lvalue_assignment {
-            args
-        } else {
-            self.auto_fetch_proxy_args(args)?
-        };
-        // Strip the parser-injected `__mutsu_test_callsite_line` pair BEFORE the
-        // resolution probes below.
-        // Every test assertion (`ok 1, "x"`, `is $got, $exp, "..."`) carries that
-        // pair, which is exactly why this opcode exists; leaving it in made both
-        // probes ask about a call shape that does not exist, so a callee that IS
-        // in the caller's compiled table could not be recognised. Stripping used
-        // to happen one level down instead (inside `exec_call` for the carrier
-        // arm, inside `call_compiled_function_named` for the compiled one), so
-        // the line each of them recovered from the pair is published here now.
-        let (args, callsite_line) = self.sanitize_call_args_owned(args);
-        loan_env!(self, set_pending_callsite_line(callsite_line));
-        // A routine a custom `sub EXPORT` installed with no same-named package
-        // routine (#9261) -- same precedence as `CallFunc`'s check.
-        if let Some(callable) = self.export_hook_callable(&name, name_sym) {
-            let v = self.vm_call_on_value(callable, args, Some(compiled_fns))?;
-            if keep_value {
-                self.stack.push(v);
-            } else {
-                self.sink_discarded_call_value(&v)?;
-            }
-            return Ok(());
-        }
-        // Try compiled function dispatch first. `resolved_memo` catches the
-        // routine the probe resolved on the way, so the carrier arm below does
-        // not resolve the same call a second time (see `exec_call_sanitized`).
-        let mut resolved_memo: Option<Arc<crate::ast::FunctionDef>> = None;
-        if let Some(cf) = self.find_compiled_function_memo(
-            compiled_fns,
-            &name,
-            name_sym,
-            &args,
-            &mut resolved_memo,
-        ) {
-            crate::vm::vm_stats::record_dispatch_entry_outcome("execcallpairs", "compiled");
-            let pkg_sym = self.current_package_sym();
-            let v = self.call_compiled_function_named(cf, args, compiled_fns, pkg_sym, name_sym)?;
-            // Slice F: drain any `is rw` param writeback into the caller's slots.
-            self.apply_pending_rw_writeback(code);
-            // call_compiled_function_named signals env_dirty precisely; no blanket.
-            if keep_value {
-                self.stack.push(v);
-            } else {
-                self.sink_discarded_call_value(&v)?;
-            }
-            return Ok(());
-        }
-        // Try native function (env-pure: no env_dirty mark).
-        if let Some(native_result) = self.try_native_function(name_sym, &args) {
-            crate::vm::vm_stats::record_dispatch_entry_outcome("execcallpairs", "native");
-            let v = native_result?;
-            if keep_value {
-                self.stack.push(v);
-            } else {
-                self.sink_discarded_call_value(&v)?;
-            }
-            return Ok(());
-        }
-        crate::vm::vm_stats::record_dispatch_entry_outcome(
-            "execcallpairs",
-            if resolved_memo.is_some() {
-                // The probe above resolved the winner and the carrier reuses
-                // it: one resolution per call instead of two.
-                "carrier-preresolved"
-            } else {
-                "carrier"
-            },
-        );
-        // Carrier fallback: precise scalar writeback + unconditional env_dirty net.
-        // Keeps the blanket: deep `:=` bind-cell mutations through interpreter
-        // builtins are not name-trackable and dropping the net corrupts cell
-        // coherence (the CP-2 wall; t/element-bind-cell.t). See docs/vm-single-store.md.
-        //
-        // A block Test function (`lives-ok { $b<a> = 42 }` / `lives-ok { $a does
-        // Role }`) mutates a captured-outer caller lexical through env. Snapshot
-        // the caller frame's slot-backing env values for the overwritable slots
-        // before the carrier, then write through only the slots whose env value
-        // changed. Plain Array/Hash and binding-cell slots are excluded (see
-        // `slot_carrier_overwritable`).
-        let pre_env: Vec<Option<Value>> = self.snapshot_carrier_overwritable_env(code);
-        let carrier_saved = self.begin_carrier();
-        // Tail position (`keep_value`) routes through the standard expression
-        // dispatcher first (call_function) so the
-        // call's value is the real return value; the legacy exec_call carrier
-        // reconstructs an implicit return from the topic, which is unreliable
-        // for a value that must propagate (JSON::Marshal's tail
-        // `to-json($ret, :$sorted-keys, :$pretty)`).
-        let exec_result = loan_env!(
-            self,
-            exec_call_pairs_values_sanitized(&name, args, callsite_line, resolved_memo)
-        );
-        let written = self.end_carrier(carrier_saved);
-        let v = exec_result?;
-        self.writeback_carrier_writes(code, &written);
-        self.carrier_writeback_changed_aggregates(code, &pre_env);
-        if keep_value {
-            self.stack.push(v);
-        } else {
-            self.sink_discarded_call_value(&v)?;
         }
         Ok(())
     }

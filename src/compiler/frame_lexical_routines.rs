@@ -90,10 +90,7 @@ pub(super) fn scan_chunk(
             }
             continue;
         }
-        let callee = match op {
-            OpCode::ExecCallPairs { name_idx, .. } => Some(*name_idx),
-            _ => CompiledCode::op_callee_name_const_idx(op),
-        };
+        let callee = CompiledCode::op_callee_name_const_idx(op);
         if let Some(idx) = callee {
             if let Some(sym) = const_sym(idx) {
                 let exact = matches!(

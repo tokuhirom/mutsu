@@ -56,6 +56,12 @@ pub(crate) fn method_decl_body_my(input: &str, multi: bool, is_our: bool) -> PRe
     method_decl_body_with_my(input, multi, is_our, true, false)
 }
 
+/// A named `method NAME ...` / `submethod NAME ...` written in expression
+/// position: parsed as a lexical (`my`) declaration, whose value is the method.
+pub(crate) fn expr_position_method_decl(input: &str, is_submethod: bool) -> PResult<'_, Stmt> {
+    method_decl_body_with_my(input, false, false, true, is_submethod)
+}
+
 fn method_decl_body_with_my(
     input: &str,
     multi: bool,

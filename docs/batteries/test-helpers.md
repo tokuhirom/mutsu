@@ -26,7 +26,7 @@ is "a small web blog can be written with the bundle alone." Writing one implies
 one makes the suite fail the moment two runs overlap. mutsu's own suite learned
 this the hard way (`t/io-socket-recv-limit.t` was misdiagnosed as flaky for
 months when it was really a port collision — see "Known flaky tests" in
-CLAUDE.md). Shipping the helper means a user's test suite does not have to
+AGENTS.md). Shipping the helper means a user's test suite does not have to
 re-solve it.
 
 **It closes a hole in the release gate.** `HTTP::UserAgent` declares it under

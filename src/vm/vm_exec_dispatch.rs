@@ -4708,29 +4708,6 @@ impl Interpreter {
                 }
                 *ip += 1;
             }
-            // Cost: O(a) plus the callee's body, a = arguments.
-            OpCode::ExecCallPairs {
-                name_idx,
-                arity,
-                arg_sources_idx,
-                keep_value,
-            } => {
-                self.sync_source_line(code, *ip);
-                // `use fatal`: see the comment on the `CallFunc` arm above.
-                self.explode_if_fatal_failure_in_call_args(
-                    Self::const_str(code, *name_idx),
-                    *arity as usize,
-                )?;
-                self.exec_exec_call_pairs_op(
-                    code,
-                    compiled_fns,
-                    *name_idx,
-                    *arity,
-                    *arg_sources_idx,
-                    *keep_value,
-                )?;
-                *ip += 1;
-            }
 
             // -- Indexing --
             // Cost: O(1) for a single index/key; O(k) for a slice, k = indices (see
@@ -5458,7 +5435,7 @@ impl Interpreter {
             }
 
             // -- Exception handling --
-            // Cost: O(1) plus the body, except a resume-capable CATCH / resume-safe CONTROL: O(c +
+            // Cost: O(1) plus the body, except a resume-capable CATCH / CONTROL: O(c +
             // f) per entry, c = ops + constants of the enclosing CompiledCode, f = compiled
             // functions (both deep-cloned into the handler entry). Rakudo: O(1) -- see #9172.
             OpCode::TryCatch {
@@ -5472,6 +5449,7 @@ impl Interpreter {
                 is_bare_block,
                 traps,
                 catch_resume_capable,
+                control_resume_capable,
             } => {
                 self.sync_source_line(code, *ip);
                 self.exec_try_catch_op(
@@ -5486,6 +5464,7 @@ impl Interpreter {
                     *is_bare_block,
                     *traps,
                     *catch_resume_capable,
+                    *control_resume_capable,
                     ip,
                     compiled_fns,
                 )?;
@@ -5726,8 +5705,8 @@ impl Interpreter {
             }
 
             // -- Substitution --
-            // Cost: O(n + r) plus engine work; `s:g///` is O(n*r + r^2) (see run_subst). Rakudo:
-            // O(n + r) -- see #9143.
+            // Cost: O(n + r) plus engine work, n = chars of the topic, r = matches (see
+            // run_subst).
             OpCode::Subst {
                 pattern_idx,
                 replacement_idx,
@@ -5756,7 +5735,7 @@ impl Interpreter {
                 )?;
                 *ip += 1;
             }
-            // Cost: as Subst, O(n*r + r^2) for `S:g///`. Rakudo: O(n + r) -- see #9143.
+            // Cost: as Subst, O(n + r) plus engine work.
             OpCode::NonDestructiveSubst {
                 pattern_idx,
                 replacement_idx,

@@ -649,7 +649,7 @@ lexical — the same root as #3 below. The three roots:
    decl seed. A structural override (prefer the closure's captured `data.env`) is
    NOT byte-safe OFF — mutsu's compile-time mutation analysis is incomplete, so a
    by-value capture can be stale where the live caller env is fresh (the flaky risk
-   ADR-0001/CLAUDE.md warns about). So instead fold every **nested-closure free var
+   ADR-0001/AGENTS.md warns about). So instead fold every **nested-closure free var
    that is one of this frame's own locals** into `needs_env_sync`, **gated on
    `gate_local_env_write()`** (compute_needs_env_sync, opcode.rs). Gate OFF this is a
    no-op (byte-identical AND perf-neutral — no extra `flush_local_to_env`); the cost
@@ -1237,6 +1237,6 @@ Concrete first slices (each behavior-preserving with the gate OFF; roast is the 
    `MUTSU_SHADOW_SLOTS` default and burn down the resulting roast set.
 
 **ADR note:** §1.3 slot-indexed locals is a large architectural call and its closure
-half overlaps ADR-0001 (Track B container cells fused with GC). Per CLAUDE.md, land it
+half overlaps ADR-0001 (Track B container cells fused with GC). Per AGENTS.md, land it
 as coordinated slices with roast as the safety net, and do NOT eagerly box scalar
 locals (the flaky-capture trap, ANALYSIS §1.3). A dedicated session per slice.

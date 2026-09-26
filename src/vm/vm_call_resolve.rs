@@ -32,7 +32,6 @@ impl Interpreter {
     /// clause ran once per resolution, where rakudo evaluates it once per call
     /// (#7886). Both callers resolve and consume inside one dispatch of one
     /// call, so the pending sources cannot have changed under them: in
-    /// `OpCode::ExecCallPairs` nothing touches them in between, and in
     /// `dispatch_func_call_inner` the probe runs with the call's own
     /// `arg_sources` installed while the consumer ran with them already
     /// cleared — so the memoised answer is the more accurate of the two.

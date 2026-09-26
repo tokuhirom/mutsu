@@ -1452,7 +1452,19 @@ impl Interpreter {
         };
         let accessor_base_override =
             accessor_owner.is_some() && self.has_user_method(receiver_class, method_name);
+        // A user method on a subclass of a builtin metamodel HOW (OO::Monitors'
+        // `MonitorHOW.new_type`) is the same situation once more: its base
+        // candidate is the native metamethod (`native_metamodel_next_candidate`),
+        // not a `MethodDef`. Without a frame of its own, a `callsame` in it
+        // resolved against an enclosing routine's live frame whenever there was
+        // one -- `use-ok 'Terminal::ANSI'` loads a `monitor` from inside the
+        // `multi sub use-ok`, whose multi frame answered instead, handing back
+        // the wrong value and breaking the class declaration.
+        let metamodel_base_override = crate::opcode::dispatcher_possible()
+            && self.is_metamodel_how_class(receiver_class)
+            && self.has_user_method(receiver_class, method_name);
         let native_base_override = grammar_parse_override
+            || metamodel_base_override
             || mu_base_override
             || new_base_override
             || container_protocol_override
@@ -1668,17 +1680,8 @@ impl Interpreter {
     /// cacheable (`func_multi_dispatch_type_cacheable` refuses a value-dependent
     /// multi), so a second resolution *re-runs user code*. Rakudo resolves a
     /// call once; so should we (#7886).
-    pub(crate) fn push_multi_dispatch_frame_with_winner(
-        &mut self,
-        name: &str,
-        args: &[Value],
-        winner: Option<&FunctionDef>,
-    ) -> bool {
-        self.push_multi_dispatch_frame_with_winner_sym(name, Symbol::intern(name), args, winner)
-    }
-
-    /// [`Self::push_multi_dispatch_frame_with_winner`] for a caller that
-    /// already holds the callsite name's `Symbol` (#7766 unit 2 item 4).
+    ///
+    /// The callsite name arrives already interned (#7766 unit 2 item 4).
     pub(crate) fn push_multi_dispatch_frame_with_winner_sym(
         &mut self,
         name: &str,

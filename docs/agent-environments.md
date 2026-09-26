@@ -1,6 +1,6 @@
 # Agent environments: the local box vs. a remote container
 
-`CLAUDE.md` is written as a set of shell recipes, and most of them were first written on the
+`AGENTS.md` is written as a set of shell recipes, and most of them were first written on the
 maintainer's own machine. Sessions actually run in **two different kinds of environment**, and a
 recipe that is exactly right in one is impossible in the other — `gh pr create` does not exist in a
 remote container, and `.claude/worktrees/` sub-agent batches sized for a 12-core box wedge a 4-core
@@ -10,7 +10,7 @@ that the task cannot be done.
 
 ## Which one am I in?
 
-Check, do not assume — the same repo, the same branch and the same `CLAUDE.md` are present in both.
+Check, do not assume — the same repo, the same branch and the same `AGENTS.md` are present in both.
 
 | Signal | Local dev box | Remote container |
 | --- | --- | --- |
@@ -73,7 +73,7 @@ Two consequences worth spelling out:
   does. Remotely there is no shell command to block on, so use `subscribe_pr_activity` and let CI
   results and review comments wake the session. Re-reading `pull_request_read`/`get_check_runs` on a
   run that is still going buys nothing and is subject to the 30-minute polling floor in
-  [CLAUDE.md](../CLAUDE.md#waiting-for-a-long-job--the-30-minute-polling-floor); the same floor
+  [AGENTS.md](../AGENTS.md#waiting-for-long-jobs--the-30-minute-polling-floor); the same floor
   governs `cargo build`, `make test` and `make roast`, which is where the cost actually is.
 
 ## Provisioning: rust, raku, the native C libraries and the sandbox
@@ -110,7 +110,7 @@ grows a `rust-toolchain.toml`.
 
 ## Cores, parallelism and sub-agents
 
-The concurrency numbers in `CLAUDE.md` ("at most 3 concurrent agents that build") were measured on
+The concurrency numbers in `AGENTS.md` and the `issue-backlog-pipeline` skill ("at most 3 concurrent agents that build") were measured on
 the 12-core local box. **They are a ratio, not a constant** — on a 4-core remote container, roughly
 one building agent is the equivalent, and running the batch inline in the main session is usually
 better than paying for worktree copies of `target/`. Check `nproc`, `uptime` and `pgrep -c -x rustc`
@@ -128,7 +128,7 @@ smaller box makes that gate slower, not optional.
 `make roast` cannot come back fully green in a remote container, for reasons that have nothing to do
 with any change. Re-deriving this every session is pure waste, so here is the whole set. **These
 four files, and only these four, may be red when you publish**; anything else is a real failure and
-the "do NOT dismiss them as pre-existing" rule in `CLAUDE.md` applies in full.
+the "do NOT dismiss them as pre-existing" rule in `AGENTS.md` applies in full.
 
 | File | Shape | Why |
 |---|---|---|

@@ -19,7 +19,7 @@ and the release `mutsu`.
 
 **At release — authoritative.** A release is cut by the manual
 `tag-release.yml` workflow (`gh workflow run tag-release.yml -f version=X.Y.Z`;
-see "Cutting a release" in `CLAUDE.md`), which bumps the version and pushes the
+see "Cutting a release" in `AGENTS.md`), which bumps the version and pushes the
 tag that fires `release.yml`. The `batteries` job there `needs`-gates the
 publish job, so a regression against a shipped library blocks the release.
 

@@ -4,7 +4,7 @@
 The Internals pages describe how mutsu works inside. The parts of that
 description that are *lists* -- every VM opcode, every tag a `Value` word can
 carry, every built-in type's ancestry -- would drift the week they were
-written by hand (CLAUDE.md's own "~100 opcodes" sat stale for months while the
+written by hand (AGENTS.md's own "~100 opcodes" sat stale for months while the
 set grew past 340), so they are generated from the places that are
 authoritative by construction:
 
@@ -12,7 +12,7 @@ authoritative by construction:
     - src/opcode.rs, `enum OpCode`: each variant, its operands, the `///` doc
       comment above it, and the `// -- Section --` comment it sits under;
     - src/vm/vm_exec_dispatch.rs, `exec_one_dispatch`: the `// Cost:` line
-      CLAUDE.md requires above every `OpCode::` arm
+      AGENTS.md requires above every `OpCode::` arm
       (docs/complexity-annotations.md).
 
   site/content/types.json (site/types.html)

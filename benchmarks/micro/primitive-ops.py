@@ -46,7 +46,7 @@ import sys
 import time
 
 # Generated scripts are throwaway; `tmp/` is the project-local gitignored
-# scratch directory CLAUDE.md reserves for exactly this.
+# scratch directory AGENTS.md reserves for exactly this.
 SCRATCH = "tmp/micro"
 
 PREAMBLE = {

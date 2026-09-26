@@ -16,6 +16,7 @@ impl Interpreter {
         is_bare_block: bool,
         traps: bool,
         catch_resume_capable: bool,
+        control_resume_capable: bool,
         ip: &mut usize,
         compiled_fns: &CompiledFns,
     ) -> Result<(), RuntimeError> {
@@ -69,6 +70,7 @@ impl Interpreter {
             control_handles_take,
             traps,
             catch_resume_capable,
+            control_resume_capable,
             ip,
             compiled_fns,
         );
@@ -89,7 +91,7 @@ impl Interpreter {
         result
     }
 
-    // Cost: O(1) plus the body, except that a resume-safe CONTROL or a
+    // Cost: O(1) plus the body, except that a resume-safe or resume-capable CONTROL or a
     // resume-capable CATCH deep-clones the enclosing `CompiledCode` (ops +
     // constants, c) and the `CompiledFns` table (f entries) into its handler
     // entry on every region entry: O(c + f). Rakudo: O(1) -- see #9172.
@@ -106,6 +108,7 @@ impl Interpreter {
         control_handles_take: bool,
         traps: bool,
         catch_resume_capable: bool,
+        control_resume_capable: bool,
         ip: &mut usize,
         compiled_fns: &CompiledFns,
     ) -> Result<(), RuntimeError> {
@@ -116,8 +119,7 @@ impl Interpreter {
         let control_begin = control_start as usize;
         let end = body_end as usize;
         let has_control = control_begin < end;
-        if has_control {
-            self.control_handler_depth += 1;
+        let control_token = if has_control {
             // Register this CONTROL handler so a `warn` raised deep inside the
             // protected body (on the Rust call stack, several frames down) can
             // find it. A `resume_safe` handler carries its own bytecode +
@@ -127,22 +129,20 @@ impl Interpreter {
             // here). The depth invariant `control_handlers.len() ==
             // control_handler_depth` is preserved so the innermost handler is
             // always `control_handlers.last()`.
-            let handler = if resume_safe {
-                Some(crate::vm::ControlHandlerCode {
-                    code: std::sync::Arc::new(code.clone()),
-                    control_begin,
-                    end,
-                    compiled_fns: compiled_fns.clone(),
-                })
-            } else {
-                None
-            };
-            self.control_handlers.push(crate::vm::ControlHandlerEntry {
-                resume_safe,
-                handler,
-                handles_take: control_handles_take,
-            });
-        }
+            self.catch_handler_seq += 1;
+            let token = self.catch_handler_seq;
+            self.push_control_handler(
+                code,
+                (control_begin, end),
+                (resume_safe, control_resume_capable),
+                control_handles_take,
+                token,
+                compiled_fns,
+            );
+            Some(token)
+        } else {
+            None
+        };
         // ADR-0072: register this region as an exception-absorbing boundary for
         // the duration of the protected body. Any region that would *stop* an
         // exception from reaching an outer CATCH — one with its own CATCH block,
@@ -433,6 +433,22 @@ impl Interpreter {
                 // construct" the way rakudo does.
                 let mut handled = true;
                 loop {
+                    // #9469: a resume-capable CONTROL handler already ran INLINE
+                    // at the raise site and did not resume. Apply the verdict it
+                    // stamped instead of running any handler a second time: the
+                    // stamping region takes the verdict, every region nested
+                    // inside it declined on the way out.
+                    if let Some(token) = control_token
+                        && let Some((tag, verdict)) = pending_err.catch_inline_verdict()
+                        && tag <= token
+                    {
+                        if tag == token && verdict == crate::value::CatchInlineVerdict::Handled {
+                            pending_err.set_catch_inline_verdict(None);
+                        } else {
+                            handled = false;
+                        }
+                        break;
+                    }
                     if let Some(signal_topic) = Self::control_signal_topic_value(&pending_err) {
                         self.env_mut().insert("_".to_string(), signal_topic);
                     }
@@ -489,23 +505,15 @@ impl Interpreter {
                             {
                                 self.stack.push(rv);
                             }
-                            if has_control {
-                                self.control_handler_depth += 1;
-                                let handler = if resume_safe {
-                                    Some(crate::vm::ControlHandlerCode {
-                                        code: std::sync::Arc::new(code.clone()),
-                                        control_begin,
-                                        end,
-                                        compiled_fns: compiled_fns.clone(),
-                                    })
-                                } else {
-                                    None
-                                };
-                                self.control_handlers.push(crate::vm::ControlHandlerEntry {
-                                    resume_safe,
-                                    handler,
-                                    handles_take: control_handles_take,
-                                });
+                            if let Some(token) = control_token {
+                                self.push_control_handler(
+                                    code,
+                                    (control_begin, end),
+                                    (resume_safe, control_resume_capable),
+                                    control_handles_take,
+                                    token,
+                                    compiled_fns,
+                                );
                             }
                             // ADR-0072: the resumed body is still this region's
                             // protected body, so re-register the catch boundary

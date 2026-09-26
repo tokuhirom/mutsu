@@ -380,10 +380,10 @@ impl Interpreter {
             let is_container_param = pn.starts_with('@') || pn.starts_with('%');
             bind_value!(npb.slot, npb.needs_env || is_container_param, v);
         }
-        // Surplus positional args are an arity error (mixed signatures only —
-        // all-named signatures keep their historical lax behavior for a stray
-        // positional; the full dispatch path is just as lax there).
-        if bind_err.is_none() && plan.positional_count > 0 {
+        // Surplus positional args are an arity error, all-named signatures
+        // included: `sub d(:$x) {}; d(1, 2)` dies in Rakudo ("Too many
+        // positionals passed; expected 0 arguments but got 2").
+        if bind_err.is_none() {
             let mut idx = positional_idx;
             while idx < args.len() {
                 let is_named_or_marker = in_spec(idx)

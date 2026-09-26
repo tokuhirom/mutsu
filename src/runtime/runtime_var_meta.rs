@@ -19,7 +19,7 @@ static ATOMIC_VAR_SEEN: std::sync::atomic::AtomicBool = std::sync::atomic::Atomi
 /// constructed fresh, so a per-interpreter flag starts `false` and silently
 /// disables enforcement for constraints that are demonstrably right there in
 /// the env it was handed (`roast/S02-types/type.t` 5-11). Enumerating every
-/// such adoption site is exactly the completeness-dependent design CLAUDE.md
+/// such adoption site is exactly the completeness-dependent design AGENTS.md
 /// calls the higher-risk route, and getting it wrong turns a loud refusal into
 /// a silent wrong answer. An over-set is conservative: it only makes the
 /// (correct) env lookup run.

@@ -89,7 +89,7 @@ map; record each slice's before/after here.
 > snapshot). The lesson the slices half-learned — "diff the failure *set* before
 > blaming your change" — is right, but its converse also holds: a baseline
 > failure being stable does **not** make it acceptable; verify whether it is
-> deterministic and fix it. See CLAUDE.md "Triaging a suspected-flaky failure".
+> deterministic and fix it. See `docs/flaky-test-policy.md` §8.
 
 ## The two stores today
 

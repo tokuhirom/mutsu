@@ -117,14 +117,11 @@ impl Interpreter {
     /// has no single traceable rw source, so every runtime argument it
     /// expands into gets `None` there.
     ///
-    /// ADR-0054 Slice 4: this is the ONE mechanism every call op uses --
-    /// `ExecCallPairs` (`exec_exec_call_pairs_op`) collapsed its dedicated
-    /// `slip_positions_idx` constant into the same `arg_sources_idx`
-    /// descriptor and calls this too (passing `None` for `decoded_sources`,
-    /// since it never tracked rw-arg sources), which is why the
-    /// per-position flattening below now has exactly one call site and is
-    /// inlined rather than factored into a separate
-    /// `append_flattened_call_arg` helper.
+    /// ADR-0054 Slice 4: this is the ONE mechanism every call op uses (the
+    /// statement-call opcodes that once had their own `slip_positions_idx`
+    /// constant are gone, #9462), which is why the per-position flattening
+    /// below has exactly one call site and is inlined rather than factored
+    /// into a separate `append_flattened_call_arg` helper.
     pub(super) fn spread_call_args_by_syntax(
         code: &CompiledCode,
         raw_args: Vec<Value>,
