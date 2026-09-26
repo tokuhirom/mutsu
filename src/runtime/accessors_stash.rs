@@ -102,16 +102,18 @@ impl Interpreter {
     /// [`Self::stash_member_tail`] only matches the package-leading form, so
     /// such a member was callable but missing from the stash.
     fn sigil_leading_stash_member(key: &str, package: &str) -> Option<String> {
-        let package = package.trim_end_matches("::");
         let sigil = key
             .chars()
             .next()
             .filter(|c| matches!(c, '&' | '@' | '%'))?;
-        if package.is_empty() || package == "GLOBAL" {
-            return None;
-        }
-        let bare = key[1..].strip_prefix(package)?.strip_prefix("::")?;
-        if bare.is_empty() || bare.contains("::") {
+        let rest = &key[1..];
+        let bare = Self::stash_member_tail(rest, package)?;
+        // GLOBAL's "tail" is the whole key (it has no prefix to strip); a root
+        // routine is not spelled this way, so only a real strip counts.
+        if bare.is_empty()
+            || bare.len() == rest.len()
+            || crate::qualified::is_qualified(Symbol::intern(bare))
+        {
             return None;
         }
         Some(format!("{sigil}{bare}"))
@@ -453,7 +455,7 @@ impl Interpreter {
         }
     }
 
-    fn normalize_stash_package(package: &str) -> String {
+    pub(crate) fn normalize_stash_package(package: &str) -> String {
         let trimmed = package.trim_end_matches("::");
         if let Some(inner) = trimmed
             .strip_prefix("GLOBAL[")

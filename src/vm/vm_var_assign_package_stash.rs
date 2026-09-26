@@ -31,7 +31,7 @@ impl Interpreter {
     ) -> Result<(), RuntimeError> {
         let raw_key = key.to_string_value();
         let stash_name = Self::const_str(code, stash_name_idx);
-        let package = stash_name.strip_suffix("::").unwrap_or(stash_name);
+        let package = Self::normalize_stash_package(stash_name);
         let Some(bare) = raw_key.strip_prefix('&').filter(|_| !package.is_empty()) else {
             self.exec_get_pseudo_stash_op(code, stash_name_idx);
             self.stack.push(key);
@@ -39,7 +39,6 @@ impl Interpreter {
             return self.exec_index_assign_generic_op(code, false);
         };
         let (val, _) = Self::unwrap_bind_index_value(val);
-        let package = package.to_string();
         self.register_package_code_alias(package.clone(), bare, &val);
         self.publish_package_stash_symbol(package, "&", bare, &val);
         self.stack.push(val);

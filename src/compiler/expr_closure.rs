@@ -622,6 +622,41 @@ impl Compiler {
         })
     }
 
+    /// A named package's stash (`EXPORT::DEFAULT::{$_} = ::($_)`, the
+    /// re-export idiom; `Foo::<&bar> := &f`). A literal non-`&` key keeps the
+    /// generic index-assign; a `&` key or a runtime key goes to the keyed
+    /// stash op, which installs a routine as the package's symbol (and
+    /// export) and defers any other key back to the generic path.
+    ///
+    /// Out of line so its locals stay out of `compile_expr_index_assign`'s
+    /// frame, which the compiler re-enters recursively.
+    #[inline(never)]
+    fn try_compile_named_package_stash_assign(
+        &mut self,
+        target: &Expr,
+        index: &Expr,
+        value: &Expr,
+    ) -> bool {
+        let Expr::PseudoStash(stash_name) = target else {
+            return false;
+        };
+        let named = stash_name.strip_suffix("::").is_some_and(|pkg| {
+            !pkg.is_empty() && !pkg.split("::").any(crate::parser::is_pseudo_package)
+        });
+        if !named
+            || matches!(index, Expr::Literal(lit)
+                if lit.as_str().is_some_and(|key| !key.starts_with('&')))
+        {
+            return false;
+        }
+        self.compile_bind_index_value(value);
+        self.compile_expr(index);
+        let stash_name_idx = self.code.add_constant(Value::str(stash_name.clone()));
+        self.code
+            .emit(OpCode::IndexAssignPseudoStashKeyed { stash_name_idx });
+        true
+    }
+
     fn compile_bind_index_value(&mut self, value: &Expr) {
         let is_bind = matches!(
             value,
@@ -910,23 +945,7 @@ impl Compiler {
                 .emit(OpCode::IndexAssignPseudoStashKeyed { stash_name_idx });
             return;
         }
-        // A named package's stash (`EXPORT::DEFAULT::{$_} = ::($_)`, the
-        // re-export idiom; `Foo::<&bar> := &f`). A literal non-`&` key keeps
-        // the generic index-assign; a `&` key or a runtime key goes to the
-        // keyed stash op, which installs a routine as the package's symbol
-        // (and export) and defers any other key back to the generic path.
-        if let Expr::PseudoStash(stash_name) = target
-            && stash_name.strip_suffix("::").is_some_and(|pkg| {
-                !pkg.is_empty() && !pkg.split("::").any(crate::parser::is_pseudo_package)
-            })
-            && !matches!(index, Expr::Literal(lit)
-                if lit.as_str().is_some_and(|key| !key.starts_with('&')))
-        {
-            self.compile_bind_index_value(value);
-            self.compile_expr(index);
-            let stash_name_idx = self.code.add_constant(Value::str(stash_name.clone()));
-            self.code
-                .emit(OpCode::IndexAssignPseudoStashKeyed { stash_name_idx });
+        if self.try_compile_named_package_stash_assign(target, index, value) {
             return;
         }
         // A subscript chain rooted at an accessor-style method call
