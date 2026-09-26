@@ -11,6 +11,7 @@ pub(crate) use expr::{
 // draw its `<anon|N>` id from the same counter the parser uses for a `role { }`
 // literal (see `Interpreter::apply_single_mixin`).
 pub(crate) use primary::next_anon_role_name;
+pub(crate) use primary::var::is_pseudo_package;
 pub(crate) mod helpers;
 pub(in crate::parser) mod memo;
 mod outer_redecl;

@@ -4986,7 +4986,10 @@ impl Interpreter {
                 self.exec_index_assign_pseudo_stash_named_op(code, *stash_name_idx, *key_name_idx)?;
                 *ip += 1;
             }
-            // Cost: O(m), m = key bytes (name built by `format!`), plus an O(1) avg stash store.
+            // Cost: O(m), m = key bytes (name built by `format!`), plus an O(1) avg stash store;
+            // a `&` key re-aliasing a multi scans the function registry, O(r), r = registered
+            // functions (-- see #9665); a named package's non-`&` key builds the stash first,
+            // O(v), v = env entries (-- see #9171). Rakudo: O(1).
             OpCode::IndexAssignPseudoStashKeyed { stash_name_idx } => {
                 self.exec_index_assign_pseudo_stash_keyed_op(code, *stash_name_idx)?;
                 *ip += 1;
