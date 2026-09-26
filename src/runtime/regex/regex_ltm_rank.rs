@@ -174,6 +174,27 @@ impl Interpreter {
         pos: usize,
         pkg: Symbol,
     ) -> (Option<usize>, bool) {
+        // #9579: one measurement per (branch, position) per outermost
+        // measurement — see `regex_ltm_memo` for why the key is sound.
+        let slot = match super::regex_ltm_memo::ltm_memo_enter(pattern, chars, pos, pkg) {
+            Ok(slot) => slot,
+            Err(cached) => return cached,
+        };
+        let lr_before = super::regex_lr_state::lr_consult_count();
+        let result = self.ltm_prefix_len_uncached(pattern, chars, pos, pkg);
+        let consulted_lr = super::regex_lr_state::lr_consult_count() != lr_before;
+        super::regex_ltm_memo::ltm_memo_store(&slot, pattern, consulted_lr, result);
+        result
+    }
+
+    /// [`Self::ltm_prefix_len_at`] without the memo: the measurement itself.
+    fn ltm_prefix_len_uncached(
+        &mut self,
+        pattern: &RegexPattern,
+        chars: &[char],
+        pos: usize,
+        pkg: Symbol,
+    ) -> (Option<usize>, bool) {
         let saved_mode = LTM_DECLARATIVE_MODE.with(|f| f.replace(true));
         let saved_terminated = LTM_PREFIX_TERMINATED.with(|f| f.replace(false));
         let saved_epsilon = LTM_SEQALT_EPSILON.with(|f| f.replace(false));
