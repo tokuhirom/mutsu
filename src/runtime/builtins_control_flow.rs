@@ -392,31 +392,17 @@ impl Interpreter {
             }
             return Ok(Value::NIL);
         }
-        // A CONTROL handler is active somewhere up the dynamic call stack. If the
-        // *innermost* one can `.resume` (`resume_safe` or resume-capable), run it
-        // INLINE here, at the raise site, then return `Ok(Nil)` so the deep
-        // computation continues exactly where the `warn` was raised. Returning an
-        // `Err` instead would unwind the Rust call stack to the CONTROL block's
-        // frame, destroying every frame between here and there — so the rest of
-        // the deep computation (the code after the `warn`) would be lost. This is
-        // the cross-frame resumable-warn mechanism. A non-resume-safe handler
-        // (e.g. `when CX::Warn { }`, which `succeed`s/exits the block) must take
-        // the unwinding path so the `succeed` has a block boundary to unwind to.
-        if let Some(result) = self.try_control_inline(&message) {
-            return result;
-        }
-        Err(RuntimeError::warn_signal(message))
+        // A CONTROL handler is active somewhere up the dynamic call stack. Run
+        // it INLINE here, at the raise site, as rakudo does (#9510): returning
+        // an `Err` instead would unwind the Rust call stack to the CONTROL
+        // block's frame, destroying every frame between here and there, so a
+        // resuming handler could not continue the computation after the
+        // `warn`. A handler that ends its region without resuming (`when
+        // CX::Warn { }`) comes back as a warn signal stamped with that region's
+        // verdict, which the region applies as it unwinds.
+        self.try_control_inline(&message)
     }
 
-    /// Raise a resumable warning from an arbitrary raise site: print-and-resume
-    /// inline when no CONTROL handler is active (returning `resume` as the
-    /// expression's value), run a resume-safe CONTROL handler inline, or fall
-    /// back to the unwinding `CX::Warn` signal. Op-level warn sites (e.g. the
-    /// `+Any` numeric coercion) must use this instead of returning a bare
-    /// `warn_signal_with_resume` error: the unwinding signal carries its resume
-    /// value in `return_value`, which function-call boundaries treat as an
-    /// explicit `return` — silently swallowing the warning and abandoning the
-    /// rest of the callee body.
     /// The `Str` COERCION of a `Regex`, or `None` when `v` is not one.
     ///
     /// rakudo refuses to hand back a regex's source text in string context: it
@@ -469,6 +455,15 @@ impl Interpreter {
         )
     }
 
+    /// Raise a resumable warning from an arbitrary raise site: print-and-resume
+    /// inline when no CONTROL handler is active (returning `resume` as the
+    /// expression's value), or offer it to the active CONTROL handlers inline
+    /// (`try_control_inline`). Op-level warn sites (e.g. the `+Any` numeric
+    /// coercion) must use this instead of returning a bare
+    /// `warn_signal_with_resume` error: the unwinding signal carries its resume
+    /// value in `return_value`, which function-call boundaries treat as an
+    /// explicit `return` — silently swallowing the warning and abandoning the
+    /// rest of the callee body (#9510).
     pub(crate) fn raise_resumable_warning(
         &mut self,
         message: &str,
@@ -480,13 +475,7 @@ impl Interpreter {
             }
             return Ok(resume);
         }
-        if let Some(result) = self.try_control_inline(message) {
-            return result.map(|_| resume);
-        }
-        Err(RuntimeError::warn_signal_with_resume(
-            message.to_string(),
-            resume,
-        ))
+        self.try_control_inline(message).map(|_| resume)
     }
 
     pub(super) fn make_stub_exception(message: String) -> Value {
