@@ -52,10 +52,7 @@ impl Interpreter {
         match arg.view() {
             ValueView::Pair(key, _) => vec![key.to_string()],
             ValueView::ValuePair(key, _) => vec![key.to_string_value()],
-            ValueView::Array(items, ..) => items
-                .iter()
-                .flat_map(Self::export_trait_tags)
-                .collect(),
+            ValueView::Array(items, ..) => items.iter().flat_map(Self::export_trait_tags).collect(),
             _ => Vec::new(),
         }
     }
