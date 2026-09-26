@@ -25,6 +25,6 @@ A held consumer is also released at the thread's next blocking point
 An initializer that waits for its own callback would otherwise deadlock. In that case the
 callback sees the declaration unbound, which is what Rakudo does.
 
-Pinned by `t/concurrency/thread-lock/self-captured-tap-waits-for-its-declaration.t`. It keeps
+Pinned by `t/concurrency/thread-lock/cross-thread-tap-callback-waits-for-its-declaration.t`. It keeps
 the initializer busy after `.tap` returns, so without the hold it fails every time instead of
 only now and then.
