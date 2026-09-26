@@ -304,7 +304,8 @@ impl Interpreter {
             Some(b'$' | b'&' | b'@' | b'%') => (&name[..1], &name[1..]),
             _ => ("", name.as_str()),
         };
-        if bare.is_empty() || bare.contains("::") {
+        // A nested name is rejected by `publish_our_pseudo_stash_symbol`.
+        if bare.is_empty() {
             return;
         }
         let qualified = format!("{sigil}{package}::{bare}");
