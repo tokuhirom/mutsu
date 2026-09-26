@@ -581,6 +581,7 @@ mod builtins_multidim_subscript;
 mod builtins_multidim_subscript_adverb;
 mod builtins_postcircumfix;
 mod catch_inline;
+mod control_inline;
 pub(crate) mod json;
 mod proxy_store;
 pub(crate) use builtins_multidim_subscript::PositionalMissing;
@@ -4147,7 +4148,7 @@ pub struct Interpreter {
     /// dedup-on-insert and the drain linear in that accumulated size.
     pub(crate) pending_caller_var_writeback: rustc_hash::FxHashSet<String>,
     /// Appended every time a resume-safe `CONTROL` handler is run INLINE at a
-    /// warn raise site (`try_resume_safe_control_inline`) and writes one of the
+    /// warn raise site (`try_control_inline`) and writes one of the
     /// installing frame's lexicals into `env`; each entry is the `Symbol` of
     /// the lexical written.
     ///

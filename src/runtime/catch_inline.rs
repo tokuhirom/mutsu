@@ -10,7 +10,7 @@
 //! Rakudo does not save a continuation either: it runs the handler in the dynamic
 //! scope of the throw, *before* unwinding, so `.resume` is nothing more than the
 //! handler returning and the `die` evaluating to `Any`. This module implements
-//! that for `CATCH`, mirroring what `try_resume_safe_control_inline` has done for
+//! that for `CATCH`, mirroring what `try_control_inline` has done for
 //! `CONTROL`/`warn` since the cross-frame resumable-warn work.
 //!
 //! A handler that runs inline and does *not* resume still has to transfer control

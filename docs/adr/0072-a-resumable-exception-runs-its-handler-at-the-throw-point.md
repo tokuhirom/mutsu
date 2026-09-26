@@ -1,6 +1,6 @@
 # ADR-0072: A resumable exception runs its `CATCH` handler at the throw point, not after unwinding
 
-- Status: Accepted (Slice 1 implemented; Slices 2-3 open — see "Implementation status")
+- Status: Accepted (Slice 1 implemented; Slices 2-3 open — see "Implementation status"); amended 2026-09-25 to cover CONTROL (#9469)
 - Date: 2026-09-07
 - Supersedes: none
 - Related: ADR-0001 (Rust-stack-recursive VM), `docs/adr/0052` (a `when` clause produces its value on the stack)
@@ -197,3 +197,43 @@ inline path safe there and unsafe in general.
   closes rows 16 and 19 for non-resuming handlers too. Trigger: a roast/battery
   failure that turns on handler-vs-`LEAVE` ordering, or on a `CATCH` observing the
   throw's dynamic scope.
+
+## Amendment (2026-09-25): CONTROL handlers that can resume (#9469)
+
+Before this amendment a CONTROL handler ran inline at a `warn` raise site only
+when the compiler proved it `resume_safe` (`control_block_is_resume_safe`: it
+always resumes). Every other CONTROL handler unwound, and could resume only
+through `resume_ip`, which only the call-op arms record. So `.resume if $flag`
+did nothing for a warning raised by an opcode (`"a" ~ Any`) or in a callee.
+
+**Decision.** CONTROL uses the same gate as CATCH. A CONTROL block whose op range
+contains a `.resume` call is resume-*capable*
+(`OpCode::TryCatch::control_resume_capable`) and registers its bytecode in its
+`ControlHandlerEntry`, next to a per-activation `token` drawn from the same
+counter as `CatchHandlerEntry::token`. At the raise site
+(`Interpreter::try_control_inline`, `runtime/control_inline.rs`) the active
+handlers are tried innermost first, each with only the handlers outside it
+registered:
+
+- resumed: the raise site continues;
+- declined (no `when`/`default` matched): try the next outer handler; if every
+  handler declined, the default handler prints the warning and resumes;
+- handled without resuming: the raise site returns the warn signal stamped
+  `(token, Handled)`;
+- reaching a handler that cannot run inline: fall back to unwinding. When
+  handlers inside it already declined, the signal is stamped
+  `(outermost declined token, Unhandled)`.
+
+On the unwinding side, a region whose token is at least the stamp's token
+applies the stamp instead of running its handler: the stamping region applies
+the verdict, and regions nested inside it (larger tokens) decline. Nested active
+regions always have increasing tokens, so one stamp covers the whole chain.
+
+Unlike CATCH, a same-frame raise is also run inline. The `resume_safe` path has
+always done that, and an op-raised warning has no `resume_ip` to fall back on.
+
+**Still open.** A CONTROL handler with no `.resume` keeps the unwinding path, so
+an op-raised warning in a callee under it is lost at the call boundary (the
+resume value in `return_value` is read as a `return`). Running *every* CONTROL
+handler inline would fix that, but it would pay the per-entry `CompiledCode`
+clone (#9172) on every CONTROL region. Tracked as #9510.
