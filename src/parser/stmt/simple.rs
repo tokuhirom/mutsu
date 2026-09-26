@@ -116,7 +116,8 @@ pub(in crate::parser) use user_ops::{
     is_user_defined_infix, match_user_declared_circumfix_op, match_user_declared_infix_symbol_op,
     match_user_declared_postcircumfix_op, match_user_declared_postfix_op,
     match_user_declared_prefix_op, match_user_declared_term_symbol,
-    register_user_callable_term_symbol, register_user_term_symbol,
+    register_user_callable_term_symbol, register_user_sigiled_value_term,
+    register_user_term_symbol,
 };
 
 /// A single lexical scope frame tracking both user-declared subs and module imports.

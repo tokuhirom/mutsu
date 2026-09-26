@@ -50,7 +50,11 @@ pub(in crate::parser::stmt) fn constant_decl(input: &str) -> PResult<'_, Stmt> {
             .and_then(|s| s.strip_suffix('>'))
             .unwrap_or(&full)
             .to_string();
-        register_term_symbol_from_decl_name(&inner);
+        if inner.starts_with(['$', '@', '%']) {
+            crate::parser::stmt::simple::register_user_sigiled_value_term(&inner);
+        } else {
+            register_term_symbol_from_decl_name(&inner);
+        }
         (r, inner)
     } else {
         // `constant * = 3;` — the declarator is committed by now, so a name

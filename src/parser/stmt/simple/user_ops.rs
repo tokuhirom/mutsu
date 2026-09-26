@@ -335,6 +335,24 @@ pub(crate) fn register_user_term_symbol(name: &str) {
     });
 }
 
+/// Register a value term whose spelling starts with a sigil
+/// (`constant term:<$bar> = ...` declares the term `$bar`). Such a term is
+/// matched before the variable parsers see the sigil, so `$bar` means the
+/// bound value -- the way a sigilless `constant bar` does -- rather than a
+/// lexical scalar that was never declared. `register_user_term_symbol`
+/// deliberately refuses sigiled names, since `constant $x` is a variable.
+pub(crate) fn register_user_sigiled_value_term(name: &str) {
+    SCOPES.with(|s| {
+        let mut scopes = s.borrow_mut();
+        let current = scopes
+            .last_mut()
+            .expect("scope stack should never be empty");
+        current
+            .term_symbols
+            .insert(name.to_string(), TermBinding::Value(name.to_string()));
+    });
+}
+
 /// Whether `name` is an in-scope **non-callable** term symbol (a sigilless
 /// `my \foo` / `constant \foo`, i.e. a `TermBinding::Value`). Such a symbol is a
 /// complete term that takes no arguments, so a bare occurrence of it — e.g. in a

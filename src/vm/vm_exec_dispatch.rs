@@ -6428,6 +6428,17 @@ impl Interpreter {
                 // re-intern the name on each execution just to miss the set.
                 // The error construction (readonly hit) is the cold path.
                 if self.is_readonly_sym(code.const_sym(*name_idx)) {
+                    // A term that IS its value (`constant term:<$x> =
+                    // Obj.new`, `constant x = ...`) bound to an object with a
+                    // user `STORE` is assignable, as a sigilless `my \x` is
+                    // below (#9566).
+                    if self.readonly_kind(name) == Some(crate::ast::ReadonlyKind::ImmutableValue)
+                        && self.sigilless_value_has_store(code, name)
+                    {
+                        self.pending_sigilless_store = Some(name.to_string());
+                        *ip += 1;
+                        return Ok(());
+                    }
                     self.check_readonly_for_modify(name)?;
                 }
                 // Also check env-based readonly status set by cross-scope

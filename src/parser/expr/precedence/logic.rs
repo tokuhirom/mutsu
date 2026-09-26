@@ -250,7 +250,8 @@ pub(crate) fn assign_not_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, E
         && let Some((after_op, op)) = parse_compound_assign_op(r)
     {
         let (after_ws, _) = ws(after_op)?;
-        if let Ok((r, rhs)) = parse_assignment_rhs_mode(after_ws, mode)
+        let comma_level = matches!(op, crate::parser::stmt::assign::CompoundAssignOp::Comma);
+        if let Ok((r, rhs)) = parse_compound_assign_rhs_mode(after_ws, comma_level, mode)
             && let Ok(result) = build_compound_assign_expr(expr.clone(), op, rhs.clone())
         {
             // The established nested-lvalue expansion consumes the inner
@@ -299,7 +300,7 @@ pub(crate) fn assign_not_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, E
     // `word_infix_at`), so `not_expr_mode` above returns the bare lvalue here.
     if let Some((after_op, op_name)) = parse_custom_compound_assign_op(r) {
         let (after_ws, _) = ws(after_op)?;
-        if let Ok((r, rhs)) = parse_assignment_rhs_mode(after_ws, mode)
+        if let Ok((r, rhs)) = parse_compound_assign_rhs_mode(after_ws, false, mode)
             && let Ok(result) = build_custom_compound_assign_expr(expr.clone(), op_name, rhs)
         {
             return Ok((r, result));
