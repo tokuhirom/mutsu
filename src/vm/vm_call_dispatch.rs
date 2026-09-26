@@ -340,6 +340,7 @@ impl Interpreter {
             params_fill_frame: false,
             has_inner_subs: false,
             declares_inner_routines: false,
+            captured_fatal_mode: false,
             named_call_plan: None,
             deprecated_info,
             trir: None,

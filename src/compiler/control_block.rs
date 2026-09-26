@@ -243,12 +243,19 @@ impl Compiler {
         let state_reset = (is_bare && !suppress_loop_reset)
             .then(|| self.emit_nested_block_state_reset(stmts))
             .flatten();
+        // #9521: mirror the runtime save/restore this opcode pair performs on
+        // `fatal_mode` at compile time, on `Compiler::fatal_pragma_active`
+        // (only a block that owns an import scope can have changed it).
+        let saved_fatal_pragma_active = plan.import_scope.then_some(self.fatal_pragma_active);
         if plan.import_scope {
             self.code.emit(OpCode::PushImportScope);
         }
         self.emit_block_shape(stmts, label, position, &plan, is_bare);
         if plan.import_scope {
             self.code.emit(OpCode::PopImportScope);
+        }
+        if let Some(saved) = saved_fatal_pragma_active {
+            self.fatal_pragma_active = saved;
         }
         self.restore_sigilless_type_names(sigilless_types_before);
         self.user_listop_shadows = saved_listop_shadows;

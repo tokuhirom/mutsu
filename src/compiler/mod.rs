@@ -1153,6 +1153,17 @@ mod trir_call;
 pub(crate) struct Compiler {
     code: CompiledCode,
     local_map: HashMap<String, u32>,
+    /// Whether `use fatal` is textually active at the point currently being
+    /// compiled (#9521) — a compile-time mirror of the runtime `fatal_mode`
+    /// flag `use fatal;`'s own statement sets. `use fatal` is lexical in real
+    /// Raku: a named routine's own body must run under the pragma state of
+    /// ITS OWN declaration site, not whatever a caller's dynamic `fatal_mode`
+    /// happens to be at the call. Set when compiling a `use fatal;` statement,
+    /// saved/restored around a block that owns an import scope (mirroring the
+    /// runtime `PushImportScope`/`PopImportScope` pair), and read into
+    /// `CompiledFunction::captured_fatal_mode` at each sub/method body's own
+    /// compile site.
+    fatal_pragma_active: bool,
     /// ADR-0110 §3.3: routines this compile registered with a TRIR chunk,
     /// keyed by (name, positional arity), so a later call site in the same
     /// compile can resolve the callee without a name. Populated by the single
@@ -1761,6 +1772,7 @@ impl Compiler {
         Self {
             code: CompiledCode::new(),
             local_map: HashMap::new(),
+            fatal_pragma_active: false,
             trir_routines: HashMap::new(),
             // Frame 0 = compilation-unit / routine top level; never popped.
             local_scopes: vec![HashMap::new()],

@@ -156,7 +156,18 @@ impl Interpreter {
             self.trir.pop_frame(callee_frame);
             return Ok(None);
         }
+        // #9521: same fix as the outer doors (`try_call_trir`,
+        // `exec_call_trir_site`) -- `use fatal` is lexical to the callee's OWN
+        // declaration site, not this (TRIR) caller's dynamic state. `link.key`
+        // may not resolve in THIS caller's `compiled_fns` (a module routine's
+        // own nested-sub table does not hold its siblings), in which case
+        // `false` (never lexically fatal) is the safe default.
+        let saved_fatal_mode = self.fatal_mode;
+        self.fatal_mode = compiled_fns
+            .get(&link.key)
+            .is_some_and(|cf| cf.captured_fatal_mode);
         let outcome = self.run_trir_routine(&callee, callee_frame, compiled_fns);
+        self.fatal_mode = saved_fatal_mode;
         drop(guard);
         self.trir.pop_frame(callee_frame);
         match outcome? {

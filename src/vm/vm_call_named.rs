@@ -35,6 +35,9 @@ impl Interpreter {
         // Save the caller's pragma state and restore it on every exit path so
         // `use fatal` inside the callee does not bleed into the caller.
         let saved_pragmas = self.save_pragma_state();
+        // #9521: initialise from the callee's OWN declaration-site pragma
+        // state -- see `call_compiled_function_fast`'s identical comment.
+        self.fatal_mode = cf.captured_fatal_mode;
         // A routine declared directly in this body is lexical to the call.
         // Snapshot the routine registry around the (multi-exit) body so the
         // lexical routine is removed on return — UNLESS it escapes by being

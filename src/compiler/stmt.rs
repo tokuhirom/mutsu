@@ -4294,6 +4294,15 @@ impl Compiler {
                 condition,
                 arg,
             } => {
+                // #9521: mirror `use fatal`'s effect at compile time, so a
+                // sub/method compiled from this point on in the same lexical
+                // scope can record that it was declared under it (see
+                // `Compiler::fatal_pragma_active`'s doc comment). Restoring
+                // this on block exit is `compile_block_construct`'s job,
+                // matching the runtime `PushImportScope`/`PopImportScope` pair.
+                if module == "fatal" {
+                    self.fatal_pragma_active = true;
+                }
                 // A module `use`d here may export operators
                 // (`multi infix:<...> is export`). Because mutsu loads modules
                 // at *runtime*, the compiler cannot see those exports while

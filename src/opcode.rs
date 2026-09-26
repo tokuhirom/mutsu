@@ -11799,6 +11799,15 @@ pub(crate) struct CompiledFunction {
     /// returns. A `my sub` nested inside a `{ }` block within the body is not
     /// counted here: `BlockScope` already restores the registry for it.
     pub(crate) declares_inner_routines: bool,
+    /// The interpreter's `fatal_mode` at the moment this routine was
+    /// registered (mirroring `SubData::captured_fatal_mode` for closures).
+    /// `use fatal` is lexically scoped in real Raku: a named sub's own body
+    /// must run under the pragma state of ITS OWN declaration site, not
+    /// whatever the caller's dynamic `fatal_mode` happens to be at the call
+    /// (#9521). Always `false` on a freshly compiled chunk — populated at
+    /// registration time by `adapt_compiled_to_def`, which runs while the
+    /// declaring statement executes and so sees the correct ambient state.
+    pub(crate) captured_fatal_mode: bool,
     /// Pre-computed bind plan for the light named-call path
     /// (`call_compiled_function_light`): per-parameter match keys, locals
     /// slots, and env-mirror gates that the binding loop would otherwise
@@ -12436,6 +12445,7 @@ mod compiled_fns_identity {
             params_fill_frame: false,
             has_inner_subs: false,
             declares_inner_routines: false,
+            captured_fatal_mode: false,
             named_call_plan: None,
             deprecated_info: None,
             trir: None,

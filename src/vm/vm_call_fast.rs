@@ -198,6 +198,12 @@ impl Interpreter {
         // `use newline`) are scoped to the compilation unit where they appear.
         // Save and restore around the body so callee's `use fatal` never leaks.
         let saved_pragmas = self.save_pragma_state();
+        // #9521: `use fatal` is lexical to the callee's OWN declaration site,
+        // not the caller's dynamic state -- initialise it from what was
+        // captured when this routine was registered (mirrors closures'
+        // `captured_fatal_mode`), so a sub declared outside a `use fatal`
+        // block never inherits one merely because its caller is inside one.
+        self.fatal_mode = cf.captured_fatal_mode;
         // Push a routine frame for the duration of the body so backtraces
         // (`die`/`fail`/type errors), `&?ROUTINE`, `CALLER::`, and `callframe`
         // see this call — see the doc comment above and `RoutineFrame`'s own.
