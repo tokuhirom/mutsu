@@ -3668,6 +3668,27 @@ impl Interpreter {
                 // whole point of it having its own type object. See
                 // `types/role_candidate.rs`.
                 let raw_role_name = role_name.resolve();
+                // A bracketed role spelling can arrive here as a package name
+                // when it crossed a type-object lookup boundary. Normalize it
+                // to the canonical parametric-role representation before the
+                // punning retry: retrying `R[T]` as the same package name has
+                // no class to fall through to and recurses forever.
+                if let Some((base_name, type_names)) =
+                    Self::parse_parametric_type_name(&raw_role_name)
+                    && self.is_role_type_name(&base_name)
+                    && !crate::runtime::types::is_builtin_role_name(&base_name)
+                    && !self.registry().classes.contains_key(&raw_role_name)
+                {
+                    let type_args = type_names
+                        .iter()
+                        .map(|name| self.type_arg_value_from_name(name))
+                        .collect();
+                    return self.call_method_with_values(
+                        Value::parametric_role(Symbol::intern(&base_name), type_args),
+                        method,
+                        args,
+                    );
+                }
                 let role_name_resolved = self.role_group_name(&raw_role_name);
                 let has_role_method = self.role_or_parent_has_method(&role_name_resolved, method);
                 let has_public_accessor = args.is_empty()

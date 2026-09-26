@@ -1923,11 +1923,22 @@ impl Interpreter {
                         })
                         .cloned()
                 };
-                if let Some(role_bindings) = role_bindings {
-                    for (name, value) in &role_bindings {
+                if let Some(role_bindings) = &role_bindings {
+                    for (name, value) in role_bindings {
                         self.env.insert(name.clone(), value.clone());
                     }
                 }
+                let role_binding_symbols = role_bindings.as_ref().map(|bindings| {
+                    bindings
+                        .keys()
+                        .flat_map(|name| {
+                            [
+                                Symbol::intern(name),
+                                Symbol::intern(name.trim_start_matches([':', '$', '@', '%', '&'])),
+                            ]
+                        })
+                        .collect::<HashSet<_>>()
+                });
                 let class_attrs_info = self.collect_class_attributes(class_key);
                 // Check required attributes BEFORE evaluating defaults
                 // (required attributes are checked before defaults run)
@@ -2372,9 +2383,18 @@ impl Interpreter {
                 }
                 // Restore env after default evaluation, but preserve side effects
                 // on variables that already existed in the caller environment.
+                // Role type parameters are temporary bindings for this
+                // construction, not side effects. A caller may already have a
+                // lexical with the same name (`$type` is the common case), so
+                // copying the temporary value back would silently rebind the
+                // caller's receiver after `R[T]` is materialized.
                 let mut restored_env = saved_default_env;
                 for (key, value) in self.env.iter() {
-                    if restored_env.contains_key_sym(*key) {
+                    if restored_env.contains_key_sym(*key)
+                        && role_binding_symbols
+                            .as_ref()
+                            .is_none_or(|symbols| !symbols.contains(key))
+                    {
                         restored_env.insert_sym(*key, value.clone());
                     }
                 }
