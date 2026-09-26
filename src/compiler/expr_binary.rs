@@ -343,10 +343,14 @@ impl Compiler {
         // Detect `funcname |capture` pattern (listop call with capture slip)
         // Exclude names starting with uppercase -- they are likely type
         // names, and `TypeName|OtherType` should compile as a junction.
+        // A left bareword that names an in-scope term -- a sigilless binding
+        // (`\g` param, `my \x`) or a `constant` -- is a value, not a listop,
+        // so `g | e` is the infix junction (issue #9364).
         if *op == TokenKind::Pipe
             && matches!(right, Expr::BareWord(_))
             && let Expr::BareWord(name) = left
             && !name.starts_with(char::is_uppercase)
+            && !self.bareword_is_lexical_term(name)
         {
             // Compile the slip arg (the capture variable) into a Slip value;
             // CallFunc spreads it via `arg_sources_idx` (ADR-0054: argument-list
