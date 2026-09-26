@@ -537,6 +537,24 @@ impl Interpreter {
         method: &str,
         args: Vec<Value>,
     ) -> Option<Result<Value, RuntimeError>> {
+        // `Code.set_name`: rename the code object itself, so every alias of it
+        // (and a method `^add_method` installed from it) reports the new name.
+        // Without this arm the call fell through to method composition and
+        // answered a `<composed-method:set_name>` Sub while the name stayed
+        // empty (#9479, PDF::COS::Tie's `&accessor.set_name($key)`).
+        // Cost: O(n), n = chars of the new name (interned).
+        if method == "set_name"
+            && let [new_name] = args.as_slice()
+            && let ValueView::Sub(gc) = target.view()
+        {
+            let name = new_name.to_string_value();
+            // SAFETY: a single write of a `Copy` field of the shared node; no
+            // borrow into this `SubData` is dereferenced across it (`data` is
+            // not read again on this path). Code objects are not structurally
+            // mutated from another thread.
+            unsafe { crate::value::gc_contents_mut(&gc).name = Symbol::intern(&name) };
+            return Some(Ok(Value::str(name)));
+        }
         // WhateverCode's ACCEPTS is its predicate interface: invoke the
         // placeholder with the value being tested and return the result as a
         // Bool. This is what paths' `:file(* eq $name)` matcher relies on;
