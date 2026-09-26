@@ -701,7 +701,7 @@ impl Interpreter {
             if self.user_declared_classes.contains(&name) {
                 continue;
             }
-            if let Some(res) = Self::try_native_builtin_construct(*cn, args) {
+            if let Some(res) = self.try_native_builtin_construct(*cn, args) {
                 // An Instance-shaped builtin (`Date`, `DateTime`, `Buf`, ...)
                 // is minted under the ANCESTOR's name because that is the name
                 // the constructor was selected by. rakudo hands back an

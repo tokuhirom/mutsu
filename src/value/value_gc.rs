@@ -233,7 +233,8 @@ impl Value {
     }
 }
 
-/// A promise node's single `Value` edge is its resolved `result`. Its queued
+/// A promise node's `Value` edges are its resolved `result` and its bound
+/// user `scheduler` (ADR-0105 D1). Its queued
 /// `waiters` are boxed `FnOnce` closures — opaque to a visitor (they may capture
 /// `Value`s, but those are unreachable through this node until the callback runs
 /// and are dropped when the promise resolves), so they are not traced.
@@ -242,11 +243,15 @@ impl Trace for (Mutex<PromiseState>, Condvar) {
     fn trace(&self, visit: &mut dyn FnMut(&ErasedGc)) {
         if let Ok(state) = self.0.lock() {
             state.result.gc_trace(visit);
+            if let Some(scheduler) = &state.scheduler {
+                scheduler.gc_trace(visit);
+            }
         }
     }
     fn drop_gc_edges(&mut self) {
         if let Ok(state) = self.0.get_mut() {
             state.result = Value::Nil;
+            state.scheduler = None;
             state.waiters.clear();
         }
     }
@@ -668,6 +673,9 @@ impl SharedPromise {
     pub(crate) fn visit_gc_children(&self, visitor: &mut dyn RootVisitor) {
         if let Ok(state) = self.inner.0.lock() {
             visitor.visit_value(&state.result);
+            if let Some(scheduler) = &state.scheduler {
+                visitor.visit_value(scheduler);
+            }
         }
         // `waiters` are boxed `FnOnce` closures — opaque to a visitor (design
         // doc §2.2's PromiseState note). Any `Value` a callback captures is

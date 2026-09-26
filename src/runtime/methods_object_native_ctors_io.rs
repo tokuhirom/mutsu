@@ -342,6 +342,7 @@ impl Interpreter {
     }
 
     pub(crate) fn try_native_builtin_construct(
+        &mut self,
         class_name: Symbol,
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
@@ -428,10 +429,13 @@ impl Interpreter {
             }
             Some(Ok(Value::make_instance(class_name, attrs)))
         } else if cn == "Promise" {
-            // A bare `Promise.new` is an empty planned promise — pure shared
-            // state, no env / registry / user code. Shared with the interpreter's
-            // `dispatch_new` arm.
-            Some(Ok(Value::promise(crate::value::SharedPromise::new())))
+            // `Promise.new(:$scheduler = $*SCHEDULER)`: an empty planned
+            // promise bound to its scheduler (ADR-0105 D1). Shared with the
+            // interpreter's `dispatch_new` arm.
+            let explicit = Self::named_value(args, "scheduler");
+            Some(Ok(Value::promise(
+                self.new_bound_promise(class_name, explicit),
+            )))
         } else if cn == "Channel" {
             // Likewise an empty channel.
             Some(Ok(Value::channel(crate::value::SharedChannel::new())))

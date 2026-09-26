@@ -14,8 +14,15 @@ impl Interpreter {
             return Some(self.dispatch_supply_transform(target.clone(), "start", args));
         }
         if let Some(cls) = self.promise_class_name(target) {
-            let block = args.first().cloned().unwrap_or(Value::NIL);
-            return Some(Ok(self.spawn_callable_promise(block, Symbol::intern(&cls))));
+            // `Promise.start(:scheduler($s), { ... })`: the block is the first
+            // positional, wherever the named argument sits.
+            let block = args
+                .iter()
+                .find(|a| !matches!(a.view(), ValueView::Pair(..)))
+                .cloned()
+                .unwrap_or(Value::NIL);
+            let scheduler = self.promise_scheduler_binding(Self::named_value(args, "scheduler"));
+            return Some(self.start_callable_promise(block, Symbol::intern(&cls), scheduler));
         }
         // Thread.start
         if let ValueView::Package(class_name) = target.view()
@@ -43,31 +50,6 @@ impl Interpreter {
             }),
         )
         .map_err(crate::runtime::builtins_system::refused_thread_error)
-    }
-
-    /// The `$*SCHEDULER` currently in effect, but only when it is a
-    /// *user-defined* scheduler — a class that is not one of the built-ins.
-    ///
-    /// Raku defines `Promise.in($t)` as `$*SCHEDULER.cue({ ... }, :in($t))`, so
-    /// swapping `$*SCHEDULER` (e.g. for `Test::Scheduler`'s virtual time)
-    /// redirects every timed promise. mutsu drives the built-in schedulers
-    /// straight off the shared deadline heap, which is much cheaper and
-    /// observationally identical, so only a user scheduler needs the real
-    /// `.cue` dispatch.
-    pub(super) fn user_scheduler(&mut self) -> Option<Value> {
-        let sched = self.env().get("*SCHEDULER")?.clone();
-        let ValueView::Instance { class_name, .. } = sched.view() else {
-            return None;
-        };
-        let name = class_name.resolve();
-        if matches!(
-            name.as_str(),
-            "Scheduler" | "ThreadPoolScheduler" | "CurrentThreadScheduler" | "FakeScheduler"
-        ) {
-            return None;
-        }
-        // Only a scheduler that actually provides `cue` can drive the promise.
-        self.class_has_method(&name, "cue").then_some(sched)
     }
 
     /// Hand `promise` to a user `$*SCHEDULER` via `.cue(&keeper, :$in)`, where
@@ -104,35 +86,7 @@ impl Interpreter {
             modifier: None,
             quoted: false,
         })];
-        Value::sub_value(crate::gc::Gc::new(crate::value::SubData {
-            package: Symbol::intern("GLOBAL"),
-            name: Symbol::intern(""),
-            params: crate::value::empty_params(),
-            param_defs: crate::value::empty_param_defs(),
-            body: std::sync::Arc::new(body),
-            is_rw: false,
-            is_raw: false,
-            env: Env::new(),
-            assumed_positional: Vec::new(),
-            assumed_named: ValueMap::default(),
-            id: crate::value::next_instance_id(),
-            empty_sig: false,
-            is_bare_block: true,
-            compiled_code: None,
-            compiled_fns: None,
-            compiled_routine: None,
-            is_decl_expr_thunk: false,
-            deprecated_message: None,
-            source_line: None,
-            source_file: None,
-            owned_captures: Vec::new(),
-            authoritative_captures: Vec::new(),
-            upvalues: Vec::new(),
-            captured_fatal_mode: false,
-            param_name_syms_cache: std::sync::OnceLock::new(),
-            source_file_sym_cache: std::sync::OnceLock::new(),
-            state_scope_guard: None,
-        }))
+        Self::synthesized_thunk(body)
     }
 
     /// Promise.in dispatch
@@ -142,13 +96,18 @@ impl Interpreter {
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
         if let Some(cls) = self.promise_class_name(target) {
-            let secs = args.first().map(|v| v.to_f64()).unwrap_or(0.0);
-            let promise = SharedPromise::new_with_class(Symbol::intern(&cls));
+            let secs = args
+                .iter()
+                .find(|a| !matches!(a.view(), ValueView::Pair(..)))
+                .map(|v| v.to_f64())
+                .unwrap_or(0.0);
+            let promise =
+                self.new_bound_promise(Symbol::intern(&cls), Self::named_value(args, "scheduler"));
             // mutsu resolves this promise itself (the timer keeps it), so it
             // is vowed: user `.keep`/`.break`/`.vow` on it is X::Promise::Vowed.
             promise.mark_vowed();
             let ret = Value::promise(promise.clone());
-            if let Some(scheduler) = self.user_scheduler() {
+            if let Some(scheduler) = promise.scheduler() {
                 if let Err(e) = self.cue_promise_on_scheduler(scheduler, &promise, "in", secs) {
                     return Some(Err(e));
                 }
@@ -171,7 +130,11 @@ impl Interpreter {
         if let Some(cls) = self.promise_class_name(target) {
             // at_time may be an Instant (TAI) or a plain numeric (POSIX).
             // Convert Instant values to POSIX for delay calculation.
-            let at_time = match args.first().map(|v| (v, v.view())) {
+            let at_time = match args
+                .iter()
+                .find(|a| !matches!(a.view(), ValueView::Pair(..)))
+                .map(|v| (v, v.view()))
+            {
                 Some((
                     _,
                     ValueView::Instance {
@@ -192,10 +155,11 @@ impl Interpreter {
             };
             let now = crate::value::current_time_secs_f64();
             let delay = at_time - now;
-            let promise = SharedPromise::new_with_class(Symbol::intern(&cls));
+            let promise =
+                self.new_bound_promise(Symbol::intern(&cls), Self::named_value(args, "scheduler"));
             promise.mark_vowed();
             let ret = Value::promise(promise.clone());
-            if let Some(scheduler) = self.user_scheduler() {
+            if let Some(scheduler) = promise.scheduler() {
                 // Rakudo's `Promise.at` cues with `:in($at - now)`, not `:at`,
                 // so a virtual-time scheduler measures the delay from its own
                 // clock. Match that.
@@ -220,7 +184,7 @@ impl Interpreter {
     ) -> Option<Result<Value, RuntimeError>> {
         if let Some(cls) = self.promise_class_name(target) {
             let value = args.first().cloned().unwrap_or(Value::TRUE);
-            let promise = SharedPromise::new_with_class(Symbol::intern(&cls));
+            let promise = self.new_bound_promise(Symbol::intern(&cls), None);
             promise.keep(value, String::new(), String::new());
             return Some(Ok(Value::promise(promise)));
         }
@@ -238,7 +202,7 @@ impl Interpreter {
                 .first()
                 .cloned()
                 .unwrap_or_else(|| Value::str_from("Died"));
-            let promise = SharedPromise::new_with_class(Symbol::intern(&cls));
+            let promise = self.new_bound_promise(Symbol::intern(&cls), None);
             promise.break_with(reason_val, String::new(), String::new());
             return Some(Ok(Value::promise(promise)));
         }
@@ -252,7 +216,7 @@ impl Interpreter {
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
         if let Some(cls) = self.promise_class_name(target) {
-            let promise = SharedPromise::new_with_class(Symbol::intern(&cls));
+            let promise = self.new_bound_promise(Symbol::intern(&cls), None);
             promise.mark_vowed();
             let ret = Value::promise(promise.clone());
             let promises = match self.collect_promise_combinator_inputs("allof", args) {
@@ -298,7 +262,7 @@ impl Interpreter {
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
         if let Some(cls) = self.promise_class_name(target) {
-            let promise = SharedPromise::new_with_class(Symbol::intern(&cls));
+            let promise = self.new_bound_promise(Symbol::intern(&cls), None);
             promise.mark_vowed();
             let ret = Value::promise(promise.clone());
             let promises = match self.collect_promise_combinator_inputs("anyof", args) {

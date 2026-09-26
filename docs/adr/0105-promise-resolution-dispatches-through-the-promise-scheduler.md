@@ -3,7 +3,7 @@
 - Status: **Accepted** (design final 2026-09-16 — the user delegated the two
   open points to the design session under the premise "we are building the
   fastest Raku interpreter", and §7 records how they were settled;
-  implementation not started, slices in §8)
+  implementation in progress: S0 and S1 landed, S2–S5 open, slices in §8)
 - Date: 2026-09-16
 - Context: [#8380](https://github.com/tokuhirom/mutsu/issues/8380) (the
   `Test::Time` / `Test::Scheduler` deadlock), whose 2026-09-16 direction
@@ -333,7 +333,11 @@ order without stacking.
   `.then`), F4 (`.scheduler`, `Promise.in(:scheduler)`, `start` under a user
   `$*SCHEDULER` cues through it), and the experiment-3 invariant. All fail
   today.
-- **S1 — D1.** The field, every binding site, the accessor.
+- **S1 — D1.** The field, every binding site, the accessor. *(Landed:
+  `PromiseState::scheduler`, `src/runtime/methods_promise_scheduler.rs`,
+  pinned by `t/concurrency/thread-lock/promise-scheduler-binding.t`. The
+  `start` thunk breaks its own promise rather than passing Rakudo's
+  `:catch`, since a synthesized block has no parameter list.)*
 - **S2 — D2.** Resolution via the scheduler; `await` parks on its own wake
   waiter; the broadcast wake path removed; the per-worker pending-wake list
   for built-in wake-ups (flushed at park / task end; the tick arrives in S4).

@@ -92,6 +92,7 @@ impl SharedPromise {
                     observed: false,
                     unhandled_reported: false,
                     thread_id: 0,
+                    scheduler: None,
                 }),
                 Condvar::new(),
             )),
@@ -116,6 +117,7 @@ impl SharedPromise {
                     observed: false,
                     unhandled_reported: false,
                     thread_id: 0,
+                    scheduler: None,
                 }),
                 Condvar::new(),
             )),
@@ -166,6 +168,19 @@ impl SharedPromise {
     pub(crate) fn set_thread_id(&self, thread_id: i64) {
         let (lock, _) = &*self.inner;
         lock.lock().unwrap().thread_id = thread_id;
+    }
+
+    /// Bind this promise to a user scheduler (ADR-0105 D1); `None` means a
+    /// built-in one. See `PromiseState::scheduler`.
+    pub(crate) fn set_scheduler(&self, scheduler: Option<Value>) {
+        let (lock, _) = &*self.inner;
+        lock.lock().unwrap().scheduler = scheduler;
+    }
+
+    /// The user scheduler this promise is bound to, if any.
+    pub(crate) fn scheduler(&self) -> Option<Value> {
+        let (lock, _) = &*self.inner;
+        lock.lock().unwrap().scheduler.clone()
     }
 
     pub(crate) fn class_name(&self) -> Symbol {

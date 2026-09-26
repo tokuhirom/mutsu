@@ -72,6 +72,9 @@ impl Interpreter {
     ) -> Value {
         let orig = shared.clone();
         let new_promise = SharedPromise::new_with_class(shared.class_name());
+        // Rakudo's `.then` result is `self.new(:$!scheduler)`: it inherits the
+        // original's scheduler (ADR-0105 D1).
+        new_promise.set_scheduler(shared.scheduler());
         // The callback's outcome resolves the derived promise, so mutsu holds
         // its vow: `$p.then({...}).keep` is X::Promise::Vowed in Rakudo.
         new_promise.mark_vowed();
@@ -188,6 +191,8 @@ impl Interpreter {
                 }
             }
             "status" => Ok(Value::str(shared.status())),
+            // Cost: O(1).
+            "scheduler" => Ok(self.promise_scheduler_value(shared)),
             "then" => {
                 let block = args.into_iter().next().unwrap_or(Value::NIL);
                 // .then always runs the callback regardless of Kept/Broken
@@ -344,6 +349,12 @@ impl Interpreter {
                     Ok(()) => Ok(Value::NIL),
                     Err(status) => Err(Self::promise_resolved_error(&shared, &status)),
                 }
+            }
+            // The body of the block a user scheduler is cued with for `start`
+            // (see `promise_start_thunk`).
+            "__mutsu_run_start" => {
+                let block = args.into_iter().next().unwrap_or(Value::NIL);
+                self.run_cued_start_body(&shared, block)
             }
             "WHAT" => Ok(Value::package(Symbol::intern("Promise::Vow"))),
             "Str" | "gist" => Ok(Value::str("(Vow)".to_string())),

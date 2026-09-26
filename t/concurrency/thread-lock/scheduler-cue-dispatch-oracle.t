@@ -30,7 +30,6 @@ class LogSched does Scheduler {
     my $s = LogSched.new;
     my $p = Promise.new(scheduler => $s);
     my $sched = try { $p.scheduler };
-    todo 'ADR-0105 S1 (D1): Promise.scheduler does not exist yet';
     is $sched, $s, 'Promise.scheduler returns the bound scheduler (F4)';
 }
 
@@ -47,7 +46,7 @@ class LogSched does Scheduler {
     sleep 0.05;
     $p.keep(1);
     await $t;
-    todo 'ADR-0105 S1/S2 (D1/D2): await-wake does not dispatch through the bound scheduler yet';
+    todo 'ADR-0105 S2 (D2): await-wake does not dispatch through the bound scheduler yet';
     ok $s.log.elems >= 1, 'keep cues the awaiter wake-up through the promise scheduler (F1)';
 }
 
@@ -59,7 +58,7 @@ class LogSched does Scheduler {
     $p.then({ $done.keep(1) });
     $p.keep(1);
     await $done;
-    todo 'ADR-0105 S1/S2 (D1/D2): .then dispatch does not go through the bound scheduler yet';
+    todo 'ADR-0105 S2 (D2): .then dispatch does not go through the bound scheduler yet';
     ok $s.log.elems >= 1, '.then callback dispatch cues through the promise scheduler (F1)';
 }
 
@@ -71,7 +70,6 @@ class LogSched does Scheduler {
         start { 42 };
     }
     is await($t), 42, 'the start block still completes normally';
-    todo 'ADR-0105 S1 (D1): start does not consult a user $*SCHEDULER yet';
     ok $s.log.elems >= 1, 'start cues its task through the user $*SCHEDULER (F4)';
 }
 

@@ -1007,7 +1007,10 @@ impl Interpreter {
                 "Promise" => {
                     // Shared with the VM's native fast path
                     // (`try_native_builtin_construct`).
-                    return Ok(Value::promise(SharedPromise::new()));
+                    let explicit = Self::named_value(&args, "scheduler");
+                    return Ok(Value::promise(
+                        self.new_bound_promise(Symbol::intern("Promise"), explicit),
+                    ));
                 }
                 "Channel" => {
                     // Shared with the VM's native fast path

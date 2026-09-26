@@ -100,7 +100,7 @@ impl Interpreter {
             // the pure-native fork when user candidates exist.
             && !self.has_user_method(&class_name.resolve(), "new")
             && let Some(result) =
-                crate::runtime::Interpreter::try_native_builtin_construct(class_name, &args)
+                self.try_native_builtin_construct(class_name, &args)
         {
             self.method_dispatch_pure = true;
             return result;
