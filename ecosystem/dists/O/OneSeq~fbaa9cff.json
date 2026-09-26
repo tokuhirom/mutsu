@@ -14,11 +14,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "X::Undeclared::Symbols: Undeclared name:",
+        "first_failure": "The iterator of this Seq is already in use/consumed by another Seq (you might solve this by adding .cache on usages of the Seq, or by assigning the Seq into an array)",
         "nok": 0,
-        "ok": 6,
+        "ok": 3,
         "plan": 21,
-        "secs": 0.17,
+        "secs": 0.23,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -28,7 +28,7 @@
         "nok": 0,
         "ok": 21,
         "plan": 21,
-        "secs": 6.56,
+        "secs": 5.73,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -40,10 +40,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-25",
+    "date": "2026-09-26",
     "harness": 2,
-    "host": "linux-x86_64",
-    "mutsu_commit": "eccced5eb",
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "199f95e",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -58,7 +58,7 @@
   "totals": {
     "baseline_assertions": 21,
     "baseline_files": 1,
-    "mutsu_assertions": 6,
+    "mutsu_assertions": 3,
     "parity_files": 0,
     "regressed_files": 1
   },

@@ -28,7 +28,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 1.16,
+        "secs": 0.84,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -38,20 +38,21 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 36.34,
+        "secs": 33.64,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "partial",
+      "cmp": "no_baseline",
+      "flaky": true,
       "mutsu": {
         "first_failure": "simple eval",
         "nok": 45,
         "ok": 9,
         "plan": 54,
-        "secs": 1.46,
+        "secs": 1.05,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -61,7 +62,7 @@
         "nok": 0,
         "ok": 54,
         "plan": 54,
-        "secs": 4.18,
+        "secs": 3.09,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -75,7 +76,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 5,
-        "secs": 1.78,
+        "secs": 1.25,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -89,7 +90,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 1.5,
+        "secs": 1.09,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -99,10 +100,10 @@
       "cmp": "regression",
       "mutsu": {
         "first_failure": "Codepoint 55296 (0xD800) is out of bounds in 'chr'",
-        "nok": 1,
-        "ok": 9,
+        "nok": 0,
+        "ok": 10,
         "plan": null,
-        "secs": 0.69,
+        "secs": 0.46,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -112,7 +113,7 @@
         "nok": 0,
         "ok": 21,
         "plan": 21,
-        "secs": 1.99,
+        "secs": 1.58,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -126,7 +127,7 @@
         "nok": 0,
         "ok": 48,
         "plan": 56,
-        "secs": 1.63,
+        "secs": 1.2,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -139,7 +140,7 @@
         "nok": 1,
         "ok": 3,
         "plan": 11,
-        "secs": 0.43,
+        "secs": 0.31,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -149,7 +150,7 @@
         "nok": 0,
         "ok": 11,
         "plan": 11,
-        "secs": 1.04,
+        "secs": 0.79,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -161,7 +162,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.13,
+        "secs": 0.08,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -171,7 +172,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.63,
+        "secs": 0.46,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -185,7 +186,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 7,
-        "secs": 1.11,
+        "secs": 0.78,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -199,7 +200,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 4.19,
+        "secs": 3.18,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -211,7 +212,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.12,
+        "secs": 0.07,
         "skip": 1,
         "todo": 0,
         "verdict": "pass"
@@ -221,7 +222,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.6,
+        "secs": 0.48,
         "skip": 1,
         "todo": 0,
         "verdict": "pass"
@@ -243,10 +244,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-25",
+    "date": "2026-09-26",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "404ac78",
+    "mutsu_commit": "199f95e",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -259,11 +260,11 @@
   },
   "status": "partial",
   "totals": {
-    "baseline_assertions": 89,
-    "baseline_files": 6,
-    "mutsu_assertions": 24,
+    "baseline_assertions": 35,
+    "baseline_files": 5,
+    "mutsu_assertions": 16,
     "parity_files": 3,
-    "regressed_files": 3
+    "regressed_files": 2
   },
   "version": "1.0.4"
 }
