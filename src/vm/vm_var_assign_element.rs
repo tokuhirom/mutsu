@@ -906,7 +906,12 @@ impl Interpreter {
                     slot_mutated = Some(current);
                 }
             }
-            if let Some(mutated) = slot_mutated.or_else(|| self.env().get_sym(var_sym).cloned()) {
+            // A store path that already wrote through the cell re-installs
+            // the cell itself under the name; storing that into the cell
+            // would make it contain itself.
+            if let Some(mutated) = slot_mutated.or_else(|| self.env().get_sym(var_sym).cloned())
+                && !matches!(mutated.view(), ValueView::ContainerRef(c) if crate::gc::Gc::ptr_eq(&c, &cell))
+            {
                 *cell.lock().unwrap() = mutated;
             }
             // `saved_env_entry` is `Some(_)` whenever `unit_cell` is (both
