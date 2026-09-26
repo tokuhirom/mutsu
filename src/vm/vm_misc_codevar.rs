@@ -50,16 +50,18 @@ impl Interpreter {
         self.stack.push(val);
     }
 
-    // Cost: O(1) for a `&`-sigil local (one hashed `find_local_slot` probe);
-    // O(s + f) for a registered routine, s = visible env names that are not
-    // plain user lexicals, f = the routine's free vars: its code object carries
-    // a filtered capture (`routine_code_object_env`), not the live env tier.
-    pub(super) fn exec_get_code_var_op(
-        &mut self,
-        code: &CompiledCode,
-        name_idx: u32,
-    ) -> Result<(), RuntimeError> {
-        let name = Self::const_str(code, name_idx);
+    /// The `&name` TERM's value when the executing frame itself binds it: a
+    /// `&`-sigil lexical (`my &op`, a `&op` parameter) in this chunk's local
+    /// slots, or a frame-lexical `my sub`. `None` means the name is not bound
+    /// by this frame and resolves through the env/registry
+    /// (`resolve_code_var`). Shared by `GetCodeVar` and every meta-op that
+    /// names its operator as `&name` (`»[&op]«`, `[[&op]]`), so a `&op`
+    /// parameter -- which lives only in a local slot, never in the env --
+    /// is found the same way everywhere (#9464).
+    ///
+    /// Cost: O(1), one hashed `find_local_slot` probe plus one
+    /// `lexical_routine` probe.
+    pub(super) fn frame_amp_callable(&self, code: &CompiledCode, name: &str) -> Option<Value> {
         // `&cb` reads a `&`-sigil LEXICAL first when this frame has one — a
         // `&f` parameter lives in a local slot under its sigiled name, and
         // `resolve_code_var` only ever consults the env, which a slot-only bind
@@ -72,8 +74,7 @@ impl Interpreter {
             // callable, not the cell holding it.
             let slot_val = self.locals[slot].clone().into_deref();
             if !slot_val.is_nil() {
-                self.stack.push(slot_val);
-                return Ok(());
+                return Some(slot_val);
             }
         }
         // ADR-0113: a frame-lexical `my sub` is in no registry; this chunk's
@@ -82,6 +83,22 @@ impl Interpreter {
             && let Some(sym) = Symbol::lookup(name)
             && let Some(val) = self.frame_lexical_code_object(code, sym)
         {
+            return Some(val);
+        }
+        None
+    }
+
+    // Cost: O(1) for a `&`-sigil local (one hashed `find_local_slot` probe);
+    // O(s + f) for a registered routine, s = visible env names that are not
+    // plain user lexicals, f = the routine's free vars: its code object carries
+    // a filtered capture (`routine_code_object_env`), not the live env tier.
+    pub(super) fn exec_get_code_var_op(
+        &mut self,
+        code: &CompiledCode,
+        name_idx: u32,
+    ) -> Result<(), RuntimeError> {
+        let name = Self::const_str(code, name_idx);
+        if let Some(val) = self.frame_amp_callable(code, name) {
             self.stack.push(val);
             return Ok(());
         }
