@@ -2583,6 +2583,10 @@ pub struct Interpreter {
     /// consulted by `resolve_module_path` to pick among installed dists that
     /// provide the same short name. Saved/restored around each load so a
     /// transitive `use` resolves with its own (usually absent) selectors.
+    /// The `-M` modules of the command line, re-announced to the parser
+    /// before the mainline parse so their exports are lexically in scope
+    /// (`set_compiling_options`, `run`).
+    preload_modules: Vec<String>,
     pending_dist_selectors: Vec<(String, String)>,
     /// Arguments passed to the `use` currently being loaded (`use Foo "a", "b"`
     /// / `use Foo <a b c>`), evaluated by the caller and pushed for the

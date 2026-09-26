@@ -144,7 +144,8 @@ pub(crate) fn replay_cached_type_names(
     }
 }
 pub use stmt::simple::{
-    clear_parser_lib_paths, set_parser_lib_paths, set_parser_program_path, set_parser_source_file,
+    clear_parser_lib_paths, set_parser_lib_paths, set_parser_preload_modules,
+    set_parser_program_path, set_parser_source_file,
 };
 
 pub(crate) use expr::precedence::lower_feed_node;
@@ -655,6 +656,7 @@ pub(crate) fn parse_program(input: &str) -> Result<(Vec<Stmt>, Option<String>), 
     // buffer at the same address (see `memo::MemoKey`).
     let _memo_generation = memo::begin_parse_generation();
     stmt::reset_user_subs();
+    stmt::simple::register_preload_module_exports();
     let _core_type_fold = core_type_fold::begin_unit();
     crate::trace::trace_log!("parse", "parser start memo={}", memo_enabled);
     primary::set_original_source(input);
