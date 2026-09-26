@@ -3474,7 +3474,8 @@ pub(crate) enum OpCode {
     /// topic writes through to its element). `$/` and the capture variables
     /// are set. The result is the `Match`; under `:g`, `:x` or a multi-value
     /// `:nth` it is a `List` of Matches (possibly empty); a non-list form
-    /// that matched nothing pushes `False` (Rakudo: `Nil`; see #9515).
+    /// that matched nothing pushes `Nil`, as in Rakudo (`$x ~~ s///` reports
+    /// that failure as `False`).
     /// Runs `exec_subst_op` → `run_subst`, shared with
     /// [`Self::NonDestructiveSubst`].
     Subst {
