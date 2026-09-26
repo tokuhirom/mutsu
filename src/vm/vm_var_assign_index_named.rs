@@ -3362,12 +3362,14 @@ impl Interpreter {
         stash_name_idx: u32,
     ) -> Result<(), RuntimeError> {
         let stash_name = Self::const_str(code, stash_name_idx);
-        // The compiler emits this op for PROCESS:: and OUR:: (see
-        // compile_index_assign).
-        debug_assert!(matches!(stash_name, "PROCESS::" | "OUR::"));
+        // The compiler emits this op for PROCESS::, OUR:: and a named
+        // package's stash (see compile_index_assign).
         let key = self.stack.pop().unwrap_or(Value::NIL);
         let val = self.stack.pop().unwrap_or(Value::NIL);
         let raw_key = key.to_string_value();
+        if !matches!(stash_name, "PROCESS::" | "OUR::") {
+            return self.index_assign_named_package_stash(code, stash_name_idx, key, val);
+        }
         if stash_name == "OUR::" {
             // The stash key carries its own sigil (`'&' ~ $tag`); the internal
             // pseudo-var spelling drops a leading `$` and keeps every other

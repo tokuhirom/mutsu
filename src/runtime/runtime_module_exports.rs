@@ -78,17 +78,29 @@ impl Interpreter {
     /// loading module's name and the routine is recorded as one of its exports.
     /// Without that, `use`-ing the re-exporting module imported nothing at all.
     pub(crate) fn register_our_code_alias(&mut self, name: &str, value: &Value) {
+        let Some(name) = name.strip_prefix("&OUR::") else {
+            return;
+        };
+        let current_pkg = self.current_package();
+        self.register_package_code_alias(current_pkg, name, value);
+    }
+
+    /// [`Self::register_our_code_alias`] for an explicitly named package:
+    /// `current_pkg` is the package whose stash receives the `&name` entry
+    /// (the current one for `OUR::`, the named one for `Foo::{'&name'}`).
+    pub(crate) fn register_package_code_alias(
+        &mut self,
+        current_pkg: String,
+        name: &str,
+        value: &Value,
+    ) {
         let ValueView::Sub(data) = value.view() else {
             return;
         };
         let is_multi = data.env.contains_key("__mutsu_multi_dispatch_candidates");
-        let Some(name) = name.strip_prefix("&OUR::") else {
-            return;
-        };
         if name.is_empty() {
             return;
         }
-        let current_pkg = self.current_package();
         // `module_load_stack` names the compunit being loaded, which is the
         // namespace `import_module` reads an export back out of.
         let export_target = match (
@@ -218,11 +230,24 @@ impl Interpreter {
         let Some(bare) = rest.strip_prefix("OUR::") else {
             return;
         };
+        let package = self.current_package();
+        self.publish_package_stash_symbol(package, sigil, bare, value);
+    }
+
+    /// [`Self::publish_our_pseudo_stash_symbol`] for an explicitly named
+    /// package: binds `{sigil}{package}::{bare}` and, when `package` is an
+    /// `EXPORT::<tag>` stash of the module being loaded, records the export.
+    pub(crate) fn publish_package_stash_symbol(
+        &mut self,
+        package: String,
+        sigil: &str,
+        bare: &str,
+        value: &Value,
+    ) {
         // A nested name is a package path, not a symbol of THIS package.
         if bare.is_empty() || bare.contains("::") {
             return;
         }
-        let package = self.current_package();
         let qualified = if package.is_empty() || package == "GLOBAL" {
             format!("{sigil}{bare}")
         } else {

@@ -96,6 +96,27 @@ impl Interpreter {
             && !crate::runtime::utils::is_known_type_constraint(rest)
     }
 
+    /// The stash key for a sigil-leading env / `our` spelling of a member of
+    /// `package` -- `&Foo::bar` (how `Foo::<&bar> := ...`, `BIND-KEY` and
+    /// `our &Foo::bar = ...` store a routine) is `Foo::`'s `&bar`.
+    /// [`Self::stash_member_tail`] only matches the package-leading form, so
+    /// such a member was callable but missing from the stash.
+    fn sigil_leading_stash_member(key: &str, package: &str) -> Option<String> {
+        let package = package.trim_end_matches("::");
+        let sigil = key
+            .chars()
+            .next()
+            .filter(|c| matches!(c, '&' | '@' | '%'))?;
+        if package.is_empty() || package == "GLOBAL" {
+            return None;
+        }
+        let bare = key[1..].strip_prefix(package)?.strip_prefix("::")?;
+        if bare.is_empty() || bare.contains("::") {
+            return None;
+        }
+        Some(format!("{sigil}{bare}"))
+    }
+
     fn stash_member_tail<'a>(key: &'a str, package: &str) -> Option<&'a str> {
         let package = package.trim_end_matches("::");
         if package == "GLOBAL" {
@@ -868,6 +889,11 @@ impl Interpreter {
             } else {
                 &key_s
             };
+            if let Some(stash_key) = Self::sigil_leading_stash_member(effective_key, &package_name)
+            {
+                symbols.insert(stash_key, val.clone());
+                continue;
+            }
             if let Some(rest) = Self::stash_member_tail(effective_key, &package_name) {
                 // A member whose tail is itself qualified (`foo::bar` seen from
                 // GLOBAL) does not name a symbol of THIS package -- it names a
@@ -932,6 +958,10 @@ impl Interpreter {
         if package_name != "GLOBAL" && !package_name.is_empty() {
             for (key, val) in self.our_vars_iter() {
                 if key.starts_with("__mutsu_") {
+                    continue;
+                }
+                if let Some(stash_key) = Self::sigil_leading_stash_member(key, &package_name) {
+                    symbols.entry(stash_key).or_insert_with(|| val.clone());
                     continue;
                 }
                 let Some(rest) = Self::stash_member_tail(key, &package_name) else {

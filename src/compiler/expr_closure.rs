@@ -910,6 +910,25 @@ impl Compiler {
                 .emit(OpCode::IndexAssignPseudoStashKeyed { stash_name_idx });
             return;
         }
+        // A named package's stash (`EXPORT::DEFAULT::{$_} = ::($_)`, the
+        // re-export idiom; `Foo::<&bar> := &f`). A literal non-`&` key keeps
+        // the generic index-assign; a `&` key or a runtime key goes to the
+        // keyed stash op, which installs a routine as the package's symbol
+        // (and export) and defers any other key back to the generic path.
+        if let Expr::PseudoStash(stash_name) = target
+            && stash_name.strip_suffix("::").is_some_and(|pkg| {
+                !pkg.is_empty() && !pkg.split("::").any(crate::parser::is_pseudo_package)
+            })
+            && !matches!(index, Expr::Literal(lit)
+                if lit.as_str().is_some_and(|key| !key.starts_with('&')))
+        {
+            self.compile_bind_index_value(value);
+            self.compile_expr(index);
+            let stash_name_idx = self.code.add_constant(Value::str(stash_name.clone()));
+            self.code
+                .emit(OpCode::IndexAssignPseudoStashKeyed { stash_name_idx });
+            return;
+        }
         // A subscript chain rooted at an accessor-style method call
         // (`$o.a[0]<x> = 5`, `$o.h<a><b> = 5`) is compiled by evaluating the
         // accessor ONCE into a compiler temp and then running the ordinary
