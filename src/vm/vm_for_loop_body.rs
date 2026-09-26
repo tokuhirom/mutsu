@@ -50,6 +50,17 @@ impl Interpreter {
     /// so an outer loop's `ReadonlyKind::ImmutableDeep` is restored right
     /// along with `Immutable`/`ImmutableValue`/`Alias` — there is no second,
     /// independent "deep" flag to remember to clear or restore separately.
+    /// The value a `for` loop's tagged source variable holds, read through a
+    /// capture cell: a variable an escaping closure captured is a shared
+    /// `ContainerRef`, and classifying the cell itself (instead of the
+    /// QuantHash inside it) made an immutable `Bag`'s weights writable
+    /// (#9488).
+    // Cost: O(d), one env probe.
+    fn for_source_binding_value(&self, name: &str) -> Option<Value> {
+        self.get_env_with_main_alias(name)
+            .map(|v| v.deref_container())
+    }
+
     pub(super) fn restore_topic_readonly(&mut self, saved: Option<crate::ast::ReadonlyKind>) {
         match saved {
             Some(kind) => self.mark_readonly_sym_with(crate::symbol::wk::topic(), kind),
@@ -226,7 +237,9 @@ impl Interpreter {
         // read-only with writeback suppressed.
         let source_immutable_quant = container_binding.as_ref().is_some_and(|name| {
             matches!(
-                self.get_env_with_main_alias(name).as_ref().map(Value::view),
+                self.for_source_binding_value(name)
+                    .as_ref()
+                    .map(Value::view),
                 Some(ValueView::Mix(_, false))
                     | Some(ValueView::Set(_, false))
                     | Some(ValueView::Bag(_, false))
@@ -243,7 +256,9 @@ impl Interpreter {
         // assigned value (X::Str::Numeric on a bad string; weight 0 removes the key).
         let source_mutable_quant = container_binding.as_ref().is_some_and(|name| {
             matches!(
-                self.get_env_with_main_alias(name).as_ref().map(Value::view),
+                self.for_source_binding_value(name)
+                    .as_ref()
+                    .map(Value::view),
                 Some(ValueView::Mix(_, true))
                     | Some(ValueView::Set(_, true))
                     | Some(ValueView::Bag(_, true))
@@ -548,7 +563,7 @@ impl Interpreter {
             && match &container_binding {
                 None => false,
                 Some(name) => {
-                    if let Some(val) = self.get_env_with_main_alias(name) {
+                    if let Some(val) = self.for_source_binding_value(name) {
                         matches!(
                             val.view(),
                             ValueView::Mix(_, false)

@@ -2819,17 +2819,19 @@ impl Compiler {
                 // invoked from a nested block
                 // (todo/deep/closure-capture-shadowed-by-colliding-callee-parameter.md).
                 //
-                // Positional args here deliberately keep `compile_call_arg`'s
-                // unconditional non-escaping treatment: unlike the named-arg
-                // case, marking a positional closure literal (e.g.
-                // `lives-ok { ... }, $desc` — rewritten to an anon sub before
-                // this loop runs, so it still matches `is_closure_literal_arg`)
-                // escaping here regressed `t/bind-alias-chain.t`, so this
-                // narrower fix only touches the shape the bug report is about.
+                // A positional closure literal (e.g. `lives-ok { ... }, $desc`
+                // — rewritten to an anon sub before this loop runs, so it
+                // still matches `is_closure_literal_arg`) escapes the same way,
+                // so the statement and expression call forms compile their
+                // arguments identically. It used to stay non-escaping because
+                // a captured cell lost the variable's container traits (`is
+                // default`, `is Map`, typed/shaped/QuantHash containers):
+                // every store path now reads those through the cell (#9488).
                 let wb_base = self.index_rw_writeback_base();
                 for arg in &rewritten_args {
                     match arg {
-                        CallArg::Positional(expr) => self.compile_call_arg(expr),
+                        CallArg::Positional(expr) => self
+                            .compile_call_arg_with_escape(expr, Self::is_closure_literal_arg(expr)),
                         CallArg::Named {
                             name,
                             value: Some(expr),

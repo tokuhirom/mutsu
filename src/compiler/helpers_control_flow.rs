@@ -1362,11 +1362,13 @@ impl Compiler {
                 // invoked from a nested block
                 // (todo/deep/closure-capture-shadowed-by-colliding-callee-parameter.md).
                 //
-                // Positional args deliberately keep `compile_call_arg`'s
-                // unconditional non-escaping treatment — see the identical
-                // note in `compile_stmt`'s `Stmt::Call` arm
-                // (t/bind-alias-chain.t regressed when this was widened).
-                CallArg::Positional(expr) => self.compile_call_arg(expr),
+                // A positional closure literal escapes too, exactly as in the
+                // expression call form (`compile_expr_call_inner`), so the two
+                // forms compile their arguments identically. See the identical
+                // note in `compile_stmt`'s `Stmt::Call` arm (#9488).
+                CallArg::Positional(expr) => {
+                    self.compile_call_arg_with_escape(expr, Self::is_closure_literal_arg(expr))
+                }
                 CallArg::Named {
                     name,
                     value: Some(expr),

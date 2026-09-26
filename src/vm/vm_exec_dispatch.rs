@@ -1371,8 +1371,10 @@ impl Interpreter {
                 // an immutable value.
                 if let Some(constraint) = loan_env!(self, var_type_constraint_sym(name_sym)) {
                     let base = constraint.split('[').next().unwrap_or(&constraint);
+                    // Read through a capture cell: an escaping closure's
+                    // `%h is Bag` is a shared `ContainerRef` (#9488).
                     if matches!(base, "Mix" | "Set" | "Bag")
-                        && let Some(existing) = self.env().get(&name)
+                        && let Some(existing) = self.env().get(&name).map(|v| v.deref_container())
                         && matches!(
                             existing.view(),
                             ValueView::Mix(_, false)
@@ -1736,6 +1738,20 @@ impl Interpreter {
                         *ip += 1;
                         return Ok(());
                     }
+                }
+                // A Nil ASSIGNED to an `is default(...)` scalar stores the
+                // default, as `exec_set_local_op`'s STORE does. A write from a
+                // closure (or named sub) that captured the variable lands here
+                // with no local slot, so without this the raw Nil went into the
+                // shared cell (#9488: `lives-ok { $a = Nil }`).
+                if val.is_nil()
+                    && !raw_mode
+                    && !is_bind_ctx
+                    && !is_rebind
+                    && !name.starts_with(['@', '%', '&'])
+                    && let Some(def) = self.var_default(&name)
+                {
+                    val = def.clone();
                 }
                 if let Some(constraint) = loan_env!(self, var_type_constraint_sym(name_sym))
                     && !name.starts_with('%')

@@ -166,7 +166,10 @@ impl Interpreter {
     fn builtin_index_var_meta(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
         let element = args.first().cloned().unwrap_or(Value::NIL);
         let source_name = args.get(1).map(Value::to_string_value).unwrap_or_default();
-        let container = self.env.get(&source_name).cloned();
+        // Read through a capture cell: a variable an escaping closure captured
+        // is a shared `ContainerRef`, which is not itself a container of
+        // element Scalars (#9488).
+        let container = self.env.get(&source_name).map(Value::deref_container);
         self.element_var_meta(element, container, &source_name)
     }
 

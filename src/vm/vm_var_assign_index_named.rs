@@ -2109,13 +2109,31 @@ impl Interpreter {
                         }
                     }
                 }
-                if !matches!(
-                    self.env().get(&var_name).map(Value::view),
-                    Some(ValueView::Hash(_))
-                ) {
+                // A `%h` an escaping closure captured is held in a shared
+                // `ContainerCell`: the slice lands in the hash INSIDE the cell.
+                // Treating the cell as "not a Hash" replaced the whole
+                // container with a fresh one holding only the sliced keys,
+                // detached from every other closure sharing the cell (#9488).
+                let celled_hash = match self.env().get(&var_name).map(Value::view) {
+                    Some(ValueView::ContainerRef(cell))
+                        if matches!(cell.lock().unwrap().view(), ValueView::Hash(_)) =>
+                    {
+                        Some(cell.clone())
+                    }
+                    _ => None,
+                };
+                if celled_hash.is_none()
+                    && !matches!(
+                        self.env().get(&var_name).map(Value::view),
+                        Some(ValueView::Hash(_))
+                    )
+                {
                     self.env_mut()
                         .insert(var_name.clone(), Value::hash(ValueMap::default()));
                 }
+                let mut celled_inner = celled_hash
+                    .as_ref()
+                    .map(|cell| cell.lock().unwrap().clone());
                 let slice_is_object_hash =
                     loan_env!(self, var_hash_key_constraint(&var_name)).is_some();
                 // Phase 2 Stage 2 (hash slice bind): pre-read each bind source
@@ -2150,7 +2168,11 @@ impl Interpreter {
                     crate::gc::Gc<crate::value::ContainerCell>,
                 )> = Vec::new();
                 let mut assigned_values: Vec<Value> = Vec::new();
-                if let Some(entry) = self.env_mut().get_mut(&var_name) {
+                let target = match celled_inner.as_mut() {
+                    Some(inner) => Some(inner),
+                    None => self.env_mut().get_mut(&var_name),
+                };
+                if let Some(entry) = target {
                     let _ = entry.with_hash_mut(|hash| {
                         let h = crate::value::gc_data_mut(hash);
                         for (i, key) in keys.iter().enumerate() {
@@ -2194,6 +2216,9 @@ impl Interpreter {
                             }
                         }
                     });
+                }
+                if let (Some(cell), Some(inner)) = (celled_hash, celled_inner) {
+                    *cell.lock().unwrap() = inner;
                 }
                 for (source_name, cell) in pending_source_cells {
                     // Bind the source variable to the same cell installed at
@@ -2550,16 +2575,19 @@ impl Interpreter {
                 // parameterized (e.g. SetHash[Str]), not when the constraint is just
                 // `is SetHash`. The subscript key is the element, so it must satisfy
                 // the parameterized element (keyof) type.
+                // Read through a capture cell (#9488): an escaping closure's
+                // `$s` holds the parameterized QuantHash inside a shared
+                // `ContainerRef`.
                 let set_val_clone = self
                     .env()
                     .get(&var_name)
+                    .map(Value::deref_container)
                     .filter(|v| {
                         matches!(
                             v.view(),
                             ValueView::Set(..) | ValueView::Bag(..) | ValueView::Mix(..)
                         )
-                    })
-                    .cloned();
+                    });
                 // The subscript key is checked against the element (keyof) type.
                 // For Set/Bag that equals `value_type`; for Mix the keyof lives in
                 // `key_type` (while `value_type` is the weight type, Real).

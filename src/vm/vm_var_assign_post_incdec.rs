@@ -280,6 +280,48 @@ impl Interpreter {
         self.exec_inc_dec_index_op(code, name_idx, slot, false, true)
     }
 
+    /// Type-check the incremented value against the element constraint of a
+    /// typed array/hash, e.g. `subset Y of Int where 1..10; my Y @x; @x[0]=10;
+    /// @x[0]++` must throw when the new value (11) falls outside the subset.
+    /// Native arrays wrap instead of erroring, so skip them. Skip container-type
+    /// constraints (e.g. `%h is SetHash`), where the constraint names the whole
+    /// container rather than its element/value type.
+    // Cost: O(t), t = cost of one type match against `constraint`.
+    fn check_incdec_element_type(
+        &mut self,
+        name: &str,
+        declared_constraint: Option<&str>,
+        new_val: &Value,
+    ) -> Result<(), RuntimeError> {
+        if (name.starts_with('@') || name.starts_with('%'))
+            && let Some(constraint) = declared_constraint
+            && !crate::runtime::native_types::is_native_array_element_type(constraint)
+            && !matches!(constraint, "num" | "num32" | "num64" | "str")
+            && !matches!(
+                constraint,
+                "Hash"
+                    | "Array"
+                    | "Map"
+                    | "List"
+                    | "Bag"
+                    | "Set"
+                    | "Mix"
+                    | "BagHash"
+                    | "SetHash"
+                    | "MixHash"
+                    | "Seq"
+            )
+            && !self.is_container_subclass(constraint)
+            && !new_val.is_nil()
+            && !self.type_matches_value(constraint, new_val)
+        {
+            return Err(runtime::utils::type_check_element_typed_error(
+                name, constraint, new_val,
+            ));
+        }
+        Ok(())
+    }
+
     /// `slot` is the compile-time-resolved local slot of the *base container*
     /// (§1.5). It disambiguates a name that occupies several `code.locals`
     /// entries — a bare block shares its enclosing frame's locals, so an inner
@@ -725,6 +767,10 @@ impl Interpreter {
                 self.decrement_value_smart(&effective)?
             };
             let new_val = wrap_element_result(new_val);
+            // The celled container is the variable's own, so its element
+            // constraint holds here exactly as on the uncelled path below
+            // (#9488: `my Y @x` captured by `throws-like { @x[0]++ }`).
+            self.check_incdec_element_type(&name, declared_constraint_incdec.as_deref(), &new_val)?;
             let mut updated = inner;
             // Container identity (§3): write through the shared backing node.
             if updated
@@ -742,13 +788,18 @@ impl Interpreter {
                             let data = crate::value::gc_data_mut(arr);
                             let old_len = data.items().len();
                             // ADR-0049 slice 5: fill skipped slots with the
-                            // standard `Package("Any")` gap marker instead of
-                            // a raw `Value::NIL` -- `Nil` is no longer a hole
-                            // sentinel, only `ArrayData::initialized` is.
+                            // element type's gap marker (`(Int)` for a
+                            // `my Int @a` an escaping closure captured, the
+                            // same fill the uncelled path uses -- #9488)
+                            // instead of a raw `Value::NIL` -- `Nil` is no
+                            // longer a hole sentinel, only
+                            // `ArrayData::initialized` is.
                             Self::autoviv_resize(
                                 data.items_mut(),
                                 i + 1,
-                                Self::native_fill_for_constraint(None),
+                                Self::native_fill_for_constraint(
+                                    element_constraint_incdec.as_deref(),
+                                ),
                             )?;
                             Value::assign_element_slot(&mut data[i], new_val.clone());
                             // Materialize the "all present" range before
@@ -875,38 +926,7 @@ impl Interpreter {
         } else {
             new_val
         };
-        // Type-check the incremented value against the element constraint of a
-        // typed array/hash, e.g. `subset Y of Int where 1..10; my Y @x; @x[0]=10;
-        // @x[0]++` must throw when the new value (11) falls outside the subset.
-        // Native arrays wrap instead of erroring, so skip them. Skip container-type
-        // constraints (e.g. `%h is SetHash`), where the constraint names the whole
-        // container rather than its element/value type.
-        if (name.starts_with('@') || name.starts_with('%'))
-            && let Some(constraint) = declared_constraint_incdec.as_deref()
-            && !crate::runtime::native_types::is_native_array_element_type(constraint)
-            && !matches!(constraint, "num" | "num32" | "num64" | "str")
-            && !matches!(
-                constraint,
-                "Hash"
-                    | "Array"
-                    | "Map"
-                    | "List"
-                    | "Bag"
-                    | "Set"
-                    | "Mix"
-                    | "BagHash"
-                    | "SetHash"
-                    | "MixHash"
-                    | "Seq"
-            )
-            && !self.is_container_subclass(constraint)
-            && !new_val.is_nil()
-            && !self.type_matches_value(constraint, &new_val)
-        {
-            return Err(runtime::utils::type_check_element_typed_error(
-                &name, constraint, &new_val,
-            ));
-        }
+        self.check_incdec_element_type(&name, declared_constraint_incdec.as_deref(), &new_val)?;
         // Modify the container in-place in the env to preserve Arc sharing
         // (e.g. when two variables reference the same array via Arc).
         // First try to modify via env_mut().get_mut() to avoid clone.
