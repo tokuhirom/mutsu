@@ -262,10 +262,13 @@ impl Interpreter {
         self.env_mut().insert("/".to_string(), slash.clone());
         self.publish_subst_capture_env(&slash);
         self.substitution_in_smartmatch = self.in_smartmatch_rhs;
+        // A non-list `s///` that matched nothing is `Nil`, the failed match's
+        // value (Rakudo); the smartmatch form (`$x ~~ s///`) turns it into
+        // `False` in `exec_smart_match_expr_op`.
         self.stack.push(if outcome.matched || outcome.is_list {
             outcome.slash
         } else {
-            Value::FALSE
+            Value::NIL
         });
         Ok(())
     }
