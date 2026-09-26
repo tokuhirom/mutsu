@@ -3268,16 +3268,13 @@ impl Interpreter {
             }
 
             // -- Identity/value equality --
-            // Cost: O(t1 + t2), t = elements of a list-shaped operand, counted
-            // recursively to depth 16 (warm_which_identity walks them all before
-            // the pointer compare); O(1) for scalars (see exec_strict_eq_op).
-            // Rakudo: O(1) -- see #9172.
+            // Cost: O(1) (see identical_values; O(k) for a Capture operand,
+            // k = its elements).
             OpCode::StrictEq => {
                 self.exec_strict_eq_op()?;
                 *ip += 1;
             }
-            // Cost: O(t1 + t2), as StrictEq (see exec_strict_ne_op). Rakudo:
-            // O(1) -- see #9172.
+            // Cost: as StrictEq (see exec_strict_ne_op).
             OpCode::StrictNe => {
                 self.exec_strict_ne_op()?;
                 *ip += 1;
@@ -3665,8 +3662,8 @@ impl Interpreter {
                     *ip + 1
                 };
             }
-            // Cost: O(1) for a plain value; O(d) for an instance, d = MRO depth
-            // (has_user_method probes each level for a `defined` override).
+            // Cost: O(1); for an instance, the `defined`-override probe
+            // (has_user_method) is memoized per class, a miss O(d), d = MRO depth.
             OpCode::JumpIfNotNil(target) => {
                 *ip = if self.jump_if_not_nil_taken() {
                     *target as usize
@@ -3675,9 +3672,10 @@ impl Interpreter {
                 };
             }
 
-            // Cost: O(d) for an instance, d = MRO depth (has_user_method), O(1)
-            // otherwise; with a user `.defined` method, plus its call and the
-            // drain of any by-name caller write it recorded (O(1) when none).
+            // Cost: O(1) (an instance's has_user_method probe is memoized per
+            // class, a miss O(d), d = MRO depth); with a user `.defined`
+            // method, plus its call and the drain of any by-name caller write
+            // it recorded (O(1) when none).
             OpCode::CallDefined => {
                 self.sync_source_line(code, *ip);
                 let val = self.stack.pop().unwrap();
@@ -4369,17 +4367,16 @@ impl Interpreter {
                 self.exec_call_func_site(code, *ip, compiled_fns)?;
                 *ip += 1;
             }
-            // Cost: O(a + d^2) plus the method body, a = arguments, d = MRO depth of an
-            // Instance/Package receiver: `grammar_has_user_method` walks the parent chain on every
-            // call (`class_is_grammar_seen`, a `Vec<String>` seen-list, so O(d^2)) plus O(d)
-            // accessor/method probes. Rakudo: O(a) (method cache) -- see #9172.
+            // Cost: O(a) plus the method body, a = arguments: the per-`(class, method)` MRO
+            // probes (`grammar_has_user_method`, the accessor race, `is_native_method`) are
+            // memoized for one registry write generation (`user_method_probe_memo.rs`).
             OpCode::CallMethod { .. } => {
                 self.exec_call_method_site(code, *ip)?;
                 *ip += 1;
             }
-            // Cost: O(a + d) plus the method body, a = arguments, d = MRO depth of the receiver's
-            // class (per-call MRO scans in the user-method dispatch). Rakudo: O(a) (method cache)
-            // -- see #9172.
+            // Cost: O(a) plus the method body, a = arguments (the MRO probes and the
+            // candidate-level walk of `resolve_method_with_owner` are memoized per
+            // `(class, method)`, see `user_method_probe_memo.rs`).
             OpCode::CallMethodDynamic {
                 arity,
                 modifier_idx,
@@ -4416,8 +4413,8 @@ impl Interpreter {
                 self.drain_pending_local_updates_after_call(code);
                 *ip += 1;
             }
-            // Cost: as CallMethodDynamic, O(a + d) plus the body; the attribute snapshot/mirror is
-            // O(1) for a non-attribute receiver. Rakudo: O(a) -- see #9172.
+            // Cost: as CallMethodDynamic, O(a) plus the body; the attribute snapshot/mirror is
+            // O(1) for a non-attribute receiver.
             OpCode::CallMethodDynamicMut { .. } => {
                 self.exec_call_method_mut_site(code, *ip)?;
                 *ip += 1;
@@ -4435,10 +4432,9 @@ impl Interpreter {
                 self.mirror_attr_env_to_cell(code, *target_name_idx, pre);
                 *ip += 1;
             }
-            // Cost: O(a + d) plus the method body, a = arguments, d = MRO depth of a user-class
-            // receiver (`push_method_dispatch_frame` scans the whole MRO for a public accessor on
-            // every call); receiver env snapshot/compare O(1). Rakudo: O(a) (method cache) -- see
-            // #9172.
+            // Cost: O(a) plus the method body, a = arguments (`push_method_dispatch_frame`'s
+            // MRO probes are memoized per `(class, method)`, see `user_method_probe_memo.rs`);
+            // receiver env snapshot/compare O(1).
             OpCode::CallMethodMut { .. } => {
                 self.exec_call_method_mut_site(code, *ip)?;
                 *ip += 1;

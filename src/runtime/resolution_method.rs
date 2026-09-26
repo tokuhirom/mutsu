@@ -268,7 +268,16 @@ impl Interpreter {
         // (submethods block MRO search for their class but not for
         // descendants).
         let mut submethod_blocks = false;
-        for cn in mro.iter() {
+        // Only the levels that declare `method_name` at all can contribute a
+        // candidate; the memo lists them so the walk is O(candidate levels),
+        // not O(MRO depth) with a registry probe per level.
+        let levels = self.method_candidate_levels(class_name, method_name);
+        for &level in levels.iter() {
+            let level = level as usize;
+            if level >= mro.len() {
+                break;
+            }
+            let cn = &mro[level];
             // Hoist the clone to a `let` so the registry read guard drops here,
             // before method_args_match_for_invocant re-enters (&mut self). An
             // `if let` scrutinee would otherwise keep the temporary guard alive

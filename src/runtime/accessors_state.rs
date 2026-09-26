@@ -1372,9 +1372,10 @@ impl Interpreter {
         })
     }
 
-    // Cost: O(d), d = MRO depth of `receiver_class`, on every user-method call:
-    // the `accessor_owner` scan walks the whole MRO before the memoized
-    // single-candidate fast path can return. Rakudo: O(1) (method cache) -- see #9172.
+    // Cost: O(1) amortized before the single-candidate fast path returns (every
+    // MRO probe on the way is memoized per `(class, method)` for one registry
+    // write generation); a multi-candidate deferral frame is O(c) in the
+    // candidates it collects.
     pub(crate) fn push_method_dispatch_frame(
         &mut self,
         receiver_class: &str,
@@ -1439,17 +1440,8 @@ impl Interpreter {
         // and silently answering Nil instead of reading the attribute
         // (Email::MIME's `Email::Simple` subclass overrides the auto `body`
         // reader this way).
-        let accessor_owner = {
-            let name_sym = crate::symbol::Symbol::intern(method_name);
-            self.class_mro(receiver_class)
-                .iter()
-                .find(|owner| {
-                    self.registry()
-                        .accessor_is_public_sym(**owner, name_sym)
-                        .is_some_and(|is_public| is_public)
-                })
-                .copied()
-        };
+        let accessor_owner = super::user_method_probe_memo::probe_key(method_name)
+            .and_then(|name| self.first_public_accessor_owner(receiver_class, name));
         let accessor_base_override =
             accessor_owner.is_some() && self.has_user_method(receiver_class, method_name);
         // A user method on a subclass of a builtin metamodel HOW (OO::Monitors'

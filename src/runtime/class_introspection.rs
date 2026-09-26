@@ -3,6 +3,7 @@
 //! attribute collection across the MRO and composed roles. Lifecycle/MRO lives
 //! in `class`; instance-method dispatch in `class_dispatch`.
 
+use super::user_method_probe_memo::probe_key;
 use super::*;
 use crate::runtime::meta_ns::MetaNs;
 
@@ -263,10 +264,25 @@ impl Interpreter {
         false
     }
 
+    // Cost: O(1) amortized (the MRO walk is memoized per `(class, method)` for
+    // one registry write generation); a miss is O(d), d = MRO depth.
     pub(crate) fn is_native_method(&mut self, class_name: &str, method_name: &str) -> bool {
         if Self::hardcoded_native_method(class_name, method_name) {
             return true;
         }
+        match (probe_key(class_name), probe_key(method_name)) {
+            (Some(class), Some(method)) => self.is_native_method_memo(class, method),
+            _ => self.is_native_method_uncached(class_name, method_name),
+        }
+    }
+
+    /// The MRO walk behind [`Self::is_native_method`], unmemoized.
+    // Cost: O(d), d = MRO depth.
+    pub(super) fn is_native_method_uncached(
+        &mut self,
+        class_name: &str,
+        method_name: &str,
+    ) -> bool {
         let mro = self.class_mro(class_name);
         for cn in mro.iter() {
             if let Some(class_def) = self.registry().classes.get(cn.as_str())
@@ -285,7 +301,23 @@ impl Interpreter {
     /// [`Self::has_user_method`] for a caller that already holds the method
     /// name interned — the compiled dispatch entries do, and on a `Match`
     /// receiver the intern alone was a measurable share of the call (#8888).
+    // Cost: O(1) amortized (memoized per `(class, method)` for one registry
+    // write generation, see `user_method_probe_memo.rs`); a miss is O(d),
+    // d = MRO depth.
     pub(crate) fn has_user_method_sym(
+        &mut self,
+        class_name: &str,
+        name_sym: crate::symbol::Symbol,
+    ) -> bool {
+        match probe_key(class_name) {
+            Some(class) => self.has_user_method_memo(class, name_sym),
+            None => self.has_user_method_uncached(class_name, name_sym),
+        }
+    }
+
+    /// The MRO walk behind [`Self::has_user_method_sym`], unmemoized.
+    // Cost: O(d), d = MRO depth.
+    pub(super) fn has_user_method_uncached(
         &mut self,
         class_name: &str,
         name_sym: crate::symbol::Symbol,
@@ -331,12 +363,15 @@ impl Interpreter {
     /// such as `Match` it is not in the class table and falls back to a
     /// `::`-tail scan of every registered class, which cost ~115k
     /// instructions per call and 44% of `bench-regex-capture`.
-    // Cost: O(d + r), d = MRO depth, r = registered roles; the O(d^2)
-    // grammar-ancestry walk runs only when a role on the MRO declares the
-    // method. Runs on every `CallMethod` to an Instance/Package.
-    // Rakudo: O(1) (method cache) -- see #9172.
+    // Cost: O(1) amortized (memoized per `(class, method)` for one registry
+    // write generation); a miss is O(d + r), d = MRO depth, r = registered
+    // roles, plus the O(d^2) grammar-ancestry walk when a role on the MRO
+    // declares the method.
     pub(crate) fn grammar_has_user_method(&mut self, name: &str, method_name: &str) -> bool {
-        self.grammar_has_user_method_sym(name, crate::symbol::Symbol::intern(method_name))
+        match (probe_key(name), probe_key(method_name)) {
+            (Some(class), Some(method)) => self.grammar_has_user_method_memo(class, method),
+            _ => self.grammar_has_user_method_sym(name, crate::symbol::Symbol::intern(method_name)),
+        }
     }
 
     /// [`Self::grammar_has_user_method`] for a caller that already holds the
@@ -417,7 +452,24 @@ impl Interpreter {
 
     /// [`Self::resolve_user_method_or_accessor`] for a caller that already
     /// holds the method name interned (see [`Self::has_user_method_sym`]).
+    // Cost: O(1) amortized (memoized per `(class, method)` for one registry
+    // write generation, see `user_method_probe_memo.rs`); a miss is O(d),
+    // d = MRO depth.
     pub(crate) fn resolve_user_method_or_accessor_sym(
+        &mut self,
+        class_name: &str,
+        name_sym: crate::symbol::Symbol,
+    ) -> Option<UserMethodOrAccessor> {
+        match probe_key(class_name) {
+            Some(class) => self.resolve_user_method_or_accessor_memo(class, name_sym),
+            None => self.resolve_user_method_or_accessor_uncached(class_name, name_sym),
+        }
+    }
+
+    /// The MRO walk behind [`Self::resolve_user_method_or_accessor_sym`],
+    /// unmemoized.
+    // Cost: O(d), d = MRO depth.
+    pub(super) fn resolve_user_method_or_accessor_uncached(
         &mut self,
         class_name: &str,
         name_sym: crate::symbol::Symbol,
@@ -492,26 +544,20 @@ impl Interpreter {
     /// resolution for `method_name`, or `None` when an explicit method wins or
     /// no public accessor exists. The owner is needed to find a wrap chain
     /// installed through the accessor's Method meta-object.
+    // Cost: O(1) amortized (two memoized probes); a miss is O(d), d = MRO depth.
     pub(crate) fn attribute_accessor_owner(
         &mut self,
         class_name: &str,
         method_name: &str,
     ) -> Option<crate::symbol::Symbol> {
+        let name = probe_key(method_name)?;
         if !matches!(
-            self.resolve_user_method_or_accessor(class_name, method_name),
+            self.resolve_user_method_or_accessor_sym(class_name, name),
             Some(UserMethodOrAccessor::Accessor)
         ) {
             return None;
         }
-        let name = crate::symbol::Symbol::intern(method_name);
-        self.class_mro(class_name)
-            .iter()
-            .find(|owner| {
-                self.registry()
-                    .accessor_is_public_sym(**owner, name)
-                    .is_some_and(|is_public| is_public)
-            })
-            .copied()
+        self.first_public_accessor_owner(class_name, name)
     }
 
     /// Whether `class_name`'s public attribute `attr_name` was contributed by a
