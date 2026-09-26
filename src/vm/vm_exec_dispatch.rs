@@ -1245,10 +1245,14 @@ impl Interpreter {
                 // class's STORE, exactly like the local-slot path. Statement context
                 // — `maybe_tied_store_reassign_named` leaves the bound instance on
                 // the stack, so discard it after routing.
-                if !raw_mode
-                    && !is_bind_ctx
-                    && !is_rebind
-                    && (name.starts_with('%') || name.starts_with('@'))
+                // A sigilless name bound to an object with a user `STORE`
+                // (`CheckReadOnly` marked it) takes the same route (#9551).
+                let sigilless_store = self.pending_sigilless_store.as_deref() == Some(&*name);
+                if (sigilless_store
+                    || (!raw_mode
+                        && !is_bind_ctx
+                        && !is_rebind
+                        && (name.starts_with('%') || name.starts_with('@'))))
                     && self.maybe_tied_store_reassign_named(&name)?.is_some()
                 {
                     self.stack.pop();
@@ -6436,6 +6440,15 @@ impl Interpreter {
                         self.env().get_sym(readonly_key).map(Value::view),
                         Some(ValueView::Bool(true))
                     ) {
+                        // An object with a user `STORE` is its own container
+                        // (rakudo's p6store falls back to `.STORE`): let the
+                        // assignment through and have the store that follows
+                        // call it (#9551, FixedInt).
+                        if self.sigilless_value_has_store(code, name) {
+                            self.pending_sigilless_store = Some(name.to_string());
+                            *ip += 1;
+                            return Ok(());
+                        }
                         // A sigilless term (`my \\c = 5`) IS the value, so
                         // rakudo names the value in the error: "Cannot modify
                         // an immutable Int (5)".

@@ -1068,7 +1068,14 @@ fn postfix_expr_loop_from(
             // `.=` mutating method call in expression context
             // For BareWord targets (type objects like `Foo .= new`), defer to
             // statement-level handler which correctly handles read-only type objects.
-            if r.starts_with('=') && !r.starts_with("==") && matches!(expr, Expr::BareWord(_)) {
+            // A sigilless term (`my \foo`) is a variable, not a type object: its
+            // `foo.=m` parses here like `$x.=m`, so it also works as a call
+            // argument (`is(foo.=ror(2), ...)`, #9551).
+            if r.starts_with('=')
+                && !r.starts_with("==")
+                && matches!(&expr, Expr::BareWord(n)
+                    if !crate::parser::stmt::simple::is_user_declared_value_term(n))
+            {
                 break;
             }
             if r.starts_with('=') && !r.starts_with("==") {
