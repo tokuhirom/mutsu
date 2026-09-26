@@ -3620,37 +3620,28 @@ impl Interpreter {
             }
             // Cost: O(1) (a user `Bool` method costs its call).
             OpCode::JumpIfFalse(target) => {
-                // Mark Failures as handled when tested for truthiness (e.g. && operator)
-                Self::mark_failure_handled_on_stack(&mut self.stack);
-                let val = self.stack.pop().unwrap();
-                if !self.eval_truthy(&val) {
-                    // Also mark the original (below dup) as handled
-                    Self::mark_failure_handled_on_stack(&mut self.stack);
-                    *ip = *target as usize;
+                *ip = if self.jump_if_false_taken() {
+                    *target as usize
                 } else {
-                    *ip += 1;
-                }
+                    *ip + 1
+                };
             }
             // Cost: O(1) (a user `Bool` method costs its call).
             OpCode::JumpIfTrue(target) => {
-                Self::mark_failure_handled_on_stack(&mut self.stack);
-                let val = self.stack.last().unwrap().clone();
-                if self.eval_truthy(&val) {
-                    *ip = *target as usize;
+                *ip = if self.jump_if_true_taken() {
+                    *target as usize
                 } else {
-                    *ip += 1;
-                }
+                    *ip + 1
+                };
             }
             // Cost: O(1) for a plain value; O(d) for an instance, d = MRO depth
             // (has_user_method probes each level for a `defined` override).
             OpCode::JumpIfNotNil(target) => {
-                Self::mark_failure_handled_on_stack(&mut self.stack);
-                let val = self.stack.last().unwrap().clone();
-                if self.value_is_defined_dispatch(&val) {
-                    *ip = *target as usize;
+                *ip = if self.jump_if_not_nil_taken() {
+                    *target as usize
                 } else {
-                    *ip += 1;
-                }
+                    *ip + 1
+                };
             }
 
             // Cost: O(d) for an instance, d = MRO depth (has_user_method), O(1)
@@ -4312,39 +4303,8 @@ impl Interpreter {
             // -- Calls --
             // Cost: O(a) plus the callee's body, a = arguments (name-keyed dispatch and the inline
             // caches are hash probes; see exec_call_func_op).
-            OpCode::CallFunc {
-                name_idx,
-                arity,
-                arg_sources_idx,
-                literal_native_args,
-            } => {
-                self.sync_source_line(code, *ip);
-                // `use fatal`: explode an unhandled Failure produced by one of
-                // this call's argument expressions before the callee runs.
-                // See `explode_if_fatal_failure_in_call_args`.
-                self.explode_if_fatal_failure_in_call_args(
-                    Self::const_str(code, *name_idx),
-                    *arity as usize,
-                )?;
-                match self.exec_call_func_op(
-                    code,
-                    *name_idx,
-                    *arity,
-                    *arg_sources_idx,
-                    *literal_native_args,
-                    compiled_fns,
-                ) {
-                    Ok(()) => {}
-                    Err(e) => {
-                        // Record a resume point so a call that raises a
-                        // control signal (e.g. `warn`) can be resumed after
-                        // the call site by `.resume` in a CONTROL block.
-                        if !e.is_resume() && self.resume_ip.is_none() {
-                            self.resume_ip = Some((Self::resume_code_fp(code), *ip + 1));
-                        }
-                        return Err(e);
-                    }
-                }
+            OpCode::CallFunc { .. } => {
+                self.exec_call_func_site(code, *ip, compiled_fns)?;
                 *ip += 1;
             }
             // Cost: dispatch O(1) by op id; the op's own cost is on its implementation
@@ -4374,104 +4334,16 @@ impl Interpreter {
             }
             // Cost: O(a) plus the callee's body, a = arguments including named pairs (see
             // exec_call_func_named_op).
-            OpCode::CallFuncNamed {
-                name_idx,
-                arity,
-                spec_idx,
-                arg_sources_idx,
-                literal_native_args,
-            } => {
-                self.sync_source_line(code, *ip);
-                // `use fatal`: see the comment on the `CallFunc` arm above.
-                self.explode_if_fatal_failure_in_call_args(
-                    Self::const_str(code, *name_idx),
-                    *arity as usize,
-                )?;
-                match self.exec_call_func_named_op(
-                    code,
-                    *name_idx,
-                    *arity,
-                    *spec_idx,
-                    *arg_sources_idx,
-                    *literal_native_args,
-                    compiled_fns,
-                ) {
-                    Ok(()) => {}
-                    Err(e) => {
-                        // Same resume-point recording as CallFunc.
-                        if !e.is_resume() && self.resume_ip.is_none() {
-                            self.resume_ip = Some((Self::resume_code_fp(code), *ip + 1));
-                        }
-                        return Err(e);
-                    }
-                }
+            OpCode::CallFuncNamed { .. } => {
+                self.exec_call_func_site(code, *ip, compiled_fns)?;
                 *ip += 1;
             }
             // Cost: O(a + d^2) plus the method body, a = arguments, d = MRO depth of an
             // Instance/Package receiver: `grammar_has_user_method` walks the parent chain on every
             // call (`class_is_grammar_seen`, a `Vec<String>` seen-list, so O(d^2)) plus O(d)
             // accessor/method probes. Rakudo: O(a) (method cache) -- see #9172.
-            OpCode::CallMethod {
-                name_idx,
-                arity,
-                modifier_idx,
-                quoted,
-                arg_sources_idx,
-            } => {
-                self.sync_source_line(code, *ip);
-                // `use fatal`: see the comment on the `CallFunc` arm above. The
-                // receiver sits below the `arity` argument values on the stack,
-                // so this only ever scans the arguments, not the invocant. A
-                // method can never be `require` (a bareword sub), so pass "".
-                self.explode_if_fatal_failure_in_call_args("", *arity as usize)?;
-                // ADR-0072: `$ex.throw` is a resumable throw site. Remember where
-                // the receiver+arguments start so a handler that resumes inline
-                // can leave the call's single `Any` value in their place.
-                let throw_base = self
-                    .method_name_is_resumable_throw(code, *name_idx)
-                    .then(|| self.stack.len().saturating_sub(*arity as usize + 1));
-                match self.exec_call_method_op(
-                    code,
-                    *name_idx,
-                    *arity,
-                    *modifier_idx,
-                    *quoted,
-                    *arg_sources_idx,
-                ) {
-                    Ok(()) => {}
-                    Err(e) if throw_base.is_some() && !e.is_resume() => {
-                        match self.try_catch_inline(e) {
-                            Ok(v) => {
-                                self.stack.truncate(throw_base.unwrap_or(0));
-                                self.stack.push(v);
-                            }
-                            Err(e) => {
-                                if self.resume_ip.is_none() {
-                                    self.resume_ip = Some((Self::resume_code_fp(code), *ip + 1));
-                                }
-                                return Err(e);
-                            }
-                        }
-                    }
-                    Err(e) => {
-                        // Record a resume point so a method that throws can
-                        // be resumed after the call site by .resume in CATCH.
-                        // Don't overwrite an existing resume_ip: when the
-                        // method call is itself a `.resume`/`.rethrow` that
-                        // re-raises a control signal, the original resume
-                        // point (e.g. after `warn`) must be preserved.
-                        if !e.is_resume() && self.resume_ip.is_none() {
-                            self.resume_ip = Some((Self::resume_code_fp(code), *ip + 1));
-                        }
-                        return Err(e);
-                    }
-                }
-                // Slice F: write any `is rw` method-param writeback through to the
-                // caller's local slot (no-op unless the dispatch recorded one).
-                self.apply_pending_rw_writeback(code);
-                // A `Grammar.parse` may run embedded regex `{ ... }` blocks that
-                // wrote caller lexicals into `env`; reconcile them into slots.
-                self.drain_pending_local_updates_after_call(code);
+            OpCode::CallMethod { .. } => {
+                self.exec_call_method_site(code, *ip)?;
                 *ip += 1;
             }
             // Cost: O(a + d) plus the method body, a = arguments, d = MRO depth of the receiver's
@@ -4573,98 +4445,8 @@ impl Interpreter {
             // receiver (`push_method_dispatch_frame` scans the whole MRO for a public accessor on
             // every call); receiver env snapshot/compare O(1). Rakudo: O(a) (method cache) -- see
             // #9172.
-            OpCode::CallMethodMut {
-                name_idx,
-                arity,
-                target_name_idx,
-                modifier_idx,
-                quoted,
-                arg_sources_idx,
-            } => {
-                self.sync_source_line(code, *ip);
-                crate::alloc_scope_named!(_sc_cmm_pre, "op:CallMethodMut:pre");
-                // `use fatal`: see the comment on the `CallFunc` arm above. A
-                // method can never be `require` (a bareword sub), so pass "".
-                self.explode_if_fatal_failure_in_call_args("", *arity as usize)?;
-                let pre = self.attr_env_snapshot(code, *target_name_idx);
-                // The receiver's env binding before the call, so the writeback
-                // below can tell whether this method actually rebound it (see
-                // there). Compared with `same_binding` — O(1), and it never walks
-                // container contents the way `PartialEq` would.
-                let receiver_before: Option<Option<Value>> =
-                    (!Self::const_str(code, *target_name_idx).is_empty()).then(|| {
-                        self.env()
-                            .get_sym(code.const_sym(*target_name_idx))
-                            .cloned()
-                    });
-                crate::alloc_scope_end!(_sc_cmm_pre);
-                crate::alloc_scope_named!(_sc_cmm_disp, "op:CallMethodMut:dispatch");
-                match self.exec_call_method_mut_op(
-                    code,
-                    *name_idx,
-                    *arity,
-                    *target_name_idx,
-                    *modifier_idx,
-                    *quoted,
-                    *arg_sources_idx,
-                ) {
-                    Ok(()) => {}
-                    Err(e) => {
-                        if !e.is_resume() && self.resume_ip.is_none() {
-                            self.resume_ip = Some((Self::resume_code_fp(code), *ip + 1));
-                        }
-                        return Err(e);
-                    }
-                }
-                // Slice F (env<->locals coherence): a mutating method updates the
-                // receiver in env by name (`$s.push` on an `is Array`-backed
-                // instance reassigns `env[$s]`; the ~15 `env_mut().insert(target,
-                // ..)` branches in exec_call_method_mut_op) and relied on the
-                // reverse `sync_locals_from_env` pull to refresh the caller's
-                // local slot. Write the receiver through to its slot here so it
-                // stays coherent without the pull. (`apply_pending_rw_writeback`
-                // mirrors the reverse pull's HashEntryRef-skip invariant.)
-                //
-                // ONLY when the call actually REBOUND `env[receiver]`. This used
-                // to fire after every method call on a named receiver, and
-                // `apply_pending_rw_writeback` copies `env[name]` into the local
-                // slot by name — but a frame's env also carries every same-named
-                // binding it inherited from its caller (the callee env is the
-                // flattened caller plus its own writes; parameters live in slots,
-                // not in env). So on an unchanged receiver it copied the CALLER's
-                // variable over the callee's parameter. A self-recursive routine is
-                // exactly that shape:
-                //
-                //     sub f($tree, $d) { ... ; f($tree[1], $d + 1) }
-                //
-                // Every frame has a `tree`, so *any* method call on `$tree` in the
-                // callee (`.defined`, `.gist`, even inside a `say`) silently
-                // reverted `$tree` to the caller's node, the descent never reached
-                // a leaf, and the recursion ran until the Rust stack gave out
-                // (roast integration/99problems-51-to-60.t P57 — a stack overflow
-                // that was really an infinite recursion).
-                //
-                // A method that mutates the receiver in place through its `Gc`
-                // (rather than rebinding the name) leaves the bits equal, and that
-                // is correct: the slot already holds the very same `Gc`.
-                crate::alloc_scope_end!(_sc_cmm_disp);
-                crate::alloc_scope_named!(_sc_cmm_post, "op:CallMethodMut:post");
-                if let Some(before) = receiver_before {
-                    let after = self.env().get_sym(code.const_sym(*target_name_idx));
-                    let rebound = match (&before, after) {
-                        (Some(b), Some(a)) => !b.same_binding(a),
-                        (None, None) => false,
-                        _ => true,
-                    };
-                    if rebound {
-                        self.pending_rw_writeback_sources
-                            .push(Self::const_str(code, *target_name_idx).to_string());
-                    }
-                }
-                self.apply_pending_rw_writeback(code);
-                self.drain_pending_local_updates_after_call(code);
-                self.mirror_attr_env_to_cell(code, *target_name_idx, pre);
-                crate::alloc_scope_end!(_sc_cmm_post);
+            OpCode::CallMethodMut { .. } => {
+                self.exec_call_method_mut_site(code, *ip)?;
                 *ip += 1;
             }
             // Cost: O(a) plus the callee's body, a = arguments.
@@ -5458,9 +5240,9 @@ impl Interpreter {
             }
 
             // -- Exception handling --
-            // Cost: O(1) plus the body, except a resume-capable CATCH / CONTROL: O(c +
-            // f) per entry, c = ops + constants of the enclosing CompiledCode, f = compiled
-            // functions (both deep-cloned into the handler entry). Rakudo: O(1) -- see #9172.
+            // Cost: O(1) plus the body. A CONTROL or resume-capable CATCH region pays
+            // O(c + f) once per code object / function-table version for its shared
+            // handler copy, c = ops + constants, f = compiled functions.
             OpCode::TryCatch {
                 catch_start,
                 control_start,
@@ -5472,7 +5254,6 @@ impl Interpreter {
                 is_bare_block,
                 traps,
                 catch_resume_capable,
-                control_resume_capable,
             } => {
                 self.sync_source_line(code, *ip);
                 self.exec_try_catch_op(
@@ -5487,7 +5268,6 @@ impl Interpreter {
                     *is_bare_block,
                     *traps,
                     *catch_resume_capable,
-                    *control_resume_capable,
                     ip,
                     compiled_fns,
                 )?;
@@ -5623,39 +5403,8 @@ impl Interpreter {
             }
             // Cost: O(1).
             OpCode::Return => {
-                let val = self.stack.pop().unwrap_or(Value::NIL);
-                // Check if &return has been lexically rebound; if so, call
-                // the rebound function instead of performing a built-in return.
-                // Pre-interned, and gated on the process-global latch (see the
-                // matching probe in `vm_jit_helpers::ret`): this runs on every
-                // return, and with no rebinding anywhere the lookup is a miss
-                // that walks every overlay tier plus the global base.
-                if crate::env::return_rebound_possible()
-                    && let Some(rebound) = self
-                        .env()
-                        .get_sym(crate::symbol::wk::rebound_return())
-                        .cloned()
-                    && matches!(
-                        rebound.view(),
-                        ValueView::Sub(_) | ValueView::WeakSub(_) | ValueView::Routine { .. }
-                    )
-                {
-                    let result = self.vm_call_on_value(rebound, vec![val], None)?;
-                    self.stack.push(result);
-                    *ip += 1;
-                    return Ok(());
-                }
-                let mut err = RuntimeError::return_signal(val);
-                // ADR-0037 Slice 4: an EVAL unit whose `context => $ctx`
-                // named a live routine bakes that routine's id onto its own
-                // `CompiledCode` (`compile_block_value_opts`); stamp it here
-                // so the signal unwinds past any intervening routine
-                // boundary to the frame this id names, instead of being
-                // caught by the first one it reaches.
-                if let Some(target_id) = code.eval_context_target_callable_id {
-                    err.set_return_target_callable_id(Some(target_id));
-                }
-                return Err(err);
+                self.exec_return_site(code)?;
+                *ip += 1;
             }
             // Cost: O(1).
             OpCode::ReturnFromNonRoutine(lexically_in_routine, out_of_dynamic_scope) => {
@@ -6163,18 +5912,11 @@ impl Interpreter {
             }
             // Cost: O(1).
             OpCode::StateVarInitGuard(key_idx, jump_to) => {
-                let base_key = crate::symbol::Symbol::from_id(*key_idx);
-                let scoped_key = self.scoped_state_key(base_key);
-                if self.get_state_var(scoped_key).is_some() {
-                    // State already initialized: push a placeholder value on the
-                    // stack (StateVarInit will discard it and use the stored value)
-                    // and skip the RHS initializer.
-                    self.stack.push(Value::NIL);
-                    *ip = *jump_to as usize;
+                *ip = if self.state_var_init_guard_taken(*key_idx) {
+                    *jump_to as usize
                 } else {
-                    // State not yet initialized: fall through to compile RHS
-                    *ip += 1;
-                }
+                    *ip + 1
+                };
             }
 
             // -- Block scope --

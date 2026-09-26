@@ -4008,6 +4008,10 @@ pub struct Interpreter {
     /// handler via `.last()` and, if it is `resume_safe`, run it inline at the
     /// raise site (cross-frame resumable warn). See `vm::ControlHandlerEntry`.
     pub(crate) control_handlers: Vec<crate::vm::ControlHandlerEntry>,
+    /// The function table inline CATCH/CONTROL handler entries share while it
+    /// is unchanged, keyed by its `CompiledFns::id`. See
+    /// `Interpreter::shared_fns_snapshot`.
+    pub(crate) handler_fns_snapshot: Option<(u64, std::sync::Arc<crate::opcode::CompiledFns>)>,
     /// ADR-0072: active exception-absorbing regions on the dynamic call stack —
     /// every `try` and every block with a `CATCH { }`. A `die` raised deep inside
     /// a protected body consults `.last()`: when that innermost region's CATCH is

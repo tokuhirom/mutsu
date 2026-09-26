@@ -378,6 +378,50 @@ impl Interpreter {
                 }
             }
         }
+        // `Method::Also` implements `is also<NAME>` through a custom
+        // metarole that calls `.^add_method` during composition. Keep the
+        // trait module unchanged and install the alias here as well: mutsu's
+        // class method table is the authoritative dispatch table, while the
+        // metarole hook is not observable through the ordinary registration
+        // path. This also covers classes that use the trait before the module
+        // has installed its HOW role.
+        if !is_lexical_only && !is_our_only {
+            for (trait_name, trait_arg) in &decl.custom_traits {
+                if trait_name != "also" {
+                    continue;
+                }
+                let Some(arg_expr) = trait_arg else {
+                    continue;
+                };
+                let aliases = self.eval_block_value(&[crate::ast::Stmt::Expr(arg_expr.clone())])?;
+                let alias_names: Vec<String> = match aliases.view() {
+                    ValueView::Array(items, _) => items
+                        .iter()
+                        .map(Value::to_string_value)
+                        .filter(|name| !name.is_empty())
+                        .collect(),
+                    _ => aliases
+                        .to_string_value()
+                        .split_whitespace()
+                        .map(str::to_string)
+                        .filter(|name| !name.is_empty())
+                        .collect(),
+                };
+                let Some(overloads) = self
+                    .registry()
+                    .user_method_overloads(cx.name, &resolved_method_name)
+                else {
+                    continue;
+                };
+                for alias_name in alias_names {
+                    self.registry_mut().set_user_methods(
+                        Symbol::intern(cx.name),
+                        Symbol::intern(&alias_name),
+                        overloads.clone(),
+                    );
+                }
+            }
+        }
         // `handles` on a method: synthesize forwarder methods that
         // delegate to the return value of this method. E.g.
         //   method Str() handles 'uc' { 'x' }

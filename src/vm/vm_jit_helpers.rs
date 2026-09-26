@@ -1,6 +1,8 @@
 //! `extern "C"` opcode helper shims called from JIT-compiled code (Tier A).
 //!
-//! Each shim reproduces exactly one `exec_one` dispatch arm. Values travel on
+//! Each shim executes exactly one `exec_one` dispatch arm, by calling the same
+//! function the arm calls (`vm_call_site_ops.rs` holds the bodies shared with
+//! a dedicated shim), so a shim has no opcode logic of its own. Values travel on
 //! `Interpreter::stack` as in interpreted execution, so no `Value` crosses the
 //! FFI boundary; errors are parked in `Interpreter::jit_error` and signalled
 //! by a nonzero status (see `vm_jit::JIT_STATUS_*`).
@@ -314,52 +316,33 @@ pub(super) unsafe extern "C" fn step(
     })
 }
 
-/// `OpCode::JumpIfFalse` condition: pops the tested value; returns 1 when the
-/// jump must be taken (falsy), 0 to fall through. Mirrors the dispatch arm's
-/// Failure-handled marking on both paths.
+/// `OpCode::JumpIfFalse` condition (`Interpreter::jump_if_false_taken`):
+/// pops the tested value; returns 1 when the jump must be taken, 0 to fall
+/// through.
 pub(super) unsafe extern "C" fn jump_if_false_cond(interp: *mut Interpreter) -> u32 {
     let interp = unsafe { &mut *interp };
-    Interpreter::mark_failure_handled_on_stack(&mut interp.stack);
-    let val = interp.stack.pop().unwrap();
-    if !interp.eval_truthy(&val) {
-        Interpreter::mark_failure_handled_on_stack(&mut interp.stack);
-        1
-    } else {
-        0
-    }
+    interp.jump_if_false_taken() as u32
 }
 
-/// `OpCode::JumpIfTrue` condition: PEEKS the tested value (the interpreter
-/// arm keeps it on the stack on both paths — `||`-style short-circuit);
-/// returns 1 when the jump must be taken (truthy), 0 to fall through.
+/// `OpCode::JumpIfTrue` condition (`Interpreter::jump_if_true_taken`): PEEKS
+/// the tested value; returns 1 when the jump must be taken, 0 to fall through.
 pub(super) unsafe extern "C" fn jump_if_true_cond(interp: *mut Interpreter) -> u32 {
     let interp = unsafe { &mut *interp };
-    Interpreter::mark_failure_handled_on_stack(&mut interp.stack);
-    let val = interp.stack.last().unwrap().clone();
-    if interp.eval_truthy(&val) { 1 } else { 0 }
+    interp.jump_if_true_taken() as u32
 }
 
-/// `OpCode::JumpIfNotNil` condition: PEEKS the tested value (kept on the
-/// stack on both paths — `//`-style short-circuit); returns 1 when the jump
-/// must be taken (defined), 0 to fall through.
+/// `OpCode::JumpIfNotNil` condition (`Interpreter::jump_if_not_nil_taken`):
+/// PEEKS the tested value; returns 1 when the jump must be taken, 0 to fall
+/// through.
 pub(super) unsafe extern "C" fn jump_if_not_nil_cond(interp: *mut Interpreter) -> u32 {
     let interp = unsafe { &mut *interp };
-    Interpreter::mark_failure_handled_on_stack(&mut interp.stack);
-    let val = interp.stack.last().unwrap().clone();
-    if interp.value_is_defined_dispatch(&val) {
-        1
-    } else {
-        0
-    }
+    interp.jump_if_not_nil_taken() as u32
 }
 
-/// `OpCode::StateVarInitGuard` condition: keyed on the opcode's own
-/// `key_idx` (not a stack value) rather than the tested-value stack slot the
-/// other `*_cond` shims read. Mirrors the interpreter arm
-/// (`vm_exec_dispatch.rs`) exactly: when the state var is already
-/// initialized, pushes the `NIL` placeholder `StateVarInit` discards and
-/// returns 1 (jump past the RHS initializer); otherwise returns 0 (fall
-/// through and run it).
+/// `OpCode::StateVarInitGuard` condition
+/// (`Interpreter::state_var_init_guard_taken`), keyed on the opcode's own
+/// `key_idx` rather than a stack value: returns 1 to jump past the RHS
+/// initializer, 0 to fall through and run it.
 pub(super) unsafe extern "C" fn state_var_init_guard_cond(
     interp: *mut Interpreter,
     code: *const CompiledCode,
@@ -369,220 +352,74 @@ pub(super) unsafe extern "C" fn state_var_init_guard_cond(
     let OpCode::StateVarInitGuard(key_idx, _) = &code.ops[op_idx as usize] else {
         unreachable!("jit state_var_init_guard shim on a non-StateVarInitGuard opcode")
     };
-    let base_key = crate::symbol::Symbol::from_id(*key_idx);
-    let scoped_key = interp.scoped_state_key(base_key);
-    if interp.get_state_var(scoped_key).is_some() {
-        interp.stack.push(Value::NIL);
-        1
-    } else {
-        0
-    }
+    interp.state_var_init_guard_taken(*key_idx) as u32
 }
 
-/// `OpCode::Return`. Status OK means a rebound `&return` ran and execution
-/// continues at the next opcode; otherwise the return signal (or the rebound
-/// call's error) is parked and reported as ERR, exactly like the interpreter
-/// arm's `Err(RuntimeError::return_signal(..))`.
-pub(super) unsafe extern "C" fn ret(interp: *mut Interpreter) -> u32 {
-    let interp = unsafe { &mut *interp };
-    panic_boundary(|| {
-        let val = interp.stack.pop().unwrap_or(Value::NIL);
-        // Pre-interned (`wk::rebound_return`): this probe runs on every return
-        // out of natively-compiled code, and `Env::get(&str)` would re-intern
-        // the name -- a thread-local string-keyed hash lookup per return.
-        // Gated on the process-global latch (`env::return_rebound_possible`):
-        // even Symbol-keyed, the lookup is a *miss* that walks every overlay
-        // tier and then the global base, which was ~2% of `bench-fib`.
-        if crate::env::return_rebound_possible()
-            && let Some(rebound) = interp
-                .env()
-                .get_sym(crate::symbol::wk::rebound_return())
-                .cloned()
-            && matches!(
-                rebound.view(),
-                ValueView::Sub(_) | ValueView::WeakSub(_) | ValueView::Routine { .. }
-            )
-        {
-            return match interp.vm_call_on_value(rebound, vec![val], None) {
-                Ok(result) => {
-                    interp.stack.push(result);
-                    JIT_STATUS_OK
-                }
-                Err(e) => park_err(interp, e),
-            };
-        }
-        park_err(interp, RuntimeError::return_signal(val))
+/// `OpCode::Return` (`Interpreter::exec_return_site`). Status OK means a
+/// rebound `&return` ran and execution continues at the next opcode;
+/// otherwise the return signal (or the rebound call's error) is parked and
+/// reported as ERR.
+/// `_op_idx` is unused; it only lets the shim share the `s_code_u32` ABI.
+pub(super) unsafe extern "C" fn ret(
+    interp: *mut Interpreter,
+    code: *const CompiledCode,
+    _op_idx: u32,
+) -> u32 {
+    let (interp, code) = unsafe { (&mut *interp, &*code) };
+    panic_boundary(|| match interp.exec_return_site(code) {
+        Ok(()) => JIT_STATUS_OK,
+        Err(e) => park_err(interp, e),
     })
 }
 
-/// `OpCode::CallMethod`. `op_idx` addresses the opcode in `code.ops` so the
-/// payload is read in place. Reproduces the dispatch arm exactly: resume-point
-/// recording on error, and the `is rw` writeback / pending-local drain on
-/// success. Restores `current_code` after the re-entrant dispatch.
+/// Adapt a call site's result (`Interpreter::exec_call_*_site`) to a shim
+/// status. Restores `current_code`: the callee's dispatch overwrote it, and
+/// unlike the interpreter loop the following native opcodes do not reset it
+/// per step. Native code runs no per-op line update, which is why every call
+/// site body starts with `sync_source_line`.
+#[inline]
+fn call_site_status(
+    interp: &mut Interpreter,
+    code: &CompiledCode,
+    r: Result<(), RuntimeError>,
+) -> u32 {
+    interp.current_code = code as *const CompiledCode as usize;
+    match r {
+        Ok(()) if interp.is_halted() => JIT_STATUS_HALT,
+        Ok(()) => JIT_STATUS_OK,
+        Err(e) => park_err(interp, e),
+    }
+}
+
+/// `OpCode::CallMethod` (`Interpreter::exec_call_method_site`). `op_idx`
+/// addresses the opcode in `code.ops` so the payload is read in place.
 pub(super) unsafe extern "C" fn call_method(
     interp: *mut Interpreter,
     code: *const CompiledCode,
     op_idx: u32,
 ) -> u32 {
     let (interp, code) = unsafe { (&mut *interp, &*code) };
-    let OpCode::CallMethod {
-        name_idx,
-        arity,
-        modifier_idx,
-        quoted,
-        arg_sources_idx,
-    } = &code.ops[op_idx as usize]
-    else {
-        unreachable!("jit call_method shim on a non-CallMethod opcode")
-    };
     panic_boundary(|| {
-        // Native code runs no per-op line update, so the callee's frame/backtrace
-        // line must be pulled from the static ip -> line table at the call site.
-        interp.sync_source_line(code, op_idx as usize);
-        // ADR-0072, mirroring the `CallMethod` arm of `exec_one_dispatch`: a
-        // `.throw` is a resumable throw site, so a resume-capable `CATCH`
-        // several frames up runs INLINE here with every Rust frame still live
-        // and `.resume` continues with the next statement of the *calling*
-        // body. Without this hook a chunk that went native lost the resume
-        // entirely — the handler still ran (through the ordinary region path)
-        // but everything after the throw in the caller's block was skipped,
-        // because the non-inline path can only resume within one
-        // `CompiledCode`. The base is the receiver+arguments start, so a
-        // resumed handler leaves the call's single `Any` value in their place.
-        let throw_base = interp
-            .method_name_is_resumable_throw(code, *name_idx)
-            .then(|| interp.stack.len().saturating_sub(*arity as usize + 1));
-        let r = interp.exec_call_method_op(
-            code,
-            *name_idx,
-            *arity,
-            *modifier_idx,
-            *quoted,
-            *arg_sources_idx,
-        );
-        interp.current_code = code as *const CompiledCode as usize;
-        let r = match r {
-            Err(e) if throw_base.is_some() && !e.is_resume() => match interp.try_catch_inline(e) {
-                Ok(v) => {
-                    interp.stack.truncate(throw_base.unwrap_or(0));
-                    interp.stack.push(v);
-                    Ok(())
-                }
-                Err(e) => Err(e),
-            },
-            other => other,
-        };
-        match r {
-            Ok(()) => {
-                interp.apply_pending_rw_writeback(code);
-                interp.drain_pending_local_updates_after_call(code);
-                if interp.is_halted() {
-                    JIT_STATUS_HALT
-                } else {
-                    JIT_STATUS_OK
-                }
-            }
-            Err(e) => {
-                if !e.is_resume() && interp.resume_ip.is_none() {
-                    interp.resume_ip =
-                        Some((Interpreter::resume_code_fp(code), op_idx as usize + 1));
-                }
-                park_err(interp, e)
-            }
-        }
+        let r = interp.exec_call_method_site(code, op_idx as usize);
+        call_site_status(interp, code, r)
     })
 }
 
-/// `OpCode::CallMethodMut`. Mirrors the dispatch arm: attr-cell snapshot
-/// before, receiver writeback + rw writeback + pending-local drain + attr-cell
-/// mirror after, resume-point recording on error.
+/// `OpCode::CallMethodMut` (`Interpreter::exec_call_method_mut_site`).
 pub(super) unsafe extern "C" fn call_method_mut(
     interp: *mut Interpreter,
     code: *const CompiledCode,
     op_idx: u32,
 ) -> u32 {
     let (interp, code) = unsafe { (&mut *interp, &*code) };
-    let OpCode::CallMethodMut {
-        name_idx,
-        arity,
-        target_name_idx,
-        modifier_idx,
-        quoted,
-        arg_sources_idx,
-    } = &code.ops[op_idx as usize]
-    else {
-        unreachable!("jit call_method_mut shim on a non-CallMethodMut opcode")
-    };
     panic_boundary(|| {
-        interp.sync_source_line(code, op_idx as usize);
-        let pre = interp.attr_env_snapshot(code, *target_name_idx);
-        // The receiver's env binding before the call, so the writeback below can
-        // tell whether this method actually rebound it. Mirrors the interpreter's
-        // `CallMethodMut` arm (vm_exec_dispatch.rs): only push the receiver for a
-        // writeback when the call REBOUND `env[receiver]`. Without this guard the
-        // JIT path unconditionally pulls `env[receiver]` into the caller's slot,
-        // which is wrong when the callee env merely inherited a same-named binding
-        // from its caller (a self-recursive `$tree` reverting to the caller's node)
-        // and, under the (B) per-store env-write, when
-        // `env[receiver]` is a stale decl-seed while the live value lives only in
-        // the slot (a hot `$io .= succ` loop frozen by a stale `env[io]` pull).
-        let receiver_before: Option<Option<Value>> =
-            (!Interpreter::const_str(code, *target_name_idx).is_empty()).then(|| {
-                interp
-                    .env()
-                    .get_sym(code.const_sym(*target_name_idx))
-                    .cloned()
-            });
-        let r = interp.exec_call_method_mut_op(
-            code,
-            *name_idx,
-            *arity,
-            *target_name_idx,
-            *modifier_idx,
-            *quoted,
-            *arg_sources_idx,
-        );
-        interp.current_code = code as *const CompiledCode as usize;
-        match r {
-            Ok(()) => {
-                if let Some(before) = receiver_before {
-                    let after = interp.env().get_sym(code.const_sym(*target_name_idx));
-                    let rebound = match (&before, after) {
-                        (Some(b), Some(a)) => !b.same_binding(a),
-                        (None, None) => false,
-                        _ => true,
-                    };
-                    if rebound {
-                        interp
-                            .pending_rw_writeback_sources
-                            .push(Interpreter::const_str(code, *target_name_idx).to_string());
-                    }
-                }
-                interp.apply_pending_rw_writeback(code);
-                interp.drain_pending_local_updates_after_call(code);
-                interp.mirror_attr_env_to_cell(code, *target_name_idx, pre);
-                if interp.is_halted() {
-                    JIT_STATUS_HALT
-                } else {
-                    JIT_STATUS_OK
-                }
-            }
-            Err(e) => {
-                if !e.is_resume() && interp.resume_ip.is_none() {
-                    interp.resume_ip =
-                        Some((Interpreter::resume_code_fp(code), op_idx as usize + 1));
-                }
-                park_err(interp, e)
-            }
-        }
+        let r = interp.exec_call_method_mut_site(code, op_idx as usize);
+        call_site_status(interp, code, r)
     })
 }
 
-/// `OpCode::CallFunc`. `op_idx` addresses the opcode in `code.ops` so the
-/// payload (`name_idx`/`arity`/`arg_sources_idx`) is read in place instead of
-/// being marshalled through the native frame. Restores `current_code` after
-/// the call (the callee's dispatch overwrote it) and reproduces the dispatch
-/// arm's resume-point recording.
+/// `OpCode::CallFunc` / `OpCode::CallFuncNamed`
+/// (`Interpreter::exec_call_func_site`).
 pub(super) unsafe extern "C" fn call_func(
     interp: *mut Interpreter,
     code: *const CompiledCode,
@@ -591,54 +428,7 @@ pub(super) unsafe extern "C" fn call_func(
 ) -> u32 {
     let (interp, code, fns) = unsafe { (&mut *interp, &*code, &*fns) };
     panic_boundary(|| {
-        interp.sync_source_line(code, op_idx as usize);
-        let r = match &code.ops[op_idx as usize] {
-            OpCode::CallFunc {
-                name_idx,
-                arity,
-                arg_sources_idx,
-                literal_native_args,
-            } => interp.exec_call_func_op(
-                code,
-                *name_idx,
-                *arity,
-                *arg_sources_idx,
-                *literal_native_args,
-                fns,
-            ),
-            OpCode::CallFuncNamed {
-                name_idx,
-                arity,
-                spec_idx,
-                arg_sources_idx,
-                literal_native_args,
-            } => interp.exec_call_func_named_op(
-                code,
-                *name_idx,
-                *arity,
-                *spec_idx,
-                *arg_sources_idx,
-                *literal_native_args,
-                fns,
-            ),
-            _ => unreachable!("jit call_func shim on a non-CallFunc opcode"),
-        };
-        interp.current_code = code as *const CompiledCode as usize;
-        match r {
-            Ok(()) => {
-                if interp.is_halted() {
-                    JIT_STATUS_HALT
-                } else {
-                    JIT_STATUS_OK
-                }
-            }
-            Err(e) => {
-                if !e.is_resume() && interp.resume_ip.is_none() {
-                    interp.resume_ip =
-                        Some((Interpreter::resume_code_fp(code), op_idx as usize + 1));
-                }
-                park_err(interp, e)
-            }
-        }
+        let r = interp.exec_call_func_site(code, op_idx as usize, fns);
+        call_site_status(interp, code, r)
     })
 }
