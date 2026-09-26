@@ -3,7 +3,7 @@
 - Status: **Accepted** (design final 2026-09-16 — the user delegated the two
   open points to the design session under the premise "we are building the
   fastest Raku interpreter", and §7 records how they were settled;
-  implementation in progress: S0 and S1 landed, S2–S5 open, slices in §8)
+  implemented 2026-09-26, slices and implementation notes in §8)
 - Date: 2026-09-16
 - Context: [#8380](https://github.com/tokuhirom/mutsu/issues/8380) (the
   `Test::Time` / `Test::Scheduler` deadlock), whose 2026-09-16 direction
@@ -338,19 +338,44 @@ order without stacking.
   pinned by `t/concurrency/promise/promise-scheduler-binding.t`. The
   `start` thunk breaks its own promise rather than passing Rakudo's
   `:catch`, since a synthesized block has no parameter list.)*
-- **S2 — D2.** Resolution via the scheduler; `await` parks on its own wake
-  waiter; the broadcast wake path removed; the per-worker pending-wake list
-  for built-in wake-ups (flushed at park / task end; the tick arrives in S4).
-- **S3 — D3.** The rendezvous on user-scheduler wake-ups, hooked at the
-  quiescent chokepoint and the task boundary; wasm32 no-op; the
-  `MUTSU_TRACE=pool` diagnostic.
-- **S4 — D4.** Deferred start for worker-submitted tasks; park-spawn; the
-  10ms tick (spawn + pending-wake flush).
-- **S5 — verify and record.** The issue's reduction; `t/01-tdd.t` under
-  `scripts/flake-repro.sh` load (the CI-load discriminator); experiment 3 at
-  30/30; regenerate the `Test::Time` and `Test::Scheduler` ecosystem records;
-  the `news/` entry; this ADR to Accepted; ADR-0020 §5.1 and PLAN.md
-  pointers finalized. `Closes #8380`.
+- **S2–S5 — D2, D3, D4, verification.** *(Landed together, 2026-09-26.)*
+  - D2: `src/value/promise_wake.rs`. A promise's subscriber list holds
+    `.then` callbacks and parked awaiters (`Subscriber::Wake(ticket)`) in
+    registration order; `wait` parks until its ticket is granted, so the
+    condvar broadcast is no longer a wake path. The interpreter-aware
+    resolving sites (`.keep`/`.break`, `Promise::Vow`, a cued `start` body,
+    `.then`-family results) go through
+    `Interpreter::resolve_promise_dispatching`, which cues one
+    `Promise::Vow.__mutsu_run_dispatch($id)` block through the user
+    scheduler as `.cue(&dispatcher, :catch)`; every other site takes the
+    built-in path, so nothing is ever stranded.
+  - D2's pending-wake list and D4 live in
+    `src/runtime/worker_pool/yield_points.rs`: the yield hook runs from
+    `worker_pool::enter_blocking` (reached from `gc::block_quiescent` and
+    `gc::wait_until`; `wait_until` now returns without yielding when its
+    condition already holds, so an uncontended wait is not a yield) and at
+    the pool's task boundary. **Implementation note:** the 10ms tick starts
+    deferred *tasks*, but delivers a deferred *wake-up* only once it has
+    waited 100ms (`WAKE_GRACE`). Flushing wake-ups on the first tick, as D4
+    first described it, lost `Test::Time` subtest 6 in 1 of 9 debug-build
+    runs: an interpreted keeper's straight-line code between its `keep` and
+    its next `sleep` can outlast 10ms. The tick exists only for keepers that
+    never yield, which pay the longer grace.
+  - D3: the woken awaiter records the rendezvous in a thread-local list,
+    released at its next yield or by `drop_thread_local_gc_state` (task end,
+    thread exit). `MUTSU_TRACE=pool` names a rendezvous open for 5s.
+  - Verification surfaced two pre-existing cross-thread variable bugs on the
+    same path, fixed here: a `start` inside a method seeded its attribute
+    aliases (`@!x`, `!lock`) into the bare-name store, so an inline
+    `$!lock.protect: { @!x ... }` read a spawn-time snapshot
+    (`t/oo/attribute/start-in-method-attribute-alias.t`); and
+    `sync_shared_vars_for_names` pulled a re-declared aggregate's stale lane
+    entry into a protect block (`Test::Scheduler.run-due` re-queued a
+    cancelled `:every` event forever;
+    `t/vm/protect-block-redeclared-aggregate.t`).
+  - Result: the issue's reduction, `Test::Time` `t/01-tdd.t` (6/6) and all
+    three `Test::Scheduler` files pass under the default pool; the S0 oracle
+    carries no `todo`.
 
 Unrelated findings to file as `todo:ticket`s (not this ADR's scope):
 

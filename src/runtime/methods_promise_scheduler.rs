@@ -177,13 +177,19 @@ impl Interpreter {
     /// `$vow.__mutsu_run_start(&block)`, which runs `block` and keeps or
     /// breaks the promise with its outcome.
     fn promise_start_thunk(promise: &SharedPromise, block: Value) -> Value {
+        Self::vow_method_thunk(promise, "__mutsu_run_start", block)
+    }
+
+    /// A zero-arg block whose body is `$vow.<method>(arg)`, `$vow` being a
+    /// `Promise::Vow` on `promise`.
+    fn vow_method_thunk(promise: &SharedPromise, method: &str, arg: Value) -> Value {
         let mut vow_attrs = std::collections::HashMap::new();
         vow_attrs.insert("promise".to_string(), Value::promise(promise.clone()));
         let vow = Value::make_instance(Symbol::intern("Promise::Vow"), vow_attrs);
         let body = vec![crate::ast::Stmt::Expr(crate::ast::Expr::MethodCall {
             target: Box::new(crate::ast::Expr::Literal(vow)),
-            name: Symbol::intern("__mutsu_run_start"),
-            args: vec![crate::ast::Expr::Literal(block)],
+            name: Symbol::intern(method),
+            args: vec![crate::ast::Expr::Literal(arg)],
             modifier: None,
             quoted: false,
         })];
@@ -201,18 +207,82 @@ impl Interpreter {
     ) -> Result<Value, RuntimeError> {
         promise.set_thread_id(crate::runtime::current_mutsu_thread_id());
         let result = crate::vm::guard_worker_panic(|| self.call_value(block, vec![]));
-        match result {
-            Ok(v) => {
-                let _ = promise.try_keep(v);
-            }
+        let (kept, value) = match result {
+            Ok(v) => (true, v),
             Err(e) => {
                 let error_val = e
                     .exception
                     .map(|ex| *ex)
                     .unwrap_or_else(|| Value::str(e.message.into_owned()));
-                let _ = promise.try_break(error_val);
+                (false, error_val)
+            }
+        };
+        let _ = self.resolve_promise_dispatching(promise, kept, value, None)?;
+        Ok(Value::NIL)
+    }
+
+    /// Resolve `promise` from a site that can call into a user scheduler: a
+    /// promise bound to one has its subscribers dispatched through that
+    /// scheduler's `.cue` (ADR-0105 D2), on this thread and with this
+    /// interpreter's dynamic scope — `Test::Scheduler` finds its
+    /// `@*TEST-SCHEDULER-NESTED` through it. `output` replaces the captured
+    /// output (a `.then` result); without it an already-resolved promise is
+    /// refused with its status, as `try_keep`/`try_break` do.
+    // Cost: O(s) plus O(cue) for a user scheduler, s = subscribers, cue = the
+    // user scheduler's `.cue` method.
+    pub(in crate::runtime) fn resolve_promise_dispatching(
+        &mut self,
+        promise: &SharedPromise,
+        kept: bool,
+        value: Value,
+        output: Option<(String, String)>,
+    ) -> Result<Result<(), String>, RuntimeError> {
+        match promise.resolve_for_dispatch(kept, value, output) {
+            Err(status) => Ok(Err(status)),
+            Ok(None) => Ok(Ok(())),
+            Ok(Some(dispatch)) => self.cue_user_dispatch(dispatch).map(Ok),
+        }
+    }
+
+    /// Cue `dispatch` through its user scheduler as
+    /// `.cue(&dispatcher, :catch)` (Rakudo's F1). If the scheduler cannot be
+    /// called, the subscribers are dispatched the built-in way so no awaiter
+    /// is stranded, and the error propagates.
+    fn cue_user_dispatch(
+        &mut self,
+        dispatch: crate::value::promise_wake::UserDispatch,
+    ) -> Result<(), RuntimeError> {
+        let scheduler = dispatch.scheduler().clone();
+        let promise = dispatch.promise().clone();
+        let id = crate::value::promise_wake::register_user_dispatch(dispatch);
+        let dispatcher =
+            Self::vow_method_thunk(&promise, "__mutsu_run_dispatch", Value::int(id as i64));
+        // The dispatcher only runs native subscribers and never throws; the
+        // `:catch` is there because Rakudo passes one (a scheduler may branch
+        // on it, as `Test::Scheduler` does).
+        let catch = Self::synthesized_thunk(Vec::new());
+        let named_catch = Value::pair("catch".to_string(), catch);
+        match self.call_method_with_values(scheduler, "cue", vec![dispatcher, named_catch]) {
+            Ok(_) => Ok(()),
+            Err(e) => {
+                if let Some(dispatch) = crate::value::promise_wake::take_user_dispatch(id) {
+                    dispatch.run_builtin();
+                }
+                Err(e)
             }
         }
-        Ok(Value::NIL)
+    }
+
+    /// `Promise::Vow.__mutsu_run_dispatch($id)`: the body of the block
+    /// [`Self::cue_user_dispatch`] cued — run the registered dispatch here.
+    // Cost: O(s), s = subscribers (each wake also waits for its awaiter's
+    // next blocking point, ADR-0105 D3).
+    pub(in crate::runtime) fn run_cued_dispatch(id: &Value) -> Value {
+        if let Some(id) = id.as_int()
+            && let Some(dispatch) = crate::value::promise_wake::take_user_dispatch(id as u64)
+        {
+            dispatch.run();
+        }
+        Value::NIL
     }
 }

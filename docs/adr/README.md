@@ -129,7 +129,7 @@ The role of an ADR is to preserve the *context of the judgment* — something th
 | [0101](0101-grammar-rule-dynamic-vars-have-a-match-scoped-stack.md) | Grammar rule dynamic variables have a match-scoped stack | Proposed |
 | [0103](0103-user-key-map-hasher.md) | A map keyed by *runtime data* hashes with a randomly-seeded fast hasher, not SipHash and not `FxHash` | Accepted (implemented) |
 | [0104](0104-compiler-version-is-a-rakudo-release-coordinate.md) | `$*RAKU.compiler.version` is a Rakudo-release coordinate, not mutsu's package version | Accepted (implemented) |
-| [0105](0105-promise-resolution-dispatches-through-the-promise-scheduler.md) | Promise resolution dispatches through the promise's scheduler, and a woken awaiter borrows the resuming worker's slot (the answer to ADR-0020 §5.1; fork (b) is not the fix) | Accepted (design final 2026-09-16; implementation not started — slices in §8) |
+| [0105](0105-promise-resolution-dispatches-through-the-promise-scheduler.md) | Promise resolution dispatches through the promise's scheduler, and a woken awaiter borrows the resuming worker's slot (the answer to ADR-0020 §5.1; fork (b) is not the fix) | Accepted (implemented 2026-09-26) |
 | [0106](0106-raku-level-profiler.md) | The Raku-level profiler — sampled time over the static ip→line table, exact counts at the chokepoints that already exist | Accepted (Slices 0-5 shipped; Slice 6 optional and unstarted) |
 | [0107](0107-compilation-unit-runtime-identity.md) | A compilation unit's runtime identity is the path as invoked; `$?FILE` is its absolutified form | Accepted (implemented) |
 | [0108](0108-closure-must-pin-its-defining-blocks-routine-imports.md) | A closure must pin the routine imports live in its defining block | Proposed |

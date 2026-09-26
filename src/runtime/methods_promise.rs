@@ -39,23 +39,30 @@ impl Interpreter {
 
     /// Resolve a callback result into the new promise, keeping on success,
     /// breaking on error.
+    ///
+    /// The derived promise inherits the original's scheduler, so a user
+    /// scheduler dispatches its subscribers (ADR-0105 D2).
     fn resolve_promise_callback(
+        &mut self,
         new_promise: &SharedPromise,
         result: Result<Value, RuntimeError>,
         output: String,
         stderr: String,
     ) {
-        match result {
-            Ok(v) => new_promise.keep(v, output, stderr),
+        let (kept, value) = match result {
+            Ok(v) => (true, v),
             Err(e) => {
                 let error_val = if let Some(ex) = e.exception {
                     *ex
                 } else {
                     Value::str(e.message.into_owned())
                 };
-                new_promise.break_with(error_val, output, stderr);
+                (false, error_val)
             }
-        }
+        };
+        // A scheduler whose `.cue` fails has already had the subscribers
+        // dispatched the built-in way; there is no caller to report it to.
+        let _ = self.resolve_promise_dispatching(new_promise, kept, value, Some((output, stderr)));
     }
 
     /// Run a promise chaining method (.then, .andthen, .orelse).
@@ -85,7 +92,7 @@ impl Interpreter {
             if should_run(&status) {
                 let promise_val = Value::promise(orig);
                 let cb_result = self.call_sub_value(block, vec![promise_val], true);
-                Self::resolve_promise_callback(&new_promise, cb_result, output, stderr);
+                self.resolve_promise_callback(&new_promise, cb_result, output, stderr);
             } else if propagate_kept {
                 new_promise.keep(result, output, stderr);
             } else {
@@ -110,7 +117,7 @@ impl Interpreter {
                     let cb_result = thread_interp.call_sub_value(block, vec![promise_val], true);
                     let out = std::mem::take(&mut thread_interp.output_sink_mut().output);
                     let err = std::mem::take(&mut thread_interp.output_sink_mut().stderr_output);
-                    Self::resolve_promise_callback(
+                    thread_interp.resolve_promise_callback(
                         &new_promise,
                         cb_result,
                         format!("{}{}", output, out),
@@ -219,16 +226,15 @@ impl Interpreter {
                 if !shared.take_vow() {
                     return Err(Self::promise_vowed_error(shared));
                 }
-                let res = if method == "keep" {
-                    let value = args.into_iter().next().unwrap_or(Value::TRUE);
-                    shared.try_keep(value)
+                let kept = method == "keep";
+                let value = if kept {
+                    args.into_iter().next().unwrap_or(Value::TRUE)
                 } else {
-                    let reason_val = args
-                        .into_iter()
+                    args.into_iter()
                         .next()
-                        .unwrap_or_else(|| Value::str_from("Died"));
-                    shared.try_break(reason_val)
+                        .unwrap_or_else(|| Value::str_from("Died"))
                 };
+                let res = self.resolve_promise_dispatching(shared, kept, value, None)?;
                 match res {
                     Ok(()) => Ok(Value::NIL),
                     Err(status) => Err(Self::promise_resolved_error(shared, &status)),
@@ -340,11 +346,8 @@ impl Interpreter {
                         .next()
                         .unwrap_or_else(|| Value::str_from("Died"))
                 };
-                let res = if method == "keep" {
-                    shared.try_keep(value)
-                } else {
-                    shared.try_break(value)
-                };
+                let res =
+                    self.resolve_promise_dispatching(&shared, method == "keep", value, None)?;
                 match res {
                     Ok(()) => Ok(Value::NIL),
                     Err(status) => Err(Self::promise_resolved_error(&shared, &status)),
@@ -356,6 +359,12 @@ impl Interpreter {
                 let block = args.into_iter().next().unwrap_or(Value::NIL);
                 self.run_cued_start_body(&shared, block)
             }
+            // The body of the block a user scheduler is cued with to dispatch
+            // a resolution's subscribers (ADR-0105 D2).
+            // Cost: O(s), s = the resolution's subscribers.
+            "__mutsu_run_dispatch" => Ok(Self::run_cued_dispatch(
+                &args.into_iter().next().unwrap_or(Value::NIL),
+            )),
             "WHAT" => Ok(Value::package(Symbol::intern("Promise::Vow"))),
             "Str" | "gist" => Ok(Value::str("(Vow)".to_string())),
             _ => Err(RuntimeError::new(format!(

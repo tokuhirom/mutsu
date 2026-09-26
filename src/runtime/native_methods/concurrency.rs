@@ -380,7 +380,7 @@ impl Interpreter {
             // a `message` attribute that would shadow it.
             "keep" => {
                 let value = args.into_iter().next().unwrap_or(Value::TRUE);
-                if let Err(status) = shared.try_keep(value) {
+                if let Err(status) = self.resolve_promise_dispatching(&shared, true, value, None)? {
                     return Err(Interpreter::promise_resolved_error(&shared, &status));
                 }
                 Ok(Value::NIL)
@@ -390,7 +390,9 @@ impl Interpreter {
                     .into_iter()
                     .next()
                     .unwrap_or_else(|| Value::str_from("Died"));
-                if let Err(status) = shared.try_break(reason) {
+                if let Err(status) =
+                    self.resolve_promise_dispatching(&shared, false, reason, None)?
+                {
                     return Err(Interpreter::promise_resolved_error(&shared, &status));
                 }
                 Ok(Value::NIL)
@@ -401,6 +403,12 @@ impl Interpreter {
                 let block = args.into_iter().next().unwrap_or(Value::NIL);
                 self.run_cued_start_body(&shared, block)
             }
+            // The body of the block a user scheduler is cued with to dispatch
+            // a resolution's subscribers (ADR-0105 D2).
+            // Cost: O(s), s = the resolution's subscribers.
+            "__mutsu_run_dispatch" => Ok(Interpreter::run_cued_dispatch(
+                &args.into_iter().next().unwrap_or(Value::NIL),
+            )),
             _ => Err(RuntimeError::new(format!(
                 "No native method '{}' on Promise::Vow",
                 method
