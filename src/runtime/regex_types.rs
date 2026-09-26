@@ -91,8 +91,7 @@ pub(crate) struct PatternDerived {
     /// one entry per package it was ranked from. Building one resolves rule
     /// names, so, like `prefilter_in_pkg`, the entries are keyed by package
     /// and `TOKEN_DEFS_GEN`.
-    pub(crate) ltm_nfa:
-        std::sync::Mutex<Vec<crate::runtime::regex::regex_ltm_nfa::LtmNfaSlot>>,
+    pub(crate) ltm_nfa: std::sync::Mutex<Vec<crate::runtime::regex::regex_ltm_nfa::LtmNfaSlot>>,
 }
 
 /// One package's entry in [`PatternDerived::prefilter_in_pkg`].
