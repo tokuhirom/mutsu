@@ -7,7 +7,7 @@ use Test;
 # types, shapes, QuantHash semantics. Each case below runs through an
 # escaping closure (a few also through the statement call form).
 
-plan 33;
+plan 35;
 
 sub run(&c) { c() }
 
@@ -125,5 +125,15 @@ sub run(&c) { c() }
     {
         constant Int = 5;
         is Int, 5, 'a later constant still shadows the type name';
+    }
+}
+
+# A fresh `my` in an inner block is its own variable, not the outer one's cell.
+{
+    my Int $n = 1;
+    dies-ok { $n = "x" }, 'the outer typed scalar rejects a Str through a cell';
+    {
+        my $n = "inner";
+        is $n, "inner", 'an inner untyped my of the same name takes a Str';
     }
 }

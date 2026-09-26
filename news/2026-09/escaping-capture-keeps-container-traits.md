@@ -41,13 +41,19 @@ closure a cell for `Int`, and the assignment went into it instead of dying. The
 analysis now honours the slot the closure's creation point actually saw
 (`free_var_parent_slots`).
 
-The statement call form (`dies-ok { ... }, 'x';`) still compiles its positional
-closure arguments as non-escaping. With these fixes the roast files that used
-to regress when it did not all pass, except one shape that belongs to the
-`ExecCallPairs` carrier: a closure's `:=` rebind of a celled caller lexical is
-not written back (`S02-types/array-shapes.t` #29). Retiring `ExecCallPairs`
-(#9462) removes that carrier; the statement form can then compile identically
-to the expression form.
+With these fixes the statement call form (`dies-ok { ... }, 'x';`) compiles its
+positional closure arguments exactly like the expression form: the one-shot
+`stmt_call_positional_closures_nonescaping` compiler flag, which kept them
+non-escaping after `ExecCallPairs` was retired (#9462), is gone. The roast files
+that regressed without it (`S02-names/is_default.t`, `S32-hash/map.t`,
+`S09-multidim/*`, `S09-typed-arrays/*`, the `S02-types` List and QuantHash
+files, `S05-substitution/subst.t`) all pass with the arguments escaping.
+
+Running the whole suite that way surfaced one more leak: a fresh `my $a` in an
+inner block adopted the outer `$a`'s capture cell through the declaration's
+lazy env sync, so `my Int $a; dies-ok { $a = "x" }; { my $a = "s" }` stored the
+inner initializer into -- and type-checked it against -- the outer variable. A
+declaration no longer adopts an env cell.
 
 `--dump-bytecode` now also lists every closure body, labelled by its path and
 whether it escapes.
