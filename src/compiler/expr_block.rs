@@ -525,7 +525,9 @@ impl Compiler {
                     // load the existing package variable value instead of Nil.
                     let is_our_redecl_nil =
                         *is_our && matches!(expr, Expr::Literal(lit) if lit.is_nil());
-                    let native_default = (name.starts_with('$')
+                    let native_default = (!name.starts_with('@')
+                        && !name.starts_with('%')
+                        && !name.starts_with('&')
                         && !custom_traits.iter().any(|(t, _)| t == "__has_initializer")
                         && Self::is_synthesized_decl_default(expr))
                     .then(|| {

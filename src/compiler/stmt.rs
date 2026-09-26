@@ -1690,7 +1690,9 @@ impl Compiler {
                     // Any type object, not Nil (PLAN 8.5 step 3) — see
                     // `uninit_untyped_scalar_defaults_to_any`.
                     let any_default = Self::any_type_object_expr();
-                    let native_default = (name.starts_with('$')
+                    let native_default = (!name.starts_with('@')
+                        && !name.starts_with('%')
+                        && !name.starts_with('&')
                         && !has_explicit_initializer
                         && Self::is_synthesized_decl_default(expr))
                     .then(|| {
