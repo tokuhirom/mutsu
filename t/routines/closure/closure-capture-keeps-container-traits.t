@@ -7,7 +7,7 @@ use Test;
 # types, shapes, QuantHash semantics. Each case below runs through an
 # escaping closure (a few also through the statement call form).
 
-plan 32;
+plan 33;
 
 sub run(&c) { c() }
 
