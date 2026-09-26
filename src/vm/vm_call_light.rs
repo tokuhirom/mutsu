@@ -494,7 +494,14 @@ impl Interpreter {
                             | crate::opcode::FastParamType::NativeIntSized
                     );
                     let val = arg_binding_value(&self.stack[args_base + param_idx]);
-                    Self::fast_type_check_tagged(&val, kind, name_sym)
+                    // A native parameter binds the bare value: an itemized
+                    // argument (`my $ = 200`) is checked as what it holds (#9533).
+                    let val = if is_native_int {
+                        val.descalarize()
+                    } else {
+                        &*val
+                    };
+                    Self::fast_type_check_tagged(val, kind, name_sym)
                 }
                 None => {
                     let Some(tc) = cf.param_defs[param_idx].type_constraint.as_ref() else {
@@ -502,7 +509,12 @@ impl Interpreter {
                     };
                     is_native_int = crate::runtime::native_types::is_native_int_type(tc);
                     let val = arg_binding_value(&self.stack[args_base + param_idx]);
-                    Self::fast_type_check(&val, tc)
+                    let val = if is_native_int {
+                        val.descalarize()
+                    } else {
+                        &*val
+                    };
+                    Self::fast_type_check(val, tc)
                 }
             };
             if ok && is_native_int {

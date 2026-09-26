@@ -999,6 +999,12 @@ impl Interpreter {
                 }
             }
             ValueView::Bool(b) => NumBigInt::from(if b { 1 } else { 0 }),
+            // An Int-valued enum stores its value (`my int $x = E::B`, #9533);
+            // the store itself unboxes it via `unbox_enum_to_native_int`.
+            ValueView::Enum {
+                value: crate::value::EnumValue::Int(n),
+                ..
+            } => NumBigInt::from(*n),
             _ => {
                 return Err(RuntimeError::new(format!(
                     "Cannot convert value to native integer type '{}'",
