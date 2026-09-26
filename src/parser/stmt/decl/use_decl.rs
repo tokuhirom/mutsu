@@ -162,9 +162,14 @@ pub(in crate::parser::stmt) fn use_stmt(input: &str) -> PResult<'_, Stmt> {
                     rest = after;
                     continue;
                 }
-                if (is_dist_selector || is_inert_adverb)
-                    && (r.starts_with('(') || (is_inert_adverb && !is_dist_selector))
-                {
+                // A selector's `(expr)` form, or any inert adverb, is consumed
+                // and discarded.
+                let discard = if is_dist_selector {
+                    r.starts_with('(')
+                } else {
+                    is_inert_adverb
+                };
+                if discard {
                     let after = skip_balanced_parens(r);
                     let (after, _) = ws(after)?;
                     let after = after.strip_prefix(',').unwrap_or(after);
@@ -595,8 +600,8 @@ fn skip_name_adverbs(mut input: &str) -> &str {
         && !r.starts_with(':')
         && let Ok((r, _)) = ident(r)
     {
-        input = if r.starts_with('<') {
-            r[1..].find('>').map_or("", |end| &r[end + 2..])
+        input = if let Some(inner) = r.strip_prefix('<') {
+            inner.find('>').map_or("", |end| &inner[end + 1..])
         } else if r.starts_with('(') {
             skip_balanced_parens(r)
         } else {
