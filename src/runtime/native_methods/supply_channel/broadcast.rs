@@ -55,14 +55,15 @@ pub(super) fn notify_all(wakers: &WakerSet, signal: &Signal) {
 /// One tap's private queue.
 #[derive(Debug, Default)]
 pub(super) struct SubQueue {
-    pub(super) events: Mutex<VecDeque<SupplyEvent>>,
+    /// Each event with its global send sequence (see `super::next_send_seq`).
+    pub(super) events: Mutex<VecDeque<(u64, SupplyEvent)>>,
 }
 
 /// State shared by the sender clones, the registry template, and every
 /// subscriber handle.
 #[derive(Debug)]
 pub(super) struct Broadcast {
-    pub(super) upstream: Mutex<mpsc::Receiver<SupplyEvent>>,
+    pub(super) upstream: Mutex<mpsc::Receiver<(u64, SupplyEvent)>>,
     pub(super) subscribers: Mutex<Vec<Weak<SubQueue>>>,
     /// Set once the upstream mpsc has hung up. A subscriber reports
     /// `Disconnected` only after this is set *and* its own queue is drained.
@@ -91,6 +92,21 @@ impl Broadcast {
         let Ok(upstream) = self.upstream.try_lock() else {
             return;
         };
+        self.pump_locked(&upstream);
+    }
+
+    /// [`Self::pump`], but waits for a concurrent pumper instead of skipping.
+    /// A caller that must see every event sent before some point (the drive
+    /// loop's cross-source ordering check, `SupplyReceiver::peek_seq`) cannot
+    /// accept "someone else is distributing it right now".
+    pub(super) fn pump_blocking(&self) {
+        let Ok(upstream) = self.upstream.lock() else {
+            return;
+        };
+        self.pump_locked(&upstream);
+    }
+
+    fn pump_locked(&self, upstream: &mpsc::Receiver<(u64, SupplyEvent)>) {
         loop {
             match upstream.try_recv() {
                 Ok(event) => self.distribute(event),
@@ -103,7 +119,7 @@ impl Broadcast {
         }
     }
 
-    fn distribute(&self, event: SupplyEvent) {
+    fn distribute(&self, event: (u64, SupplyEvent)) {
         let Ok(mut subs) = self.subscribers.lock() else {
             return;
         };
