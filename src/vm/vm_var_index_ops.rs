@@ -1177,6 +1177,35 @@ impl Interpreter {
             self.stack.push(result);
             return Ok(());
         }
+        // A user-defined `AT-POS` on a type object owns positional indexing of
+        // that object. This is distinct from `Type[...]` parameterization:
+        // `C.[29]` dispatches to `C.AT-POS(29)` even when C is otherwise a
+        // non-parametric class. Keep this after `^parameterize`, whose method
+        // is the metaclass hook for genuine type-argument syntax.
+        if is_positional
+            && let ValueView::Package(name) = target.view()
+            && self.has_user_method(name.as_str(), "AT-POS")
+        {
+            let result = self.try_compiled_method_or_interpret(
+                target.clone(),
+                "AT-POS",
+                vec![index.clone()],
+            )?;
+            self.stack.push(result);
+            return Ok(());
+        }
+        if !is_positional
+            && let ValueView::Package(name) = target.view()
+            && self.has_user_method(name.as_str(), "AT-KEY")
+        {
+            let result = self.try_compiled_method_or_interpret(
+                target.clone(),
+                "AT-KEY",
+                vec![index.clone()],
+            )?;
+            self.stack.push(result);
+            return Ok(());
+        }
         let result = match (target.view(), index.view()) {
             // Any subscript (positional or associative) on Nil yields Nil again,
             // so chained access such as `Nil[0][2]` or `Nil<a><b>` keeps

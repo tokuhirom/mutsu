@@ -3,6 +3,78 @@ use crate::runtime::meta_ns::MetaNs;
 use crate::value::ValueView;
 
 impl Interpreter {
+    fn is_runtime_stub_method_def(def: &MethodDef) -> bool {
+        let body: Vec<_> = def
+            .body
+            .iter()
+            .filter(|stmt| !matches!(stmt, Stmt::SetLine(_)))
+            .collect();
+        body.len() == 1
+            && matches!(
+                body[0],
+                Stmt::Expr(Expr::Call { name, .. })
+                    if name == "__mutsu_stub_die" || name == "__mutsu_stub_warn"
+            )
+    }
+
+    /// A runtime role mixin must satisfy every public stub in the role before
+    /// the resulting type is published. Class-header composition performs the
+    /// same check in `resolve_class_stub_requirements`, but values and type
+    /// objects take the wrapper path through `compose_role_on_value` instead.
+    fn runtime_value_has_concrete_method(&mut self, value: &Value, method: &str) -> bool {
+        match value.view() {
+            ValueView::Mixin(inner, mixins) => {
+                if mixins.contains_key(method) {
+                    return true;
+                }
+                for role_name in mixins
+                    .keys()
+                    .filter_map(|key| key.strip_prefix("__mutsu_role__"))
+                {
+                    let Some(role) = self.role_def_for_mixin_role(mixins, role_name) else {
+                        continue;
+                    };
+                    if role.methods.get(method).is_some_and(|defs| {
+                        defs.iter()
+                            .any(|def| !Self::is_runtime_stub_method_def(def))
+                    }) || role
+                        .attributes
+                        .iter()
+                        .any(|attr| attr.is_public && attr.name == method)
+                    {
+                        return true;
+                    }
+                }
+                self.runtime_value_has_concrete_method(inner, method)
+            }
+            _ => self.value_can_method(value, method),
+        }
+    }
+
+    fn validate_runtime_role_requirements(
+        &mut self,
+        value: &Value,
+        role_name: &str,
+        role: &RoleDef,
+    ) -> Result<(), RuntimeError> {
+        let type_name = crate::runtime::utils::value_type_name(value);
+        for (method_name, defs) in &role.methods {
+            let has_required_stub = defs.iter().any(|def| {
+                Self::is_runtime_stub_method_def(def) && !def.is_private && !def.is_multi
+            });
+            if has_required_stub && !self.runtime_value_has_concrete_method(value, method_name) {
+                return Err(RuntimeError::typed_msg(
+                    "X::Comp::AdHoc",
+                    format!(
+                        "Method '{}' must be implemented by {} because it is required by roles: {}.",
+                        method_name, type_name, role_name
+                    ),
+                ));
+            }
+        }
+        Ok(())
+    }
+
     /// Re-apply any roles ever composed onto the named routine
     /// `package::name` (via `.^mixin(Role)` or a trait handler's `$r does
     /// Role`) to a freshly rebuilt `sub_val` for that same routine.
@@ -741,6 +813,10 @@ impl Interpreter {
                     self.run_composed_role_ancestor_bodies(role_name, role_name)?;
                 }
             }
+        }
+
+        if let Some(role) = role.as_ref() {
+            self.validate_runtime_role_requirements(&left, role_name, role)?;
         }
 
         let (inner, mut mixins) = if let ValueView::Mixin(inner, existing) = left.view() {
