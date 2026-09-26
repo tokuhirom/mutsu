@@ -176,7 +176,7 @@ impl Interpreter {
             )
         };
 
-        let callable = self.reduction_callable_for_op(&base_op);
+        let callable = self.reduction_callable_for_op(&base_op, None);
         let remaining = needed - cached_len;
 
         // Collect new source values to iterate over

@@ -43,13 +43,22 @@ pub(crate) fn infix_term_call(op: InfixTermOp, left: Expr, right: Vec<Expr>) -> 
     match op.modifier {
         // `X` / `Z` over a callable are `cross` / `zip` with `:with`.
         Some(m @ ('X' | 'Z')) => {
-            let mut args = vec![left];
-            args.extend(right);
-            args.push(Expr::Binary {
-                left: Box::new(Expr::Literal(crate::value::Value::str_from("with"))),
-                op: crate::token_kind::TokenKind::FatArrow,
-                right: Box::new(op.callable),
-            });
+            // A comma-list right operand (`"%04x" X[&sprintf] 7, 11, 42`) is
+            // ONE list operand, not one list per element.
+            let right = if right.len() == 1 {
+                right.into_iter().next().unwrap()
+            } else {
+                Expr::ArrayLiteral(right)
+            };
+            let args = vec![
+                left,
+                right,
+                Expr::Binary {
+                    left: Box::new(Expr::Literal(crate::value::Value::str_from("with"))),
+                    op: crate::token_kind::TokenKind::FatArrow,
+                    right: Box::new(op.callable),
+                },
+            ];
             Expr::Call {
                 name: Symbol::intern(if m == 'X' { "cross" } else { "zip" }),
                 args,

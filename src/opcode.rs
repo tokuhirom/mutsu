@@ -3780,32 +3780,31 @@ pub(crate) enum OpCode {
         count: u32,
     },
 
-    // -- InfixFunc (atan2, sprintf) --
-    /// An infix call by routine name: `1 [&foo] 2`, a user-declared
-    /// operator (`sub infix:<zz>`), a string-bitwise or other operator with
-    /// no dedicated opcode, and a list-associative chain whose junction
-    /// operator is user-defined. Stack: `[left, r1, …, rn] → [result]`
-    /// (`n` = `right_arity`).
+    // -- InfixFunc --
+    /// An infix call by operator name: a user-declared operator
+    /// (`sub infix:<zz>`), a string-bitwise or other operator with no
+    /// dedicated opcode, and a list-associative chain whose junction operator
+    /// is user-defined. Stack: `[left, r1, …, rn] → [result]` (`n` =
+    /// `right_arity`).
     ///
-    /// `atan2` and `sprintf` are handled inline. Otherwise the name is
-    /// resolved as `infix:<name>`: a lexical `&infix:<name>` is called
-    /// directly, a chaining operator with more than two arguments folds
-    /// pairwise into a `Bool`, and the rest goes through `try_user_infix`
-    /// and `call_infix_fallback`. Operands are compiled as call arguments, so
-    /// an `is rw` parameter binds the caller's container. The `R` modifier
-    /// swaps the two arguments; the `Z` modifier is currently ignored
-    /// (`3 Z[&foo] 4` calls `foo(3, 4)` once, where Rakudo zips; see
-    /// #9464).
+    /// The name is resolved as `infix:<name>`: a lexical `&infix:<name>` is
+    /// called directly, a chaining operator with more than two arguments
+    /// folds pairwise into a `Bool`, and the rest goes through
+    /// `try_user_infix` and `call_infix_fallback`. Operands are compiled as
+    /// call arguments, so an `is rw` parameter binds the caller's container.
+    /// The `[&name]` spelling (and its `R`/`X`/`Z` forms) does NOT come here:
+    /// the parser lowers it to a call on the `&name` term, or to
+    /// `cross`/`zip` with `:with(&name)` (#9464).
     InfixFunc {
         /// Constant-pool index of the operator or function name, without
         /// the `infix:<…>` wrapper.
         name_idx: u32,
         /// Number of right-hand operands: 1 normally, more for a
-        /// list-associative chain, `X[&f] a, b, c`, or trailing colonpair
-        /// adverbs (appended as named arguments).
+        /// list-associative chain or trailing colonpair adverbs (appended as
+        /// named arguments).
         right_arity: u32,
-        /// Constant-pool index of the meta modifier `"R"`, `"X"` or `"Z"`,
-        /// or `None`.
+        /// Constant-pool index of the meta modifier `"R"` (swaps the two
+        /// arguments), or `None`.
         modifier_idx: Option<u32>,
     },
     /// Stateful scalar flip-flop (ff/fff) with lazily evaluated lhs/rhs bytecode spans.

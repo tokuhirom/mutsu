@@ -175,12 +175,20 @@ fn parse_list_infix_loop_impl<'a>(
                     break;
                 }
             }
-            *left = Expr::InfixFunc {
-                name,
-                left: Box::new(left.clone()),
-                right: right_exprs,
-                modifier,
+            // `[&name]` calls the callable the `&name` TERM denotes -- the
+            // lexical `&name` (a `my &op`, a `&op` parameter), falling back to
+            // a routine of that name -- exactly like the `[&TERM]` spelling
+            // below; the `R`/`X`/`Z` meta prefixes reverse / cross / zip with
+            // it. Lowering it to `Expr::InfixFunc` instead resolved `name` as
+            // an `infix:<name>` operator at run time: `[&cmp]` over a lexical
+            // `&cmp` ran the builtin `cmp`, a `&op` parameter was not found at
+            // all, and `X`/`Z` never crossed or zipped (#9464).
+            let op = InfixTermOp {
+                modifier: modifier.as_deref().and_then(|m| m.chars().next()),
+                callable: Expr::CodeVar(name),
+                len,
             };
+            *left = infix_term_call(op, left.clone(), right_exprs);
             *current_assoc_key = Some(op_key);
             rest = r;
             continue;

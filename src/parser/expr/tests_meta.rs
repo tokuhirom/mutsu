@@ -316,10 +316,12 @@ fn parse_grouped_sequences_as_metaop_operands() {
 fn parse_bracket_infix_func_chain_with_same_operator() {
     let (rest, expr) = expression("2 [&foo] 3 [&foo] 4").unwrap();
     assert_eq!(rest, "");
-    assert!(matches!(
-        expr,
-        Expr::InfixFunc { ref name, modifier: None, .. } if name == "foo"
-    ));
+    // `[&foo]` calls the `&foo` term; the chain folds left.
+    let Expr::CallOn { target, args } = expr else {
+        panic!("expected a call on &foo");
+    };
+    assert!(matches!(*target, Expr::CodeVar(ref name) if name == "foo"));
+    assert!(matches!(args[0], Expr::CallOn { .. }));
 }
 
 #[test]

@@ -5460,7 +5460,7 @@ impl Interpreter {
             OpCode::Reduction(spec_idx) => {
                 self.sync_source_line(code, *ip);
                 let spec = code.reduction_spec(*spec_idx);
-                self.exec_reduction_op(spec)?;
+                self.exec_reduction_op(code, spec)?;
                 *ip += 1;
             }
 

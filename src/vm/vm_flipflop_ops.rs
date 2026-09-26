@@ -20,33 +20,7 @@ impl Interpreter {
         let left_val = self.stack.pop().unwrap_or(Value::NIL);
         let name = Self::const_str(code, name_idx).to_string();
         let modifier = modifier_idx.map(|idx| Self::const_str(code, idx).to_string());
-        let result = if name == "atan2" {
-            let mut x = right_vals
-                .first()
-                .and_then(runtime::to_float_value)
-                .unwrap_or(0.0);
-            let mut y = runtime::to_float_value(&left_val).unwrap_or(0.0);
-            if modifier.as_deref() == Some("R") {
-                std::mem::swap(&mut x, &mut y);
-            }
-            Value::num(y.atan2(x))
-        } else if name == "sprintf" {
-            let fmt = match left_val.view() {
-                ValueView::Str(s) => s.to_string(),
-                _ => String::new(),
-            };
-            if modifier.as_deref() == Some("X") {
-                let mut parts = Vec::new();
-                for val in &right_vals {
-                    parts.push(runtime::format_sprintf(&fmt, Some(val)));
-                }
-                Value::str(parts.join(" "))
-            } else {
-                let arg = right_vals.first();
-                let rendered = runtime::format_sprintf(&fmt, arg);
-                Value::str(rendered)
-            }
-        } else {
+        let result = {
             let mut call_args = vec![left_val.clone()];
             call_args.extend(right_vals.clone());
             if modifier.as_deref() == Some("R") && call_args.len() == 2 {

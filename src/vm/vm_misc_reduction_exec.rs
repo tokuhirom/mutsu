@@ -21,6 +21,7 @@ impl Interpreter {
     /// so its steps join strands instead (ADR-0120), O(1) amortized per step.
     pub(super) fn exec_reduction_op(
         &mut self,
+        code: &CompiledCode,
         spec: crate::compiled_operator::ReductionSpec,
     ) -> Result<(), RuntimeError> {
         // Every marker the operator's spelling carried — the `[\op]` scan
@@ -160,7 +161,7 @@ impl Interpreter {
         // one strip is all the old loop could ever do here.
         if let Some(inner) = base_op.strip_prefix('R')
             && inner.starts_with('&')
-            && self.reduction_callable_for_op(inner).is_some()
+            && self.reduction_callable_for_op(inner, Some(code)).is_some()
         {
             list.reverse();
             base_op = inner;
@@ -179,7 +180,7 @@ impl Interpreter {
             }
             return Ok(());
         }
-        let mut callable = self.reduction_callable_for_op(base_op);
+        let mut callable = self.reduction_callable_for_op(base_op, Some(code));
         // `my &op = &[+]; [[&op]] 5` is still a reduction with `infix:<+>`'s
         // identity, so unwrap a callable that merely names a builtin operator
         // back into that operator before any of the arity/associativity/

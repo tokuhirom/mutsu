@@ -180,9 +180,19 @@ impl Interpreter {
         }
     }
 
-    pub(super) fn reduction_callable_for_op(&mut self, op: &str) -> Option<Value> {
+    //
+    // `code` is the executing chunk, when there is one: a `&op` the frame binds
+    // itself (a `&op` parameter, a `my &op`) lives in a local slot the env
+    // never sees (#9464). A deferred scan step has no frame and passes `None`.
+    pub(super) fn reduction_callable_for_op(
+        &mut self,
+        op: &str,
+        code: Option<&CompiledCode>,
+    ) -> Option<Value> {
         if let Some(name) = op.strip_prefix('&') {
-            let callable = loan_env!(self, resolve_code_var(name));
+            let callable = code
+                .and_then(|code| self.frame_amp_callable(code, name))
+                .unwrap_or_else(|| loan_env!(self, resolve_code_var(name)));
             if matches!(
                 callable.view(),
                 ValueView::Sub(_)
@@ -254,7 +264,14 @@ impl Interpreter {
         let op = name
             .strip_prefix("infix:<")
             .and_then(|rest| rest.strip_suffix('>'))?;
-        if Self::is_builtin_reduction_op(op) {
+        // The diffy structural operators have no reduction form (`[leg]` is
+        // X::Syntax::CannotMeta), so a callable naming one is folded as the
+        // plain left-associative callable it is: rakudo answers
+        // `my &l = &infix:<leg>; [[&l]] 10, 9` with `Less`. Unwrapping it
+        // into the operator handed it to the chaining-comparison fold (#9464).
+        if Self::is_builtin_reduction_op(op)
+            && !matches!(op, "leg" | "cmp" | "<=>" | "coll" | "unicmp")
+        {
             Some(Symbol::intern(op))
         } else {
             None

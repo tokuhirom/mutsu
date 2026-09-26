@@ -38,10 +38,20 @@ impl Interpreter {
         // dispatch (`vm_call_on_value`) so sigilless `rw` binding and the
         // return value behave the same as a named-sub call; the interpreter
         // fallback mishandles both for mutating sigilless subs.
+        // A `&op` the frame binds itself (a `&op` parameter) lives only in a
+        // local slot, never in the env (#9464).
         let func_value: Option<Value> = {
             let bare = name.trim_start_matches('&');
-            let mut found = None;
+            let mut found = self.frame_amp_callable(code, bare).filter(|v| {
+                matches!(
+                    v.view(),
+                    ValueView::Sub(_) | ValueView::WeakSub(_) | ValueView::Routine { .. }
+                )
+            });
             for key in [format!("&{}", bare), bare.to_string()] {
+                if found.is_some() {
+                    break;
+                }
                 if let Some(v) = self.env().get(&key)
                     && matches!(
                         v.view(),
