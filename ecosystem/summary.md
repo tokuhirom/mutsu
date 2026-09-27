@@ -7,18 +7,18 @@ definitions: [docs/ecosystem-parity.md](../docs/ecosystem-parity.md).
 
 | metric | value |
 |---|---|
-| **dist parity** (published headline) | **66.3%** (810/1221) |
-| file parity | 73.4% (3132/4269) |
+| **dist parity** (published headline) | **66.5%** (812/1221) |
+| file parity | 73.4% (3134/4269) |
 | assertion parity | 84.0% |
 
 | status | distributions |
 |---|---|
 | `blocked_dep` | 7 |
 | `blocked_load` | 110 |
-| `green` | 810 |
+| `green` | 812 |
 | `no_baseline` | 289 |
-| `partial` | 239 |
-| `red` | 172 |
+| `partial` | 238 |
+| `red` | 171 |
 | `skipped` | 10 |
 
 ## Distributions
@@ -921,7 +921,7 @@ definitions: [docs/ecosystem-parity.md](../docs/ecosystem-parity.md).
 | `Math::Fitting` | 0.0.5 | green | 4/4 |
 | `Math::FractionalPart` | 0.0.6 | partial | 2/6 |
 | `Math::GameTheory` | 0.0.1 | green | 2/2 |
-| `Math::Handy` | 0.0.2 | red | 0/1 |
+| `Math::Handy` | 0.0.2 | green | 1/1 |
 | `Math::Interval` | 0.0.3 | green | 2/2 |
 | `Math::Libgsl::BLAS` | 0.0.5 | green | 1/1 |
 | `Math::Libgsl::Combination` | 0.1.1 | green | 1/1 |
@@ -1074,7 +1074,7 @@ definitions: [docs/ecosystem-parity.md](../docs/ecosystem-parity.md).
 | `NYI` | 0.0.2 | green | 1/1 |
 | `Object::Delayed` | 0.0.13 | red | 0/4 |
 | `Object::Permission` | 0.0.7 | partial | 4/6 |
-| `Object::Permission::Group` | 0.0.7 | partial | 2/3 |
+| `Object::Permission::Group` | 0.0.7 | green | 3/3 |
 | `Object::Trampoline` | 0.0.12 | red | 0/3 |
 | `ObjectCache` | 0.0.6 | red | 0/1 |
 | `octans` | 0.2.5 | partial | 1/2 |
