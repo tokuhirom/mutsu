@@ -1,6 +1,6 @@
 # ADR-0121: Instance attributes live in per-class slots, and each access site resolves its slot once
 
-- **Status**: Accepted (user approval 2026-09-24; D1, D2, and the `$!x`, accessor and literal-name `getattr`/`bindattr` and `nqp::create` parts of D3 implemented, see §5)
+- **Status**: Accepted (user approval 2026-09-24; D1, D2, and the `$!x`, accessor and literal-name `getattr`/`bindattr`, `nqp::create` and default-construction parts of D3 implemented, see §5)
 - **Deciders**: tokuhirom, Claude
 - **Context**: [#9291](https://github.com/tokuhirom/mutsu/issues/9291) (the measurements),
   [#9134](https://github.com/tokuhirom/mutsu/issues/9134) group 1 and `create` (the `nqp::`
@@ -279,6 +279,17 @@ probe and the lock.
   `ClassOperandSite` remembers the resolved type object. In callgrind
   instructions per create: untyped 5,134 → 739, TRIR 3,882 → 2,278. See
   `news/2026-09/nqp-create-remembers-its-class-shape.md`.
+- **D3, default construction (landed).** `Class.new(named...)` on a
+  `CallMethodMut` site skips the probe chain once a call has walked it into
+  the native default constructor (`src/vm/vm_ctor_lane.rs`): a class-keyed
+  memo written only at that tail, pinned by the method generation and the
+  identity of the `NativeCtorPlan` it was installed with, and refused for
+  classes with `BUILD`/`TWEAK`. The plan also carries each attribute's
+  effective type constraint and buildability, which the constructor and
+  `dispatch_bless` re-derived per attribute per construction (O(n²) in the
+  attribute count). `P.new(x => .., y => ..)` went from 17,579 to 11,580
+  instructions above a `$s = $i` loop. See
+  `news/2026-09/class-new-skips-the-dispatch-probe-chain.md`.
 - **D3, the rest:** not started. That covers a per-site layout cache for
   the attribute ops, and `Array` / `Hash` `$!descriptor`.
 - **D4:** not started.
