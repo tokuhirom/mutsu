@@ -61,6 +61,16 @@ pub(crate) use inplace::{
 /// accessor you need is missing — add it here.
 const ELEMS_ATTR: &str = "bytes";
 
+/// [`ELEMS_ATTR`] as an attribute key, interned once: every in-place Buf
+/// probe (`buf_target`, which `nqp::push` runs on any instance target) would
+/// otherwise look the name up in the interner per call.
+// Cost: O(1).
+fn elems_key() -> Symbol {
+    static KEY: std::sync::LazyLock<Symbol> =
+        std::sync::LazyLock::new(|| Symbol::intern(ELEMS_ATTR));
+    *KEY
+}
+
 // ---------------------------------------------------------------------------
 // User classes that are buffers.
 // ---------------------------------------------------------------------------
@@ -285,7 +295,7 @@ fn storage_value(bytes: Vec<u8>, width: u8, kind: ElemKind) -> Value {
 
 /// The node behind a buffer instance's storage attribute, if it has one.
 fn node_in(map: &AttrMap) -> Option<super::GcRef<'_, BufData>> {
-    match map.get(ELEMS_ATTR)?.view() {
+    match map.get(elems_key())?.view() {
         ValueView::BufStorage(data) => Some(data),
         _ => None,
     }
@@ -355,12 +365,12 @@ pub(crate) fn buf_elem_at(attrs: &InstanceAttrs, idx: usize) -> Option<Value> {
 /// Whether this instance carries element storage at all. Distinguishes a real
 /// (possibly empty) buffer from a `Blob`/`Buf` **type object**, which has none.
 pub(crate) fn has_buf_elems(attrs: &InstanceAttrs) -> bool {
-    attrs.contains_key(ELEMS_ATTR)
+    attrs.contains_key(elems_key())
 }
 
 /// [`has_buf_elems`] against an attribute map already in hand.
 pub(crate) fn has_buf_elems_in(map: &AttrMap) -> bool {
-    map.contains_key(ELEMS_ATTR)
+    map.contains_key(elems_key())
 }
 
 /// A fresh attribute map holding `elems` — the map to hand
@@ -392,7 +402,7 @@ pub(crate) fn bytes_to_elems(bytes: &[u8]) -> Vec<Value> {
 pub(crate) fn set_buf_elems(map: &mut AttrMap, class_name: Symbol, elems: Vec<Value>) {
     let (width, kind) = elem_type(&class_name.resolve());
     map.insert(
-        ELEMS_ATTR,
+        elems_key(),
         storage_value(encode_elems(&elems, width, kind), width, kind),
     );
 }
@@ -431,7 +441,7 @@ fn put_bytes(attrs: &InstanceAttrs, bytes: Vec<u8>, width: u8, kind: ElemKind) {
             return;
         }
     }
-    attrs.insert(ELEMS_ATTR, storage_value(bytes, width, kind));
+    attrs.insert(elems_key(), storage_value(bytes, width, kind));
 }
 
 /// Mutate the elements in place through the shared cell, without decoding the
@@ -498,7 +508,7 @@ pub(crate) fn extend_buf_elems(
     let added = encode_elems(new_elems, width, kind);
 
     if existing.is_none() {
-        attrs.insert(ELEMS_ATTR, storage_value(added, width, kind));
+        attrs.insert(elems_key(), storage_value(added, width, kind));
         return;
     }
 
@@ -523,7 +533,7 @@ pub(crate) fn extend_buf_elems(
             .unwrap_or_default();
         drop(map);
         splice_in(&mut bytes, added, end);
-        attrs.insert(ELEMS_ATTR, storage_value(bytes.into_vec(), width, kind));
+        attrs.insert(elems_key(), storage_value(bytes.into_vec(), width, kind));
     }
 }
 
@@ -556,20 +566,20 @@ pub(crate) fn buf_attrs_extended(
     });
     splice_in(&mut bytes, encode_elems(new_elems, width, kind), end);
     let mut map = AttrMap::new();
-    map.insert(ELEMS_ATTR, storage_value(bytes.into_vec(), width, kind));
+    map.insert(elems_key(), storage_value(bytes.into_vec(), width, kind));
     map
 }
 
 /// The element container itself, cloned, for the coercions that re-tag a buffer
 /// without looking inside it (`.Buf`, `.Blob`). Pair with [`set_buf_storage`].
 pub(crate) fn buf_storage(map: &AttrMap) -> Option<Value> {
-    let stored = map.get(ELEMS_ATTR)?;
+    let stored = map.get(elems_key())?;
     matches!(stored.view(), ValueView::BufStorage(..)).then(|| stored.clone())
 }
 
 /// Store a container obtained from [`buf_storage`] into a map being built.
 pub(crate) fn set_buf_storage(map: &mut AttrMap, storage: Value) {
-    map.insert(ELEMS_ATTR, storage);
+    map.insert(elems_key(), storage);
 }
 
 /// The elements as an array `Value` of `kind`, **sharing** the backing node
@@ -753,7 +763,7 @@ pub(crate) fn buf_raw_bytes_or_empty(attrs: &InstanceAttrs) -> Vec<u8> {
 pub(crate) fn set_buf_raw_bytes(map: &mut AttrMap, class_name: Symbol, bytes: Vec<u8>) {
     let (width, kind) = elem_type(&class_name.resolve());
     map.insert(
-        ELEMS_ATTR,
+        elems_key(),
         storage_value(pad_to_width(bytes, width), width, kind),
     );
 }

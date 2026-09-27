@@ -16,7 +16,7 @@
 
 use super::storage_value;
 use super::{
-    BufBytes, BufData, ELEMS_ATTR, ElemKind, InstanceAttrs, Value, decode_elem_bits, elem_bits,
+    BufBytes, BufData, ElemKind, InstanceAttrs, Value, decode_elem_bits, elem_bits, elems_key,
     node_in,
 };
 
@@ -47,7 +47,7 @@ pub(crate) fn with_buf_storage_mut<R>(
         (node.bytes.clone(), node.width, node.kind)
     };
     let out = f(&mut bytes, w as usize);
-    attrs.insert(ELEMS_ATTR, storage_value(bytes.into_vec(), w, kind));
+    attrs.insert(elems_key(), storage_value(bytes.into_vec(), w, kind));
     Some(out)
 }
 
