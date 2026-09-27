@@ -100,9 +100,9 @@ impl Interpreter {
                         // the provided `Nil` itself. Seed it here so the check
                         // below (and the stored value) sees that default, not
                         // a value that could spuriously fail the type check.
-                        let seeded = val
-                            .is_nil()
-                            .then(|| self.seed_attr_value(cn_resolved, key, '$', type_constraints));
+                        let seeded = val.is_nil().then(|| {
+                            self.attr_store_nil_default(cn_resolved, key, '$', val.clone())
+                        });
                         let val = seeded.as_ref().unwrap_or(val);
                         // A provided value that does not already match its
                         // attribute's type constraint needs the interpreter

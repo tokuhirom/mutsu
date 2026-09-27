@@ -865,9 +865,24 @@ impl Interpreter {
                 .or_else(|| name.strip_prefix("%."))
         };
         if let Some(attr_name) = attr_name {
+            // `:$!x` binds by assignment, so an explicit Nil stores the
+            // attribute's container default (raku: `submethod BUILD(:$!x) {}`
+            // with `.new(:x(Nil))` leaves `$!x` as `Any`).
+            let attr_value = if name.starts_with('!')
+                && value.is_nil()
+                && let Some(self_val) = self.env.get("self")
+                && let ValueView::Instance { class_name, .. } = self_val.view()
+            {
+                let class_name = class_name.resolve();
+                self.attr_store_nil_default(&class_name, attr_name, '$', value.clone())
+            } else {
+                value.clone()
+            };
             // Also set the canonical !attr env key so write-back finds it
-            self.env.insert(format!("!{}", attr_name), value.clone());
-            self.env.insert(format!(".{}", attr_name), value.clone());
+            self.env
+                .insert(format!("!{}", attr_name), attr_value.clone());
+            self.env
+                .insert(format!(".{}", attr_name), attr_value.clone());
             if let Some(self_val) = self.env.get("self")
                 && let ValueView::Instance { attributes, .. } = self_val.view()
             {
@@ -877,7 +892,7 @@ impl Interpreter {
                 // round-trip cloned every attribute per attributive param and
                 // could clobber a concurrent write to a *different* attribute
                 // between snapshot and commit.
-                attributes.insert(attr_name.to_string(), value.clone());
+                attributes.insert(attr_name.to_string(), attr_value);
             }
         }
         if matches!(
