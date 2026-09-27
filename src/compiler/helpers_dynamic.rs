@@ -189,45 +189,12 @@ impl Compiler {
     /// always "declared" by the setting, so reading one and *then* shadowing it with
     /// a `my $*X` is legal and must NOT trip X::Dynamic::Postdeclaration (which only
     /// applies to a genuinely user-declared dynamic used before its declaration).
+    ///
+    /// The whitelist itself lives in `crate::runtime::utils::is_builtin_dynamic_var`,
+    /// shared with the VM's read-side X::Dynamic::NotFound check, so it cannot drift
+    /// between compile time and run time.
     pub(super) fn is_builtin_dynamic_var(name: &str) -> bool {
-        let bare = name.trim_start_matches(['$', '@', '%', '&']);
-        let Some(bare) = bare.strip_prefix('*') else {
-            return false;
-        };
-        matches!(
-            bare,
-            "OUT"
-                | "ERR"
-                | "IN"
-                | "ARGFILES"
-                | "ARGS"
-                | "SPEC"
-                | "CWD"
-                | "TMPDIR"
-                | "HOME"
-                | "EXECUTABLE"
-                | "EXECUTABLE-NAME"
-                | "PROGRAM"
-                | "PROGRAM-NAME"
-                | "DISTRO"
-                | "PERL"
-                | "RAKU"
-                | "VM"
-                | "KERNEL"
-                | "PID"
-                | "TOLERANCE"
-                | "COLLATION"
-                | "DEFAULT-READ-ELEMS"
-                | "INIT-INSTANT"
-                | "REPO"
-                | "RAT-OVERFLOW"
-                | "SCHEDULER"
-                | "THREAD"
-                | "SAMPLER"
-                | "USER"
-                | "GROUP"
-                | "LANG"
-        )
+        crate::runtime::utils::is_builtin_dynamic_var(name)
     }
 
     /// Emit X::Dynamic::Package error for a dynamic variable with :: in name.

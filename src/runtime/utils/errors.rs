@@ -263,6 +263,56 @@ pub(crate) fn dynamic_not_found_error(display_name: &str) -> RuntimeError {
     RuntimeError::typed("X::Dynamic::NotFound", attrs)
 }
 
+/// Whether `name` (an internal `*`-prefixed dynamic var name, e.g. `*TOLERANCE`,
+/// or an array/hash form that keeps its sigil, e.g. `%*OPTS`) is a built-in
+/// dynamic variable provided by the runtime. Built-in dynamics are always
+/// "declared" by the setting, so reading or assigning one before any user
+/// `my $*X` must never be treated as a genuinely undeclared dynamic var --
+/// shared by the compiler's X::Dynamic::Postdeclaration check
+/// (`Compiler::check_dynamic_var_decl_errors`) and the VM's read-side
+/// X::Dynamic::NotFound fallback (`OpCode::GetGlobal`'s final miss branch),
+/// so the one whitelist cannot drift between the two.
+pub(crate) fn is_builtin_dynamic_var(name: &str) -> bool {
+    let bare = name.trim_start_matches(['$', '@', '%', '&']);
+    let Some(bare) = bare.strip_prefix('*') else {
+        return false;
+    };
+    matches!(
+        bare,
+        "OUT"
+            | "ERR"
+            | "IN"
+            | "ARGFILES"
+            | "ARGS"
+            | "SPEC"
+            | "CWD"
+            | "TMPDIR"
+            | "HOME"
+            | "EXECUTABLE"
+            | "EXECUTABLE-NAME"
+            | "PROGRAM"
+            | "PROGRAM-NAME"
+            | "DISTRO"
+            | "PERL"
+            | "RAKU"
+            | "VM"
+            | "KERNEL"
+            | "PID"
+            | "TOLERANCE"
+            | "COLLATION"
+            | "DEFAULT-READ-ELEMS"
+            | "INIT-INSTANT"
+            | "REPO"
+            | "RAT-OVERFLOW"
+            | "SCHEDULER"
+            | "THREAD"
+            | "SAMPLER"
+            | "USER"
+            | "GROUP"
+            | "LANG"
+    )
+}
+
 /// Build a structured X::Caller::NotDynamic RuntimeError.
 /// Thrown when accessing a caller-frame lexical through `CALLER::` (either the
 /// `$CALLER::x` symbolic form or the `CALLER::<$x>` stash-subscript form) when
