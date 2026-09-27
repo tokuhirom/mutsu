@@ -1388,6 +1388,7 @@ impl Interpreter {
                     captured_env,
                     source_file: sub_data.source_file.clone(),
                     role_param_bindings: None,
+                    nested_capture_index: None,
                 };
                 // If the class doesn't exist yet (e.g. built-in types like Rat, Int, Str),
                 // create a stub ClassDef so methods can be added dynamically.
@@ -1482,6 +1483,7 @@ impl Interpreter {
                     captured_env,
                     source_file: sub_data.source_file.clone(),
                     role_param_bindings: None,
+                    nested_capture_index: None,
                 };
                 // `^add_multi_method` must still *error* for an unregistered
                 // class -- existence keys off `classes.contains_key`, not the

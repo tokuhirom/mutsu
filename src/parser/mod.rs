@@ -57,6 +57,8 @@ use std::sync::OnceLock;
 /// and for `CompiledCode::is_supply_block_body`.
 pub(crate) const SUPPLY_EMITTER_PREFIX: &str = "__mutsu_supply_emitter_";
 
+pub(crate) use stmt::nested_block_methods::NESTED_BLOCK_METHOD_TRAIT;
+
 pub(crate) fn is_imported_function(name: &str) -> bool {
     stmt::simple::is_imported_function(name)
 }

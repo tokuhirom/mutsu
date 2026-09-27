@@ -24,6 +24,7 @@ pub(super) fn mark_stmt(stmt: &mut Stmt) {
             mark_opt_box_expr(where_constraint);
         }
         Stmt::Assign { expr, .. } => mark_value_leaf(expr),
+        Stmt::NestedMethodCapture { closure, .. } => super::expr::mark_expr(closure),
         Stmt::Return(e) | Stmt::Die(e) | Stmt::Fail(e) | Stmt::Take(e, _) | Stmt::Goto(e) => {
             super::expr::mark_expr(e);
         }

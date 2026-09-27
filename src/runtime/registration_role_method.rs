@@ -315,6 +315,7 @@ impl Interpreter {
             captured_env: None,
             source_file: self.current_source_file(),
             role_param_bindings: None,
+            nested_capture_index: decl.nested_capture_index,
         };
         // `my method` in roles are role-private, skip method table.
         // Submethods (is_submethod) DO get composed even though

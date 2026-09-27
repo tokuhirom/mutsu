@@ -992,6 +992,19 @@ impl Compiler {
         }
         self.note_construct_body_block(stmt);
         match stmt {
+            Stmt::NestedMethodCapture {
+                index,
+                closure,
+                routines,
+            } => {
+                self.compile_expr(closure);
+                self.code.emit(OpCode::CaptureNestedMethodEnv(Box::new(
+                    crate::opcode::NestedMethodCaptureSpec {
+                        index: *index,
+                        routines: routines.clone(),
+                    },
+                )));
+            }
             Stmt::Expr(expr) => {
                 // See `Compiler::sunk_list_assign_result` — the statement's
                 // value is about to be unconditionally discarded below, so a

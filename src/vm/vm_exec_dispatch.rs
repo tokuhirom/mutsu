@@ -6195,6 +6195,11 @@ impl Interpreter {
                 self.exec_make_block_closure_op(code, *idx, *cc_idx)?;
                 *ip += 1;
             }
+            // Cost: O(e + f + n * r), e = the closure's env entries, f = the body's free variables, n = the enclosing blocks' routines, r = one `&name` resolution.
+            OpCode::CaptureNestedMethodEnv(spec) => {
+                self.exec_capture_nested_method_env_op(spec);
+                *ip += 1;
+            }
             // Cost: O(size of the declaration) per execution (routine/class/role registration).
             OpCode::RegisterDecl(idx) => {
                 self.sync_source_line(code, *ip);
