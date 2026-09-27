@@ -192,10 +192,21 @@ fn format_sprintf_impl(fmt: &str, args: &[Value], z_mode: bool) -> String {
         };
         let raw_arg = args.get(effective_arg_index);
         let _mixin_storage: Value;
+        // A Mixin formats as its inner value, and an `Int` subclass instance
+        // as its `Int` payload (`builtins::int_subclass`).
         let arg = match raw_arg.map(Value::view) {
             Some(ValueView::Mixin(inner, _)) => {
                 _mixin_storage = (**inner).clone();
                 Some(&_mixin_storage)
+            }
+            Some(ValueView::Instance { .. }) => {
+                match raw_arg.and_then(crate::builtins::int_subclass::int_subclass_payload) {
+                    Some(payload) => {
+                        _mixin_storage = payload;
+                        Some(&_mixin_storage)
+                    }
+                    None => raw_arg,
+                }
             }
             _ => raw_arg,
         };

@@ -13,6 +13,7 @@ pub(crate) mod exception_message;
 pub(crate) mod fast_0arg;
 mod functions;
 pub(crate) mod grapheme_index;
+pub(crate) mod int_subclass;
 pub(crate) mod iterator_construct;
 pub(crate) mod map_hash_coerce;
 pub(crate) mod methods_0arg;
