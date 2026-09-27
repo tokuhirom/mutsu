@@ -1295,16 +1295,17 @@ impl Interpreter {
             // (multi_candidates_cache / fn_keys_by_base).
             self.invalidate_fn_resolution();
 
+            // Interned once, not per `proto_functions` entry: that table grows
+            // as this loop imports each export (in hash order), so a per-entry
+            // intern also made the import's cost vary from run to run.
+            let global_proto_key = (unit_global_subs.contains_key(&name) || bare_file_module)
+                .then(|| Symbol::intern(&format!("GLOBAL::{name}")));
             let proto_entries: Vec<(Symbol, Arc<FunctionDef>)> = self
                 .registry()
                 .proto_functions
                 .iter()
                 .filter_map(|(k, v)| {
-                    if *k == *source_single
-                        || (unit_global_subs.contains_key(&name)
-                            && *k == Symbol::intern(&format!("GLOBAL::{name}")))
-                        || (bare_file_module && *k == Symbol::intern(&format!("GLOBAL::{name}")))
-                    {
+                    if *k == *source_single || global_proto_key == Some(*k) {
                         Some((Symbol::intern(&target_single), v.clone()))
                     } else {
                         None

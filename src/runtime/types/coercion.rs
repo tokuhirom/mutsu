@@ -261,6 +261,11 @@ impl Interpreter {
         {
             return Ok(enum_value);
         }
+        if base_target == "Hash"
+            && let Some(err) = crate::builtins::map_hash_coerce::hash_coercion_odd_error(&value)
+        {
+            return Err(err);
+        }
         let result = coerce_value(target, value.clone());
         // If the coercion returned a Failure, propagate it directly
         if is_failure_value(&result) {
