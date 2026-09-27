@@ -116,9 +116,21 @@ impl Interpreter {
             .resolve_lexical_regex(spec, pkg)?
             .regex_closure_scope()?;
         let mut saved: super::regex_dynparams::SavedDynParams = Vec::with_capacity(scope.len());
+        let qq_prefix = crate::runtime::meta_ns::MetaNs::RegexQq.prefix();
         for (key, value) in scope.iter() {
+            // A `"..."` atom's qq thunk is bound to its result, which the
+            // pre-pass splices in while the pattern is parsed (see
+            // `regex_qq_token_scope`); one that throws is left out.
+            let value = if key.starts_with(qq_prefix) {
+                match self.call_sub_value(value.clone(), Vec::new(), false) {
+                    Ok(result) => Value::str(result.to_string_value()),
+                    Err(_) => continue,
+                }
+            } else {
+                value.clone()
+            };
             saved.push((key.clone(), self.env.get(key).cloned()));
-            self.env.insert(key.clone(), value.clone());
+            self.env.insert(key.clone(), value);
         }
         (!saved.is_empty()).then_some(saved)
     }

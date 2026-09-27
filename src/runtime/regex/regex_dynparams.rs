@@ -146,6 +146,9 @@ impl Interpreter {
         arg_values: &[Value],
         prior: Option<SavedDynParams>,
     ) -> Option<SavedDynParams> {
+        // The rule's `"..."` atoms' qq thunks run in the same window, so the
+        // pre-pass sees their results while the rule's pattern is parsed.
+        let prior = self.install_subrule_qq_thunks(name, pkg, prior);
         let has_block_arg = arg_values.iter().any(|value| match value.view() {
             ValueView::Pair(_, value) | ValueView::ValuePair(_, value) => {
                 matches!(value.view(), ValueView::Sub(_) | ValueView::WeakSub(_))

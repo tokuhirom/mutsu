@@ -455,6 +455,7 @@ fn analyze_atom(an: &mut Analyzer, atom: &RegexAtom, ctx: Ctx) -> Option<Info> {
         | RegexAtom::Backref(_)
         | RegexAtom::NamedBackref(_)
         | RegexAtom::VarInterp(_)
+        | RegexAtom::QqInterp { .. }
         | RegexAtom::RecurseSelf(_)
         | RegexAtom::TildeMarker
         | RegexAtom::GoalMatch { .. } => None,

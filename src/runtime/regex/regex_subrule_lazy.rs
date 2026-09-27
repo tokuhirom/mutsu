@@ -96,6 +96,7 @@ fn atom_is_rule_call_free(atom: &RegexAtom) -> bool {
         | RegexAtom::NamedBackref(_)
         // Interpolates a variable's STRING value as a literal, not as a rule.
         | RegexAtom::VarInterp(_)
+        | RegexAtom::QqInterp { .. }
         | RegexAtom::SameAssertion { .. }
         | RegexAtom::AtPosition(_)
         | RegexAtom::TildeMarker => true,

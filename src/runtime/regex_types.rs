@@ -1139,6 +1139,22 @@ pub(crate) enum RegexAtom {
     /// a captured indentation string). Distinct from `NamedBackref` (which reads
     /// a capture) and from pre-substituted outer-scope `$var` interpolation.
     VarInterp(String),
+    /// A double-quoted atom (`"x @a[0]"`) the compiler lowered to a qq
+    /// thunk (`crate::regex_qq_atoms`) whose result was not installed when
+    /// the pattern was parsed: a `<$re>`-interpolated regex (its scope is
+    /// installed only when the atom is matched, by
+    /// [`RegexAtom::CaptureIsolatedGroupScoped`]) or a rule body parsed
+    /// outside its resolve-and-match window (`regex_qq_token_scope`). At
+    /// match time the thunk's string result is read from `env` under `key`
+    /// (a `MetaNs::RegexQq` key) and matched literally; with no result there
+    /// (the atom was never lowered, or its thunk threw) `fallback`, the
+    /// atom's text-scan reading, is matched instead. Opaque to every static
+    /// analysis, like [`RegexAtom::VarInterp`] — Rakudo compiles the atom to
+    /// code, which ends a declarative prefix.
+    QqInterp {
+        key: crate::symbol::Symbol,
+        fallback: Box<RegexPattern>,
+    },
     /// `<?same>` / `<!same>` — zero-width assertion: adjacent chars are same/different
     SameAssertion {
         negated: bool,

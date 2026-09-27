@@ -2014,7 +2014,12 @@ impl Interpreter {
     /// has no line history of its own). Calling straight through, under
     /// `current_package` already set to the composing class, is equivalent
     /// to what that recompile does at runtime and keeps the line.
-    pub(crate) fn register_token_decl_from_stmt(&mut self, stmt: &Stmt, source_line: Option<i64>) {
+    pub(crate) fn register_token_decl_from_stmt(
+        &mut self,
+        stmt: &Stmt,
+        source_line: Option<i64>,
+        qq_thunk_chunks: &[(Symbol, crate::opcode::CompiledDeclExpr)],
+    ) -> Result<(), RuntimeError> {
         let (name, params, param_defs, body, multi) = match stmt {
             Stmt::TokenDecl {
                 name,
@@ -2034,14 +2039,16 @@ impl Interpreter {
             } => (name, params, param_defs, body, *multi),
             _ => unreachable!("register_token_decl_from_stmt expects TokenDecl/RuleDecl"),
         };
+        let captured_body = self.token_body_with_qq_thunks(body, qq_thunk_chunks)?;
         self.register_token_decl(
             &name.resolve(),
             params,
             param_defs,
-            body,
+            captured_body.as_deref().unwrap_or(body),
             multi,
             source_line,
         );
+        Ok(())
     }
 
     #[allow(clippy::too_many_arguments)]

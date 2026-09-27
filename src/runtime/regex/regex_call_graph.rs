@@ -123,6 +123,10 @@ pub(super) enum StreamDecline {
     /// A `$*`-twigil rule parameter is declared somewhere in the program, so
     /// the call has to install and tear down a dynamic scope around itself.
     DynamicRuleParam,
+    /// The rule's body carries a `"..."` qq thunk, whose result has to be
+    /// installed around the call and torn down after it
+    /// (`regex_qq_token_scope`), like a `$*` parameter.
+    QqThunk,
     /// The rule declares a match-scoped grammar dynamic variable. The eager
     /// path owns the frame boundary; streaming would otherwise expose one
     /// frame across the caller continuation.
@@ -159,6 +163,7 @@ impl StreamDecline {
             Self::CalleeEdgeUnresolvable => "callee-edge-unresolvable",
             Self::ReachableSetTooLarge => "reachable-set-too-large",
             Self::DynamicRuleParam => "dynamic-rule-param",
+            Self::QqThunk => "qq-thunk",
             Self::GrammarDynvar => "grammar-dynvar",
             Self::CustomHow => "custom-how-grammar",
             Self::MethodWrapInstalled => "method-wrap-installed",
@@ -597,6 +602,7 @@ fn collect_atom_calls(atom: &RegexAtom, pkg: Symbol, out: &mut DirectCalls) -> b
         | RegexAtom::NamedBackref(_)
         // Interpolates a variable's STRING value as a literal, not as a rule.
         | RegexAtom::VarInterp(_)
+        | RegexAtom::QqInterp { .. }
         | RegexAtom::SameAssertion { .. }
         | RegexAtom::AtPosition(_)
         | RegexAtom::TildeMarker => true,

@@ -4108,8 +4108,14 @@ impl Compiler {
                         .set_sub_decl_compiled_routine_keys(idx, compiled_routine_keys);
                 }
             }
-            Stmt::TokenDecl { body, .. } | Stmt::RuleDecl { body, .. } => {
-                let captures = self.token_decl_regex_captures(body);
+            Stmt::TokenDecl { body, params, .. } | Stmt::RuleDecl { body, params, .. } => {
+                let mut captures = self.token_decl_regex_captures(body);
+                let qq_thunks = self.compile_token_decl_qq_thunks(params, body);
+                if !qq_thunks.is_empty() {
+                    let mut all = captures.as_deref().cloned().unwrap_or_default();
+                    all.extend(qq_thunks);
+                    captures = Some(std::sync::Arc::new(all));
+                }
                 let idx = self
                     .code
                     .add_token_decl_plan(stmt, self.last_source_line, captures);

@@ -3559,6 +3559,11 @@ pub(crate) enum OpCode {
         x_idx: Option<u32>,
         /// `:P5`: the pattern is matched verbatim by the Perl 5 engine.
         perl5: bool,
+        /// The pattern's interpolating `"..."` atoms, lowered to qq thunks
+        /// (`crate::regex_qq_atoms`): (`MetaNs::RegexQq` key, local slot of
+        /// the thunk), installed around the match like a regex literal's
+        /// `LoadRegexClosure` captures. `None` when the pattern has none.
+        qq_thunks: Option<Arc<Vec<(Symbol, u32)>>>,
     },
 
     // -- Non-destructive substitution (S///) --
@@ -3597,6 +3602,11 @@ pub(crate) enum OpCode {
         x_idx: Option<u32>,
         /// `:P5`: the pattern is matched verbatim by the Perl 5 engine.
         perl5: bool,
+        /// The pattern's interpolating `"..."` atoms, lowered to qq thunks
+        /// (`crate::regex_qq_atoms`): (`MetaNs::RegexQq` key, local slot of
+        /// the thunk), installed around the match like a regex literal's
+        /// `LoadRegexClosure` captures. `None` when the pattern has none.
+        qq_thunks: Option<Arc<Vec<(Symbol, u32)>>>,
     },
 
     // -- Transliteration (tr///) --
@@ -5841,6 +5851,9 @@ pub(crate) struct DeferredBodyOp {
     /// is a role-declaration-time fact regardless of who composes the role,
     /// so it is captured here rather than lost the way `chunk` is.
     pub(crate) source_line: Option<i64>,
+    /// `TokenRule` only: the declaration's `"..."` qq thunk chunks — see
+    /// [`CompiledTokenDeclPlan::qq_thunk_chunks`]. Empty for every other kind.
+    pub(crate) qq_thunk_chunks: Vec<(Symbol, CompiledDeclExpr)>,
 }
 
 pub(crate) fn classify_deferred_body_op_kind(stmt: &Stmt) -> DeferredBodyOpKind {
@@ -6028,6 +6041,13 @@ pub(crate) struct CompiledTokenDeclPlan {
     /// enclosing routine's `local_map` to resolve slots against) and for a
     /// declaration with no resolvable interpolated name.
     pub(crate) regex_captures: Option<std::sync::Arc<Vec<(Symbol, u32)>>>,
+    /// A class-body declaration's interpolating `"..."` atoms
+    /// (`crate::regex_qq_atoms`): (`MetaNs::RegexQq` key, a chunk that
+    /// builds the atom's qq thunk). A class body has no local slots to
+    /// compile the thunks into (the top-level path adds them to
+    /// `regex_captures` instead), so registration runs these chunks and puts
+    /// the thunks on the body's regex value. Empty everywhere else.
+    pub(crate) qq_thunk_chunks: Vec<(Symbol, CompiledDeclExpr)>,
 }
 
 /// Build a [`CompiledTokenDeclPlan`] from a `Stmt::TokenDecl`/`RuleDecl`.
@@ -6084,6 +6104,7 @@ fn build_token_decl_plan(
         is_export,
         export_tags,
         regex_captures,
+        qq_thunk_chunks: Vec::new(),
     }
 }
 

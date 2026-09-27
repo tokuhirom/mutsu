@@ -12,6 +12,13 @@
 //! the regex's scope for a match runs the thunk, and the pre-pass splices its
 //! string result in as a literal. Both sides find the atom's body with
 //! [`dq_atom_close`], so they agree on the key.
+//!
+//! The same thunks ride on `s///`/`S///` (`OpCode::Subst::qq_thunks`) and on
+//! `token`/`rule` declarations (`CompiledTokenDeclPlan`, run for a grammar in
+//! the rule's resolve-and-match window by `regex_qq_token_scope`). An atom
+//! whose result is not installed when its pattern is parsed — a `<$re>`
+//! interpolation, or a rule body parsed for a static analysis — becomes a
+//! `RegexAtom::QqInterp`, which reads the result when it is matched (#9673).
 
 /// Whether `ch` opens a double-quoted regex literal.
 pub(crate) fn is_dq_opener(ch: char) -> bool {

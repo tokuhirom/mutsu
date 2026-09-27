@@ -42,6 +42,8 @@ pub(crate) mod regex_prefilter_inner;
 mod regex_prefilter_memo;
 pub(crate) mod regex_prefilter_scan;
 mod regex_prefilter_subrule;
+mod regex_qq_interp;
+pub(crate) mod regex_qq_token_scope;
 mod regex_resolve;
 mod regex_silent_action;
 mod regex_subrule_lazy;

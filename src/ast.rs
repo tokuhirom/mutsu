@@ -3851,8 +3851,15 @@ pub(crate) fn has_var_decl(stmts: &[Stmt], name: &str) -> bool {
 /// the signature-less-block case; it is deliberately conservative, since a
 /// false positive only makes a call more permissive than rakudo and a false
 /// negative only leaves the pre-existing behaviour.
+///
+/// A literal value statement is skipped: it reads no variable, and a
+/// `token`/`rule` body is one whose regex value can carry its captured scope
+/// (closures included, whose formatted form is unbounded).
 pub(crate) fn body_reads_args_array(stmts: &[Stmt]) -> bool {
-    format!("{stmts:?}").contains("ArrayVar(\"_\")")
+    stmts
+        .iter()
+        .filter(|stmt| !matches!(stmt, Stmt::Expr(Expr::Literal(_))))
+        .any(|stmt| format!("{stmt:?}").contains("ArrayVar(\"_\")"))
 }
 
 /// Whether `stmts` reads the legacy named-argument hash `%_` anywhere.

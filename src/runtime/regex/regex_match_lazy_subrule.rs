@@ -82,6 +82,9 @@ impl Interpreter {
             return decline(reason);
         }
         let spec = name.spec();
+        if self.subrule_has_qq_thunks(&spec.lookup_name, pkg) {
+            return decline(StreamDecline::QqThunk);
+        }
         // A grammar-rule declaration must be restored before the caller's
         // continuation. The eager path has an explicit scope around its whole
         // candidate set; this streamed path would otherwise keep the frame

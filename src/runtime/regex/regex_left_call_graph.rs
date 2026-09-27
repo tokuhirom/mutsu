@@ -238,6 +238,7 @@ fn left_calls_of_atom(atom: &RegexAtom, pkg: Symbol, out: &mut Vec<RuleNode>) ->
         | RegexAtom::Backref(_)
         | RegexAtom::NamedBackref(_)
         | RegexAtom::VarInterp(_)
+        | RegexAtom::QqInterp { .. }
         | RegexAtom::SameAssertion { .. }
         | RegexAtom::AtPosition(_)
         | RegexAtom::TildeMarker

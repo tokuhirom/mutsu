@@ -383,10 +383,11 @@ impl Interpreter {
                     // through `run_block_raw` (a fresh `Compiler::new()` there has
                     // no line history, so the recompile would silently lose
                     // `Code.line`/`Code.file` -- see `register_token_decl_from_stmt`).
-                    None if is_regex_decl => {
-                        this.register_token_decl_from_stmt(&op.raw, op.source_line);
-                        Ok(())
-                    }
+                    None if is_regex_decl => this.register_token_decl_from_stmt(
+                        &op.raw,
+                        op.source_line,
+                        &op.qq_thunk_chunks,
+                    ),
                     None => this.run_block_raw(std::slice::from_ref(&op.raw)),
                 }
             };

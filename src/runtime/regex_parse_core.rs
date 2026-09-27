@@ -2554,12 +2554,26 @@ impl Interpreter {
                     }
                     regex_single_quote_atom(literal, ignore_case)
                 }
+                '"' | '\u{201C}' | '\u{201E}'
+                    if mode == RegexParseMode::Match
+                        && super::regex_qq_array_interp::regex_qq_interp_body(c, &chars)
+                            .is_some() =>
+                {
+                    // A `"..."` atom whose qq thunk result was not spliced in
+                    // (`splice_regex_qq_thunk_result`): read it at match time.
+                    let (body, span) =
+                        super::regex_qq_array_interp::regex_qq_interp_body(c, &chars)?;
+                    for _ in 0..span {
+                        chars.next();
+                    }
+                    self.regex_qq_interp_atom(c, &body, ignore_case)?
+                }
                 '"' | '\u{201C}' | '\u{201E}' => {
                     // Double-quoted literal string in Raku regex: "foo" matches literally
                     // Interpolation was done before this parse: by the
                     // pre-pass for a bare `$name`, or by splicing a compiled qq
-                    // thunk's result (`crate::regex_qq_atoms`). TODO: the
-                    // thunk does not reach `s///`, tokens or `<$re>` (#9673).
+                    // thunk's result (`crate::regex_qq_atoms`); the arm above
+                    // takes an atom whose result is read at match time.
                     let close = match c {
                         '"' => '"',
                         '\u{201C}' | '\u{201E}' => '\u{201D}',
