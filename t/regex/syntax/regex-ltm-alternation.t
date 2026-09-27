@@ -40,7 +40,7 @@ ok !$0.defined, 'nested-alternation branch beats capture branch (all-pure-litera
 
 # quantifiers: length yes, litlen no
 "abab" ~~ / (\w+) | 'ab' ** 2 /;
-ok !$0.defined, 'tie: first (capture) branch wins by declaration order (litlen tie 0-0)';
+ok $0.defined, 'tie: first (capture) branch wins by declaration order (litlen tie 0-0)';
 
 "aab" ~~ / 'a' | 'a' ** 1..2 'b' /;
 is ~$/, "aab", 'second branch wins on LENGTH (3 > 1), litlen irrelevant';
