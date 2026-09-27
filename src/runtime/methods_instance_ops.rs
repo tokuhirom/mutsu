@@ -2684,22 +2684,69 @@ impl Interpreter {
                             name.resolve()
                         )))
                     }
-                    ValueView::Package(name) => Ok(Value::str(name.resolve())),
-                    ValueView::Str(name) => Ok(Value::str_arc(name.clone())),
                     ValueView::Sub(data) => {
                         Ok(Value::str(format_operator_name(&data.name.resolve())))
                     }
-                    // Preserve the legacy fallback for non-instance built-in
-                    // values (notably Pair and Bool). User-class instances do
-                    // not enter this arm and reach the real method-not-found
-                    // path below.
-                    _ => Ok(Value::NIL),
+                    // `Nil` swallows every method call. `Array`/`Hash` answer
+                    // with their container descriptor's name in rakudo
+                    // (`[1].name` is "element", `(my %h).name` is "%h"),
+                    // which mutsu does not model yet.
+                    ValueView::Nil | ValueView::Hash(_) => Ok(Value::NIL),
+                    ValueView::Array(..) if crate::runtime::value_type_name(&target) == "Array" => {
+                        Ok(Value::NIL)
+                    }
+                    // A regex is a `Code`, and an anonymous one's name is "".
+                    ValueView::Regex(..) | ValueView::RegexWithAdverbs(..) => {
+                        Ok(Value::str(String::new()))
+                    }
+                    // `Code`'s `name` reads an attribute, which a `Code` type
+                    // object does not have.
+                    ValueView::Package(name)
+                        if matches!(
+                            name.resolve().as_str(),
+                            "Code"
+                                | "Block"
+                                | "Routine"
+                                | "Sub"
+                                | "Method"
+                                | "Submethod"
+                                | "Regex"
+                                | "Macro"
+                                | "Array"
+                        ) =>
+                    {
+                        Err(RuntimeError::new(format!(
+                            "Cannot look up attributes in a {} type object. Did you forget a '.new'?",
+                            name.resolve()
+                        )))
+                    }
+                    // Only `Code` and the container descriptors declare
+                    // `name` (`.^name` is the type-name introspection): an
+                    // `Int`, a `Str`, a type object or any other value has no
+                    // such method (#9776).
+                    _ => Err(super::methods_signature_errors::method_not_found_for_value(
+                        "name", &target,
+                    )),
                 }
             }
             "package" if args.is_empty() => match target.view() {
                 ValueView::Sub(data) => Ok(Value::package(data.package)),
                 ValueView::Routine { package, .. } => Ok(Value::package(package)),
-                _ => Ok(Value::NIL),
+                ValueView::Nil => Ok(Value::NIL),
+                // A `Method` object built by `.^methods` for a multi's
+                // dispatcher records no package (rakudo reports a stub one).
+                ValueView::Instance { class_name, .. }
+                    if matches!(
+                        class_name.resolve().as_str(),
+                        "Method" | "Submethod" | "Sub" | "Routine" | "Code" | "Block"
+                    ) =>
+                {
+                    Ok(Value::NIL)
+                }
+                // Only `Code` declares `package` (#9776).
+                _ => Err(super::methods_signature_errors::method_not_found_for_value(
+                    "package", &target,
+                )),
             },
             // `Code.line`/`Code.file` on a `Regex` code object -- a regex
             // literal (`/abc/`) or a grammar `token`/`rule` body. `Regex` is a

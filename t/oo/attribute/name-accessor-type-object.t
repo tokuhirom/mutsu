@@ -13,9 +13,11 @@ dies-ok { Dog.name }, '.name on the type object dies (attribute lookup on type o
 throws-like 'class D { has $.name }; D.name', Exception,
     '.name on a type object throws an Exception';
 
-# A class WITHOUT a `name` attribute is unaffected (keeps type-name behaviour).
+# A class WITHOUT a `name` attribute has no `name` method at all: `.^name`
+# is the type-name introspection (#9776).
 class Plain { }
-lives-ok { Plain.name }, '.name on a class without a name attribute does not die';
+throws-like { Plain.name }, X::Method::NotFound,
+    '.name on a class without a name attribute is X::Method::NotFound';
 
 # Routine .name is unaffected.
 sub greet() { }

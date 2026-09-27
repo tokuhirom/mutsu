@@ -54,6 +54,17 @@ pub(super) fn make_private_unqualified_error(method_name: &str) -> RuntimeError 
     err
 }
 
+/// `X::Method::NotFound` for `method` called on `target`, naming a type
+/// object by its own name (`Int.name` is "for invocant of type 'Int'").
+pub(super) fn method_not_found_for_value(method: &str, target: &Value) -> RuntimeError {
+    match target.view() {
+        crate::value::ValueView::Package(name) => {
+            make_method_not_found_error(method, &name.resolve(), false)
+        }
+        _ => make_method_not_found_error(method, crate::runtime::value_type_name(target), false),
+    }
+}
+
 /// Create a structured X::Method::NotFound error.
 pub(super) fn make_method_not_found_error(
     method_name: &str,
