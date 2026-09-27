@@ -1,23 +1,23 @@
 {
-  "assertion_parity": 83.5,
+  "assertion_parity": 84.0,
   "baseline_assertions": 172908,
   "baseline_files": 4269,
-  "dist_parity": 65.7,
+  "dist_parity": 66.3,
   "distributions": 1637,
-  "file_parity": 72.9,
+  "file_parity": 73.3,
   "generated": "2026-09-27",
   "graded_distributions": 1221,
-  "green_distributions": 802,
-  "mutsu_assertions": 144370,
-  "parity_files": 3112,
+  "green_distributions": 809,
+  "mutsu_assertions": 145175,
+  "parity_files": 3131,
   "schema": 1,
   "status": {
     "blocked_dep": 7,
     "blocked_load": 110,
-    "green": 802,
+    "green": 809,
     "no_baseline": 289,
-    "partial": 245,
-    "red": 174,
+    "partial": 240,
+    "red": 172,
     "skipped": 10
   }
 }

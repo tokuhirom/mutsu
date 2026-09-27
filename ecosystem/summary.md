@@ -7,18 +7,18 @@ definitions: [docs/ecosystem-parity.md](../docs/ecosystem-parity.md).
 
 | metric | value |
 |---|---|
-| **dist parity** (published headline) | **65.7%** (802/1221) |
-| file parity | 72.9% (3112/4269) |
-| assertion parity | 83.5% |
+| **dist parity** (published headline) | **66.3%** (809/1221) |
+| file parity | 73.3% (3131/4269) |
+| assertion parity | 84.0% |
 
 | status | distributions |
 |---|---|
 | `blocked_dep` | 7 |
 | `blocked_load` | 110 |
-| `green` | 802 |
+| `green` | 809 |
 | `no_baseline` | 289 |
-| `partial` | 245 |
-| `red` | 174 |
+| `partial` | 240 |
+| `red` | 172 |
 | `skipped` | 10 |
 
 ## Distributions
@@ -27,7 +27,7 @@ definitions: [docs/ecosystem-parity.md](../docs/ecosystem-parity.md).
 |---|---|---|---|
 | `_` | 0.0.2 | no_baseline | — |
 | `Abbreviations` | 2.2.3 | green | 9/9 |
-| `ABC` | 0.6.13 | partial | 5/10 |
+| `ABC` | 0.6.13 | green | 10/10 |
 | `AccessorFacade` | 0.1.2 | partial | 2/4 |
 | `AccountableBagHash` | 0.0.8 | green | 1/1 |
 | `Acme::Anguish` | 1.001002 | green | 4/4 |
@@ -265,7 +265,7 @@ definitions: [docs/ecosystem-parity.md](../docs/ecosystem-parity.md).
 | `Config::Parser::NetRC` | 0.0.1 | green | 1/1 |
 | `Config::Parser::toml` | 1.0.4 | red | 0/1 |
 | `Config::TOML` | 0.1.3 | partial | 15/19 |
-| `Configuration` | 0.0.11 | red | 0/2 |
+| `Configuration` | 0.0.11 | green | 2/2 |
 | `Console::Blackjack` | 1.0.10 | no_baseline | — |
 | `Contact` | 0.0.5 | green | 5/5 |
 | `Contact::Name` | 0.0.1 | no_baseline | — |
@@ -410,7 +410,7 @@ definitions: [docs/ecosystem-parity.md](../docs/ecosystem-parity.md).
 | `Device::Velleman::K8055` | 0.0.6 | green | 3/3 |
 | `DFM::Parser` | 0.0.1 | green | 1/1 |
 | `Dice::Roller` | 0.1.2 | green | 1/1 |
-| `Die` | 1.001002 | partial | 2/3 |
+| `Die` | 1.001002 | green | 3/3 |
 | `Digest` | 1.1.0 | green | 4/4 |
 | `Digest::FNV` | 0.1.1 | green | 1/1 |
 | `Digest::HMAC` | 1.0.7 | green | 2/2 |
@@ -558,7 +558,7 @@ definitions: [docs/ecosystem-parity.md](../docs/ecosystem-parity.md).
 | `Geo::Basic` | 0.0.5 | partial | 3/5 |
 | `Geo::Coder::OpenCage` | 1.1 | green | 4/4 |
 | `Geo::Coordinates::UTM` | 0.9.0 | green | 3/3 |
-| `Geo::Ellipsoid` | 1.0.1 | partial | 10/11 |
+| `Geo::Ellipsoid` | 1.0.1 | green | 11/11 |
 | `Geo::Geometry` | 0.1.3 | green | 1/1 |
 | `Geo::Location` | 0.0.4 | green | 1/1 |
 | `Geo::Polyline` | 0.0.4 | green | 6/6 |
@@ -570,7 +570,7 @@ definitions: [docs/ecosystem-parity.md](../docs/ecosystem-parity.md).
 | `GEOS` | 0.0.5 | no_baseline | — |
 | `German` | 0.0.3 | green | 1/1 |
 | `Getopt::Long::Grammar` | 0.0.2 | green | 2/2 |
-| `Getopt::Type` | 0.2 | red | 0/1 |
+| `Getopt::Type` | 0.2 | green | 1/1 |
 | `Gherkin::Grammar` | 0.1.6 | green | 3/3 |
 | `Git::Add` | 0.0.2 | green | 1/1 |
 | `Git::Blame::File` | 0.0.11 | green | 1/1 |
@@ -1521,7 +1521,7 @@ definitions: [docs/ecosystem-parity.md](../docs/ecosystem-parity.md).
 | `Timezone::Simple` | 0.0.1 | green | 2/2 |
 | `Timezones::US` | 0.0.7 | green | 2/2 |
 | `Timezones::ZoneInfo` | 0.5.0 | partial | 4/7 |
-| `Tinky` | 0.1.5 | partial | 2/8 |
+| `Tinky` | 0.1.5 | green | 8/8 |
 | `Tinky::Declare` | 0.0.2 | partial | 2/6 |
 | `Tinky::JSON` | 0.0.8 | partial | 2/5 |
 | `TinyFloats` | 0.0.5 | green | 5/5 |
@@ -1611,7 +1611,7 @@ definitions: [docs/ecosystem-parity.md](../docs/ecosystem-parity.md).
 | `WebService::AWS::Auth::V4` | 0.0.5 | no_baseline | — |
 | `WebService::GitHub` | 0.2.2 | green | 1/1 |
 | `WebService::HashiCorp::Vault` | 0.1.0 | no_baseline | — |
-| `WebService::Nominatim` | 0.0.7 | partial | 1/4 |
+| `WebService::Nominatim` | 0.0.7 | green | 4/4 |
 | `WebService::Overpass` | 0.0.7 | partial | 2/4 |
 | `WebService::Slack::Webhook` | 0.1.3 | green | 3/3 |
 | `WebService::Soundcloud` | 0.0.10 | green | 9/9 |
