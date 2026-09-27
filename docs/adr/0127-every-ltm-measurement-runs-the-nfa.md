@@ -104,6 +104,7 @@ cover a match nested in a leaf — a `<+name>` class calling a token, say.
 - Protos, `:rule<...>` and nested rankings measure what Rakudo's NFA measures, including
   the paths `:ratchet` would cut (`t/regex/regex-ltm-nfa-entry-points.t`).
 - The measurement no longer has side effects the rest of the engine relied on (§2.4).
-- Known remaining differences from Rakudo: `||` (above), the bounded `** m..n` of
-  [#9637](https://github.com/tokuhirom/mutsu/issues/9637), and `:i` with a
-  multi-character case fold, whose leaves compare one character at a time.
+- Known remaining differences from Rakudo: `||` (above) and `:i` with a multi-character
+  case fold, whose leaves compare one character at a time. The bounded `** m..n` gap is
+  fixed: see [ADR-0125](0125-ltm-declarative-prefix-nfa.md) §6,
+  [#9637](https://github.com/tokuhirom/mutsu/issues/9637).

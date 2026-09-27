@@ -144,6 +144,21 @@ pub(crate) fn record_regex_farthest_position(pos: usize) {
     });
 }
 
+/// The declarative-prefix length a bounded `** m..n` quantifier reports for
+/// LTM ranking, given its real `max`. Used only by the LTM NFA builder
+/// (`regex_ltm_nfa_build.rs`), which exists solely to measure, so this needs
+/// no `LTM_DECLARATIVE_MODE` gate the way a real-matching engine would.
+///
+/// Rakudo's `QRegex::NFA.quant` unrolls a bounded `** m..n` fully, but the
+/// declarative-prefix length it reports for LTM ranking never exceeds
+/// `min(m+1, n)`: past `m+1` repeats every further one lands on an NFA state
+/// the ranking has already scored, so it cannot lengthen the measured prefix
+/// ([#9637](https://github.com/tokuhirom/mutsu/issues/9637)).
+#[inline]
+pub(crate) fn bounded_declarative_max(min: usize, max: usize) -> usize {
+    max.min(min.saturating_add(1))
+}
+
 /// Marker for one live grammar-rule dynamic-variable frame.
 pub(crate) struct GrammarDynvarScopeGuard;
 

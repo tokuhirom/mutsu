@@ -135,5 +135,21 @@ reading code.
   - the other measurement entry points, then retiring the walker's measurement mode:
     done in [#9644](https://github.com/tokuhirom/mutsu/issues/9644), see
     [ADR-0127](0127-every-ltm-measurement-runs-the-nfa.md);
-  - a bounded `** m..n` measures longer than Rakudo in both engines:
-    [#9637](https://github.com/tokuhirom/mutsu/issues/9637).
+  - a bounded `** m..n` measured longer than Rakudo in both engines
+    ([#9637](https://github.com/tokuhirom/mutsu/issues/9637), fixed): the
+    real bug was upstream of both — a plain (no-separator) bounded
+    `**min..max` over a captureless single atom lowers, before the NFA
+    builder ever sees it, to a bare `RegexAtom::Alternation` of fully
+    unrolled literal repeats (`expand_ltm_pattern`), which is measured as
+    an ordinary `|` and credited with its longest branch's real length
+    and a nonzero `litlen`. A quantifier must never do either — Rakudo's
+    NFA sets its `$!LITEND` marker the instant it enters `method quant`,
+    before building a single repeat's edges, so no bounded repeat ever
+    contributes to `litlen`, and its state-set NFA simulation converges
+    (and so stops extending the measured prefix) after `min(min+1, max)`
+    repeats. The fix defers that shape to the native `RegexQuant::Repeat`
+    parser instead of string-unrolling it, so `build_counted`'s now-added
+    `min(min+1, max)` cap, and `ltm_litlen_walk`'s pre-existing
+    "quantifiers end litlen" rule, both apply to it. The unbounded
+    `**min..*` shape is untouched (Rakudo's own NFA measures it the same
+    way mutsu already did).
