@@ -523,14 +523,7 @@ pub(crate) fn assign_not_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, E
         )),
         Expr::Call { name, args } => Ok((
             r,
-            Expr::Call {
-                name: Symbol::intern("__mutsu_assign_named_sub_lvalue"),
-                args: vec![
-                    Expr::Literal(Value::str(name.resolve())),
-                    Expr::ArrayLiteral(args),
-                    rhs,
-                ],
-            },
+            crate::parser::stmt::assign::named_sub_lvalue_assign_expr(name.resolve(), args, rhs),
         )),
         Expr::MultiDimIndex {
             target,

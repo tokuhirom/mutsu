@@ -145,6 +145,22 @@ pub(crate) fn named_sub_lvalue_assign_expr(
     call_args: Vec<Expr>,
     value: Expr,
 ) -> Expr {
+    // An internal `__mutsu_*` call (`@a[1]:v` lowers to
+    // `__mutsu_subscript_adverb(...)`) is a builtin, never a user routine, so
+    // resolving it by name as an rw sub can only fail with "Unknown call".
+    // Evaluate it and assign to the value it yields instead, as for any other
+    // non-routine expression: a container is written through, anything else
+    // dies with X::Assignment::RO naming the value (#9811).
+    if name.starts_with("__mutsu_") {
+        return callable_lvalue_assign_expr(
+            Expr::Call {
+                name: Symbol::intern(&name),
+                args: call_args,
+            },
+            Vec::new(),
+            value,
+        );
+    }
     Expr::Call {
         name: Symbol::intern("__mutsu_assign_named_sub_lvalue"),
         args: vec![

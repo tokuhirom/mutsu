@@ -723,10 +723,61 @@ impl Interpreter {
                 ),
                 None => Err(RuntimeError::new("Callable has been freed")),
             },
+            // `(1 + $x) = 3`, `@a[1]:v = 3`, `(1, 2) = 3`: the LHS is an
+            // expression's value, not a routine to call. Assign to that value
+            // the way Rakudo does (#9811).
+            _ if call_args.is_empty() => self.assign_to_expression_value(callable, value),
             _ => Err(RuntimeError::assignment_ro(Some(
                 "cannot assign through non-callable value",
             ))),
         }
+    }
+
+    /// Assign `value` to the value an arbitrary (non-routine) expression
+    /// produced. A container (`ContainerRef`, `Proxy`, hash entry) is written
+    /// through and a real `Array`/`Hash` is list-assigned into, exactly like an
+    /// rw routine's result. An immutable `List` is a list assignment into its
+    /// elements, so Rakudo reports its first non-container element
+    /// (`(1, 2) = 3` and `@a[1]:kv = 3` die naming `Int (1)`); any other value
+    /// dies with X::Assignment::RO naming it (`@a[1]:v = 3` names the element's
+    /// value, since `:v` returns values, not containers).
+    ///
+    /// Cost: O(k), k = elements of a `List` target (O(1) otherwise, plus the
+    /// aggregate store for an `Array`/`Hash` target).
+    fn assign_to_expression_value(
+        &mut self,
+        target: Value,
+        value: Value,
+    ) -> Result<Value, RuntimeError> {
+        if let ValueView::Array(items, kind) = target.view()
+            && !kind.is_real_array()
+            && kind != crate::value::ArrayKind::Shaped
+        {
+            let is_container = |v: &Value| {
+                matches!(
+                    v.view(),
+                    ValueView::ContainerRef(_)
+                        | ValueView::Proxy { .. }
+                        | ValueView::HashEntryRef { .. }
+                )
+            };
+            if let Some(immutable) = items.iter().find(|v| !is_container(v)) {
+                return Err(RuntimeError::assignment_ro_value(immutable.clone()));
+            }
+            let rhs = crate::runtime::utils::coerce_to_array(value);
+            let rhs_items: Vec<Value> = match rhs.view() {
+                ValueView::Array(vals, _) => vals.iter().cloned().collect(),
+                _ => vec![rhs.clone()],
+            };
+            for (i, cell) in items.iter().enumerate() {
+                let item = rhs_items.get(i).cloned().unwrap_or(Value::NIL);
+                if let Some(assigned) = self.assign_lvalue_container(cell, item) {
+                    assigned?;
+                }
+            }
+            return Ok(target);
+        }
+        self.assign_through_rw_result(target, value)
     }
 
     pub(super) fn builtin_assign_named_sub_lvalue(
