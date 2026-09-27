@@ -593,6 +593,22 @@ impl Compiler {
         // does not inherit the suppression.
         let suppress_multidim_bind_ref = self.suppress_multidim_bind_ref_arg;
         self.suppress_multidim_bind_ref_arg = false;
+        if is_bind_target
+            && let Expr::Var(name) = arg
+            && name.starts_with("__mutsu_bind_index_assign_src_")
+        {
+            // A nested indexed assignment stores its source location in a
+            // raw compiler temporary. Read that location without the ordinary
+            // GetGlobal decontainerization before tagging it for the outer
+            // bind.
+            let name_idx = self.code.add_constant(Value::str(name.clone()));
+            self.code.emit(OpCode::GetCallTempRaw(name_idx));
+            self.code.emit(OpCode::WrapVarRef {
+                name_idx,
+                slot: u32::MAX,
+            });
+            return;
+        }
         // A multi-dimensional subscript (`@a[0;1;2]`, `%h{"a";"b"}`) passed as a
         // raw `\target` / `is rw` argument must alias the underlying nested
         // slot, so a later `target = v` inside the callee mutates the real

@@ -992,7 +992,16 @@ impl Value {
     /// write chokepoint that keeps a bound element's alias live across writes.
     pub fn assign_element_slot(slot: &mut Value, val: Value) {
         if let ValueView::ContainerRef(cell) = slot.view() {
-            *cell.lock().unwrap() = val;
+            // A bind to a missing hash key keeps a deferred HashEntryRef in
+            // the element cell. Writing through the alias must materialize
+            // that token's terminal entry, rather than replacing the token
+            // inside the cell and severing the source alias.
+            let current = cell.lock().unwrap_or_else(|e| e.into_inner()).clone();
+            if matches!(current.view(), ValueView::HashEntryRef { .. }) {
+                current.hash_entry_write(val);
+            } else {
+                *cell.lock().unwrap_or_else(|e| e.into_inner()) = val;
+            }
         } else {
             *slot = val;
         }

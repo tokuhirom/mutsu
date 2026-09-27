@@ -1492,6 +1492,10 @@ pub(crate) struct Compiler {
     /// semantics corrupt the *previous* iteration's bound cell instead of
     /// storing a fresh one (see the `lock.t` array-corruption investigation).
     bind_target_direct: bool,
+    /// When true, a scalar root of the source indexed assignment in a nested
+    /// indexed bind must be promoted to a shared container before its path is
+    /// evaluated. Ordinary bind chains retain their deferred-local fast path.
+    compile_nested_index_bind_source: bool,
     /// When true, `compile_call_arg`'s `MultiDimIndex` special case (which
     /// emits `MultiDimIndexBindRef` to promote the subscripted leaf/leaves to
     /// shared `ContainerRef` cells for a raw `\target` / `is rw` argument) is
@@ -1847,6 +1851,7 @@ impl Compiler {
             rw_tail_branch: false,
             pending_rw_arg_list_callee: None,
             bind_target_direct: false,
+            compile_nested_index_bind_source: false,
             suppress_multidim_bind_ref_arg: false,
             mint_named_pair: false,
             pending_immutable_topic_block: false,
