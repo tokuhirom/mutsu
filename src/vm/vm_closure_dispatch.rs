@@ -1,6 +1,34 @@
 use super::*;
 
 impl Interpreter {
+    fn is_forced_outer_scalar_param(cc: &CompiledCode, sym: crate::symbol::Symbol) -> bool {
+        cc.forced_free_var_syms.contains(&sym) && cc.param_locals.contains(&sym)
+    }
+
+    fn restore_forced_outer_scalar_params(
+        &mut self,
+        data: &crate::gc::Gc<crate::value::SubData>,
+        cc: &CompiledCode,
+    ) {
+        for pd in data.param_defs.iter() {
+            if !pd.sigilless {
+                continue;
+            }
+            let sym = crate::symbol::Symbol::intern(&pd.name);
+            if !Self::is_forced_outer_scalar_param(cc, sym) {
+                continue;
+            }
+            let Some(&slot) = cc.local_slots_of(sym).first() else {
+                continue;
+            };
+            let parameter = self.env().get_sym(sym).cloned().unwrap_or(Value::NIL);
+            if let Some(captured) = data.env.get_sym(sym).cloned() {
+                self.env_mut().insert_sym(sym, captured);
+            }
+            self.locals[slot as usize] = parameter;
+        }
+    }
+
     /// Extract nominal type from a coercion-type string (e.g. `"Bool(Mu)"` → `"Mu"`).
     fn nominal_type_for_closure(tc: &str) -> &str {
         if let Some(inner_start) = tc.find('(')
@@ -1014,6 +1042,13 @@ impl Interpreter {
                 self.locals[i] = val.clone();
             }
         }
+        // A sigilless parameter and an enclosing scalar can share the same
+        // runtime key. The binder necessarily uses that key while it builds the
+        // parameter value, but the body has two source-level bindings: the
+        // parameter is slot-backed while the scalar is the captured env value.
+        // Move the parameter back to its slot and restore the captured env entry
+        // before executing the body.
+        self.restore_forced_outer_scalar_params(data, cc);
         // Install this closure's captured upvalue array for `GetUpvalue` reads.
         // (`push_call_frame` saved the caller's array; `pop_call_frame` restores
         // it.) Out-of-range `GetUpvalue` indices fall back to env by name, so a
@@ -1358,7 +1393,10 @@ impl Interpreter {
             // the local's name for the probe AND allocated a fresh `String` for
             // the insert, per captured local, per call.
             let local_sym = cc.local_sym(i);
-            if !local_name.is_empty() && data.env.contains_key_for(local_name, local_sym) {
+            if !local_name.is_empty()
+                && data.env.contains_key_for(local_name, local_sym)
+                && !local_sym.is_some_and(|sym| Self::is_forced_outer_scalar_param(cc, sym))
+            {
                 let __v = self.locals[i].clone();
                 self.env_mut().insert_for(local_name, local_sym, __v);
             }

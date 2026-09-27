@@ -104,7 +104,8 @@ impl Interpreter {
             }
             // Store language revision metadata from the version captured at parse time
             if !name.resolve().is_empty() {
-                self.store_language_revision_from_version(&name.resolve(), language_version);
+                let key = self.enum_registry_key(&name.resolve());
+                self.store_language_revision_from_version(&key, language_version);
             }
             // Push the enum's Map value. In expression position — `my $e = enum Foo
             // <a b c>` or a bare `enum <a b c>` — this Map is the declaration's value;

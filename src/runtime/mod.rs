@@ -787,6 +787,7 @@ pub(crate) mod scope_stack;
 mod uncaught_render;
 mod user_accepts;
 pub(crate) use native_io::{io_file_test, path_is_readable};
+mod enum_type_key;
 mod native_io_special;
 pub(crate) mod native_methods;
 mod native_proc_async;

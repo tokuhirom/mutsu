@@ -368,51 +368,28 @@ impl Interpreter {
         ) {
             return None;
         }
+        // `:=` bind RHS / `.VAR` chain / `is rw` routine tail: return the
+        // attribute slot's container identity (promoting the slot to a shared
+        // `ContainerRef` cell) instead of a value copy. The consumer is shared
+        // with the wrapped-accessor terminal (`rw_accessor_container`); when it
+        // declines (a read-only or aggregate accessor) the plain read below
+        // answers, as raku's decontainerized value does.
+        if want_ref && let Some(cell_val) = self.rw_accessor_container(target, &cn, method) {
+            return Some(cell_val);
+        }
         // Public accessor confirmed. Read its backing value, stored under the
         // public name or the `!`-suffixed private storage name. This mirrors the
         // long-standing non-mut fast path (which returned the value regardless of
         // type); extending it to the mut path means an accessor read on a
         // *variable* (`$obj.x`, compiled as CallMethodMut) no longer falls back
         // to the interpreter.
-        let priv_key = format!("{}!", method);
-        let (key, out) = {
+        let out = {
             let map = attributes.as_map();
             match map.get(method) {
-                Some(v) => (method.to_string(), Some(v.clone())),
-                None => (priv_key.clone(), map.get(&priv_key).cloned()),
+                Some(v) => Some(v.clone()),
+                None => map.get(format!("{}!", method).as_str()).cloned(),
             }
         };
-        // `:=` bind RHS / `.VAR` chain: return the attribute slot's container
-        // identity (promoting the slot to a shared `ContainerRef` cell) instead
-        // of a value copy. Restricted to scalar-shaped slots — an `@`/`%`
-        // attribute value is already a shared container Arc, and the aggregate
-        // accessor path (with its container type metadata) lives on the
-        // interpreter side.
-        if want_ref
-            && matches!(
-                out,
-                Some(ref v) if !matches!(
-                    v.view(),
-                    ValueView::Array(..) | ValueView::Hash(_) | ValueView::Mixin(..)
-                )
-            )
-            && let Some(type_constraint) = self.rw_accessor_type_constraint(&cn, method)
-        {
-            let cell_val = attributes.promote_attr_to_container(&key);
-            // A typed rw attribute's constraint travels with the cell, so a
-            // later write through the bound alias (`$ref = v`) type-checks
-            // exactly like `$obj.x = v` does.
-            if let ValueView::ContainerRef(cell) = cell_val.view()
-                && let Some(tc) = type_constraint.as_ref()
-                && !matches!(tc.as_str(), "Mu" | "Any")
-            {
-                crate::value::register_container_constraint(&cell, tc);
-            }
-            if let Some(msg) = self.class_attribute_deprecated(&cn, method) {
-                loan_env!(self, check_deprecation_for_method(method, &cn, &msg));
-            }
-            return Some(cell_val);
-        }
         match out {
             Some(v) => {
                 // A slot promoted to a `ContainerRef` cell (a prior `:=` bind /
@@ -1061,6 +1038,16 @@ impl Interpreter {
             // env->locals pull that dominated method-heavy code like bench-class).
             crate::vm::vm_stats::record_dispatch_entry_outcome("callmethod", "accessor");
             self.stack.push(val);
+            return Ok(());
+        }
+        // A `.wrap`ped accessor declines the fast path above (its wrappers must
+        // run); when a container was asked for, run the chain with the
+        // container request carried to its terminal accessor.
+        if want_ref
+            && args.is_empty()
+            && let Some(result) = self.try_wrapped_accessor_container(&target, method)
+        {
+            self.stack.push(result?);
             return Ok(());
         }
         // `.so` / `.not` on a value whose type defines a user `Bool` method must

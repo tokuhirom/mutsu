@@ -1369,6 +1369,7 @@ fn lower_assign(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         name,
         expr,
         op: crate::ast::AssignOp::Assign,
+        target_is_sigilless: false,
     })
 }
 

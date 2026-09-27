@@ -99,7 +99,7 @@ impl Compiler {
             // this the fallback compiles the assignment as a sink and the block
             // yields Nil (surfaced by a two-phase `pull-one { with $!k {...} else
             // { $!k := ... } }` iterator whose `else` value was dropped).
-            Stmt::Assign { name, expr, op } => {
+            Stmt::Assign { name, expr, op, .. } => {
                 // Keep the full statement compiler for `:=`.  A binding is not
                 // an assignment with a different spelling: it needs the
                 // scalar/container bind markers and the lvalue-preserving
@@ -490,7 +490,7 @@ impl Compiler {
                         self.pop_dynamic_scope_lexical(saved);
                         return;
                     }
-                    Stmt::Assign { name, expr, op } => {
+                    Stmt::Assign { name, expr, op, .. } => {
                         // As in `compile_when_tail_stmt_inner`, retain the
                         // complete bind lowering for a tail `:=`.  In
                         // particular, the two branches of an `if` inside a

@@ -83,6 +83,22 @@ impl Compiler {
                 let idx = self.code.add_constant(Value::str(attr));
                 self.code.emit(OpCode::AttrContainerRef(idx));
             }
+            // `sub f() is rw { $obj.acc }`: a public `is rw` auto-accessor
+            // names the attribute's Scalar, so the rw routine hands that
+            // container back (raku: `f() = 4` writes `$obj.acc`). The request
+            // is the same `MarkAccessorRefContext` a `:=` bind RHS emits; its
+            // consumer (`try_fast_accessor_read`'s `want_ref` branch, or the
+            // wrapped-accessor terminal) answers with the promoted attribute
+            // cell only for a zero-argument read of a public `is rw` scalar
+            // accessor and hands every other callee's value back unchanged.
+            Expr::MethodCall {
+                args,
+                modifier: None,
+                ..
+            } if args.is_empty() && self.return_rw_container_name(arg).is_none() => {
+                self.compile_expr(arg);
+                self.mark_trailing_method_call_as_accessor_ref();
+            }
             _ => {
                 let cell_name = self.return_rw_container_name(arg);
                 self.compile_expr(arg);
@@ -593,6 +609,22 @@ impl Compiler {
         // does not inherit the suppression.
         let suppress_multidim_bind_ref = self.suppress_multidim_bind_ref_arg;
         self.suppress_multidim_bind_ref_arg = false;
+        if is_bind_target
+            && let Expr::Var(name) = arg
+            && name.starts_with("__mutsu_bind_index_assign_src_")
+        {
+            // A nested indexed assignment stores its source location in a
+            // raw compiler temporary. Read that location without the ordinary
+            // GetGlobal decontainerization before tagging it for the outer
+            // bind.
+            let name_idx = self.code.add_constant(Value::str(name.clone()));
+            self.code.emit(OpCode::GetCallTempRaw(name_idx));
+            self.code.emit(OpCode::WrapVarRef {
+                name_idx,
+                slot: u32::MAX,
+            });
+            return;
+        }
         // A multi-dimensional subscript (`@a[0;1;2]`, `%h{"a";"b"}`) passed as a
         // raw `\target` / `is rw` argument must alias the underlying nested
         // slot, so a later `target = v` inside the callee mutates the real

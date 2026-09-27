@@ -272,6 +272,7 @@ pub(super) fn my_decl_assign_or_default(input: &str, s: MyDeclState) -> PResult<
                             } else {
                                 crate::ast::AssignOp::Assign
                             },
+                            target_is_sigilless: false,
                         };
                         (Expr::BareWord(role_name), Some(assign))
                     }
@@ -346,6 +347,7 @@ where
         name: s.name.clone(),
         expr: make_expr(Expr::Var(s.name.clone()), rhs),
         op: AssignOp::Assign,
+        target_is_sigilless: false,
     };
     let stmt = Stmt::SyntheticBlock(vec![decl_stmt, assign_stmt]);
     if s.apply_modifier {

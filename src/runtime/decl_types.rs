@@ -380,6 +380,11 @@ pub(crate) enum DeferralEntry {
     Accessor {
         owner: crate::symbol::Symbol,
         name: String,
+        /// The chain was entered from a context that wants the attribute's
+        /// *container* (an lvalue assignment through a wrapped accessor,
+        /// `A.foo = 7`), so the terminal hands back the promoted attribute
+        /// cell (`rw_accessor_container`) instead of a value copy.
+        want_container: bool,
     },
 }
 

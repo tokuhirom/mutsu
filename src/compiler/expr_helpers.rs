@@ -787,7 +787,15 @@ impl Compiler {
                 .add_constant(Value::str(self.qualify_variable_name(name)));
             self.code.emit(OpCode::GetGlobal(name_idx));
         } else if let Some(&slot) = self.local_map.get(name) {
-            self.code.emit(OpCode::GetLocal(slot));
+            if self.sigilless_param_shadows_outer_scalar(name) {
+                self.note_forced_outer_scalar_capture(name, false);
+                let name_idx = self
+                    .code
+                    .add_constant(Value::str(self.qualify_variable_name(name)));
+                self.code.emit(OpCode::GetGlobal(name_idx));
+            } else {
+                self.code.emit(OpCode::GetLocal(slot));
+            }
         } else {
             let name_idx = self
                 .code
@@ -851,29 +859,44 @@ impl Compiler {
         (!captures.is_empty()).then_some(captures)
     }
 
-    /// Whether a regex literal must capture its defining frame's `$_`, and
-    /// from where: `Some(slot)` (or `Some(NOT_A_LOCAL)` for `env`) when the
-    /// literal's value escapes (`{ /foo/ }`, `my $r = /foo/`), `None`
-    /// otherwise. An env-held `$_` is captured as its container
-    /// (`Interpreter::topic_container_cell`), so later assignments stay
-    /// visible to `Regex.Bool` but rebinds do not (#9396); see
-    /// `RegexClosure::topic`.
+    /// Whether a parser-created regex value must capture its defining frame's
+    /// `$_`, and from where: `Some(slot)` (or `Some(NOT_A_LOCAL)` for `env`)
+    /// when the value escapes (`{ /foo/ }`, `my $r = /foo/`). An env-held `$_`
+    /// is captured as its container (`Interpreter::topic_container_cell`), so
+    /// later assignments stay visible to `Regex.Bool` but rebinds do not
+    /// (#9396); see `RegexClosure::topic`.
     pub(super) fn regex_literal_topic_capture(&self, v: &Value) -> Option<u32> {
         if !self.escaping_position {
             return None;
         }
-        if !matches!(
-            v.view(),
-            ValueView::Regex(_) | ValueView::RegexWithAdverbs(_)
-        ) {
+        if !matches!(v.view(), ValueView::Regex(_)) {
             return None;
         }
-        Some(
-            self.local_map
-                .get("_")
-                .copied()
-                .unwrap_or(crate::opcode::NOT_A_LOCAL),
-        )
+        Some(self.regex_topic_capture_slot())
+    }
+
+    /// Topic capture for an `Expr::RegexLiteral` (`rx/.../`) that the parser
+    /// kept distinct from a plain `Expr::Literal`. The `:=` parser path can
+    /// produce a plain literal, whose automatic path deliberately leaves
+    /// `Regex.Bool` dynamic; a direct rx term in a returned closure needs the
+    /// defining topic just like a slash regex.
+    pub(super) fn regex_literal_topic_capture_for_rx(&self, v: &Value) -> Option<u32> {
+        if !self.escaping_position
+            || !matches!(
+                v.view(),
+                ValueView::Regex(_) | ValueView::RegexWithAdverbs(_)
+            )
+        {
+            return None;
+        }
+        Some(self.regex_topic_capture_slot())
+    }
+
+    fn regex_topic_capture_slot(&self) -> u32 {
+        self.local_map
+            .get("_")
+            .copied()
+            .unwrap_or(crate::opcode::NOT_A_LOCAL)
     }
 
     /// [`Compiler::regex_literal_closure_captures`], applied to a `token`/

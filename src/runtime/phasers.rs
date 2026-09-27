@@ -336,6 +336,7 @@ fn extract_phasers_from_stmts(
                         origin: crate::ast::DoBlockOrigin::Desugar,
                     },
                     op: AssignOp::Assign,
+                    target_is_sigilless: false,
                 };
                 match kind {
                     PhaserKind::Check => {
@@ -390,6 +391,7 @@ fn extract_begin_from_stmts(stmts: &mut [Stmt], begin: &mut Vec<Stmt>) {
                     name: temp_name,
                     expr: Expr::desugar_block(body),
                     op: AssignOp::Assign,
+                    target_is_sigilless: false,
                 };
                 begin.push(var_decl);
                 begin.push(assign);
@@ -471,6 +473,7 @@ fn lift_phasers_from_expr_inner(
                     origin: crate::ast::DoBlockOrigin::Desugar,
                 },
                 op: AssignOp::Assign,
+                target_is_sigilless: false,
             };
             match kind {
                 PhaserKind::Begin => {
@@ -931,6 +934,7 @@ fn reorder_at_level(
                     name: name.clone(),
                     expr: init_expr.clone(),
                     op: AssignOp::Assign,
+                    target_is_sigilless: false,
                 });
             }
             continue;
