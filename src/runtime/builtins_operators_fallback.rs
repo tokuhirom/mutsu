@@ -1129,11 +1129,7 @@ impl Interpreter {
             // `say`, ...) live in `call_function`'s arms, which raise this
             // same NoMatch for a name they do not serve. (An ambiguity among
             // the user candidates was already raised above.)
-            //
-            // TODO: operator-category names stay excluded because the
-            // subscript operators' call-form arm ignores adverbs (#9682);
-            // drop the `:<` test once it honours them.
-            if Self::is_builtin_function(name) && !name.contains(":<") {
+            if Self::is_builtin_function(name) {
                 self.reify_map_grep_seq_args(args)?;
                 return self.call_function_arms(name, args.to_vec(), false);
             }
