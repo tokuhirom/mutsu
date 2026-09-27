@@ -91,14 +91,16 @@ impl Interpreter {
                 // A role may reference its own type in a method param
                 // (`role R { method f(R:D $x) }`); the role is not yet in
                 // the registry while its methods validate, so accept its
-                // own name (full or short) explicitly. "Short" includes any
-                // `::`-suffix of the registered name: `role A::Item` inside
-                // `module Core` registers as `Core::A::Item` and names itself
-                // `A::Item` (Intl::CLDR's `role CLDR::Item`).
+                // own name (full or short) explicitly. "Short" includes the
+                // name relative to any enclosing package: `role A::Item`
+                // inside `module Core` registers as `Core::A::Item` and names
+                // itself `A::Item` (Intl::CLDR's `role CLDR::Item`).
                 let self_short = name.rsplit_once("::").map(|(_, s)| s).unwrap_or(name);
-                let names_self_relative = name
-                    .strip_suffix(tc_base)
-                    .is_some_and(|pfx| pfx.ends_with("::"));
+                let names_self_relative = enclosing_prefixes.iter().any(|pfx| {
+                    crate::qualified::qualified(Symbol::intern(pfx), Symbol::intern(tc_base))
+                        .as_str()
+                        == name
+                });
                 let resolvable_without_deferred = tc_base == name
                     || tc_base == self_short
                     || names_self_relative
