@@ -186,6 +186,21 @@ impl Interpreter {
                 i = end;
                 continue;
             }
+            // Braces inside a double-quoted regex term are qq interpolation,
+            // not regex code blocks. Evaluate the expression and splice its
+            // string value literally, just like `$(...)` below. This matters
+            // for values such as a newline: `"...{$nl}..."` must not leave
+            // the braces and scalar source for the structural regex parser.
+            if ch == '{'
+                && is_inside_double_quoted_regex_literal(&chars, i)
+                && let Some(end) = Self::find_matching_brace_end_in_chars(&chars, i)
+            {
+                let expr: String = chars[i + 1..end].iter().collect();
+                let value = self.eval_string_as_source(&expr);
+                out.push_str(&Self::escape_regex_scalar_literal(&value.to_string_value()));
+                i = end + 1;
+                continue;
+            }
             // Skip code blocks { ... } — don't interpolate variables inside them
             if ch == '{' {
                 let mut depth = 1usize;

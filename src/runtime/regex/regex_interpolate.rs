@@ -809,7 +809,7 @@ impl Interpreter {
 
     /// [`Self::find_matching_brace_end`] for a caller that already holds the
     /// text as a `char` slice and counts in chars rather than bytes.
-    pub(super) fn find_matching_brace_end_in_chars(
+    pub(in crate::runtime) fn find_matching_brace_end_in_chars(
         chars: &[char],
         open_idx: usize,
     ) -> Option<usize> {
