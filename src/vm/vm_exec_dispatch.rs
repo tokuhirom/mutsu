@@ -5121,7 +5121,8 @@ impl Interpreter {
                 self.exec_get_code_var_op(code, *name_idx, None)?;
                 *ip += 1;
             }
-            // Cost: O(1) when the slot is bound; otherwise as `GetCodeVar`.
+            // Cost: O(1) for a bound slot; else O(s + f) as `GetCodeVar`, s = visible env
+            // names that are not plain user lexicals, f = the routine's free vars.
             OpCode::GetCodeVarLocal { name_idx, slot } => {
                 self.exec_get_code_var_op(code, *name_idx, Some(*slot as usize))?;
                 *ip += 1;
