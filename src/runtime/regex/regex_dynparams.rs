@@ -77,6 +77,51 @@ pub(crate) fn note_token_def_params(param_defs: &[ParamDef]) {
     }
 }
 
+/// Whether a value bound to a `token`/`rule`/`regex` parameter is *opaque*:
+/// its `.raku` text, re-evaluated inside the rule's code blocks, would not
+/// yield the same value. A closure's `.raku` is not the closure, and an
+/// object's `.raku` re-parsed is at best a fresh object without the caller's
+/// state (a grammar that consults a resource object in `<?{ … }>` saw an
+/// empty one, DSL::Shared's `entity-name`). A container holding such a value
+/// inherits it. Plain data — numbers, strings, type objects, and containers
+/// of those — round-trips through its literal form and stays baked.
+// Cost: O(n), n = elements reachable through nested containers of the value.
+pub(crate) fn regex_param_value_is_opaque(value: &Value) -> bool {
+    match value.view() {
+        ValueView::Sub(_)
+        | ValueView::WeakSub(_)
+        | ValueView::Routine { .. }
+        | ValueView::Instance { .. }
+        | ValueView::Mixin(..)
+        | ValueView::CustomTypeInstance(_)
+        | ValueView::Proxy { .. }
+        | ValueView::Promise(_)
+        | ValueView::Channel(_) => true,
+        // Look through a container to what it holds: a variable a closure
+        // captures (`sub f { ($o, 1) }`) is read as its shared cell, and the
+        // cell's `.raku` is not the object's.
+        ValueView::Scalar(inner) | ValueView::VarRef { value: inner, .. } => {
+            regex_param_value_is_opaque(inner)
+        }
+        ValueView::ContainerRef(cell) | ValueView::ContainerView(cell) => {
+            let inner = cell.lock().unwrap().clone();
+            regex_param_value_is_opaque(&inner)
+        }
+        ValueView::Capture { positional, named } => {
+            positional.iter().any(regex_param_value_is_opaque)
+                || named.values().any(regex_param_value_is_opaque)
+        }
+        ValueView::Pair(_, inner) => regex_param_value_is_opaque(inner),
+        ValueView::ValuePair(key, inner) => {
+            regex_param_value_is_opaque(key) || regex_param_value_is_opaque(inner)
+        }
+        ValueView::Array(items, _) => items.iter().any(regex_param_value_is_opaque),
+        ValueView::Slip(items) => items.iter().any(regex_param_value_is_opaque),
+        ValueView::Hash(map) => map.values().any(regex_param_value_is_opaque),
+        _ => false,
+    }
+}
+
 impl Interpreter {
     fn subrule_dynamic_params(&mut self, name: &str, pkg: Symbol) -> Arc<Vec<DynParam>> {
         let tok_gen =
@@ -149,26 +194,54 @@ impl Interpreter {
         // The rule's `"..."` atoms' qq thunks run in the same window, so the
         // pre-pass sees their results while the rule's pattern is parsed.
         let prior = self.install_subrule_qq_thunks(name, pkg, prior);
-        let has_block_arg = arg_values.iter().any(|value| match value.view() {
+        let has_opaque_arg = arg_values.iter().any(|value| match value.view() {
             ValueView::Pair(_, value) | ValueView::ValuePair(_, value) => {
-                matches!(value.view(), ValueView::Sub(_) | ValueView::WeakSub(_))
+                regex_param_value_is_opaque(value)
             }
-            _ => false,
+            _ => regex_param_value_is_opaque(value),
         });
-        if !ANY_DYNAMIC_TOKEN_PARAM.load(Ordering::Relaxed) && !has_block_arg {
+        if !ANY_DYNAMIC_TOKEN_PARAM.load(Ordering::Relaxed) && !has_opaque_arg {
             return prior;
         }
         let mut saved = prior.unwrap_or_default();
-        // A block-valued named argument is a closure and must remain a closure
-        // when the callee's regex code assertion runs. The scratch interpreter
-        // used to build the callee's pattern has the named binding, but the
-        // final code block executes in this matcher. Preserve the binding in
-        // this env for the same resolve-and-match window instead of baking the
-        // Block through its string representation.
-        if has_block_arg {
+        // An opaque argument (a closure, an object — see
+        // [`regex_param_value_is_opaque`]) must stay *that* value when the
+        // callee's code blocks run. The scratch interpreter that builds the
+        // callee's pattern has the binding, but the final code block executes
+        // in this matcher, and baking cannot carry the value there: a
+        // closure's `.raku` is not the closure, and an object's `.raku`
+        // re-parsed is a fresh object without the caller's state. Such a
+        // parameter is left unbaked (`value_to_raku_literal`), and its
+        // binding is preserved in this env for the same resolve-and-match
+        // window instead.
+        if has_opaque_arg {
+            let positional: Vec<&Value> = arg_values
+                .iter()
+                .filter(|v| !matches!(v.view(), ValueView::Pair(..) | ValueView::ValuePair(..)))
+                .collect();
             for def in self.resolve_token_defs_in_pkg(name, pkg) {
+                let mut positional_idx = 0usize;
                 for pd in &def.param_defs {
-                    if !pd.named || pd.named_alias {
+                    if !pd.named {
+                        if pd.is_invocant || pd.slurpy {
+                            continue;
+                        }
+                        let idx = positional_idx;
+                        positional_idx += 1;
+                        // A `$*` parameter is bound below, for every value.
+                        if is_dynamic_var_name(&pd.name) {
+                            continue;
+                        }
+                        let Some(value) = positional.get(idx) else {
+                            continue;
+                        };
+                        if regex_param_value_is_opaque(value) {
+                            saved.push((pd.name.clone(), self.env.get(&pd.name).cloned()));
+                            self.env.insert(pd.name.clone(), (*value).clone());
+                        }
+                        continue;
+                    }
+                    if pd.named_alias {
                         continue;
                     }
                     let Some(value) = arg_values.iter().rev().find_map(|arg| match arg.view() {
@@ -190,7 +263,7 @@ impl Interpreter {
                     }) else {
                         continue;
                     };
-                    if !matches!(value.view(), ValueView::Sub(_) | ValueView::WeakSub(_)) {
+                    if !regex_param_value_is_opaque(value) {
                         continue;
                     }
                     saved.push((pd.name.clone(), self.env.get(&pd.name).cloned()));

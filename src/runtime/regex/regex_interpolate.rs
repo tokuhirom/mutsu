@@ -426,6 +426,11 @@ impl Interpreter {
             // the actual closure at match time; `raku_value` would stringify
             // the Block and turn `$callback()` into a call on a Str.
             ValueView::Sub(_) | ValueView::WeakSub(_) => None,
+            // Likewise any other opaque value (an object, or a container
+            // holding one): its `.raku` re-parsed is not the value, so the
+            // reference stays and the matcher binds the real value for the
+            // rule's match window (`install_subrule_dynamic_params_named`).
+            _ if super::regex_dynparams::regex_param_value_is_opaque(value) => None,
             // Bound token parameters are evaluated before the token's code
             // blocks run.  Reparse their ordinary Raku representation in the
             // caller-side block so composite arguments (notably Pair/Hash and
