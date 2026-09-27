@@ -296,7 +296,12 @@ impl Interpreter {
         method_name: &str,
         required: &MethodDef,
     ) -> bool {
-        if !Self::stub_is_nullary(required) {
+        // A non-multi stub is satisfied by name, like the other by-name
+        // branches in `resolve_class_stub_requirements` -- its positional
+        // signature is advisory, not enforced (#9758). Only a multi stub
+        // still requires the accessor to be nullary, matching rakudo's
+        // per-candidate signature enforcement for stubbed multis.
+        if required.is_multi && !Self::stub_is_nullary(required) {
             return false;
         }
         self.collect_class_attributes(class_name)
