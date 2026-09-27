@@ -36,7 +36,9 @@ fn str_numeric_error(source: &str, pos: usize, radix: i64) -> RuntimeError {
 
 /// Convert a single character to its digit value in the given radix.
 /// Returns Some(value) if the character is a valid digit, None otherwise.
-fn char_digit_value(ch: char, radix: u32) -> Option<u32> {
+/// Shared by `parse-base` and `nqp::radix`: any Unicode Nd digit counts, and
+/// the fullwidth Latin letters are digits 10..35 like their ASCII forms.
+pub(crate) fn char_digit_value(ch: char, radix: u32) -> Option<u32> {
     // ASCII fast path: 0-9, A-Z, a-z
     let v = if ch.is_ascii_digit() {
         (ch as u32) - ('0' as u32)
@@ -44,6 +46,10 @@ fn char_digit_value(ch: char, radix: u32) -> Option<u32> {
         (ch as u32) - ('A' as u32) + 10
     } else if ch.is_ascii_lowercase() {
         (ch as u32) - ('a' as u32) + 10
+    } else if ('\u{FF21}'..='\u{FF3A}').contains(&ch) {
+        (ch as u32) - 0xFF21 + 10
+    } else if ('\u{FF41}'..='\u{FF5A}').contains(&ch) {
+        (ch as u32) - 0xFF41 + 10
     } else {
         // Unicode Nd character
         crate::builtins::unicode::unicode_decimal_digit_value(ch)?
