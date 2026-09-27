@@ -539,6 +539,28 @@ impl Interpreter {
         Ok(())
     }
 
+    /// Whether a value used as a positional subscript index is a genuine
+    /// type object: a bare type (`ValueView::Package`, e.g. an uninitialized
+    /// `my $i;` read back, or `Int` used literally) or the uninitialized-slot
+    /// sentinel `ValueView::Nil` (itself undefined, like every type object).
+    /// raku's `postcircumfix:<[ ]>` refuses to index with either.
+    pub(super) fn is_type_object_index(value: &Value) -> bool {
+        matches!(value.view(), ValueView::Nil | ValueView::Package(_))
+    }
+
+    /// The error raku raises for `@a[$i]` (also `:exists`/`:delete`) when
+    /// `$i` is a type object: `Unable to call postcircumfix @a[ (Any) ] with
+    /// a type object` / `Indexing requires a defined object`. mutsu does not
+    /// thread the subscripted variable's source name into this VM-level op
+    /// (unlike `ExistsIndexNamedAdv`'s narrower delete-tracker use), so the
+    /// message omits the `@a[ (Any) ]` part raku prints from that name.
+    pub(super) fn type_object_index_error() -> RuntimeError {
+        RuntimeError::new(
+            "Unable to call postcircumfix:<[ ]> with a type object\n\
+             Indexing requires a defined object",
+        )
+    }
+
     pub(super) fn anon_state_value(&self, name: &str) -> Option<Value> {
         let key = self.anon_state_key(name)?;
         self.get_state_var(key).cloned()
