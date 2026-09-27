@@ -254,7 +254,15 @@ impl Interpreter {
     /// `Signature ~~ Signature` to compare parameter types the pure-value
     /// helper in `value::signature_smartmatch` cannot decide.
     // Cost: O(m), m = size of `sub`'s MRO and composed-role set.
+    ///
+    /// Two built-in names are left to that helper's curated table: the runtime
+    /// type check is looser there than a signature comparison may be (a `Seq`
+    /// passes a `Positional` parameter through `PositionalBindFailover`, but
+    /// `:(Seq) ~~ :(Positional)` is False).
     pub(crate) fn type_name_accepts_type_name(&mut self, sup: &str, sub: &str) -> bool {
+        if Self::is_builtin_type(sup) && Self::is_builtin_type(sub) {
+            return false;
+        }
         let sub_type = self.type_arg_value_from_name(sub);
         self.type_matches_value(sup, &sub_type)
     }
