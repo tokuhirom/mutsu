@@ -516,9 +516,10 @@ impl Interpreter {
             }
             ValueView::Seq(items) => build_items(self, items.iter().cloned().collect())?,
             ValueView::Slip(items) => build_items(self, items.iter().cloned().collect())?,
-            // A single bare scalar assigned to a hash is a one-element (odd)
-            // initializer: `my %h = 1` is X::Hash::Store::OddNumber. Hashes,
-            // pairs, sets, instances, Nil, etc. keep their existing coercion.
+            // A single bare scalar or type object assigned to a hash is a
+            // one-element (odd) initializer: `my %h = 1` is
+            // X::Hash::Store::OddNumber. Hashes, pairs, sets, instances, Nil,
+            // etc. keep their existing coercion.
             _ if matches!(
                 value.clone().into_descalarized().view(),
                 ValueView::Int(_)
@@ -529,6 +530,9 @@ impl Interpreter {
                     | ValueView::Rat(..)
                     | ValueView::FatRat(..)
                     | ValueView::BigRat(..)
+                    // A type object is one (odd) element too: `my %h = Any`
+                    // dies "Only saw: type object 'Any'" (#9774).
+                    | ValueView::Package(_)
             ) =>
             {
                 build_items(self, vec![value])?
