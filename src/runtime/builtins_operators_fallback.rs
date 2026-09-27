@@ -518,7 +518,11 @@ impl Interpreter {
             let mut coerced_args: Vec<Value> = Vec::with_capacity(args.len());
             let mut all_ok = true;
             for arg in args {
-                if matches!(arg.view(), ValueView::Instance { .. }) {
+                if let Some(payload) = crate::builtins::int_subclass::int_subclass_payload(arg) {
+                    // An `Int` subclass's `.Numeric` is the instance itself;
+                    // the builtin takes its `Int` payload.
+                    coerced_args.push(payload);
+                } else if matches!(arg.view(), ValueView::Instance { .. }) {
                     let coerced = self
                         .call_method_with_values(arg.clone(), "Numeric", vec![])
                         .or_else(|_| self.call_method_with_values(arg.clone(), "Bridge", vec![]));

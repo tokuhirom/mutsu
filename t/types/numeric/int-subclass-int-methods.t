@@ -1,6 +1,6 @@
 use Test;
 
-plan 19;
+plan 26;
 
 # An instance of a user subclass of Int inherits Int's methods and Int's
 # `++` / `--` candidates (#9906).
@@ -36,6 +36,18 @@ class MyInt is Int {}
     is $x.polymod(2), '1 2', '.polymod';
     is $x.fmt('%03d'), '005', '.fmt';
     is sprintf('%x', MyInt.new(255)), 'ff', 'sprintf formats the payload';
+}
+
+# Operators take the Int candidates, so a mixed operation stays exact.
+{
+    my $x = MyInt.new(6);
+    isa-ok $x + 1, Int, 'Int subclass + Int is an Int';
+    isa-ok 1 + $x, Int, 'Int + Int subclass is an Int';
+    isa-ok $x * 2, Int, 'Int subclass * Int is an Int';
+    isa-ok $x / 4, Rat, 'Int subclass / Int is a Rat';
+    isa-ok MyInt.new(1) / MyInt.new(0), Rat, 'dividing by a zero Int subclass is a Rat, not a Num failure';
+    is abs(MyInt.new(-6)), 6, 'the abs() routine takes the payload';
+    is ($x max 3).WHAT.^name, 'MyInt', 'max returns the Int subclass operand';
 }
 
 # Rakudo's `++` on an Int subclass takes the Int candidate, so a user `.succ`

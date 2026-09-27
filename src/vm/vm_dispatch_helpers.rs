@@ -410,9 +410,11 @@ impl Interpreter {
     /// A user-defined object that does the `Real` role — the operand that makes
     /// rakudo pick the generic `(Real, Real)` infix candidate over a built-in
     /// numeric one. Deliberately restricted to `Instance` values: the built-in
-    /// numeric `Value` variants are handled by their own candidates.
+    /// numeric `Value` variants are handled by their own candidates, and so is
+    /// an `Int` subclass instance, which takes the `Int` candidates.
     pub(crate) fn is_real_role_object(&mut self, value: &Value) -> bool {
         matches!(value.view(), ValueView::Instance { .. })
+            && crate::builtins::int_subclass::int_subclass_payload(value).is_none()
             && !Self::is_buf_value(value)
             && value.match_str_value().is_none()
             && self.type_matches_value("Real", value)

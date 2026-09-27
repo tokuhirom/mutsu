@@ -19,4 +19,13 @@ Two paths that take their numbers from the argument rather than through method
 dispatch read the payload too: `sprintf` / `.fmt` (`%d` formatted such an
 instance as `0`) and `.polymod` (which answered `(0 0)`).
 
+Operators follow Rakudo's `Int` candidates as well. The operand coercion no
+longer treats an `Int` subclass as a user `Real` object: that path numified it
+(and the other operand) through `.Bridge`, so `$x + 1` was a `Num` and
+`IntSub.new(1) / IntSub.new(0)` a Num division-by-zero `Failure` instead of a
+`Rat` (which `roast/S32-num/rat.t`'s `Rational[Foo, Foo]` subtest depends on).
+Internal numifications that call `.Numeric` and expect a built-in number (the
+`abs()` routine's argument coercion, the numeric-method redispatch) take the
+payload, since an `Int` subclass's `.Numeric` is the instance itself.
+
 Regression test: `t/types/numeric/int-subclass-int-methods.t`. Fixes #9906.
