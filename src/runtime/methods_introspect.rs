@@ -919,7 +919,8 @@ impl Interpreter {
                 if crate::value::is_internal_anon_type_name(&n) {
                     String::new()
                 } else {
-                    n
+                    // A package-scoped enum reports its declared name (#9654).
+                    crate::value::user_facing_type_name(&n).into_owned()
                 }
             }
             // `.^set_name`, whether called directly on a role-mixed value

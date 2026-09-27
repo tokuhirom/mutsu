@@ -5822,8 +5822,8 @@ fn is_stub_marker_stmt(stmt: &Stmt) -> bool {
 /// `is_type_decl`/`is_regex_decl` classification.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum DeferredBodyOpKind {
-    /// A nested `class`/`role` declaration — registers under the role's
-    /// OWN package at composition time.
+    /// A nested `class`/`role`/`enum` declaration — registers under the
+    /// role's OWN package at composition time.
     TypeDecl,
     /// A `token`/`rule`/`regex` declaration — registers under the
     /// COMPOSING class's package, which is not known until composition;
@@ -5878,7 +5878,12 @@ pub(crate) struct DeferredBodyOp {
 
 pub(crate) fn classify_deferred_body_op_kind(stmt: &Stmt) -> DeferredBodyOpKind {
     match stmt {
-        Stmt::ClassDecl { .. } | Stmt::RoleDecl { .. } => DeferredBodyOpKind::TypeDecl,
+        // An enum is a nested type like a class: it registers under the
+        // role's package whoever composes the role, so every composition
+        // shares the one `R::E` type (#9654).
+        Stmt::ClassDecl { .. } | Stmt::RoleDecl { .. } | Stmt::EnumDecl { .. } => {
+            DeferredBodyOpKind::TypeDecl
+        }
         Stmt::TokenDecl { .. } | Stmt::RuleDecl { .. } => DeferredBodyOpKind::TokenRule,
         _ => DeferredBodyOpKind::Plain,
     }

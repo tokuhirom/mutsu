@@ -273,8 +273,8 @@ impl Interpreter {
         // name, while calls in that module may use the package-qualified name
         // (`Lumberjack::Level($value)`). Resolve that spelling before looking
         // up its variants so qualified enum coercions retain their enum type.
-        let enum_name = if self.registry().enum_types.contains_key(name) {
-            Some(Symbol::intern(name))
+        let enum_name = if let Some(key) = self.resolve_enum_type_key(name) {
+            Some(Symbol::intern(&key))
         } else {
             let qualified_name = Symbol::intern(name);
             let short = crate::qualified::unqualified_part(qualified_name);
