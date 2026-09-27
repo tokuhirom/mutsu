@@ -93,7 +93,7 @@ impl Interpreter {
     // for a qualified parent nothing is registered under.
     pub(crate) fn canonical_class_parent_name(&self, parent: &str) -> String {
         let base = parent.split_once('[').map_or(parent, |(base, _)| base);
-        if !crate::runtime::utils::has_double_colon(base) {
+        if !crate::qualified::is_qualified(crate::symbol::Symbol::intern(base)) {
             return parent.to_string();
         }
         let is_registered = |name: &str| {
