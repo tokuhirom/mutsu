@@ -742,6 +742,9 @@ impl Interpreter {
         } else {
             None
         };
+        if is_vardecl && self.shared_vars_active {
+            self.remask_declaration_store(code, idx as usize);
+        }
         let r = self.exec_set_local_op_inner(code, idx);
         if r.is_ok()
             && let Some(cell) = binding_cell
@@ -3179,22 +3182,16 @@ impl Interpreter {
         // goes through the dedicated shared-state cells — both must keep
         // propagating. Twigil'd forms (`@!x`, `%*y`) share a name across
         // instances/dynamic scopes by design and keep the name lane.
-        if self.shared_vars_active
-            && !name.starts_with('&')
-            && (!name.starts_with(['@', '%']) || Self::is_plain_lexical_name(name))
-        {
-            let is_state = code.is_state_name(name);
-            if !is_state {
-                self.thread_redeclared_vars
-                    .borrow_mut()
-                    .insert(name.to_string());
-                // The initializer has not run yet, so neither this frame's slot
-                // nor `env` holds the new binding. Mark the window so a spawn
-                // performed BY the initializer cannot unmask the name and let the
-                // shadowed outer value be pulled back over it
-                // (`thread_decl_in_flight`). Cleared by the store that ends it.
-                self.thread_decl_in_flight.insert(name.to_string());
-            }
+        if self.shared_vars_active && Self::thread_decl_masks_name(code, name) {
+            self.thread_redeclared_vars
+                .borrow_mut()
+                .insert(name.to_string());
+            // The initializer has not run yet, so neither this frame's slot
+            // nor `env` holds the new binding. Mark the window so a spawn
+            // performed BY the initializer cannot unmask the name and let the
+            // shadowed outer value be pulled back over it
+            // (`thread_decl_in_flight`). Cleared by the store that ends it.
+            self.thread_decl_in_flight.insert(name.to_string());
         }
         // A fresh declaration without an explicit type must not inherit stale
         // constraints from an earlier lexical with the same name. The slot's
