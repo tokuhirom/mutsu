@@ -159,6 +159,12 @@ pub(in crate::runtime) fn coerce_value(target: &str, value: Value) -> Value {
     }
 }
 
+/// `*COERCION-TYPE` interned once: a coercion into a user class binds it.
+fn coercion_type_key() -> Symbol {
+    static KEY: std::sync::OnceLock<Symbol> = std::sync::OnceLock::new();
+    *KEY.get_or_init(|| Symbol::intern("*COERCION-TYPE"))
+}
+
 fn gcd_i64(a: i64, b: i64) -> i64 {
     if b == 0 { a } else { gcd_i64(b, a % b) }
 }
@@ -331,34 +337,15 @@ impl Interpreter {
             // through to the error below exactly as before.
             let try_new = self.class_has_new_accepting_positional(&remapped_base_target, &value)
                 || !self.class_declares_user_new(&remapped_base_target);
-            if try_new {
-                // Rakudo exposes the coercion's target type to a user `new`
-                // candidate invoked as the coercion fallback via the dynamic
-                // variable `$*COERCION-TYPE` (roast
-                // `S12-coercion/coercion-methods.t`'s "method new has its
-                // context set"). Bind it for the duration of this one call —
-                // the same save/insert/restore shape `indir`'s `$*CWD`
-                // (`builtins_io_dir.rs`) uses for a builtin dynamic variable
-                // no user code lexically declares.
-                let saved_coercion_type = self.env.get("*COERCION-TYPE").cloned();
-                self.env.insert(
-                    "*COERCION-TYPE".to_string(),
-                    Value::package(Symbol::intern(&remapped_base_target)),
-                );
-                let new_result = self.call_method_with_values(
+            if try_new
+                && let Ok(coerced) = self.call_method_with_values(
                     Value::package(Symbol::intern(&remapped_base_target)),
                     "new",
                     vec![coerce_arg],
-                );
-                match saved_coercion_type {
-                    Some(prev) => self.env.insert("*COERCION-TYPE".to_string(), prev),
-                    None => self.env.remove("*COERCION-TYPE"),
-                };
-                if let Ok(coerced) = new_result
-                    && self.type_matches_value(&remapped_base_target, &coerced)
-                {
-                    return Ok(coerced);
-                }
+                )
+                && self.type_matches_value(&remapped_base_target, &coerced)
+            {
+                return Ok(coerced);
             }
         }
         if let Some(coerced) = self.coerce_into_builtin_inheriting_class(base_target, &value) {
@@ -437,7 +424,26 @@ impl Interpreter {
                 value
             };
             let resolved_target = self.resolve_constraint_alias(target);
-            return self.try_coerce_value_with_method(&resolved_target, intermediate);
+            // Rakudo runs a user target's `COERCE`/`new` with `$*COERCION-TYPE`
+            // bound to the coercion type itself (`C1(Any)`, not `C1`) — roast
+            // `S12-coercion/coercion-methods.t`. Builtin targets (`Bool(Mu)`,
+            // `Str()`, ...) run no user code that could observe it, so they
+            // skip the binding (it would cost two interns per Test assertion).
+            // A `my class` registers under a mangled name, hence the remap.
+            let class_key = self.lexical_env_remap_name(&resolved_target);
+            if !self.registry().classes.contains_key(class_key.as_str()) {
+                return self.try_coerce_value_with_method(&resolved_target, intermediate);
+            }
+            let key = coercion_type_key();
+            let saved = self.env.get_sym(key).cloned();
+            self.env
+                .insert_sym(key, Value::package(Symbol::intern(constraint)));
+            let result = self.try_coerce_value_with_method(&resolved_target, intermediate);
+            match saved {
+                Some(v) => self.env.insert_sym(key, v),
+                None => self.env.remove_sym(key),
+            };
+            return result;
         }
         // A registry with no subsets (most programs) has nothing to walk — and
         // that settles the whole rest of the function, alias resolution

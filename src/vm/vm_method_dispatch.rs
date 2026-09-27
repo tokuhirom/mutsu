@@ -1880,6 +1880,14 @@ impl Interpreter {
                     // t/tweak-named-fast-path.t).
                     None => Self::missing_optional_param_value(pd),
                 };
+                // `:$!x` binds by assignment: an explicit Nil stores the
+                // attribute's container default (`BUILD(:$!x)` with
+                // `.new(:x(Nil))` leaves `$!x` as `Any`).
+                let val = if val.is_nil() && pd.name.starts_with('!') {
+                    self.attr_store_nil_default(owner_class, &pd.name[1..], '$', val)
+                } else {
+                    val
+                };
                 // Attributive param: write the one attribute through `self`'s
                 // shared cell (the single-key cell write `bind_param_value`
                 // performs) BEFORE the locals-init loop below reads attribute

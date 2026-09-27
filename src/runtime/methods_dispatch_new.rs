@@ -443,12 +443,7 @@ impl Interpreter {
                         // like `has $.x = Nil` and plain `$x = Nil` do — not
                         // the provided `Nil` itself.
                         let coerced = if attr.sigil == '$' && coerced.is_nil() {
-                            self.seed_attr_value(
-                                cn_resolved,
-                                &attr.name,
-                                attr.sigil,
-                                &plan.type_constraints,
-                            )
+                            self.attr_store_nil_default(cn_resolved, &attr.name, '$', coerced)
                         } else {
                             coerced
                         };
@@ -603,11 +598,11 @@ impl Interpreter {
                         // to the container's declared type default (see the
                         // matching seed in `provided_attrs` above).
                         let coerced = if sigil == '$' && coerced.is_nil() {
-                            self.seed_attr_value(
+                            self.attr_store_nil_default(
                                 cn_resolved,
                                 &plan.class_attrs[i].name,
-                                sigil,
-                                &plan.type_constraints,
+                                '$',
+                                coerced,
                             )
                         } else {
                             coerced
