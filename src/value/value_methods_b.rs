@@ -486,6 +486,18 @@ impl Value {
         Value::Slip(Arc::new(items), false)
     }
     pub fn junction(kind: JunctionKind, values: Vec<Value>) -> Self {
+        // Eigenstates are values, never a source's containers: an array element
+        // promoted to a shared `ContainerRef` cell (`grep`'s `$_` alias, a `:=`
+        // bind) must not leak in, or a method threaded over the junction sees
+        // the cell instead of the object. A non-cell value moves through as is.
+        let values = if values
+            .iter()
+            .any(|v| matches!(v.view(), ValueView::ContainerRef(_)))
+        {
+            values.into_iter().map(Value::into_deref).collect()
+        } else {
+            values
+        };
         Value::from_repr(ValueRepr::Junction {
             kind,
             values: Arc::new(values),

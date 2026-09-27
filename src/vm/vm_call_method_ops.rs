@@ -264,7 +264,10 @@ impl Interpreter {
         quoted: bool,
         want_ref: bool,
     ) -> Option<Value> {
-        if !args.is_empty() || has_modifier || quoted {
+        // A quoted name (`$obj."$name"()`) still addresses the same accessor;
+        // this fast path only takes it when a container was asked for, which
+        // nothing but this path can hand back.
+        if !args.is_empty() || has_modifier || (quoted && !want_ref) {
             return None;
         }
         let method = method_sym.as_str();

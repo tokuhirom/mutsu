@@ -12,6 +12,7 @@ mod lambda;
 #[cfg(test)]
 mod lambda_tests;
 mod reduction;
+mod topic_scan;
 
 pub(crate) use anon_decl::next_anon_role_name;
 pub(super) use anon_decl::{

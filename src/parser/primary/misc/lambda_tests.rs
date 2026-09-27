@@ -79,3 +79,18 @@ fn method_calls_with_ordinary_invocants_stay_hashes() {
 fn placeholder_variables_force_a_block() {
     assert!(!is_hash("{ a => $^x }"));
 }
+
+#[test]
+fn angle_word_lists_are_literal_text() {
+    // A `.word` inside `< … >` is a word, not an implicit-topic call.
+    // Regression: Math::Symbolic's `{ :type<postfix>, :parts< .abs > }` parsed
+    // as a block, so `|%$_` on it died with "Odd number of elements".
+    assert!(is_hash("{ :type<postfix>, :parts< .abs > }"));
+    assert!(is_hash("{ a => < .abs .sign > }"));
+    assert!(is_hash("{ a => (< .x >) }"));
+    assert!(is_hash("{ a => %h< .k >.elems }"));
+    // Infix less-than is still an operator, so a topic call after it counts.
+    assert!(!is_hash("{ a => 1 < .elems }"));
+    assert!(!is_hash("{ a => $x < .elems }"));
+    assert!(!is_hash("{ a => $x <= .elems }"));
+}

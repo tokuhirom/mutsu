@@ -766,7 +766,12 @@ impl Compiler {
             // D1 to pass — they already work through the pre-existing
             // `free_var_writes` write-tracking machinery (ADR-0032 §1.4).
             self.emit_wrap_var_ref_arg_tag(&name);
-        } else if is_bind_target && matches!(arg, Expr::MethodCall { .. }) {
+        } else if is_bind_target
+            && matches!(
+                arg,
+                Expr::MethodCall { .. } | Expr::DynamicMethodCall { .. }
+            )
+        {
             // `:=` bind to a method-call RHS (`my $ref := $obj.attr`): flag the
             // dispatch so a public attribute accessor returns the attribute
             // slot's `ContainerRef` cell instead of a value copy — the bound
@@ -1002,6 +1007,8 @@ impl Compiler {
                 OpCode::Decont | OpCode::ContainerizePair | OpCode::WrapVarRef { .. } => i -= 1,
                 OpCode::CallMethod { .. }
                 | OpCode::CallMethodMut { .. }
+                | OpCode::CallMethodDynamic { .. }
+                | OpCode::CallMethodDynamicMut { .. }
                 | OpCode::ResolveAttrRwCandidate(..) => {
                     // Keep the ip -> line table (`op_lines`) aligned with `ops`:
                     // the marker inherits the call's line.
