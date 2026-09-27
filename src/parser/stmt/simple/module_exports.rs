@@ -1528,12 +1528,21 @@ fn collect_exported_subs_in(
                 exports.insert(entry.name.clone(), entry);
             }
             Stmt::ProtoDecl {
-                name, is_export, ..
-            } if *is_export => {
+                name,
+                is_export,
+                is_our,
+                ..
+            } if *is_export || (in_export_stash && *is_our) => {
                 // Same superset rationale as the `SubDecl` arm above: every
                 // `is export` proto is collected whatever tag it carries,
                 // because this set only answers "is `name` a routine" for
                 // the parser, not "does the importer's tag list admit it".
+                // An `our proto sub` declared directly inside the module's own
+                // `EXPORT::<tag>` stash is exported by construction too, the
+                // proto-family counterpart of the `SubDecl` arm's `our sub`/
+                // `our multi sub` handling (raku rejects `our multi sub`
+                // outright, so an `our`-scoped proto is the only way to put a
+                // multi family into an export stash this way).
                 let resolved = name.resolve();
                 exports
                     .entry(resolved.clone())

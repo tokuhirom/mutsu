@@ -387,6 +387,62 @@ impl Interpreter {
         self.register_exported_sub(module, resolved_name.to_string(), vec![tag]);
     }
 
+    /// [`Self::export_implicit_stash_sub`] for an `our proto sub name(...)
+    /// {*}` declared directly inside a module's own `my package
+    /// EXPORT::<tag> { ... }` block — the only legal way to put a multi
+    /// family into an export stash this way, since raku rejects `our multi
+    /// sub` outright ("Cannot use 'our' with individual multi candidates.
+    /// Please declare an our-scoped proto instead").
+    ///
+    /// The proto itself lives in `Registry::proto_functions`, not
+    /// `functions`, so it needs its own alias here before delegating to
+    /// `export_implicit_stash_sub` for the candidate family. The proto
+    /// commonly precedes its `multi sub` candidates, and those candidates are
+    /// not themselves `our`-scoped (so `exec_register_sub_op` cannot reach
+    /// them via its `__our_scoped` branch) — `exec_register_sub_op` instead
+    /// calls this again as each bare candidate registers, once it recognises
+    /// (via [`Self::is_our_scoped_proto`]) that the proto already put the
+    /// family in this stash's export list. `export_implicit_stash_sub`
+    /// already tolerates being called before any candidate exists.
+    pub(crate) fn export_implicit_stash_proto(&mut self, name: &str) {
+        let current_pkg = self.current_package();
+        if Self::export_stash_tag(&current_pkg).is_none() {
+            return;
+        }
+        let Some(module) = self.module_load_stack.last().cloned() else {
+            return;
+        };
+        let name_sym = Symbol::intern(name);
+        let proto_key = crate::qualified::qualified(Symbol::intern(&current_pkg), name_sym);
+        // Hoist the clone to a `let` so the read guard drops before the
+        // registry_mut write below (read->write on the same lock deadlocks).
+        let proto_def = self.registry().proto_functions.get(&proto_key).cloned();
+        if let Some(def) = proto_def {
+            let target = crate::qualified::qualified(Symbol::intern(&module), name_sym);
+            self.registry_mut()
+                .proto_functions_mut()
+                .entry(target)
+                .or_insert(def);
+        }
+        self.export_implicit_stash_sub(name, true);
+    }
+
+    /// Whether `name`'s `proto` in the current package was declared
+    /// `our`-scoped (see `register_proto_decl`'s `mark_our_scoped_package_item`
+    /// call). `pub(crate)`: consulted by `vm_register_sub_ops.rs`, a
+    /// different module tree, so a later bare `multi sub` candidate can tell
+    /// whether its proto already made this name part of an export stash's
+    /// list (see [`Self::export_implicit_stash_proto`]).
+    pub(crate) fn is_our_scoped_proto(&self, name: &str) -> bool {
+        let fq_name = crate::qualified::qualified(
+            Symbol::intern(&self.current_package()),
+            Symbol::intern(name),
+        );
+        let fq_name = fq_name.as_str();
+        self.registry().proto_subs_contains(fq_name)
+            && self.our_scoped_package_items.contains(fq_name)
+    }
+
     /// Hide the candidate family already visible at target_single before an
     /// imported proto is installed. Raku treats the imported proto as a new
     /// lexical family, while the flat registry otherwise merges its candidates
