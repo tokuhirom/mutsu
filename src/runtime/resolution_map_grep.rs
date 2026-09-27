@@ -194,6 +194,7 @@ pub(super) fn normalize_tail_stmt_for_value(body: &[crate::ast::Stmt]) -> Vec<cr
             name,
             expr,
             op: AssignOp::Assign,
+            ..
         } if !matches!(expr, Expr::Feed { .. }) => {
             let mut out = body.to_vec();
             out[last_idx] = Stmt::Expr(Expr::AssignExpr {

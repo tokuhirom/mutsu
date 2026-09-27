@@ -6554,6 +6554,16 @@ pub(crate) struct CompiledCode {
     /// closures so an enclosing scope can tell which of *its* locals are mutated
     /// from inside a closure. Used to compute `captured_mutated_locals`.
     pub(crate) free_var_writes: Vec<Symbol>,
+    /// Sigilless parameter names that also name an enclosing scalar lexical.
+    /// Raku keeps the two source namespaces separate, but both spellings use
+    /// the same runtime key after sigil stripping. The nested compiler records
+    /// these names so `compute_free_vars` can retain the enclosing scalar even
+    /// though the sigilless parameter is present in `locals`.
+    pub(crate) forced_free_var_syms: Vec<Symbol>,
+    /// Subset of [`Self::forced_free_var_syms`] written by this body. These
+    /// names must participate in closure writeback and cell analysis just like
+    /// an ordinary free-variable assignment.
+    pub(crate) forced_free_var_writes: Vec<Symbol>,
     /// Free `@`/`%` container variables this code mutates IN PLACE (via a mutating
     /// method like `push`/`append`, or an element/index assignment) without ever
     /// rebinding the whole container by name. Such mutations are NOT `SetGlobal`
@@ -7560,6 +7570,8 @@ impl CompiledCode {
             upvalue_parent_slots: Vec::new(),
             outer_ref_names: Vec::new(),
             free_var_writes: Vec::new(),
+            forced_free_var_syms: Vec::new(),
+            forced_free_var_writes: Vec::new(),
             free_var_container_writes: Vec::new(),
             named_sub_captures: Vec::new(),
             lexical_routines: Vec::new(),
@@ -9769,6 +9781,18 @@ impl CompiledCode {
         // An atomic op's target is written through a `__mutsu_*_var("name", …)`
         // call, which the op scan above cannot see as a write. Fold those names
         // in explicitly (see `atomic_target_syms`).
+        // A sigilless parameter can share its canonical runtime key with an
+        // enclosing scalar (`my $args; -> |args { $args = args }`). The op scan
+        // above normally excludes names present in `own`, but the compiler has
+        // retained the source-level namespace distinction for this shape. Keep
+        // the enclosing scalar in the capture set and in the write set.
+        for sym in &self.forced_free_var_syms {
+            free.insert(*sym);
+        }
+        for sym in &self.forced_free_var_writes {
+            free.insert(*sym);
+            free_writes.insert(*sym);
+        }
         for sym in &self.atomic_target_syms {
             if sym.with_str(|s| own.contains(s)) {
                 self_mutated.insert(*sym);

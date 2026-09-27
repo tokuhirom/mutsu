@@ -139,6 +139,15 @@ impl Interpreter {
         keep_deferred_entry: bool,
     ) -> Result<(), RuntimeError> {
         let idx = idx as usize;
+        // A sigilless parameter can share its canonical name with an enclosing
+        // scalar lexical. Its slot is the parameter namespace; do not let the
+        // captured scalar's env aliases redirect this `GetLocal` read.
+        if code.local_sym(idx).is_some_and(|sym| {
+            code.forced_free_var_syms.contains(&sym) && code.param_locals.contains(&sym)
+        }) {
+            self.stack.push(self.locals[idx].clone().into_deref());
+            return Ok(());
+        }
         // Fast path (#8332): the whole guard chain below reduces to
         // `stack.push(locals[idx].clone())` when three independent conditions
         // hold, and it costs ~230 instructions per read when it does not —

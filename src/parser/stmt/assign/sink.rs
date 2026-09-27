@@ -221,6 +221,7 @@ pub(crate) fn rewrite_scalar_assignment_stmt_as_sink(name: String, rhs: Expr) ->
                     name,
                     expr: *left,
                     op: AssignOp::Assign,
+                    target_is_sigilless: false,
                 }))),
                 right,
             }))

@@ -325,6 +325,7 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                     name: name.clone(),
                     expr: make_rhs(Expr::Var(name)),
                     op: AssignOp::Assign,
+                    target_is_sigilless: false,
                 };
                 return parse_statement_modifier(r, stmt);
             }
@@ -333,6 +334,7 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                     name: format!("@{}", name),
                     expr: make_rhs(Expr::ArrayVar(name)),
                     op: AssignOp::Assign,
+                    target_is_sigilless: false,
                 };
                 return parse_statement_modifier(r, stmt);
             }
@@ -341,6 +343,7 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                     name: format!("%{}", name),
                     expr: make_rhs(Expr::HashVar(name)),
                     op: AssignOp::Assign,
+                    target_is_sigilless: false,
                 };
                 return parse_statement_modifier(r, stmt);
             }
@@ -479,6 +482,7 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                     name: name.clone(),
                     expr: make_rhs(Expr::Var(name)),
                     op: AssignOp::Assign,
+                    target_is_sigilless: false,
                 };
                 return parse_statement_modifier(r, stmt);
             }
@@ -487,6 +491,7 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                     name: format!("@{}", name),
                     expr: make_rhs(Expr::ArrayVar(name)),
                     op: AssignOp::Assign,
+                    target_is_sigilless: false,
                 };
                 return parse_statement_modifier(r, stmt);
             }
@@ -495,6 +500,7 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                     name: format!("%{}", name),
                     expr: make_rhs(Expr::HashVar(name)),
                     op: AssignOp::Assign,
+                    target_is_sigilless: false,
                 };
                 return parse_statement_modifier(r, stmt);
             }
@@ -545,6 +551,7 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                     name: name.clone(),
                     expr: make_rhs(expr.clone()),
                     op: AssignOp::Assign,
+                    target_is_sigilless: false,
                 };
                 return parse_statement_modifier(r, stmt);
             }
@@ -808,16 +815,19 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                 name,
                 expr,
                 op: AssignOp::Assign,
+                target_is_sigilless: false,
             },
             Expr::ArrayVar(name) => Stmt::Assign {
                 name: format!("@{}", name),
                 expr,
                 op: AssignOp::Assign,
+                target_is_sigilless: false,
             },
             Expr::HashVar(name) => Stmt::Assign {
                 name: format!("%{}", name),
                 expr,
                 op: AssignOp::Assign,
+                target_is_sigilless: false,
             },
             Expr::SymbolicDeref { sigil, expr: inner } => Stmt::Expr(Expr::SymbolicDerefAssign {
                 sigil,
@@ -1124,6 +1134,7 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                     name: assign_name,
                     expr: value_expr,
                     op: crate::ast::AssignOp::Bind,
+                    target_is_sigilless: false,
                 });
             }
             let stmt = Stmt::SyntheticBlock(stmts);
@@ -1238,6 +1249,7 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                     name: var_name,
                     expr: rhs,
                     op: AssignOp::Assign,
+                    target_is_sigilless: false,
                 },
             ];
             return parse_statement_modifier(r, Stmt::Block(stmts));
@@ -1264,6 +1276,7 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                         right: Box::new(rhs),
                     },
                     op: AssignOp::Assign,
+                    target_is_sigilless: false,
                 },
             ];
             return parse_statement_modifier(r, Stmt::Block(stmts));

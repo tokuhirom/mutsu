@@ -113,7 +113,13 @@ impl Compiler {
                 // whose Value payload predates provenance still reaches the
                 // value-aware execution entry point.
                 let value = value.with_regex_source_tree(tree.clone());
-                self.compile_expr(&Expr::Literal(value));
+                // `rx/.../` constructs a Regex value. Preserve the topic
+                // capture for an rx literal written directly in a closure;
+                // the parser's `:=` form lowers to Expr::Literal instead and
+                // is handled as an ordinary Regex value by the automatic
+                // topic-capture path.
+                let topic = self.regex_literal_topic_capture_for_rx(&value);
+                self.compile_literal_constant_with_topic(&value, topic);
             }
             Expr::Literal(v) => match v.view() {
                 ValueView::Nil => {

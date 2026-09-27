@@ -1476,6 +1476,13 @@ pub(crate) enum Stmt {
         name: String,
         expr: Expr,
         op: AssignOp,
+        /// True when the source assignment target was a sigilless term
+        /// (`name = value`), rather than a sigiled scalar (`$name = value`).
+        /// The two spellings share an environment key but are distinct lexical
+        /// namespaces, so the compiler must retain this bit when a sigilless
+        /// parameter shadows an enclosing scalar of the same name.
+        #[serde(default)]
+        target_is_sigilless: bool,
     },
     SubDecl {
         name: Symbol,

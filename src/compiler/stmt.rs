@@ -1030,6 +1030,7 @@ impl Compiler {
                 name,
                 expr: feed @ Expr::Feed { .. },
                 op: AssignOp::Assign,
+                ..
             } if name != "*PID" => {
                 let mut feed = feed.clone();
                 {
@@ -2180,6 +2181,7 @@ impl Compiler {
                 name,
                 expr,
                 op: op @ (AssignOp::Assign | AssignOp::Bind),
+                target_is_sigilless,
             } if name != "*PID" => {
                 // ADR-0061: inside a routine whose signature declares a `$self`
                 // parameter, the reserved `$self` lexical key names that
@@ -2418,14 +2420,15 @@ impl Compiler {
                 // goes straight to `SetLocal`/`SetGlobal` below — so record
                 // its target slot here for `rebind_target_slots` (#8748).
                 if matches!(op, AssignOp::Bind) {
-                    let source_slot = self.local_map.get(effective_name).copied();
+                    let source_slot =
+                        self.assignment_target_slot(effective_name, *target_is_sigilless);
                     self.code.note_rebind_target(source_slot);
                     self.code.note_rebound_slot(source_slot);
                     if source_slot.is_none() {
                         self.code.note_rebound_name(effective_name);
                     }
                 }
-                self.emit_set_named_var(effective_name);
+                self.emit_set_named_var_with_kind(effective_name, *target_is_sigilless);
             }
             Stmt::If {
                 cond,
@@ -2914,6 +2917,7 @@ impl Compiler {
                 name,
                 expr,
                 op: AssignOp::MatchAssign,
+                ..
             } if name != "*PID" => {
                 self.with_escape(true, |c| c.compile_expr(expr));
                 self.code.emit(OpCode::StrCoerce);

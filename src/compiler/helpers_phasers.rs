@@ -417,6 +417,7 @@ impl Compiler {
                             name: var_name,
                             expr: e.clone(),
                             op: AssignOp::Assign,
+                            target_is_sigilless: false,
                         }
                     } else {
                         Stmt::Block(phaser_body)
@@ -544,6 +545,7 @@ impl Compiler {
             name: ran_var.clone(),
             expr: Expr::Literal(Value::TRUE),
             op: AssignOp::Assign,
+            target_is_sigilless: false,
         });
         // Save $_ at the start of each iteration so LAST phasers can see it
         // even when `last` exits the loop early (before the end of the body)
@@ -552,6 +554,7 @@ impl Compiler {
                 name: last_topic_var,
                 expr: Expr::Var("_".to_string()),
                 op: AssignOp::Assign,
+                target_is_sigilless: false,
             });
         }
         // NEXT phasers run in LIFO (reverse declaration) order per Raku spec
@@ -593,6 +596,7 @@ impl Compiler {
                 name: first_var.clone(),
                 expr: Expr::Literal(Value::FALSE),
                 op: AssignOp::Assign,
+                target_is_sigilless: false,
             }];
             then_branch.extend(first_ph);
             loop_body.push(Stmt::If {
@@ -638,6 +642,7 @@ impl Compiler {
                         name: cap_var,
                         expr: expr.clone(),
                         op: AssignOp::Assign,
+                        target_is_sigilless: false,
                     }),
                     // A trailing `take <expr>` (the gather-lowered loop
                     // expression form) carries the iteration value: capture it
@@ -648,6 +653,7 @@ impl Compiler {
                             name: cap_var.clone(),
                             expr: expr.clone(),
                             op: AssignOp::Assign,
+                            target_is_sigilless: false,
                         });
                         loop_body.push(Stmt::Take(Expr::Var(cap_var), false));
                     }
@@ -657,6 +663,7 @@ impl Compiler {
                             name: cap_var,
                             expr: Expr::Literal(Value::NIL),
                             op: AssignOp::Assign,
+                            target_is_sigilless: false,
                         });
                     }
                 }
@@ -665,6 +672,7 @@ impl Compiler {
                     name: cap_var,
                     expr: Expr::Literal(Value::NIL),
                     op: AssignOp::Assign,
+                    target_is_sigilless: false,
                 });
             }
             // If we have both result_var and post_topic_var, sync them
@@ -676,6 +684,7 @@ impl Compiler {
                         name: pv,
                         expr: Expr::Var(rv),
                         op: AssignOp::Assign,
+                        target_is_sigilless: false,
                     });
                 }
             }
@@ -874,10 +883,11 @@ impl Compiler {
                 else_branch: Self::rewrite_enter_phaser_stmts(else_branch, extracted, counter),
                 binding_var: binding_var.clone(),
             },
-            Stmt::Assign { name, expr, op } => Stmt::Assign {
+            Stmt::Assign { name, expr, op, .. } => Stmt::Assign {
                 name: name.clone(),
                 expr: Self::rewrite_enter_phaser_expr(expr, extracted, counter),
                 op: *op,
+                target_is_sigilless: false,
             },
             Stmt::Block(body) => {
                 Stmt::Block(Self::rewrite_enter_phaser_stmts(body, extracted, counter))

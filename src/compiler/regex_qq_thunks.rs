@@ -13,13 +13,18 @@ impl Compiler {
     /// local here would otherwise widen each of its frames.
     #[inline(never)]
     pub(super) fn compile_literal_constant(&mut self, v: &Value) {
+        let topic = self.regex_literal_topic_capture(v);
+        self.compile_literal_constant_with_topic(v, topic);
+    }
+
+    #[inline(never)]
+    pub(super) fn compile_literal_constant_with_topic(&mut self, v: &Value, topic: Option<u32>) {
         let idx = self.code.add_constant(v.clone());
         let mut captures = self.regex_literal_closure_captures(v);
         let qq_thunks = self.compile_regex_qq_thunks(v);
         if !qq_thunks.is_empty() {
             captures.get_or_insert_with(Vec::new).extend(qq_thunks);
         }
-        let topic = self.regex_literal_topic_capture(v);
         if captures.is_some() || topic.is_some() {
             self.code.emit(OpCode::LoadRegexClosure {
                 const_idx: idx,
