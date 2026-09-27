@@ -20,6 +20,16 @@ use crate::value::{Value, ValueView};
 /// method dispatch; named here because the nqp ops below have to vivify it.
 pub(crate) const ITERATION_BUFFER_ITEMS: &str = "__mutsu_iterationbuffer_items";
 
+/// [`ITERATION_BUFFER_ITEMS`] as an attribute key, interned once. The nqp list
+/// ops probe it on every `push`/`bindattr` of a buffer, and a `&str` key
+/// re-looks the name up in the interner each time (`AttrKey for &str`).
+// Cost: O(1).
+pub(crate) fn iteration_buffer_items_key() -> crate::symbol::Symbol {
+    static KEY: std::sync::LazyLock<crate::symbol::Symbol> =
+        std::sync::LazyLock::new(|| crate::symbol::Symbol::intern(ITERATION_BUFFER_ITEMS));
+    *KEY
+}
+
 pub(crate) use super::nqp_backing::{nqp_backing_array, with_nqp_backing_array};
 
 fn iarg(args: &[Value], i: usize) -> i64 {
@@ -38,7 +48,7 @@ fn repoint_backing_array(storage: &Value, array: &Value) -> bool {
         && class_name == "IterationBuffer"
         && matches!(array.view(), ValueView::Array(..))
     {
-        attributes.insert(ITERATION_BUFFER_ITEMS, array.clone());
+        attributes.insert(iteration_buffer_items_key(), array.clone());
         return true;
     }
     false
@@ -227,6 +237,30 @@ impl Interpreter {
         }
         match container.view() {
             ValueView::Array(items, _) => {
+                // A buffer fresh from `nqp::create(IterationBuffer)` has no
+                // storage yet (`nqp_backing_array`'s vivify case), so there is
+                // nothing to copy in: the container is emptied and the buffer
+                // re-pointed at it. That is exactly what vivifying an empty
+                // store, copying it and re-pointing would leave behind, without
+                // allocating the store only to drop it again. JSON::Fast's
+                // `parse-array` does this once per array it decodes.
+                if let ValueView::Instance {
+                    class_name,
+                    attributes,
+                    ..
+                } = storage.view()
+                    && class_name == "IterationBuffer"
+                    && !attributes
+                        .as_map()
+                        .contains_key(iteration_buffer_items_key())
+                {
+                    // SAFETY: as below -- a plain element replacement with no
+                    // other borrow into the node live across it.
+                    let data = unsafe { crate::value::gc_contents_mut(&items) };
+                    *data.items_mut() = Vec::new();
+                    attributes.insert(iteration_buffer_items_key(), container.clone());
+                    return true;
+                }
                 let Some(elems) = Self::nqp_elems_of(storage) else {
                     return false;
                 };
