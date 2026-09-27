@@ -443,6 +443,7 @@ impl Interpreter {
     ) -> Result<(), RuntimeError> {
         let var_name = Self::const_str(code, name_idx).to_string();
         let idx = self.stack.pop().unwrap_or(Value::NIL);
+        Self::throw_if_failure(&idx)?;
         // Method-produced key lists are lazy `Seq`s (`%h.keys`, `grep`, and
         // `map` all use this representation).  In a hash subscript they are
         // ordinary multi-key slices, just like a parenthesized list; leaving
@@ -484,6 +485,18 @@ impl Interpreter {
             ) if target_is_hash => Value::scalar(idx.clone()),
             _ => idx,
         };
+        // A positional `@a[$i]:delete` with a type-object index (`$i`
+        // undefined) is not a hash lookup, and — unlike an `Instance`/`Mixin`
+        // target — has no DELETE-POS to dispatch to either: raku's
+        // `postcircumfix:<[ ]>` refuses to index with a type object at all.
+        let target_is_array = self
+            .env()
+            .get(&var_name)
+            .map(|v| matches!(v.deref_container().view(), ValueView::Array(..)))
+            .unwrap_or(false);
+        if target_is_array && Self::is_type_object_index(&idx) {
+            return Err(Self::type_object_index_error());
+        }
         // An `is Hash`/`is Map` subclass instance (`$h<k>:delete`): delegate
         // DELETE-KEY to the backing `__mutsu_hash_storage` directly, ahead of
         // the `declares`-gated block below (which only recognizes a
@@ -944,7 +957,11 @@ impl Interpreter {
 
     pub(super) fn exec_delete_index_expr_op(&mut self) -> Result<(), RuntimeError> {
         let idx = self.stack.pop().unwrap_or(Value::NIL);
+        Self::throw_if_failure(&idx)?;
         let mut target = self.stack.pop().unwrap_or(Value::NIL);
+        if matches!(target.view(), ValueView::Array(..)) && Self::is_type_object_index(&idx) {
+            return Err(Self::type_object_index_error());
+        }
         // Note: We cannot distinguish Bag from BagHash or Set from SetHash
         // in the expression form (no variable metadata), so immutability
         // checks for Bag/Set are only in the named op path.
