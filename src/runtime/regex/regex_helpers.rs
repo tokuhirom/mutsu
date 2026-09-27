@@ -1490,16 +1490,6 @@ pub(super) fn count_capture_groups(atom: &RegexAtom) -> usize {
     }
 }
 
-/// The positional-capture width reserved by an alternation.  Capture numbers
-/// after an alternation follow its widest branch, so a shorter winning branch
-/// must contribute Nil slots for the captures it did not take.
-pub(super) fn alternation_capture_slots(alts: &[RegexPattern]) -> usize {
-    alts.iter()
-        .map(count_pattern_capture_groups)
-        .max()
-        .unwrap_or(0)
-}
-
 /// For each positional slot `atom` will produce (same order and count as
 /// [`count_capture_groups`]), whether raku renders it as an empty LIST
 /// (`[]`) rather than `Nil` when the enclosing `?` token takes its zero
@@ -1539,6 +1529,211 @@ fn pattern_capture_group_list_flags(pat: &RegexPattern, ambient_list: bool) -> V
         out.extend(capture_group_list_flags(&token.atom, token_is_list));
     }
     out
+}
+
+/// How an alternation's UNTAKEN branch should render each capture it never
+/// bound: an empty LIST where Raku's static per-pattern analysis (see
+/// [`NameMult`]) marks the slot/name list-valued, absent (`Nil`) otherwise.
+/// Computed once per alternation atom and shared by every branch/candidate
+/// transform ([`super::regex_match_delta::alternation_branch_delta`]).
+///
+/// Positional capture GROUPS don't need the name side's "bound more than
+/// once in a sequence" rule — each `(...)` occurrence is its own slot index,
+/// so "list within the branch that has it" ([`capture_group_list_flags`])
+/// combined with the max over branches (the same rule that decides the
+/// reserved slot count: the widest branch's [`pattern_capture_group_list_flags`])
+/// is enough.
+pub(super) struct AlternationListFlags {
+    /// Per positional slot; the vector's length is the width reserved for
+    /// this alternation (capture numbers after it follow its widest branch,
+    /// so a shorter winning branch must still contribute a slot per capture
+    /// it did not take).
+    pub(super) positional: Vec<bool>,
+    pub(super) named: rustc_hash::FxHashSet<crate::symbol::Symbol>,
+}
+
+pub(super) fn alternation_list_flags(alts: &[RegexPattern]) -> AlternationListFlags {
+    let positional = alts
+        .iter()
+        .map(|p| pattern_capture_group_list_flags(p, false))
+        .max_by_key(|flags| flags.len())
+        .unwrap_or_default();
+    let mut mults: HashMap<crate::symbol::Symbol, NameMult> = HashMap::default();
+    for alt in alts {
+        for (&name, &m) in pattern_name_mult(alt, false).iter() {
+            let entry = mults.entry(name).or_insert(NameMult::None);
+            *entry = (*entry).max(m);
+        }
+    }
+    let named = mults
+        .into_iter()
+        .filter(|(_, m)| *m == NameMult::Many)
+        .map(|(k, _)| k)
+        .collect();
+    AlternationListFlags { positional, named }
+}
+
+/// A capture name's statically possible occurrence count within one match of
+/// a pattern, coarsened to exactly what distinguishes a singular `Match`
+/// from a LIST-valued capture: never bound here (`None`), bound at most once
+/// (`One`), or bound at least twice (`Many` — quantified, or two separate
+/// occurrences in the same sequence, e.g. `<e> <e>`). `Ord` is
+/// `None < One < Many` so a sequence's "combine" and an alternation's "max
+/// over branches" both fold with plain lattice operations
+/// ([`Self::seq`], [`Ord::max`]).
+///
+/// This is Rakudo's QRegex `capnames` static analysis (issue #9675): a name
+/// is list-valued EVERYWHERE in the pattern once it can occur twice ANYWHERE
+/// in the pattern, whether or not the branch that would populate it actually
+/// ran — an alternation's branch that never matched still leaves a
+/// list-valued name as `[]`, not `Nil`.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub(crate) enum NameMult {
+    None,
+    One,
+    Many,
+}
+
+impl NameMult {
+    /// Combine two occurrences of the SAME name at the same sequence level.
+    /// Either alone stays as-is; two non-`None` occurrences make it `Many`
+    /// regardless of either one's own multiplicity — two textual bindings
+    /// (`<e> <e>`) produce two `Match` objects under the same name even
+    /// though neither `<e>` is itself quantified.
+    fn seq(self, other: Self) -> Self {
+        match (self, other) {
+            (NameMult::None, x) | (x, NameMult::None) => x,
+            _ => NameMult::Many,
+        }
+    }
+}
+
+/// [`NameMult`] contribution of one atom's named captures. `ambient_list`
+/// carries whether something OUTSIDE this atom already repeats it (an
+/// enclosing token's own list quantifier). Mirrors
+/// [`Interpreter::collect_named_captures_in_atom`]'s transparency rules (a
+/// `CaptureGroup` is its own boundary and contributes nothing outward),
+/// generalized from "is this name reachable" to "how many times".
+fn atom_name_mult(
+    atom: &RegexAtom,
+    ambient_list: bool,
+) -> HashMap<crate::symbol::Symbol, NameMult> {
+    match atom {
+        RegexAtom::Named(name) => {
+            let mut out = HashMap::default();
+            let spec = name.spec();
+            if spec.silent {
+                return out;
+            }
+            let mult = if ambient_list {
+                NameMult::Many
+            } else {
+                NameMult::One
+            };
+            if let Some(alias) = spec.capture_name.as_deref() {
+                if !alias.is_empty() {
+                    // `capture_sym` is interned alongside `capture_name`
+                    // (regex_resolve.rs) whenever the latter is `Some`.
+                    out.insert(spec.capture_sym.unwrap(), mult);
+                }
+                if !spec.alias_replaces_original
+                    && alias != spec.lookup_name
+                    && !spec.lookup_name.is_empty()
+                {
+                    out.insert(spec.lookup_sym, mult);
+                }
+            } else if !spec.lookup_name.is_empty() {
+                out.insert(spec.lookup_sym, mult);
+            }
+            out
+        }
+        RegexAtom::Group(pat) => (*pattern_name_mult(pat, ambient_list)).clone(),
+        RegexAtom::Alternation(alts) | RegexAtom::SequentialAlternation(alts) => {
+            let mut acc: HashMap<crate::symbol::Symbol, NameMult> = HashMap::default();
+            for alt in alts {
+                for (&name, &m) in pattern_name_mult(alt, ambient_list).iter() {
+                    let entry = acc.entry(name).or_insert(NameMult::None);
+                    *entry = (*entry).max(m);
+                }
+            }
+            acc
+        }
+        _ => HashMap::default(),
+    }
+}
+
+/// [`atom_name_mult`] over a whole pattern, memoized on the pattern's own
+/// [`PatternDerived::name_mult`] for `ambient_list == false` — the only
+/// shape that is a pure function of the pattern alone; entering with
+/// `ambient_list == true` reuses that memo (every name reachable at all
+/// becomes `Many` under an ambient list, so no re-walk is needed — see the
+/// doc on [`NameMult`]).
+///
+/// Each token's own explicit alias (`$<name>=...`) contributes by
+/// `ambient_list` alone: the alias binds once per THIS token's own match —
+/// its own quantifier collapses into that one binding, it does not repeat
+/// the alias (`$<n>=[\w]+` is a single Match, not a list, unless something
+/// OUTSIDE it repeats the whole aliased unit). Names nested inside the
+/// atom instead contribute by `token_is_list` (ambient OR this token's own
+/// quantifier): a bare rule call like `<e>` really is invoked, and so
+/// captured, once per iteration of `<e>+` / `[ <e> ]+`. Sequential tokens
+/// combine with [`NameMult::seq`], so `<e> <e>` is `Many` even though
+/// neither `<e>` is itself quantified.
+fn pattern_name_mult(
+    pat: &RegexPattern,
+    ambient_list: bool,
+) -> Arc<HashMap<crate::symbol::Symbol, NameMult>> {
+    let base = Arc::clone(
+        pat.derived
+            .name_mult
+            .get_or_init(|| Arc::new(pattern_name_mult_uncached(pat))),
+    );
+    if !ambient_list {
+        return base;
+    }
+    Arc::new(base.keys().map(|&k| (k, NameMult::Many)).collect())
+}
+
+fn pattern_name_mult_uncached(pat: &RegexPattern) -> HashMap<crate::symbol::Symbol, NameMult> {
+    let mut acc: HashMap<crate::symbol::Symbol, NameMult> = HashMap::default();
+    for token in &pat.tokens {
+        let token_is_list = matches!(
+            token.quant,
+            RegexQuant::ZeroOrMore
+                | RegexQuant::OneOrMore
+                | RegexQuant::Repeat(..)
+                | RegexQuant::RepeatCode(_)
+        ) || token.separator.is_some();
+        let mut token_map: HashMap<crate::symbol::Symbol, NameMult> = HashMap::default();
+        for alias in [
+            token.named_capture.as_deref(),
+            token.secondary_named_capture.as_deref(),
+        ]
+        .into_iter()
+        .flatten()
+        {
+            if !alias.is_empty() {
+                let sym = crate::symbol::Symbol::intern(alias);
+                let entry = token_map.entry(sym).or_insert(NameMult::None);
+                *entry = (*entry).seq(NameMult::One);
+            }
+        }
+        for (name, m) in atom_name_mult(&token.atom, token_is_list) {
+            let entry = token_map.entry(name).or_insert(NameMult::None);
+            *entry = (*entry).seq(m);
+        }
+        if let Some(sep) = token.separator.as_ref() {
+            for (&name, &m) in pattern_name_mult(&sep.pattern, true).iter() {
+                let entry = token_map.entry(name).or_insert(NameMult::None);
+                *entry = (*entry).seq(m);
+            }
+        }
+        for (name, m) in token_map {
+            let entry = acc.entry(name).or_insert(NameMult::None);
+            *entry = (*entry).seq(m);
+        }
+    }
+    acc
 }
 
 /// Whether matching `atom` involves an alternation whose branches can have

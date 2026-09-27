@@ -78,23 +78,53 @@ pub(super) fn capture_group_delta(
 }
 
 /// One `|` / `||` branch's inner match, padded into the alternation's shared
-/// positional slot space.
+/// positional slot space, and — for a capture (name or positional slot)
+/// [`AlternationListFlags`] marks list-valued anywhere in the alternation —
+/// seeded as an empty LIST rather than left absent/Nil when this branch
+/// never bound it (#9675: `'x' | <e>+` must leave `$<e>` as `[]`, not `Nil`,
+/// when the `'x'` branch is the one that actually matched).
 pub(super) fn alternation_branch_delta(
-    capture_slots: usize,
+    flags: &super::regex_helpers::AlternationListFlags,
     mut inner_caps: RegexCaptures,
 ) -> RegexCaptures {
     if !super::regex_helpers::IN_QUANTIFIED_ALTERNATION_MATCH.with(Cell::get) {
-        inner_caps
-            .positional
-            .resize(capture_slots, PosSlot::alternation_padding());
+        pad_alternation_positional(&mut inner_caps, flags);
     }
     let mut new_caps = RegexCaptures::default();
     for (k, v) in inner_caps.named.drain() {
         new_caps.named.entry(k).or_default().merge(v);
+    }
+    for &name in &flags.named {
+        new_caps.named.entry(name).or_insert_with(|| NamedSlot {
+            nodes: Vec::new(),
+            quantified: true,
+        });
     }
     new_caps.extend_capture_alias_map(inner_caps.take_capture_alias_map());
     new_caps.positional.append(&mut inner_caps.positional);
     super::regex_helpers::adopt_inline_ast(&mut new_caps, &mut inner_caps);
     new_caps.extend_regex_vars(inner_caps.take_regex_vars());
     new_caps
+}
+
+/// Grow `caps.positional` to the alternation's shared slot count, padding
+/// each new slot as an empty LIST where `flags` says that slot sits under a
+/// list quantifier ANYWHERE in the alternation, Nil (the historical
+/// [`PosSlot::alternation_padding`]) otherwise.
+fn pad_alternation_positional(
+    caps: &mut RegexCaptures,
+    flags: &super::regex_helpers::AlternationListFlags,
+) {
+    while caps.positional.len() < flags.positional.len() {
+        let idx = caps.positional.len();
+        let slot = if flags.positional[idx] {
+            PosSlot {
+                quantified: Some(Vec::new()),
+                ..Default::default()
+            }
+        } else {
+            PosSlot::alternation_padding()
+        };
+        caps.positional.push(slot);
+    }
 }
