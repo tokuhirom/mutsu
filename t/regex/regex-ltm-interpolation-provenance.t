@@ -1,7 +1,7 @@
 use v6;
 use Test;
 
-plan 20;
+plan 24;
 
 # ADR-0046 Slice 1: array- and regex-object-valued regex interpolation forms
 # (`@name`, `<@name>`, `@(...)`, `@$ref`, `<$var>` holding a Regex) terminate
@@ -75,6 +75,41 @@ plan 20;
     my $rx = rx/Strict/;
     ok "StrictX" ~~ / <$rx> 'X' | 'St' /, 'probe S: matches';
     is ~$/, 'St', 'probe S: <$rx> regex-value form terminates too';
+}
+
+# Probe V (issue #9692): unlike probe S's Regex-valued `$rx`, a `$var` holding
+# a plain Str is re-parsed into a real AST right here at `<$var>`'s own parse
+# site -- it is exactly as knowable as a hand-written literal in the same
+# spot, so it must NOT terminate the declarative prefix. `raku` cannot be
+# reached from this container to confirm this exact reduction, but the
+# `Math::Symbolic` ecosystem distribution's `t/01-basics.t` (which relies on
+# precisely this shape: `<before .+? <$in_ops_a>>` in its `infix_chain_*`
+# rules) passes under real rakudo 2026.07.
+{
+    my $str = 'Strict';
+    ok "StrictX" ~~ / <$str> 'X' | 'St' /, 'probe V: matches';
+    is ~$/, 'StrictX',
+        'probe V: <$str> holding a plain Str participates normally (contrast with probe S)';
+}
+
+# Probe W (issue #9692): the same Str-vs-Regex distinction, but through an
+# unbounded quantifier inside a lookahead -- the shape the bug actually showed
+# up in. Before the fix, `<$ops>` (Terminate) sitting right after `.+?`'s loop
+# point was reached anew at every position the loop explored, so `chain`'s
+# measured prefix kept growing with the subject instead of stopping at the
+# first real match of `<$ops>` -- inflating it past `equation`'s properly
+# bounded prefix and flipping which branch `token TOP` tries first.
+{
+    my $ops = "['+'|'-']";
+    grammar Chain9692 {
+        token TOP { <equation> | <expression> }
+        token equation { <before <-[ = ]>+ \= > <expression> \= <expression> }
+        rule expression { \s* [<chain>|<term>] }
+        rule chain { <before .+? <$ops>> <term> [ $<op>=<$ops> <term> ]+ }
+        token term { \w+ }
+    }
+    ok Chain9692.parse('x+y=1'), 'probe W: matches (equation branch)';
+    ok Chain9692.parse('x+y'), 'probe W: matches (expression/chain branch)';
 }
 
 # ---------------------------------------------------------------------------

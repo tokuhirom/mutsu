@@ -3652,8 +3652,21 @@ impl Interpreter {
                                         // `constant`-ness -- verified against
                                         // `raku` for `constant $rx = rx/.../`
                                         // too, unlike the plain `$`-scalar
-                                        // textual-splice case.
-                                        runtime_value_atom = true;
+                                        // textual-splice case. That covers a
+                                        // genuine Regex-typed value only
+                                        // (`is_regex_value`): its own AST is
+                                        // opaque to the NFA build the way a
+                                        // called routine's body is. A `$var`
+                                        // holding a plain Str is different —
+                                        // `parsed` above IS this arm's own
+                                        // freshly-parsed AST, exactly as
+                                        // knowable as if the source had been
+                                        // written literally, so it measures
+                                        // normally (issue #9692: `<$ops>`
+                                        // holding `"['+'|'-']"` must rank
+                                        // identically to a hand-written
+                                        // `['+'|'-']` in the same spot).
+                                        runtime_value_atom = is_regex_value;
                                         match closure_scope {
                                             Some(scope) => {
                                                 RegexAtom::CaptureIsolatedGroupScoped(parsed, scope)
