@@ -416,10 +416,7 @@ impl Interpreter {
                     self.export_implicit_stash_sub(&resolved_name, *multi);
                 } else if *multi
                     && !self.suppress_exports
-                    && self.is_our_scoped_proto(&format!(
-                        "{}::{resolved_name}",
-                        self.current_package()
-                    ))
+                    && self.is_our_scoped_proto(&resolved_name)
                 {
                     // A bare `multi sub` candidate is never itself `our`-scoped
                     // (raku rejects `our multi sub`), but its proto may be --

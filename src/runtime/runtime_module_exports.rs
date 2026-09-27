@@ -412,12 +412,13 @@ impl Interpreter {
         let Some(module) = self.module_load_stack.last().cloned() else {
             return;
         };
-        let proto_key = Symbol::intern(&format!("{current_pkg}::{name}"));
+        let name_sym = Symbol::intern(name);
+        let proto_key = crate::qualified::qualified(Symbol::intern(&current_pkg), name_sym);
         // Hoist the clone to a `let` so the read guard drops before the
         // registry_mut write below (read->write on the same lock deadlocks).
         let proto_def = self.registry().proto_functions.get(&proto_key).cloned();
         if let Some(def) = proto_def {
-            let target = Symbol::intern(&format!("{module}::{name}"));
+            let target = crate::qualified::qualified(Symbol::intern(&module), name_sym);
             self.registry_mut()
                 .proto_functions_mut()
                 .entry(target)
@@ -426,13 +427,18 @@ impl Interpreter {
         self.export_implicit_stash_sub(name, true);
     }
 
-    /// Whether `fq_name` (`{package}::{name}`) names a `proto` declared
+    /// Whether `name`'s `proto` in the current package was declared
     /// `our`-scoped (see `register_proto_decl`'s `mark_our_scoped_package_item`
     /// call). `pub(crate)`: consulted by `vm_register_sub_ops.rs`, a
     /// different module tree, so a later bare `multi sub` candidate can tell
     /// whether its proto already made this name part of an export stash's
     /// list (see [`Self::export_implicit_stash_proto`]).
-    pub(crate) fn is_our_scoped_proto(&self, fq_name: &str) -> bool {
+    pub(crate) fn is_our_scoped_proto(&self, name: &str) -> bool {
+        let fq_name = crate::qualified::qualified(
+            Symbol::intern(&self.current_package()),
+            Symbol::intern(name),
+        );
+        let fq_name = fq_name.as_str();
         self.registry().proto_subs_contains(fq_name)
             && self.our_scoped_package_items.contains(fq_name)
     }
