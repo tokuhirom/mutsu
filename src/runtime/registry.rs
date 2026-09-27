@@ -188,6 +188,10 @@ pub(crate) struct Registry {
     pub(crate) dispatcher_wrapped_methods: std::collections::HashSet<String>,
     /// `enum Name (...)` declarations: enum name -> [(variant name, value)].
     pub(crate) enum_types: HashMap<String, Vec<(String, EnumValue)>>,
+    /// Enums minted by `Metamodel::EnumHOW.new_type`: type name -> the value
+    /// objects `.^add_enum_value` received and the HOW's compose state.
+    /// Declared (`enum Name ...`) enums live in `enum_types` instead.
+    pub(crate) how_enums: HashMap<String, super::methods_enumhow::HowEnumState>,
     /// `subset Name of Base where { ... }` declarations.
     pub(crate) subsets: HashMap<String, SubsetDef>,
 

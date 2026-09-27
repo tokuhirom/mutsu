@@ -306,7 +306,7 @@ impl Interpreter {
             ValueView::Package(n) => self.registry().enum_types.contains_key(&*n.resolve()),
             _ => false,
         };
-        if base_type == "Enumeration" && is_enum {
+        if (base_type == "Enumeration" || self.enum_does_marker_role(left, base_type)) && is_enum {
             // An enum value is defined (:D); a bare enum type object is
             // undefined (:U).
             return match smiley {

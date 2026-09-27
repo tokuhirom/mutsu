@@ -48,6 +48,8 @@ pub(crate) const BUILTIN_ROLE_NAMES: &[&str] = &[
     // `unit module M; class C does Enumeration` compiled a parent named
     // `M::Enumeration` that nothing could ever resolve.
     "Enumeration",
+    "NumericEnumeration",
+    "StringyEnumeration",
 ];
 
 /// Is `name` one of [`BUILTIN_ROLE_NAMES`]?

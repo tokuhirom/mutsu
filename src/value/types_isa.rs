@@ -100,9 +100,14 @@ impl Value {
             | ValueView::GenericRange { .. } => "Range",
             ValueView::Nil => "Nil",
             ValueView::Instance { .. } | ValueView::Package(_) => owned_name.as_deref().unwrap(),
-            ValueView::Enum { enum_type, .. } => {
-                // Every enum value does the `Enumeration` role.
-                return type_name == "Enumeration" || enum_type.resolve() == type_name;
+            ValueView::Enum {
+                enum_type, value, ..
+            } => {
+                // Every enum value does the `Enumeration` role, and a numeric
+                // or stringy one its marker role too.
+                return type_name == "Enumeration"
+                    || value.marker_role() == Some(type_name)
+                    || enum_type.resolve() == type_name;
             }
             ValueView::Sub(data) => match data.env.get("__mutsu_callable_type").map(Value::view) {
                 Some(ValueView::Str(kind)) if kind.as_str() == "Method" => "Method",

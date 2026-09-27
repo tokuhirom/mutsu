@@ -57,10 +57,19 @@ impl Interpreter {
         // composition reads a role's `RoleDef`, not a class definition.
         if native_short == Some("ParametricRoleHOW") {
             self.register_metamodel_role(&name);
-        } else if !self.registry().classes.contains_key(&name) {
-            self.registry_mut()
-                .classes
-                .insert(name.clone(), Default::default());
+        } else {
+            // An EnumHOW-minted type carries the value list and compose state
+            // its `.^add_enum_value` / `.^compose_values` build up.
+            if native_short == Some("EnumHOW") {
+                self.registry_mut()
+                    .how_enums
+                    .insert(name.clone(), Default::default());
+            }
+            if !self.registry().classes.contains_key(&name) {
+                self.registry_mut()
+                    .classes
+                    .insert(name.clone(), Default::default());
+            }
         }
         // A run-time-minted type is not a lexical import: it must outlive a
         // `use`-containing routine that created it (#9532).

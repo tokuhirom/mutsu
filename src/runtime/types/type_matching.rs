@@ -674,6 +674,9 @@ impl Interpreter {
         // Enumeration` example and `Logic::Ternary` both do), and denying it
         // here made `$instance ~~ Enumeration` `False` for a class that had
         // just composed the role.
+        if self.enum_does_marker_role(value, constraint) {
+            return true;
+        }
         if constraint == "Enumeration" {
             match value.view() {
                 ValueView::Enum { .. } => return true,

@@ -276,6 +276,17 @@ role GLOBAL::Enumeration {
     multi method gist(::?CLASS:D:) { self.key.Str }
     multi method raku(::?CLASS:D:) { self.^name ~ '::' ~ self.key }
 }
+# The marker roles rakudo's EnumHOW mixes into a numeric / stringy enum. A
+# declared enum's values type-check against them natively
+# (`enum_marker_role`); these declarations give the names a real role type
+# object for the MOP (`Metamodel::EnumHOW.new_type(...).^add_role(...)`) and
+# for classes that compose them.
+role GLOBAL::NumericEnumeration {
+    multi method Str(::?CLASS:D:) { self.key }
+}
+role GLOBAL::StringyEnumeration {
+    multi method Str(::?CLASS:D:) { self.value }
+}
 "#;
 
 /// `trait_mod:<does>` — CORE.setting's callable form of the `does` mixin
