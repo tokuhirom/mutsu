@@ -2079,7 +2079,12 @@ impl Interpreter {
             && !name.starts_with('@')
         {
             if val.is_nil() && self.is_definite_constraint(constraint) {
-                if has_explicit_initializer {
+                // A plain reassignment (not a `my` declaration at all) or a `my`
+                // declaration whose explicit initializer evaluated to Nil is a
+                // genuine failing assignment, not a missing initializer — only a
+                // bare `my Foo $x;` with NOTHING written for its initializer gets
+                // the MissingInitializer treatment below.
+                if !is_vardecl || has_explicit_initializer {
                     let nominal =
                         loan_env!(self, nominal_type_object_name_for_constraint(constraint));
                     let reset_value = Value::package(Symbol::intern(&nominal));

@@ -476,8 +476,14 @@ impl Compiler {
                                     self.code
                                         .emit(OpCode::TypeCheckBind(tc_idx, Some(var_name_idx)));
                                 } else {
-                                    self.code
-                                        .emit(OpCode::TypeCheck(tc_idx, Some(var_name_idx)));
+                                    // The guard above already excludes a Nil-literal
+                                    // `expr`, so this is always a genuine explicit
+                                    // initializer expression.
+                                    self.code.emit(OpCode::TypeCheck(
+                                        tc_idx,
+                                        Some(var_name_idx),
+                                        true,
+                                    ));
                                 }
                             }
                             self.code.emit(OpCode::Dup);

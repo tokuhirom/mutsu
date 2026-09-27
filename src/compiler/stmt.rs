@@ -1805,8 +1805,11 @@ impl Compiler {
                         self.code
                             .emit(OpCode::TypeCheckBind(tc_idx, Some(var_name_idx)));
                     } else {
-                        self.code
-                            .emit(OpCode::TypeCheck(tc_idx, Some(var_name_idx)));
+                        self.code.emit(OpCode::TypeCheck(
+                            tc_idx,
+                            Some(var_name_idx),
+                            has_explicit_initializer,
+                        ));
                     }
                 }
                 let slot = self.declare_local(name);

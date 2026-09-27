@@ -9,6 +9,7 @@ impl Interpreter {
         tc_idx: u32,
         var_name_idx: Option<u32>,
         bind_mode: bool,
+        has_explicit_initializer: bool,
     ) -> Result<(), RuntimeError> {
         let raw_constraint = Self::const_str(code, tc_idx);
         let var_name: Option<&str> = var_name_idx.map(|idx| Self::const_str(code, idx));
@@ -253,6 +254,20 @@ impl Interpreter {
             // Infinite ranges and non-matching types fall through to normal check
         }
         if value.is_nil() && self.is_definite_constraint(constraint) {
+            if has_explicit_initializer {
+                // The declaration DID write an initializer expression — it just
+                // evaluated to Nil at runtime (`my Int:D $i = f()` where `f`
+                // returns `Nil`). That is a genuine failing assignment, not a
+                // missing one: rakudo raises X::TypeCheck::Assignment here, the
+                // same error a later `$i = Nil` reassignment gets.
+                let nominal = loan_env!(self, nominal_type_object_name_for_constraint(constraint));
+                let reset_value = Value::package(Symbol::intern(&nominal));
+                return Err(runtime::utils::definite_type_check_assignment_error(
+                    var_name.unwrap_or("variable"),
+                    constraint,
+                    &reset_value,
+                ));
+            }
             // A subset (named or anon-from-`where`) whose base is `:D` does not
             // require an initializer — only an explicit `:D` smiley on the declared
             // type does. Only raise MissingInitializer when one is truly required;
