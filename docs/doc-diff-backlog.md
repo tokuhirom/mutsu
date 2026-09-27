@@ -304,7 +304,8 @@ row here.
 
 All ~390 findings of the sweep were re-run against `raku` v2026.07 and a
 release `mutsu` at `8458a31f`, reduced to minimal repros, and clustered by root
-cause: 117 issues, #9766–#9882. Paths are under `raku-doc/doc/`.
+cause: 117 issues, #9766–#9882, plus #9885–#9887 filed afterwards from
+the first "not filed" list. Paths are under `raku-doc/doc/`.
 
 | file:line | one-line summary | issue |
 |---|---|---|
@@ -425,14 +426,11 @@ cause: 117 issues, #9766–#9882. Paths are under `raku-doc/doc/`.
 | Type/Baggy:355 | `Baggy.hash` is a plain `Hash` | [#9880](https://github.com/tokuhirom/mutsu/issues/9880) |
 | Type/independent-routines:246 | `PROCESS::<&chdir> = …` accepted | [#9881](https://github.com/tokuhirom/mutsu/issues/9881) |
 | Type/Capture:70, Language/control:647,1368, … | arity message count / missing candidate list | [#9882](https://github.com/tokuhirom/mutsu/issues/9882) |
+| Language/experimental:66,78,93,104, Type/X/TypeCheck/Splice:30 | macros (`macro` / `quasi`) unimplemented — ADR-0011 Phase 6 (deep) | [#9885](https://github.com/tokuhirom/mutsu/issues/9885) |
+| Language/signatures:445 | `use v6.c; my Int:D $x .= new: 42` succeeds | [#9886](https://github.com/tokuhirom/mutsu/issues/9886) |
+| Type/CompUnit/Repository/Installation:46 | `.uninstall(Any)` succeeds silently | [#9887](https://github.com/tokuhirom/mutsu/issues/9887) |
 
 **Triaged, deliberately not filed (2026-09-27).**
-- Macros (`Language/experimental:66,78,93,104`, `Type/X/TypeCheck/Splice:30`):
-  `quasi` does not parse at all; tracked as ADR-0011 Phase 6, not as an issue.
-- `use v6.c; my Int:D $x .= new: 42` (`Language/signatures:445`) and
-  `repository-for-name("site").uninstall(Any)`
-  (`Type/CompUnit/Repository/Installation:46`): mutsu accepts what raku rejects,
-  in corners too narrow to be worth a ticket yet.
 - Rakudo 2026.07 disagrees with its own doc and mutsu follows the doc:
   `Type/Int:134,150` (`polymod`), `Type/Any:817` (argument-less `.first`),
   `Type/Any:617,628` (`minpairs`/`maxpairs` return type),
