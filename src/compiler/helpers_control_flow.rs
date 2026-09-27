@@ -3,9 +3,20 @@ use crate::ast::CallArg;
 
 impl Compiler {
     /// Check if the body uses @_ or %_ legacy argument variables.
+    ///
+    /// Only a sigiled `name: "@_"` / `name: "%_"` field (an assignment, `temp`
+    /// or declaration target) counts. A string literal that merely spells `@_`
+    /// or `%_` (`Str("%_")`, e.g. `<$_ @_ %_>`) is data, not a use: counting it
+    /// made an `if` block bind its condition as `@_` (LLM::Graph's
+    /// `when $name ∈ <$_ @_ %_>`).
+    ///
+    /// TODO: a plain read (`ArrayVar("_")`) is not detected, so `if 42 { say
+    /// @_ }` does not see `[42]` as raku does. Detecting it needs the bound
+    /// `@_` to be scoped to the branch, or it overwrites the enclosing
+    /// routine's `@_` for the statements after the `if` -- see #9979.
     pub(super) fn body_uses_legacy_args(body: &[Stmt]) -> bool {
         let body_str = format!("{:?}", body);
-        body_str.contains("\"@_\"") || body_str.contains("\"%_\"")
+        body_str.contains("name: \"@_\"") || body_str.contains("name: \"%_\"")
     }
 
     /// Whether `--> spec` names a **definite return value** (a literal or a

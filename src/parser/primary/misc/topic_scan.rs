@@ -66,9 +66,27 @@ pub(super) fn body_references_topic(input: &str) -> bool {
             }
             // A `< … >` word list is literal text too: the `.abs` in
             // `{ :parts< .abs > }` is a word, not a topic call.
+            // `<->` opens an rw pointy signature, not a word list.
+            b'<' if depth == 1 && bytes[i + 1..].starts_with(b"->") => {
+                if let Some(end) = nested_signature_end(bytes, i + 1) {
+                    i = end;
+                    continue;
+                }
+            }
             b'<' => {
                 if let Some(close) = angle_words_end(bytes, i) {
                     i = close;
+                }
+            }
+            // A nested routine's or pointy block's signature declares (and
+            // defaults) its own parameters: the `$_` in `{ a => sub ($_ =
+            // Whatever) { … } }` or `{ a => -> $_ { … } }` is that closure's,
+            // so rakudo keeps both hashes. Skip the signature; its body brace
+            // is then ordinary nesting.
+            b's' | b'-' if depth == 1 => {
+                if let Some(end) = nested_signature_end(bytes, i) {
+                    i = end;
+                    continue;
                 }
             }
             // `$_` / `@_` / `%_` topic variable at the top level of this body,
@@ -94,6 +112,54 @@ pub(super) fn body_references_topic(input: &str) -> bool {
         i += 1;
     }
     false
+}
+
+/// If `at` starts an anonymous `sub (…)` or a pointy `-> …` signature, the
+/// index just past that signature: after the closing `)` for `sub`, at the
+/// body's `{` for a pointy block. Gives up (`None`) at a `;` or an unbalanced
+/// closer, so a misread can never swallow the rest of the body.
+fn nested_signature_end(bytes: &[u8], at: usize) -> Option<usize> {
+    let is_ident = |c: u8| c.is_ascii_alphanumeric() || c == b'_' || c == b'-';
+    let pointy = bytes[at..].starts_with(b"->");
+    if !pointy {
+        if !bytes[at..].starts_with(b"sub")
+            || (at > 0 && is_ident(bytes[at - 1]))
+            || bytes.get(at + 3).is_some_and(|&c| is_ident(c))
+        {
+            return None;
+        }
+        let mut j = at + 3;
+        while bytes.get(j).is_some_and(|c| c.is_ascii_whitespace()) {
+            j += 1;
+        }
+        if bytes.get(j) != Some(&b'(') {
+            return None;
+        }
+    }
+    let mut j = at + if pointy { 2 } else { 3 };
+    let mut nest = 0u32;
+    while let Some(&c) = bytes.get(j) {
+        match c {
+            b'(' | b'[' => nest += 1,
+            b')' | b']' => {
+                nest = nest.checked_sub(1)?;
+                if nest == 0 && !pointy {
+                    return Some(j + 1);
+                }
+            }
+            b'{' if nest == 0 => return pointy.then_some(j),
+            b'{' | b'}' | b';' => return None,
+            b'\'' | b'"' => {
+                j += 1;
+                while bytes.get(j).is_some_and(|&q| q != c) {
+                    j += 1;
+                }
+            }
+            _ => {}
+        }
+        j += 1;
+    }
+    None
 }
 
 /// If the `<` at `at` opens a `< … >` word list, the index of its closing `>`.

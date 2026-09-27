@@ -140,11 +140,17 @@ impl Compiler {
             if has_element_source_capture {
                 self.code.emit(OpCode::ClearElementSource);
             }
-            self.code.patch_jump(jump_else);
             if needs_cond_value {
                 // Pop the leftover duplicated condition value on the false
-                // branch (JumpIfFalse consumed only one copy).
+                // branch only (JumpIfFalse consumed one copy; the taken branch
+                // consumed the other binding `@_` / the placeholder). Falling
+                // through into the Pop would eat the caller's stack slot.
+                let jump_end = self.code.emit(OpCode::Jump(0));
+                self.code.patch_jump(jump_else);
                 self.code.emit(OpCode::Pop);
+                self.code.patch_jump(jump_end);
+            } else {
+                self.code.patch_jump(jump_else);
             }
         } else {
             let jump_end = self.code.emit(OpCode::Jump(0));
