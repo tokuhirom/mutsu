@@ -272,6 +272,27 @@ pub(in crate::parser) fn is_within_original_source(input: &str) -> bool {
     })
 }
 
+/// Whether `rest` lies entirely within a registered heredoc leaked region — a
+/// buffer `Box::leak`ed once by `parse_to_heredoc_with_flags` and never
+/// freed, so every byte in it stays valid for the rest of the process.
+///
+/// A heredoc whose marker line carries trailing code (`is Q:to[END], 'x';`)
+/// splices that code onto the text after the terminator and returns the
+/// splice as its remainder, which is not a subslice of the input it was
+/// parsed from. `ParseMemo::store` uses this to admit such a remainder
+/// anyway instead of refusing to cache the entry — the refusal is what made
+/// every backtracking attempt re-parse (and re-leak) the same heredoc from
+/// scratch, multiplying cost at every level of block nesting (#9674).
+pub(in crate::parser) fn is_within_leaked_region(rest: &str) -> bool {
+    let start = rest.as_ptr() as usize;
+    let end = start.saturating_add(rest.len());
+    LEAKED_REGIONS.with(|r| {
+        r.borrow()
+            .iter()
+            .any(|region| start >= region.ptr && end <= region.ptr.saturating_add(region.len))
+    })
+}
+
 pub(super) fn reset_primary_memo() {
     PRIMARY_MEMO.reset();
 }
