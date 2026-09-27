@@ -259,19 +259,21 @@ pub(crate) fn inject_implicit_rule_ws(pattern: &str) -> String {
             // `%*var` in it (`:my %*PLAYED = ()`) is not mangled by `<.ws>`
             // injection (which would corrupt both the match and later scans of
             // the pattern for its declared dynamic variables).
-            if c == ':' && brace_depth == 0 && angle_depth == 0 {
-                if let Some((len, on)) = inline_sigspace_modifier(&chars[i + 1..]) {
-                    out.extend(chars[i..=i + len].iter());
-                    i += len + 1;
-                    sigspace = on;
-                    // The whitespace right after the adverb separates it from
-                    // the atom it scopes over; it is never significant.
-                    while i < chars.len() && chars[i].is_whitespace() {
-                        i += 1;
-                    }
-                    out.push(' ');
-                    continue;
+            if c == ':'
+                && brace_depth == 0
+                && angle_depth == 0
+                && let Some((len, on)) = inline_sigspace_modifier(&chars[i + 1..])
+            {
+                out.extend(chars[i..=i + len].iter());
+                i += len + 1;
+                sigspace = on;
+                // The whitespace right after the adverb separates it from
+                // the atom it scopes over; it is never significant.
+                while i < chars.len() && chars[i].is_whitespace() {
+                    i += 1;
                 }
+                out.push(' ');
+                continue;
             }
             if c == ':' && brace_depth == 0 {
                 let rest: String = chars[i + 1..].iter().collect();
