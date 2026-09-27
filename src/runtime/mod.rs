@@ -583,6 +583,7 @@ mod builtins_postcircumfix;
 mod catch_inline;
 mod control_inline;
 pub(crate) mod json;
+mod module_reinstate;
 mod proxy_store;
 pub(crate) mod state_scope_reaper;
 pub(crate) use builtins_multidim_subscript::PositionalMissing;

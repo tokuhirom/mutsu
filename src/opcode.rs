@@ -3108,6 +3108,16 @@ pub(crate) enum OpCode {
     /// the `Any` type object when it is `::`-qualified, and
     /// `X::Undeclared::Symbols` inside an `EVAL`.
     GetCodeVar(u32),
+    /// [`Self::GetCodeVar`] for a `&name` the compiler resolved to a local
+    /// slot of this frame. Stack: `[] → [Code]`.
+    ///
+    /// A frame can hold several slots named `&name` -- an inner block's `my
+    /// &f`, or a nested `if EXPR -> &f` -- and only the compiler's scoped
+    /// `local_map` knows which one a read names; a run-time by-name probe
+    /// always found the first, so the inner read saw the OUTER binding. The
+    /// slot is read first; when it is still `Nil` the read resolves exactly
+    /// as `GetCodeVar(name_idx)` does, minus the by-name slot probe.
+    GetCodeVarLocal { name_idx: u32, slot: u32 },
 
     // -- Postfix operators --
     // The optional second field is the compile-time-resolved local slot for the
@@ -7440,9 +7450,9 @@ impl CompiledCode {
                 // halves of every scan that asks about one.
                 | OpCode::ConcatAssignLocal(slot, _)
                 | OpCode::StateVarInit(slot, _) => Some(*slot),
-                OpCode::GetLocalMetaAssign { slot, .. } | OpCode::SetLocalDecl { slot, .. } => {
-                    Some(*slot)
-                }
+                OpCode::GetLocalMetaAssign { slot, .. }
+                | OpCode::SetLocalDecl { slot, .. }
+                | OpCode::GetCodeVarLocal { slot, .. } => Some(*slot),
                 _ => None,
             };
             if let Some(needed) = slot.and_then(|slot| slots.get_mut(slot as usize)) {
@@ -9330,7 +9340,7 @@ impl CompiledCode {
     /// so the free-var scan must re-key it with the sigil before matching.
     pub(crate) fn op_code_var_read_const_idx(op: &OpCode) -> Option<u32> {
         match op {
-            OpCode::GetCodeVar(idx) => Some(*idx),
+            OpCode::GetCodeVar(idx) | OpCode::GetCodeVarLocal { name_idx: idx, .. } => Some(*idx),
             OpCode::CallOnCodeVar { name_idx, .. } => Some(*name_idx),
             _ => None,
         }

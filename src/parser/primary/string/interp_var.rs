@@ -599,55 +599,15 @@ pub(crate) fn try_interpolate_var<'a>(
         {
             return Some(result);
         }
-        if next.is_alphabetic() || next == '_' {
-            let var_rest = &rest[1..];
-            let end = var_rest
-                .find(|c: char| !c.is_alphanumeric() && c != '_' && c != '-')
-                .unwrap_or(var_rest.len());
-            let name = &var_rest[..end];
-            let after_name = &var_rest[end..];
-            // Must be followed by (...) to interpolate
-            if after_name.starts_with('(') {
-                // Find matching closing paren
-                let mut depth = 0usize;
-                let mut paren_end = None;
-                for (idx, ch) in after_name.char_indices() {
-                    if ch == '(' {
-                        depth += 1;
-                    } else if ch == ')' {
-                        depth -= 1;
-                        if depth == 0 {
-                            paren_end = Some(idx);
-                            break;
-                        }
-                    }
-                }
-                if let Some(pe) = paren_end {
-                    let args_str = &after_name[1..pe];
-                    let remainder = &after_name[pe + 1..];
-                    // Parse arguments
-                    let args = if args_str.trim().is_empty() {
-                        vec![]
-                    } else {
-                        let mut args = vec![];
-                        for arg in args_str.split(',') {
-                            let arg = arg.trim();
-                            if let Ok((_, expr)) = crate::parser::expr::expression(arg) {
-                                args.push(expr);
-                            }
-                        }
-                        args
-                    };
-                    if !current.is_empty() {
-                        parts.push(Expr::Literal(literal_str(std::mem::take(current))));
-                    }
-                    parts.push(Expr::Call {
-                        name: Symbol::intern(name),
-                        args,
-                    });
-                    return Some(remainder);
-                }
-            }
+        if (next.is_alphabetic() || next == '_')
+            && let Some(result) = super::interp_code_call::try_code_call_interp(
+                rest,
+                parts,
+                current,
+                parse_postcircumfix_index,
+            )
+        {
+            return Some(result);
         }
     }
     None

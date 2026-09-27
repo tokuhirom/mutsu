@@ -5118,7 +5118,13 @@ impl Interpreter {
             // user lexicals, f = the routine's free vars (its code object's filtered capture,
             // `routine_code_object_env`); O(1) for a `&`-sigil local.
             OpCode::GetCodeVar(name_idx) => {
-                self.exec_get_code_var_op(code, *name_idx)?;
+                self.exec_get_code_var_op(code, *name_idx, None)?;
+                *ip += 1;
+            }
+            // Cost: O(1) for a bound slot; else O(s + f) as `GetCodeVar`, s = visible env
+            // names that are not plain user lexicals, f = the routine's free vars.
+            OpCode::GetCodeVarLocal { name_idx, slot } => {
+                self.exec_get_code_var_op(code, *name_idx, Some(*slot as usize))?;
                 *ip += 1;
             }
 

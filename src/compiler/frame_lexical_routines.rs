@@ -106,7 +106,7 @@ pub(super) fn scan_chunk(
             continue;
         }
         // `&name` as a value: the lexical table builds the code object.
-        if let OpCode::GetCodeVar(idx) = op
+        if let OpCode::GetCodeVar(idx) | OpCode::GetCodeVarLocal { name_idx: idx, .. } = op
             && let Some(sym) = const_sym(*idx)
             && matches!(
                 code.constants.get(*idx as usize).map(Value::view),

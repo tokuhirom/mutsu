@@ -363,6 +363,11 @@ impl Compiler {
         if pointy_topic_scope {
             self.code.emit(OpCode::EnterPointyTopic);
         }
+        // Its own scope, as in `compile_if_construct`.
+        let binding_scope = binding_var.is_some();
+        if binding_scope {
+            self.push_local_scope();
+        }
         let mut deferred_container_decl = None;
         if let Some(var_name) = binding_var {
             let (read_expr, deferred) = self.compile_if_binding_decl(var_name, cond);
@@ -427,6 +432,9 @@ impl Compiler {
         self.code.patch_jump(jump_end);
         if pointy_topic_scope {
             self.code.emit(OpCode::ExitPointyTopic);
+        }
+        if binding_scope {
+            self.pop_local_scope();
         }
     }
 

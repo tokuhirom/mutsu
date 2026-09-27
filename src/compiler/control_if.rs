@@ -83,6 +83,14 @@ impl Compiler {
             bind_cond_placeholders && Self::inlined_body_binds_supplied_value(then_branch);
         let needs_cond_value = needs_at_underscore || binds_cond_placeholder;
 
+        // The pointy parameter is the branch block's own lexical, not a
+        // declaration in the enclosing scope: give it a scope of its own, so a
+        // same-named outer variable gets a distinct slot back when the `if`
+        // ends (`my $c = 7; if 8 -> $c { }; say $c` is 7).
+        let binding_scope = binding_var.is_some();
+        if binding_scope {
+            self.push_local_scope();
+        }
         let mut deferred_container_decl = None;
         let mut has_element_source_capture = false;
         if let Some(var_name) = binding_var {
@@ -194,6 +202,9 @@ impl Compiler {
         }
         if pointy_topic_scope {
             self.code.emit(OpCode::ExitPointyTopic);
+        }
+        if binding_scope {
+            self.pop_local_scope();
         }
     }
 
