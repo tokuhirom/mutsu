@@ -592,6 +592,27 @@ impl Interpreter {
                             // uninitialized scalar: it reads as the Any type
                             // object, like `my $x` (S03-operators/context.t).
                             Ok(Value::package(crate::symbol::wk::any()))
+                        } else if name.starts_with('*')
+                            && !runtime::utils::is_builtin_dynamic_var(name)
+                        {
+                            // A `$*x`/`@*x`/`%*x` that resolved through NONE of
+                            // the stores above (env, a caller's `my $*x`,
+                            // `PROCESS::`, ...) was never declared anywhere in
+                            // the dynamic scope: raku raises "Dynamic variable
+                            // ... not found" (X::Dynamic::NotFound). It is a
+                            // lazy Failure, not an eager throw here — `.^name`
+                            // and `.defined` must answer without exploding
+                            // (mirrors `CheckDynamicVarDeclared`'s eager throw
+                            // on the ASSIGNMENT side, where there is no lazy
+                            // value to hand back instead).
+                            let display = if name.starts_with(['@', '%', '&']) {
+                                name.to_string()
+                            } else {
+                                format!("${}", name)
+                            };
+                            Ok(self.fail_error_to_failure_value(
+                                &runtime::utils::dynamic_not_found_error(&display),
+                            ))
                         } else if self.strict_mode && !Self::strict_read_exempt(name) {
                             // Read-side counterpart of the `SetGlobal` write
                             // check above: a plain scalar name that resolved
@@ -765,28 +786,33 @@ impl Interpreter {
                     // declaration-time snapshot, taken once at block exit
                     // (#8869).
                     .or_else(|| self.package_scope_lexical(name))
+                    .map(Ok)
                     .unwrap_or_else(|| {
-                        // A never-declared `@*`-twigil (dynamic) variable is
-                        // `X::Dynamic::NotFound` territory in Raku -- the
-                        // caller-chain lookup genuinely found nothing, so the
-                        // read is undefined (Nil), matching the scalar
-                        // `GetGlobal` fallback below and letting `//` fall
-                        // through to its RHS. Mirrors Test::META's own
-                        // `@*META-CANDIDATES // <META6.json META.info>`
-                        // (App::ShowPath, #8483 sibling finding): auto-vivifying
-                        // a defined empty Array here made `//` never see the
-                        // fallback.
-                        if name.strip_prefix('@').is_some_and(|n| n.starts_with('*')) {
-                            Value::NIL
+                        // A never-declared `@*`-twigil (dynamic) variable: the
+                        // caller-chain lookup genuinely found nothing, so raku
+                        // raises `X::Dynamic::NotFound` -- as a lazy Failure
+                        // here (not an eager throw), mirroring the scalar
+                        // `GetGlobal` fallback above so `.^name`/`.defined`
+                        // still answer and `//` still falls through to its RHS.
+                        // A builtin dynamic (`@*ARGS`, ...) is always
+                        // "declared" by the setting, so it is exempted the
+                        // same way the scalar fallback and the assignment-side
+                        // `CheckDynamicVarDeclared` check are.
+                        if name.strip_prefix('@').is_some_and(|n| n.starts_with('*'))
+                            && !runtime::utils::is_builtin_dynamic_var(name)
+                        {
+                            Ok(self.fail_error_to_failure_value(
+                                &runtime::utils::dynamic_not_found_error(name),
+                            ))
                         } else {
                             // An undeclared plain `@`-sigil variable defaults to
                             // an empty Array (raku auto-declares it as Array
                             // under `no strict`): `@x[2]` is `(Any)`, `@x.end`
                             // is `-1`, `@x.raku` is `[]`. Anonymous `@`-sigil
                             // variables share this default.
-                            Value::real_array(vec![])
+                            Ok(Value::real_array(vec![]))
                         }
-                    });
+                    })?;
                 // A whole-container `:=` bind (`my @b := @a`) stores a shared
                 // `ContainerRef` cell in the slot so both aliases observe
                 // mutations. Decontainerize the top-level cell here so the read
@@ -921,12 +947,19 @@ impl Interpreter {
                             return Err(RuntimeError::undeclared("name", "%ENV"));
                         }
                         // A never-declared `%*`-twigil (dynamic) variable
-                        // mirrors the `@*` case in `GetArrayVar`: Raku raises
-                        // `X::Dynamic::NotFound` there, so the read is
-                        // undefined (Nil) rather than a defined empty Hash,
-                        // letting `//` fall through to its RHS.
-                        if name.strip_prefix('%').is_some_and(|n| n.starts_with('*')) {
-                            self.stack.push(Value::NIL);
+                        // mirrors the `@*` case in `GetArrayVar`: raku raises
+                        // `X::Dynamic::NotFound` there, as a lazy Failure (not
+                        // an eager throw) so `.^name`/`.defined` still answer
+                        // and `//` still falls through to its RHS. A builtin
+                        // dynamic (`%*ENV`, ...) is always "declared" by the
+                        // setting, exempted the same way the scalar/array
+                        // fallbacks are.
+                        if name.strip_prefix('%').is_some_and(|n| n.starts_with('*'))
+                            && !runtime::utils::is_builtin_dynamic_var(name)
+                        {
+                            self.stack.push(self.fail_error_to_failure_value(
+                                &runtime::utils::dynamic_not_found_error(name),
+                            ));
                         } else {
                             // An undeclared plain `%`-sigil variable defaults to
                             // an empty Hash (raku auto-declares it as Hash under

@@ -1,6 +1,6 @@
 use Test;
 
-plan 12;
+plan 14;
 
 # Assigning to an undeclared dynamic variable throws X::Dynamic::NotFound
 # (Raku semantics: a dynamic var must be declared with `my $*x` first).
@@ -45,10 +45,18 @@ plan 12;
     is @*decl-arr.elems, 2, 'declared @*var is assignable';
 }
 
-# Reading an undeclared dynamic variable does NOT throw (returns undefined).
+# Reading an undeclared dynamic variable does NOT throw eagerly -- it comes
+# back as a lazy, unhandled Failure (X::Dynamic::NotFound), exactly like any
+# other failed operation: `.defined`/`.^name` answer without exploding it.
+# (The trailing `1` keeps the block's own return value from being the raw
+# Failure -- a bare Failure in tail/sink position explodes on ITS OWN terms,
+# same as `"abc" + 1`, regardless of this ticket.)
 {
-    lives-ok { my $v = $*never_declared_read; },
+    my $v;
+    lives-ok { $v = $*never_declared_read; 1 },
         'reading an undeclared $*var does not throw';
+    nok $v.defined, 'the read value is undefined';
+    is $v.^name, 'Failure', 'the read value is a Failure';
 }
 
 # A destructured signature parameter introduces a fresh dynamic var — binding it
