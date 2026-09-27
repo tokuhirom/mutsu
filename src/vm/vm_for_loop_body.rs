@@ -610,6 +610,16 @@ impl Interpreter {
         // `plan_for_element_alias` owns the whole discriminator (which
         // parameters alias, which sources do, and the shaped/native/`Map`
         // carve-outs); see `vm_for_loop_alias.rs`.
+        // The plan checks that the loop iterates its source one-for-one; a
+        // live source IS that array, so it is shown the array's own items.
+        let live_items = live.and_then(|array| match array.view() {
+            ValueView::Array(items, _) => Some(items.clone()),
+            _ => None,
+        });
+        let alias_items: &[Value] = match &live_items {
+            Some(items) => items,
+            None => &chunked_items,
+        };
         let element_alias = self.plan_for_element_alias(
             code,
             spec,
@@ -620,7 +630,7 @@ impl Interpreter {
             writes_back_topic,
             topic_readonly,
             hash_keys_for_writeback.as_deref(),
-            &chunked_items,
+            alias_items,
         );
         // The base decisions; each iteration retires them for itself only when
         // the element really was promoted (see the bind site below).

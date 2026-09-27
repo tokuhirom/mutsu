@@ -463,6 +463,9 @@ impl Interpreter {
                 ValueView::Array(data, crate::value::ArrayKind::Array | crate::value::ArrayKind::List)
                     if data.native_storage_node().is_none()
             )
+            // A one-element List holding a Blob (a `Blob:D` parameter's
+            // argument list) iterates the Blob's bytes.
+            && Self::for_blob_byte_items(iterable).is_none()
     }
 
     /// `for $obj` where `$obj` is an instance of a class that `does Iterable`
