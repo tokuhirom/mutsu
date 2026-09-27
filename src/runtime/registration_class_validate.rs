@@ -200,6 +200,21 @@ impl Interpreter {
         // like `A.^add_method(...)` inside the declaration can resolve `A`.
         // Clear stale method wrap chains from a previous class with the same name.
         self.registry_mut().clear_method_wrap_chains_for_class(name);
+        // Likewise a role-mixed HOW (`$class.HOW does R` from a class or
+        // attribute trait) left by a previous registration of this
+        // declaration (the hoisted pre-pass): the traits re-run and rebuild
+        // it, and its `compose` hook must fire again to re-apply what the
+        // clear above just dropped (Staticish's wrapped methods). A custom
+        // HOW *instance* (EXPORTHOW/DECLARE) is reinstalled by its own path.
+        let mut reg = self.registry_mut();
+        if reg
+            .class_how_values
+            .get(name)
+            .is_some_and(|how| matches!(how.view(), crate::value::ValueView::Mixin(..)))
+        {
+            reg.class_how_values.remove(name);
+        }
+        drop(reg);
         // `class C hides P` marks parent P hidden from C's (and descendants')
         // `.^mro_unhidden`. Record it so the mro_unhidden filter can drop P.
         if !hidden_parents.is_empty() {

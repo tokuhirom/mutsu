@@ -460,7 +460,7 @@ impl Interpreter {
     /// any role it mixes in — the "does this need a deferred `compose` hook
     /// call" test shared by both the attribute-level and `$class.HOW`-level
     /// paths in [`Interpreter::apply_attribute_traits`].
-    fn mixin_has_compose_hook(&self, value: &Value) -> bool {
+    pub(crate) fn mixin_has_compose_hook(&self, value: &Value) -> bool {
         match value.view() {
             ValueView::Mixin(_, mixins) => mixins.keys().any(|key| {
                 key.strip_prefix("__mutsu_role__").is_some_and(|role_name| {

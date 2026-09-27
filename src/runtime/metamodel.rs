@@ -346,6 +346,32 @@ impl Interpreter {
         Ok(has_user_compose)
     }
 
+    /// Whether `class_name`'s HOW is a `does`-mixin carrying a user `compose`
+    /// hook (a role mixed in by a class trait: `$class.HOW does SomeRole`).
+    pub(crate) fn class_how_compose_hook(&self, class_name: &str) -> bool {
+        self.registry()
+            .class_how_values
+            .get(class_name)
+            .is_some_and(|how| self.mixin_has_compose_hook(how))
+    }
+
+    /// Queue `class_name` for a post-trait `compose` call when its custom `is`
+    /// traits mixed a role with a `compose` hook into its HOW
+    /// (`had_hook_before` is [`Interpreter::class_how_compose_hook`] from
+    /// before the traits ran). Rakudo applies class traits before composing
+    /// the class, so the mixed-in `compose` override runs as part of
+    /// composition -- here via the same `pending_class_compose` drain the
+    /// EXPORTHOW metaclass hook uses.
+    pub(crate) fn queue_trait_how_compose(&mut self, class_name: &str, had_hook_before: bool) {
+        if had_hook_before || !self.class_how_compose_hook(class_name) {
+            return;
+        }
+        let mut reg = self.registry_mut();
+        if !reg.pending_class_compose.iter().any(|c| c == class_name) {
+            reg.pending_class_compose.push(class_name.to_string());
+        }
+    }
+
     /// Whether the (user) class of the installed HOW instance for `class_name`
     /// defines `method_name` anywhere in its MRO.
     fn declare_how_has_user_method(&mut self, how_val: &Value, method_name: &str) -> bool {

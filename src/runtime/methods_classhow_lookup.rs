@@ -51,6 +51,39 @@ impl Interpreter {
         method_name: &str,
         include_ancestor_submethods: bool,
     ) -> Option<Value> {
+        // A `does`/`but` mixin (`$obj but R`, `$class.HOW does R`) has no
+        // registry entry of its own: a method a mixed-in role declares wins
+        // over the wrapped value's, then the wrapped value's own MRO answers
+        // (Rakudo: the mixin type's MRO is the role pun followed by the
+        // original type's). Keeps `.^find_method`/`.^lookup` in lockstep with
+        // `.^can` (`collect_can_methods`) and with dispatch.
+        if let ValueView::Mixin(inner, mixins) = invocant.view() {
+            for role_name in mixins
+                .keys()
+                .filter_map(|key| key.strip_prefix("__mutsu_role__"))
+            {
+                let Some(role) = self.role_def_for_mixin_role(mixins, role_name) else {
+                    continue;
+                };
+                let Some(defs) = role.methods.get(method_name) else {
+                    continue;
+                };
+                let defs: Vec<MethodDef> = defs.iter().filter(|d| !d.is_private).cloned().collect();
+                let Some(first) = defs.first() else {
+                    continue;
+                };
+                let has_multi = defs.iter().any(|d| d.is_multi);
+                return Some(self.make_method_object_with_owner(
+                    method_name,
+                    first,
+                    has_multi,
+                    first.return_type.clone(),
+                    has_multi.then_some(defs.as_slice()),
+                    Some(role_name),
+                ));
+            }
+            return self.classhow_lookup_impl(inner, method_name, include_ancestor_submethods);
+        }
         let (class_name, class_name_str) = match invocant.view() {
             ValueView::Package(name) => (name, name.resolve()),
             // An instance of a user class carries its class name; `value_type_name` would

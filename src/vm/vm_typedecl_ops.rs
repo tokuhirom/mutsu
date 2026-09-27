@@ -614,6 +614,9 @@ impl Interpreter {
                 }
             }
 
+            // Remember whether the class's HOW already carried a `compose`
+            // hook, so one mixed in by the traits below can be told apart.
+            let how_hook_before = self.class_how_compose_hook(&storage_name);
             // Dispatch custom `is` traits via trait_mod:<is> if defined.
             // Merge explicitly parsed custom_traits with deferred_traits
             // (unknown lowercase parents deferred from register_class_decl).
@@ -675,6 +678,14 @@ impl Interpreter {
                         self.vm_call_function("trait_mod:<is>", call_args)?;
                     }
                 }
+            }
+
+            // A class trait that mixed a role with a `compose` method into the
+            // class's HOW (`$class.HOW does MetamodelX::StaticHOW`, Staticish)
+            // gets that hook run when the class composes, as in Rakudo -- once,
+            // at the real declaration, not for a throwaway hoisted shell.
+            if !is_hoisted_shell {
+                self.queue_trait_how_compose(&storage_name, how_hook_before);
             }
 
             // A class installed under a custom EXPORTHOW `class` metaclass whose

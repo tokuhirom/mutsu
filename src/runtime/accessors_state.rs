@@ -1123,8 +1123,16 @@ impl Interpreter {
         args: &[Value],
         invocant: Option<Value>,
     ) {
+        // A role mixed into a class's native HOW (`$class.HOW does
+        // SomeHOWRole`, Staticish) dispatches with the role as
+        // `receiver_class`; its `callsame` must still reach the native
+        // metamethod, exactly like a user HOW subclass's.
+        let native_how_mixin = invocant.as_ref().is_some_and(|inv| {
+            matches!(inv.view(), crate::value::ValueView::Mixin(..))
+                && Self::how_target_from_value(inv).is_some()
+        });
         self.push_samewith_context(method_name, invocant, Some(args.to_vec()));
-        if self.is_metamodel_how_class(receiver_class) {
+        if native_how_mixin || self.is_metamodel_how_class(receiver_class) {
             self.metamodel_dispatch_stack.push((
                 self.samewith_context_stack.len(),
                 receiver_class.to_string(),
