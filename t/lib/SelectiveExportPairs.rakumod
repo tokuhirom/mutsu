@@ -1,4 +1,4 @@
-# Fixture for t/modules/export-sub-selective-lexical-multi.t: String::Utils'
+# Fixture for t/modules/import-export/export-sub-selective-lexical-multi.t: String::Utils'
 # EXPORT hands back `UNIT::{"&$_"}:p` pairs, whose values sit in the stash
 # element's container rather than being the bare Sub.
 my sub between(str $s, str $l, str $r) {

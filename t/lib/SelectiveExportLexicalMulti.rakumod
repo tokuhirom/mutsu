@@ -1,4 +1,4 @@
-# Fixture for t/modules/export-sub-selective-lexical-multi.t: the shape of
+# Fixture for t/modules/import-export/export-sub-selective-lexical-multi.t: the shape of
 # lizmat's Identity::Utils / String::Utils selective-import EXPORT, which
 # resolves each requested name through `UNIT::` -- including a lexical `multi`
 # family and an `in:out` rename.
