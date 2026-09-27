@@ -323,12 +323,33 @@ impl Interpreter {
             // IMPORTING scope is never in it and `{ use Foo } foo()` still dies
             // (`roast/S11-modules/lexical.t`). This is the block twin of the
             // carve-out `reinstate_module_functions` gives the EVAL rollback.
+            //
+            // A package-qualified key is not always the module's own
+            // definition, though: an operator `use`d inside a routine body is
+            // aliased under the routine's unit package (`ModT::infix:<**>`, see
+            // `import_module`'s `target_pkg`), which has exactly the shape of a
+            // definition. Such an alias was recorded as an imported routine
+            // alias during this scope (it is absent from the snapshot's alias
+            // set), so it goes with the scope too -- otherwise
+            // `sub f { use FiniteField; ... }` inside a module leaked its
+            // `infix:<**>` into every later call in that package.
+            let scope_aliases: HashSet<Symbol> = self
+                .imported_routine_aliases
+                .difference(&imported_routine_aliases)
+                .copied()
+                .collect();
             let module_keys = std::mem::take(&mut self.module_registered_functions);
             self.registry_mut().functions_mut().retain(|key, _| {
                 if func_snapshot.contains(key) || module_keys.contains(key) {
                     return true;
                 }
                 let ks = key.resolve();
+                if !scope_aliases.is_empty() {
+                    let base = ks.split_once('/').map_or(ks.as_str(), |(base, _)| base);
+                    if Symbol::lookup(base).is_some_and(|sym| scope_aliases.contains(&sym)) {
+                        return false;
+                    }
+                }
                 ks.contains("::") && !ks.starts_with("GLOBAL::")
             });
             // An imported proto/multi family has lexical shadowing semantics,

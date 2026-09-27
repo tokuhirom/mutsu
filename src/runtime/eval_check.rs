@@ -69,28 +69,22 @@ fn collect_use_declared_type_names(
         }
         i = (i + kw.len()).max(j);
     }
-    collect_source_constant_type_aliases(interp, &bytes, out);
+    collect_source_constant_names(&bytes, out);
 }
 
-/// Record the `constant NAME = TypeName;` *type aliases* a used module's source
-/// declares.
+/// Record the `constant NAME = ...;` names a used module's source declares.
 ///
 /// A `constant` bound to a bare type name aliases that type and is usable
 /// wherever a type name is — `Gnome::N`'s `constant \GType is export = uint64`,
 /// named by `sub g_value_init(N-GValue $value, GType $g_type)`. A `constant`
-/// bound to a *value* (`constant TAU = 6.28`) is not a type and must keep being
-/// rejected in a parameter declaration, so only a single-identifier right-hand
-/// side the interpreter already recognises as a type is recorded — the same
-/// line the in-unit collector draws for a `Stmt::VarDecl` alias.
+/// bound to a *value* (`constant G = Point.new(...)`) is usable there too, as a
+/// value constraint (`multi f(G)`) — the same line the in-unit collector draws
+/// for a `Stmt::VarDecl` constant — so every name is recorded.
 ///
-/// This cannot ride the declarator loop above: the alias-ness is decided by the
-/// right-hand side, not by the keyword, and the name may be spelled sigillessly
-/// (`\GType`) with traits (`is export`) in between.
-fn collect_source_constant_type_aliases(
-    interp: &Interpreter,
-    bytes: &[char],
-    out: &mut std::collections::HashSet<String>,
-) {
+/// This cannot ride the declarator loop above: the name may be spelled
+/// sigillessly (`\GType`) with traits (`is export`) in between, and only a
+/// `constant NAME ... =` declaration (not a stray `constant` word) counts.
+fn collect_source_constant_names(bytes: &[char], out: &mut std::collections::HashSet<String>) {
     let is_ident = |c: char| c.is_alphanumeric() || c == '_' || c == '-';
     let mut i = 0usize;
     while i < bytes.len() {
@@ -127,32 +121,7 @@ fn collect_source_constant_type_aliases(
             i = (i + 8).max(j);
             continue;
         }
-        j += 1;
-        while bytes.get(j).is_some_and(|c| c.is_whitespace()) {
-            j += 1;
-        }
-        let rhs_start = j;
-        while bytes.get(j).is_some_and(|c| is_ident(*c)) {
-            j += 1;
-        }
-        let target: String = bytes[rhs_start..j].iter().collect();
-        // The right-hand side must be the WHOLE initializer, or it is an
-        // expression (`constant K = Int.new`) rather than an alias.
-        let trailing_is_terminator = bytes[j..]
-            .iter()
-            .find(|c| !c.is_whitespace())
-            .is_none_or(|c| *c == ';');
-        if !name.is_empty()
-            && !target.is_empty()
-            && trailing_is_terminator
-            && (interp.is_resolvable_type(&target)
-                || interp.has_type(&target)
-                // A type the SAME module declares is not registered yet either
-                // -- the declarator scan above has just collected it into
-                // `out`, and that is the only record of it at this point.
-                || out.contains(&target)
-                || crate::runtime::nativecall::CType::from_type_name(&target).is_some())
-        {
+        if !name.is_empty() {
             out.insert(name);
         }
         i = (i + 8).max(j);
@@ -293,27 +262,23 @@ fn collect_declared_type_names_with(
             }
             // `constant HANDLE = uint32;` aliases a type, and the alias is usable
             // wherever a type name is (`sub GetProcessHeap(--> HANDLE)`, which is
-            // how C bindings spell their platform types). Only a bare-name RHS
-            // counts: `constant TAU = 6.28` names a value, not a type, and must
-            // stay rejected as a parameter type. Whether the bare name really
-            // resolves to a type is not decided here — this pre-pass only records
-            // that the *alias* exists, exactly as it does for a `class`.
+            // how C bindings spell their platform types). A constant bound to a
+            // *value* is just as valid there: rakudo turns `sub f(TAU)` /
+            // `sub f(TAU $x)` into a value constraint (the value's type plus a
+            // smartmatch against it), which the binder resolves from the
+            // constant at dispatch time -- `secp256k1`'s
+            // `multi infix:<*>(Int $n, G)` special-cases its generator point
+            // that way. So every sigilless `constant` name is recorded; whether
+            // it names a type or a value is decided when it is bound.
             Stmt::VarDecl {
                 name,
-                expr: crate::ast::Expr::BareWord(target),
                 custom_traits,
                 ..
             } if custom_traits.iter().any(|(t, _)| t == "__constant")
                 && name.starts_with(|c: char| c.is_ascii_uppercase() || c.is_ascii_lowercase())
                 && !name.starts_with(['$', '@', '%', '&']) =>
             {
-                // Record only when the target itself looks like a type name, so a
-                // `constant Foo = bareword-sub-call` is not mistaken for a type.
-                if interp.is_none_or(|i| i.is_resolvable_type(target) || i.has_type(target))
-                    || crate::runtime::nativecall::CType::from_type_name(target).is_some()
-                {
-                    insert_declared_name(out, name);
-                }
+                insert_declared_name(out, name);
             }
             Stmt::Block(body) | Stmt::SyntheticBlock(body) => {
                 collect_declared_type_names_with(interp, extra_dirs, body, out, packages, classes);

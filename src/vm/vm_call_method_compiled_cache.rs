@@ -303,7 +303,19 @@ impl Interpreter {
             return true;
         }
         let root = base.split(['[', ' ']).next().unwrap_or(base);
-        self.registry().subsets.contains_key(root)
+        if self.registry().subsets.contains_key(root) {
+            return true;
+        }
+        // A `constant` bound to a value and written where a type goes
+        // (`constant G = Point.new(...); multi f(G)`) is a definite-value
+        // constraint: every `Point` shares one type key, but only `G` binds.
+        // A type alias (`constant HANDLE = uint32`) binds a type object and
+        // stays nominal.
+        !crate::runtime::utils::is_known_type_constraint(base)
+            && self
+                .env()
+                .get(base)
+                .is_some_and(|bound| !matches!(bound.view(), crate::value::ValueView::Package(_)))
     }
 
     /// Whether a `(class, method)` is a MULTI whose dispatch is purely type+arity

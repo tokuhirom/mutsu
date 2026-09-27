@@ -1885,6 +1885,19 @@ impl Interpreter {
                 return self.type_matches_value(&resolved, value);
             }
         }
+        // A `constant` bound to a value, written where a type goes
+        // (`constant TAU = 6.28; sub f(TAU $x)`): rakudo turns it into a value
+        // constraint, and smartmatching a definite value is `===`. Also last
+        // resort, for the same reason as above -- a real type name never
+        // reaches here with a match still possible.
+        if !crate::runtime::utils::is_known_type_constraint(constraint)
+            && let Some(bound) = self.env().get(constraint).cloned()
+            && !matches!(bound.view(), ValueView::Package(_))
+        {
+            self.warm_which_identity_for_identity(value);
+            self.warm_which_identity_for_identity(&bound);
+            return crate::runtime::values_identical(value, &bound);
+        }
         // Registered RakuAST type objects have their own hierarchy, including
         // semantic ancestors (`IntLiteral` isa `Term` isa `Expression`) that
         // cannot be derived from namespace spelling alone.
