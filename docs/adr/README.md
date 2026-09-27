@@ -150,3 +150,4 @@ The role of an ADR is to preserve the *context of the judgment* — something th
 | [0123](0123-bounded-user-thread-stack-reservations.md) | User-thread stacks are reserved against an address-space budget, and the pool queues rather than grows past it | Accepted (implemented) |
 | [0124](0124-parse-time-export-probe-for-computed-export-stashes.md) | A module that binds its export stash under computed keys is run at parse time (fresh interpreter, fresh thread) to learn the exported names | Proposed (implemented) |
 | [0125](0125-ltm-declarative-prefix-nfa.md) | Measure an LTM declarative prefix with a compiled NFA | Accepted (Phase 1 implemented: `\|` ranking from a real match) |
+| [0126](0126-dev-job-runner-for-long-jobs-and-gates.md) | Long jobs and the pre-publication gate run through one job runner, `scripts/dev` | Proposed |
