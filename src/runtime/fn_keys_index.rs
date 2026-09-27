@@ -52,10 +52,7 @@ impl Interpreter {
     // Cost: O(m), m = key bytes (base-name reduction, intern, two hash probes).
     pub(crate) fn evict_fn_keys_base(&mut self, key: Symbol) -> bool {
         let base = function_key_base_name(key.as_str());
-        let evicted = self
-            .fn_keys_by_base
-            .remove(&Symbol::intern(base))
-            .is_some();
+        let evicted = self.fn_keys_by_base.remove(&Symbol::intern(base)).is_some();
         if self.fn_keys_index.complete {
             self.fn_keys_index.dirty.insert(base);
         }
@@ -171,7 +168,10 @@ mod tests {
         i.invalidate_fn_resolution_for_keys([alpha[0]]);
         assert!(!indexed(&i, "alpha") && !indexed(&i, "gamma"));
         assert_eq!(&*i.fn_keys_for_base("alpha"), &*alpha);
-        assert!(indexed(&i, "gamma"), "the other dirty name refilled in the same pass");
+        assert!(
+            indexed(&i, "gamma"),
+            "the other dirty name refilled in the same pass"
+        );
         assert_eq!(&*i.fn_keys_for_base("gamma"), &*gamma);
         assert!(i.fn_keys_index.dirty.is_empty());
     }
