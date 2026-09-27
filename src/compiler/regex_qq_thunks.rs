@@ -6,6 +6,31 @@ use crate::runtime::meta_ns::MetaNs;
 use crate::value::ValueView;
 
 impl Compiler {
+    /// Load a non-`Nil`/`Bool` literal. A code-bearing regex literal is a
+    /// closure over the scope it is written in, so it loads through
+    /// `LoadRegexClosure` instead of a plain constant — see that op's doc
+    /// comment. Kept out of line: `compile_expr` recurses deeply, and every
+    /// local here would otherwise widen each of its frames.
+    #[inline(never)]
+    pub(super) fn compile_literal_constant(&mut self, v: &Value) {
+        let idx = self.code.add_constant(v.clone());
+        let mut captures = self.regex_literal_closure_captures(v);
+        let qq_thunks = self.compile_regex_qq_thunks(v);
+        if !qq_thunks.is_empty() {
+            captures.get_or_insert_with(Vec::new).extend(qq_thunks);
+        }
+        let topic = self.regex_literal_topic_capture(v);
+        if captures.is_some() || topic.is_some() {
+            self.code.emit(OpCode::LoadRegexClosure {
+                const_idx: idx,
+                topic,
+                captures: std::sync::Arc::new(captures.unwrap_or_default()),
+            });
+        } else {
+            self.code.emit(OpCode::LoadConst(idx));
+        }
+    }
+
     /// Compile one closure per interpolating `"..."` atom of the regex
     /// literal `v`, each into a fresh local, and return the capture entries
     /// (`MetaNs::RegexQq` key, local slot) that put them on the regex value's

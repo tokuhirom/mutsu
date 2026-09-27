@@ -125,27 +125,7 @@ impl Compiler {
                 ValueView::Bool(false) => {
                     self.code.emit(OpCode::LoadFalse);
                 }
-                _ => {
-                    let idx = self.code.add_constant(v.clone());
-                    // A code-bearing regex literal is a closure over the scope
-                    // it is written in, so it loads through `LoadRegexClosure`
-                    // instead of a plain constant — see that op's doc comment.
-                    let mut captures = self.regex_literal_closure_captures(v);
-                    let qq_thunks = self.compile_regex_qq_thunks(v);
-                    if !qq_thunks.is_empty() {
-                        captures.get_or_insert_with(Vec::new).extend(qq_thunks);
-                    }
-                    let topic = self.regex_literal_topic_capture(v);
-                    if captures.is_some() || topic.is_some() {
-                        self.code.emit(OpCode::LoadRegexClosure {
-                            const_idx: idx,
-                            topic,
-                            captures: std::sync::Arc::new(captures.unwrap_or_default()),
-                        });
-                    } else {
-                        self.code.emit(OpCode::LoadConst(idx));
-                    }
-                }
+                _ => self.compile_literal_constant(v),
             },
             // Grouped (parenthesized) expression — transparent wrapper
             Expr::Grouped(inner) => {
