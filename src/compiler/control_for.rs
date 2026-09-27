@@ -499,11 +499,12 @@ impl Compiler {
                 .map(|p| p.strip_prefix('\\').unwrap_or(p).to_string()),
         );
         // The loop's multi-parameters are declarations of the loop block
-        // (`build_for_bind_stmts` emits them as `my`-style decls), so give them
-        // a scope frame of their own that encloses the body: a same-named
-        // parameter of a nested loop then shadows with a fresh slot instead of
-        // landing in (and clobbering) this loop's body frame, and the names
-        // stop resolving once the loop is over. A name that had no slot before
+        // (`build_for_bind_stmts` emits them as `my`-style decls), so they are
+        // declared in a frame that becomes the body's own scope frame (see
+        // `pending_scope_frame`): a same-named parameter of a nested loop then
+        // shadows with a fresh slot instead of landing in (and clobbering) the
+        // enclosing loop's body frame, and the body's scope exit restores the
+        // outer bindings. A name that had no slot before
         // the loop (an outer single-param loop variable is bound by name, a
         // routine's free variable resolves through the env) must go back to
         // that by-name resolution after the loop, so it is dropped from
@@ -518,6 +519,9 @@ impl Compiler {
         for s in &bind_prefix {
             self.compile_stmt(s);
         }
+        // Hand the declarations to the body's frame without restoring anything
+        // yet: the bindings stay visible until the body's scope exits.
+        self.pending_scope_frame = self.local_scopes.pop();
         self.hoist_sub_decls(&loop_body, true);
         // A `for` body is its own Raku call frame; count it so a
         // `callframe`/`caller` inside sees the enclosing routine one level
@@ -579,10 +583,16 @@ impl Compiler {
             self.sigilless_locals.remove(n);
         }
         self.code.patch_loop_end(loop_idx);
+        // A body that pushed no frame of its own leaves the declarations
+        // parked; close them here so they neither leak into the next scope
+        // nor keep shadowing after the loop.
+        if let Some(frame) = self.pending_scope_frame.take() {
+            self.local_scopes.push(frame);
+            self.pop_local_scope();
+        }
         for s in &post_stmts {
             self.compile_stmt(s);
         }
-        self.pop_local_scope();
         for name in &fresh_param_names {
             self.local_map.remove(name);
         }

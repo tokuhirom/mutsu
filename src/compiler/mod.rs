@@ -1188,6 +1188,13 @@ pub(crate) struct Compiler {
     /// slot resolution) and §1.3 (collapse the dual store). See ANALYSIS.md §1.4.
     /// Frame 0 is the compilation-unit / routine top level and is never popped.
     local_scopes: Vec<HashMap<String, Option<u32>>>,
+    /// Declarations the NEXT [`Self::push_local_scope`] starts its frame with.
+    /// A multi-parameter `for` loop declares its parameters before its body's
+    /// scope frame is pushed; they belong to that frame (Raku puts a block's
+    /// signature in the block's own scope), so they are parked here instead of
+    /// getting a frame of their own, which would add a spurious level to every
+    /// `OUTER::`/`CALLER::` resolved in the body.
+    pending_scope_frame: Option<HashMap<String, Option<u32>>>,
     /// The ENCLOSING compilation's scope chain (outermost first), for compilers
     /// that are compiling a nested body. `local_scopes` stops at the routine /
     /// closure boundary because slot allocation does, but the *lexical* chain does
@@ -1790,6 +1797,7 @@ impl Compiler {
             trir_routines: HashMap::new(),
             // Frame 0 = compilation-unit / routine top level; never popped.
             local_scopes: vec![HashMap::new()],
+            pending_scope_frame: None,
             enclosing_scopes: Vec::new(),
             role_param_scope: None,
             unit_root_scope: 0,
@@ -2717,7 +2725,8 @@ impl Compiler {
     /// [`Self::pop_local_scope`]; driven by the block-boundary hooks
     /// (`push_dynamic_scope_lexical`/`pop_dynamic_scope_lexical`).
     fn push_local_scope(&mut self) {
-        self.local_scopes.push(HashMap::new());
+        let frame = self.pending_scope_frame.take().unwrap_or_default();
+        self.local_scopes.push(frame);
     }
 
     /// Leave the innermost lexical scope. Behavior-preserving today: it only drops
