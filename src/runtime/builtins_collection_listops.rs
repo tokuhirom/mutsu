@@ -400,7 +400,17 @@ impl Interpreter {
             sort_args.push(Value::pair("k".to_string(), Value::TRUE));
         }
 
-        if items.is_empty() && positional.is_empty() {
+        // `sort;` / `sort()` with no positional argument at all (not even an
+        // empty list) is a runtime error as of Rakudo 2022.07 — distinct from
+        // `sort(())`, where an empty list *was* specified and sorting it
+        // legitimately yields `()`.
+        if positional.is_empty() {
+            return Err(RuntimeError::typed_msg(
+                "X::AdHoc",
+                "Must specify something to sort",
+            ));
+        }
+        if items.is_empty() {
             return Ok(Value::array(Vec::new()));
         }
 
