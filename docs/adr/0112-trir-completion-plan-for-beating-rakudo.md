@@ -270,6 +270,17 @@ the name nowhere. 727-record decode ~0.17 s → ~0.146 s; `{}` ~5.0 → ~3.6 µs
 ~12.5 → ~10.0 µs. `[]` (~15 µs) is still well above the 5 µs gate, and is what the next slice
 looks at.
 
+### Step 3 — `[]` gate met (2026-09-27, #9122)
+
+Measured by #9122's own definition (its repro at n = 4001 minus n = 1, over 4000, release,
+warm precomp cache), a `[]` element cost ~2.9 µs on `main` at `2179535a`, after the slices above
+and ADR-0121's attribute ops. A last slice took it to ~2.3 µs (~24.9K → ~20.0K instructions):
+a fresh `IterationBuffer` bound as `$!reified` is re-pointed without vivifying a store, the
+buffer and Buf storage keys are interned once, the routine-frame path's symbol maps are
+`FxHashMap`s, and TRIR keeps the scanned text's grapheme index in a one-entry memo
+(`news/2026-09/json-fast-empty-array-element-under-its-gate.md`). The `[]` half of this step's
+gate is therefore met; the per-character half is tracked separately.
+
 ### Step 4 — measured before it was built (2026-09-23, [ADR-0116](0116-trir-native-lowering-measured-before-building.md), Proposed)
 
 A first slice of Step 4 (the int bank and native slots in SSA, native branches, every other op
