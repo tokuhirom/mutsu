@@ -1092,11 +1092,20 @@ impl Interpreter {
         // a `need`-loaded compunit remain in their historical GLOBAL/import
         // scope, while operator syntax needs the unit package during the
         // declaration's pre-registration window.
+        //
+        // A `use` inside a package body (`class K { use OpT; ... }`) already
+        // runs under that package, and imports into it: the operator is
+        // lexical to the class body, so the unit module's other routines must
+        // not see it (#9944).
         let current_pkg = self.current_package().to_string();
         let unit_pkg = self
             .import_target_package
             .clone()
-            .or_else(|| self.unit_module_loading_stack.last().cloned())
+            .or_else(|| {
+                crate::qualified::is_global_package(self.current_package_sym())
+                    .then(|| self.unit_module_loading_stack.last().cloned())
+                    .flatten()
+            })
             .unwrap_or_else(|| current_pkg.clone());
         // Module bodies execute with the caller's runtime package, but their
         // imports belong to the module's lexical compilation unit. Keep those
@@ -1178,19 +1187,9 @@ impl Interpreter {
                 crate::runtime::cow_table_mut(&mut self.imported_operator_names)
                     .insert(name.clone());
             }
-            if name.starts_with("infix:<") {
-                // An EXPORTED operator becomes lexically visible in whatever
-                // unit imported it, so it carries no declaring-file
-                // restriction (empty set == visible everywhere). Force the
-                // set empty rather than filling it in only when absent: see
-                // the matching comment in
-                // `runtime_module_export_sub.rs::install_export_symbol`
-                // (#8008) — the declaring module's own decl-time entry is
-                // never absent by the time export runs.
-                crate::runtime::cow_table_mut(&mut self.user_declared_infix_ops)
-                    .insert(name.clone(), HashSet::new());
-                crate::vm::vm_jit::note_user_infix_decl();
-            }
+            // An EXPORTED operator becomes lexically visible in the unit that
+            // imported it -- and only there (#9944).
+            self.record_infix_import_gate(&name);
             let source_single = format!("{module}::{name}");
             let source_prefix = format!("{module}::{name}/");
             let target_single = format!("{target_pkg}::{name}");
@@ -1330,6 +1329,9 @@ impl Interpreter {
                         break;
                     }
                 }
+            }
+            if is_operator {
+                self.record_operator_import(&name, function_entries.iter().map(|(_, def)| def));
             }
             for (k, v) in function_entries {
                 let ks = k.resolve();

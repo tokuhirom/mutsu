@@ -155,3 +155,4 @@ The role of an ADR is to preserve the *context of the judgment* — something th
 | [0128](0128-package-scoped-enum-identity-is-qualified.md) | A package-scoped enum's identity is its qualified name; its display name is the declared one | Accepted (implemented) |
 | [0129](0129-retired-lane-bindings-follow-their-live-children.md) | A re-declared lane binding is retired into a box its live children keep | Accepted (implemented) |
 | [0130](0130-ecosystem-accepted-divergences.md) | A test file that fails only on a Rakudo artefact mutsu will not copy is graded `accepted` | Accepted (implemented) |
+| [0131](0131-imported-operator-candidates-are-scoped-to-the-importing-compunit.md) | An imported operator candidate is visible only to its declaring and importing compunits | Accepted (implemented) |

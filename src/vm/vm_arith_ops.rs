@@ -172,8 +172,16 @@ impl Interpreter {
     ///
     /// Only reached once a user-declared infix of this name exists, so the env
     /// lookup stays off ordinary arithmetic.
+    ///
+    /// `current_unit` is not switched by every method-dispatch path, so the
+    /// executing frame's own declaring file is the second anchor (as in
+    /// `prelude_visible_here`): a method of a module that imported the
+    /// operator sees it however it was called (#9944).
+    // Cost: O(e + r), e = EVAL nesting depth, r = inlined block frames on top
+    // of the innermost routine frame; only when the operator is declared.
     fn declaring_unit_is_in_scope(&self, files: &HashSet<Symbol>) -> bool {
         self.unit_chain_contains(self.current_unit, files)
+            || self.unit_chain_contains(self.executing_unit_sym(), files)
     }
 
     /// METAOP_ASSIGN identity substitution (`$x OP= $y` with an undefined `$x`).

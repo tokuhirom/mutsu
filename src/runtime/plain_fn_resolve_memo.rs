@@ -60,6 +60,11 @@ impl Interpreter {
         if crate::qualified::is_qualified(name_sym) {
             return None;
         }
+        // An imported operator's visibility depends on the executing frame,
+        // not only on `current_unit` (#9944).
+        if self.operator_has_import_scope(name) {
+            return None;
+        }
         if !self.empty_sig_proto_names.is_empty() && self.empty_sig_proto_names.contains(&name_sym)
         {
             return None;

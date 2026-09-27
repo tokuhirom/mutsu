@@ -3144,6 +3144,7 @@ impl Interpreter {
             operator_assoc: Default::default(),
             imported_operator_names: Default::default(),
             user_declared_infix_ops: Default::default(),
+            operator_import_units: Default::default(),
             unit_private_routines: Default::default(),
             unit_private_names: Default::default(),
             class_declaring_units: Default::default(),

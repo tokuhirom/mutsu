@@ -29,6 +29,11 @@ impl Compiler {
     /// when registration runs.
     fn new_decl_chunk_compiler(&self) -> Compiler {
         let mut chunk_compiler = Compiler::new();
+        // A declaration chunk (a class body) belongs to this compilation
+        // unit, so it shares the unit's fold state: its `use` has to disable
+        // literal folding in the unit's method bodies too (#9944).
+        chunk_compiler.fold_ctx = std::sync::Arc::clone(&self.fold_ctx);
+        chunk_compiler.fold_root = false;
         chunk_compiler.is_routine = self.is_routine;
         chunk_compiler.lexically_in_routine = self.lexically_in_routine;
         chunk_compiler.enclosing_package = Some(

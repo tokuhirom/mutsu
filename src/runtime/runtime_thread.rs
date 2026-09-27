@@ -588,6 +588,7 @@ impl Interpreter {
             operator_assoc: self.operator_assoc.clone(),
             imported_operator_names: self.imported_operator_names.clone(),
             user_declared_infix_ops: self.user_declared_infix_ops.clone(),
+            operator_import_units: self.operator_import_units.clone(),
             unit_private_routines: self.unit_private_routines.clone(),
             unit_private_names: self.unit_private_names.clone(),
             class_declaring_units: self.class_declaring_units.clone(),
