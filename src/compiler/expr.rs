@@ -130,7 +130,11 @@ impl Compiler {
                     // A code-bearing regex literal is a closure over the scope
                     // it is written in, so it loads through `LoadRegexClosure`
                     // instead of a plain constant — see that op's doc comment.
-                    let captures = self.regex_literal_closure_captures(v);
+                    let mut captures = self.regex_literal_closure_captures(v);
+                    let qq_thunks = self.compile_regex_qq_thunks(v);
+                    if !qq_thunks.is_empty() {
+                        captures.get_or_insert_with(Vec::new).extend(qq_thunks);
+                    }
                     let topic = self.regex_literal_topic_capture(v);
                     if captures.is_some() || topic.is_some() {
                         self.code.emit(OpCode::LoadRegexClosure {

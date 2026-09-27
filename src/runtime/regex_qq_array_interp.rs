@@ -5,6 +5,7 @@
 //! what `interpolate_regex_scalars`' `@` arm does.
 
 use super::*;
+use crate::runtime::meta_ns::MetaNs;
 
 impl Interpreter {
     /// Handle the `@` at `chars[at]` (inside a double-quoted regex literal),
@@ -46,18 +47,100 @@ impl Interpreter {
                 Self::push_value_as_regex_pattern(&Value::str(joined), out);
                 Some(j + 2)
             }
-            // TODO: a subscripted `@a[0]` / `@a{'k'}` in a double-quoted regex
-            // literal should interpolate its (qq-joined) result; it still takes
-            // the bare-`@name` alternation path, which is only right for a
-            // single-element result.
+            // A subscripted `@a[0]` / `@a{'k'}` or a `"@a.join(',')"` call in a
+            // regex literal is lowered to a compiled qq thunk
+            // (`splice_regex_qq_thunk_result`) and never reaches here.
+            // TODO: `s///`, `token`/`rule` bodies and `<$re>` still take the
+            // bare-`@name` alternation path here (#9673).
             (Some('[' | '{' | '<'), _) => None,
             // A bare `@name` is literal text in a qq string (so is `@a.foo`
-            // without a trailing call; TODO: `"@a.join(',')"` should call it).
+            // without a trailing call).
             _ => {
                 out.push('@');
                 Some(at + 1)
             }
         }
+    }
+}
+
+impl Interpreter {
+    /// Handle the double-quoted atom opening at `chars[at]` when the
+    /// compiler lowered it to a qq thunk (`crate::regex_qq_atoms`) and the
+    /// regex's installed scope holds the thunk's string result: append the
+    /// result as a single-quoted literal to `out` and return the position
+    /// after the closing quote. `None` leaves the atom to the text scan.
+    // Cost: O(n + |r|), n = the pattern's length (quote-state scan), r = the result.
+    pub(super) fn splice_regex_qq_thunk_result(
+        &self,
+        chars: &[char],
+        at: usize,
+        out: &mut String,
+    ) -> Option<usize> {
+        let close = crate::regex_qq_atoms::dq_atom_close(chars, at)?;
+        let body: String = chars[at + 1..close].iter().collect();
+        if !crate::regex_qq_atoms::body_wants_thunk(&body)
+            || super::regex_parse::is_inside_regex_quote_literal(chars, at)
+        {
+            return None;
+        }
+        let key = MetaNs::RegexQq.key(Symbol::intern(&body));
+        let result = self.env.get_sym(key)?;
+        let ValueView::Str(text) = result.view() else {
+            return None;
+        };
+        out.push('\'');
+        for c in text.chars() {
+            if matches!(c, '\\' | '\'') {
+                out.push('\\');
+            }
+            out.push(c);
+        }
+        out.push('\'');
+        Some(close + 1)
+    }
+}
+
+thread_local! {
+    /// The `"..."` qq thunks (`crate::regex_qq_atoms`) whose results are
+    /// installed right now, innermost last, each with its result. One match
+    /// can install the same regex's scope more than once (the VM's
+    /// smartmatch op, then `smart_match` itself); a nested install of a
+    /// thunk that is already active reuses its result, so the thunk runs
+    /// once per match as in Rakudo.
+    static ACTIVE_REGEX_QQ: std::cell::RefCell<Vec<(Value, Value)>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+}
+
+impl Interpreter {
+    /// Evaluate a `"..."` atom's compiled qq thunk for a scope install and
+    /// mark it active until the matching [`Self::end_regex_qq_thunk`].
+    /// Returns the string result, or `None` (nothing marked) when the thunk
+    /// throws — the pre-pass then falls back to its own reading of the atom.
+    // Cost: O(a) plus the thunk's own run, a = active thunks (nesting depth).
+    pub(crate) fn eval_regex_qq_thunk(&mut self, thunk: &Value) -> Option<Value> {
+        let active = ACTIVE_REGEX_QQ.with(|a| {
+            a.borrow()
+                .iter()
+                .rev()
+                .find(|(t, _)| t.same_binding(thunk))
+                .map(|(_, r)| r.clone())
+        });
+        let result = match active {
+            Some(r) => r,
+            None => {
+                let r = self.call_sub_value(thunk.clone(), Vec::new(), false).ok()?;
+                Value::str(r.to_string_value())
+            }
+        };
+        ACTIVE_REGEX_QQ.with(|a| a.borrow_mut().push((thunk.clone(), result.clone())));
+        Some(result)
+    }
+
+    /// Undo one [`Self::eval_regex_qq_thunk`] (installs nest strictly, so
+    /// the innermost entry is the one being uninstalled).
+    // Cost: O(1).
+    pub(crate) fn end_regex_qq_thunk() {
+        ACTIVE_REGEX_QQ.with(|a| a.borrow_mut().pop());
     }
 }
 
