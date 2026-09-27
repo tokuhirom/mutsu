@@ -508,6 +508,47 @@ impl Interpreter {
             self.stack.push(stash);
             return;
         }
+        if let Some(target) = self.named_pseudo_stash_target(name) {
+            let stash = loan_env!(self, package_stash_value(&target));
+            self.stack.push(stash);
+            return;
+        }
+
+        // MY:: pseudo-stash: collect all variable names from current scope.
+        let mut entries: ValueMap = ValueMap::default();
+        for (i, var_name) in code.locals.iter().enumerate() {
+            let val = self.locals[i].clone();
+            let key = Self::add_sigil_prefix(var_name);
+            entries.insert(key, val);
+        }
+        for (key, val) in self.env().iter() {
+            let key_str = key.resolve();
+            if self.should_hide_from_my_global_stash(&key_str) {
+                continue;
+            }
+            let display_key = Self::add_sigil_prefix(&key_str);
+            entries.entry(display_key).or_insert_with(|| val.clone());
+        }
+        self.add_visible_routines_to_pseudo_stash(&mut entries);
+        let stash = self.pseudo_stash_hash(entries);
+        self.stack.push(stash);
+    }
+
+    /// The package a `Name::` pseudo-stash read names, when it is an ordinary
+    /// package stash (not `CALLER::`, `OUTER::`, `OUR::`, `DYNAMIC::`,
+    /// `CALLERS::`, `MY::`, `LEXICAL::` or `UNIT::`, which have their own
+    /// builders in [`Self::exec_get_pseudo_stash_op`]).
+    // Cost: O(m), m = bytes of the name, plus one env probe.
+    fn named_pseudo_stash_target(&self, name: &str) -> Option<String> {
+        if Self::caller_stash_depth(name).is_some() {
+            return None;
+        }
+        if matches!(
+            name.strip_suffix("::"),
+            Some("OUTER" | "OUR" | "DYNAMIC" | "CALLERS")
+        ) {
+            return None;
+        }
         if let Some(package) = name.strip_suffix("::")
             && package != "MY"
             && package != "LEXICAL"
@@ -541,29 +582,52 @@ impl Interpreter {
                     _ => None,
                 })
                 .unwrap_or_else(|| package.to_string());
-            let stash = loan_env!(self, package_stash_value(&target));
-            self.stack.push(stash);
-            return;
+            return Some(target);
         }
+        None
+    }
 
-        // MY:: pseudo-stash: collect all variable names from current scope.
-        let mut entries: ValueMap = ValueMap::default();
-        for (i, var_name) in code.locals.iter().enumerate() {
-            let val = self.locals[i].clone();
-            let key = Self::add_sigil_prefix(var_name);
-            entries.insert(key, val);
+    /// `Name::<key>` / `Name::{$key}`: the pseudo-stash read fused with its
+    /// one-key subscript. An ordinary package answers the key alone
+    /// (`package_stash_keyed_value`) instead of materializing its whole stash;
+    /// anything else builds the stash exactly as `GetPseudoStash` does. Either
+    /// way the ordinary `Index` performs the read, so the result is the same.
+    // Cost: O(k) for a sigiled key of an ordinary package, k = interned qualified
+    // names ending in the key's bare name (`qualified_tail_index`); otherwise as
+    // `GetPseudoStash` plus `Index`, O(v), v = env entries. Rakudo: O(1) -- see #9171.
+    pub(super) fn exec_get_pseudo_stash_keyed_op(
+        &mut self,
+        code: &CompiledCode,
+        name_idx: u32,
+    ) -> Result<(), RuntimeError> {
+        let key = self.stack.pop().unwrap_or(Value::NIL);
+        self.push_pseudo_stash_for_key(code, name_idx, &key);
+        self.stack.push(key);
+        self.exec_index_op_with_positional(false)
+    }
+
+    /// Push the stash `Name::` names, as far as a one-key subscript by `key`
+    /// can observe it: an ordinary package's one-entry stash when the key can
+    /// be answered alone (`package_stash_keyed_value`), else the whole stash
+    /// `GetPseudoStash` builds.
+    // Cost: as `GetPseudoStashKeyed`.
+    pub(super) fn push_pseudo_stash_for_key(
+        &mut self,
+        code: &CompiledCode,
+        name_idx: u32,
+        key: &Value,
+    ) {
+        let name = Self::const_str(code, name_idx);
+        let keyed = match key.deref_container().view() {
+            ValueView::Str(key_str) => self
+                .named_pseudo_stash_target(name)
+                .and_then(|target| loan_env!(self, package_stash_keyed_value(&target, &key_str))),
+            _ => None,
+        };
+        match keyed {
+            Some(stash) => self.stack.push(stash),
+            None => self.exec_get_pseudo_stash_op(code, name_idx),
         }
-        for (key, val) in self.env().iter() {
-            let key_str = key.resolve();
-            if self.should_hide_from_my_global_stash(&key_str) {
-                continue;
-            }
-            let display_key = Self::add_sigil_prefix(&key_str);
-            entries.entry(display_key).or_insert_with(|| val.clone());
-        }
-        self.add_visible_routines_to_pseudo_stash(&mut entries);
-        let stash = self.pseudo_stash_hash(entries);
-        self.stack.push(stash);
     }
 
     /// Build a pseudo-stash for the exact lexical frame selected by the

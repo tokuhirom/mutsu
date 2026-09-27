@@ -1238,6 +1238,12 @@ pub(crate) enum OpCode {
     /// visible `env` entry under its sigiled name; a package name builds the
     /// package's symbol table. The stash is a fresh map on every execution.
     GetPseudoStash(u32),
+    /// `Name::<key>` / `Name::{$key}`: [`Self::GetPseudoStash`] fused with its
+    /// one-key hash subscript. Pops the key. An ordinary package's stash is
+    /// read for that key alone instead of being built whole (#9171); every
+    /// other stash is built as `GetPseudoStash` builds it. The read itself is
+    /// the ordinary `Index`.
+    GetPseudoStashKeyed(u32),
     /// Build a lexical pseudo-stash from a compiler-baked scope description.
     /// Unlike `GetPseudoStash`, this names exactly one lexical frame, so an
     /// inner `MY::` cannot accidentally expose captured outer variables.
@@ -8807,6 +8813,7 @@ impl CompiledCode {
                 | OpCode::GetOuterVar { .. }
                 | OpCode::GetCallerOuterVar { .. }
                 | OpCode::GetPseudoStash(_)
+                | OpCode::GetPseudoStashKeyed(_)
                 | OpCode::GetLexicalStash(_)
                 | OpCode::SymbolicDeref { .. }
                 | OpCode::SymbolicDerefStore(_)
@@ -10436,7 +10443,7 @@ impl CompiledCode {
                 | OpCode::GetCallerOuterVar { .. } => {
                     self.uses_callframe = true;
                 }
-                OpCode::GetPseudoStash(name_idx) => {
+                OpCode::GetPseudoStash(name_idx) | OpCode::GetPseudoStashKeyed(name_idx) => {
                     if let Some(value) = self.constants.get(*name_idx as usize)
                         && let ValueView::Str(name) = value.view()
                         && name

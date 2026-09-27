@@ -33,7 +33,7 @@ impl Interpreter {
         let stash_name = Self::const_str(code, stash_name_idx);
         let package = Self::normalize_stash_package(stash_name);
         let Some(bare) = raw_key.strip_prefix('&').filter(|_| !package.is_empty()) else {
-            self.exec_get_pseudo_stash_op(code, stash_name_idx);
+            self.push_pseudo_stash_for_key(code, stash_name_idx, &key);
             self.stack.push(key);
             self.stack.push(val);
             return self.exec_index_assign_generic_op(code, false);
