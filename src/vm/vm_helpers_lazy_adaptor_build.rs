@@ -65,6 +65,92 @@ impl Interpreter {
         )
     }
 
+    /// A lazy list literal whose `parts` (runs of plain elements as `List`s,
+    /// slipped lazy lists as themselves) are read one after another.
+    // Cost: O(p), p = parts.
+    /// A slipped `lazy`-marked part keeps the whole list `.is-lazy` even when
+    /// every part is finite (`(1, |(lazy 2, 3)).is-lazy` is True).
+    // Cost: O(p), p = parts.
+    pub(crate) fn lazy_concat_pipe(parts: Vec<Value>, array_context: bool) -> Value {
+        let lazy_marked = parts
+            .iter()
+            .any(|p| matches!(p.view(), ValueView::LazyList(ll) if ll.is_lazy_marked()));
+        let first = parts.first().cloned().unwrap_or(Value::NIL);
+        let mut ll = LazyList::new_adaptor_pipe(
+            first,
+            Value::NIL,
+            PipeAdaptor::Concat {
+                parts,
+                part: 0,
+                base: 0,
+            },
+        );
+        if lazy_marked {
+            ll.mark_lazy();
+        }
+        if array_context {
+            ll = ll.with_array_context();
+        }
+        Value::lazy_list(crate::gc::Gc::new(ll))
+    }
+
+    /// Splice a Slip's items into a list literal under construction, noting
+    /// where a genuinely lazy list (one `|` kept whole rather than reifying)
+    /// lands so the literal can stay lazy.
+    // Cost: O(k), k = items in the Slip.
+    pub(super) fn extend_with_slip_items(
+        elems: &mut Vec<Value>,
+        lazy_slots: &mut Vec<usize>,
+        items: &[Value],
+    ) {
+        for item in items {
+            if let ValueView::LazyList(ll) = item.view()
+                && ll.renders_lazy_placeholder()
+            {
+                lazy_slots.push(elems.len());
+            }
+            elems.push(item.clone());
+        }
+    }
+
+    /// A list literal with slipped lazy lists (`(1, |[\*] 1..*)`,
+    /// `[0, |(1...*)]`) as a lazy concatenation: each run of plain elements is
+    /// one finite part, each slipped lazy list its own part, read in order.
+    /// Rakudo keeps such a literal lazy (`.is-lazy` is True) and reifies only
+    /// what is read.
+    // Cost: O(e), e = elements of the literal.
+    pub(super) fn lazy_literal_with_slipped_tail(
+        elems: Vec<Value>,
+        lazy_slots: &[usize],
+        is_real_array: bool,
+    ) -> Value {
+        let finite_part = |run: Vec<Value>| {
+            if is_real_array {
+                crate::runtime::utils::itemize_real_array_elements(Value::real_array(run))
+            } else {
+                Value::array(run)
+            }
+        };
+        let mut parts = Vec::with_capacity(lazy_slots.len() * 2 + 1);
+        let mut run = Vec::new();
+        let mut slots = lazy_slots.iter().peekable();
+        for (i, elem) in elems.into_iter().enumerate() {
+            if slots.peek() == Some(&&i) {
+                slots.next();
+                if !run.is_empty() {
+                    parts.push(finite_part(std::mem::take(&mut run)));
+                }
+                parts.push(elem);
+            } else {
+                run.push(elem);
+            }
+        }
+        if !run.is_empty() {
+            parts.push(finite_part(run));
+        }
+        Self::lazy_concat_pipe(parts, is_real_array)
+    }
+
     fn adaptor_pipe_value(source: Value, func: Value, adaptor: PipeAdaptor) -> Value {
         Value::lazy_list(crate::gc::Gc::new(LazyList::new_adaptor_pipe(
             source, func, adaptor,

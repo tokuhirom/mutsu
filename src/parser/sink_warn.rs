@@ -257,7 +257,18 @@ fn scan_gathers_expr(expr: &Expr) {
 /// source-text position left to compute it from directly).
 fn walk_stmts(stmts: &[Stmt], nil_hint: bool, line: &std::cell::Cell<i64>) {
     for stmt in stmts {
-        walk_stmt(stmt, nil_hint, line);
+        match stmt {
+            // `my $d = 6, 3`: the declaration's trailing items are one list
+            // headed by the declared scalar (the statement's value). That head
+            // is not a user-written term, so only the trailing items can be
+            // useless.
+            Stmt::Expr(Expr::ArrayLiteral(elems)) if is_decl_value_head(stmts, elems) => {
+                for e in &elems[1..] {
+                    warn_expr_sink(e, nil_hint, line.get());
+                }
+            }
+            _ => walk_stmt(stmt, nil_hint, line),
+        }
     }
 }
 
@@ -302,6 +313,17 @@ fn walk_stmt(stmt: &Stmt, nil_hint: bool, line: &std::cell::Cell<i64>) {
         // bodies of subs/classes/etc.) is not analysed for sink warnings.
         _ => {}
     }
+}
+
+/// Whether `elems` is the value list the parser appends after a scalar
+/// declaration with trailing comma items (`my $d = 6, 3`): its head is the
+/// variable a `VarDecl` in the same desugaring block declares.
+fn is_decl_value_head(body: &[Stmt], elems: &[Expr]) -> bool {
+    let Some(Expr::Var(head)) = elems.first() else {
+        return false;
+    };
+    body.iter()
+        .any(|s| matches!(s, Stmt::VarDecl { name, .. } if name == head))
 }
 
 /// Whether `body` is the desugaring of a `my (...) = RHS` / `my (...) := RHS`

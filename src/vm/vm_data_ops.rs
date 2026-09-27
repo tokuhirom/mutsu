@@ -67,6 +67,11 @@ impl Interpreter {
         let start = self.stack.len() - n;
         let raw: Vec<Value> = self.stack.drain(start..).collect();
         let mut elems = Vec::with_capacity(raw.len());
+        // Indices into `elems` of genuinely lazy lists a `|` slipped in
+        // (`(1, |[\*] 1..*)`): they are part of this list's own sequence, so
+        // the literal becomes a lazy concatenation instead of a List holding
+        // them as items.
+        let mut lazy_slots: Vec<usize> = Vec::new();
         for val in raw {
             // A `WrapVarRef`-tagged scalar variable element of a List (`($a, $b)`):
             // store the variable's shared `ContainerRef` cell so the List aliases
@@ -84,7 +89,7 @@ impl Interpreter {
             } = val.view()
             {
                 if let ValueView::Slip(items) = inner.view() {
-                    elems.extend(items.iter().cloned());
+                    Self::extend_with_slip_items(&mut elems, &mut lazy_slots, &items);
                     continue;
                 }
                 let source_name = source_name.resolve();
@@ -107,7 +112,7 @@ impl Interpreter {
             if let ValueView::ContainerRef(_) = val.view() {
                 let inner = val.deref_container();
                 if let ValueView::Slip(items) = inner.view() {
-                    elems.extend(items.iter().cloned());
+                    Self::extend_with_slip_items(&mut elems, &mut lazy_slots, &items);
                     continue;
                 }
             }
@@ -146,7 +151,9 @@ impl Interpreter {
                 val
             };
             match val.view() {
-                ValueView::Slip(items) => elems.extend(items.iter().cloned()),
+                ValueView::Slip(items) => {
+                    Self::extend_with_slip_items(&mut elems, &mut lazy_slots, &items)
+                }
                 ValueView::Array(_, kind) if kind.is_itemized() => elems.push(val),
                 // Scalar-wrapped values (.item / $()) are never flattened.
                 ValueView::Scalar(_) => elems.push(val),
@@ -229,6 +236,11 @@ impl Interpreter {
         // unhandled Failure produced by one of its elements -- explode here,
         // before the composite becomes a stored value.
         self.explode_if_fatal_failure_in_composite(&elems)?;
+        if !lazy_slots.is_empty() {
+            let lazy = Self::lazy_literal_with_slipped_tail(elems, &lazy_slots, is_real_array);
+            self.stack.push(lazy);
+            return Ok(());
+        }
         let result = if is_real_array {
             Value::real_array(elems)
         } else {
