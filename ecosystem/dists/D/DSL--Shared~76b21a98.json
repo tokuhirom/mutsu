@@ -33,7 +33,7 @@
         "nok": 1,
         "ok": 6,
         "plan": 7,
-        "secs": 0.25,
+        "secs": 0.12,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -43,7 +43,7 @@
         "nok": 0,
         "ok": 7,
         "plan": 7,
-        "secs": 7.36,
+        "secs": 2.66,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -57,7 +57,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 8,
-        "secs": 31.71,
+        "secs": 11.03,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -69,7 +69,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 0.3,
+        "secs": 0.11,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -79,30 +79,29 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 2.9,
+        "secs": 1.0,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "No such method 'known-name' for invocant of type 'DSL::Shared::Entity::ResourceAccess(Any)'",
         "nok": 0,
-        "ok": 0,
+        "ok": 4,
         "plan": 4,
-        "secs": 0.77,
+        "secs": 0.36,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/Entity-names-parsing-via-resources-access-object.rakutest",
       "raku": {
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 10.39,
+        "secs": 3.45,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -116,7 +115,7 @@
         "nok": 0,
         "ok": 7,
         "plan": null,
-        "secs": 5.07,
+        "secs": 1.67,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -130,7 +129,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 22,
-        "secs": 4.34,
+        "secs": 1.4,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -144,7 +143,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 23,
-        "secs": 4.37,
+        "secs": 1.5,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -156,7 +155,7 @@
         "nok": 0,
         "ok": 8,
         "plan": 8,
-        "secs": 0.56,
+        "secs": 0.23,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -166,7 +165,7 @@
         "nok": 0,
         "ok": 8,
         "plan": 8,
-        "secs": 22.65,
+        "secs": 7.65,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -178,7 +177,7 @@
         "nok": 0,
         "ok": 11,
         "plan": 11,
-        "secs": 0.62,
+        "secs": 0.2,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -188,7 +187,7 @@
         "nok": 0,
         "ok": 11,
         "plan": 11,
-        "secs": 1.97,
+        "secs": 0.65,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -202,7 +201,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 26,
-        "secs": 10.78,
+        "secs": 3.47,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -216,7 +215,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 12,
-        "secs": 4.51,
+        "secs": 1.45,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -230,7 +229,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 11,
-        "secs": 1.83,
+        "secs": 0.69,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -325,10 +324,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-26",
+    "date": "2026-09-27",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "199f95e",
+    "mutsu_commit": "108386a",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -339,13 +338,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/D/SL/DSL_SHARED/d022fef2bb857616568b46967958e319b132313d.tar.gz"
   },
-  "status": "partial",
+  "status": "green",
   "totals": {
     "baseline_assertions": 26,
     "baseline_files": 4,
-    "mutsu_assertions": 22,
-    "parity_files": 3,
-    "regressed_files": 1
+    "mutsu_assertions": 26,
+    "parity_files": 4,
+    "regressed_files": 0
   },
   "version": "0.2.11"
 }

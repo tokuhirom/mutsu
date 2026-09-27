@@ -7,8 +7,8 @@ definitions: [docs/ecosystem-parity.md](../docs/ecosystem-parity.md).
 
 | metric | value |
 |---|---|
-| **dist parity** (published headline) | **66.5%** (812/1221) |
-| file parity | 73.4% (3134/4268) |
+| **dist parity** (published headline) | **66.6%** (813/1221) |
+| file parity | 73.5% (3135/4268) |
 | assertion parity | 84.0% |
 | accepted divergences (out of the KPI, ADR-0130) | 1 file(s) |
 
@@ -16,9 +16,9 @@ definitions: [docs/ecosystem-parity.md](../docs/ecosystem-parity.md).
 |---|---|
 | `blocked_dep` | 7 |
 | `blocked_load` | 110 |
-| `green` | 812 |
+| `green` | 813 |
 | `no_baseline` | 289 |
-| `partial` | 238 |
+| `partial` | 237 |
 | `red` | 171 |
 | `skipped` | 10 |
 
@@ -454,7 +454,7 @@ definitions: [docs/ecosystem-parity.md](../docs/ecosystem-parity.md).
 | `DSL::Entity::WeatherData` | 0.1.0 | green | 2/2 |
 | `DSL::Examples` | 0.0.7 | green | 1/1 |
 | `DSL::FiniteStateMachines` | 0.1.4 | green | 1/1 |
-| `DSL::Shared` | 0.2.11 | partial | 3/4 |
+| `DSL::Shared` | 0.2.11 | green | 4/4 |
 | `DSL::Translators` | 0.1.1 | no_baseline | — |
 | `Duck::CSV` | 0.0.2 | green | 1/1 |
 | `Duckie` | 0.0.12 | green | 1/1 |
