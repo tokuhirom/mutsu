@@ -1,9 +1,10 @@
 # Tinky's state-machine suite runs under mutsu
 
 `Tinky` 0.1.5, a workflow/state-machine library, went from 2 of 8 baseline
-test files to all 8 passing locally (the `060-callbacks` file is slow under a
-debug build but completes). Eight separate interpreter gaps were in the way,
-each fixed generally and pinned by its own `t/` test:
+test files to 7 of 8 passing. The remaining file, `060-callbacks`, deadlocks
+because a `start`/deferred `.then` closure reads a later call's same-named
+array (#9723). Eight separate interpreter gaps were in the way, each fixed
+generally and pinned by its own `t/` test:
 
 - `Signature ~~ Signature` now compares parameter types through the type
   registry, so `:(ObjectOne $) ~~ :(Object)` holds when `ObjectOne` does the
