@@ -480,19 +480,63 @@ fn fold_compile_time_version(expr: &Expr) -> Option<Value> {
     Some(Value::version(parts, false, false))
 }
 
-/// True when `input` begins, at this exact position, with a user-declared
-/// custom infix operator (symbol or word form). Used by `block_stmt` to
-/// detect that a leading `{ ... }` is really the left operand of a declared
-/// operator (`{ $x--; } zork 25;`, where `infix:<zork>` takes a `&closure`
-/// first parameter) rather than a complete bare-block statement. Unlike the
-/// generic word-operator lookahead used mid-expression (which accepts any
-/// unreserved word and lets an undeclared name fail later with a
-/// Raku-compatible "Two terms in a row"), this check requires the operator to
-/// actually be declared — otherwise every bare block followed on the same
-/// line by an ordinary call (`{ $x++; } say $x;`) would be misdirected into
-/// the same fallback and fail instead of running as two statements.
-fn starts_with_declared_custom_infix(input: &str) -> bool {
+/// Built-in infix operators, spelled as a word, that can never begin a new
+/// Raku statement — so finding one immediately after a statement-leading
+/// `{ ... }` means the block is that operator's left operand, not a complete
+/// bare-block statement (`{ ... } or die`, `{ ... } eq $x`). Restricted to
+/// words `expression()`'s speculative custom-infix match already refuses to
+/// treat as an ad-hoc operator (`is_reserved_infix_word`) — an ordinary call
+/// name like `say` is NOT here, so a bare block followed by one on the same
+/// line (`{ $x++; } say $x;`) still parses as two statements. `andthen`,
+/// `orelse` and `notandthen` are genuine operators too but are not in that
+/// reserved list (their own dedicated parser runs before the speculative
+/// match would ever see them), so they are added explicitly.
+const BUILTIN_INFIX_WORDS: &[&str] = &[
+    "and",
+    "or",
+    "xor",
+    "andthen",
+    "orelse",
+    "notandthen",
+    "min",
+    "max",
+    "cmp",
+    "coll",
+    "unicmp",
+    "leg",
+    "eq",
+    "ne",
+    "lt",
+    "gt",
+    "le",
+    "ge",
+    "eqv",
+    "ff",
+    "fff",
+    "after",
+    "before",
+    "gcd",
+    "lcm",
+    "x",
+    "xx",
+    "o",
+];
+
+/// True when `input` begins, at this exact position, with an infix operator —
+/// either one of the built-in word forms above or a user-declared custom
+/// infix (symbol or word form). Used by `block_stmt` to detect that a leading
+/// `{ ... }` is really the left operand of a following operator
+/// (`{ $x--; } zork 25;`, where `infix:<zork>` takes a `&closure` first
+/// parameter, or `{ ... } or die`) rather than a complete bare-block
+/// statement.
+fn starts_with_infix_operand_marker(input: &str) -> bool {
     if match_user_declared_infix_symbol_op(input).is_some() {
+        return true;
+    }
+    if BUILTIN_INFIX_WORDS
+        .iter()
+        .any(|kw| keyword(kw, input).is_some())
+    {
         return true;
     }
     let first = match input.chars().next() {
@@ -556,16 +600,14 @@ pub(crate) fn block_stmt(input: &str) -> PResult<'_, Stmt> {
         let (rest, expr) = crate::parser::expr::postfix_expr_continue(rest, block_expr)?;
         return parse_statement_modifier(rest, Stmt::Expr(expr));
     }
-    // A declared custom infix operator immediately follows, on the same line:
-    // `{ ... }` is the operator's left operand, not a complete statement. Fail
-    // this parse so `statement()` falls through to `simple::expr_stmt`, which
-    // re-parses `{ ... }` as a term via `block_or_hash_expr` and continues
-    // into the infix expression.
+    // An infix operator immediately follows, on the same line: `{ ... }` is
+    // the operator's left operand, not a complete statement. Fail this parse
+    // so `statement()` falls through to `simple::expr_stmt`, which re-parses
+    // `{ ... }` as a term via `block_or_hash_expr` and continues into the
+    // infix expression.
     let ws_before_next = &rest[..rest.len() - r_ws.len()];
-    if !ws_before_next.contains('\n') && starts_with_declared_custom_infix(r_ws) {
-        return Err(PError::expected(
-            "statement (block is a custom-infix operand)",
-        ));
+    if !ws_before_next.contains('\n') && starts_with_infix_operand_marker(r_ws) {
+        return Err(PError::expected("statement (block is an infix operand)"));
     }
     parse_statement_modifier(rest, Stmt::Block(body))
 }
