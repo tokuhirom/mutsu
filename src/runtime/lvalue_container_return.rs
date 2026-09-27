@@ -211,11 +211,13 @@ impl Interpreter {
         let result = self.dispatch_wrapped_attribute_accessor(
             target.clone(),
             &class_name,
-            method,
             Vec::new(),
-            owner,
             chain,
-            true,
+            super::DeferralEntry::Accessor {
+                owner,
+                name: method.to_string(),
+                want_container: true,
+            },
         );
         self.set_pending_call_arg_sources(saved_sources);
         Some(result)
