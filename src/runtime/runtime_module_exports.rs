@@ -58,20 +58,22 @@ impl Interpreter {
         name: &str,
         target_pkg: &str,
     ) -> Vec<(String, Arc<FunctionDef>)> {
+        let name_sym = Symbol::intern(name);
+        let source_prefixes: Vec<Symbol> = source_packages
+            .iter()
+            .map(|pkg| crate::qualified::qualified(Symbol::intern(pkg), name_sym))
+            .collect();
+        let target = crate::qualified::qualified(Symbol::intern(target_pkg), name_sym);
         let keys = self.fn_keys_for_base(name);
         let registry = self.registry();
         keys.iter()
             .filter_map(|key| {
                 let key_str = key.as_str();
-                let suffix = source_packages.iter().find_map(|pkg| {
-                    key_str
-                        .strip_prefix(pkg.as_str())?
-                        .strip_prefix("::")?
-                        .strip_prefix(name)?
-                        .strip_prefix('/')
-                })?;
+                let suffix = source_prefixes
+                    .iter()
+                    .find_map(|prefix| key_str.strip_prefix(prefix.as_str())?.strip_prefix('/'))?;
                 let def = registry.functions.get(key)?.clone();
-                Some((format!("{target_pkg}::{name}/{suffix}"), def))
+                Some((format!("{}/{suffix}", target.as_str()), def))
             })
             .collect()
     }
