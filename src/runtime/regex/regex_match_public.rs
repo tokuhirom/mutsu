@@ -245,18 +245,12 @@ impl Interpreter {
         let target = MatchTarget::new(text);
         let _target_scope = super::regex_helpers::MatchTargetScope::enter(target.clone());
         let orig_chars = target.chars();
-        // A declarative-prefix measurement asks how far the pattern gets from
-        // the start of `text`, never where it first matches, so it does not
-        // scan: a later start would record fates from positions the measured
-        // candidate never starts at (`regex_ltm_fate`).
-        let measuring = super::regex_helpers::LTM_DECLARATIVE_MODE.with(std::cell::Cell::get);
-
         // When :m (ignoremark) is set, strip combining marks from both text and
         // pattern literals, match on stripped forms, then map positions back.
         // Every recorded span (including sub-captures) is remapped from the
         // stripped space so captured text derives from the original subject.
         if parsed.ignore_mark {
-            return self.regex_match_ignoremark_captures(parsed, &target, measuring, pkg);
+            return self.regex_match_ignoremark_captures(parsed, &target, pkg);
         }
 
         // When :i (ignorecase) is set and there are characters with multi-char
@@ -269,7 +263,7 @@ impl Interpreter {
         // fold expansion. This prevents false matches in the middle of a fold
         // (e.g., matching 't' from the expansion of 'ﬆ' -> 'st').
         if parsed.ignore_case && needs_casefold_expansion(orig_chars, parsed) {
-            return self.regex_match_casefold_captures(parsed, &target, measuring, pkg);
+            return self.regex_match_casefold_captures(parsed, &target, pkg);
         }
 
         let chars = orig_chars;
@@ -284,9 +278,6 @@ impl Interpreter {
                 });
         }
         for start in regex_scan_positions(self, parsed, chars, 0, pkg) {
-            if measuring && start > 0 {
-                break;
-            }
             if let Some((end, mut caps)) =
                 self.regex_match_end_from_caps_in_pkg(parsed, chars, start, pkg)
             {

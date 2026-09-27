@@ -6,25 +6,17 @@
 //! *fate*, and the prefix length is the furthest position any path reaches a
 //! fate or the end of the pattern. A fate stops only its own path.
 //!
-//! mutsu measures by walking the ordinary backtracking matcher under
-//! `LTM_DECLARATIVE_MODE`. A stopper used to report its position as a
-//! zero-width match and unwind the WHOLE walk, so the measurement was the
-//! first fate the depth-first walk happened to reach, not the furthest one:
-//! `<[a..z]> | <-[Z \n]>` inside a `*` loop measured the loop as ending where
-//! the second branch fired, one character in, even though the first branch
-//! carries the path on to the end of the word.
-//!
-//! Now a stopper records its position here as a fate and fails its own path,
-//! and the walk carries on through every other path. A measurement entry point
-//! (`ltm_prefix_len_at`, `declarative_prefix_match_len`) opens a frame, and its
-//! result is the larger of the furthest full match and the furthest fate.
+//! mutsu's NFA (ADR-0125) keeps its own fates. The frame here collects the
+//! ones the matcher records while it answers one of the NFA's leaves under
+//! `LTM_DECLARATIVE_MODE` — a code block inside a token that a `<+name>`
+//! class calls, say: the NFA run opens a frame around its walk and counts the
+//! frame's furthest fate with its own.
 //!
 //! Positions are indices into the character array being walked. A matcher
-//! that re-slices or re-maps the subject (a subrule matched on
-//! `&chars[pos..]`, `:i` case folding, `:m` mark stripping) opens its own
-//! frame and maps the inner fate back when it closes it.
+//! that re-slices or re-maps the subject (`:i` case folding, `:m` mark
+//! stripping) opens its own frame and maps the inner fate back when it closes
+//! it.
 
-use super::regex_helpers::LTM_PREFIX_TERMINATED;
 use std::cell::Cell;
 
 thread_local! {
@@ -35,7 +27,6 @@ thread_local! {
 /// A non-declarative atom ended a path of the measurement at `pos`. The caller
 /// must then fail that path rather than continue past the atom.
 pub(crate) fn ltm_record_fate(pos: usize) {
-    LTM_PREFIX_TERMINATED.with(|f| f.set(true));
     LTM_FATE_MAX.with(|f| f.set(Some(f.get().map_or(pos, |max| max.max(pos)))));
 }
 
@@ -63,9 +54,10 @@ pub(crate) fn ltm_fate_frame_close_into(
 }
 
 impl crate::runtime::Interpreter {
-    /// `<?before X>` under measurement: Rakudo's NFA inlines `X` and puts a
-    /// fate at each place it ends, so each end of `X` is a fate. A path of
-    /// `X` that fails ends nowhere, and fates inside `X` record themselves.
+    /// `<?before X>` in a match nested in an NFA leaf: Rakudo's NFA inlines
+    /// `X` and puts a fate at each place it ends, so each end of `X` is a
+    /// fate. A path of `X` that fails ends nowhere, and fates inside `X`
+    /// record themselves.
     pub(super) fn ltm_record_lookahead_fates(
         &mut self,
         inner: &crate::runtime::RegexPattern,

@@ -115,14 +115,8 @@ impl Interpreter {
         pkg: Symbol,
     ) -> Vec<RankedAlternationBranch> {
         let mut out = Vec::new();
-        let mut ltm_alternatives = super::regex_helpers::LtmAlternativeScope::new();
         for alt in alts {
-            ltm_alternatives.before_alternative();
-            // #9617: under measurement this walk is also the branch's rank walk.
-            let walk = super::regex_ltm_rank_reuse::ltm_branch_walk_open();
             let raw_ends = self.regex_match_ends_from_caps_in_pkg(alt, chars, pos, pkg);
-            let measured_plen = walk.close(&raw_ends, pos);
-            ltm_alternatives.after_alternative(!raw_ends.is_empty());
             if raw_ends.is_empty() {
                 continue;
             }
@@ -145,10 +139,7 @@ impl Interpreter {
                     (end, new_caps)
                 })
                 .collect();
-            let rank = match measured_plen {
-                Some(plen) => self.ltm_branch_rank_key_with_prefix(alt, chars, pos, pkg, plen),
-                None => self.ltm_branch_rank_key(alt, chars, pos, pkg),
-            };
+            let rank = self.ltm_branch_rank_key(alt, chars, pos, pkg);
             out.push((rank, ends));
         }
         out
@@ -197,45 +188,6 @@ impl Interpreter {
         ignore_case: bool,
         subrule_first_only: bool,
     ) -> Vec<(usize, RegexCaptures)> {
-        // #9617: under measurement a recursive subrule call is a fate.
-        let _ltm_subrule = match super::regex_ltm_recursion::ltm_enter_subrule(atom, pos) {
-            super::regex_ltm_recursion::LtmSubruleEntry::Recursive => return Vec::new(),
-            entry => entry,
-        };
-        // #9579: inside a measurement, an argument-less `<subrule>` call is
-        // walked once per position (`regex_ltm_memo`). It opens no grammar
-        // frame under measurement (see below); a defaulted `$*` parameter is
-        // still installed for the walk and torn down after it.
-        if let RegexAtom::Named(name) = atom
-            && LTM_DECLARATIVE_MODE.with(std::cell::Cell::get)
-            && name.spec().arg_exprs.is_empty()
-        {
-            let call = super::regex_ltm_memo::MemoSubruleCall {
-                spec: name.spec(),
-                pos,
-                pkg,
-                first_only: subrule_first_only,
-                ignore_case,
-            };
-            return super::regex_ltm_memo::ltm_memo_subrule_ends(self, call, chars, |interp| {
-                let mut dyn_saved = None;
-                let out = interp.regex_match_atom_all_with_capture_in_pkg_inner(
-                    atom,
-                    chars,
-                    pos,
-                    current_caps,
-                    pkg,
-                    ignore_case,
-                    subrule_first_only,
-                    &mut dyn_saved,
-                    None,
-                );
-                if let Some(saved) = dyn_saved {
-                    interp.restore_subrule_dynamic_params(saved);
-                }
-                out
-            });
-        }
         let mut dyn_saved = None;
         let mut preinstalled_arg_values = None;
         // A named atom is one grammar-rule invocation. Keep its declaration
@@ -352,17 +304,10 @@ impl Interpreter {
         // subrule argument evaluation) — it must never be cloned into results.
         let _vars_seed = Self::arm_inline_vars_seed(atom, current_caps);
 
-        // ADR-0022 §4.2: in LTM declarative-prefix measurement mode, a
-        // non-declarative atom either terminates the prefix at its own
-        // position (zero-width) or — for a positive lookahead — inlines its
-        // inner pattern's consumption first, then terminates. `SequentialAlternation`
-        // is intentionally not covered by `ltm_atom_mode` (it needs its own
-        // ε-bypass measurement below) and `CodeAssertion` keeps its existing
-        // inline handling (ADR-0009), so both fall through to `LtmAtomMode::Normal`
-        // here and are unaffected by this guard.
-        // A `.wrap`ped token is measured by its own body here, like any other
-        // subrule: the wrapper is user code and never runs during measurement
-        // (`token_method_wrap_chain`, #9151).
+        // An LTM NFA leaf (ADR-0125) is answered under `LTM_DECLARATIVE_MODE`,
+        // and a match nested in one (a `<+name>` class calling a token) must
+        // run no user code (ADR-0009): a non-declarative atom there is a fate,
+        // as it is in the NFA, recorded into the run's fate frame.
         if LTM_DECLARATIVE_MODE.with(std::cell::Cell::get) {
             match ltm_atom_mode(atom) {
                 // A fate ends this path of the measurement: record where, and
@@ -429,12 +374,6 @@ impl Interpreter {
             return out;
         }
         if let RegexAtom::SequentialAlternation(alternatives) = atom {
-            if LTM_DECLARATIVE_MODE.with(std::cell::Cell::get) {
-                // ADR-0022 §4.2: only the first branch of `X || Y ...`
-                // participates in the declarative prefix, plus a zero-width
-                // epsilon bypass — see `ltm_seqalt_candidates`.
-                return self.ltm_seqalt_candidates(alternatives, chars, pos, pkg);
-            }
             // || (sequential alternation): alt0 has higher priority than alt1, etc.
             // All alternatives are included to allow outer-context backtracking,
             // but in priority order: alt0's matches have highest priority.
@@ -777,12 +716,6 @@ impl Interpreter {
                 let mut best_raw: Vec<(usize, RegexCaptures)> = Vec::new();
 
                 let has_proto = candidates.iter().any(|(_, _, sym)| sym.is_some());
-                // #9643: a measurement sees a proto the way Rakudo's NFA does,
-                // as the union of every candidate's every end, not as the
-                // ranked winner's greedy end alone. Measuring runs no user
-                // code (ADR-0009), so walking the losers is free of the side
-                // effects ADR-0046 §2.3 ranks to avoid.
-                let measuring = LTM_DECLARATIVE_MODE.with(std::cell::Cell::get);
                 // Left-recursion escape hatch for the rank-then-match path — see
                 // the `seed_was_consulted` handling below.
                 let mut lr_match_all = false;
@@ -809,11 +742,11 @@ impl Interpreter {
                     // Evaluate all candidates' patterns directly (unwrapped).
                     let mut raw_out: Vec<(usize, RegexCaptures)> = Vec::new();
 
-                    if has_proto && !lr_match_all && !measuring {
+                    if has_proto && !lr_match_all {
                         // ADR-0046 Decision 1: rank the proto candidates by
                         // MEASUREMENT, then match only the winner. Ranking runs
-                        // under `LTM_DECLARATIVE_MODE`, so it executes nothing
-                        // (ADR-0009) — which is what keeps a losing candidate's
+                        // each candidate's NFA, so it executes nothing
+                        // (ADR-0009, ADR-0125) — which is what keeps a losing candidate's
                         // `{ … }` blocks and action methods from firing (ADR-0046
                         // §2.3). This is the same `(prefix_len, litlen, decl
                         // order)` triple `|` alternation and the `:rule<...>`
@@ -888,7 +821,7 @@ impl Interpreter {
                                 },
                             );
                             // all_matches: HIGHEST FIRST.
-                            let matches_to_use: Vec<_> = if sym_key.is_some() && !measuring {
+                            let matches_to_use: Vec<_> = if sym_key.is_some() {
                                 all_matches.into_iter().take(1).collect()
                             } else {
                                 all_matches

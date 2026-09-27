@@ -38,14 +38,6 @@ const QUANT_ALT_BUDGET: u32 = 20_000;
 struct QuantDfsState {
     /// Nodes left before the expansion gives up (`QUANT_ALT_BUDGET`).
     budget: u32,
-    /// `(position, iteration-count class)` states already expanded, kept only
-    /// while measuring a declarative prefix (ADR-0022). A measurement collects
-    /// every end and executes nothing, so what the rest of the pattern can
-    /// reach from a state does not depend on the path that led there;
-    /// re-expanding it would only re-report the same ends. Without this, a
-    /// recursive `regex A { '{' [ <A> | . ]*? '}' }` measured every path
-    /// through the loop, which is exponential in the subject length (#9596).
-    seen: Option<rustc_hash::FxHashSet<(usize, usize)>>,
 }
 
 /// Compound atoms can expose more than one end for one quantifier iteration.
@@ -796,12 +788,9 @@ impl Interpreter {
         }
         // Ordered alternation (`||`) is driven from here, against the real
         // continuation of this pattern — see `walk_seq_alternation`. The eager
-        // atom producer still handles it under a list quantifier and in the
-        // LTM declarative-prefix measurement, which has its own epsilon-bypass
-        // rule (`ltm_seqalt_candidates`).
+        // atom producer still handles it under a list quantifier.
         if let RegexAtom::SequentialAlternation(alternatives) = &token.atom
             && matches!(token.quant, RegexQuant::One | RegexQuant::ZeroOrOne)
-            && !super::regex_helpers::LTM_DECLARATIVE_MODE.with(std::cell::Cell::get)
         {
             return self.walk_seq_alternation(ctx, idx, pos, alternatives, store, matches);
         }
@@ -1208,13 +1197,6 @@ impl Interpreter {
         if token.frugal {
             return None;
         }
-        // A declarative-prefix measurement walks every path the way Rakudo's
-        // NFA does, which ignores `:ratchet`, and a fate can sit at the end of
-        // the subject where these loops stop without trying the atom
-        // (`regex_ltm_fate`). The general chain covers it.
-        if super::regex_helpers::LTM_DECLARATIVE_MODE.with(std::cell::Cell::get) {
-            return None;
-        }
         if is_simple_atom(&token.atom) {
             // Position-only scan: no captures are produced at all.
             let mut current = pos;
@@ -1566,9 +1548,6 @@ impl Interpreter {
         }
         let mut walk = QuantDfsState {
             budget: QUANT_ALT_BUDGET,
-            seen: super::regex_helpers::LTM_DECLARATIVE_MODE
-                .with(std::cell::Cell::get)
-                .then(rustc_hash::FxHashSet::default),
         };
         let stop = self.walk_quant_group_candidates_dfs(
             ctx,
@@ -1605,14 +1584,6 @@ impl Interpreter {
         matches: &mut MatchSink<'_>,
     ) -> bool {
         if walk.budget == 0 {
-            return false;
-        }
-        // Past `min` (and with no `max`), the iteration count no longer
-        // changes what the rest of the walk can do from `current`.
-        let count_class = if max.is_none() { count.min(min) } else { count };
-        if let Some(seen) = walk.seen.as_mut()
-            && !seen.insert((current, count_class))
-        {
             return false;
         }
         let token = &ctx.pattern.tokens[idx];

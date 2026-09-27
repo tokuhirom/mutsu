@@ -734,10 +734,9 @@ impl Interpreter {
                         if let Some(err) = Self::take_pending_regex_error() {
                             return Err(err);
                         }
-                        // Candidate selection already ran the start rule's
-                        // pattern, so a `~` conjunction that lost its closer has
-                        // recorded its goal even though we never reach the main
-                        // match below. `FAILGOAL` must still fire.
+                        // No candidate reaches the main match below; a `~`
+                        // goal the start rule names must still reach
+                        // `FAILGOAL`.
                         let start_source = self
                             .resolve_token_defs(&start_rule)
                             .and_then(|defs| defs.into_iter().next())

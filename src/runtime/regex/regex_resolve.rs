@@ -140,50 +140,31 @@ impl Interpreter {
     /// prefix `a .+`), while a plain `{ … }` block **does** (`a {} .+` has prefix
     /// `a`). Neither is run.
     ///
-    /// This runs the ordinary matcher under `LTM_DECLARATIVE_MODE`, which applies
-    /// both rules without executing (see the `CodeAssertion` arm of
-    /// `regex_match_atom_with_capture_in_pkg` and the `LTM_PREFIX_TERMINATED` check
-    /// in `walk_tokens`). Going through the real matcher — rather than truncating
-    /// the token list — is what lets the prefix descend *into* a subrule and handle
-    /// a code atom nested inside it (`token TOP { <item> }` where `item` holds the
-    /// assertion): the flags are thread-locals, so they survive the nested
-    /// sub-interpreter dispatch a subrule match goes through.
+    /// Measured by the pattern's NFA (ADR-0125, `ltm_prefix_len_at`), from
+    /// the start of `text`, in the current package. The NFA inlines the
+    /// subrules the pattern calls, so a code atom nested inside one
+    /// (`token TOP { <item> }` where `item` holds the assertion) is seen too.
     ///
-    /// A pattern with no code atom anywhere therefore measures as a full match,
-    /// which executes nothing.
-    ///
-    /// Returns `(len, stopped_at_code_block)`. The flag matters because a `None`
-    /// length means two different things. With `false`, the measurement ran to the
-    /// end and `None` is real evidence the candidate cannot match — the caller may
-    /// drop it. With `true`, a plain `{ }` block cut the measurement short, so a
-    /// `None` proves nothing about whether the real match would succeed and the
-    /// candidate must be kept for the real match to judge.
+    /// Returns `(len, stopped)`. The flag matters because a `None` length means
+    /// two different things. With `false`, the measurement ran to the end and
+    /// `None` is real evidence the candidate cannot match — the caller may drop
+    /// it. With `true`, the measurement was cut short, so a `None` proves
+    /// nothing about whether the real match would succeed and the candidate
+    /// must be kept for the real match to judge. A pattern that does not parse
+    /// is `(None, true)`: the real match reports it.
+    // Cost: one parse (memoized) plus `ltm_prefix_len_at`.
     pub(crate) fn declarative_prefix_match_len(
         &mut self,
         pattern: &str,
         text: &str,
     ) -> (Option<usize>, bool) {
-        // Saved/restored rather than simply cleared: a subrule's own pattern can be
-        // measured while an outer measurement is still live.
-        let saved_mode = super::regex_helpers::LTM_DECLARATIVE_MODE.replace(true);
-        let saved_terminated = super::regex_helpers::LTM_PREFIX_TERMINATED.replace(false);
-        let saved_epsilon = super::regex_helpers::LTM_SEQALT_EPSILON.replace(false);
-        let enclosing_fate = super::regex_ltm_fate::ltm_fate_frame_open();
-        let stack = super::regex_ltm_recursion::LtmMeasurementStack::open(saved_mode);
-        let matched = self.regex_match_len_at_start(pattern, text);
-        drop(stack);
-        // The furthest place any path got: a full match or a fate
-        // (`regex_ltm_fate`).
-        let fate = super::regex_ltm_fate::ltm_fate_frame_close(enclosing_fate);
-        let result = matched.into_iter().chain(fate).max();
-        // A `||` epsilon bypass makes a `None` unsound to filter on, same as a
-        // code atom — see `LTM_SEQALT_EPSILON`.
-        let stopped_at_code_atom = super::regex_helpers::LTM_PREFIX_TERMINATED.get()
-            || super::regex_helpers::LTM_SEQALT_EPSILON.get();
-        super::regex_helpers::LTM_DECLARATIVE_MODE.set(saved_mode);
-        super::regex_helpers::LTM_PREFIX_TERMINATED.set(saved_terminated);
-        super::regex_helpers::LTM_SEQALT_EPSILON.set(saved_epsilon);
-        (result, stopped_at_code_atom)
+        let Some(parsed) = self.parse_regex(pattern) else {
+            return (None, true);
+        };
+        let target = MatchTarget::new(text);
+        let _target_scope = super::regex_helpers::MatchTargetScope::enter(target.clone());
+        let pkg = self.current_package_sym();
+        self.ltm_prefix_len_at(&parsed, target.chars(), 0, pkg)
     }
 
     pub(in crate::runtime) fn instantiate_token_pattern(

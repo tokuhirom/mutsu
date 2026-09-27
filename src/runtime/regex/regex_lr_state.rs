@@ -26,7 +26,7 @@
 //! the same thread-local the state lives in.
 
 use rustc_hash::FxHashMap as HashMap;
-use std::cell::{Cell, RefCell};
+use std::cell::RefCell;
 use std::collections::hash_map::Entry;
 
 use crate::runtime::regex_types::RegexCaptures;
@@ -154,50 +154,33 @@ thread_local! {
     /// times per `<subrule>` call at every position, and a grammar rule name is
     /// not adversarial input.
     static LR_STATE: RefCell<LrState> = const { RefCell::new(LrState::new()) };
-
-    /// How many times a live activation has been consulted — a re-entry that
-    /// read its seed, or a lazy call that declined because its key was live.
-    /// Only ever compared before/after a walk: a walk that moved it depended on
-    /// left-recursion state its caller does not see, which is what keeps the
-    /// declarative-prefix memo (`regex_ltm_memo`) from storing it.
-    static LR_CONSULTS: Cell<u64> = const { Cell::new(0) };
 }
 
-/// The running count of left-recursion consultations (see `LR_CONSULTS`).
-// Cost: O(1).
-pub(super) fn lr_consult_count() -> u64 {
-    LR_CONSULTS.with(Cell::get)
-}
-
-fn note_lr_consult() {
-    LR_CONSULTS.with(|c| c.set(c.get().wrapping_add(1)));
-}
-
-/// `true` when an argument-less call of `name` with `remaining` characters
-/// left is under evaluation, i.e. a call there would read its seed. Unlike
-/// [`lr_key_is_active`] this is not a consultation: the LTM NFA (ADR-0125)
-/// asks it only to decide whether to leave the measurement to the walker.
-// Cost: O(1) expected (an array index, then one hash probe for a live name).
-pub(super) fn lr_call_is_live(name: Symbol, remaining: usize) -> bool {
+/// The seed of the live activation an argument-less call of `name` with
+/// `remaining` characters left would re-enter, or `None` when no such
+/// activation is live. Reading it is a consultation, exactly as a matcher
+/// re-entry's (`lr_begin_or_reenter`): the owner keeps growing its seed. The
+/// LTM NFA (ADR-0125) reads a live seed where the matcher would, instead of
+/// walking the rule's body.
+// Cost: O(1) expected (an array index, then one hash probe for a live name),
+// plus O(e) to copy the seed's ends, e = its end count.
+pub(super) fn lr_read_live_seed(name: Symbol, remaining: usize) -> Option<Vec<usize>> {
     LR_STATE.with(|s| {
-        let s = s.borrow();
+        let mut s = s.borrow_mut();
         if s.active.get(name.id() as usize).is_none_or(|&n| n == 0) {
-            return false;
+            return None;
         }
-        s.keys
-            .get(&LrKey::new(name, None, remaining))
-            .is_some_and(|e| e.seed.is_some())
+        let entry = s.keys.get_mut(&LrKey::new(name, None, remaining))?;
+        let ends = entry.seed.as_ref()?.iter().map(|(end, _)| *end).collect();
+        entry.seed_read = true;
+        Some(ends)
     })
 }
 
 /// `true` when this key is already being evaluated further up the stack, i.e.
 /// entering it again would be a left-recursive re-entry.
 pub(super) fn lr_key_is_active(key: &LrKey) -> bool {
-    let active = LR_STATE.with(|s| s.borrow().keys.get(key).is_some_and(|e| e.seed.is_some()));
-    if active {
-        note_lr_consult();
-    }
-    active
+    LR_STATE.with(|s| s.borrow().keys.get(key).is_some_and(|e| e.seed.is_some()))
 }
 
 /// Mark `key` as under evaluation with an empty seed, returning the enclosing
@@ -277,7 +260,6 @@ pub(super) fn lr_begin_or_reenter(key: &LrKey) -> LrBegin {
         let entry = s.keys.entry(key.clone()).or_default();
         if let Some(seed) = entry.seed.as_ref() {
             entry.seed_read = true;
-            note_lr_consult();
             return LrBegin::Reentry(seed.clone());
         }
         entry.seed = Some(Vec::new());

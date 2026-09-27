@@ -11,13 +11,11 @@ use super::regex_ltm_fate::{ltm_fate_frame_close_into, ltm_fate_frame_open};
 use super::regex_prefilter::regex_scan_positions;
 
 impl Interpreter {
-    /// `:m`: match on the mark-stripped subject. `measuring` limits the match
-    /// to start 0 (see `regex_match_with_parsed_captures`).
+    /// `:m`: match on the mark-stripped subject.
     pub(super) fn regex_match_ignoremark_captures(
         &mut self,
         parsed: &RegexPattern,
         target: &MatchTarget,
-        measuring: bool,
         pkg: Symbol,
     ) -> Option<RegexCaptures> {
         let stripped = target.stripped();
@@ -42,9 +40,6 @@ impl Interpreter {
                 });
         } else {
             for start in regex_scan_positions(self, &stripped_parsed, stripped_chars, 0, pkg) {
-                if measuring && start > 0 {
-                    break;
-                }
                 if let Some((end, mut caps)) = self.regex_match_end_from_caps_in_pkg(
                     &stripped_parsed,
                     stripped_chars,
@@ -79,7 +74,6 @@ impl Interpreter {
         &mut self,
         parsed: &RegexPattern,
         target: &MatchTarget,
-        measuring: bool,
         pkg: Symbol,
     ) -> Option<RegexCaptures> {
         let orig_chars = target.chars();
@@ -110,8 +104,7 @@ impl Interpreter {
                     Some(caps)
                 });
         } else {
-            let last_start = if measuring { 0 } else { folded_chars.len() };
-            for start in 0..=last_start {
+            for start in 0..=folded_chars.len() {
                 // Only try start positions at fold boundaries
                 if !is_fold_boundary(start) {
                     continue;

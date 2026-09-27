@@ -208,14 +208,11 @@ impl Interpreter {
         });
         // Collect all matching candidates with their LTM rank key.
         // `ltm_rank_token_candidate_source` (ADR-0046 Decision 1) is the ONLY
-        // trial match here: it measures under `LTM_DECLARATIVE_MODE`, stopping
-        // at the candidate's first code block/assertion and never executing
-        // one, so measuring a candidate cannot duplicate its side effects
-        // (ADR-0009). For a candidate with no code atom it is a full match —
-        // which executes nothing — so the "does this candidate match at all?"
-        // filter is unchanged for those. It is the same primitive
-        // `|`-alternation ranking uses (`ltm_branch_rank_key`), so this site
-        // now also gets ADR-0022's `litlen` tie-break.
+        // trial here: it runs the candidate's LTM NFA (ADR-0125), which never
+        // executes user code, so measuring a candidate cannot duplicate its
+        // side effects (ADR-0009). It is the same primitive `|`-alternation
+        // ranking uses (`ltm_branch_rank_key`), with ADR-0022's `litlen`
+        // tie-break.
         // ((prefix_match_len, litlen), pattern, sym adverb of the candidate's def)
         let mut candidates: Vec<((usize, usize), String, Option<String>)> = Vec::new();
         let mut rejected: Vec<String> = Vec::new();
@@ -249,20 +246,14 @@ impl Interpreter {
                     .collect(),
             ));
         }
-        // Nothing matched declaratively. Normally that is a cheap "this rule
-        // cannot match" verdict and the real match is skipped — but during a
-        // `Grammar.parse(:actions(...))` the real match has OBSERVABLE side
-        // effects: Rakudo dispatches an action the moment a subrule reduces, so
-        // even a doomed match leaves the actions of its matched subrules behind.
-        // A grammar that installs a parse diagnostic cursor (such as
-        // Grammar::PrettyErrors' `$*HIGHWATER`) likewise needs the real walk to
-        // run so wrapped tokens and the failure position are observable. With a
-        // single (non-proto) candidate there is nothing to select between, so
-        // hand it back and let the real match run and fail.
-        if rejected.len() == 1
-            && !self.has_proto_token(name)
-            && (self.current_grammar_actions.is_some() || self.env.contains_key("*HIGHWATER"))
-        {
+        // Nothing matched declaratively. With a single (non-proto) candidate
+        // there is nothing to select between, and Rakudo runs no NFA for it:
+        // it just calls the rule. The real match has observable effects even
+        // when it fails — an action dispatched the moment a subrule reduces
+        // during `Grammar.parse(:actions(...))`, a parse diagnostic cursor
+        // (Grammar::PrettyErrors' `$*HIGHWATER`), a `~` goal that goes missing
+        // and reaches `FAILGOAL` — so hand it back and let it run and fail.
+        if rejected.len() == 1 && !self.has_proto_token(name) {
             return Ok(rejected.pop().map(|p| vec![(p, None)]));
         }
         if self.has_proto_token(name) {

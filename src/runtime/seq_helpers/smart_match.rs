@@ -155,7 +155,6 @@ impl Interpreter {
         // captured lexical, and pin it so the match-time sites that would set
         // `$_` to the subject leave it alone (`regex_topic_pinned`).
         if let Some(topic) = topic {
-            crate::runtime::regex::regex_ltm_memo::note_env_scope_change();
             let topic = topic.deref_container();
             saved.push(RegexClosureBinding {
                 name: "_".to_string(),
@@ -176,7 +175,6 @@ impl Interpreter {
     /// atom, not off a `Value`) and has no `Value` to call
     /// `regex_closure_scope` on.
     pub(crate) fn install_env_scope(&mut self, scope: &ValueMap) -> Vec<RegexClosureBinding> {
-        crate::runtime::regex::regex_ltm_memo::note_env_scope_change();
         let saved: Vec<RegexClosureBinding> = scope
             .iter()
             .map(|(k, v)| RegexClosureBinding {
@@ -202,7 +200,6 @@ impl Interpreter {
         saved: Option<Vec<RegexClosureBinding>>,
     ) {
         let Some(saved) = saved else { return };
-        crate::runtime::regex::regex_ltm_memo::note_env_scope_change();
         for b in saved {
             if b.pins_topic {
                 self.regex_topic_pinned = self.regex_topic_pinned.saturating_sub(1);
