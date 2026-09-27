@@ -18,7 +18,13 @@ impl Interpreter {
         if self.registry().enum_types.contains_key(name) {
             return Some(name.to_string());
         }
-        if let Some(ValueView::Package(sym)) = self.env.get(name).map(Value::view) {
+        // `Symbol::lookup`, not `env.get`: this runs on every coercion to a
+        // non-enum type (`Bool(Mu)` on each `Test` assertion), and a name that
+        // was never interned cannot be an env key, so a miss must not intern.
+        if let Some(ValueView::Package(sym)) = Symbol::lookup(name)
+            .and_then(|key| self.env.get_sym(key))
+            .map(Value::view)
+        {
             let key = sym.resolve();
             if self.registry().enum_types.contains_key(key.as_str()) {
                 return Some(key.to_string());
