@@ -2208,20 +2208,37 @@ impl Interpreter {
             {
                 self.env_mut().remove_sym(sym);
             }
-            // Also remove env-based aliases that point TO this variable,
-            // so GetLocal alias-following doesn't read the new value.
+            // Also remove env-based aliases that point TO this variable, so
+            // GetLocal alias-following doesn't read the new value -- and the
+            // aliaser's own readonly marks, which were only true BECAUSE it
+            // aliased this (now stale) binding: both the sigilless-readonly
+            // env marker (`readonly_kind` propagation's boolean companion)
+            // and the `readonly_vars` kind that propagation copied
+            // (`mark_readonly_with(name, kind)`, a few dozen lines above this
+            // store's own version of it). Leaving either behind orphaned the
+            // aliaser from its alias: the aliaser's OWN next `:=` rebind hit
+            // the sigilless-readonly check's signal for "bound to a bare
+            // value with no alias" (readonly-but-no-Str-alias) and was
+            // wrongly refused, even though the rebind was a legitimate
+            // replacement (#9730, `roast/S12-class/mro-6e.t`).
             let mut aliases_to_remove = Vec::new();
             let prefix = "__mutsu_sigilless_alias::";
             for (k, v) in self.env().iter() {
-                if let Some(_var_name) = k.strip_prefix_str(prefix)
+                if let Some(var_name) = k.strip_prefix_str(prefix)
                     && let ValueView::Str(target) = v.view()
                     && target.as_str() == name
                 {
-                    aliases_to_remove.push(*k);
+                    aliases_to_remove.push((
+                        *k,
+                        runtime::sigilless_readonly_key(&var_name),
+                        var_name,
+                    ));
                 }
             }
-            for k in aliases_to_remove {
-                self.env_mut().remove_sym(k);
+            for (alias_key, readonly_key, var_name) in aliases_to_remove {
+                self.env_mut().remove_sym(alias_key);
+                self.env_mut().remove_sym(readonly_key);
+                self.unmark_readonly(&var_name);
             }
         }
         if let Some(source_name) = bind_source {
