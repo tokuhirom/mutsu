@@ -45,13 +45,6 @@ fn split_method_qualifier_last(method: &str) -> Option<(&str, &str)> {
     Some((&method[..at], &method[at + 2..]))
 }
 
-/// Like [`split_method_qualifier_last`], but splits at the FIRST package-separating `::`.
-fn split_method_qualifier_first(method: &str) -> Option<(&str, &str)> {
-    let cut = extended_name_adverb_start(method);
-    let at = method[..cut].find("::")?;
-    Some((&method[..at], &method[at + 2..]))
-}
-
 impl Interpreter {
     /// Rebless a native scalar produced by a qualified ancestor constructor.
     ///
@@ -1022,7 +1015,7 @@ impl Interpreter {
         method: &str,
         args: Vec<Value>,
     ) -> Option<Result<Value, RuntimeError>> {
-        let (qualifier, actual_method) = split_method_qualifier_first(method)?;
+        let (qualifier, actual_method) = split_method_qualifier_last(method)?;
         if method.starts_with('!') || matches!(target.view(), ValueView::Instance { .. }) {
             return None;
         }

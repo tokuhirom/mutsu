@@ -3670,22 +3670,22 @@ impl Interpreter {
             }
             // Cost: O(e1 + e2), e = elements of each operand.
             OpCode::SetSubset => {
-                self.exec_set_subset_op();
+                self.exec_set_subset_op()?;
                 *ip += 1;
             }
             // Cost: O(e1 + e2), e = elements of each operand.
             OpCode::SetSuperset => {
-                self.exec_set_superset_op();
+                self.exec_set_superset_op()?;
                 *ip += 1;
             }
             // Cost: O(e1 + e2), e = elements of each operand.
             OpCode::SetStrictSubset => {
-                self.exec_set_strict_subset_op();
+                self.exec_set_strict_subset_op()?;
                 *ip += 1;
             }
             // Cost: O(e1 + e2), e = elements of each operand.
             OpCode::SetStrictSuperset => {
-                self.exec_set_strict_superset_op();
+                self.exec_set_strict_superset_op()?;
                 *ip += 1;
             }
             // Cost: O(1) (a two-element junction, no flattening).
