@@ -15,7 +15,8 @@
 //! first read by whoever reads it, and only a consuming `.head(n)` / `.first`
 //! or a subscript on an unread one stops after the prefix.
 
-use crate::value::{Value, ValueView};
+use crate::value::list_gen_rotor::RotorState;
+use crate::value::{MapGrepItems, Value, ValueView};
 use std::sync::Arc;
 
 /// Which positional view of an Array a [`ListGen::Positional`] produces.
@@ -62,6 +63,32 @@ pub(crate) enum ListGen {
         array: Value,
         size: usize,
         /// The index of the next batch's first element.
+        pos: usize,
+    },
+    /// `.rotor(...)`: sub-lists stepped by [`RotorState`] over the source
+    /// (a live Array, or a snapshot of any other list).
+    Rotor {
+        items: MapGrepItems,
+        state: RotorState,
+    },
+    /// `.flat` of an Array or List: each element flattened in turn by
+    /// `flat_val`, the same routine the eager `.flat` uses.
+    Flat {
+        array: Value,
+        /// Whether an element that is itself a list flattens too: a List's
+        /// elements do, a real Array's itemized ones do not.
+        flatten_children: bool,
+        pos: usize,
+        /// What the element being flattened produced and nothing has pulled
+        /// yet.
+        buf: std::collections::VecDeque<Value>,
+    },
+    /// `.tree` / `.tree(n)` of an Array or List: each element treed to
+    /// `depth - 1` levels by `tree_to_depth`, the routine the eager `.tree`
+    /// uses.
+    Tree {
+        array: Value,
+        depth: usize,
         pos: usize,
     },
     /// `.combinations(k)` for every `k` in `k..=k_max`, in Rakudo's order:
@@ -111,6 +138,36 @@ impl ListGen {
         }
     }
 
+    /// `.rotor` over `items` with the parsed `state`, which must not be able
+    /// to underflow ([`RotorState::can_underflow`]): a pure iterator cannot
+    /// throw.
+    // Cost: O(1).
+    pub(crate) fn rotor(items: MapGrepItems, state: RotorState) -> Self {
+        ListGen::Rotor { items, state }
+    }
+
+    /// `.flat` of the Array or List `array`.
+    // Cost: O(1).
+    pub(crate) fn flat(array: Value, flatten_children: bool) -> Self {
+        ListGen::Flat {
+            array,
+            flatten_children,
+            pos: 0,
+            buf: std::collections::VecDeque::new(),
+        }
+    }
+
+    /// The elements of `.tree(depth)` of the Array or List `array` (`depth >=
+    /// 1`; the caller itemizes the Seq, as `.tree` returns `$(...)`).
+    // Cost: O(1).
+    pub(crate) fn tree(array: Value, depth: usize) -> Self {
+        ListGen::Tree {
+            array,
+            depth,
+            pos: 0,
+        }
+    }
+
     /// Every combination of `items` whose size lies in `k_min..=k_max`
     /// (clamped to `0..=items.len()`).
     // Cost: O(1) beyond the `items` snapshot the caller built.
@@ -143,7 +200,7 @@ impl ListGen {
     }
 
     /// Whether every element this iterator yields is defined (an `Int`, a
-    /// `Pair` or an `Array`) — false for the views that hand out elements.
+    /// `Pair` or a sub-list) — false for the views that hand out elements.
     // Cost: O(1).
     pub(crate) fn never_nilish(&self) -> bool {
         !matches!(
@@ -151,13 +208,14 @@ impl ListGen {
             ListGen::Positional {
                 mode: PositionalMode::Values | PositionalMode::Kv,
                 ..
-            }
+            } | ListGen::Flat { .. }
         )
     }
 
     /// Rakudo's `pull-one`: the next element, or `None` at the end.
-    // Cost: O(1) for a positional view; O(n) for a batch of n elements; O(k)
-    // for a combination of size k;
+    // Cost: O(1) for a positional view; O(n) for a batch or rotor sub-list of n
+    // elements; O(t) for the element `.flat` / `.tree` walks, t = nodes under
+    // it; O(k) for a combination of size k;
     // O(e) for a permutation, e = elements (amortized O(1) index steps, plus
     // building the e-element result).
     pub(crate) fn pull_one(&mut self) -> Option<Value> {
@@ -218,6 +276,36 @@ impl ListGen {
                 *pos = end;
                 Some(chunk)
             }
+            // `can_underflow` was ruled out at construction, so `step` cannot
+            // fail here.
+            ListGen::Rotor { items, state } => {
+                items.with_items(|items| state.step(items)).ok().flatten()
+            }
+            ListGen::Flat {
+                array,
+                flatten_children,
+                pos,
+                buf,
+            } => loop {
+                if let Some(v) = buf.pop_front() {
+                    return Some(v);
+                }
+                let item = positional_get(array, *pos)?;
+                *pos += 1;
+                let mut out = Vec::new();
+                crate::builtins::flat_val(&item, &mut out, *flatten_children);
+                buf.extend(out);
+            },
+            ListGen::Tree { array, depth, pos } => {
+                let item = positional_get(array, *pos)?;
+                *pos += 1;
+                Some(
+                    crate::builtins::methods_0arg::dispatch_core_math::tree_to_depth(
+                        &item,
+                        *depth - 1,
+                    ),
+                )
+            }
             ListGen::Combinations {
                 items,
                 k,
@@ -268,7 +356,14 @@ impl ListGen {
     // Cost: O(e), e = elements of a combinatorics snapshot; O(1) otherwise.
     pub(crate) fn trace_edges(&self, visit: &mut dyn FnMut(&crate::gc::ErasedGc)) {
         match self {
-            ListGen::Batch { array, .. } => array.gc_trace(visit),
+            ListGen::Batch { array, .. } | ListGen::Tree { array, .. } => array.gc_trace(visit),
+            ListGen::Flat { array, buf, .. } => {
+                array.gc_trace(visit);
+                for v in buf {
+                    v.gc_trace(visit);
+                }
+            }
+            ListGen::Rotor { items, .. } => items.trace_edges(visit),
             ListGen::Positional { array, pending, .. } => {
                 array.gc_trace(visit);
                 if let Some(v) = pending {
@@ -302,6 +397,15 @@ pub(crate) fn positional_antipair(value: &Value, idx: usize) -> Value {
         value.deref_container().deitemize_element(),
         Value::int(idx as i64),
     )
+}
+
+/// Element `i` of the live Array `array`, or `None` past its end.
+// Cost: O(1).
+fn positional_get(array: &Value, i: usize) -> Option<Value> {
+    match array.view() {
+        ValueView::Array(items, _) => items.get(i).cloned(),
+        _ => None,
+    }
 }
 
 /// Element `i` of the Array `array`, as the eager `.values` / `.pairs` read it.

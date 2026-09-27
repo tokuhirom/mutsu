@@ -5,7 +5,7 @@ use crate::value::Value;
 use std::sync::Arc;
 
 /// The source elements a [`crate::value::SeqSource::MapGrep`] body maps or greps over.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub(crate) enum MapGrepItems {
     /// Materialized at the `.map`/`.grep` call (a Range, a Seq, a hash, a
     /// shaped array's leaves, the listop form's flattened arguments, ...).
@@ -41,6 +41,18 @@ impl MapGrepItems {
             MapGrepItems::Live(array) => match array.view() {
                 crate::value::ValueView::Array(items, _) => items.len(),
                 _ => 0,
+            },
+        }
+    }
+
+    /// Run `f` over the source elements as they are now.
+    // Cost: O(1) plus `f`'s cost.
+    pub(crate) fn with_items<R>(&self, f: impl FnOnce(&[Value]) -> R) -> R {
+        match self {
+            MapGrepItems::Snapshot(items) => f(items),
+            MapGrepItems::Live(array) => match array.view() {
+                crate::value::ValueView::Array(items, _) => f(&items),
+                _ => f(&[]),
             },
         }
     }

@@ -71,9 +71,9 @@ pub(super) fn dispatch(
                 _ => Some(Ok(Value::int(0))),
             })
         }
-        // Cost: O(t), t = leaves reached through flattenable (non-itemized) nesting,
-        // copied eagerly even when only a prefix is consumed; O(1) on a LazyList
-        // or infinite Range. Rakudo: O(1) per call, O(1) per leaf pulled -- see #9158.
+        // Cost: O(1) per call on an Array or List (a lazy Seq, `ListGen::Flat`,
+        // that flattens one element per pull), a LazyList or an infinite Range;
+        // otherwise O(t), t = leaves reached through flattenable nesting.
         "flat" => Some(match target.view() {
             ValueView::Array(_, crate::value::ArrayKind::Shaped) => {
                 let leaves = crate::runtime::utils::shaped_array_leaves(target);
@@ -92,12 +92,23 @@ pub(super) fn dispatch(
                 // De-itemize the top-level receiver first: `$(1,2,3).flat`
                 // un-itemizes to `(1,2,3)` and then flattens (Raku semantics);
                 // nested itemized items stay single (handled by `flat_val`).
+                let operand = crate::builtins::deitemize_flat_operand(target);
+                // An Array or List flattens lazily, one element per pull, through
+                // the same `flat_val`: a real Array's itemized elements stay
+                // single, a List's flatten in turn.
+                if let ValueView::Array(
+                    _,
+                    kind @ (crate::value::ArrayKind::Array | crate::value::ArrayKind::List),
+                ) = operand.view()
+                {
+                    let flatten_children = kind == crate::value::ArrayKind::List;
+                    return Some(Some(Ok(Value::seq_list_gen(
+                        crate::value::ListGen::flat(operand, flatten_children),
+                        false,
+                    ))));
+                }
                 let mut result = Vec::new();
-                crate::builtins::flat_val(
-                    &crate::builtins::deitemize_flat_operand(target),
-                    &mut result,
-                    true,
-                );
+                crate::builtins::flat_val(&operand, &mut result, true);
                 Some(Ok(Value::seq(result)))
             }
         }),
