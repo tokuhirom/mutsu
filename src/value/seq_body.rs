@@ -20,7 +20,7 @@
 
 use super::sync_cell::SyncUnsafeCell;
 use super::{RuntimeError, Value};
-use crate::value::PureCursor;
+use crate::value::{MapGrepItems, PureCursor};
 use std::sync::{Arc, Mutex};
 
 /// Which deferred `.map`/`.grep` shape a [`SeqSource::MapGrep`] body carries.
@@ -68,7 +68,12 @@ pub(crate) enum SeqSource {
     /// `.map` call, so a `die`/`fail` inside it escapes a `try` that only
     /// lexically encloses the `.map`.
     MapGrep {
-        items: Arc<Vec<Value>>,
+        items: MapGrepItems,
+        /// How many source elements a prefix pull
+        /// (`Interpreter::pull_map_grep_prefix`) already ran the callback
+        /// over; their results sit in the body's live generation, and the
+        /// next pull resumes here.
+        pos: usize,
         func: Option<Value>,
         /// `use fatal` as it stood at the `.map` CALL, not at the pull.
         /// `use fatal` is lexical, so a callback written outside a `use fatal`
@@ -170,6 +175,9 @@ pub(crate) enum PrefixSource {
     /// A `Seq.new($iterator)` source: a user/native `Iterator` driven one
     /// `pull-one` at a time.
     Iterator(Value),
+    /// A deferred `.map`/`.grep` ([`SeqSource::MapGrep`]), whose callback
+    /// runs over only as much of the source as the prefix needs.
+    MapGrep(SeqSource),
 }
 
 /// Outcome of [`SeqBody::take`]: whether the caller may treat the Seq as
@@ -448,7 +456,7 @@ impl SeqBody {
             }
             std::mem::replace(&mut state.source, SeqSource::Taken)
         };
-        let items = pull_source(&source, pull)?;
+        let items = self.after_pulled_prefix(&source, pull_source(&source, pull)?);
         // SAFETY: the shape `SyncUnsafeCell` exists for — a write under the
         // shared `&self` every alias of this `Arc<SeqBody>` keeps using
         // afterward. No reference into `gens` is held across this push:
@@ -457,6 +465,57 @@ impl SeqBody {
         // rewritten slots (module docs).
         unsafe { (*self.core.gens.get()).push(Box::new(items)) };
         self.core.state.lock().unwrap().source = SeqSource::Reified;
+        Ok(())
+    }
+
+    /// `rest`, the elements a full pull of `source` produced, behind the
+    /// prefix an earlier [`SeqBody::extend_map_grep_prefix`] already stored:
+    /// a `.map`/`.grep` source resumed at `pos > 0` produces only the rest.
+    // Cost: O(1), or O(p + r) to join a prefix of p onto r pulled elements.
+    fn after_pulled_prefix(&self, source: &SeqSource, rest: Vec<Value>) -> Vec<Value> {
+        match source {
+            SeqSource::MapGrep { pos, .. } if *pos > 0 => {
+                let mut items = self.live_generation().clone();
+                items.extend(rest);
+                items
+            }
+            _ => rest,
+        }
+    }
+
+    /// A non-consuming prefix pull of a not-yet-finished `.map`/`.grep` body
+    /// (`?@a.grep(...)` asks for one element): hand its source to `pull`,
+    /// which advances the source's `pos` and returns the elements it
+    /// produced plus whether the source is now exhausted; they are appended
+    /// to the body's live generation, and the source stays in place for the
+    /// next pull unless it ran out. A no-op for any other source, and once
+    /// `.cache` was requested nothing changes about that: the elements are
+    /// kept either way. A failed pull leaves the body `Taken`, as a failed
+    /// full pull does.
+    // Cost: `pull`'s cost, plus a copy of the prefix already pulled.
+    pub(crate) fn extend_map_grep_prefix(
+        &self,
+        pull: impl FnOnce(&mut SeqSource) -> Result<(Vec<Value>, bool), RuntimeError>,
+    ) -> Result<(), RuntimeError> {
+        let mut source = {
+            let mut state = self.core.state.lock().unwrap();
+            if !matches!(state.source, SeqSource::MapGrep { .. }) {
+                return Ok(());
+            }
+            std::mem::replace(&mut state.source, SeqSource::Taken)
+        };
+        let (new_items, exhausted) = pull(&mut source)?;
+        let mut combined = self.live_generation().clone();
+        combined.extend(new_items);
+        // SAFETY: same reasoning as `pull_and_store` — no reference into
+        // `gens` is held across this push, and earlier generations are never
+        // rewritten, only superseded by a longer one.
+        unsafe { (*self.core.gens.get()).push(Box::new(combined)) };
+        self.core.state.lock().unwrap().source = if exhausted {
+            SeqSource::Reified
+        } else {
+            source
+        };
         Ok(())
     }
 
@@ -491,7 +550,8 @@ impl SeqBody {
     /// A consuming `.head(n)` / `.first` on a body nobody has read yet whose
     /// source can be pulled one element at a time: a [`SeqSource::Pure`],
     /// an `IO::Handle.lines` / `.words` read ([`SeqSource::IoLines`]
-    /// without `kv`), or a `Seq.new($iterator)` ([`SeqSource::Iterator`]). Steals and returns that source, leaving the body
+    /// without `kv`), a `Seq.new($iterator)` ([`SeqSource::Iterator`]), or a
+    /// not-yet-run `.map`/`.grep` ([`SeqSource::MapGrep`]). Steals and returns that source, leaving the body
     /// `Taken` exactly as a full [`SeqBody::take`] would, so the caller can
     /// pull only the prefix it needs, the way Rakudo's `.head` pulls `n`
     /// times from the Seq's iterator. `None` (and nothing changes) for any
@@ -507,7 +567,10 @@ impl SeqBody {
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let granular = matches!(
             state.source,
-            SeqSource::Pure(_) | SeqSource::IoLines { kv: false, .. } | SeqSource::Iterator(_)
+            SeqSource::Pure(_)
+                | SeqSource::IoLines { kv: false, .. }
+                | SeqSource::Iterator(_)
+                | SeqSource::MapGrep { .. }
         );
         if !granular || state.cache_requested || !self.live_generation().is_empty() {
             return None;
@@ -521,6 +584,7 @@ impl SeqBody {
                 Some(PrefixSource::IoLines { handle, words })
             }
             SeqSource::Iterator(iterator) => Some(PrefixSource::Iterator(iterator)),
+            source @ SeqSource::MapGrep { .. } => Some(PrefixSource::MapGrep(source)),
             // `granular` above admits only the shapes matched here.
             other => {
                 state.source = other;
@@ -601,7 +665,7 @@ impl SeqBody {
             let mut state = self.core.state.lock().unwrap();
             std::mem::replace(&mut state.source, SeqSource::Taken)
         };
-        let items = pull_source(&source, pull)?;
+        let items = self.after_pulled_prefix(&source, pull_source(&source, pull)?);
         Ok((items, SeqTaken::Taken))
     }
 
@@ -1032,9 +1096,7 @@ impl SeqBody {
             SeqSource::MapGrep {
                 items, func, mode, ..
             } => {
-                for v in items.iter() {
-                    v.gc_trace(visit);
-                }
+                items.trace_edges(visit);
                 if let Some(f) = func {
                     f.gc_trace(visit);
                 }

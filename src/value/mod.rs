@@ -565,6 +565,8 @@ pub(crate) use str_iter::{
     StrIterMode, StrIterSpec, parse_limit as str_iter_limit, str_iter_count, str_iter_seq,
 };
 pub(crate) mod list_gen;
+mod map_grep_items;
+pub(crate) use map_grep_items::MapGrepItems;
 mod pure_cursor;
 pub(crate) use list_gen::{ListGen, PositionalMode};
 pub(crate) use pure_cursor::PureCursor;

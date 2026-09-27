@@ -2074,17 +2074,18 @@ impl Interpreter {
                 "callmethodmutwithvalues",
                 "map-rw-writeback",
             );
-            let is_shaped = crate::runtime::utils::is_shaped_array(&target);
-            let items = if is_shaped {
-                crate::runtime::utils::shaped_array_leaves(&target)
-            } else {
-                Self::value_to_list(&target)
-            };
+            let items = crate::value::MapGrepItems::of(&target, || {
+                if crate::runtime::utils::is_shaped_array(&target) {
+                    crate::runtime::utils::shaped_array_leaves(&target)
+                } else {
+                    Self::value_to_list(&target)
+                }
+            });
             // With no elements there is neither a callback invocation nor an
             // rw writeback to defer. Avoid creating a MapGrep source merely to
             // reify it immediately as empty; this is the mutable-array route
             // used by attribute TWEAKs such as `@!resources.map(*.flat)`.
-            if items.is_empty() {
+            if items.len() == 0 {
                 return Ok(Value::seq(Vec::new()));
             }
             // ADR-0058 §9.4: this used to run the map loop RIGHT HERE, which
@@ -2104,7 +2105,8 @@ impl Interpreter {
             // at consumption too (`my @a=1,2,3; @a.map({$_++})` leaves
             // `[2 3 4]` only because a sunk statement consumes the Seq).
             return Ok(Value::seq_deferred(crate::value::SeqSource::MapGrep {
-                items: std::sync::Arc::new(items),
+                items,
+                pos: 0,
                 func: args.first().cloned(),
                 fatal: self.fatal_mode,
                 mode: crate::value::MapGrepMode::MapRw(target.clone()),

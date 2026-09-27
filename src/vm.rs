@@ -241,6 +241,7 @@ mod vm_loop_cstyle_repeat;
 mod vm_loop_writeback;
 mod vm_loop_writeback_quant;
 mod vm_lvalue_object_subscript;
+mod vm_map_grep_pull;
 pub(crate) mod vm_meta_ops;
 pub(crate) mod vm_method_dispatch;
 pub(crate) mod vm_misc_assign;

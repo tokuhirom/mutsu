@@ -4891,6 +4891,14 @@ pub struct Interpreter {
     /// compiled frame.
     pub(crate) lazy_pull_entry_routine_depth: Option<usize>,
     pub(crate) rw_map_topic_capture: Option<Value>,
+    /// Set by the `.map`/`.grep` loops when a `last` in the callback stopped
+    /// them, to the loop-handler depth of the loop that caught it
+    /// (`loop_handler_depth::loop_handler_depth`). A deferred `.map`/`.grep`
+    /// Seq pulled a prefix at a time (`pull_map_grep_prefix`) reads it to tell
+    /// "the callback said `last`" from "this chunk of the source ran out",
+    /// since the loops swallow the signal; the depth keeps a `last` caught by
+    /// a loop nested inside the callback from counting.
+    pub(crate) map_grep_last_depth: Option<usize>,
     /// Next routine-invocation id this interpreter will hand out, and one past
     /// the end of the block it was claimed from (see `NEXT_INVOCATION_ID_BLOCK`).
     /// Equal when the block is exhausted, which is the refill condition.

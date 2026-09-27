@@ -98,7 +98,8 @@ impl Interpreter {
             // element-type metadata that the old `Value::real_array` rebuild
             // dropped.
             Ok(Value::seq_deferred(crate::value::SeqSource::MapGrep {
-                items: std::sync::Arc::new(list_items),
+                items: crate::value::MapGrepItems::Snapshot(std::sync::Arc::new(list_items)),
+                pos: 0,
                 func,
                 fatal: self.fatal_mode,
                 mode: crate::value::MapGrepMode::MapRw(args[1].clone()),
@@ -115,7 +116,8 @@ impl Interpreter {
             // instead of at first consumption, and let a `die` inside the
             // callback be caught by a `try` that merely enclosed the `map`.
             Ok(Value::seq_deferred(crate::value::SeqSource::MapGrep {
-                items: std::sync::Arc::new(list_items),
+                items: crate::value::MapGrepItems::Snapshot(std::sync::Arc::new(list_items)),
+                pos: 0,
                 func,
                 fatal: self.fatal_mode,
                 mode: crate::value::MapGrepMode::Map,
@@ -306,7 +308,8 @@ impl Interpreter {
                 _ => crate::value::MapGrepMode::Grep,
             };
             Ok(Value::seq_deferred(crate::value::SeqSource::MapGrep {
-                items: std::sync::Arc::new(list_items),
+                items: crate::value::MapGrepItems::Snapshot(std::sync::Arc::new(list_items)),
+                pos: 0,
                 func,
                 fatal: self.fatal_mode,
                 mode,
