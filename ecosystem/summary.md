@@ -7,8 +7,8 @@ definitions: [docs/ecosystem-parity.md](../docs/ecosystem-parity.md).
 
 | metric | value |
 |---|---|
-| **dist parity** (published headline) | **66.6%** (813/1221) |
-| file parity | 73.5% (3135/4268) |
+| **dist parity** (published headline) | **66.7%** (815/1221) |
+| file parity | 73.5% (3137/4268) |
 | assertion parity | 84.0% |
 | accepted divergences (out of the KPI, ADR-0130) | 1 file(s) |
 
@@ -16,10 +16,10 @@ definitions: [docs/ecosystem-parity.md](../docs/ecosystem-parity.md).
 |---|---|
 | `blocked_dep` | 7 |
 | `blocked_load` | 110 |
-| `green` | 813 |
+| `green` | 815 |
 | `no_baseline` | 289 |
 | `partial` | 237 |
-| `red` | 171 |
+| `red` | 169 |
 | `skipped` | 10 |
 
 ## Distributions
@@ -978,7 +978,7 @@ definitions: [docs/ecosystem-parity.md](../docs/ecosystem-parity.md).
 | `MeCab` | 0.0.19 | no_baseline | — |
 | `Memoize` | * | green | 2/2 |
 | `Menu::Simple` | 0.17 | green | 4/4 |
-| `MergeOrderedSeqs` | 0.0.2 | red | 0/1 |
+| `MergeOrderedSeqs` | 0.0.2 | green | 1/1 |
 | `MermaidJS::Grammar` | 0.0.2 | green | 1/1 |
 | `MessagePack::Class` | 0.0.5 | partial | 2/4 |
 | `MessageStream` | 0.2.0 | no_baseline | — |
@@ -1136,7 +1136,7 @@ definitions: [docs/ecosystem-parity.md](../docs/ecosystem-parity.md).
 | `P5substr` | 0.0.7 | green | 1/1 |
 | `P5tie` | 0.0.17 | green | 1/1 |
 | `P5times` | 0.0.10 | green | 1/1 |
-| `P5unlink` | 0.0.1 | red | 0/1 |
+| `P5unlink` | 0.0.1 | green | 1/1 |
 | `Pakku` | celastrina.6 | blocked_load | — |
 | `Parameterizable` | 0.0.3 | partial | 1/2 |
 | `ParaSeq` | 0.2.7 | blocked_load | — |
