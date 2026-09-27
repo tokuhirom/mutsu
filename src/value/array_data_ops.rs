@@ -35,9 +35,10 @@ impl ArrayData {
     /// outgrows the live part, so it never costs more than one memmove per
     /// element shifted and never holds more slots than the array has live.
     // Cost: O(1) amortized; O(e), e = elements, for an array with a
-    // `NativeBacking` (ADR-0030), which still takes `Vec::remove(0)` (a plain
-    // `my int @a` measures O(1): scripts/array-complexity-check.sh).
-    // Rakudo: O(1) amortized -- see #9156.
+    // `NativeBacking` (ADR-0030: a native array after `.WHERE` or a CStruct
+    // `HAS` array), which still takes `Vec::remove(0)`. A plain `my int @a` has
+    // no `NativeBacking` and measures O(1) (scripts/array-complexity-check.sh).
+    // Rakudo: O(1) amortized -- see #9695.
     pub(crate) fn shift_front(&mut self) -> Option<Value> {
         let value = if self.native.is_some() {
             let items = self.items_mut();
@@ -105,7 +106,7 @@ impl ArrayData {
     // Cost: O(1) amortized at index 0 of a boxed array (`unshift_front`); otherwise
     // O(e - i), e = elements, i = index (`Vec::insert` on the live range moves the
     // tail only); index 0 of a `NativeBacking` array is O(e).
-    // Rakudo: O(1) amortized at the front -- see #9156.
+    // Rakudo: O(1) amortized at the front -- see #9695.
     pub(crate) fn insert(&mut self, index: usize, value: Value) {
         if self.native.is_some() {
             self.items_mut().insert(index, value);
