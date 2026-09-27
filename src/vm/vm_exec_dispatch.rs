@@ -1162,9 +1162,20 @@ impl Interpreter {
                 // a `PROCESS::`-installed name; `process_dynamics` is probed
                 // too as a direct, defensive check of the durable store
                 // itself (#8682).
+                //
+                // A LAZY builtin dynamic (`$*TOLERANCE`, `$*RAT-OVERFLOW`, ...) is
+                // "declared" by the setting exactly like an eagerly-seeded one, but
+                // `lazy_magic_dynamic_var` only materializes it on a READ miss
+                // (`Interpreter::get_env_with_main_alias_inner`) — it is never
+                // written into `env`/`process_dynamics` just by being read, so a
+                // bare `$*TOLERANCE = 0` (no prior `my`) tripped this guard despite
+                // being exactly the documented usage. `is_builtin_dynamic_var` is
+                // the same whitelist the read-side `GetGlobal` fallback and the
+                // compiler's `X::Dynamic::Postdeclaration` check already exempt.
                 if !self.env().contains_key(name)
                     && !self.is_var_dynamic(name)
                     && !self.process_dynamics_contains(name)
+                    && !runtime::utils::is_builtin_dynamic_var(name)
                 {
                     let display = if name.starts_with(['@', '%', '&']) {
                         name.to_string()
@@ -2804,7 +2815,8 @@ impl Interpreter {
 
             // -- Arithmetic --
             // Cost: O(1) on Int/Num/Rat operands; O(d) on BigInt, d = digits (a Str operand is
-            // numified first, O(n)).
+            // numified first, O(n)); plus one `$*RAT-OVERFLOW` dynamic lookup when an operand is
+            // already Rat/BigRat (`Interpreter::rat_overflow_scope_for`).
             OpCode::Add => {
                 let saved_site = self.enter_numeric_op_site(code, *ip);
                 let r = self.exec_add_op();
@@ -2812,7 +2824,8 @@ impl Interpreter {
                 r?;
                 *ip += 1;
             }
-            // Cost: O(1) on Int/Num/Rat operands; O(d) on BigInt, d = digits.
+            // Cost: O(1) on Int/Num/Rat operands; O(d) on BigInt, d = digits; plus one
+            // `$*RAT-OVERFLOW` dynamic lookup when an operand is already Rat/BigRat.
             OpCode::Sub => {
                 let saved_site = self.enter_numeric_op_site(code, *ip);
                 let r = self.exec_sub_op();
@@ -2820,7 +2833,8 @@ impl Interpreter {
                 r?;
                 *ip += 1;
             }
-            // Cost: O(1) on Int/Num/Rat operands; O(d1*d2) on BigInt, d = digits of each operand.
+            // Cost: O(1) on Int/Num/Rat operands; O(d1*d2) on BigInt, d = digits of each operand;
+            // plus one `$*RAT-OVERFLOW` dynamic lookup when an operand is already Rat/BigRat.
             OpCode::Mul => {
                 let saved_site = self.enter_numeric_op_site(code, *ip);
                 let r = self.exec_mul_op();
@@ -2833,7 +2847,8 @@ impl Interpreter {
                 self.exec_native_int_arithmetic_op(*op, *unsigned)?;
                 *ip += 1;
             }
-            // Cost: O(1) on Int/Num/Rat operands (plus a gcd); O(d1*d2) on BigInt operands.
+            // Cost: O(1) on Int/Num/Rat operands (plus a gcd); O(d1*d2) on BigInt operands; plus
+            // one `$*RAT-OVERFLOW` dynamic lookup when an operand is already Rat/BigRat.
             OpCode::Div => {
                 let saved_site = self.enter_numeric_op_site(code, *ip);
                 let r = self.exec_div_op();
@@ -2850,7 +2865,8 @@ impl Interpreter {
                 *ip += 1;
             }
             // Cost: O(1) for Int ** Int with exponent <= 30 (fast path); otherwise bigint
-            // exponentiation by squaring, O(M(d) log k) (measured on par with Rakudo).
+            // exponentiation by squaring, O(M(d) log k) (measured on par with Rakudo); plus one
+            // `$*RAT-OVERFLOW` dynamic lookup when an operand is already Rat/BigRat.
             OpCode::Pow => {
                 let saved_site = self.enter_numeric_op_site(code, *ip);
                 let r = self.exec_pow_op();

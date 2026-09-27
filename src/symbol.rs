@@ -539,6 +539,10 @@ pub(crate) mod wk {
         /// per creation cost a thread-local string-keyed hash lookup each time
         /// (0.25% of a closure-creation loop, #7557).
         in_eval => "__mutsu_in_eval";
+        /// The `FatRat` type object, compared against a resolved
+        /// `$*RAT-OVERFLOW` on every Rat-family arithmetic op
+        /// (`Interpreter::rat_overflow_scope_for`).
+        fat_rat => "FatRat";
     }
 
     /// How many positional-capture index names ([`capture_index`]) are served
