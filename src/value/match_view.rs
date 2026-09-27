@@ -46,6 +46,35 @@ pub(crate) fn cursor_match_marker() -> crate::symbol::Symbol {
 /// other internal keys it is never exposed through `.hash`/`.list`.
 pub(crate) const CURSOR_REGEXSUB_ATTR: &str = "__cursor_regexsub__";
 
+/// `Any` methods a `Match` answers from its positional list. A `Match` is a
+/// `Capture`, and `Any`'s list coercions and iteration methods are all
+/// `self.list.<method>`, where `Capture.list` is the positional part (raku:
+/// `('ab' ~~ /(.)(.)/).grep(*.so)` is the two sub-Matches, never the whole
+/// match or its `.Str`). `.list`/`.elems`/`.keys`/`.values`/`.kv`/`.pairs`
+/// have Capture-specific answers and are not in this set.
+pub(crate) fn is_capture_list_method(method: &str) -> bool {
+    matches!(
+        method,
+        "grep"
+            | "map"
+            | "first"
+            | "sort"
+            | "reverse"
+            | "head"
+            | "tail"
+            | "flat"
+            | "List"
+            | "Slip"
+            | "Seq"
+            | "cache"
+            | "eager"
+            | "Array"
+            | "iterator"
+            | "pick"
+            | "roll"
+    )
+}
+
 impl Value {
     /// Is this value a `Match` instance (regex match object)? True for both
     /// the lazy repr (`ValueRepr::Match`, checked WITHOUT materializing) and
@@ -160,6 +189,23 @@ impl Value {
     /// The positional-capture list (`.list`), an array `Value`.
     pub(crate) fn match_list(&self) -> Option<Value> {
         self.match_attr("list")
+    }
+
+    /// The positional captures as the list `Any`'s iteration methods walk:
+    /// `Capture.list`, so an `Array` for `.Array` and a `List` otherwise.
+    /// Empty for a non-Match.
+    // Cost: O(p), p = positional captures (copied once).
+    pub(crate) fn match_positional_list(&self, as_array: bool) -> Value {
+        let items = self
+            .match_list()
+            .as_ref()
+            .map(crate::runtime::utils::value_to_list)
+            .unwrap_or_default();
+        if as_array {
+            Value::real_array(items)
+        } else {
+            Value::array(items)
+        }
     }
 
     /// The named-capture hash (`.hash`), a hash `Value`.

@@ -2000,10 +2000,17 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                     &(attributes).as_map(),
                 ))));
             }
-            "list" | "Array" => {
+            "list" => {
                 return Some(Ok(target
                     .match_list()
                     .unwrap_or_else(|| Value::array(Vec::new()))));
+            }
+            // Cost: O(p), p = positional captures (copied once into the result).
+            // The 0-arg members of `is_capture_list_method` that arrays answer
+            // natively: a Match is never coerced to its `.Str` for them.
+            "Array" | "List" | "Slip" | "Seq" | "flat" | "cache" | "eager" | "reverse" => {
+                let list = target.match_positional_list(method == "Array");
+                return native_method_0arg(&list, Symbol::intern(method));
             }
             "hash" | "Hash" => {
                 let named = if method == "hash" {
@@ -2066,7 +2073,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                 let mut pairs = Vec::new();
                 if let Some(ValueView::Array(list, _)) = list_v.as_ref().map(Value::view) {
                     for (i, v) in list.iter().enumerate() {
-                        pairs.push(Value::value_pair(Value::str(i.to_string()), v.clone()));
+                        pairs.push(Value::value_pair(Value::int(i as i64), v.clone()));
                     }
                 }
                 if let Some(ValueView::Hash(named)) = named_v.as_ref().map(Value::view) {
