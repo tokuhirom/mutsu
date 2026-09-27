@@ -68,9 +68,15 @@ impl Interpreter {
     /// A lazy list literal whose `parts` (runs of plain elements as `List`s,
     /// slipped lazy lists as themselves) are read one after another.
     // Cost: O(p), p = parts.
-    pub(crate) fn lazy_concat_pipe(parts: Vec<Value>) -> Value {
+    /// A slipped `lazy`-marked part keeps the whole list `.is-lazy` even when
+    /// every part is finite (`(1, |(lazy 2, 3)).is-lazy` is True).
+    // Cost: O(p), p = parts.
+    pub(crate) fn lazy_concat_pipe(parts: Vec<Value>, array_context: bool) -> Value {
+        let lazy_marked = parts
+            .iter()
+            .any(|p| matches!(p.view(), ValueView::LazyList(ll) if ll.is_lazy_marked()));
         let first = parts.first().cloned().unwrap_or(Value::NIL);
-        Self::adaptor_pipe_value(
+        let mut ll = LazyList::new_adaptor_pipe(
             first,
             Value::NIL,
             PipeAdaptor::Concat {
@@ -78,7 +84,14 @@ impl Interpreter {
                 part: 0,
                 base: 0,
             },
-        )
+        );
+        if lazy_marked {
+            ll.mark_lazy();
+        }
+        if array_context {
+            ll = ll.with_array_context();
+        }
+        Value::lazy_list(crate::gc::Gc::new(ll))
     }
 
     /// Splice a Slip's items into a list literal under construction, noting
@@ -135,13 +148,7 @@ impl Interpreter {
         if !run.is_empty() {
             parts.push(finite_part(run));
         }
-        let lazy = Self::lazy_concat_pipe(parts);
-        match lazy.view() {
-            ValueView::LazyList(ll) if is_real_array => {
-                Value::lazy_list(crate::gc::Gc::new(ll.with_array_context()))
-            }
-            _ => lazy,
-        }
+        Self::lazy_concat_pipe(parts, is_real_array)
     }
 
     fn adaptor_pipe_value(source: Value, func: Value, adaptor: PipeAdaptor) -> Value {

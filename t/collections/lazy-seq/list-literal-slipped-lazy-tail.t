@@ -1,6 +1,6 @@
 use Test;
 
-plan 16;
+plan 20;
 
 # A list literal that slips a genuinely lazy list (`(1, |[\*] 1..*)`) is itself
 # lazy: the slipped list is its tail, reified only as far as it is read.
@@ -36,3 +36,12 @@ is (<1 2 3> Z* 1, |map 1/(2 + *), 0..*), (1, 1, 1), 'zip against a lazy-tailed l
 
 ok (1, |(lazy 2, 3)).is-lazy, 'a slipped lazy-marked finite list keeps the list lazy';
 is (1, |(1..3)).raku, '(1, 1, 2, 3)', 'a finite slip still flattens eagerly';
+
+# A finite lazy-marked array (no user code to run) is reified by the mutators
+# that need the whole array, as in Rakudo (roast S32-array/splice.t).
+my @s = <a>, |lazy <b c d>;
+is-deeply @s.splice(1, 10), [<b c d>], 'splice on a finite lazy-tailed array';
+is-deeply @s, [<a>], 'and the array is spliced';
+my @t = lazy <b c d>;
+is @t.shift, 'b', 'shift on a lazy-marked cached array';
+is-deeply @t, [<c d>], 'and the array is shifted';

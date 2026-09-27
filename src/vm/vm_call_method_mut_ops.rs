@@ -638,7 +638,13 @@ impl Interpreter {
         }
         let target = if let ValueView::LazyList(ll) = target.view()
             && ll.in_array_context()
-            && (ll.sequence_spec.is_some() || ll.closure_seq.is_some() || ll.scan_spec.is_some())
+            && (ll.sequence_spec.is_some()
+                || ll.closure_seq.is_some()
+                || ll.scan_spec.is_some()
+                // A `lazy`-marked list that is known finite and runs no user
+                // code to reify (`my @a = lazy <b c d>`, `my @a = <a>, |lazy
+                // <b c d>`): Rakudo reifies it for these mutators too.
+                || (ll.is_lazy_marked() && !ll.eqv_would_hang()))
             && matches!(method, "shift" | "unshift" | "prepend" | "splice")
         {
             let items = self.force_lazy_list_vm(&ll)?;

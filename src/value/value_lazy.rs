@@ -216,12 +216,9 @@ impl LazyList {
                 crate::value::PipeAdaptor::Cross { operands, .. }
                 | crate::value::PipeAdaptor::Roundrobin { operands, .. },
             ) => operands.iter().all(operand_finite),
-            // A slipped `lazy`-marked part keeps the whole literal lazy even
-            // when it is finite (`(1, |(lazy 2, 3)).is-lazy` is True).
-            Some(crate::value::PipeAdaptor::Concat { parts, .. }) => parts.iter().all(|p| {
-                Self::value_source_is_finite(p)
-                    && !matches!(p.view(), ValueView::LazyList(ll) if ll.is_lazy_marked())
-            }),
+            Some(crate::value::PipeAdaptor::Concat { parts, .. }) => {
+                parts.iter().all(Self::value_source_is_finite)
+            }
             _ => {
                 let source = spec.source.clone();
                 drop(spec);
@@ -266,7 +263,10 @@ impl LazyList {
                 } else {
                     // A gather coroutine (or an already-materialized gather body)
                     // is finite; sequence/closure/cat specs were ruled out above.
-                    ll.coroutine.is_some() || ll.is_from_gather() || !ll.body.is_empty()
+                    ll.coroutine.is_some()
+                        || ll.is_from_gather()
+                        || !ll.body.is_empty()
+                        || ll.is_cache_only()
                 }
             }
             ValueView::Junction { values, .. } => values.iter().all(Self::value_source_is_finite),
@@ -354,6 +354,34 @@ impl LazyList {
                 .map(Value::view),
             Some(ValueView::Bool(true))
         )
+    }
+
+    /// Whether this list has no generator at all -- its elements are exactly
+    /// its cache (`lazy <b c d>`) -- and so is finite.
+    pub(crate) fn is_cache_only(&self) -> bool {
+        self.coroutine.is_none()
+            && self.body.is_empty()
+            && self.compiled_code.is_none()
+            && self.scan_spec.is_none()
+            && self.sequence_spec.is_none()
+            && self.lazy_pipe.is_none()
+            && self.closure_seq.is_none()
+            && self.cat_pull.is_none()
+            && self.elems_count.is_none()
+            && self
+                .cache
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .is_some()
+    }
+
+    /// Set the `lazy` prefix marker (see [`Self::is_lazy_marked`]): the list is
+    /// `.is-lazy` even when it is known to be finite.
+    pub(crate) fn mark_lazy(&mut self) {
+        self.env.insert(
+            "__mutsu_preserve_lazy_on_array_assign".to_string(),
+            Value::TRUE,
+        );
     }
 
     /// Return a clone of this list tagged as living in `@` array context.
