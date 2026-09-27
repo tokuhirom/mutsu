@@ -1,4 +1,4 @@
-.PHONY: test lint roast check-roast-whitelist check-value-wall check-flaky-list check-t-layout check-magic-keys check-panic-surface check-pipefail check-bench-det check-prims
+.PHONY: test lint roast check-roast-whitelist check-value-wall check-flaky-list check-t-layout check-magic-keys check-panic-surface check-pipefail check-bench-det check-prims check-dev
 
 # Recipes run under bash with `pipefail`, because the two suite recipes pipe
 # into `tee` and POSIX sh reports only the *last* command's status -- `tee`'s,
@@ -46,9 +46,15 @@ PROVE_JOBS ?= 4
 # the gc-stress / jit-stress CI jobs keep running the whole t/ suite on debug.
 # See docs/adr/0075-make-test-runs-tap-on-release-binary.md, which supersedes
 # ADR-0014.
-test: check-pipefail check-value-wall check-flaky-list check-t-layout check-magic-keys check-panic-surface check-name-scans check-bench-det check-prims
+#
+# `RUST_MIN_STACK=8388608`: the same 8 MiB test-thread stack CI's `Unit tests`
+# step sets. Without it `cargo test` ran on Rust's 2 MiB default, and a debug
+# test that parses the vendored `Test` module cold (after a rebuild invalidated
+# the precompilation cache) overflowed locally while passing in CI
+# (`named_call_intern_budget`, found by the first `scripts/dev gate` run).
+test: check-pipefail check-value-wall check-flaky-list check-t-layout check-magic-keys check-panic-surface check-name-scans check-bench-det check-prims check-dev
 	@mkdir -p tmp
-	(cargo build --release && cargo test -- --test-threads=1 && cargo test -p mutsu-lsp && MUTSU_BIN='$(CARGO_TARGET_DIR)/release/mutsu' MUTSU_T_TIMEOUT=60 prove -r -e 'scripts/run-t-test.sh' t/) 2>&1 | tee tmp/make-test.log
+	(cargo build --release && RUST_MIN_STACK=8388608 cargo test -- --test-threads=1 && RUST_MIN_STACK=8388608 cargo test -p mutsu-lsp && MUTSU_BIN='$(CARGO_TARGET_DIR)/release/mutsu' MUTSU_T_TIMEOUT=60 prove -r -e 'scripts/run-t-test.sh' t/) 2>&1 | tee tmp/make-test.log
 
 # Every configuration mutsu ships, linted the way CI lints it. A warning only
 # exists in the configuration you actually compile, so the default host build
@@ -126,6 +132,14 @@ check-prims:
 # binary, and runs in milliseconds.
 check-bench-det:
 	scripts/bench-det.sh --self-test
+
+# The job runner every agent session uses for long jobs and the pre-publication
+# gate (ADR-0126). Its self-test covers what a silent bug would cost most:
+# lost-job detection, the per-name lock, the tree-id result cache, and the
+# prove-summary parser plus known-env-failure matcher that decide the gate's
+# verdict. Seconds, no build.
+check-dev:
+	scripts/dev self-test
 
 roast: check-pipefail
 	@mkdir -p tmp

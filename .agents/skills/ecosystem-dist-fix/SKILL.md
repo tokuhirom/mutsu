@@ -234,11 +234,10 @@ the syntax it uses). The ecosystem sweep only measures, and nightly at that, so 
 *only* thing standing between your fix and a silent regression. Name it after the capability, and
 say in a comment which distribution it came from.
 
-Then the standard gate, before publishing: `cargo fmt --all`, `make lint`, `make test`,
-`make roast`, reading `tmp/make-test.log` / `tmp/make-roast.log` by searching them rather than
-re-running a suite. In a remote container, confirm any red `make roast` is a subset **by name** of
-the environment-only failures in
-[docs/agent-environments.md](../../../docs/agent-environments.md).
+Then the standard gate, before publishing: `cargo fmt --all`, then `scripts/dev gate` and
+`scripts/dev wait <id>`, and publish only on `verdict: pass` (AGENTS.md "Before publishing a
+PR"). Its verdict already classifies the remote container's environment-only failures; read a
+failed file's reason from the job's stage log in `tmp/jobs/<id>/` rather than re-running a suite.
 
 ## 7. Re-measure with `--only` and update the ledger record
 

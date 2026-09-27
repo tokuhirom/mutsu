@@ -56,7 +56,7 @@ itself. Before any investigation:
 4. Only then start. **Do not add the `working` label** — `.github/workflows/claim-label.yml`
    derives it from the comment you just posted, and removes it again on your `Releasing:`.
 5. **Re-read the comments again at two later checkpoints** — before the pre-publication
-   `make test` + `make roast` run, and immediately before you open the PR (see "Publish"
+   `scripts/dev gate` run, and immediately before you open the PR (see "Publish"
    below). Steps 1-3 settle only the claims that exist in the first few seconds; they cannot
    see an agent who claims later and declines to yield, nor a sibling PR that lands while your
    suites are running.
@@ -235,27 +235,24 @@ Two rules that go with the loop:
   waiting on CI (15-20 minutes per PR). Use that wait to read the next issue, reproduce it, and
   measure — just keep the result uncommitted (or stashed) until the current PR merges, then reset
   and commit onto the fresh branch. Do not open a second PR from the same branch.
-- **Do not spend that wait re-checking the PR.** CI, `cargo build`, `make test` and `make roast` all
-  wake you when they finish; a progress reading from one that has not is worth nothing and costs a
-  tool call plus a reply every time. `AGENTS.md`'s 30-minute polling floor applies to this run as
-  much as to any other: either do the next ticket's reading, or end the turn and be woken.
+- **Do not spend that wait re-checking the PR.** CI wakes you through the PR subscription, and a
+  `scripts/dev` job through its `scripts/dev wait` notification; a progress reading from one that
+  has not finished is worth nothing and costs a tool call plus a reply every time. Either do the
+  next ticket's reading, or end the turn and be woken.
 
 If a ticket genuinely needs two branches in flight, stop and ask the user rather than pushing
 elsewhere.
 
-Before publishing an implementation PR, run `cargo fmt --all`, `make lint`, `make test`, and
-`make roast` once each (`make lint` rather than a bare `cargo clippy` — it adds the three
-configurations CI's `lint-configs` job gates on and the default clippy is blind to). Inspect
-`tmp/make-test.log` and `tmp/make-roast.log` by searching them rather than rerunning a suite for
-its output. Do not publish an implementation PR until both full suites succeed — each target exits
-non-zero when its suite fails, so check the status and do not rely on skimming the log.
-
-In a remote container `make roast` has a fixed set of three environment-only failures it cannot
-avoid (`uid 0` breaks two `chmod`-based file-test files; the network sandbox times out one socket
-file). Confirm the failing set is a subset of the table in
-[docs/agent-environments.md](../../../docs/agent-environments.md) **by name** before treating a red
-roast as publishable — a fourth file, or a different subtest range inside those three, is your
-change.
+Before publishing an implementation PR, run `cargo fmt --all`, then `scripts/dev gate` and wait
+for it with `scripts/dev wait <id>` (`run_in_background: true`). The gate runs `cargo fmt --check`,
+`make lint` (all four configurations CI's `lint-configs` job gates on, not just the default clippy),
+`make test` and `make roast`, and **do not publish until its verdict is `pass`**. The verdict
+already accounts for the remote container's environment-only roast failures
+(`ci/known-env-failures.toml`, matched by exact shape), so there is nothing to compare by eye:
+every file in a stage's `unexpected` list is your change's. To see *why* a file failed, read the
+job's `stage-<name>.log` (`tmp/jobs/<id>/`) with Grep rather than re-running the suite; the gate's
+result is cached per working tree, so re-running `gate` on an unchanged tree only reports it
+again. Quote `scripts/dev status <id>` in the PR body.
 
 ## Publish, monitor, and verify merge
 

@@ -1,6 +1,6 @@
 # ADR-0126: Long jobs and the pre-publication gate run through one job runner, `scripts/dev`
 
-- Status: Proposed
+- Status: Accepted (implemented: all four steps of §5)
 - Date: 2026-09-27
 - Deciders: tokuhirom, Claude
 - Related: `AGENTS.md` "Build, run and test" / "Before publishing a PR" / "Waiting for long
@@ -202,3 +202,14 @@ iterating on one suite.
    `docs/agent-environments.md` table to reference it.
 4. `AGENTS.md` "Before publishing a PR" and "Waiting for long jobs" rewritten per §2.7; the
    `mutsu-ticket-flow` / `perf-tuning` skills' gate steps pointed at `scripts/dev gate`.
+
+## 6. Outcome
+
+All four steps landed together. The first real `scripts/dev gate` run paid for itself before the
+PR was even open: its test stage failed on `named_call_intern_budget` with a stack overflow that CI
+never showed. The cause was a local/CI divergence, not the change. CI runs `cargo test` with
+`RUST_MIN_STACK=8388608`, and `make test` ran it on Rust's 2 MiB default, so a debug test that parses
+the vendored `Test` module cold overflowed only locally. `make test` now sets the same stack. The
+gate's report named the failing test binary (§2.5), and the next run passed with the four
+container-only roast files classified `known_env` from the data file. A second `gate` on the same
+tree reported the stored result without running anything (§2.4).

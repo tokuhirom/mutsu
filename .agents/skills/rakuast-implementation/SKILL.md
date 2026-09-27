@@ -77,5 +77,6 @@ guidance, ADRs for decisions, `news/YYYY-MM/` for completed work, and the
 focused test as the executable record. Avoid making every small slice edit a
 shared campaign ledger; the per-slice todo/news file is the source of truth.
 
-For an implementation PR, follow the repository's required full validation and
-inspect `tmp/make-test.log` and `tmp/make-roast.log` before publication.
+For an implementation PR, follow the repository's required full validation
+(`scripts/dev gate`, publish only on `verdict: pass`) and read any failure from the
+gate job's stage logs before publication.

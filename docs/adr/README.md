@@ -150,5 +150,5 @@ The role of an ADR is to preserve the *context of the judgment* — something th
 | [0123](0123-bounded-user-thread-stack-reservations.md) | User-thread stacks are reserved against an address-space budget, and the pool queues rather than grows past it | Accepted (implemented) |
 | [0124](0124-parse-time-export-probe-for-computed-export-stashes.md) | A module that binds its export stash under computed keys is run at parse time (fresh interpreter, fresh thread) to learn the exported names | Proposed (implemented) |
 | [0125](0125-ltm-declarative-prefix-nfa.md) | Measure an LTM declarative prefix with a compiled NFA | Accepted (implemented; completed by 0127) |
-| [0126](0126-dev-job-runner-for-long-jobs-and-gates.md) | Long jobs and the pre-publication gate run through one job runner, `scripts/dev` | Proposed |
+| [0126](0126-dev-job-runner-for-long-jobs-and-gates.md) | Long jobs and the pre-publication gate run through one job runner, `scripts/dev` | Accepted (implemented) |
 | [0127](0127-every-ltm-measurement-runs-the-nfa.md) | Every LTM measurement runs the NFA; the walker's measurement mode is retired | Accepted (implemented) |

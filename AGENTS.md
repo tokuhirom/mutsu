@@ -127,10 +127,12 @@ work, so free space with the `reclaim-disk` skill and continue.
   is required for roast** (fudge directives are only preprocessed with it) and **must never be set
   for ordinary scripts** (a stray `#?rakudo skip` comment would drop a statement).
 - Full suites: `make test` (cargo tests + TAP on the release binary) and `make roast` (whitelisted
-  roast). **The exit status is the verdict** (both run under `bash -o pipefail`, guarded by
-  `check-pipefail`); the logs `tmp/make-test.log` / `tmp/make-roast.log` are where you find *which*
-  file failed. Never re-run a suite just to see its output, and never run the same suite twice
-  concurrently (they share build locks, logs and harness state).
+  roast). An agent runs them through `scripts/dev gate` (below), whose `report.json` is the verdict
+  and whose per-stage logs say *which* file failed; at a terminal the targets' exit status is the
+  verdict (both run under `bash -o pipefail`, guarded by `check-pipefail`) and
+  `tmp/make-test.log` / `tmp/make-roast.log` hold the output. Never re-run a suite just to see its
+  output, and never run the same suite twice concurrently (they share build locks, logs and harness
+  state; `scripts/dev` refuses a second job of the same name).
 - `make lint` runs the four configurations CI's `lint-configs` gates on: default clippy, clippy with
   `jit` off, clippy for wasm32, and rustdoc with `-D warnings`. The lefthook pre-commit hook runs
   `cargo fmt` and the *default* clippy only, so **a green hook is not a green CI**: rustdoc alone
@@ -143,32 +145,54 @@ work, so free space with the `reclaim-disk` skill and continue.
   a roast file under `raku` before comparing mutsu's output. `docs/raku-doc-guide.md` indexes the
   vendored docs; `old-design-docs/` holds the original synopses.
 
-### Before publishing a PR
+### Before publishing a PR — `scripts/dev gate`
 
-Run `cargo fmt --all`, `make lint`, `make test` and `make roast` once each, and **do not publish
-until all exit zero.** CI is the net for what you could not foresee, not the way to find out whether
-your change works. While iterating, run only the tests your change touches. The exceptions:
+Run **`scripts/dev gate`** and **do not publish until its verdict is `pass`.** It is one job that runs
+`cargo fmt --check`, `make lint`, `make test` and `make roast` against the current working tree and
+writes a structured `report.json` ([ADR-0126](docs/adr/0126-dev-job-runner-for-long-jobs-and-gates.md)).
+CI is the net for what you could not foresee, not the way to find out whether your change works.
+While iterating, run only the tests your change touches.
 
+- The verdict is decided for you: a test file counts only if it is in the stage's `unexpected` list.
+  The remote container's environment-only roast failures are data
+  (`ci/known-env-failures.toml`) and are matched by exact shape, so a known file that starts failing
+  differently is `unexpected` too. Never dismiss an `unexpected` file as "pre-existing".
+- The result is keyed by the working tree (`git write-tree`): `gate` on a tree that already has a
+  result reports it instead of running again, so a no-op rebase costs nothing. `--fresh` forces a run.
+- Quote the `scripts/dev status <id>` summary in the PR body.
 - A **documentation-only** change (CI skips the build jobs too, see `docs/ci-pipeline.md`): verify
   with `git diff --check`, plus a focused check only if it touches generated output, an executable
   script or test configuration. Re-triaging an issue touches no files and needs nothing.
-- A red `make roast` whose failing files are a subset, **by name**, of the container-only list in
-  `docs/agent-environments.md` (`uid 0` chmod tests, one sandboxed-network test). Anything else
-  failing is yours — never dismiss a whitelisted failure as "pre-existing".
 
 A local timeout on a heavy file under a *debug* build (~3.3x slower than release) is not by itself a
 failure; confirm on `target/release/mutsu`. Wall-clock figures in the repo (`make lint` ≈ 5 min)
 are 12-core numbers — budget more on a smaller box; that makes the gate slower, not optional.
 
-### Waiting for long jobs — the 30-minute polling floor
+### Long jobs — `scripts/dev run` and `scripts/dev wait`, never a hand-written wait
 
-Start `cargo build --release`, `make test`, `make roast` and the like with `run_in_background: true`
-and **wait for the completion notification.** Polling a running job more often than every 30
-minutes is forbidden — tailing the log, `grep -c ' ok$'`, `pgrep rustc`, `sleep`-then-check loops.
-One session burned tens of thousands of tokens re-checking an empty output file. A progress count
-changes nothing; only a finished run does. A check before 30 minutes needs a real question (a
-suspected hang) and is one command. While waiting, do genuinely independent work or end the turn
-silently — no per-check "waiting…" messages.
+Every job longer than a few minutes — the gate, `cargo build --release`, a callgrind run, an ecosystem
+sweep — goes through `scripts/dev`:
+
+```sh
+scripts/dev gate                        # or: scripts/dev run <name> -- <command...>
+scripts/dev wait <id>                   # with run_in_background: true
+scripts/dev status [<id>]               # running / passed / failed / lost
+scripts/dev log <id> --tail 50          # only to diagnose a failed job
+scripts/dev stop <id>
+```
+
+- **Wait only with `scripts/dev wait`**, started with `run_in_background: true`, and end the turn
+  until its notification arrives. It returns within 9 minutes: exit 0 passed, 1 failed, 70 lost (the
+  job died, e.g. a container restart — start it again), 75 still running (start another `wait`).
+  Do not tail logs, count `ok` lines or write `sleep`/`until` loops; a progress count changes
+  nothing, only a finished job does.
+- **Never locate, wait for or stop a job by process name.** `pgrep -f` / `pkill -f` match the
+  shell that runs them — a wait on `pgrep -f "make lint"` never ends, and `pkill -f "make test"`
+  kills the caller. A job is its directory `tmp/jobs/<id>/`; `scripts/dev` reads its recorded pid.
+- One job per name at a time is enforced (the suites share build locks, logs and harness state);
+  a second `gate` while one runs is refused and names the running one.
+- While waiting, do genuinely independent work or end the turn silently — no per-check
+  "waiting…" messages.
 
 ## Code rules
 
@@ -301,7 +325,7 @@ protocol and the flake history: [docs/flaky-test-policy.md](docs/flaky-test-poli
    blocks until no check is pending. Remotely: `subscribe_pr_activity` and let CI and reviews wake
    the session. Never foreground `gh pr checks --watch` (it blocks ~13 min; only a harness with no
    background notification at all may block on it once), never `sleep`, never re-read an unfinished
-   run inside the 30-minute floor. A red run: fix forward on the same branch and push. Aggregator
+   run between wakes. A red run: fix forward on the same branch and push. Aggregator
    jobs report a cancelled run on a superseded commit as red — judge by the current head
    (`docs/ci-pipeline.md`).
 6. **A PR is done when GitHub reports it `MERGED`** and its merge commit is reachable from

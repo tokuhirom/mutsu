@@ -1,0 +1,46 @@
+# Test files that fail for reasons of the host, not of mutsu — the exact set
+# `scripts/dev gate` may classify as `known_env` instead of `unexpected`.
+#
+# Decision: docs/adr/0126-dev-job-runner-for-long-jobs-and-gates.md §2.6.
+# Human-readable context: docs/agent-environments.md, "Environment-only
+# `make roast` failures".
+#
+# An entry matches a failing file only when every condition in `when` holds on
+# the host running the gate AND the failure has exactly this `shape`:
+#
+#   failed   the failing test numbers (prove's ranges), exactly — omitted
+#            means "no individual test failed"
+#   exit     the file's exit status
+#   planned  / ran — a "Bad plan" parse error's counts
+#
+# Conditions (see `host_conditions` in scripts/dev):
+#   uid0               running as root, which bypasses permission bits
+#   restricted-proc    /proc/1/environ is unreadable
+#   sandboxed-network  the remote agent container's proxied network
+#
+# A known file failing in any other way is `unexpected`. Keep this list exact:
+# that is what makes it safe to trust.
+
+[[failure]]
+file = "roast/6.c/S32-io/file-tests.t"
+when = "uid0"
+shape = { failed = "6-8, 10", exit = 4 }
+reason = "chmod'ed file still reads as readable/writable: root bypasses permission bits"
+
+[[failure]]
+file = "roast/S16-filehandles/filetest.t"
+when = "uid0"
+shape = { failed = "57-64, 69-72, 77-80, 101-112, 117-118, 121-122, 125-126", exit = 34 }
+reason = "same as file-tests.t: .r/.w/.x (and their ~~ :rw twins) are True for root"
+
+[[failure]]
+file = "roast/S16-io/eof.t"
+when = ["uid0", "restricted-proc"]
+shape = { exit = 255, planned = 5, ran = 1 }
+reason = "Failed to open '/proc/1/environ': Permission denied"
+
+[[failure]]
+file = "roast/S32-io/IO-Socket-Async.t"
+when = "sandboxed-network"
+shape = { exit = 124, planned = 40, ran = 17 }
+reason = "times out part-way behind the agent container's network sandbox; mechanism not pinned down"
