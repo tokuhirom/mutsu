@@ -304,14 +304,20 @@ def run_gate(root: str, path: str, meta: dict, log, stopped) -> int:
             text = fh.read()
         log.write(f"== {stage}: exit {code} ({time.time() - started:.0f}s)\n")
         log.flush()
-        result = judge_stage(stage, code, text, known, conditions)
+        if stopped["flag"]:
+            result = {"status": "stopped"}
+        else:
+            result = judge_stage(stage, code, text, known, conditions)
         result["seconds"] = round(time.time() - started)
         report["stages"][stage] = result
         write_atomic(report_path, json.dumps(report, indent=2) + "\n")
         if result["status"] != "pass" and stage in BLOCKING_STAGES:
             blocked = True
-    report["verdict"] = ("pass" if all(s["status"] == "pass" for s in report["stages"].values())
-                         else "fail")
+    if stopped["flag"]:
+        report["verdict"] = "stopped"
+    else:
+        report["verdict"] = ("pass" if all(s["status"] == "pass"
+                                           for s in report["stages"].values()) else "fail")
     write_atomic(report_path, json.dumps(report, indent=2) + "\n")
     return 0 if report["verdict"] == "pass" else 1
 
