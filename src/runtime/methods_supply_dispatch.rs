@@ -4,7 +4,14 @@ use crate::value::AttrMap;
 
 impl Interpreter {
     /// Supply.merge(...) as a class method
+    // Cost: O(n + e), n = supplies merged, e = values they have already emitted.
     pub(super) fn dispatch_supply_merge(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        // The class method is `merge(*@s)`: an array of supplies flattens into
+        // the supplies themselves (`Supply.merge(@supplies)`, Tinky's
+        // `enter-supply`), exactly as the list of separate arguments would.
+        let mut flat = Vec::with_capacity(args.len());
+        super::types::flatten_into_slurpy(args, &mut flat);
+        let args = flat.as_slice();
         // Validate all args are Supply instances
         for arg in args {
             if !matches!(arg.view(), ValueView::Instance { class_name, .. } if class_name == "Supply")

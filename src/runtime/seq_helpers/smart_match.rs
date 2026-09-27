@@ -3,7 +3,7 @@ use crate::runtime::meta_ns::MetaNs;
 use crate::symbol::Symbol;
 use crate::value::ValueMap;
 use crate::value::ValueView;
-use crate::value::signature::{extract_sig_info, signature_smartmatch};
+use crate::value::signature::{extract_sig_info, signature_smartmatch_with};
 
 /// One lexical a regex closure installed for the duration of a match: the
 /// binding it shadowed (`None` = the name was unbound) and the value it put
@@ -424,7 +424,8 @@ impl Interpreter {
             // junction autothreading (the arm below) still wins.
             (_, ValueView::Instance { class_name, .. })
                 if !matches!(left.view(), ValueView::Junction { .. })
-                    && self.has_user_method(&class_name.resolve(), "ACCEPTS") =>
+                    && self.has_user_method(&class_name.resolve(), "ACCEPTS")
+                    && self.user_accepts_applies(&class_name.resolve(), right, left) =>
             {
                 match self.call_method_with_values(right.clone(), "ACCEPTS", vec![left.clone()]) {
                     Ok(v) => v.truthy(),
@@ -1910,7 +1911,9 @@ impl Interpreter {
                     if info_b.params.iter().any(|p| p.where_constraint.is_some()) {
                         false
                     } else {
-                        signature_smartmatch(&info_b, &info_a)
+                        signature_smartmatch_with(&info_b, &info_a, &mut |t1, t2| {
+                            self.type_name_accepts_type_name(t1, t2)
+                        })
                     }
                 } else {
                     id_a == id_b

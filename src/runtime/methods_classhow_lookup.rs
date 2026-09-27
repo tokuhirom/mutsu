@@ -629,6 +629,7 @@ impl Interpreter {
                 | "add_method"
                 | "add_multi_method"
                 | "add_fallback"
+                | "set_body_block"
                 | "compose"
                 | "methods"
                 | "attributes"

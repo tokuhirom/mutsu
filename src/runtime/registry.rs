@@ -406,6 +406,12 @@ pub(crate) struct Registry {
     pub(crate) role_hides: HashMap<String, Vec<String>>,
     /// Declared type parameters per parameterized role: role -> [param names].
     pub(crate) role_type_params: HashMap<String, Vec<String>>,
+    /// A role's body block, installed by `$role.^set_body_block(&block)` on a
+    /// role built with `Metamodel::ParametricRoleHOW.new_type`. A declared
+    /// role's body is `RoleDef::deferred_body`; a MOP-built role has only this
+    /// block, which every composition calls with the consuming type, like
+    /// Rakudo's `ParametricRoleHOW.specialize`.
+    pub(crate) role_body_blocks: HashMap<String, Value>,
     /// Compositions whose role body has already been run, keyed by kind and
     /// target (`pun:R`, `mixin:R`, or `class:C:R`). A role body runs once per
     /// composed target: repeated paths to the same ancestor role in one class

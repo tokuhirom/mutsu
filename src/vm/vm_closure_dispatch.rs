@@ -350,10 +350,14 @@ impl Interpreter {
                 let class = class_name.resolve();
                 // Only check free-standing methods (not defined in a class, or defined
                 // in a different class than the invocant).
+                // A closure written in a ROLE method carries the role as its
+                // package (`lexical_closure_package_sym`); the role's `$!attr`s
+                // are its composer's, so that is not a foreign method.
                 let is_foreign = method_pkg != class
                     && (method_pkg.is_empty()
                         || method_pkg == "GLOBAL"
-                        || !self.has_class(&method_pkg));
+                        || (!self.has_class(&method_pkg)
+                            && !self.registry().roles.contains_key(&method_pkg)));
                 if is_foreign {
                     // Check if the compiled code has any !attr locals
                     let has_attr_locals = cc

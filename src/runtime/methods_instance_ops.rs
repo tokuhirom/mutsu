@@ -735,9 +735,17 @@ impl Interpreter {
                     }
                 };
                 if let Some((resolved_owner, method_def)) = resolved {
+                    // Code written in a role reaches the private methods the
+                    // role composed into its consumer: an unqualified
+                    // `$obj!m` there resolves against the role, not a caller.
                     let caller_allowed = self
                         .private_owner_trusts_caller(caller_class.as_deref(), &resolved_owner)
-                        || self.lexical_self_allows_private(&resolved_owner);
+                        || self.lexical_self_allows_private(&resolved_owner)
+                        || (!was_qualified
+                            && caller_class.as_deref().is_some_and(|caller| {
+                                self.registry().roles.contains_key(caller)
+                                    && self.class_does_role(&resolved_owner, caller)
+                            }));
                     if !caller_allowed {
                         if was_qualified {
                             return Err(make_private_permission_error(

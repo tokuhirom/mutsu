@@ -830,6 +830,10 @@ impl Interpreter {
                     )?;
                     self.run_composed_role_ancestor_bodies(role_name, role_name)?;
                     self.persist_role_body_lexicals(role_name, &env_before, &declared);
+                    self.run_role_body_block(
+                        role_name,
+                        Value::package(Symbol::intern(&base_type)),
+                    )?;
                 }
             }
         }
