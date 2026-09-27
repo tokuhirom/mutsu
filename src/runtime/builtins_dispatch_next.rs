@@ -1790,11 +1790,20 @@ impl Interpreter {
                     frame.remaining.first().cloned()
             {
                 frame.remaining.remove(0);
+                let has_explicit_invocant = def
+                    .param_defs
+                    .iter()
+                    .any(|pd| pd.is_invocant || pd.traits.iter().any(|t| t == "invocant"));
+                let mut callable_param_defs = Vec::with_capacity(def.param_defs.len() + 1);
+                if !has_explicit_invocant {
+                    callable_param_defs.push(Self::make_invocant_param(&owner.resolve()));
+                }
+                callable_param_defs.extend(def.param_defs.iter().cloned());
                 return Ok(Value::make_sub_for_routine(
                     owner,
                     Symbol::intern(&method_name),
                     def.params.to_vec(),
-                    def.param_defs.to_vec(),
+                    callable_param_defs,
                     def.body.clone(),
                     def.is_rw,
                     self.env.clone(),

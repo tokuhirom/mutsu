@@ -306,6 +306,14 @@ impl Interpreter {
             // a miss runs the fallback chain, O(d + p*|name|), p = enclosing packages probed.
             OpCode::GetGlobal(name_idx) => {
                 let name = Self::const_str(code, *name_idx);
+                if self.rw_return_context
+                    && !name.starts_with(['@', '%', '&', '*', '!', '?'])
+                    && !crate::qualified::is_qualified(code.const_sym(*name_idx))
+                {
+                    self.exec_get_scalar_container_op(code, *name_idx, None);
+                    *ip += 1;
+                    return Ok(());
+                }
                 if name == "?CALLER::LINE" {
                     let line = self.get_caller_line(1).unwrap_or(Value::NIL);
                     self.stack.push(line);
@@ -4693,7 +4701,11 @@ impl Interpreter {
             // Cost: O(1) for a single index/key; O(k) for a slice, k = indices (see
             // exec_index_op_with_positional).
             OpCode::Index { is_positional } => {
-                self.exec_index_op_with_positional(*is_positional)?;
+                if self.rw_return_context {
+                    self.exec_index_autovivify_lazy_op(true, *is_positional)?;
+                } else {
+                    self.exec_index_op_with_positional(*is_positional)?;
+                }
                 *ip += 1;
             }
             // Cost: O(1) for a single index; otherwise as Index.

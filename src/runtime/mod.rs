@@ -3179,6 +3179,11 @@ pub struct Interpreter {
     pub(crate) suppress_exports: bool,
     /// When true, rw routine calls should not auto-FETCH Proxy return values.
     pub(crate) in_lvalue_assignment: bool,
+    /// When true, a bare block is evaluating the tail of an `is rw` routine
+    /// and scalar reads must retain their storage container. This is set only
+    /// around the indirect block call; ordinary block calls still
+    /// decontainerize as usual.
+    pub(crate) rw_return_context: bool,
     /// When true, a role call with non-matching args returns a Pair instead of
     /// throwing X::Coerce::Impossible. Set during the RHS evaluation of `does`
     /// so that `$x does Role("arg")` works as a role application.

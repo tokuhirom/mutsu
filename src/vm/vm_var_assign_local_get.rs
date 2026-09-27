@@ -16,6 +16,16 @@ impl Interpreter {
         local_idx: Option<u32>,
     ) {
         let name = Self::const_str(code, name_idx);
+        let sym = local_idx.and_then(|idx| code.locals_sym.get(idx as usize).copied());
+        self.exec_get_scalar_container_named(name, local_idx, sym);
+    }
+
+    fn exec_get_scalar_container_named(
+        &mut self,
+        name: &str,
+        local_idx: Option<u32>,
+        sym: Option<Symbol>,
+    ) {
         // The loop topic is refreshed in env for every iteration.  Its compiled
         // local slot belongs to the enclosing gather body and can therefore be
         // a stale prior item; prefer the live topic binding.
@@ -38,7 +48,6 @@ impl Interpreter {
 
         if let Some(idx) = local_idx {
             self.locals[idx as usize] = cell.clone();
-            let sym = code.locals_sym.get(idx as usize).copied();
             self.set_env_with_main_alias_sym(name, sym, cell.clone());
         } else {
             self.set_env_with_main_alias(name, cell.clone());
@@ -139,6 +148,17 @@ impl Interpreter {
         keep_deferred_entry: bool,
     ) -> Result<(), RuntimeError> {
         let idx = idx as usize;
+        if self.rw_return_context
+            && code
+                .locals
+                .get(idx)
+                .is_some_and(|name| !name.starts_with(['@', '%', '&', '*', '!', '?']))
+        {
+            let name = code.locals[idx].as_str();
+            let sym = code.locals_sym.get(idx).copied();
+            self.exec_get_scalar_container_named(name, Some(idx as u32), sym);
+            return Ok(());
+        }
         // A sigilless parameter can share its canonical name with an enclosing
         // scalar lexical. Its slot is the parameter namespace; do not let the
         // captured scalar's env aliases redirect this `GetLocal` read.

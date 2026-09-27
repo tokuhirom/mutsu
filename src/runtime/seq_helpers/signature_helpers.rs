@@ -170,10 +170,37 @@ impl Interpreter {
         let saved = self.env.clone();
         self.env.insert("_".to_string(), candidate.clone());
         let ok = match where_expr {
-            Expr::AnonSub { body, .. } => self
-                .eval_block_value(body)
-                .map(|v| v.truthy())
-                .unwrap_or(false),
+            Expr::AnonSub { body, .. } => {
+                // A signature-literal matcher can use placeholder parameters in
+                // its `where` block (`:($ where { !$^value.flag })`).  Ordinary
+                // call binding creates those names before evaluating the
+                // predicate; Signature.ACCEPTS has to provide the same binding
+                // when it evaluates the block against a Capture.
+                let mut placeholder_keys: Vec<String> = Vec::new();
+                for placeholder in crate::ast::collect_placeholders(body)
+                    .iter()
+                    .chain(crate::ast::collect_where_assign_placeholders(body).iter())
+                {
+                    let key = placeholder
+                        .trim_start_matches(|c: char| "$@%&".contains(c))
+                        .to_string();
+                    if !placeholder_keys.contains(&key) {
+                        placeholder_keys.push(key);
+                    }
+                }
+                for key in &placeholder_keys {
+                    self.env.insert(key.clone(), candidate.clone());
+                    self.mark_readonly(key);
+                }
+                let result = self
+                    .eval_block_value(body)
+                    .map(|v| v.truthy())
+                    .unwrap_or(false);
+                for key in &placeholder_keys {
+                    self.unmark_readonly(key);
+                }
+                result
+            }
             expr => self
                 .eval_block_value(&[Stmt::Expr(expr.clone())])
                 .map(|v| self.smart_match(candidate, &v))

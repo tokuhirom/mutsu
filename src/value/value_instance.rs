@@ -91,6 +91,7 @@ impl Clone for InstanceAttrs {
             side: Arc::new(RwLock::new(super::lazy_attrs::InstanceSide {
                 which: self.which_memo(),
                 lazy: None,
+                pending_attr_initializers: Default::default(),
             })),
             id: self.id,
             queue_destroy: false,
@@ -141,6 +142,7 @@ impl InstanceAttrs {
         attrs.side = Arc::new(RwLock::new(super::lazy_attrs::InstanceSide {
             which: None,
             lazy: Some(source),
+            pending_attr_initializers: Default::default(),
         }));
         attrs.lazy_pending = std::sync::atomic::AtomicBool::new(true);
         attrs
@@ -247,6 +249,50 @@ impl InstanceAttrs {
     /// Take a read lock over the attribute map. The guard derefs to `&HashMap`.
     pub(crate) fn as_map(&self) -> AttrReadGuard<'_> {
         read_attrs(self.cell())
+    }
+
+    /// Read an attribute for the MOP's lazy-initialization idiom.  The side
+    /// state and attribute cell are locked in this order so a concurrent
+    /// `set_attribute_value` can atomically decide whether it is completing
+    /// an absent read or replacing an already-present value.
+    pub(crate) fn get_attribute_value(&self, key: Symbol) -> Value {
+        let cell = self.cell();
+        let thread_id = std::thread::current().id();
+        let mut side = self.side.write().expect("instance side lock poisoned");
+        let value = read_attrs(cell).get(key).cloned();
+        if value.is_none() {
+            *side
+                .pending_attr_initializers
+                .entry((thread_id, key))
+                .or_insert(0) += 1;
+        }
+        value.unwrap_or(Value::NIL)
+    }
+
+    /// Store an attribute for the MOP's lazy-initialization idiom, returning
+    /// the value that won an absent-slot race.  Direct setters that did not
+    /// observe an absent slot retain ordinary replacement semantics.
+    pub(crate) fn set_attribute_value(&self, key: Symbol, value: Value) -> Value {
+        let cell = self.cell();
+        let thread_id = std::thread::current().id();
+        let mut side = self.side.write().expect("instance side lock poisoned");
+        let mut attrs = write_attrs(cell);
+        let pending_key = (thread_id, key);
+        let completes_absent_read =
+            if let Some(count) = side.pending_attr_initializers.get_mut(&pending_key) {
+                *count -= 1;
+                if *count == 0 {
+                    side.pending_attr_initializers.remove(&pending_key);
+                }
+                true
+            } else {
+                false
+            };
+        if completes_absent_read && let Some(current) = attrs.get(key) {
+            return current.clone();
+        }
+        attrs.insert(key, value.clone());
+        value
     }
 
     /// An owned clone of the backing map.
