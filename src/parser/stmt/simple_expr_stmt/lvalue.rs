@@ -53,14 +53,7 @@ pub(super) fn named_sub_lvalue_assign_expr(
     call_args: Vec<Expr>,
     value: Expr,
 ) -> Expr {
-    Expr::Call {
-        name: Symbol::intern("__mutsu_assign_named_sub_lvalue"),
-        args: vec![
-            Expr::Literal(Value::str(name)),
-            Expr::ArrayLiteral(call_args),
-            value,
-        ],
-    }
+    crate::parser::stmt::assign::named_sub_lvalue_assign_expr(name, call_args, value)
 }
 
 pub(super) fn callable_lvalue_assign_expr(target: Expr, call_args: Vec<Expr>, value: Expr) -> Expr {

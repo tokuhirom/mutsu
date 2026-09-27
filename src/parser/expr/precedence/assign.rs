@@ -138,14 +138,9 @@ pub(crate) fn assign_to_target_expr(target: Expr, value: Expr) -> Expr {
                 value,
             )
         }
-        Expr::Call { name, args } => Expr::Call {
-            name: Symbol::intern("__mutsu_assign_named_sub_lvalue"),
-            args: vec![
-                Expr::Literal(Value::str(name.resolve())),
-                Expr::ArrayLiteral(args),
-                value,
-            ],
-        },
+        Expr::Call { name, args } => {
+            crate::parser::stmt::assign::named_sub_lvalue_assign_expr(name.resolve(), args, value)
+        }
         Expr::CallOn { target, args } => Expr::Call {
             name: Symbol::intern("__mutsu_assign_callable_lvalue"),
             args: vec![*target, Expr::ArrayLiteral(args), value],

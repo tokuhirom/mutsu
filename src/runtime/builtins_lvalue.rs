@@ -723,6 +723,10 @@ impl Interpreter {
                 ),
                 None => Err(RuntimeError::new("Callable has been freed")),
             },
+            // `(1 + $x) = 3`, `@a[1]:v = 3`, `(1, 2) = 3`: the LHS is an
+            // expression's value, not a routine to call. Assign to that value
+            // the way Rakudo does (#9811).
+            _ if call_args.is_empty() => self.assign_to_expression_value(callable, value),
             _ => Err(RuntimeError::assignment_ro(Some(
                 "cannot assign through non-callable value",
             ))),
