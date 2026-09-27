@@ -543,7 +543,17 @@ impl Interpreter {
         if message.is_empty() {
             message = "Warning: something's wrong".to_string();
         }
-        Err(RuntimeError::warn_signal(message))
+        // Resolve inline (like `builtin_warn`) rather than returning a bare
+        // `warn_signal` error: `???` now parses at list-prefix precedence
+        // (#9780) and can appear as the left operand of `or`/`andthen`/...,
+        // where the following bytecode expects a pushed value. The top-level
+        // `is_warn()` recovery path only pushes a signal's `return_value` (see
+        // `vm_run_loop.rs`), which `warn_signal` never carries — harmless for
+        // a bare stub statement (`SinkPop` tolerates an empty stack) but a
+        // hard VM panic (`Dup` on an empty stack) once combined with `or`.
+        // `Value::NIL` matches raku: `??? $x or say "c"` warns then runs the
+        // `or`'s right side, so the stub's own value must be falsy.
+        self.raise_resumable_warning(&message, Value::NIL)
     }
 
     pub(super) fn builtin_incdec_nomatch(&self, args: &[Value]) -> Result<Value, RuntimeError> {

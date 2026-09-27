@@ -9,7 +9,10 @@
 //! decomposable at a function boundary without semantic change.
 
 use crate::ast::Expr;
-use crate::parser::expr::{expression, expression_no_word_logical, is_angle_subscript_key_char};
+use crate::parser::expr::{
+    expression, expression_no_word_logical, is_angle_subscript_key_char,
+    starts_with_loose_word_logical,
+};
 use crate::parser::helpers::{
     consume_unspace, delim_is_identifier_continuation, split_angle_words, ws,
 };
@@ -36,6 +39,27 @@ use super::subst::{
     parse_subst_replacement_expr, try_strip_subst_compound_assign,
 };
 use super::trans::{parse_trans_adverbs, process_trans_escapes};
+
+/// Parse the optional message argument of a stub listop (`...`, `!!!`, `???`).
+/// These sit at "list prefix precedence" (`operators.rakudoc`'s `listop C«...»` /
+/// `!!!` / `???` sections): looser than the comma but tighter than the loose
+/// word-logicals (`and`/`or`/`xor`/`andthen`/`orelse`), and may take no
+/// argument at all. `r` is positioned right after the operator token and its
+/// trailing whitespace.
+fn parse_stub_message(r: &str) -> PResult<'_, Expr> {
+    if r.starts_with(';')
+        || r.is_empty()
+        || r.starts_with('}')
+        || r.starts_with(')')
+        || r.starts_with(']')
+        || r.starts_with(',')
+        || crate::parser::primary::ident::predicates::is_stmt_modifier_ahead(r)
+        || starts_with_loose_word_logical(r)
+    {
+        return Ok((r, Expr::Literal(Value::str_from("Stub code executed"))));
+    }
+    expression_no_word_logical(r)
+}
 
 fn static_regex_expr(value: Value, source: &str, declaration: bool) -> Expr {
     match RegexTree::parse_static(source, declaration) {
@@ -280,16 +304,7 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
         // Make sure it's not "...^"/"…^" (sequence exclude-end) — that's handled in infix.
         if !r.starts_with('^') {
             let (r, _) = ws(r)?;
-            let (r, msg) = if r.starts_with(';')
-                || r.is_empty()
-                || r.starts_with('}')
-                || r.starts_with(')')
-                || r.starts_with(',')
-            {
-                (r, Expr::Literal(Value::str_from("Stub code executed")))
-            } else {
-                expression(r)?
-            };
+            let (r, msg) = parse_stub_message(r)?;
             return Ok((
                 r,
                 Expr::Call {
@@ -303,11 +318,7 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
     // !!! — fatal stub operator
     if let Some(r) = input.strip_prefix("!!!") {
         let (r, _) = ws(r)?;
-        let (r, msg) = if r.starts_with(';') || r.is_empty() || r.starts_with('}') {
-            (r, Expr::Literal(Value::str_from("Stub code executed")))
-        } else {
-            expression(r)?
-        };
+        let (r, msg) = parse_stub_message(r)?;
         return Ok((
             r,
             Expr::Call {
@@ -320,11 +331,7 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
     // ??? — admonitory stub operator
     if let Some(r) = input.strip_prefix("???") {
         let (r, _) = ws(r)?;
-        let (r, msg) = if r.starts_with(';') || r.is_empty() || r.starts_with('}') {
-            (r, Expr::Literal(Value::str_from("Stub code executed")))
-        } else {
-            expression(r)?
-        };
+        let (r, msg) = parse_stub_message(r)?;
         return Ok((
             r,
             Expr::Call {
