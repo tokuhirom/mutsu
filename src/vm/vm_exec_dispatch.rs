@@ -4995,10 +4995,12 @@ impl Interpreter {
                 *ip += 1;
             }
             // Cost: O(m), m = key bytes (name built by `format!`), plus an O(1) avg stash store;
-            // a `&` key re-aliasing a multi scans the function registry, O(r), r = registered
-            // functions (-- see #9665); a named package's sigiled non-`&` key reads that one
-            // stash entry, O(k) as GetPseudoStashKeyed, while an unsigiled key builds the whole
-            // stash, O(v), v = env entries (-- see #9171). Rakudo: O(1).
+            // a `&` key re-aliasing a multi reads its family from the base-name key index,
+            // O(k·p + c·log c) amortized, k = keys sharing the name's base name, p = enclosing
+            // packages, c = candidates (see `index_assign_named_package_stash`); a named
+            // package's sigiled non-`&` key reads that one stash entry, O(k) as
+            // GetPseudoStashKeyed, while an unsigiled key builds the whole stash, O(v),
+            // v = env entries (-- see #9171). Rakudo: O(1).
             OpCode::IndexAssignPseudoStashKeyed { stash_name_idx } => {
                 self.exec_index_assign_pseudo_stash_keyed_op(code, *stash_name_idx)?;
                 *ip += 1;

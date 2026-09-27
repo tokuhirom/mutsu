@@ -996,6 +996,7 @@ impl Interpreter {
             declared_fn_cache: Default::default(),
             multi_fn_cache: Default::default(),
             fn_keys_by_base: Default::default(),
+            fn_keys_index: Default::default(),
             bare_name_packages_memo: Default::default(),
             multi_dispatch_candidates_memo: Default::default(),
             multi_dispatch_candidates_memo_gen: (0, 0),

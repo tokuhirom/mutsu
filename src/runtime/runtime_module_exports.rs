@@ -43,6 +43,39 @@ impl Interpreter {
         }
     }
 
+    /// `name`'s multi candidates registered under one of `source_packages`
+    /// (keys `{pkg}::{name}/<suffix>`), each re-keyed as
+    /// `{target_pkg}::{name}/<suffix>` for aliasing into another package.
+    ///
+    /// Reads only the keys sharing `name`'s base name, from the per-base-name
+    /// key index, never the whole functions map (#9665).
+    // Cost: O(k·p), k = registry keys sharing `name`'s base name, p = source packages, amortized:
+    // a base name evicted since the index's last refill costs one O(r) pass, r = registered
+    // functions, shared by every name evicted before it (`runtime::fn_keys_index`).
+    fn multi_family_aliases(
+        &mut self,
+        source_packages: &[String],
+        name: &str,
+        target_pkg: &str,
+    ) -> Vec<(String, Arc<FunctionDef>)> {
+        let keys = self.fn_keys_for_base(name);
+        let registry = self.registry();
+        keys.iter()
+            .filter_map(|key| {
+                let key_str = key.as_str();
+                let suffix = source_packages.iter().find_map(|pkg| {
+                    key_str
+                        .strip_prefix(pkg.as_str())?
+                        .strip_prefix("::")?
+                        .strip_prefix(name)?
+                        .strip_prefix('/')
+                })?;
+                let def = registry.functions.get(key)?.clone();
+                Some((format!("{target_pkg}::{name}/{suffix}"), def))
+            })
+            .collect()
+    }
+
     /// The export tag a package name denotes when it names a module's export
     /// stash: `EXPORT::DEFAULT` -> `DEFAULT`, `Foo::EXPORT::ALL` -> `ALL`.
     /// Any other package (including a deeper `EXPORT::A::B`) is not one.
@@ -118,38 +151,22 @@ impl Interpreter {
             None => current_pkg,
         };
 
-        let candidates = if is_multi {
-            self.resolve_all_multi_candidates(name)
-        } else {
-            Vec::new()
-        };
-        if is_multi && candidates.is_empty() {
-            return;
-        }
         let source_packages = self.bare_name_packages();
         let entries: Vec<(String, Arc<FunctionDef>)> = if is_multi {
-            let source_prefixes: Vec<String> = source_packages
+            // Both the candidate list and the family's keys come from the
+            // per-base-name key index, so re-aliasing costs the family's size
+            // rather than a walk of every registered function (#9665).
+            let candidates: HashSet<*const FunctionDef> = self
+                .resolve_all_multi_candidates_indexed(name)
                 .iter()
-                .map(|pkg| format!("{pkg}::{name}/"))
+                .map(Arc::as_ptr)
                 .collect();
-            self.registry()
-                .functions
-                .iter()
-                .filter_map(|(key, def)| {
-                    let key_str = key.as_str();
-                    let source_prefix = source_prefixes
-                        .iter()
-                        .find(|prefix| key_str.starts_with(prefix.as_str()))?;
-                    if !candidates
-                        .iter()
-                        .any(|candidate| Arc::ptr_eq(candidate, def))
-                    {
-                        return None;
-                    }
-                    let suffix = key_str.strip_prefix(source_prefix)?;
-                    Some((format!("{target_pkg}::{name}/{suffix}"), def.clone()))
-                })
-                .collect()
+            if candidates.is_empty() {
+                return;
+            }
+            let mut entries = self.multi_family_aliases(&source_packages, name, &target_pkg);
+            entries.retain(|(_, def)| candidates.contains(&Arc::as_ptr(def)));
+            entries
         } else {
             // A single routine has one registry entry, under whichever
             // enclosing package the binding's source resolved in.
@@ -166,7 +183,7 @@ impl Interpreter {
                 .unwrap_or_default()
         };
 
-        let mut changed = false;
+        let mut installed = Vec::with_capacity(entries.len());
         for (target_key, def) in entries {
             let installed_key = if target_key.contains('/') {
                 self.import_multi_candidate_merged(&target_key, def.clone())
@@ -180,10 +197,15 @@ impl Interpreter {
                 .insert(installed_key, def);
             crate::runtime::cow_table_mut(&mut self.module_registered_functions)
                 .insert(installed_key);
-            changed = true;
+            installed.push(installed_key);
         }
-        if changed {
-            self.invalidate_fn_resolution();
+        if !installed.is_empty() {
+            // Every write above went into `Registry::functions` under exactly
+            // these keys, so only their base name's index entry is evicted:
+            // the wholesale form dropped the whole index and made the next
+            // binding in a `BEGIN for ... { EXPORT::DEFAULT::{$_} = ... }`
+            // loop rebuild it from a full registry scan.
+            self.invalidate_fn_resolution_for_keys(installed);
             if let Some((module, tag)) = export_target {
                 self.register_exported_sub(module, name.to_string(), vec![tag]);
             }
@@ -327,15 +349,7 @@ impl Interpreter {
             return;
         };
         let entries: Vec<(String, Arc<FunctionDef>)> = if multi {
-            let source_prefix = format!("{current_pkg}::{resolved_name}/");
-            self.registry()
-                .functions
-                .iter()
-                .filter_map(|(key, def)| {
-                    let suffix = key.resolve().strip_prefix(&source_prefix)?.to_string();
-                    Some((format!("{module}::{resolved_name}/{suffix}"), def.clone()))
-                })
-                .collect()
+            self.multi_family_aliases(std::slice::from_ref(&current_pkg), resolved_name, &module)
         } else {
             let source_single = format!("{current_pkg}::{resolved_name}");
             self.registry()
@@ -348,7 +362,7 @@ impl Interpreter {
         if entries.is_empty() {
             return;
         }
-        let mut changed = false;
+        let mut installed = Vec::with_capacity(entries.len());
         for (target_key, def) in entries {
             let installed_key = if target_key.contains('/') {
                 self.import_multi_candidate_merged(&target_key, def.clone())
@@ -365,11 +379,9 @@ impl Interpreter {
                 .insert(installed_key, def);
             crate::runtime::cow_table_mut(&mut self.module_registered_functions)
                 .insert(installed_key);
-            changed = true;
+            installed.push(installed_key);
         }
-        if changed {
-            self.invalidate_fn_resolution();
-        }
+        self.invalidate_fn_resolution_for_keys(installed);
         self.register_exported_sub(module, resolved_name.to_string(), vec![tag]);
     }
 
