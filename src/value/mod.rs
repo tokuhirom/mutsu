@@ -563,6 +563,10 @@ mod value_lazy_ctors;
 pub(crate) use str_iter::{
     StrIterMode, StrIterSpec, parse_limit as str_iter_limit, str_iter_count, str_iter_seq,
 };
+pub(crate) mod list_gen;
+mod pure_cursor;
+pub(crate) use list_gen::{ListGen, PositionalMode};
+pub(crate) use pure_cursor::PureCursor;
 mod value_methods_a;
 mod value_methods_b;
 mod value_methods_c;

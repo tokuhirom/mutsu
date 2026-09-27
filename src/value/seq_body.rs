@@ -20,6 +20,7 @@
 
 use super::sync_cell::SyncUnsafeCell;
 use super::{RuntimeError, Value};
+use crate::value::PureCursor;
 use std::sync::{Arc, Mutex};
 
 /// Which deferred `.map`/`.grep` shape a [`SeqSource::MapGrep`] body carries.
@@ -83,7 +84,9 @@ pub(crate) enum SeqSource {
         /// promoting grep.
         mode: MapGrepMode,
     },
-    /// `Str.comb` / `.lines` / `.words` (`crate::value::StrIterSpec`): a pure
+    /// `Str.comb` / `.lines` / `.words` (`crate::value::StrIterSpec`), and an
+    /// Array's `.keys` / `.values` / `.kv` / `.pairs` / `.antipairs` or a
+    /// list's `.combinations` / `.permutations` (`crate::value::ListGen`): a pure
     /// cursor over the invocant's string. Unlike every other deferred source
     /// it needs no interpreter, so the first *read* of the body settles it
     /// in place ([`SeqBody::settle_pure_source`], run by `Deref`), after
@@ -91,7 +94,7 @@ pub(crate) enum SeqSource {
     /// *consuming* method that needs a prefix (`.head(n)`, `.first`) reaches
     /// it unread, and takes just that prefix ([`SeqBody::take_prefix_source`]),
     /// the way Rakudo's `.head` pulls `n` times from the Seq's iterator.
-    StrIter(crate::value::StrIterSpec),
+    Pure(PureCursor),
     /// The source was handed away by a consuming method (`.iterator`,
     /// `.list`, ...). A later attempt to reify or take again throws
     /// `X::Seq::Consumed`.
@@ -160,8 +163,8 @@ struct SeqState {
 
 /// A source [`SeqBody::take_prefix_source`] handed over for a prefix pull.
 pub(crate) enum PrefixSource {
-    /// A `Str.comb` / `.lines` / `.words` cursor.
-    Str(crate::value::StrIterSpec),
+    /// A `Str.comb` / `.lines` / `.words` cursor, or a native list iterator.
+    Pure(PureCursor),
     /// An `IO::Handle.lines` (`words: false`) / `.words` read.
     IoLines { handle: Value, words: bool },
     /// A `Seq.new($iterator)` source: a user/native `Iterator` driven one
@@ -225,7 +228,7 @@ struct SeqCore {
     /// preserve those cells instead of passing them through the normal array
     /// read chokepoint, which decontainerizes them.
     element_containers: bool,
-    /// Set while `state.source` may still be a [`SeqSource::StrIter`], so
+    /// Set while `state.source` may still be a [`SeqSource::Pure`], so
     /// `Deref` can settle it without taking the state lock on every read of
     /// every other Seq.
     pure_pending: std::sync::atomic::AtomicBool,
@@ -255,10 +258,10 @@ impl std::ops::Deref for SeqBody {
     /// A read that arrives before reification sees the empty seed, exactly
     /// as mutsu's plain `Arc<Vec<Value>>` Seq did — reification is triggered
     /// by the dispatch sites (`reify`/`take`), never by a read, so this
-    /// cannot re-enter the VM. The one exception is a [`SeqSource::StrIter`],
+    /// cannot re-enter the VM. The one exception is a [`SeqSource::Pure`],
     /// which needs no VM: it is cut into its elements here, on first read.
-    // Cost: O(1), except the first read of a `StrIter` body, which is O(n),
-    // n = bytes of its string.
+    // Cost: O(1), except the first read of a `Pure` body, which pulls it whole
+    // (for a `Str` cursor, O(n), n = bytes of its string).
     fn deref(&self) -> &Vec<Value> {
         self.settle_pure_source();
         self.live_generation()
@@ -309,7 +312,17 @@ impl SeqBody {
     /// Build a body whose elements are not yet available (`Seq.new($iterator)`,
     /// `IO::Handle.lines`, or a pre-consumed `Seq.new()`).
     pub(crate) fn deferred(source: SeqSource) -> Arc<Self> {
-        let pure = matches!(source, SeqSource::StrIter(_));
+        Self::deferred_with_element_containers(source, false)
+    }
+
+    /// [`Self::deferred`] for a source whose elements will be live element
+    /// containers of a mutable Array (a lazy `.values` / `.pairs` / `.kv`
+    /// element producer, [`crate::value::ListGen::Positional`] with `cells`).
+    pub(crate) fn deferred_with_element_containers(
+        source: SeqSource,
+        element_containers: bool,
+    ) -> Arc<Self> {
+        let pure = matches!(source, SeqSource::Pure(_));
         Arc::new(SeqBody {
             core: Arc::new(SeqCore {
                 which_id: crate::value::which_id::WhichId::default(),
@@ -324,7 +337,7 @@ impl SeqBody {
                     retained: false,
                     itemized: false,
                 }),
-                element_containers: false,
+                element_containers,
                 pure_pending: std::sync::atomic::AtomicBool::new(pure),
             }),
             view: SeqView::Seq,
@@ -447,7 +460,7 @@ impl SeqBody {
         Ok(())
     }
 
-    /// Cut a still-unread [`SeqSource::StrIter`] body into its elements, in
+    /// Cut a still-unread [`SeqSource::Pure`] body into its elements, in
     /// place, so every reader sees them. A no-op (one atomic load) for every
     /// other body. Must not be called with the state lock held.
     // Cost: O(1), or O(n) the first time, n = bytes of the string.
@@ -462,7 +475,7 @@ impl SeqBody {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         self.core.pure_pending.store(false, Ordering::Release);
-        if let SeqSource::StrIter(spec) = &mut state.source {
+        if let SeqSource::Pure(spec) = &mut state.source {
             // A subscript may already have cut a prefix
             // (`SeqBody::pull_prefix`); the rest goes after it.
             let mut items = self.live_generation().clone();
@@ -476,7 +489,7 @@ impl SeqBody {
     }
 
     /// A consuming `.head(n)` / `.first` on a body nobody has read yet whose
-    /// source can be pulled one element at a time: a [`SeqSource::StrIter`],
+    /// source can be pulled one element at a time: a [`SeqSource::Pure`],
     /// an `IO::Handle.lines` / `.words` read ([`SeqSource::IoLines`]
     /// without `kv`), or a `Seq.new($iterator)` ([`SeqSource::Iterator`]). Steals and returns that source, leaving the body
     /// `Taken` exactly as a full [`SeqBody::take`] would, so the caller can
@@ -494,7 +507,7 @@ impl SeqBody {
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let granular = matches!(
             state.source,
-            SeqSource::StrIter(_) | SeqSource::IoLines { kv: false, .. } | SeqSource::Iterator(_)
+            SeqSource::Pure(_) | SeqSource::IoLines { kv: false, .. } | SeqSource::Iterator(_)
         );
         if !granular || state.cache_requested || !self.live_generation().is_empty() {
             return None;
@@ -503,7 +516,7 @@ impl SeqBody {
             .pure_pending
             .store(false, std::sync::atomic::Ordering::Release);
         match std::mem::replace(&mut state.source, SeqSource::Taken) {
-            SeqSource::StrIter(spec) => Some(PrefixSource::Str(spec)),
+            SeqSource::Pure(spec) => Some(PrefixSource::Pure(spec)),
             SeqSource::IoLines { handle, words, .. } => {
                 Some(PrefixSource::IoLines { handle, words })
             }
@@ -842,7 +855,7 @@ impl SeqBody {
     /// a time (`vm_var_index_ops.rs`'s subscript special case): pull only
     /// enough additional elements to reach `needed` total, leaving the
     /// source in place for later reads unless it runs out. A
-    /// [`SeqSource::StrIter`] is cut here; an [`SeqSource::IoLines`] read is
+    /// [`SeqSource::Pure`] is cut here; an [`SeqSource::IoLines`] read is
     /// pulled through `pull_n`, which leaves the handle open unless it
     /// reports EOF. A body that is already `Reified`/`Taken`, or whose
     /// deferred source is anything else (a plain `Seq.new($iterator)`), is
@@ -852,7 +865,7 @@ impl SeqBody {
     /// auto-close from firing (it only fires when a read actually hits EOF —
     /// see `read_word_from_handle_value`), and `$str.comb[0]` cut only the
     /// first grapheme.
-    // Cost: O(k), k = the elements still to pull (for a `StrIter`, the bytes
+    // Cost: O(k), k = the elements still to pull (for a `Str` cursor, the bytes
     // they span), plus a copy of the prefix already pulled.
     pub(crate) fn pull_prefix(
         &self,
@@ -870,7 +883,7 @@ impl SeqBody {
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
             match &mut state.source {
-                SeqSource::StrIter(spec) => {
+                SeqSource::Pure(spec) => {
                     let mut items = Vec::new();
                     spec.push_up_to(&mut items, needed - have);
                     let exhausted = items.len() < needed - have;
@@ -912,19 +925,34 @@ impl SeqBody {
         Ok(())
     }
 
-    /// Whether this body may still hold an unread `Str.comb` / `.lines` /
-    /// `.words` cursor ([`SeqSource::StrIter`]). Lets a reader that only
-    /// needs to know it is looking at `Str` elements skip reading them,
-    /// which would cut the whole string.
+    /// Whether this body still holds an unread pure cursor
+    /// ([`SeqSource::Pure`]) whose elements are all defined — a `Str` cursor,
+    /// or a list iterator yielding indices, pairs or sub-lists. Lets a reader
+    /// that only needs to know no element is a Nil skip reading them, which
+    /// would cut the whole string or run the whole iterator.
     // Cost: O(1).
-    pub(crate) fn has_unread_str_source(&self) -> bool {
-        self.core
+    pub(crate) fn has_unread_defined_source(&self) -> bool {
+        if !self
+            .core
             .pure_pending
             .load(std::sync::atomic::Ordering::Acquire)
+        {
+            return false;
+        }
+        match &self
+            .core
+            .state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .source
+        {
+            SeqSource::Pure(cursor) => cursor.never_nilish(),
+            _ => false,
+        }
     }
 
     /// Whether [`SeqBody::pull_prefix`] can serve this body a prefix at a
-    /// time (a still-unread `StrIter` or non-`kv` `IoLines` source).
+    /// time (a still-unread pure cursor or non-`kv` `IoLines` source).
     // Cost: O(1).
     pub(crate) fn has_prefix_source(&self) -> bool {
         matches!(
@@ -933,7 +961,7 @@ impl SeqBody {
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner)
                 .source,
-            SeqSource::StrIter(_) | SeqSource::IoLines { kv: false, .. }
+            SeqSource::Pure(_) | SeqSource::IoLines { kv: false, .. }
         )
     }
 
@@ -1015,20 +1043,22 @@ impl SeqBody {
                     MapGrepMode::Map | MapGrepMode::Grep => {}
                 }
             }
-            SeqSource::StrIter(_) | SeqSource::Reified | SeqSource::Taken => {}
+            SeqSource::Pure(PureCursor::List(list_gen)) => list_gen.trace_edges(visit),
+            SeqSource::Pure(PureCursor::Str(_)) | SeqSource::Reified | SeqSource::Taken => {}
         }
     }
 }
 
-/// Run `pull` over a deferred `source`, except a [`SeqSource::StrIter`],
+/// Run `pull` over a deferred `source`, except a [`SeqSource::Pure`],
 /// which is cut here: it needs no interpreter.
-// Cost: O(n) for a `StrIter`, n = bytes of its string; otherwise `pull`'s cost.
+// Cost: a full pull of a `Pure` cursor (for a `Str` cursor O(n), n = bytes of
+// its string); otherwise `pull`'s cost.
 fn pull_source(
     source: &SeqSource,
     pull: impl FnOnce(&SeqSource) -> Result<Vec<Value>, RuntimeError>,
 ) -> Result<Vec<Value>, RuntimeError> {
     match source {
-        SeqSource::StrIter(spec) => {
+        SeqSource::Pure(spec) => {
             let mut items = Vec::new();
             spec.clone().push_up_to(&mut items, usize::MAX);
             Ok(items)
