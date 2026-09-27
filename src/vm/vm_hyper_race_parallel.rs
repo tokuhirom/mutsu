@@ -43,12 +43,30 @@ impl Interpreter {
         });
         if has_nonlocal_control {
             return self
-                .exec_for_loop_body(code, spec, items, body_start, loop_end, compiled_fns, 0)
+                .exec_for_loop_body(
+                    code,
+                    spec,
+                    items,
+                    None,
+                    body_start,
+                    loop_end,
+                    compiled_fns,
+                    0,
+                )
                 .map(|_| ());
         }
         if items.is_empty() {
             return self
-                .exec_for_loop_body(code, spec, items, body_start, loop_end, compiled_fns, 0)
+                .exec_for_loop_body(
+                    code,
+                    spec,
+                    items,
+                    None,
+                    body_start,
+                    loop_end,
+                    compiled_fns,
+                    0,
+                )
                 .map(|_| ());
         }
         let arity = spec.arity.max(1) as usize;
@@ -82,7 +100,7 @@ impl Interpreter {
             handles.push(crate::runtime::worker_pool::submit_joinable(move || {
                 let run = crate::vm::guard_worker_panic(|| {
                     vm.exec_for_loop_body(
-                        &task_code, &task_spec, &batch, body_start, loop_end, &task_fns, 0,
+                        &task_code, &task_spec, &batch, None, body_start, loop_end, &task_fns, 0,
                     )?;
                     let collected = if collect {
                         match vm.stack.pop() {

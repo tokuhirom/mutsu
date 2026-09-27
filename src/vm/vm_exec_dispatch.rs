@@ -5196,8 +5196,9 @@ impl Interpreter {
                 };
                 self.exec_while_loop_op(code, &spec, ip, compiled_fns)?;
             }
-            // Cost: O(1) per iteration on a Range/lazy source; O(e) at entry otherwise, e =
-            // elements copied (see exec_for_loop_op_inner). Rakudo: O(1) at entry -- see #9158.
+            // Cost: O(1) per iteration on a Range, a lazy source or a plain Array read in
+            // place; O(e) at entry otherwise, e = elements copied (see
+            // exec_for_loop_op_inner).
             OpCode::ForLoop(spec) => {
                 self.sync_source_line(code, *ip);
                 self.exec_for_loop_op(code, spec, ip, compiled_fns)?;
