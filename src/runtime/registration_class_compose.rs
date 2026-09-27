@@ -256,6 +256,9 @@ impl Interpreter {
             cx.out
                 .class_role_param_bindings
                 .insert(p.clone(), v.clone());
+            if let Some((marker, flag)) = Self::role_type_capture_marker(p, v) {
+                cx.out.class_role_param_bindings.insert(marker, flag);
+            }
             // Signature binding publishes callable parameters under both their
             // sigilless name and their `&` code-variable spelling. Role
             // composition stores the parameter bindings directly, so preserve
@@ -284,6 +287,7 @@ impl Interpreter {
                 let mut bindings = Vec::with_capacity(role_param_names.len() * 2);
                 for (name, value) in role_param_names.iter().zip(role_arg_values.iter()) {
                     bindings.push((name.clone(), value.clone()));
+                    bindings.extend(Self::role_type_capture_marker(name, value));
                     if matches!(
                         value.view(),
                         ValueView::Sub(_) | ValueView::WeakSub(_) | ValueView::Routine { .. }
