@@ -610,7 +610,18 @@ impl Compiler {
     /// real `VarDecl` later in sequence is an idempotent no-op for the type and
     /// still performs the actual (re-)initialization.
     pub(super) fn hoist_typed_var_decls(&mut self, stmts: &[Stmt]) {
+        // Pre-register each declaration with the constraint its own compile
+        // will persist, `use variables :D/:U`'s implicit smiley included: the
+        // pragma statements of this block are tracked in order, then the
+        // pragma in effect at block entry is put back for the real compile.
+        let pragma_at_entry = self.variables_pragma;
         for stmt in stmts {
+            if let Stmt::Use { module, arg, .. } = stmt
+                && module == "variables"
+            {
+                self.apply_variables_pragma_stmt(arg.as_ref());
+                continue;
+            }
             // `state TYPE $x` hoists exactly like `my TYPE $x`: Raku's
             // block-start declaration visibility does not distinguish the two.
             // It is safe on `state` because `SetVarTypeHoisted` is
@@ -629,11 +640,14 @@ impl Compiler {
             } = stmt
                 && !custom_traits.iter().any(|(n, _)| n == "default")
             {
+                let pragma_tc = self.variables_pragma_constraint(Some(tc), custom_traits);
+                let tc = pragma_tc.as_ref().unwrap_or(tc);
                 let name_idx = self.code.add_constant(Value::str(name.clone()));
                 let tc_idx = self.code.add_constant(Value::str(tc.clone()));
                 self.emit_hoisted_set_var_type(name, name_idx, tc_idx, false);
             }
         }
+        self.variables_pragma = pragma_at_entry;
     }
 
     /// Check if a class body is a stub (contains only `...`, `!!!`, or `???`).

@@ -73,6 +73,7 @@ impl Compiler {
         method_compiler.set_current_package(package_name.to_string());
         method_compiler.current_distribution = self.current_distribution.clone();
         method_compiler.lexically_in_method = true;
+        method_compiler.variables_pragma = self.variables_pragma;
         // A role method's body sits inside the role's parameter scope, so a
         // role parameter `&f` shadows any outer `sub f` for a bare `f()`.
         if let Some(frame) = &self.role_param_scope {

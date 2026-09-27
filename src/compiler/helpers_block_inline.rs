@@ -405,6 +405,12 @@ impl Compiler {
                             self.pop_dynamic_scope_lexical(saved);
                             return;
                         }
+                        // `use variables :D/:U`'s implicit smiley (#9990).
+                        let pragma_type_constraint = self
+                            .variables_pragma_constraint(type_constraint.as_deref(), custom_traits)
+                            .map(Some);
+                        let type_constraint =
+                            pragma_type_constraint.as_ref().unwrap_or(type_constraint);
                         // Record for an enclosing scope-isolating do-block.
                         self.record_block_decl(name);
                         let is_dynamic = *ast_is_dynamic || self.var_is_dynamic(name);
@@ -483,6 +489,7 @@ impl Compiler {
                                         tc_idx,
                                         Some(var_name_idx),
                                         true,
+                                        false,
                                     ));
                                 }
                             }

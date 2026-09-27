@@ -487,8 +487,16 @@ impl Interpreter {
         tc_idx: u32,
         var_name_idx: Option<u32>,
         has_explicit_initializer: bool,
+        smiley_from_pragma: bool,
     ) -> Result<(), RuntimeError> {
-        self.exec_type_check_op_inner(code, tc_idx, var_name_idx, false, has_explicit_initializer)
+        self.exec_type_check_op_inner(
+            code,
+            tc_idx,
+            var_name_idx,
+            false,
+            has_explicit_initializer,
+            smiley_from_pragma,
+        )
     }
 
     /// Type check for `:=` binds to a typed scalar; raises X::TypeCheck::Binding
@@ -499,6 +507,6 @@ impl Interpreter {
         tc_idx: u32,
         var_name_idx: Option<u32>,
     ) -> Result<(), RuntimeError> {
-        self.exec_type_check_op_inner(code, tc_idx, var_name_idx, true, false)
+        self.exec_type_check_op_inner(code, tc_idx, var_name_idx, true, false, false)
     }
 }

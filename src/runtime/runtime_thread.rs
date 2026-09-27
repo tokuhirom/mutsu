@@ -842,7 +842,6 @@ impl Interpreter {
             var_dynamic_flags: self.var_dynamic_flags.clone(),
             caller_env_stack: Vec::new(),
             var_bindings: HashMap::new(),
-            variables_pragma: self.variables_pragma.clone(),
             attributes_pragma: self.attributes_pragma.clone(),
             // Inherit monotonically: if the parent ever registered an atomic var,
             // the child (which shares the atomic storage via shared_vars) must keep

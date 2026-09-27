@@ -3626,9 +3626,6 @@ pub struct Interpreter {
     /// When target is read, the value of source is returned instead.
     /// Set up by $CALLER::target := $source binding.
     var_bindings: HashMap<String, String>,
-    /// `use variables :D/:U/:_` pragma — applies default smiley to unsmiley'd type constraints.
-    /// Empty string means no pragma active.
-    pub(crate) variables_pragma: String,
     /// `use attributes :D/:U/:_` pragma — applies default smiley to unsmiley'd attribute type constraints.
     /// Empty string means no pragma active.
     pub(crate) attributes_pragma: String,
