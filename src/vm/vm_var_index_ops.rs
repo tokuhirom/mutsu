@@ -670,6 +670,10 @@ impl Interpreter {
         if matches!(index.view(), ValueView::ContainerRef(_)) {
             index = index.deref_container();
         }
+        // A Failure used as the index (`@a[1 div 0]`) sinks here like any
+        // other read of it, propagating the exception it wraps instead of
+        // silently subscripting with it.
+        Self::throw_if_failure(&index)?;
         // A role-mixed Array used as a positional slice keeps its Mixin
         // wrapper for method dispatch, but the wrapper is transparent when it
         // supplies the slice indices (`self[@subgrid.flip: ...]`).  Expose the
@@ -2727,7 +2731,7 @@ impl Interpreter {
                 return self.exec_index_op_with_positional(is_positional);
             }
             // WhateverCode index: @a[*-1] → evaluate the lambda with array length
-            (ValueView::Array(items, ..), ValueView::Sub(data)) => {
+            (ValueView::Array(items, is_arr), ValueView::Sub(data)) => {
                 let len = items.len() as i64;
                 let mut sub_env = data.env.clone();
                 // Pass array length for ALL WhateverCode parameters (e.g. *-4 .. *-2 has 2 params)
@@ -2768,7 +2772,13 @@ impl Interpreter {
                         _ => None,
                     };
                     match i {
-                        Some(i) if i >= 0 => items.get(i as usize).cloned().unwrap_or(Value::NIL),
+                        Some(i) if i >= 0 => {
+                            let default = self.typed_container_default(&Value::array_with_kind(
+                                items.clone(),
+                                is_arr,
+                            ));
+                            self.resolve_array_entry(&items, is_arr, i as usize, default)
+                        }
                         Some(i) if i < 0 => Self::make_out_of_range_failure(i),
                         _ => Value::NIL,
                     }
@@ -3270,6 +3280,13 @@ impl Interpreter {
                     ));
                 }
                 target.clone()
+            }
+            // A type-object index (an uninitialized `my $i;`, or a bare type
+            // like `Int`) reached no arm above that gives it meaning: raku's
+            // `postcircumfix:<[ ]>` refuses to index with one rather than
+            // silently reading `Nil`/`Any`.
+            _ if is_positional && Self::is_type_object_index(&index) => {
+                return Err(Self::type_object_index_error());
             }
             _ => Value::NIL,
         };

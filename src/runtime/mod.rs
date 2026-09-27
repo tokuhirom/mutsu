@@ -584,6 +584,7 @@ mod builtins_multidim_subscript_adverb;
 mod builtins_postcircumfix;
 mod catch_inline;
 mod control_inline;
+mod cool_type_object_gate;
 pub(crate) mod json;
 mod module_reinstate;
 mod proxy_store;

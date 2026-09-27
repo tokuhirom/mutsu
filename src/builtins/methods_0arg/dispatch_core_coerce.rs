@@ -432,6 +432,27 @@ pub(super) fn dispatch(
                     attrs,
                 ))));
             }
+            // An ObjAt is identified by the identity it carries, not by the
+            // object that happens to hold it: `$o.WHICH.WHICH` is
+            // `ObjAt|<$o.WHICH>` on every call (and `ValueObjAt|Str|a` for
+            // `"a".WHICH.WHICH`), so two ObjAts of one object are the same
+            // Set/Bag key. The class is kept, as in Rakudo.
+            // Cost: O(n), n = length of the carried identity string.
+            if let ValueView::Instance {
+                class_name,
+                attributes,
+                ..
+            } = target.view()
+                && matches!(class_name.resolve().as_str(), "ObjAt" | "ValueObjAt")
+            {
+                let inner = attributes.as_map().objat_which().unwrap_or_default();
+                let mut attrs = std::collections::HashMap::new();
+                attrs.insert(
+                    "WHICH".to_string(),
+                    Value::str(format!("{}|{}", class_name.resolve(), inner)),
+                );
+                return Some(Some(Ok(Value::make_instance(class_name, attrs))));
+            }
             // Determine if this is a value type (ValueObjAt) or reference type (ObjAt)
             let is_value_type = has_value_identity(target);
             let which_str = match target.view() {

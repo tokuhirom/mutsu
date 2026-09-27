@@ -1289,50 +1289,6 @@ impl Interpreter {
         err
     }
     pub(super) fn body_contains_non_nil_return(stmts: &[Stmt]) -> bool {
-        for stmt in stmts {
-            match stmt {
-                Stmt::Return(expr) => {
-                    if !matches!(expr, Expr::Literal(lit) if lit.is_nil()) {
-                        return true;
-                    }
-                }
-                Stmt::If {
-                    then_branch,
-                    else_branch,
-                    ..
-                } => {
-                    if Self::body_contains_non_nil_return(then_branch)
-                        || Self::body_contains_non_nil_return(else_branch)
-                    {
-                        return true;
-                    }
-                }
-                Stmt::While { body, .. }
-                | Stmt::React { body }
-                | Stmt::SyntheticBlock(body)
-                | Stmt::Block(body) => {
-                    if Self::body_contains_non_nil_return(body) {
-                        return true;
-                    }
-                }
-                Stmt::For { body, .. } => {
-                    if Self::body_contains_non_nil_return(body) {
-                        return true;
-                    }
-                }
-                Stmt::Loop { init, body, .. } => {
-                    if let Some(init) = init
-                        && Self::body_contains_non_nil_return(std::slice::from_ref(init.as_ref()))
-                    {
-                        return true;
-                    }
-                    if Self::body_contains_non_nil_return(body) {
-                        return true;
-                    }
-                }
-                _ => {}
-            }
-        }
-        false
+        crate::opcode::body_contains_non_nil_return(stmts)
     }
 }

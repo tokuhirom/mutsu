@@ -187,6 +187,8 @@ fn grammar_decl_inner(input: &str, is_lexical: bool) -> PResult<'_, Stmt> {
     let mut r = rest;
     let mut parents = Vec::new();
     let mut parent_args: Vec<(String, Vec<Expr>)> = Vec::new();
+    let mut export_tags: Vec<String> = Vec::new();
+    let mut is_export = false;
     while let Some(r2) = keyword("is", r) {
         let (r2, _) = ws1(r2)?;
         let (r2, parent_name) = qualified_ident(r2)?;
@@ -208,6 +210,13 @@ fn grammar_decl_inner(input: &str, is_lexical: bool) -> PResult<'_, Stmt> {
             let (r2, _) = ws(r2)?;
             r = r2;
         } else {
+            // `grammar G is export` / `is export(:TAG)`: record the export the
+            // same way a class declaration does, so `use`/`import` binds the
+            // grammar's bare name in the importer.
+            if parent_name == "export" {
+                is_export = true;
+                super::class_decl::push_export_tags(r2, &mut export_tags);
+            }
             let r2 = crate::parser::helpers::skip_balanced_parens(r2);
             let (r2, _) = ws(r2)?;
             r = r2;
@@ -268,29 +277,37 @@ fn grammar_decl_inner(input: &str, is_lexical: bool) -> PResult<'_, Stmt> {
     super::super::simple::register_user_type(&name);
     // `grammar G { ... }.parse($s)` is one expression; see `reject_trailing_postfix`.
     super::reject_trailing_postfix(rest)?;
-    Ok((
-        rest,
-        Stmt::ClassDecl {
-            name: Symbol::intern(&name),
-            name_expr: None,
-            parents,
-            class_is_rw: false,
-            is_hidden: false,
-            is_lexical,
-            hidden_parents: vec![],
-            does_parents,
-            repr: None,
-            body,
-            language_version: super::super::simple::current_language_version(),
-            custom_traits: Vec::new(),
-            is_unit: false,
-            implicit_grammar_parent,
-            is_grammar: true,
-            decl_id: crate::ast::next_class_decl_id(),
-            parent_args,
-            body_parents,
-        },
-    ))
+    let mut custom_traits = Vec::new();
+    if is_export && is_lexical {
+        // See `class_decl`: a lexical type keeps an internal marker instead of
+        // the synthetic export statement, which would make it block-local.
+        custom_traits.push(("__mutsu_export_type".to_string(), None));
+    }
+    let grammar_stmt = Stmt::ClassDecl {
+        name: Symbol::intern(&name),
+        name_expr: None,
+        parents,
+        class_is_rw: false,
+        is_hidden: false,
+        is_lexical,
+        hidden_parents: vec![],
+        does_parents,
+        repr: None,
+        body,
+        language_version: super::super::simple::current_language_version(),
+        custom_traits,
+        is_unit: false,
+        implicit_grammar_parent,
+        is_grammar: true,
+        decl_id: crate::ast::next_class_decl_id(),
+        parent_args,
+        body_parents,
+    };
+    if is_export && !is_lexical {
+        let export = super::class_decl::export_type_stmt(&name, &export_tags);
+        return Ok((rest, Stmt::SyntheticBlock(vec![grammar_stmt, export])));
+    }
+    Ok((rest, grammar_stmt))
 }
 
 /// Parse `module Name { ... }` declaration (non-unit form).

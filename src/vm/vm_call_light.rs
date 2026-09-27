@@ -850,6 +850,7 @@ impl Interpreter {
             let mut ip = 0;
             let mut result = Ok(());
             let mut explicit_return: Option<Value> = None;
+            let mut explicit_from_method = false;
             let mut fail_bypass = false;
             while ip < cf.code.ops.len() {
                 // JIT entry (ADR-0004 J1): at body start, run the whole body
@@ -898,6 +899,7 @@ impl Interpreter {
                                 break;
                             }
                         }
+                        explicit_from_method = e.from_method_return();
                         let ret_val = e.return_value.unwrap();
                         explicit_return = Some(ret_val.clone());
                         self.stack.truncate(saved_stack_depth);
@@ -925,9 +927,9 @@ impl Interpreter {
                     break;
                 }
             }
-            (result, explicit_return, fail_bypass)
+            (result, explicit_return, fail_bypass, explicit_from_method)
         }));
-        let (result, explicit_return, fail_bypass) = match body_outcome {
+        let (result, explicit_return, fail_bypass, explicit_from_method) = match body_outcome {
             Ok(triple) => triple,
             Err(panic_payload) => {
                 // Restore every piece of caller-side state this function
@@ -1041,23 +1043,29 @@ impl Interpreter {
 
         // A definite constant return spec (`--> Nil`, `--> True`, `--> 42`,
         // #9074) is not a type check: mirror `finalize_return_with_spec`'s
-        // definite arm. A `fail` bypasses it; an explicit `return` must carry
-        // no value (a non-Nil one is `X::AdHoc` "malformed return value"); a
-        // natural completion sinks the body's value (so a trailing lazy
-        // `.map` still runs) and discards it. Either way the constant wins.
+        // definite arm. A `fail` bypasses it; a bare `return` and a natural
+        // completion yield the constant (the latter after sinking the body's
+        // value, so a trailing lazy `.map` still runs); a `.return` with a
+        // non-Nil value is `X::AdHoc`.
         let definite_value = if let Some(konst) = &cf.return_definite_const
             && result.is_ok()
             && !fail_bypass
         {
             match &explicit_return {
-                Some(v) if !v.is_nil() => {
+                // Only `27.return` checks the pinned value; a `return 27`
+                // from a nested block returns its own argument (rakudo's
+                // `return` sub never checks), see `finalize_return_with_spec`.
+                Some(v) if !v.is_nil() && explicit_from_method => {
                     let spec = cf.return_type.as_deref().unwrap_or("Nil");
                     return Err(self.malformed_return_value_error(v, spec));
                 }
-                Some(_) => {}
-                None => self.sink_for_definite_return(&ret_val)?,
+                Some(v) if !v.is_nil() => None,
+                Some(_) => Some(konst.clone()),
+                None => {
+                    self.sink_for_definite_return(&ret_val)?;
+                    Some(konst.clone())
+                }
             }
-            Some(konst.clone())
         } else {
             None
         };

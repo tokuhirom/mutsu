@@ -68,6 +68,7 @@ impl Interpreter {
             (target, idxs)
         } else {
             let mut idx = self.stack.pop().unwrap_or(Value::NIL);
+            Self::throw_if_failure(&idx)?;
             // An *itemized* list subscript (`@a[$(7,8,9)]:exists`) is a SINGLE
             // subscript, not a slice. Only a POSITIONAL one numifies (to its
             // `.Int`, the element count); a HASH subscript keeps the value
@@ -662,6 +663,14 @@ impl Interpreter {
                     (0..len as i64).collect()
                 }
                 _ => {
+                    // A positional `:exists`/`:delete` with a type-object
+                    // index (`@a[$i]:exists` where `$i` is undefined) is not
+                    // a hash lookup: raku's `postcircumfix:<[ ]>` refuses to
+                    // index with a type object at all, rather than
+                    // stringifying it into an (always-missing) key.
+                    if kind == SubscriptKind::Positional && Self::is_type_object_index(&idx) {
+                        return Err(Self::type_object_index_error());
+                    }
                     // A bare type object key coerces to "" (warning / user .Str)
                     // before lookup, matching the store/read paths.
                     let pkg_key = if matches!(idx.view(), ValueView::Package(_)) {

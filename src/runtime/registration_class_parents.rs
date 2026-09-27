@@ -77,6 +77,45 @@ impl Interpreter {
         RuntimeError::typed("X::Inheritance::UnknownParent", attrs)
     }
 
+    /// The registry name an `is` parent should be stored under.
+    ///
+    /// Inside a `unit module Foo` the compiler pre-qualifies a bare parent to
+    /// `Foo::C` (`Compiler::qualify_decl_name`), which is right for a sibling
+    /// class but not for one the module imported: `use P; class U is C {}`
+    /// means `P::C`. [`Self::resolve_declared_type_name`] already falls back
+    /// to the imported type, but only validation consulted it, so the class
+    /// kept a parent name nothing is registered under and its MRO ended at
+    /// that phantom (`Usage::Utils`' `grammar UsageStr is BasePaths`, imported
+    /// from `Parse::Paths`, lost `Grammar` and every inherited token). A name
+    /// that is registered, or does not resolve to a registered class, is
+    /// returned unchanged.
+    // Cost: O(1) registry probes plus one `resolve_declared_type_name`, only
+    // for a qualified parent nothing is registered under.
+    pub(crate) fn canonical_class_parent_name(&self, parent: &str) -> String {
+        let base = parent.split_once('[').map_or(parent, |(base, _)| base);
+        if !crate::qualified::is_qualified(crate::symbol::Symbol::intern(base)) {
+            return parent.to_string();
+        }
+        let is_registered = |name: &str| {
+            let registry = self.registry();
+            registry.classes.contains_key(name)
+                || registry.roles.contains_key(name)
+                || registry.enum_types.contains_key(name)
+        };
+        if is_registered(base) {
+            return parent.to_string();
+        }
+        let resolved = self.resolve_declared_type_name(parent);
+        let resolved_base = resolved
+            .split_once('[')
+            .map_or(resolved.as_str(), |(b, _)| b);
+        if resolved != parent && self.registry().classes.contains_key(resolved_base) {
+            resolved
+        } else {
+            parent.to_string()
+        }
+    }
+
     /// Validate that all parent classes exist.
     /// Allow inheriting from built-in types that may not be in the classes HashMap.
     /// Returns the parents that must NOT enter the C3 inheritance MRO, which

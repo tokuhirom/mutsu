@@ -201,6 +201,11 @@ impl Interpreter {
         if let Some(err) = super::any_cool_method_gate::cool_method_not_found(&target, method) {
             return Err(err);
         }
+        // The `Cool`-subtype sibling: `Str.comb` / `Int.uc` refuse the
+        // undefined invocant, `Str.uc` answers `""` with a warning (#9772).
+        if let Some(result) = self.cool_type_object_string_method(&target, method) {
+            return result;
+        }
         // The NQP cursor protocol (#7883, #7931): building a cursor
         // (`Match.!cursor_init($s, :0c)`, reached through the callable
         // `Match.^lookup("!cursor_init")` hands back), advancing one
@@ -1231,6 +1236,7 @@ impl Interpreter {
         if method == "return" && args.is_empty() {
             let mut err = RuntimeError::new("return");
             err.return_value = Some(target);
+            err.set_from_method_return();
             return Err(err);
         }
         // .resume / .throw / .rethrow on instances of user-defined Exception
