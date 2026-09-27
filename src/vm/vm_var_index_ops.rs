@@ -641,6 +641,32 @@ impl Interpreter {
         }
     }
 
+    /// Preserve a scalar variable's cell when it is stored in an immutable
+    /// List. The ordinary Index read dereferences the cell, which is right for
+    /// values but loses its identity before `.VAR` can reflect it.
+    // Cost: O(1) for a single `Int` index; otherwise as Index.
+    pub(crate) fn exec_index_var_ref_op(
+        &mut self,
+        is_positional: bool,
+    ) -> Result<(), RuntimeError> {
+        if is_positional && self.stack.len() >= 2 {
+            let n = self.stack.len();
+            if let ValueView::Int(i) = self.stack[n - 1].view()
+                && i >= 0
+                && let ValueView::Array(items, ArrayKind::List | ArrayKind::ItemList) =
+                    self.stack[n - 2].descalarize().view()
+                && let Some(element) = items.get(i as usize)
+                && matches!(element.view(), ValueView::ContainerRef(_))
+            {
+                let element = element.clone();
+                self.stack.truncate(n - 2);
+                self.stack.push(element);
+                return Ok(());
+            }
+        }
+        self.exec_index_op_with_positional(is_positional)
+    }
+
     // Cost: O(1) for a single `Int` index (a `*-1` WhateverCode index is one closure
     // call on `.elems`, also O(1)); O(k) for a slice, k = indices (the result copies
     // only the addressed elements, not the array).

@@ -111,7 +111,20 @@ impl Compiler {
             // value and answers from the container's metadata. Compiling the
             // whole subscript here also keeps the indexed expression's side
             // effects to exactly one evaluation.
-            self.compile_expr(target);
+            if let Expr::Index {
+                target: index_target,
+                index,
+                is_positional,
+            } = target
+            {
+                self.compile_expr(index_target);
+                self.compile_subscript_index(index);
+                self.code.emit(OpCode::IndexVarRef {
+                    is_positional: *is_positional,
+                });
+            } else {
+                self.compile_expr(target);
+            }
             let name_idx = self.code.add_constant(Value::str(source_name));
             self.code.emit(OpCode::LoadConst(name_idx));
             let builtin_idx = self
@@ -143,7 +156,7 @@ impl Compiler {
             self.compile_expr(index_target);
             self.code.emit(OpCode::Dup);
             self.compile_subscript_index(index);
-            self.code.emit(OpCode::Index {
+            self.code.emit(OpCode::IndexVarRef {
                 is_positional: *is_positional,
             });
             let builtin_idx = self

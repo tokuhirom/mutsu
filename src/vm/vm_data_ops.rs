@@ -476,6 +476,20 @@ impl Interpreter {
             _ => code.locals.iter().rposition(|n| n == name),
         };
         let Some(idx) = idx else {
+            // A bare `$` is an anonymous state scalar. It has no compiled local
+            // slot, but a List must still hold its container, including when
+            // its initial value is the Any type object.
+            if name.starts_with("__ANON_STATE_") {
+                let current = self.anon_state_value(name).unwrap_or(inner);
+                let cell = if current.is_container_ref() {
+                    current
+                } else {
+                    current.into_container_ref()
+                };
+                self.sync_anon_state_value(name, &cell);
+                self.set_env_with_main_alias(name, cell.clone());
+                return cell;
+            }
             // The named scalar is not a local of this frame (a captured/outer
             // variable read through the closure env), so there is no slot to box
             // into a shared cell. For List aliasing (`box_type_objects`) the

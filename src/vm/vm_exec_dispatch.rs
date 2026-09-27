@@ -4696,6 +4696,11 @@ impl Interpreter {
                 self.exec_index_op_with_positional(*is_positional)?;
                 *ip += 1;
             }
+            // Cost: O(1) for a single index; otherwise as Index.
+            OpCode::IndexVarRef { is_positional } => {
+                self.exec_index_var_ref_op(*is_positional)?;
+                *ip += 1;
+            }
             // Cost: O(1) (element cell for a single index), otherwise as Index.
             OpCode::IndexInvocantRef { is_positional } => {
                 self.exec_index_invocant_ref_op(*is_positional)?;
