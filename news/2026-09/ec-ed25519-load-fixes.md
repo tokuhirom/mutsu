@@ -3,7 +3,7 @@
 The ecosystem roulette drew **EC 0.6.6** (Lucien Grondin's elliptic-curve cryptography, the
 `ed25519` and `secp256k1` modules), whose ledger record read `blocked_load`:
 `use ed25519` died with "An exception occurred while evaluating a CHECK". Both modules now
-load. Working the suite past that exposed six general interpreter gaps, fixed here. Six more
+load. Working the suite past that exposed six general interpreter gaps. Five are fixed here, and #9954 had already fixed the sixth. Six more
 findings were filed as issues.
 
 ## Fixed
@@ -15,13 +15,12 @@ findings were filed as issues.
   core single-argument prefix operators now live in one helper, `Interpreter::core_prefix_op`
   (`src/runtime/builtins_operators_prefix.rs`). The call fallback and the new
   `native_prefix_next_candidate` both use it.
-- **A block-scoped `use` inside a `unit module` no longer leaks its operators.** Inside
-  `unit module M` an imported operator is aliased as `M::infix:<->`. `pop_import_scope`'s
-  keep-rule treats every package-qualified, non-`GLOBAL::` key as the module's own
-  definition, so the alias survived the block. After ed25519's
-  `constant d = { use FiniteField; ... }()`, every later `* - 1` in the module ran the modular
-  minus. The keys an import scope aliased are now exactly the growth of
-  `imported_routine_aliases` since the push, and those are dropped with it.
+- **A block-scoped `use` inside a `unit module` no longer leaks its operators.** After
+  ed25519's `constant d = { use FiniteField; ... }()`, every later `* - 1` in the module ran
+  FiniteField's modular minus. #9954 (from the Bitcoin draw, landed while this run was in
+  flight) fixed the same `pop_import_scope` keep-rule gap for a routine-body `use`, and it
+  covers this block form too. This change keeps #9954's fix and adds a pin for the
+  block-in-`unit module` shape.
 - **Blob/Buf ~~ Numeric compares the element count**, like an Array. ed25519 dispatches
   `Key.new` on `blob8 $seed where b div 8`. The rule now lives in one helper,
   `positional_numeric_smart_match`, shared by the VM's `pure_smart_match` and the
@@ -47,7 +46,8 @@ findings were filed as issues.
 - #9965: a `blob8`-typed pointy parameter's constraint leaks into the caller's `$h`, a case of
   #8614 that survived.
 - #9966: a mainline `CHECK` runs before the script's earlier constants are initialized.
-- #9967 (`todo:perf`): secp256k1 point doubling is about 100x slower than rakudo.
+- #9967 (`todo:perf`): secp256k1 point doubling is about 100x slower than rakudo, most
+  likely because of #9944.
 
 Pinned by `t/routines/dispatch/callsame-prefix-core-candidate.t`,
 `t/modules/block-import-operator-unit-module-scope.t` (fixtures
