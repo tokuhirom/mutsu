@@ -31,13 +31,13 @@ impl Interpreter {
         result
     }
 
-    /// Cost: O(1) per iteration on an integer Range or a lazy pipe/gather/sequence
-    /// (pulled one element at a time); otherwise O(e) at loop entry, e = elements
-    /// of the iterable (copied into a Vec by `value_to_list` before the first
-    /// iteration), then O(1) per iteration. So `for @a { last }` costs O(e), and a
-    /// `for @big { ... last if ... }` nested in an outer loop is O(outer * e).
-    /// A live-array continuation re-copies the grown array once per pass.
-    /// Rakudo: O(1) at entry, O(1) per iteration -- see #9158.
+    /// Cost: O(1) at entry and per iteration on an integer Range, a lazy
+    /// pipe/gather/sequence (pulled one element at a time) or a plain Array bound
+    /// one element per iteration (read in place, `for_iterates_array_in_place`);
+    /// otherwise O(e) at loop entry, e = elements of the iterable (copied into a
+    /// Vec by `value_to_list` before the first iteration), then O(1) per
+    /// iteration. A live-array continuation re-copies the grown array once per
+    /// pass.
     fn exec_for_loop_op_inner(
         &mut self,
         code: &CompiledCode,
@@ -100,6 +100,7 @@ impl Interpreter {
                         code,
                         spec,
                         &items,
+                        None,
                         body_start,
                         loop_end,
                         compiled_fns,
@@ -245,6 +246,28 @@ impl Interpreter {
             body.claim_single_use_once()?;
         }
         iterable = self.reify_or_consume_seq_target(iterable, "for")?;
+        // A plain Array bound one element per iteration is iterated in place,
+        // reading the live array by index (`ForItemIter::Live`): no copy at
+        // entry, so `for @a { last }` is O(1), and an element the body pushes
+        // or stores is seen when the loop gets there, as Rakudo's Array
+        // iterator does. This subsumes the live-array continuation below for
+        // these loops.
+        if Self::for_iterates_array_in_place(spec, &iterable) {
+            let body_start = *ip + 1;
+            let loop_end = spec.body_end as usize;
+            self.exec_for_loop_body(
+                code,
+                spec,
+                &[],
+                Some(&iterable),
+                body_start,
+                loop_end,
+                compiled_fns,
+                0,
+            )?;
+            *ip = loop_end;
+            return Ok(());
+        }
         let raw_items = if spec.direct_smartmatch
             && matches!(iterable.view(), ValueView::Instance { .. })
             && iterable.is_match_instance()
@@ -332,6 +355,7 @@ impl Interpreter {
                             code,
                             spec,
                             &items,
+                            None,
                             body_start,
                             loop_end,
                             compiled_fns,
@@ -377,6 +401,7 @@ impl Interpreter {
                 code,
                 spec,
                 &all_items,
+                None,
                 body_start,
                 loop_end,
                 compiled_fns,
@@ -416,6 +441,28 @@ impl Interpreter {
         }
         *ip = loop_end;
         Ok(())
+    }
+
+    /// Whether `for` iterates `iterable` in place (`ForItemIter::Live`): a
+    /// plain, non-itemized Array with ordinary storage, bound one element per
+    /// iteration by a sequential loop. Every other shape keeps the
+    /// materialized item list — a multi-parameter or threaded loop needs it,
+    /// an itemized Array is a single item, a shaped Array iterates its
+    /// leaves, a lazy one must stay lazy, and a native-storage one decodes.
+    // Cost: O(1).
+    fn for_iterates_array_in_place(spec: &ForLoopSpec, iterable: &Value) -> bool {
+        !spec.threaded
+            && !spec.chunks_items()
+            && spec.arity <= 1
+            && !spec.autothread_junctions
+            && !spec.zero_positional_params
+            && !spec.scalar_list_source
+            && spec.multi_param_names.is_empty()
+            && matches!(
+                iterable.view(),
+                ValueView::Array(data, crate::value::ArrayKind::Array | crate::value::ArrayKind::List)
+                    if data.native_storage_node().is_none()
+            )
     }
 
     /// `for $obj` where `$obj` is an instance of a class that `does Iterable`
