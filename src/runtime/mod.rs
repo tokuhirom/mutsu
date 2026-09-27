@@ -2325,6 +2325,10 @@ pub struct Interpreter {
     /// per thread (see [`io_handles`] module docs and `clone_for_thread`).
     io_handles: Arc<RwLock<io_handles::IoHandleTable>>,
     pub(crate) program_path: Option<String>,
+    /// [`Self::program_path`] interned, set with it (`set_program_path`), so
+    /// the per-call unit lookup (`unit_of_source_sym`) compares two symbols
+    /// instead of resolving one back to text.
+    pub(crate) program_path_sym: Option<Symbol>,
     /// Name of the package currently in scope (e.g. `GLOBAL`, `Foo::Bar`),
     /// used to build fully-qualified names during function/method dispatch and
     /// declaration. Held behind transitional `Arc<RwLock>` scaffolding so the VM

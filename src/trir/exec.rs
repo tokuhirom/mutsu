@@ -307,14 +307,21 @@ impl Interpreter {
                     let pos = self.ipop();
                     // Read in place: the operand is not consumed, so cloning
                     // it (a refcount pair) bought nothing.
-                    let cp = Self::trir_ord_at(&self.trir.ol[obase + *n as usize], pos);
+                    let t = &mut self.trir;
+                    let cp =
+                        Self::trir_ord_at_memo(&mut t.str_memo, &t.ol[obase + *n as usize], pos);
                     self.trir.ns.push(cp);
                 }
                 TrOp::OrdAtOuter(n) => {
                     let pos = self.ipop();
                     // Read in place: the operand is not consumed, so cloning
                     // it (a refcount pair) bought nothing.
-                    let cp = Self::trir_ord_at(&self.trir.outers[cbase + *n as usize], pos);
+                    let t = &mut self.trir;
+                    let cp = Self::trir_ord_at_memo(
+                        &mut t.str_memo,
+                        &t.outers[cbase + *n as usize],
+                        pos,
+                    );
                     self.trir.ns.push(cp);
                 }
                 TrOp::AtPosILocal(n) => {
