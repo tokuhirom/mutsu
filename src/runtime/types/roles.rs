@@ -757,6 +757,22 @@ impl Interpreter {
             Some((role_def, _, _)) => Some(role_def.clone()),
             None => self.registry().roles.get(role_name).cloned(),
         };
+        // Role type-parameter keys used for composition are normalized
+        // (sigil-less), but a declaration expression still reads the spelling
+        // from the parameter declaration: `&code` loads `&code`, not `code`.
+        // This matters for role attributes such as `has &.code = &code`, whose
+        // default runs while a role is mixed into an Attribute by a trait.
+        let role_type_param_defs = role.as_ref().and_then(|role_def| {
+            self.registry()
+                .role_candidates
+                .get(role_name)
+                .and_then(|candidates| {
+                    candidates
+                        .iter()
+                        .find(|candidate| candidate.role_def.role_id == role_def.role_id)
+                })
+                .map(|candidate| candidate.type_param_defs.clone())
+        });
         if role.is_none()
             && !matches!(role_name, "Cool" | "Any" | "Mu")
             && !super::type_registry::is_builtin_role_name(role_name)
@@ -966,6 +982,17 @@ impl Interpreter {
                         .trim_start_matches(['$', '@', '%', '&']);
                     self.env.insert(name.clone(), value.clone());
                     self.env.insert(bare.to_string(), value.clone());
+                    if let Some(param_defs) = &role_type_param_defs {
+                        for param_def in param_defs {
+                            let declared_bare = param_def
+                                .name
+                                .trim_start_matches(':')
+                                .trim_start_matches(['$', '@', '%', '&']);
+                            if declared_bare == bare {
+                                self.env.insert(param_def.name.clone(), value.clone());
+                            }
+                        }
+                    }
                 }
                 Some(saved)
             } else {
