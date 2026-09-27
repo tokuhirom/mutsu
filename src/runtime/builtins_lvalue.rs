@@ -435,7 +435,13 @@ impl Interpreter {
                 .env
                 .iter()
                 .filter(|(k, v)| {
-                    Self::is_writeback_safe_scalar(v)
+                    // Proxy callbacks commonly name their invocant `$self`.
+                    // That parameter shadows the enclosing method's `self`
+                    // while the callback runs; treating the temporary Proxy
+                    // argument as a caller writeback would replace the real
+                    // invocant with the assigned scalar.
+                    *k != "self"
+                        && Self::is_writeback_safe_scalar(v)
                         && pre_env.get(*k).map(|p| p != *v).unwrap_or(true)
                 })
                 .map(|(k, _)| k.resolve())

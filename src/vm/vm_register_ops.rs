@@ -753,6 +753,9 @@ impl Interpreter {
                     && t != "default"
                     && !t.starts_with("DEPRECATED")
                     && *t != "hidden-from-USAGE"
+                    // `is cached` is a built-in routine trait, handled by the
+                    // compiled closure path rather than trait_mod:<is>.
+                    && *t != "cached"
                     && !matches!(t.as_str(), "native" | "symbol" | "nativeconv" | "encoded")
             }) {
                 if !has_trait_mod {

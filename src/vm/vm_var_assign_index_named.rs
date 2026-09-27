@@ -5417,6 +5417,16 @@ impl Interpreter {
         let raw_val = self.fetch_proxy_for_store(raw_val)?;
         let idx = self.stack.pop().unwrap_or(Value::NIL);
         let target = self.stack.pop().unwrap_or(Value::NIL);
+        // A Proxy used as the computed subscript target is a writable view of
+        // the value returned by FETCH. Raku applies the index to that fetched
+        // aggregate directly (`Proxy.new(FETCH => -> $ { %h })<key> = value`),
+        // rather than treating the Proxy as an opaque non-container and
+        // dropping the store in the generic catch-all below.
+        let target = if target.is_proxy_value() {
+            self.auto_fetch_proxy(&target)?
+        } else {
+            target
+        };
         // A Range (including one held in an itemized Scalar) is Positional but
         // immutable.  Reject a computed-target element write before the generic
         // path treats it as a scalar to auto-vivify.

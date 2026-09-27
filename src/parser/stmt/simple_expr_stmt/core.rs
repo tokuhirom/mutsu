@@ -676,6 +676,9 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
             remaining_len: err.remaining_len.or(Some(rest.len())),
             exception: None,
         })?;
+        // Indexed bind RHSs are values too: a compound `*` expression must be
+        // retained as WhateverCode instead of being evaluated as Numeric(Whatever).
+        let value = crate::parser::expr::wrap_finished_expr(value);
         let source_meta = bind_source_metadata_expr(&value);
         let bind_value = Expr::Call {
             name: Symbol::intern("__mutsu_bind_index_value"),

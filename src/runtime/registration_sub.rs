@@ -1772,6 +1772,11 @@ impl Interpreter {
                     && t != "default"
                     && !t.starts_with("DEPRECATED")
                     && *t != "hidden-from-USAGE"
+                    // `is cached` is a built-in routine trait. It changes
+                    // compiled-routine reuse and must not be offered to a
+                    // user `trait_mod:<is>` handler (or reported as unknown
+                    // when the declaration is loaded from EVAL).
+                    && *t != "cached"
                     // NativeCall traits are consumed by `register_native_call_sub`
                     // above, not by `trait_mod:<is>`.
                     && !matches!(t.as_str(), "native" | "symbol" | "nativeconv" | "encoded")
