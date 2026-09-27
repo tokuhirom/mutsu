@@ -96,10 +96,14 @@ pub(super) fn alternation_branch_delta(
         new_caps.named.entry(k).or_default().merge(v);
     }
     for &name in &flags.named {
-        new_caps.named.entry(name).or_insert_with(|| NamedSlot {
-            nodes: Vec::new(),
-            quantified: true,
-        });
+        new_caps
+            .named
+            .entry(name)
+            .and_modify(|slot| slot.quantified = true)
+            .or_insert_with(|| NamedSlot {
+                nodes: Vec::new(),
+                quantified: true,
+            });
     }
     new_caps.extend_capture_alias_map(inner_caps.take_capture_alias_map());
     new_caps.positional.append(&mut inner_caps.positional);

@@ -1,6 +1,6 @@
 use Test;
 
-plan 9;
+plan 12;
 
 # #9675: Rakudo decides list-vs-singular for a capture NAME statically, from
 # the whole regex (QRegex's `capnames`: quantified, or bound more than once in
@@ -48,3 +48,15 @@ grammar G7 {
 }
 my @child = G7.parse('')<lexerElement>>>.ast;
 is @child.elems, 0, 'an action-style .ast map over the untaken branch works on []';
+
+# ABC 0.6.13 exposed the complementary case: a name that is list-valued in a
+# later alternation branch must remain a List when the earlier branch matches
+# and supplies the one capture.
+grammar G8 {
+    token TOP { <e> | [ '[' <e>+ ']' ] }
+    token e { \w }
+}
+my $taken = G8.parse('a');
+is $taken<e>.WHAT.raku, 'Array', 'a selected branch keeps a statically list-valued name';
+is $taken<e>.elems, 1, 'the selected branch contributes one list entry';
+is $taken<e>[0].Str, 'a', 'the selected branch list entry has the captured text';
