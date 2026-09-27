@@ -162,6 +162,29 @@ impl Interpreter {
         }
     }
 
+    /// Snapshot the lexical names in one caller frame for `CALLER::LEXICAL::`.
+    // Cost: O(v), v = visible entries in the selected caller environment.
+    pub(crate) fn caller_lexical_stash_entries(&self, depth: usize) -> ValueMap {
+        let stack_len = self.caller_env_stack.len();
+        let Some(env) = depth
+            .checked_sub(1)
+            .and_then(|offset| stack_len.checked_sub(1 + offset))
+            .and_then(|index| self.caller_env_stack.get(index))
+        else {
+            return ValueMap::default();
+        };
+        let merged = env.filtered_flat(&|_, _| true);
+        let mut entries = ValueMap::default();
+        for (key, value) in merged.iter() {
+            let key = key.resolve();
+            if self.should_hide_from_my_global_stash(&key) {
+                continue;
+            }
+            entries.insert(Self::add_sigil_prefix(&key), value.clone());
+        }
+        entries
+    }
+
     /// Look up a variable through the `$CALLERS::` chain — "any caller scope".
     ///
     /// `cascade` (a `$*`-twigil dynamic name) walks the caller frames from the

@@ -19,6 +19,12 @@ impl Interpreter {
             self.stack.push(stash);
             return;
         }
+        if let Some(depth) = Self::caller_lexical_stash_depth(name) {
+            let entries = self.caller_lexical_stash_entries(depth);
+            let stash = self.pseudo_stash_hash(entries);
+            self.stack.push(stash);
+            return;
+        }
         if name.strip_suffix("::") == Some("OUTER") {
             // OUTER:: is lexical, not package-based. Expose captured lexical vars
             // from the current interpreter environment as stash entries.
@@ -93,7 +99,9 @@ impl Interpreter {
     /// builders in [`Self::exec_get_pseudo_stash_op`]).
     // Cost: O(m), m = bytes of the name, plus one env probe.
     fn named_pseudo_stash_target(&self, name: &str) -> Option<String> {
-        if Self::caller_stash_depth(name).is_some() {
+        if Self::caller_stash_depth(name).is_some()
+            || Self::caller_lexical_stash_depth(name).is_some()
+        {
             return None;
         }
         if let Some(package) = name.strip_suffix("::")

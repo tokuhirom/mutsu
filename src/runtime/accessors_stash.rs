@@ -314,6 +314,13 @@ impl Interpreter {
         (!parts.is_empty() && parts.iter().all(|part| *part == "CALLER")).then_some(parts.len())
     }
 
+    /// Parse `CALLER::...::LEXICAL::`, the lexical-pad view of a caller frame.
+    // Cost: O(n), n = bytes in the pseudo-stash name.
+    pub(crate) fn caller_lexical_stash_depth(name: &str) -> Option<usize> {
+        let prefix = name.strip_suffix("LEXICAL::")?;
+        Self::caller_stash_depth(prefix)
+    }
+
     /// Build a `Stash` view that retains the address of one caller frame for
     /// container operations without exposing the hidden pad through iteration.
     pub(crate) fn caller_stash_value(&self, name: &str, depth: usize) -> Value {
