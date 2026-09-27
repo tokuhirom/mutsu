@@ -879,6 +879,15 @@ impl Compiler {
                     op: crate::token_kind::TokenKind::Tilde,
                     expr: Box::new(Expr::HashVar(name.clone())),
                 }),
+                // A `{ … }` closure part is its own Raku call frame
+                // (`"{callframe(0).code.^name}"` is `Block`, the enclosing
+                // routine one level up), so count it like a `for` body for the
+                // `callframe` call sites inside (see `callframe_block_depth`).
+                Expr::DoStmt(stmt) if matches!(stmt.as_ref(), Stmt::Block(_)) => {
+                    self.callframe_block_depth += 1;
+                    self.compile_expr(part);
+                    self.callframe_block_depth -= 1;
+                }
                 _ => self.compile_expr(part),
             }
         }
