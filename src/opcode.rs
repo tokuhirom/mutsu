@@ -7108,6 +7108,10 @@ pub(crate) struct CompiledCode {
     /// which class layout the slot's attribute access (`$!x` / `$.x`) last
     /// resolved to. Only attribute slots ever fill theirs.
     pub(crate) attr_sites: crate::value::AttrSiteCaches,
+    /// ADR-0121 D3: one memo per string constant, remembering the type object
+    /// a `GetBareWord` of that constant resolved to, for one registry write
+    /// generation (see `Interpreter::exec_get_bare_word_op`).
+    pub(crate) bareword_sites: crate::value::BarewordSiteCaches,
     /// Lazily-built "this slot's read has no name-shaped guard work" bit per
     /// local slot (see [`CompiledCode::local_read_plain`]). The static half of
     /// both the interpreter's `GetLocal` fast path (#8332) and the JIT's Tier B
@@ -7684,6 +7688,7 @@ impl CompiledCode {
             const_syms: Vec::new(),
             local_attr_keys: std::sync::OnceLock::new(),
             attr_sites: Default::default(),
+            bareword_sites: Default::default(),
             local_read_plain: std::sync::OnceLock::new(),
             rebind_target_slots: Vec::new(),
             rebound_slots: Vec::new(),

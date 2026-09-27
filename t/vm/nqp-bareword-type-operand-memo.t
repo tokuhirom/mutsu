@@ -8,7 +8,7 @@ use nqp;
 # must not change. (Each routine here is one TRIR accepts; see
 # MUTSU_TRIR_DUMP=1.)
 
-plan 8;
+plan 11;
 
 class IB { has $!a; }
 class JB { has $!a; }
@@ -32,6 +32,14 @@ my sub make(int $n) {
 my sub make-of(\T) { nqp::create(T) }
 isa-ok make-of(IB), IB, 'a sigilless class operand, first class';
 isa-ok make-of(JB), JB, 'a sigilless class operand, another class';
+
+# A type capture binds its name per call without a declaration; the first
+# call binds it to the same-named class, which answers the spelling too.
+class TC { }
+my sub make-captured(::TC $x) { nqp::create(TC).^name }
+is make-captured(TC.new), 'TC', 'a type capture bound to the same-named class';
+is make-captured(42), 'Int', 'the same capture bound to another type';
+is make-captured('s'), 'Str', 'and to a third';
 
 # A nested class named by its short spelling inside its outer package
 # resolves to the qualified class, which is not the spelling; it keeps

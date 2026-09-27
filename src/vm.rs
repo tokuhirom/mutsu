@@ -153,6 +153,7 @@ mod vm_call_method_compiled_io;
 pub(crate) use vm_call_method_compiled_io::note_io_handle_user_method_declared;
 mod vm_attr_site;
 mod vm_attr_type_constraint;
+mod vm_bareword_site;
 pub(crate) use vm_attr_type_constraint::AttrTypeConstraintCache;
 mod vm_accessor_lane;
 pub(crate) mod vm_block_env;

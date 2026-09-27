@@ -925,6 +925,7 @@ pub(crate) mod types;
 // `pub(crate)`: the analysis frontend (`crate::analysis`, ADR-0065) calls the
 // interpreter-free entry point directly.
 mod plain_fn_resolve_memo;
+mod registry_gen;
 pub(crate) mod undeclared_routines;
 mod unicode;
 mod unit_private_routines;

@@ -67,15 +67,6 @@ impl Interpreter {
             .cloned()
     }
 
-    pub(super) fn exec_get_bare_word_op(
-        &mut self,
-        code: &CompiledCode,
-        name_idx: u32,
-        compiled_fns: &CompiledFns,
-    ) -> Result<(), RuntimeError> {
-        self.push_bare_word_value(Self::const_str(code, name_idx), compiled_fns)
-    }
-
     /// Resolve a bareword term and push it.
     ///
     /// Split out of the opcode arm so a caller holding the name in something
