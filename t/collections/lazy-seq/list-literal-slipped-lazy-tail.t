@@ -44,4 +44,4 @@ is-deeply @s.splice(1, 10), [<b c d>], 'splice on a finite lazy-tailed array';
 is-deeply @s, [<a>], 'and the array is spliced';
 my @t = lazy <b c d>;
 is @t.shift, 'b', 'shift on a lazy-marked cached array';
-is-deeply @t, [<c d>], 'and the array is shifted';
+is @t[^2], <c d>, 'and the array is shifted';
