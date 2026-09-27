@@ -68,6 +68,20 @@ impl Interpreter {
         }
     }
 
+    /// The prefix counterpart of [`Self::native_infix_next_candidate`]: the
+    /// core `prefix:<op>` is the implicit final candidate after a user one.
+    fn native_prefix_next_candidate(
+        &mut self,
+        name: &str,
+        args: &[Value],
+    ) -> Option<Result<Value, RuntimeError>> {
+        let op = name.strip_prefix("prefix:<")?.strip_suffix('>')?;
+        let [arg] = args else {
+            return None;
+        };
+        self.core_prefix_op(op, arg)
+    }
+
     /// ADR-0019 E9b-0: `wrap_dispatch_stack`, `method_dispatch_stack`, and
     /// `multi_dispatch_stack` are independent stacks, each stamped with a
     /// shared monotonic `dispatch_token` at push time. `callsame`/`nextsame`/
@@ -1505,7 +1519,9 @@ impl Interpreter {
                 // Core infix operators are implicit final candidates: they do
                 // not occur in `candidates`, but `callsame` from a user
                 // `infix:<op>` must still reach them.
-                if let Some(result) = Self::native_infix_next_candidate(&_name, &call_args) {
+                let native_op = Self::native_infix_next_candidate(&_name, &call_args)
+                    .or_else(|| self.native_prefix_next_candidate(&_name, &call_args));
+                if let Some(result) = native_op {
                     let result = result?;
                     if tail_call {
                         return Err(RuntimeError::return_signal(result));

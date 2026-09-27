@@ -65,26 +65,12 @@ impl Interpreter {
             if args.is_empty() {
                 return Ok(Value::NIL);
             }
-            // An lvalue argument arrives tagged as a `VarRef` (the call site
-            // cannot know no user candidate wants `is rw`); the core operators
-            // below read its value. Without this `-$x` computed `-(VarRef)`,
-            // i.e. 0, whenever a user `multi prefix:<->` turned `-$x` into a
-            // call and none of its candidates took the argument.
+            if let Some(result) = self.core_prefix_op(op, &args[0]) {
+                return result;
+            }
             let arg = args[0].unwrap_varref();
             let normalized = if op == "−" { "-" } else { op };
             return match op {
-                "!" => Ok(Value::truth(!arg.truthy())),
-                "+" => Ok(crate::runtime::coerce_to_numeric(arg.clone())),
-                "-" | "−" => crate::builtins::arith_negate(arg.clone()),
-                "~" => {
-                    if let Some(err) = self.failure_to_runtime_error_if_unhandled(arg) {
-                        return Err(err);
-                    }
-                    Ok(Value::str(crate::runtime::utils::coerce_to_str(arg)))
-                }
-                "?" => Ok(Value::truth(arg.truthy())),
-                "so" => Ok(Value::truth(arg.truthy())),
-                "not" => Ok(Value::truth(!arg.truthy())),
                 "++" => crate::builtins::arith_add(arg.clone(), Value::int(1)),
                 "--" => Ok(crate::builtins::arith_sub(arg.clone(), Value::int(1))),
                 _ => {

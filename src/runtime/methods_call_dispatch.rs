@@ -652,7 +652,7 @@ impl Interpreter {
         // the plain scalars, which otherwise threw X::Method::NotFound.
         if method == "ACCEPTS"
             && args.len() == 1
-            && matches!(
+            && (matches!(
                 target.view(),
                 ValueView::Int(_)
                     | ValueView::Num(_)
@@ -661,6 +661,10 @@ impl Interpreter {
                     | ValueView::Str(_)
                     | ValueView::Bool(_)
             )
+            // A Blob/Buf too: `Blob.ACCEPTS` compares element-wise (ed25519's
+            // `method ACCEPTS { self.blob.ACCEPTS(.blob) }`).
+            || matches!(target.view(), ValueView::Instance { attributes, .. }
+                if crate::value::value_buf::has_buf_elems(&attributes)))
         {
             let matched = self.smart_match(&args[0], &target);
             return Ok(Value::truth(matched));

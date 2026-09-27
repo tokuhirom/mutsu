@@ -2003,6 +2003,13 @@ impl Interpreter {
             {
                 left.to_string_value() == right.to_string_value()
             }
+            // Blob/Buf (and Array) ~~ Numeric compares the element count.
+            (ValueView::Array(..) | ValueView::Instance { .. }, _)
+                if let Some(result) =
+                    crate::vm::vm_smart_match::positional_numeric_smart_match(left, right) =>
+            {
+                result
+            }
             // Instance ~~ Type or other: identity check (false)
             (ValueView::Instance { .. }, _) | (_, ValueView::Instance { .. }) => false,
             // Range ~~ Range: LHS is subset of RHS.

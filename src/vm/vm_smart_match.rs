@@ -82,6 +82,29 @@ fn is_numericish_matcher(v: &Value) -> bool {
     }
 }
 
+/// `Positional ~~ Numeric`: a list or buffer smart-matched against a number
+/// compares numerically (`@a == $n`), and its numeric value is its element
+/// count — so `[1,2,3] ~~ 3` and `blob8.new(0 xx 32) ~~ 32` are True (the
+/// latter is the EC dist's `blob8 $seed where b div 8` constraint). `None`
+/// when `left` is not an Array/Buf or `right` is not a plain number.
+/// Shared by the VM's `pure_smart_match` and the interpreter's `smart_match`.
+// Cost: O(1), the element count is stored.
+pub(crate) fn positional_numeric_smart_match(left: &Value, right: &Value) -> Option<bool> {
+    if !is_numericish_matcher(right) || matches!(right.view(), ValueView::Mixin(..)) {
+        return None;
+    }
+    let elems = match left.view() {
+        ValueView::Array(a, _) => a.items().len(),
+        ValueView::Instance { attributes, .. }
+            if crate::value::value_buf::has_buf_elems(&attributes) =>
+        {
+            crate::value::value_buf::buf_len_or_zero(&attributes)
+        }
+        _ => return None,
+    };
+    pure_smart_match(&Value::int(elems as i64), right)
+}
+
 /// `IO::Path ~~ :e/:d/:f/:l/:r/:w/:x/:rw/:rwx/:s/:z` file-test result (and
 /// negated forms `:!e`, ...), shared by the `Pair`- and `ValuePair`-flavour
 /// match arms in `pure_smart_match` below.
@@ -284,13 +307,11 @@ pub(crate) fn pure_smart_match(left: &Value, right: &Value) -> Option<bool> {
         (ValueView::Int(a), ValueView::Str(b)) => Some(b.trim().parse::<f64>() == Ok(a as f64)),
         (ValueView::Nil, ValueView::Str(s)) => Some(s.is_empty()),
 
-        // Array/List ~~ Numeric: a list smart-matched against a number compares
-        // numerically (`@a == $n`), and a list's numeric value is its element
-        // count — so `[1,2,3] ~~ 3` is True (3 elems), `~~ 2` is False.
-        (ValueView::Array(a, _), ValueView::Int(b)) => Some(a.items().len() as i64 == b),
-        (ValueView::Array(a, _), ValueView::Num(b)) => Some(a.items().len() as f64 == b),
-        (ValueView::Array(a, _), ValueView::Rat(n, d)) => {
-            Some(d != 0 && a.items().len() as i64 * d == n)
+        // Array/List and Blob/Buf ~~ Numeric (see `positional_numeric_smart_match`).
+        (ValueView::Array(..) | ValueView::Instance { .. }, _)
+            if positional_numeric_smart_match(left, right).is_some() =>
+        {
+            positional_numeric_smart_match(left, right)
         }
 
         // IO::Path ~~ IO::Path: compare by cleanup.absolute
