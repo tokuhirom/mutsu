@@ -3514,8 +3514,10 @@ impl Compiler {
                     Stmt::MarkBind,
                     decl_stmt(actual_name.clone(), value_expr),
                 ])
-            } else {
+            } else if actual_name == "_" {
                 bind_stmt(actual_name.clone(), value_expr)
+            } else {
+                decl_stmt(actual_name.clone(), value_expr)
             };
             if actual_name == "_" {
                 deferred_topic = Some(stmt);

@@ -313,12 +313,12 @@ pub(crate) struct ForLoopSpec {
     /// List value into a mutable Array before the bind-prefix assignments run.
     pub(crate) multi_param_is_copy: Vec<bool>,
     /// Compiler-baked local slot for each `multi_param_names` entry, when the
-    /// name already has one in the enclosing scope. A multi-param loop binds
-    /// its parameters via a plain `Stmt::Assign` (`build_for_bind_stmts`), not
-    /// a `my`-style declaration, so it does NOT get a fresh shadow slot: the
-    /// bind resolves to whatever slot `name` already occupies (an enclosing
-    /// `my $v`) and overwrites it in place for the loop's duration. `None`
-    /// when `name` has no local slot at all (the bind target is a global).
+    /// name already has one in the enclosing scope. A multi-param loop
+    /// declares its parameters (`build_for_bind_stmts`), so a name an enclosing
+    /// scope declared gets a fresh shadow slot and this one is left alone; a
+    /// name whose slot has no enclosing declaration (a free variable's slot)
+    /// is reused by the declaration and overwritten for the loop's duration.
+    /// `None` when `name` has no local slot before the loop.
     /// Parallel to `multi_param_names`. Lets the VM restore the pre-loop value
     /// straight into that slot after the loop, mirroring `param_local` for the
     /// single-param form — see `todo/tickets/for-multi-param-shadow-clobbers-outer-lexical.md`.

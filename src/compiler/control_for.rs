@@ -378,13 +378,13 @@ impl Compiler {
                     .and_then(|bare| self.local_map.get(bare).copied())
             })
         });
-        // The local slot each multi-param bind will land in, captured BEFORE
-        // `bind_prefix` is compiled (see the field doc on
-        // `ForLoopSpec::multi_param_locals`): `build_for_bind_stmts` binds via
-        // `Stmt::Assign`, which never allocates a new slot — it resolves to
-        // whatever `local_map` already maps the name to right now, or falls
-        // through to a global write if there is none. Reading `local_map` at
-        // this exact point mirrors that resolution exactly.
+        // The slot each multi-param name resolves to BEFORE the loop (see the
+        // field doc on `ForLoopSpec::multi_param_locals`), captured before
+        // `bind_prefix` is compiled. `build_for_bind_stmts` declares the params,
+        // so a name an enclosing scope declared gets a fresh shadow slot and
+        // this outer slot is untouched; but a name that is in `local_map`
+        // without an enclosing declaration (a free variable's slot) is reused
+        // by the declaration, and the VM restores it from this snapshot.
         let multi_param_locals: Vec<Option<u32>> = params
             .iter()
             .map(|p| {
@@ -498,6 +498,23 @@ impl Compiler {
                 .chain(params.iter())
                 .map(|p| p.strip_prefix('\\').unwrap_or(p).to_string()),
         );
+        // The loop's multi-parameters are declarations of the loop block
+        // (`build_for_bind_stmts` emits them as `my`-style decls), so give them
+        // a scope frame of their own that encloses the body: a same-named
+        // parameter of a nested loop then shadows with a fresh slot instead of
+        // landing in (and clobbering) this loop's body frame, and the names
+        // stop resolving once the loop is over. A name that had no slot before
+        // the loop (an outer single-param loop variable is bound by name, a
+        // routine's free variable resolves through the env) must go back to
+        // that by-name resolution after the loop, so it is dropped from
+        // `local_map` again at the end, rather than left pointing at this
+        // loop's last-iteration value.
+        let fresh_param_names: Vec<String> = params
+            .iter()
+            .map(|p| p.strip_prefix('\\').unwrap_or(p).to_string())
+            .filter(|p| !self.local_map.contains_key(p))
+            .collect();
+        self.push_local_scope();
         for s in &bind_prefix {
             self.compile_stmt(s);
         }
@@ -564,6 +581,10 @@ impl Compiler {
         self.code.patch_loop_end(loop_idx);
         for s in &post_stmts {
             self.compile_stmt(s);
+        }
+        self.pop_local_scope();
+        for name in &fresh_param_names {
+            self.local_map.remove(name);
         }
         // Restore the single named loop param after the post (LAST) phasers ran.
         // The ForLoop opcode deferred this restore (pushing its saved binding)
