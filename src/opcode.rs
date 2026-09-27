@@ -7091,6 +7091,12 @@ pub(crate) struct LocalSlotIndex {
     non_plain: Vec<u32>,
     /// Slots named after a match variable: `/` or a numbered capture (`0`, `1`, ...).
     match_names: Vec<u32>,
+    /// Every variable name some `state_locals` key declares: a key
+    /// `__state_<pkg>::<name>@<ip>` contributes the text after each `::`, which
+    /// answers the old per-execution `key.contains("::<name>@")` scan in one probe.
+    state_names: rustc_hash::FxHashSet<String>,
+    /// `our_locals` grouped by qualified package name, slots in declaration order.
+    our_slots: rustc_hash::FxHashMap<String, Vec<usize>>,
 }
 
 /// A plain user variable name (as opposed to an internal `__mutsu_*` key, a
@@ -7925,6 +7931,22 @@ impl CompiledCode {
                     index.match_names.push(slot);
                 }
             }
+            for (_, key) in &self.state_locals {
+                let key = key.resolve();
+                let Some((head, _ip)) = key.rsplit_once('@') else {
+                    continue;
+                };
+                for (pos, _) in head.match_indices("::") {
+                    index.state_names.insert(head[pos + 2..].to_string());
+                }
+            }
+            for (slot, qualified) in &self.our_locals {
+                index
+                    .our_slots
+                    .entry(qualified.clone())
+                    .or_default()
+                    .push(*slot);
+            }
             index
         })
     }
@@ -7940,12 +7962,47 @@ impl CompiledCode {
             .unwrap_or(&[])
     }
 
+    /// Every local slot named `name`, in slot order -- [`Self::local_slots_of`]
+    /// for a name that is not interned yet.
+    // Cost: O(1) amortized (one hash probe; the O(L) index is built on first use).
+    pub(crate) fn local_slots_named(&self, name: &str) -> &[u32] {
+        // `lookup`, not `intern`: every local name is already interned (the
+        // index is keyed by it), so a name that was never interned is not a
+        // local, and a hot by-name probe must not pay an intern per call. A
+        // hand-built chunk with no pre-interned `locals_sym` interns its names
+        // only when the index is built, so it takes the interning path.
+        let sym = match Symbol::lookup(name) {
+            Some(sym) => sym,
+            None if self.locals_sym.len() == self.locals.len() => return &[],
+            None => Symbol::intern(name),
+        };
+        self.local_slots_of(sym)
+    }
+
     /// Every local slot whose name, with one leading sigil stripped, is `bare`.
     // Cost: O(1) amortized (one hash probe; the O(L) index is built on first use).
     pub(crate) fn local_slots_of_bare(&self, bare: &str) -> &[u32] {
         self.local_slot_index()
             .by_bare
             .get(bare)
+            .map(Vec::as_slice)
+            .unwrap_or(&[])
+    }
+
+    /// Whether `name` is declared `state` somewhere in this chunk (some
+    /// `state_locals` key is `__state_<pkg>::<name>@<ip>`).
+    // Cost: O(1) amortized (one hash probe; the index is built on first use).
+    pub(crate) fn is_state_name(&self, name: &str) -> bool {
+        self.local_slot_index().state_names.contains(name)
+    }
+
+    /// The `our`-linked local slots aliasing the package variable `qualified`,
+    /// in `our_locals` order.
+    // Cost: O(1) amortized (one hash probe; the index is built on first use).
+    pub(crate) fn our_slots_of(&self, qualified: &str) -> &[usize] {
+        self.local_slot_index()
+            .our_slots
+            .get(qualified)
             .map(Vec::as_slice)
             .unwrap_or(&[])
     }

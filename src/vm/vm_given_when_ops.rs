@@ -288,8 +288,7 @@ impl Interpreter {
         Ok(())
     }
 
-    // Cost: O(L) plus the body, L = frame locals (`find_local_slot("_")` by-name scan).
-    // Rakudo: O(1) -- see #9171.
+    // Cost: O(1) plus the body (`find_local_slot("_")` is one probe of the chunk's name index).
     pub(super) fn exec_do_given_expr_op(
         &mut self,
         code: &CompiledCode,

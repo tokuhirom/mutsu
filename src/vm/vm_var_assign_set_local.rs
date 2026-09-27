@@ -3141,9 +3141,9 @@ impl Interpreter {
         Ok(())
     }
 
-    // Cost: O(1) in a loop body's steady state; otherwise O(t), t = the chunk's `state`
-    // locals (the `is_state` scan; the slot lookups go through the chunk's name index).
-    // Rakudo: O(1) -- see #9171.
+    // Cost: O(1) amortized: the slot lookups and the `state`-name test are hash probes
+    // into the chunk's name index (built once per chunk, O(L)), so a sub with K `my`
+    // declarations pays O(K) per call.
     pub(super) fn exec_set_var_dynamic_op(
         &mut self,
         code: &CompiledCode,
@@ -3183,10 +3183,7 @@ impl Interpreter {
             && !name.starts_with('&')
             && (!name.starts_with(['@', '%']) || Self::is_plain_lexical_name(name))
         {
-            let is_state = code
-                .state_locals
-                .iter()
-                .any(|(_, key)| key.contains_str(&format!("::{}@", name)));
+            let is_state = code.is_state_name(name);
             if !is_state {
                 self.thread_redeclared_vars
                     .borrow_mut()
@@ -3262,11 +3259,8 @@ impl Interpreter {
             // reordering, which broke every `zef` invocation.
             // `local_slots_of` answers "does `name` own a slot" from the chunk's
             // name index instead of scanning every local (#9170).
-            let is_body_local = !code.local_slots_of(name_sym).is_empty()
-                && !code
-                    .state_locals
-                    .iter()
-                    .any(|(_, key)| key.contains_str(&format!("::{}@", name)));
+            let is_body_local =
+                !code.local_slots_of(name_sym).is_empty() && !code.is_state_name(name);
             if is_body_local
                 && let Some(saved) = self.loop_local_saved_env.last_mut()
                 && !saved.contains_key(name)

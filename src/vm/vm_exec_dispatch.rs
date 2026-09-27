@@ -4832,8 +4832,8 @@ impl Interpreter {
                 *ip += 1;
             }
 
-            // Cost: O(e + L), e = elements dropped, L = locals of the unit (`find_local_slot`
-            // linear scan). Rakudo: O(e) -- see #9171.
+            // Cost: O(e), e = elements dropped; the slot lookup is one probe of the chunk's name
+            // index.
             OpCode::UndefineAggregate(name_idx) => {
                 let name = Self::const_str(code, *name_idx);
                 if let Some(val) = self.get_env_with_main_alias(name) {
@@ -5129,8 +5129,8 @@ impl Interpreter {
                 self.exec_assign_expr_op(code, *name_idx, *dot_twigil_rmw)?;
                 *ip += 1;
             }
-            // Cost: O(1) plus the method call; a whole-container topic adds O(e) coercion and O(L)
-            // `update_local_if_exists` scans. Rakudo: O(1) -- see #9171.
+            // Cost: O(1) plus the method call; a whole-container topic adds O(e) list/hash
+            // coercion, e = its elements (the slot writes probe the chunk's name index).
             OpCode::TopicDotAssign(name_idx) => {
                 self.exec_topic_dot_assign_op(code, *name_idx)?;
                 *ip += 1;
@@ -5625,8 +5625,8 @@ impl Interpreter {
                 self.sync_source_line(code, *ip);
                 self.exec_package_scope_op(code, *name_idx, *body_end, ip, compiled_fns)?;
             }
-            // Cost: O(L), L = locals of the unit (`update_local_if_exists` linear scan), plus O(1)
-            // avg table inserts. One-shot per declaration. Rakudo: O(1) -- see #9171.
+            // Cost: O(m), m = bytes of the name (copied and interned), plus O(1) avg table inserts
+            // and one probe of the chunk's name index. One-shot per declaration.
             OpCode::RegisterPackage { name_idx } => {
                 let name = Self::const_str(code, *name_idx).to_string();
                 self.shadow_suppressed_type_with_package(&name);
@@ -5650,7 +5650,8 @@ impl Interpreter {
                 self.registry_mut().package_kinds.insert(name, *kind);
                 *ip += 1;
             }
-            // Cost: O(L), L = frame locals (`update_local_if_exists` scans them by name). Rakudo: O(1) -- see #9171.
+            // Cost: O(m), m = bytes of the name (copied and interned), plus O(1) avg table inserts
+            // and one probe of the chunk's name index. One-shot per declaration.
             OpCode::RegisterPackageMy { name_idx } => {
                 let name = Self::const_str(code, *name_idx).to_string();
                 self.shadow_suppressed_type_with_package(&name);
@@ -5918,12 +5919,16 @@ impl Interpreter {
                 self.exec_symbolic_deref_op(code, *sigil_idx, *scopes_idx);
                 *ip += 1;
             }
-            // Cost: O(n + L), n = chars of the name, L = frame locals (by-name slot scans). Rakudo: O(1) -- see #9171.
+            // Cost: O(n), n = chars of the name (built and hashed); the slot/`our` syncs are
+            // probes of the chunk's name index (plus O(p), p = names already pending a by-name
+            // caller writeback, usually 0 or 1).
             OpCode::SymbolicDerefStore(sigil_idx) => {
                 self.exec_symbolic_deref_store_op(code, *sigil_idx)?;
                 *ip += 1;
             }
-            // Cost: O(n + L), n = chars of the name, L = frame locals (by-name slot scans). Rakudo: O(1) -- see #9171.
+            // Cost: O(n), n = chars of the name (built and hashed); the slot syncs are probes of
+            // the chunk's name index (plus O(p), p = names already pending a by-name caller
+            // writeback, usually 0 or 1).
             OpCode::IndirectTypeLookupStore => {
                 self.exec_indirect_type_lookup_store_op(code)?;
                 *ip += 1;
@@ -6059,7 +6064,7 @@ impl Interpreter {
                 self.sync_source_line(code, *ip);
                 self.exec_begin_once_expr_op(code, *body_end, *site_id, ip, compiled_fns)?;
             }
-            // Cost: O(L) plus the body, L = frame locals (`find_local_slot("_")` scan). Rakudo: O(1) -- see #9171.
+            // Cost: O(1) plus the body (the `$_` slot is one probe of the chunk's name index).
             OpCode::DoGivenExpr { body_end } => {
                 self.sync_source_line(code, *ip);
                 self.exec_do_given_expr_op(code, *body_end, ip, compiled_fns)?;
@@ -6320,7 +6325,8 @@ impl Interpreter {
                 self.exec_declare_our_scalar_op(code, *slot, *qualified_idx);
                 *ip += 1;
             }
-            // Cost: O(1) in a loop's steady state, else O(t), t = the chunk's `state` locals (see exec_set_var_dynamic_op). Rakudo: O(1) -- see #9171.
+            // Cost: O(1) amortized (name-index probes; see exec_set_var_dynamic_op), so a sub with
+            // K `my` declarations pays O(K) per call.
             OpCode::SetVarDynamic {
                 name_idx,
                 dynamic,
@@ -6386,7 +6392,8 @@ impl Interpreter {
                 self.bind_caller_var(target, source, *depth as usize)?;
                 *ip += 1;
             }
-            // Cost: O(1) via the baked shadow slot; O(L) by-name scan of frame locals otherwise. Rakudo: O(1) -- see #9171.
+            // Cost: O(1) amortized (baked shadow slot, chunk name index, or captured env; see
+            // get_outer_var).
             OpCode::GetOuterVar {
                 name_idx,
                 depth,
@@ -6397,7 +6404,8 @@ impl Interpreter {
                 self.stack.push(val);
                 *ip += 1;
             }
-            // Cost: O(1) via the baked shadow slot; O(L) by-name scan of frame locals otherwise. Rakudo: O(1) -- see #9171.
+            // Cost: O(1) amortized (baked shadow slot, chunk name index, or captured env; see
+            // get_outer_var).
             OpCode::GetCallerOuterVar {
                 name_idx,
                 depth,
@@ -6586,7 +6594,8 @@ impl Interpreter {
                 self.sigilless_bind_source = Some((code.const_sym(*name_idx), writable));
                 *ip += 1;
             }
-            // Cost: O(1) after a paired MarkSigillessBindSource; O(L) otherwise (rposition over frame locals). Rakudo: O(1) -- see #9171.
+            // Cost: O(1) amortized (the paired MarkSigillessBindSource verdict, else one probe of
+            // the chunk's name index).
             OpCode::MarkSigillessBind(name_idx) => {
                 let name_sym = code.const_sym(*name_idx);
                 // The verdict `MarkSigillessBindSource` took from the bind
@@ -6605,10 +6614,9 @@ impl Interpreter {
                     // binding).
                     let name = name_sym.resolve();
                     let bound = code
-                        .locals
-                        .iter()
-                        .rposition(|n| n == &name)
-                        .and_then(|idx| self.locals.get(idx).cloned())
+                        .local_slots_of(name_sym)
+                        .last()
+                        .and_then(|&idx| self.locals.get(idx as usize).cloned())
                         .or_else(|| self.env().get(&name).cloned())
                         .unwrap_or(Value::NIL);
                     matches!(
