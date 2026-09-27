@@ -564,6 +564,8 @@ pub(crate) use str_iter::{
     StrIterMode, StrIterSpec, parse_limit as str_iter_limit, str_iter_count, str_iter_seq,
 };
 pub(crate) mod list_gen;
+mod map_grep_items;
+pub(crate) use map_grep_items::MapGrepItems;
 mod pure_cursor;
 pub(crate) use list_gen::{ListGen, PositionalMode};
 pub(crate) use pure_cursor::PureCursor;
@@ -596,8 +598,8 @@ pub use guards::{ArcRef, GcRef, RefGuard, WeakGcRef};
 pub(in crate::value) use nanbox::NanBox;
 use native_backing::NativeBacking;
 pub(crate) use seq_body::{
-    MapGrepItems, MapGrepMode, PrefixSource, SeqBody, SeqSource, SeqTaken, SeqView,
-    seq_method_consumes, seq_method_never_touches,
+    MapGrepMode, PrefixSource, SeqBody, SeqSource, SeqTaken, SeqView, seq_method_consumes,
+    seq_method_never_touches,
 };
 
 /// A `'static` Nil for call sites that keep a `&Value` beyond one expression:

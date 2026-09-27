@@ -567,13 +567,14 @@ impl Interpreter {
         target
     }
 
-    /// Cost: O(e) at the call, e = elements of the invocant (copied into the
-    /// deferred `MapGrep` source), then e callback calls at the Seq's FIRST
-    /// consumption, whatever the consumer needs: `@a.map(&f).head(3)`,
-    /// `.first(...)` and `for @a.map(&f) { last }` all run `f` e times. Only an
-    /// infinite/lazy-pipe source (`make_lazy_pipe`) is O(1) per call and one
-    /// callback per element pulled. Rakudo: O(1) per call, one callback per
-    /// element pulled -- see #9158.
+    /// Cost: O(1) at the call on a non-shaped Array (read at pull time,
+    /// `MapGrepItems::Live`); O(e) on any other invocant, e = elements
+    /// (copied into the deferred `MapGrep` source). The callback runs at
+    /// consumption: once per source element a prefix consumer needs
+    /// (`.head(n)`, `.first`, boolification — `pull_map_grep_prefix`), or
+    /// over every element for a full read. An infinite/lazy-pipe source
+    /// (`make_lazy_pipe`) is O(1) per call and one callback per element
+    /// pulled.
     fn dispatch_map_method(
         &mut self,
         target: Value,

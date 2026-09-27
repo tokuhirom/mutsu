@@ -316,9 +316,7 @@ impl Interpreter {
             if have >= needed {
                 return Ok(());
             }
-            body.extend_map_grep_prefix(|source| {
-                self.pull_map_grep_prefix(source, needed - have)
-            })?;
+            body.extend_map_grep_prefix(|source| self.pull_map_grep_prefix(source, needed - have))?;
         }
         Ok(())
     }
