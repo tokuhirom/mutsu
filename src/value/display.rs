@@ -1105,6 +1105,28 @@ impl Value {
                     .map(Value::to_string_value)
                     .unwrap_or_default()
             }
+            // A `Failure` gists as its wrapped exception's message (safe even
+            // when unhandled -- `.gist` never triggers the "used a Failure"
+            // fault), prefixed once it has been marked handled. This is the
+            // raw fallback used where no method dispatch is available (e.g. a
+            // `Failure` embedded in a `Junction`); the generic `{}()` arm
+            // below would otherwise render the type repr `Failure()` instead.
+            ValueView::Instance {
+                class_name,
+                attributes,
+                ..
+            } if class_name == "Failure" => {
+                let msg = attributes
+                    .as_map()
+                    .get("exception")
+                    .map(Value::to_string_value)
+                    .unwrap_or_else(|| "Failed".to_string());
+                if self.is_failure_handled() {
+                    format!("(HANDLED) {}", msg)
+                } else {
+                    msg
+                }
+            }
             ValueView::Instance { class_name, .. } => format!("{}()", class_name),
             ValueView::Junction { kind, values } => {
                 let kind_str = match kind {

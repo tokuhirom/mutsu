@@ -332,7 +332,12 @@ pub(super) fn dispatch(
                 .map(|v| v.to_string_value())
                 .unwrap_or_else(|| "Failed".to_string());
             if method == "gist" {
-                Some(Ok(Value::str(msg)))
+                let gist = if target.is_failure_handled() {
+                    format!("(HANDLED) {}", msg)
+                } else {
+                    msg
+                };
+                Some(Ok(Value::str(gist)))
             } else if method == "raku" || method == "perl" {
                 let raku_str = if target.is_failure_handled() {
                     // For handled Failures, produce an expression that when

@@ -1235,10 +1235,10 @@ impl Interpreter {
             err.set_from_method_return();
             return Err(err);
         }
-        // .resume / .throw / .rethrow on instances of user-defined Exception
-        // subclasses (the builtin fast path only handles Exception/X::*/CX::*/
-        // Failure by name).
-        if matches!(method, "resume" | "throw" | "rethrow" | "fail")
+        // .resume / .throw / .rethrow / .die on instances of user-defined
+        // Exception subclasses (the builtin fast path only handles
+        // Exception/X::*/CX::*/Failure by name).
+        if matches!(method, "resume" | "throw" | "rethrow" | "fail" | "die")
             && args.is_empty()
             && let ValueView::Instance { class_name, .. } = target.view()
         {
@@ -1276,10 +1276,27 @@ impl Interpreter {
                     }
                     return self.builtin_fail(std::slice::from_ref(&target));
                 }
-                // throw / rethrow: build a RuntimeError carrying this exception.
-                // The text is `$exc.message` (a user `method message` wins over
-                // the stored attribute), never the raw attribute — see
-                // `exception_message_text`.
+                // `$failure.die` (`open(...) orelse .die`) re-throws the
+                // exception the Failure already carries -- unconditionally,
+                // unlike `.fail` above, which only does this once the Failure
+                // is handled. Rendering the Failure itself as an exception
+                // would report its type repr `Failure()` instead of the
+                // wrapped exception's message (see `exception_message_text`,
+                // which has no attribute to read on a bare `Failure`).
+                if method == "die"
+                    && cn == "Failure"
+                    && let ValueView::Instance { attributes, .. } = target.view()
+                    && let Some(exc) = attributes.as_map().get("exception").cloned()
+                {
+                    let msg = self.exception_message_or_died_with(&exc);
+                    let mut err = crate::value::RuntimeError::new(msg);
+                    err.exception = Some(Box::new(exc));
+                    return Err(err);
+                }
+                // throw / rethrow / die: build a RuntimeError carrying this
+                // exception. The text is `$exc.message` (a user `method
+                // message` wins over the stored attribute), never the raw
+                // attribute — see `exception_message_text`.
                 let target = self.stamp_thrown_exception_dynamics(&target);
                 let msg = self.exception_message_or_died_with(&target);
                 let mut err = crate::value::RuntimeError::new(msg);
