@@ -1,6 +1,6 @@
 unit module ExportedGrammarChild;
 
-# Fixture for t/modules/unit-module-imported-parent.t: inside a `unit module`,
+# Fixture for t/modules/import-export/unit-module-imported-parent.t: inside a `unit module`,
 # a bare parent names the type this module imported, not `ExportedGrammarChild::*`.
 use ExportedGrammarBase;
 

@@ -24,4 +24,4 @@ ended there: `grammar UsageStr is BasePaths` lost `Grammar` and every inherited 
 name is now what the class stores.
 
 Pinned by `t/routines/call/return-value-spec-nested-block.t` and
-`t/modules/unit-module-imported-parent.t`.
+`t/modules/import-export/unit-module-imported-parent.t`.
