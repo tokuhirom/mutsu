@@ -35,7 +35,7 @@ pub(crate) fn native_method_1arg(
     // An instance of a user subclass of `Int` answers `Int`'s methods on its
     // payload (`builtins::int_subclass`).
     if let Some(result) =
-        crate::builtins::int_subclass::dispatch(&target, method_sym, std::slice::from_ref(arg))
+        crate::builtins::int_subclass::dispatch(target, method_sym, std::slice::from_ref(arg))
     {
         return Some(result);
     }
