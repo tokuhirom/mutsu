@@ -5305,24 +5305,52 @@ fn compile_method_decls(body: &[Stmt]) -> Vec<CompiledMethodDecl> {
         .collect()
 }
 
-fn body_contains_non_nil_return(stmts: &[Stmt]) -> bool {
+/// Whether a routine body `return`s a non-Nil argument *in the routine's own
+/// scope* — the statements rakudo checks against a definite return value
+/// (`--> True`, `--> Nil`, `--> 42`). Rakudo resets `%*SIG_INFO` in every
+/// `block`/`pblock` (Grammar.nqp), so a `return` inside `if $x { ... }`,
+/// `for ... { ... }` or a bare `{ ... }` is never checked: it just returns its
+/// argument. Statement-modifier forms (`return 1 if $x`, `return 1 for @a`)
+/// open no block and are rejected like a direct `return` (Usage::Utils'
+/// `sub say-coloured(... --> True)` returns `True` from inside an `if`).
+// Cost: O(n), n = statements in the routine's own scope (blocks are not entered).
+pub(crate) fn body_contains_non_nil_return(stmts: &[Stmt]) -> bool {
     stmts.iter().any(|stmt| match stmt {
         Stmt::Return(expr) => !matches!(expr, Expr::Literal(value) if value.is_nil()),
         Stmt::If {
             then_branch,
             else_branch,
+            is_statement_modifier: true,
             ..
         } => body_contains_non_nil_return(then_branch) || body_contains_non_nil_return(else_branch),
-        Stmt::While { body, .. }
-        | Stmt::React { body }
-        | Stmt::SyntheticBlock(body)
-        | Stmt::Block(body)
-        | Stmt::For { body, .. } => body_contains_non_nil_return(body),
-        Stmt::Loop { init, body, .. } => {
-            init.as_deref()
-                .is_some_and(|stmt| body_contains_non_nil_return(std::slice::from_ref(stmt)))
-                || body_contains_non_nil_return(body)
+        Stmt::While {
+            body,
+            is_statement_modifier: true,
+            ..
         }
+        | Stmt::For {
+            body,
+            is_statement_modifier: true,
+            ..
+        }
+        | Stmt::Given {
+            body,
+            is_statement_modifier: true,
+            ..
+        }
+        | Stmt::When {
+            body,
+            is_statement_modifier: true,
+            ..
+        }
+        | Stmt::SyntheticBlock(body) => body_contains_non_nil_return(body),
+        Stmt::Label { stmt, .. } => {
+            body_contains_non_nil_return(std::slice::from_ref(stmt.as_ref()))
+        }
+        // A C-style `loop`'s header is in the routine's scope; its body is a block.
+        Stmt::Loop { init, .. } => init
+            .as_deref()
+            .is_some_and(|stmt| body_contains_non_nil_return(std::slice::from_ref(stmt))),
         _ => false,
     })
 }

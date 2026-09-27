@@ -936,6 +936,7 @@ impl Interpreter {
             crate::vm::vm_stats::record_dispatch_entry_intercept("callmethod", "return");
             let mut err = RuntimeError::new("return");
             err.return_value = Some(target);
+            err.set_from_method_return();
             return Err(err);
         }
         // `.throw`/`.rethrow` on an exception instance: attach a backtrace built

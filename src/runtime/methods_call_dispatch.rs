@@ -1227,6 +1227,7 @@ impl Interpreter {
         if method == "return" && args.is_empty() {
             let mut err = RuntimeError::new("return");
             err.return_value = Some(target);
+            err.set_from_method_return();
             return Err(err);
         }
         // .resume / .throw / .rethrow on instances of user-defined Exception

@@ -363,6 +363,7 @@ impl Interpreter {
         let mut ip = 0;
         let mut result = Ok(());
         let mut explicit_return: Option<Value> = None;
+        let mut explicit_from_method = false;
         let mut fail_bypass = false;
         while ip < cf.code.ops.len() {
             // JIT entry (ADR-0004 J2): same hook as vm_call_light.rs — at body
@@ -413,6 +414,7 @@ impl Interpreter {
                         result = Err(e);
                         break;
                     }
+                    explicit_from_method = e.from_method_return();
                     let ret_val = e.return_value.unwrap();
                     explicit_return = Some(ret_val.clone());
                     self.stack.truncate(saved_stack_depth);
@@ -957,6 +959,9 @@ impl Interpreter {
                 let base_result = if let Some(v) = explicit_return {
                     let mut e = RuntimeError::new("return");
                     e.return_value = Some(v);
+                    if explicit_from_method {
+                        e.set_from_method_return();
+                    }
                     Err(e)
                 } else {
                     Ok(ret_val)

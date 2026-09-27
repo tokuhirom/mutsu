@@ -535,11 +535,18 @@ impl Interpreter {
                 self.evaluate_definite_return_value(spec)
             }
             Err(e) if e.return_value.is_some() => {
+                let from_method = e.from_method_return();
                 let explicit = e.return_value.unwrap();
-                if !explicit.is_nil() {
+                if explicit.is_nil() {
+                    return self.evaluate_definite_return_value(spec);
+                }
+                // `27.return` checks the pinned value; a `return 27` that got
+                // past the compile-time check (it sits in a nested block)
+                // returns its own argument, as rakudo's `return` sub does.
+                if from_method {
                     return Err(self.malformed_return_value_error(&explicit, spec));
                 }
-                self.evaluate_definite_return_value(spec)
+                Ok(explicit)
             }
             Err(e) => Err(e),
         }
