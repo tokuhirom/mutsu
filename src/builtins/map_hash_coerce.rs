@@ -19,11 +19,34 @@ use std::collections::HashMap;
 
 /// Build an `X::Hash::Store::OddNumber` error for an odd element count.
 fn make_odd_number_error(items: &[Value]) -> RuntimeError {
-    let count = items.len();
-    let last = items
-        .last()
-        .map(|v| v.to_string_value())
-        .unwrap_or_default();
+    odd_number_error(items.len(), items.last())
+}
+
+/// How rakudo's `X::Hash::Store::OddNumber` shows the element it stopped at:
+/// `Nil`, `type object 'Any'` for a type object, else its `.raku`
+/// (`"a"`, `1.5`, `$[1]`).
+fn odd_element_repr(v: &Value) -> String {
+    match v.view() {
+        ValueView::Nil => "Nil".to_string(),
+        ValueView::Package(name) => format!(
+            "type object '{}'",
+            crate::value::user_facing_type_name(&name.resolve())
+        ),
+        _ => match crate::builtins::methods_0arg::native_method_0arg(v, Symbol::intern("raku")) {
+            Some(Ok(r)) => r.to_string_value(),
+            _ => v.to_string_value(),
+        },
+    }
+}
+
+/// The `X::Hash::Store::OddNumber` for a hash initializer of `count` elements
+/// whose last one is `last`, in rakudo's wording: `Only saw: ...` for a single
+/// element, `Found N (implicit) elements: / Last element seen: ...` otherwise.
+// Cost: O(|last|), the rendering of one element.
+pub(crate) fn odd_number_error(count: usize, last: Option<&Value>) -> RuntimeError {
+    let last = last
+        .map(odd_element_repr)
+        .unwrap_or_else(|| "Nil".to_string());
     let message = if count == 1 {
         format!(
             "Odd number of elements found where hash initializer expected:\n\

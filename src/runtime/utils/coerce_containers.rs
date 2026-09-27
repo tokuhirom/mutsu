@@ -437,10 +437,7 @@ where
     F: FnMut(&Value) -> Result<(String, bool), RuntimeError>,
 {
     let total_items = items.len();
-    let last_item = items
-        .last()
-        .map(Value::to_string_value)
-        .unwrap_or_else(|| "Nil".to_string());
+    let last_item = items.last().cloned();
     let mut map = ValueMap::default();
     let mut original_keys: ValueMap = ValueMap::default();
     // An itemized Pair (`$(:a(1))`) or a Pair held in a `:=` element cell (e.g.
@@ -495,21 +492,10 @@ where
             }
             _ => {
                 let Some(value) = iter.next() else {
-                    let message = format!(
-                        "Odd number of elements found where hash initializer expected: found {total_items} element(s); last element seen: {last_item}"
-                    );
-                    let mut attrs = std::collections::HashMap::new();
-                    attrs.insert(
-                        "message".to_string(),
-                        crate::value::Value::str(message.clone()),
-                    );
-                    let ex = crate::value::Value::make_instance(
-                        crate::symbol::Symbol::intern("X::Hash::Store::OddNumber"),
-                        attrs,
-                    );
-                    let mut err = RuntimeError::new(message);
-                    err.exception = Some(Box::new(ex));
-                    return Err(err);
+                    return Err(crate::builtins::map_hash_coerce::odd_number_error(
+                        total_items,
+                        last_item.as_ref(),
+                    ));
                 };
                 let (str_key, record_original) = encode_key(&item)?;
                 if record_original {
