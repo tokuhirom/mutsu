@@ -14,7 +14,7 @@
         "nok": 0,
         "ok": 23,
         "plan": 23,
-        "secs": 1.33,
+        "secs": 0.99,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -24,7 +24,7 @@
         "nok": 0,
         "ok": 23,
         "plan": 23,
-        "secs": 31.41,
+        "secs": 22.93,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -36,7 +36,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.16,
+        "secs": 0.1,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -46,7 +46,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.93,
+        "secs": 0.68,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -59,7 +59,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 1,
-        "secs": 0.83,
+        "secs": 0.68,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -69,30 +69,29 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 1.87,
+        "secs": 1.22,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "partial",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "multi parse handles array of glob patterns",
-        "nok": 1,
-        "ok": 26,
+        "nok": 0,
+        "ok": 27,
         "plan": 27,
-        "secs": 0.28,
+        "secs": 0.15,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "pass"
       },
       "path": "t/03-glob.t",
       "raku": {
         "nok": 0,
         "ok": 27,
         "plan": 27,
-        "secs": 2.78,
+        "secs": 1.27,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -125,10 +124,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-26",
+    "date": "2026-09-27",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "199f95e",
+    "mutsu_commit": "2f3b7d6",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -143,9 +142,9 @@
   "totals": {
     "baseline_assertions": 52,
     "baseline_files": 4,
-    "mutsu_assertions": 50,
-    "parity_files": 2,
-    "regressed_files": 2
+    "mutsu_assertions": 51,
+    "parity_files": 3,
+    "regressed_files": 1
   },
   "version": "100.0.2"
 }

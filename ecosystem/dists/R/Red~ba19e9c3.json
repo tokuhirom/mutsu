@@ -41,7 +41,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 9.06,
+        "secs": 8.42,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -51,7 +51,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 19.28,
+        "secs": 16.84,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -64,7 +64,7 @@
         "nok": 0,
         "ok": 1,
         "plan": null,
-        "secs": 4.57,
+        "secs": 3.24,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -74,7 +74,7 @@
         "nok": 0,
         "ok": 163,
         "plan": 163,
-        "secs": 61.97,
+        "secs": 43.59,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -87,7 +87,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 4.37,
+        "secs": 2.88,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -97,7 +97,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 4.35,
+        "secs": 1.39,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -110,7 +110,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 3.76,
+        "secs": 2.42,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -120,7 +120,7 @@
         "nok": 0,
         "ok": 28,
         "plan": 28,
-        "secs": 5.37,
+        "secs": 2.23,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -133,7 +133,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 4.38,
+        "secs": 3.25,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -143,7 +143,7 @@
         "nok": 0,
         "ok": 19,
         "plan": 19,
-        "secs": 5.74,
+        "secs": 2.99,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -156,7 +156,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 4.37,
+        "secs": 4.25,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -166,7 +166,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 4.68,
+        "secs": 2.03,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -179,7 +179,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.85,
+        "secs": 0.65,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -189,7 +189,7 @@
         "nok": 0,
         "ok": 66,
         "plan": 66,
-        "secs": 2.43,
+        "secs": 2.34,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -202,7 +202,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 4.13,
+        "secs": 3.12,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -212,7 +212,7 @@
         "nok": 0,
         "ok": 15,
         "plan": 15,
-        "secs": 4.64,
+        "secs": 2.61,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -225,7 +225,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 4.24,
+        "secs": 3.61,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -235,7 +235,7 @@
         "nok": 0,
         "ok": 15,
         "plan": 15,
-        "secs": 2.93,
+        "secs": 4.63,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -248,7 +248,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 4.35,
+        "secs": 3.77,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -258,7 +258,7 @@
         "nok": 0,
         "ok": 9,
         "plan": 9,
-        "secs": 11.46,
+        "secs": 13.84,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -271,7 +271,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 4.33,
+        "secs": 3.74,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -281,7 +281,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 5.26,
+        "secs": 5.34,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -294,7 +294,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 5.35,
+        "secs": 4.39,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -304,7 +304,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 3.06,
+        "secs": 4.56,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -317,7 +317,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 5.42,
+        "secs": 4.45,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -327,7 +327,7 @@
         "nok": 0,
         "ok": 8,
         "plan": 8,
-        "secs": 6.58,
+        "secs": 5.11,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -340,7 +340,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 5.48,
+        "secs": 4.32,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -350,7 +350,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 2.82,
+        "secs": 4.29,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -363,7 +363,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 18,
-        "secs": 4.98,
+        "secs": 3.95,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -373,7 +373,7 @@
         "nok": 0,
         "ok": 18,
         "plan": 18,
-        "secs": 4.79,
+        "secs": 6.71,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -386,7 +386,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 4.64,
+        "secs": 4.46,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -396,7 +396,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 5.63,
+        "secs": 2.81,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -409,7 +409,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 4.72,
+        "secs": 4.68,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -419,7 +419,7 @@
         "nok": 0,
         "ok": 14,
         "plan": 14,
-        "secs": 6.48,
+        "secs": 3.75,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -432,7 +432,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 5.53,
+        "secs": 3.94,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -442,7 +442,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 12.1,
+        "secs": 10.57,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -455,7 +455,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 34,
-        "secs": 6.19,
+        "secs": 4.74,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -465,7 +465,7 @@
         "nok": 0,
         "ok": 34,
         "plan": 34,
-        "secs": 3.74,
+        "secs": 5.42,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -478,7 +478,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 5.57,
+        "secs": 3.76,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -488,7 +488,7 @@
         "nok": 0,
         "ok": 26,
         "plan": 26,
-        "secs": 12.29,
+        "secs": 6.47,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -501,7 +501,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 4.81,
+        "secs": 4.3,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -511,7 +511,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 4.69,
+        "secs": 4.17,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -524,7 +524,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 5.62,
+        "secs": 4.9,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -534,7 +534,7 @@
         "nok": 0,
         "ok": 18,
         "plan": 18,
-        "secs": 15.76,
+        "secs": 16.69,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -547,7 +547,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 4.8,
+        "secs": 4.67,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -557,7 +557,7 @@
         "nok": 0,
         "ok": 7,
         "plan": 7,
-        "secs": 6.44,
+        "secs": 6.63,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -570,7 +570,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 1.09,
+        "secs": 0.89,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -580,7 +580,7 @@
         "nok": 0,
         "ok": 66,
         "plan": 66,
-        "secs": 8.33,
+        "secs": 5.07,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -593,7 +593,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 5.26,
+        "secs": 4.81,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -603,7 +603,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 6.92,
+        "secs": 3.82,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -616,7 +616,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 5.66,
+        "secs": 6.29,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -626,7 +626,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 2.8,
+        "secs": 6.43,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -639,7 +639,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 5.57,
+        "secs": 4.22,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -649,7 +649,7 @@
         "nok": 0,
         "ok": 26,
         "plan": 26,
-        "secs": 5.48,
+        "secs": 7.83,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -662,7 +662,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 5.15,
+        "secs": 4.48,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -672,7 +672,7 @@
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 7.02,
+        "secs": 6.34,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -685,7 +685,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 29,
-        "secs": 5.48,
+        "secs": 4.67,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -695,7 +695,7 @@
         "nok": 0,
         "ok": 29,
         "plan": 29,
-        "secs": 7.09,
+        "secs": 7.17,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -708,7 +708,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.76,
+        "secs": 4.32,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -718,7 +718,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 3.63,
+        "secs": 5.57,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -731,7 +731,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.56,
+        "secs": 3.88,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -741,7 +741,7 @@
         "nok": 0,
         "ok": 7,
         "plan": 7,
-        "secs": 4.29,
+        "secs": 5.31,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -754,7 +754,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.63,
+        "secs": 4.61,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -764,7 +764,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 1.81,
+        "secs": 6.74,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -777,7 +777,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.89,
+        "secs": 5.31,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -787,7 +787,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 3.22,
+        "secs": 4.09,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -800,7 +800,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.61,
+        "secs": 2.78,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -810,765 +810,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 2.83,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "No such method 'dispatcher' for invocant of type 'Any'",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 2.92,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/34-ast-generic.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 16,
-        "plan": 16,
-        "secs": 3.76,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "Can't use unknown trait 'is' -> 'serial' in an attribute declaration.",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 2.58,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/35-create.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 7,
-        "plan": 7,
-        "secs": 2.43,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "Can't use unknown trait 'is' -> 'serial' in an attribute declaration.",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 2.6,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/36-default-deflate.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 5,
-        "plan": 5,
-        "secs": 2.77,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "No such method 'dispatcher' for invocant of type 'Any'",
-        "nok": 0,
-        "ok": 0,
-        "plan": 6,
-        "secs": 2.9,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/37-json.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 6,
-        "plan": 6,
-        "secs": 3.03,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "Can't use unknown trait 'is' -> 'serial' in an attribute declaration.",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 2.59,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/38-equal.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 24,
-        "plan": 24,
-        "secs": 4.92,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "Can't use unknown trait 'is' -> 'serial' in an attribute declaration.",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 2.62,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/39-xmas.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 13,
-        "plan": 13,
-        "secs": 10.76,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "Can't use unknown trait 'is' -> 'id' in an attribute declaration.",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 2.59,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/40-relationship-multiple-columns.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 2,
-        "plan": 2,
-        "secs": 3.6,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "Can't use unknown trait 'is' -> 'serial' in an attribute declaration.",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 2.57,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/41-fallback.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 2,
-        "plan": 2,
-        "secs": 2.76,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "Can't use unknown trait 'is' -> 'serial' in an attribute declaration.",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 2.59,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/42-create-table.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 4,
-        "plan": 4,
-        "secs": 1.22,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "Can't use unknown trait 'is' -> 'serial' in an attribute declaration.",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 2.56,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/43-prefetch.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 101,
-        "plan": 101,
-        "secs": 5.57,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "partial",
-      "mutsu": {
-        "first_failure": "not ok 1 -",
-        "nok": 1,
-        "ok": 0,
-        "plan": 1,
-        "secs": 2.48,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "fail"
-      },
-      "path": "t/44-error-without-id.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 1,
-        "plan": 1,
-        "secs": 2.54,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "No such method 'dispatcher' for invocant of type 'Any'",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 2.92,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/45-is-handling.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 10,
-        "plan": 10,
-        "secs": 3.45,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "Can't use unknown trait 'is' -> 'serial' in an attribute declaration.",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 2.59,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/46-rw.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 20,
-        "plan": 20,
-        "secs": 2.72,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "Can't use unknown trait 'is' -> 'column' in an attribute declaration.",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 2.61,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/47-rypervenche.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 5,
-        "plan": 5,
-        "secs": 7.84,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "Can't use unknown trait 'is' -> 'serial' in an attribute declaration.",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 2.56,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/48-source-source-id.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 4,
-        "plan": 4,
-        "secs": 3.45,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "Unknown function: RED-COLUMN-FORMATTER",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 2.58,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/49-experimental-formater.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 10,
-        "plan": 10,
-        "secs": 1.19,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "Can't use unknown trait 'is' -> 'serial' in an attribute declaration.",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 2.56,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/50-experimental-name.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 4,
-        "plan": 4,
-        "secs": 2.53,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "Can't use unknown trait 'is' -> 'id' in an attribute declaration.",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 2.55,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/51-pre-create-or-update.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 20,
-        "plan": 20,
-        "secs": 2.39,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "No such method 'dispatcher' for invocant of type 'Any'",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 2.96,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/52-schema.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 20,
-        "plan": 20,
-        "secs": 3.07,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "Can't use unknown trait 'is' -> 'serial' in an attribute declaration.",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 2.55,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/53-unique.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 3,
-        "plan": 3,
-        "secs": 1.07,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "Can't use unknown trait 'is' -> 'serial' in an attribute declaration.",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 2.62,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/54-hand-made-many-to-many.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 4,
-        "plan": 4,
-        "secs": 3.08,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 0,
-        "plan": 0,
-        "secs": 0.07,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/55-no-optimization.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 0,
-        "plan": 0,
-        "secs": 0.47,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "bless can only be called on a class or instance",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 2.58,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/56-refreshable.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 24,
-        "plan": 24,
-        "secs": 2.1,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "Confused. expected statement: expected known call arguments or first call argument or positional argument expression or reduction operator or expression statement or ... [at Red-0.2.5/t/57-experimental.rakutest:4]",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 0.48,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/57-experimental.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 1,
-        "plan": 1,
-        "secs": 0.9,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "Can't use unknown trait 'is' -> 'serial' in an attribute declaration.",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 2.6,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/58-nm-relationship.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 3,
-        "plan": 3,
-        "secs": 3.26,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "Can't use unknown trait 'is' -> 'serial' in an attribute declaration.",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 2.64,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/59-tomgraceys-schema.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 2,
-        "plan": 2,
-        "secs": 5.67,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "No such method 'dispatcher' for invocant of type 'Any'",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 2.89,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/60-runtime-role.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 2,
-        "plan": 2,
-        "secs": 2.78,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "Can't use unknown trait 'is' -> 'serial' in an attribute declaration.",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 2.59,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/61-model-as-type.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 10,
-        "plan": 10,
-        "secs": 1.96,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "No such method 'dispatcher' for invocant of type 'Any'",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 2.89,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/62-date-coercion.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 3,
-        "plan": 3,
-        "secs": 2.7,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "Can't use unknown trait 'is' -> 'serial' in an attribute declaration.",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 2.58,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/63-inflate-deflate.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 5,
-        "plan": 5,
-        "secs": 1.34,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "Can't use unknown trait 'is' -> 'serial' in an attribute declaration.",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 2.56,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/64-create-on-defined-obj.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 2,
-        "plan": 2,
-        "secs": 2.57,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "No such method 'create' for invocant of type 'Perl6::Metamodel::ClassHOW'",
-        "nok": 1,
-        "ok": 0,
-        "plan": null,
-        "secs": 2.81,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/65-patrickb.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 3,
-        "plan": 3,
-        "secs": 1.59,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "No such method 'dispatcher' for invocant of type 'Any'",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 2.93,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/66-join-model.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 3,
-        "plan": 3,
-        "secs": 5.89,
+        "secs": 3.33,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -1586,35 +828,12 @@
         "todo": 0,
         "verdict": "die"
       },
-      "path": "t/67-enums.rakutest",
+      "path": "t/34-ast-generic.rakutest",
       "raku": {
         "nok": 0,
-        "ok": 6,
-        "plan": 6,
-        "secs": 2.94,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "The attribute '$!driver' is required, but you did not provide a value for it.",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 3.8,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/68-red-config.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 1,
-        "plan": 1,
-        "secs": 6.44,
+        "ok": 16,
+        "plan": 16,
+        "secs": 4.6,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -1627,16 +846,407 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.57,
+        "secs": 2.41,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
       },
-      "path": "t/69-array-columns.rakutest",
+      "path": "t/35-create.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 7,
+        "plan": 7,
+        "secs": 4.45,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Can't use unknown trait 'is' -> 'serial' in an attribute declaration.",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.31,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/36-default-deflate.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 5,
+        "plan": 5,
+        "secs": 1.32,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "No such method 'dispatcher' for invocant of type 'Any'",
+        "nok": 0,
+        "ok": 0,
+        "plan": 6,
+        "secs": 2.62,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/37-json.rakutest",
       "raku": {
         "nok": 0,
         "ok": 6,
         "plan": 6,
+        "secs": 1.56,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Can't use unknown trait 'is' -> 'serial' in an attribute declaration.",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.28,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/38-equal.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 24,
+        "plan": 24,
+        "secs": 4.82,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Can't use unknown trait 'is' -> 'serial' in an attribute declaration.",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.34,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/39-xmas.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 13,
+        "plan": 13,
+        "secs": 10.24,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Can't use unknown trait 'is' -> 'id' in an attribute declaration.",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.32,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/40-relationship-multiple-columns.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 2,
+        "plan": 2,
+        "secs": 3.05,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Can't use unknown trait 'is' -> 'serial' in an attribute declaration.",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.32,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/41-fallback.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 2,
+        "plan": 2,
+        "secs": 2.66,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Can't use unknown trait 'is' -> 'serial' in an attribute declaration.",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.35,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/42-create-table.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 4,
+        "plan": 4,
+        "secs": 1.18,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Can't use unknown trait 'is' -> 'serial' in an attribute declaration.",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.3,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/43-prefetch.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 101,
+        "plan": 101,
+        "secs": 4.2,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "not ok 1 -",
+        "nok": 1,
+        "ok": 0,
+        "plan": 1,
+        "secs": 2.24,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/44-error-without-id.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 1.35,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "No such method 'dispatcher' for invocant of type 'Any'",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.63,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/45-is-handling.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 10,
+        "plan": 10,
+        "secs": 3.39,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Can't use unknown trait 'is' -> 'serial' in an attribute declaration.",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.32,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/46-rw.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 20,
+        "plan": 20,
+        "secs": 2.62,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Can't use unknown trait 'is' -> 'column' in an attribute declaration.",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.34,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/47-rypervenche.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 5,
+        "plan": 5,
+        "secs": 5.84,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Can't use unknown trait 'is' -> 'serial' in an attribute declaration.",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.32,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/48-source-source-id.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 4,
+        "plan": 4,
+        "secs": 1.89,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Unknown function: RED-COLUMN-FORMATTER",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.34,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/49-experimental-formater.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 10,
+        "plan": 10,
+        "secs": 1.14,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Can't use unknown trait 'is' -> 'serial' in an attribute declaration.",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.3,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/50-experimental-name.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 4,
+        "plan": 4,
+        "secs": 2.37,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Can't use unknown trait 'is' -> 'id' in an attribute declaration.",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.29,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/51-pre-create-or-update.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 20,
+        "plan": 20,
+        "secs": 3.51,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "No such method 'dispatcher' for invocant of type 'Any'",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.64,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/52-schema.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 20,
+        "plan": 20,
         "secs": 2.74,
         "skip": 0,
         "todo": 0,
@@ -1650,17 +1260,154 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.56,
+        "secs": 2.32,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
       },
-      "path": "t/70-submodel.rakutest",
+      "path": "t/53-unique.rakutest",
       "raku": {
         "nok": 0,
-        "ok": 12,
-        "plan": 12,
-        "secs": 1.58,
+        "ok": 3,
+        "plan": 3,
+        "secs": 1.03,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Can't use unknown trait 'is' -> 'serial' in an attribute declaration.",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.37,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/54-hand-made-many-to-many.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 4,
+        "plan": 4,
+        "secs": 2.61,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 0,
+        "plan": 0,
+        "secs": 0.06,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/55-no-optimization.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 0,
+        "plan": 0,
+        "secs": 0.46,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Can't use unknown trait 'is' -> 'serial' in an attribute declaration.",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.34,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/56-refreshable.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 24,
+        "plan": 24,
+        "secs": 3.38,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Confused. expected statement: expected known call arguments or first call argument or positional argument expression or reduction operator or expression statement or ... [at Red-0.2.5/t/57-experimental.rakutest:4]",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.43,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/57-experimental.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.82,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Can't use unknown trait 'is' -> 'serial' in an attribute declaration.",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.34,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/58-nm-relationship.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 3.01,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Can't use unknown trait 'is' -> 'serial' in an attribute declaration.",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.34,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/59-tomgraceys-schema.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 2,
+        "plan": 2,
+        "secs": 5.24,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -1673,16 +1420,177 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.9,
+        "secs": 2.62,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
       },
-      "path": "t/71-conflicting-column-attribute.rakutest",
+      "path": "t/60-runtime-role.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 2,
+        "plan": 2,
+        "secs": 2.61,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Can't use unknown trait 'is' -> 'serial' in an attribute declaration.",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.29,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/61-model-as-type.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 10,
+        "plan": 10,
+        "secs": 1.73,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "No such method 'dispatcher' for invocant of type 'Any'",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.59,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/62-date-coercion.rakutest",
       "raku": {
         "nok": 0,
         "ok": 3,
         "plan": 3,
+        "secs": 1.27,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Can't use unknown trait 'is' -> 'serial' in an attribute declaration.",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.33,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/63-inflate-deflate.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 5,
+        "plan": 5,
+        "secs": 2.57,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Can't use unknown trait 'is' -> 'serial' in an attribute declaration.",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.33,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/64-create-on-defined-obj.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 2,
+        "plan": 2,
+        "secs": 2.5,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "No such method 'create' for invocant of type 'Perl6::Metamodel::ClassHOW'",
+        "nok": 1,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.5,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/65-patrickb.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 2.53,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "No such method 'dispatcher' for invocant of type 'Any'",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.65,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/66-join-model.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 6.02,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "No such method 'dispatcher' for invocant of type 'Any'",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.63,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/67-enums.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
         "secs": 1.47,
         "skip": 0,
         "todo": 0,
@@ -1692,11 +1600,103 @@
     {
       "cmp": "regression",
       "mutsu": {
+        "first_failure": "The attribute '$!driver' is required, but you did not provide a value for it.",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 3.46,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/68-red-config.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 6.02,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Can't use unknown trait 'is' -> 'serial' in an attribute declaration.",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.32,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/69-array-columns.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 2.55,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Can't use unknown trait 'is' -> 'serial' in an attribute declaration.",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.31,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/70-submodel.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 12,
+        "plan": 12,
+        "secs": 1.44,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
         "first_failure": "No such method 'dispatcher' for invocant of type 'Any'",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.9,
+        "secs": 2.61,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/71-conflicting-column-attribute.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 1.4,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "No such method 'dispatcher' for invocant of type 'Any'",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.63,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -1706,7 +1706,7 @@
         "nok": 0,
         "ok": 32,
         "plan": 32,
-        "secs": 2.91,
+        "secs": 4.18,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -1719,7 +1719,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.61,
+        "secs": 2.32,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -1729,7 +1729,7 @@
         "nok": 0,
         "ok": 16,
         "plan": 16,
-        "secs": 6.2,
+        "secs": 5.94,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -1742,7 +1742,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.59,
+        "secs": 2.3,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -1752,7 +1752,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 2.05,
+        "secs": 1.96,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -1765,7 +1765,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 3.97,
+        "secs": 3.65,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -1775,7 +1775,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 3.12,
+        "secs": 4.48,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -1788,7 +1788,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.91,
+        "secs": 2.64,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -1798,7 +1798,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 2.46,
+        "secs": 2.8,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -1811,7 +1811,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.89,
+        "secs": 2.58,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -1821,7 +1821,7 @@
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 1.62,
+        "secs": 2.89,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -1834,7 +1834,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 4.04,
+        "secs": 3.73,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -1844,7 +1844,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 1.29,
+        "secs": 2.82,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -1857,7 +1857,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.56,
+        "secs": 2.28,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -1867,7 +1867,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 1.26,
+        "secs": 1.16,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -1880,7 +1880,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.95,
+        "secs": 2.6,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -1890,7 +1890,7 @@
         "nok": 0,
         "ok": 56,
         "plan": 56,
-        "secs": 3.77,
+        "secs": 3.41,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -1903,7 +1903,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.57,
+        "secs": 2.33,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -1913,7 +1913,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 1.28,
+        "secs": 2.53,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -1926,7 +1926,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.57,
+        "secs": 2.32,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -1936,7 +1936,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 3.25,
+        "secs": 3.08,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -1949,7 +1949,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.92,
+        "secs": 2.59,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -1959,7 +1959,7 @@
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 3.61,
+        "secs": 3.65,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -1972,7 +1972,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.9,
+        "secs": 2.62,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -1982,7 +1982,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 3.72,
+        "secs": 3.33,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -1995,7 +1995,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.9,
+        "secs": 2.63,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -2005,7 +2005,7 @@
         "nok": 0,
         "ok": 11,
         "plan": 11,
-        "secs": 2.89,
+        "secs": 2.94,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -2018,7 +2018,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.92,
+        "secs": 2.66,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -2028,7 +2028,7 @@
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 3.52,
+        "secs": 3.25,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -2156,10 +2156,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-26",
+    "date": "2026-09-27",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "199f95e",
+    "mutsu_commit": "2f3b7d6",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",

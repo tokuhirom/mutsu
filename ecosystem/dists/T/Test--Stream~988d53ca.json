@@ -7,9 +7,139 @@
     "unresolved": []
   },
   "dist": "Test::Stream",
-  "files": [],
+  "files": [
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Unsupported nqp:: op: nqp::time_n",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.22,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/000-suite.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 37,
+        "plan": 37,
+        "secs": 12.17,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Unsupported nqp:: op: nqp::time_n",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.3,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/100-hub.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 10,
+        "plan": 10,
+        "secs": 3.35,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Unsupported nqp:: op: nqp::time_n",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.29,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/200-event-source.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 2.4,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Confused. expected statement: expected expected statement: expected expression statement or listop argument expression after ',' or expected statement: expected expression statement or '}' [at Test-Stream-0.2/t/300-predicates.rakutest:333]",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.14,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/300-predicates.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 74,
+        "plan": 74,
+        "secs": 23.04,
+        "skip": 1,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/350-predicate-exit.rakutest",
+      "raku": {
+        "first_failure": "got expected stderr from test-failures.raku",
+        "nok": 1,
+        "ok": 14,
+        "plan": 15,
+        "secs": 4.78,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Unsupported nqp:: op: nqp::time_n",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.25,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/400-tap-formatter.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 8,
+        "plan": 8,
+        "secs": 14.8,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
   "load": {
-    "Test::Predicates": "Redeclaration of routine 'instance'. Did you mean to declare a multi-sub?",
+    "Test::Predicates": "ok",
     "Test::Predicator": "ok",
     "Test::Stream": "ok",
     "Test::Stream::Diagnostic": "ok",
@@ -25,10 +155,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-26",
+    "date": "2026-09-27",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "199f95e",
+    "mutsu_commit": "2f3b7d6",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -39,13 +169,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/T/ES/TEST_STREAM/615e5fe2e5e93f821dc556bea329d06f709b5bbe.tar.gz"
   },
-  "status": "blocked_load",
+  "status": "red",
   "totals": {
-    "baseline_assertions": 0,
-    "baseline_files": 0,
+    "baseline_assertions": 130,
+    "baseline_files": 5,
     "mutsu_assertions": 0,
     "parity_files": 0,
-    "regressed_files": 0
+    "regressed_files": 5
   },
   "version": "0.2"
 }
