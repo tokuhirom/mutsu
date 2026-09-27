@@ -15,15 +15,33 @@ use Test::Util;
 # Routines that genuinely need an argument must keep falling through to the
 # bareword/X::Obsolete path, and calls with arguments must be untouched.
 
-plan 36;
+plan 37;
 
 # --- the zero-arg call really happens ---------------------------------------
 
 for <join sum min max minmax unique squish repeated flat zip cross roundrobin
-     hash item slip sort undefine val> -> $name {
+     hash item slip undefine val> -> $name {
     my $got = EVAL("my \$x = $name; \$x");
     nok ($got ~~ Str:D && $got eq $name),
         "bare `$name` compiles to a zero-arg call, not the bareword string";
+}
+
+# `sort` is zero-arg-callable too (`sort;` parses as a real call, not the
+# bareword string) but — unlike the routines above — genuinely has nothing to
+# sort with zero arguments, so Rakudo makes the *call* itself a runtime error
+# (`Must specify something to sort`, an X::AdHoc) instead of quietly
+# returning something (issue #9784).
+{
+    my $got;
+    my $message;
+    try {
+        $got = EVAL("my \$x = sort; \$x");
+        CATCH { default { $message = .message } }
+    }
+    nok ($got ~~ Str:D && $got eq 'sort'),
+        'bare `sort` compiles to a zero-arg call, not the bareword string';
+    ok $message.defined && $message.contains('Must specify something to sort'),
+        'bare `sort` dies at runtime instead of silently returning something';
 }
 
 is (my $j = join), '', 'bare `join` returns join()\'s empty string';
