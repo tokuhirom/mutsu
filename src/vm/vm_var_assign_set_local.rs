@@ -85,6 +85,19 @@ impl Interpreter {
         )
     }
 
+    /// True when a `$`-sigil `:=` bind SOURCE is a bare TYPE OBJECT (`$s :=
+    /// IB`, `$s := Int`) — no Scalar container at all, so a later `$s = v` is
+    /// rakudo's own "assign requires a concrete object (got a IB type object
+    /// instead)", not the generic immutable-value wording.
+    ///
+    /// Kept apart from [`Self::bind_source_has_no_container`]'s allowlist —
+    /// which deliberately excludes `Package` — because the two shapes raise
+    /// DIFFERENT exceptions ([`crate::ast::ReadonlyKind::TypeObject`] vs.
+    /// `::Immutable`) even though both leave the name with no container.
+    fn bind_source_is_type_object(v: &Value) -> bool {
+        matches!(v.view(), ValueView::Package(_))
+    }
+
     /// If `name` is a raw `\target` bound to a multi-dim slice lvalue (marked at
     /// bind time by `is_multidim_slice_cells`) whose current value `holder` is a
     /// non-empty list of `ContainerRef` cells, distribute `rhs` element-wise
@@ -1100,6 +1113,12 @@ impl Interpreter {
         let bind_marks_immutable = scalar_bind
             && (bind_source.is_none() || synthetic_index_source)
             && Self::bind_source_has_no_container(&raw_popped);
+        // The same container-less shape, but for a TYPE OBJECT source — see
+        // `bind_source_is_type_object` for why it needs its own kind rather
+        // than folding into `bind_marks_immutable`.
+        let bind_marks_type_object = scalar_bind
+            && (bind_source.is_none() || synthetic_index_source)
+            && Self::bind_source_is_type_object(&raw_popped);
         // The other half of rakudo's rule: `$x = v` needs `$x` bound to a
         // SCALAR container, and a `Hash`/`Map`/`Pair`/real `Array` is not one
         // even though each is mutable through its own interface
@@ -1324,6 +1343,11 @@ impl Interpreter {
                 .trim_start_matches(['$', '@', '%', '&'])
                 .to_string();
             self.mark_readonly_with(&bare, crate::ast::ReadonlyKind::Immutable);
+        } else if bind_marks_type_object {
+            let bare = code.locals[idx]
+                .trim_start_matches(['$', '@', '%', '&'])
+                .to_string();
+            self.mark_readonly_with(&bare, crate::ast::ReadonlyKind::TypeObject);
         }
         // The container-identity half of the same decision (see
         // `bind_marks_no_container`). Set/cleared per declaration so a later
@@ -2161,7 +2185,9 @@ impl Interpreter {
             // binds `$v` to an immutable value, so a later `$v = 5` must die
             // ("Cannot assign to an immutable value"). Clearing it here undid
             // the bind's own decision and let the assignment through (#9277).
-            if !self.no_readonly_vars() && !bind_marks_immutable {
+            // A bind to a bare type object (`$v := IB`, #9730) is the same
+            // shape with a different wording and needs the same exception.
+            if !self.no_readonly_vars() && !bind_marks_immutable && !bind_marks_type_object {
                 self.unmark_readonly(name);
             }
             if crate::env::sigilless_readonly_keys_possible() {
@@ -2976,8 +3002,17 @@ impl Interpreter {
         // (env-shape carriers), captured/reflective frames (read the caller's env
         // by name), and names still in `needs_env_sync` (a mechanism consumer). The
         // term-symbol block and `:=` alias chain below stay unconditional.
+        //
+        // Also excludes a bare-type-object REBIND (`$s := IB`, #9730):
+        // `type_object_assign_error` reads the bound value back through
+        // `self.env().get(name)` (the cold error path has only the NAME, not
+        // this slot's index), so a slot this optimization judged
+        // "authoritative" would leave that read seeing the stale pre-bind
+        // value — a `my $s;` declaration's `Any` — instead of the type this
+        // bind just installed.
         let skip_env_write = !is_bind
             && !is_constant
+            && !bind_marks_type_object
             && !code.needs_env_sync.get(idx).copied().unwrap_or(true)
             && !crate::opcode::reflective_name_access_possible()
             && Self::term_symbol_from_name(name).is_none();

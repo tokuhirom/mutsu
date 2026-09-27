@@ -490,6 +490,9 @@ impl Interpreter {
     /// * [`ReadonlyKind::ImmutableDeep`] — same wording as `Immutable` for a
     ///   plain `$_ = ...`; the extra method-mutation refusal it carries is
     ///   checked separately, at the method-lvalue dispatch site.
+    /// * [`ReadonlyKind::TypeObject`] — a sigiled variable bound straight to a
+    ///   type object (`$s := IB`): `X::AdHoc`, "assign requires a concrete
+    ///   object (got a IB type object instead)".
     pub(crate) fn check_readonly_for_modify(&self, name: &str) -> Result<(), RuntimeError> {
         self.check_readonly_for_modify_sym(name, Symbol::intern(name))
     }
@@ -515,6 +518,7 @@ impl Interpreter {
                 Err(RuntimeError::immutable_value())
             }
             Some(ReadonlyKind::ImmutableValue) => Err(self.immutable_value_error(name)),
+            Some(ReadonlyKind::TypeObject) => Err(self.type_object_assign_error(name)),
         }
     }
 
@@ -530,6 +534,28 @@ impl Interpreter {
             ),
             None => RuntimeError::assignment_ro(Some(name)),
         }
+    }
+
+    /// `X::AdHoc` naming the type object `name` is bound straight to, as
+    /// Rakudo's own assignment protocol reports it ("assign requires a
+    /// concrete object (got a IB type object instead)"). Falls back to
+    /// "Any" — the type every bare type object at least is — when the name
+    /// cannot be resolved to a `Package` value from here, which should not
+    /// happen since only a `Package` bind ever records this kind.
+    pub(crate) fn type_object_assign_error(&self, name: &str) -> RuntimeError {
+        // A same-scope alias (`my $y := $x` after `$x := IB`) propagates the
+        // `TypeObject` kind onto `y` too (see the `source_kind` copy above
+        // this bind's own store), but `y`'s env entry is the shared
+        // `ContainerRef` cell the alias installs, not a bare `Package` --
+        // `with_deref` reaches the type object either way.
+        let type_name = match self.env().get(name) {
+            Some(value) => value.with_deref(|v| match v.view() {
+                ValueView::Package(sym) => Some(sym.to_string()),
+                _ => None,
+            }),
+            None => None,
+        };
+        RuntimeError::assign_requires_concrete_object(type_name.as_deref().unwrap_or("Any"))
     }
 
     /// Check if a variable is readonly for increment/decrement operations.
