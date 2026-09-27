@@ -77,7 +77,10 @@ impl Compiler {
         // its own — the oracle classifies it `Transparent` — so its "body"
         // placeholders are the enclosing routine's own parameters: `sub f { say
         // "$^a" if 1; 0 }; f(7)` must print 7, not the condition.
-        let needs_at_underscore = binding_var.is_none() && Self::body_uses_legacy_args(then_branch);
+        // A statement modifier has no block, so its `@_` is the routine's own.
+        let needs_at_underscore = binding_var.is_none()
+            && !is_statement_modifier
+            && Self::body_uses_legacy_args(then_branch);
         let bind_cond_placeholders = binding_var.is_none() && !is_statement_modifier;
         let binds_cond_placeholder =
             bind_cond_placeholders && Self::inlined_body_binds_supplied_value(then_branch);

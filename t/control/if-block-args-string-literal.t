@@ -6,7 +6,7 @@ use Test;
 # no-`else` form then popped the duplicated condition on the TAKEN path too,
 # eating the caller's stack slot: `$_ => f()` came back as `r => Nil`.
 
-plan 12;
+plan 14;
 
 my $c = 1;
 
@@ -44,3 +44,9 @@ is-deeply (1, (if 42 { @_ }), 2), (1, [42], 2), 'value position binds @_';
 my @a = 3, 4;
 if @a { is-deeply @_, [3, 4], 'an array condition flattens into @_' }
 if 0 { } elsif 1, 2 { is-deeply @_, [1, 2], 'elsif binds its condition too' }
+
+# A statement-modifier `if` has no block of its own: its `@_` is the routine's.
+sub gcd { return gcd(@_[0] - @_[1], @_[1]) if @_[0] > @_[1]; return gcd(@_[0], @_[1] - @_[0]) if @_[0] < @_[1]; @_[0] }
+is gcd(12, 18), 6, 'a statement-modifier if leaves the routine @_ alone';
+sub modval { my $x = (@_ if 1); $x }
+is-deeply modval(3, 4), [3, 4], 'the same in value position';

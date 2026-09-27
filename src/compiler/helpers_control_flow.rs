@@ -391,7 +391,9 @@ impl Compiler {
             self.code.emit(OpCode::Die { user_throw: false });
             return;
         }
-        let needs_at_underscore = Self::body_uses_legacy_args(then_branch);
+        // A statement modifier has no block, so its `@_` is the routine's own.
+        let needs_at_underscore =
+            !is_statement_modifier && Self::body_uses_legacy_args(then_branch);
         // A bare `if EXPR { ... $^a ... }` whose block has a scalar placeholder
         // receives the condition value as that placeholder (like `-> $a`), so
         // `if 42 { $^a.say }` prints 42. The bind (and the arity failure when the

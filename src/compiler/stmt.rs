@@ -2481,8 +2481,9 @@ impl Compiler {
                 }
                 // Check if the then_branch uses @_ (bare if blocks receive
                 // the condition value as @_ in Raku).
-                let needs_at_underscore =
-                    binding_var.is_none() && Self::body_uses_legacy_args(then_branch);
+                let needs_at_underscore = binding_var.is_none()
+                    && !*is_statement_modifier
+                    && Self::body_uses_legacy_args(then_branch);
                 // A bare `if EXPR { ... $^a ... }` whose block has a scalar
                 // placeholder receives the condition value as that placeholder
                 // (like `if EXPR -> $a { ... }`), so `if 42 { $^a.say }` prints 42.
