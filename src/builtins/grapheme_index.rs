@@ -257,11 +257,15 @@ pub(crate) fn index_of_arc(arc: &Arc<StrBody>) -> Rc<GraphemeIndex> {
         let pos = c
             .iter()
             .position(|(w, _)| w.as_ptr() == ptr && w.strong_count() > 0)?;
-        // Move to front: the most recently used string is probed first.
-        let slot = c.remove(pos);
-        let idx = slot.1.clone();
-        c.insert(0, slot);
-        Some(idx)
+        // Move to front: the most recently used string is probed first. A
+        // scanner reads one string over and over, so the hit is usually
+        // already there, and shifting the whole cache to put it back in
+        // place was most of a lookup's cost.
+        if pos != 0 {
+            let slot = c.remove(pos);
+            c.insert(0, slot);
+        }
+        Some(c[0].1.clone())
     });
     if let Some(idx) = hit {
         return idx;

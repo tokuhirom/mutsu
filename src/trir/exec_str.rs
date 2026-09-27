@@ -58,12 +58,12 @@ impl Interpreter {
     /// elements at all.
     /// `nqp::ordat`'s answer: the same routine the untyped op runs
     /// (`builtins::str_prim`, ADR-0117).
-    pub(super) fn trir_ord_at(&mut self, src: &Value, pos: i64) -> i64 {
+    pub(super) fn trir_ord_at(src: &Value, pos: i64) -> i64 {
         crate::builtins::str_prim::nqp_ordat(src, pos)
     }
 
     /// `nqp::chars`'s answer, in graphemes.
-    pub(super) fn trir_chars_len(&mut self, src: &Value) -> i64 {
+    pub(super) fn trir_chars_len(src: &Value) -> i64 {
         crate::builtins::str_prim::chars(src) as i64
     }
 
