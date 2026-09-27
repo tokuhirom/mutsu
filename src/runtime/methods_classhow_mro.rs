@@ -44,12 +44,12 @@ impl Interpreter {
             }
         };
         // A grammar's MRO threads through Grammar -> Match -> Capture -> Cool.
-        // Trigger this whenever the type is (or inherits from) Grammar: the
-        // `token`/`rule` heuristic (`package_looks_like_grammar`) misses an empty
-        // grammar (`grammar G {}`), a token-less subclass (`grammar S is B {}`),
-        // and the `Grammar` type object itself, all of which nonetheless carry
-        // `Grammar` in the MRO computed above.
-        if self.package_looks_like_grammar(&class_name)
+        // Trigger this whenever the type is (or inherits from) Grammar. A
+        // `class`/role pun that merely *declares* a token/rule is not a
+        // grammar (`class_is_grammar` walks the real `is`-parent chain, not
+        // the presence of a `token_defs` entry), so it stays out of this
+        // branch and keeps the ordinary Any/Mu tail below.
+        if self.class_is_grammar(&class_name)
             || class_name == "Grammar"
             || mro.iter().any(|name| name == "Grammar")
         {
@@ -344,13 +344,5 @@ impl Interpreter {
         mro.into_iter()
             .filter(|name| !hidden_set.contains(name))
             .collect()
-    }
-
-    pub(super) fn package_looks_like_grammar(&self, package_name: &str) -> bool {
-        let prefix = format!("{package_name}::");
-        self.registry()
-            .token_defs
-            .keys()
-            .any(|key| key.resolve().starts_with(&prefix))
     }
 }
