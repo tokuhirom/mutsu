@@ -657,6 +657,14 @@ impl Interpreter {
     /// unconditionally safe and (like the exported-sub pass) idempotent
     /// with a later composition re-running the same declaration.
     ///
+    /// The one exception is `enum`: its variants are compile-time constants,
+    /// so an enum cannot depend on a type parameter except through an explicit
+    /// base type (`my T enum …`). Every other enum is declared here even in a
+    /// parameterized role. Otherwise `unit role Algorithm::Treap[::KeyT]; my
+    /// enum TOrder is export <DESC ASC>;` exported nothing importable until
+    /// the first composition. The importer then saw a bare `TOrder` string,
+    /// and the composition-time enum rejected the caller's `TOrder::ASC`.
+    ///
     /// Only declarative statement kinds are eagerly run — never a plain
     /// statement or expression, whose side effects must not replay both here
     /// and at composition.
@@ -666,20 +674,21 @@ impl Interpreter {
         deferred_body_ops: &[crate::opcode::DeferredBodyOp],
         type_params: &[String],
     ) -> Result<(), RuntimeError> {
-        if !type_params.is_empty() {
-            return Ok(());
-        }
+        let parameterized = !type_params.is_empty();
         let saved_package = self.current_package().to_string();
         self.set_current_package(role_name.to_string());
         for op in deferred_body_ops {
-            if !matches!(
-                &op.raw,
+            let eager = match &op.raw {
+                Stmt::EnumDecl { base_type, .. } => base_type
+                    .as_ref()
+                    .is_none_or(|base| !type_params.iter().any(|tp| tp == base)),
                 Stmt::ClassDecl { .. }
-                    | Stmt::RoleDecl { .. }
-                    | Stmt::TokenDecl { .. }
-                    | Stmt::EnumDecl { .. }
-                    | Stmt::SubsetDecl { .. }
-            ) {
+                | Stmt::RoleDecl { .. }
+                | Stmt::TokenDecl { .. }
+                | Stmt::SubsetDecl { .. } => !parameterized,
+                _ => false,
+            };
+            if !eager {
                 continue;
             }
             if let Err(error) = self.run_block_raw(std::slice::from_ref(&op.raw)) {
