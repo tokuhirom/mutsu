@@ -278,6 +278,23 @@ impl Interpreter {
         self.warn_suppression_boundaries.pop();
     }
 
+    /// The current warning-suppression state, to hand back to
+    /// [`Self::restore_warn_suppression`] when an unwind leaves a region.
+    pub(crate) fn warn_suppression_mark(&self) -> (usize, usize) {
+        (
+            self.warn_suppression_depth,
+            self.warn_suppression_boundaries.len(),
+        )
+    }
+
+    /// Drop every suppression frame pushed since `mark` was taken — the
+    /// frames of `quietly` regions an error unwound out of before their
+    /// `WarnSuppressPop` ran.
+    pub(crate) fn restore_warn_suppression(&mut self, mark: (usize, usize)) {
+        self.warn_suppression_depth = mark.0;
+        self.warn_suppression_boundaries.truncate(mark.1);
+    }
+
     pub(crate) fn warning_suppressed(&self) -> bool {
         self.warn_suppression_depth > 0
     }

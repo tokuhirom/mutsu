@@ -58,6 +58,13 @@ impl Interpreter {
         // region keeps sub declarations rolled out of the registry, so close
         // any it left open before the handler resumes ordinary execution.
         let begin_time_base = self.begin_time_hidden.len() as u32;
+        // A `quietly` region opened inside the protected body is closed by a
+        // plain `WarnSuppressPop` on its straight-through path only, so an
+        // error escaping it (`try { quietly { die } }`) would leave warnings
+        // suppressed for the rest of the process. `quietly` nests lexically
+        // inside this region, so the suppression state on every exit equals
+        // the state on entry.
+        let warn_suppression_base = self.warn_suppression_mark();
         let result = self.exec_try_catch_op_inner(
             code,
             catch_start,
@@ -73,6 +80,7 @@ impl Interpreter {
             compiled_fns,
         );
         self.begin_time_unwind_to(begin_time_base);
+        self.restore_warn_suppression(warn_suppression_base);
         if traps {
             self.fatal_mode = saved_fatal_mode;
         }
