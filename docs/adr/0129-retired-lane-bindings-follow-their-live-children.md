@@ -108,7 +108,7 @@ The eligibility test is shared with `SetVarDynamic`
 
 ## Validation
 
-- `t/concurrency/promise/thread-closure-own-aggregate-binding.t` pins the
+- `t/concurrency/thread-lock/thread-closure-own-aggregate-binding.t` pins the
   issue's `start` / `.then` array and hash repros, writes after the
   re-declaration, sibling sharing through one box, the in-flight caller case
   (with a timeout instead of a hang) and ordinary outer-array sharing.
