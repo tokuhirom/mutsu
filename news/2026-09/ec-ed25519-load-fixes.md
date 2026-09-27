@@ -49,8 +49,8 @@ findings were filed as issues.
 - #9966: a mainline `CHECK` runs before the script's earlier constants are initialized.
 - #9967 (`todo:perf`): secp256k1 point doubling is about 100x slower than rakudo.
 
-Pinned by `t/routines/callsame-prefix-core-candidate.t`,
+Pinned by `t/routines/dispatch/callsame-prefix-core-candidate.t`,
 `t/modules/block-import-operator-unit-module-scope.t` (fixtures
 `t/lib/BlockImportModOps.rakumod` and `t/lib/BlockImportModUser.rakumod`),
-`t/types/buf-numeric-smartmatch.t`, `t/types/buf-from-end-subscript-assign.t` and
+`t/collections/buf-accepts-element-count.t`, `t/collections/subscript/buf-from-end-subscript-assign.t` and
 `t/grammar/rule-alias-whitespace.t`.
