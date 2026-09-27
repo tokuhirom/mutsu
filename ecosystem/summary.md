@@ -7,19 +7,19 @@ definitions: [docs/ecosystem-parity.md](../docs/ecosystem-parity.md).
 
 | metric | value |
 |---|---|
-| **dist parity** (published headline) | **66.7%** (815/1221) |
-| file parity | 73.5% (3137/4268) |
+| **dist parity** (published headline) | **66.9%** (818/1222) |
+| file parity | 73.6% (3143/4271) |
 | assertion parity | 84.0% |
 | accepted divergences (out of the KPI, ADR-0130) | 1 file(s) |
 
 | status | distributions |
 |---|---|
 | `blocked_dep` | 7 |
-| `blocked_load` | 110 |
-| `green` | 815 |
+| `blocked_load` | 109 |
+| `green` | 818 |
 | `no_baseline` | 289 |
-| `partial` | 237 |
-| `red` | 169 |
+| `partial` | 236 |
+| `red` | 168 |
 | `skipped` | 10 |
 
 ## Distributions
@@ -523,7 +523,7 @@ definitions: [docs/ecosystem-parity.md](../docs/ecosystem-parity.md).
 | `File::Utils` | 0.1.2 | green | 2/2 |
 | `Files::Containing` | 0.0.17 | green | 1/1 |
 | `Filetype::Magic` | 0.0.5 | no_baseline | — |
-| `FINALIZER` | 0.0.10 | blocked_load | — |
+| `FINALIZER` | 0.0.10 | green | 3/3 |
 | `FiniteFields` | 0.3.2 | green | 1/1 |
 | `FixedInt` | 0.0.5 | green | 1/1 |
 | `flow` | v0.0.5 | partial | 3/4 |
@@ -686,7 +686,7 @@ definitions: [docs/ecosystem-parity.md](../docs/ecosystem-parity.md).
 | `Humming-Bird::Core` | 2.0.0 | green | 7/7 |
 | `hyperize` | 0.0.4 | green | 1/1 |
 | `IdClass` | 0.0.3 | green | 6/6 |
-| `Identity::Utils` | 0.0.29 | partial | 1/2 |
+| `Identity::Utils` | 0.0.29 | green | 2/2 |
 | `IDNA::Punycode` | 1.0.1 | green | 1/1 |
 | `Iec104Parser` | 0.1 | green | 1/1 |
 | `if` | 0.1.6 | green | 1/1 |
@@ -1566,7 +1566,7 @@ definitions: [docs/ecosystem-parity.md](../docs/ecosystem-parity.md).
 | `Updown` | 0.0.9 | no_baseline | — |
 | `UpRooted` | 1.8.3 | partial | 5/6 |
 | `URI` | v0.1.4 | green | 6/6 |
-| `URI::Encode` | 1.0 | red | 0/2 |
+| `URI::Encode` | 1.0 | green | 2/2 |
 | `URI::FetchFile` | 0.0.6 | partial | 2/4 |
 | `URI::Query::FromHash` | 0.0.2 | red | 0/1 |
 | `URI::Template` | 0.0.11 | partial | 4/8 |
