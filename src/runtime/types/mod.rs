@@ -336,6 +336,7 @@ impl Interpreter {
                     ReadonlyKind::Immutable
                         | ReadonlyKind::ImmutableValue
                         | ReadonlyKind::ImmutableDeep
+                        | ReadonlyKind::TypeObject
                 )
             )
     }

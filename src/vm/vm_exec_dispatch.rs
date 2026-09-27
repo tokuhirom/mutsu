@@ -1390,12 +1390,18 @@ impl Interpreter {
                 // A `:=` rebind replaces the binding itself, so the mark a
                 // sigiled name got for being bound to an immutable value
                 // (`my $x := 42`) cannot reject it -- rakudo rebinds (#9238).
-                // Every other readonly kind (a `constant`, a sigilless term, a
+                // A bind to a bare type object (`my $x := IB`, #9730) is the
+                // same "no container, replaced wholesale by this rebind"
+                // shape reached by a different value kind. Every other
+                // readonly kind (a `constant`, a sigilless term, a
                 // signature-bound parameter) still refuses the rebind.
                 let rebind_of_immutable = is_rebind
                     && matches!(
                         self.readonly_kind_sym(name_sym),
-                        Some(crate::ast::ReadonlyKind::Immutable)
+                        Some(
+                            crate::ast::ReadonlyKind::Immutable
+                                | crate::ast::ReadonlyKind::TypeObject
+                        )
                     );
                 if !raw_mode && !is_bind_ctx && !rebind_of_immutable && !is_bound_container {
                     if self.vardecl_context().get() {
