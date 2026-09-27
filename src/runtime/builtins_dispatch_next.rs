@@ -1055,7 +1055,11 @@ impl Interpreter {
                     }
                     return Ok(result);
                 }
-                Some(DeferralEntry::Accessor { owner, name }) => {
+                Some(DeferralEntry::Accessor {
+                    owner,
+                    name,
+                    want_container,
+                }) => {
                     // An auto-generated accessor has no MethodDef to send
                     // through the ordinary candidate runner. It is the
                     // terminal candidate of a wrapped accessor chain, so read
@@ -1082,22 +1086,36 @@ impl Interpreter {
                         frame.in_wrapper = false;
                         (frame.invocant.clone(), args)
                     };
-                    let result = self
-                        .read_public_attribute_accessor(&invocant, &name, &args)
-                        .unwrap_or_else(|| {
-                            let owner_name = owner.resolve();
-                            Err(
-                                super::methods_signature_errors::make_method_not_found_error(
-                                    &name,
-                                    if owner_name.is_empty() {
-                                        crate::runtime::utils::value_type_name(&invocant)
-                                    } else {
-                                        owner_name.as_str()
-                                    },
-                                    false,
-                                ),
-                            )
-                        })?;
+                    // An lvalue entry into the chain (`A.foo = 7` through a
+                    // wrapper) wants the attribute's Scalar, which the rw
+                    // wrapper hands straight back to the assignment.
+                    let container = match invocant.view() {
+                        ValueView::Instance { class_name, .. }
+                            if want_container && args.is_empty() =>
+                        {
+                            self.rw_accessor_container(&invocant, &class_name.resolve(), &name)
+                        }
+                        _ => None,
+                    };
+                    let result = match container {
+                        Some(cell) => cell,
+                        None => self
+                            .read_public_attribute_accessor(&invocant, &name, &args)
+                            .unwrap_or_else(|| {
+                                let owner_name = owner.resolve();
+                                Err(
+                                    super::methods_signature_errors::make_method_not_found_error(
+                                        &name,
+                                        if owner_name.is_empty() {
+                                            crate::runtime::utils::value_type_name(&invocant)
+                                        } else {
+                                            owner_name.as_str()
+                                        },
+                                        false,
+                                    ),
+                                )
+                            })?,
+                    };
                     if tail_call {
                         return Err(RuntimeError::return_signal(result));
                     }

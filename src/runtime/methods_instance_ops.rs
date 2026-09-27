@@ -440,23 +440,44 @@ impl Interpreter {
     /// Dispatch an auto-generated accessor through its method-wrap chain.
     /// `callsame` in the wrapper advances to the terminal accessor entry that
     /// `dispatch_next_candidate` consumes without re-entering this chain.
-    fn dispatch_wrapped_attribute_accessor(
+    ///
+    /// `terminal` is the chain's final `DeferralEntry::Accessor`; its
+    /// `want_container` asks for the attribute's container rather than its
+    /// value.
+    pub(crate) fn dispatch_wrapped_attribute_accessor(
         &mut self,
         target: Value,
         receiver_class: &str,
-        method: &str,
         args: Vec<Value>,
-        owner: crate::symbol::Symbol,
         chain: Vec<(u64, Value)>,
+        mut terminal: super::DeferralEntry,
     ) -> Result<Value, RuntimeError> {
+        let super::DeferralEntry::Accessor {
+            name: method,
+            want_container,
+            ..
+        } = &mut terminal
+        else {
+            unreachable!("a wrapped accessor chain ends in its accessor entry");
+        };
+        let method = method.clone();
+        let method = method.as_str();
+        // Every wrapper sits between the terminal and the caller, and a plain
+        // (non-rw) one decontainerizes its return in raku — `B.v = 5` through
+        // `method ($s: |c) { callsame }` is `X::Assignment::RO`. So the
+        // container request reaches the terminal only when the whole chain
+        // hands its result back as a container.
+        *want_container = *want_container
+            && chain
+                .iter()
+                .all(|(_, w)| matches!(w.view(), ValueView::Sub(data) if data.declares_container_return()));
         self.push_method_samewith_context(receiver_class, method, &args, Some(target.clone()));
         self.push_wrapped_accessor_dispatch_frame(
             receiver_class,
-            method,
             &args,
             target.clone(),
-            owner,
             &chain,
+            terminal,
         );
         let outermost = chain.last().expect("accessor wrap chain is non-empty");
         let wrapper_id = match outermost.1.view() {
@@ -1900,10 +1921,13 @@ impl Interpreter {
                     return self.dispatch_wrapped_attribute_accessor(
                         target,
                         &cn_resolved,
-                        method,
                         args,
-                        owner,
                         chain,
+                        super::DeferralEntry::Accessor {
+                            owner,
+                            name: method.to_string(),
+                            want_container: false,
+                        },
                     );
                 }
                 // An `is repr('CStruct')` handle stores no Raku attributes: its
@@ -3330,10 +3354,13 @@ impl Interpreter {
                         return self.dispatch_wrapped_attribute_accessor(
                             target.clone(),
                             &class_name,
-                            method,
                             args,
-                            owner,
                             chain,
+                            super::DeferralEntry::Accessor {
+                                owner,
+                                name: method.to_string(),
+                                want_container: false,
+                            },
                         );
                     }
                     return Err(RuntimeError::new(format!(

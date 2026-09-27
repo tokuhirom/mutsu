@@ -143,4 +143,61 @@ impl Interpreter {
         }
         None
     }
+
+    /// The container a public auto-accessor hands back when its caller asked
+    /// for one (`MarkAccessorRefContext`: a `:=` bind RHS, a `.VAR` chain, an
+    /// `is rw` routine's tail, or a wrapped accessor's terminal reached from
+    /// such a context): `method`'s attribute slot on the instance `target`,
+    /// promoted to its shared `ContainerRef` cell.
+    ///
+    /// This is the one want-ref consumer for an auto-accessor, shared by the
+    /// VM fast path (`try_fast_accessor_read`) and the wrap-chain terminal
+    /// (`DeferralEntry::Accessor`), so every route to the attribute names the
+    /// same cell.
+    ///
+    /// Declines (`None`) unless `method` is a public `is rw` accessor of a
+    /// present, scalar-shaped slot: raku returns the decontainerized value of a
+    /// read-only accessor, and an `@`/`%` value is already a shared container
+    /// whose type metadata the aggregate accessor path carries.
+    // Cost: O(a + m), a = the class's attributes, m = its MRO length (the
+    // rw/type-constraint lookup); the slot probe and promotion are O(1).
+    pub(crate) fn rw_accessor_container(
+        &mut self,
+        target: &Value,
+        class_name: &str,
+        method: &str,
+    ) -> Option<Value> {
+        let ValueView::Instance { attributes, .. } = target.view() else {
+            return None;
+        };
+        let priv_key = format!("{}!", method);
+        let (key, current) = {
+            let map = attributes.as_map();
+            match map.get(method) {
+                Some(v) => (method.to_string(), v.clone()),
+                None => (priv_key.clone(), map.get(&priv_key)?.clone()),
+            }
+        };
+        if matches!(
+            current.view(),
+            ValueView::Array(..) | ValueView::Hash(_) | ValueView::Mixin(..)
+        ) {
+            return None;
+        }
+        let type_constraint = self.rw_accessor_type_constraint(class_name, method)?;
+        let cell_val = attributes.promote_attr_to_container(key.as_str());
+        // A typed rw attribute's constraint travels with the cell, so a later
+        // write through the container (`$ref = v`, `f() = v`) type-checks
+        // exactly like `$obj.x = v` does.
+        if let ValueView::ContainerRef(cell) = cell_val.view()
+            && let Some(tc) = type_constraint.as_ref()
+            && !matches!(tc.as_str(), "Mu" | "Any")
+        {
+            crate::value::register_container_constraint(&cell, tc);
+        }
+        if let Some(msg) = self.class_attribute_deprecated(class_name, method) {
+            self.check_deprecation_for_method(method, class_name, &msg);
+        }
+        Some(cell_val)
+    }
 }
