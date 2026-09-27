@@ -49,6 +49,15 @@ pub(crate) fn loop_handler_in_scope() -> bool {
     LOOP_HANDLER_DEPTH.with(|d| d.get() > 0)
 }
 
+/// How many loop-control handlers are on the dynamic chain now. A loop that
+/// records where it caught a `last` (`Interpreter::map_grep_last_depth`)
+/// stamps it with this, so a caller can tell its own loop's `last` from one
+/// a nested loop caught.
+// Cost: O(1).
+pub(crate) fn loop_handler_depth() -> usize {
+    LOOP_HANDLER_DEPTH.with(Cell::get)
+}
+
 /// Raises the loop-control handler depth until dropped.
 pub(crate) struct LoopHandlerGuard;
 

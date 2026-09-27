@@ -386,6 +386,12 @@ pub(crate) enum DeferralEntry {
         /// cell (`rw_accessor_container`) instead of a value copy.
         want_container: bool,
     },
+    /// The terminal entry of a multi DISPATCHER wrap chain (a `.wrap` on the
+    /// proto `.^method_table<m>` returns). Candidate selection has not
+    /// happened yet: advancing here re-dispatches `name` on the frame's
+    /// CURRENT invocant and args (a wrapper's `callwith($other, |c)` may have
+    /// replaced both), skipping only the dispatcher chain itself.
+    Redispatch { name: String },
 }
 
 /// One entry of `Interpreter::samewith_context_stack` (ADR-0019 E9c-1).

@@ -3378,6 +3378,7 @@ impl Interpreter {
             encoding_registry: Self::shared_builtin_encodings(),
             skip_pseudo_method_native: None,
             dispatch_ambiguous: false,
+            dispatcher_wrap_bypass: None,
             role_pun_construction: Vec::new(),
             rakuseen_active: Vec::new(),
             rakuseen_cycle_hit: std::collections::HashSet::new(),
@@ -3556,6 +3557,7 @@ impl Interpreter {
             lazy_pull_entry_call_depth: None,
             lazy_pull_entry_routine_depth: None,
             rw_map_topic_capture: None,
+            map_grep_last_depth: None,
         };
         // A scratch interpreter (regex/grammar sub-interpreter) has its `env`
         // replaced wholesale by the caller's, so every `$*OUT`/`$*CWD`/

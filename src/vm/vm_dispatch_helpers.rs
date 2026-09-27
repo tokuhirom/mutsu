@@ -470,9 +470,8 @@ impl Interpreter {
     /// Evaluate truthiness of a value, including dispatch to user-defined Bool methods.
     /// For Package (type objects) and Instance values, checks if the class defines
     /// a custom Bool method and calls it. Falls back to Value::truthy() otherwise.
-    /// Cost: O(1) for most values; a not-yet-run `.map`/`.grep` Seq is forced whole by
-    /// `reify_map_grep_seq`, O(e) callbacks, e = source elements, where Rakudo pulls a single
-    /// element. Rakudo: O(1) -- see #9158.
+    /// Cost: O(1) for most values; a not-yet-run `.map`/`.grep` Seq pulls one element
+    /// (`reify_map_grep_prefix`), one callback per source element up to its first result.
     pub(crate) fn eval_truthy(&mut self, val: &Value) -> bool {
         // A successful lazy Match already knows its truth value, and reading
         // it through `view()` would force the capture map. Plain regex
@@ -490,11 +489,14 @@ impl Interpreter {
         // `.map`/`.grep` Seq as TRUE rather than reading its still-empty seed
         // (see the `is_map_grep_source` arm there). This IS the boolean
         // chokepoint that arm defers to -- it has an `&mut Interpreter` -- so
-        // force the body here and let the element count decide. Without it an
-        // EMPTY result read as true: `@a.grep(* == 9) ?? 't' !! 'f'` answered
-        // `t` where rakudo answers `f`, and every `!...grep(...)` guard
-        // inverted. Tag-probed, so every other value pays one relaxed check.
-        let _ = self.reify_map_grep_seq(val);
+        // pull the body's first element here and let the element count
+        // decide. Without it an EMPTY result read as true: `@a.grep(* == 9)
+        // ?? 't' !! 'f'` answered `t` where rakudo answers `f`, and every
+        // `!...grep(...)` guard inverted. Only ONE element is pulled, as
+        // Rakudo's `Bool` asks its iterator for one; the Seq keeps the rest
+        // for a later read. Tag-probed, so every other value pays one relaxed
+        // check.
+        let _ = self.reify_map_grep_prefix(val, 1);
         match val.view() {
             ValueView::Package(name) => {
                 let class_name = name.resolve();

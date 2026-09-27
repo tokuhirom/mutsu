@@ -787,6 +787,7 @@ pub(crate) mod scope_stack;
 mod uncaught_render;
 mod user_accepts;
 pub(crate) use native_io::{io_file_test, path_is_readable};
+mod dispatcher_wrap;
 mod enum_type_key;
 mod native_io_special;
 pub(crate) mod native_methods;
@@ -3771,6 +3772,14 @@ pub struct Interpreter {
     /// specific (an ambiguous dispatch). Consumed by the caller to raise an
     /// `X::Multi::Ambiguous` error instead of silently picking one.
     pub(crate) dispatch_ambiguous: bool,
+    /// Set while a multi DISPATCHER wrap's terminal re-dispatch is running
+    /// (`dispatcher_wrap::redispatch_after_dispatcher_wrap`): the method
+    /// name plus the VM call-frame and routine-stack depths it was set at.
+    /// The dispatcher-wrap check skips the chain only for a call of that
+    /// name at exactly those depths, so the re-dispatch itself does not
+    /// re-enter the wrapper while a nested call of the same method from
+    /// inside the chosen candidate (deeper) is wrapped as usual.
+    pub(crate) dispatcher_wrap_bypass: Option<(String, usize, usize)>,
     /// Roles whose `.new` is currently constructing through their pun. `.new` on
     /// a role composes it into a class of the same name and re-enters
     /// `dispatch_new` to run *that class's* constructor; the role name is pushed
@@ -4893,6 +4902,14 @@ pub struct Interpreter {
     /// compiled frame.
     pub(crate) lazy_pull_entry_routine_depth: Option<usize>,
     pub(crate) rw_map_topic_capture: Option<Value>,
+    /// Set by the `.map`/`.grep` loops when a `last` in the callback stopped
+    /// them, to the loop-handler depth of the loop that caught it
+    /// (`loop_handler_depth::loop_handler_depth`). A deferred `.map`/`.grep`
+    /// Seq pulled a prefix at a time (`pull_map_grep_prefix`) reads it to tell
+    /// "the callback said `last`" from "this chunk of the source ran out",
+    /// since the loops swallow the signal; the depth keeps a `last` caught by
+    /// a loop nested inside the callback from counting.
+    pub(crate) map_grep_last_depth: Option<usize>,
     /// Next routine-invocation id this interpreter will hand out, and one past
     /// the end of the block it was claimed from (see `NEXT_INVOCATION_ID_BLOCK`).
     /// Equal when the block is exhausted, which is the refill condition.

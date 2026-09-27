@@ -31,195 +31,10 @@ impl Interpreter {
             SeqSource::IoLines { handle, words, kv } => {
                 self.pull_io_lines_to_vec(handle.clone(), *words, *kv)
             }
-            // Cost: O(e) callback calls, e = source elements: the whole source is
-            // mapped/grepped at the first pull, whatever prefix the consumer needs
-            // (see `dispatch_map_method`). Rakudo: O(1) per element pulled -- see
-            // #9158.
-            // docs/adr/0058: a `.map`/`.grep` whose callback has not run yet.
-            // This IS `dispatch_map_method`'s old eager tail, just moved to
-            // first consumption — so a `die`/`fail` it raises surfaces at the
-            // consuming statement, outside a `try` that merely enclosed the
-            // `.map` call.
-            SeqSource::MapGrep {
-                items,
-                func,
-                fatal,
-                mode,
-            } => {
-                // Same contract as `force_lazy_list_vm`: this force IS the
-                // effective call site for the callbacks it runs, so a
-                // captured-outer lexical the callback mutated (`LAST $ran =
-                // True`, `$count++`) has to be drained back into the consuming
-                // frame's local slots — the reify is not a call op, so nothing
-                // else would.
-                let caller_code = self.current_code;
-                // `use fatal` is lexical to the `.map` call site, not to
-                // whoever consumes the Seq — see `SeqSource::MapGrep::fatal`.
-                let saved_fatal = std::mem::replace(&mut self.fatal_mode, *fatal);
-                // Run the callback under its DECLARING package, exactly as
-                // `call_compiled_closure_in_unit` does when a Sub value is
-                // invoked from a foreign frame. The map loop drives the block
-                // through `run_reuse`, which bypasses that guard, and the pull
-                // happens wherever the Seq is consumed -- so
-                // `class Outer { our sub f(@n) { @n.map({ Inner.new }) } }`
-                // consumed from `GLOBAL` could no longer resolve `Inner`
-                // (`t/closure-package-nested-class.t`). Eager `map` never hit
-                // this because the loop ran inside the declaring routine.
-                let _pkg_guard = func.as_ref().and_then(|f| match f.view() {
-                    ValueView::Sub(data)
-                        if !data.package.as_str().is_empty()
-                            && !crate::runtime::utils::has_routine_scope_marker(
-                                data.package.as_str(),
-                            )
-                            && data.package != self.current_package_sym() =>
-                    {
-                        Some(self.enter_package_guarded_sym(data.package))
-                    }
-                    _ => None,
-                });
-                let result = match mode {
-                    // ADR-0058 step 3b: `@a.grep({...})` promotes every matched
-                    // source slot to a shared element cell and builds its result
-                    // out of the same cells, so a writeback loop mutates through
-                    // into `@a`. That whole arm runs here now instead of at the
-                    // `.grep` call. See `MapGrepMode::GrepArray`.
-                    crate::value::MapGrepMode::GrepArray(source) => match source.view() {
-                        ValueView::Array(source_items, _) => self.grep_over_array_promoting(
-                            source_items.clone(),
-                            func.clone(),
-                            &crate::runtime::methods_collection_ops::GrepAdverb::V,
-                        ),
-                        _ => self.eval_grep_over_items(func.clone(), items.as_ref().clone()),
-                    },
-                    crate::value::MapGrepMode::Grep => {
-                        self.eval_grep_over_items(func.clone(), items.as_ref().clone())
-                    }
-                    // `@a.map({ $_++ })`: Raku rw-binds `$_` to the source
-                    // element, so the callback's writes have to reach `@a`.
-                    // See `MapGrepMode::MapRw`.
-                    crate::value::MapGrepMode::MapRw(source) => {
-                        self.pull_rw_map(func.clone(), items.as_ref().clone(), source.clone())
-                    }
-                    crate::value::MapGrepMode::Map => {
-                        self.eval_map_over_items(func.clone(), items.as_ref().clone())
-                    }
-                };
-                self.fatal_mode = saved_fatal;
-                self.reconcile_caller_after_lazy_force(caller_code);
-                // A `fail` (and `...`, which IS a `fail`) raised by the
-                // callback escapes as a `Control::Fail` error, which the next
-                // routine boundary would soften into a returned `Failure`.
-                // Under the `use fatal` that was lexically in force at the
-                // `.map` CALL — most often an enclosing `try`, which implies
-                // it — rakudo throws instead, and that boundary is nowhere
-                // near here: it is whichever routine encloses the CONSUMER.
-                // So decide it here, where the call site's `fatal` is known,
-                // by turning the soft failure into a hard throw.
-                let result = result.map_err(|mut e| {
-                    if *fatal && e.is_fail() {
-                        e.control = None;
-                    }
-                    e
-                })?;
-                let items = match result.view() {
-                    ValueView::Array(items, _) => items.to_vec(),
-                    _ => crate::runtime::utils::value_to_list(&result),
-                };
-                // A callback that itself returns a deferred Seq
-                // (`[1].map({ [2].map({ ... }) })`, and the recursive
-                // `map`-over-`map` shape `roast/integration/99problems-21-to-30.t`
-                // builds) leaves nested unpulled `MapGrep` bodies sitting in
-                // the elements this pull just produced -- and the same pure
-                // readers `reify_map_grep_seq` exists for then see the empty
-                // seed one level down: `.raku` rendered `(().Seq,).Seq` where
-                // rakudo says `(("STOP",).Seq,).Seq`, and `say`/`.Str`/`.gist`/
-                // `.flat` came out empty. Pulling a `MapGrep` therefore pulls
-                // the `MapGrep`s it produced. Depth is bounded by how deeply
-                // the callbacks nest, and every level is finite for the same
-                // reason the top level is (its `items` were materialized at
-                // the `.map` call).
-                for item in &items {
-                    if item.is_seq_value() {
-                        self.reify_map_grep_seq(item)?;
-                    }
-                }
-                Ok(items)
-            }
+            // Cost: the callback runs over the source elements from `pos` on
+            // (see `pull_map_grep_rest`).
+            SeqSource::MapGrep { .. } => self.pull_map_grep_rest(source),
         }
-    }
-
-    /// Pull a deferred `.map` whose receiver was a real Array
-    /// (`SeqSource::MapGrep::MapRw`): run the rw map loop, then publish any
-    /// element the callback wrote back into that container.
-    fn pull_rw_map(
-        &mut self,
-        func: Option<Value>,
-        mut items: Vec<Value>,
-        source: Value,
-    ) -> Result<Value, RuntimeError> {
-        // The narrow native rw loop first: it is the only one that captures a
-        // prefix `++$_`/`--$_` or a bare `tr///` (`rw_map_topic_capture`),
-        // which the shared loop's `__mutsu_rw_map_topic__` assignment mirror
-        // does not see. It declines everything else, including every
-        // read-only block, for which it is 4-7.6x slower (see its module doc).
-        if !self.native_lever_a_user_override_sym(&source, crate::symbol::wk::map())
-            && let Some(args) = func.clone().map(|f| vec![f])
-            && let Some(native) = self.try_native_rw_map_over(&source, &args)
-        {
-            let (result_items, source_after) = native?;
-            self.publish_rw_map_writeback(&source, source_after);
-            return Ok(Value::seq(result_items));
-        }
-        let (result, wrote_back) = self.eval_map_over_items_rw(func, &mut items)?;
-        // A read-only block wrote nothing, so leave the source container
-        // ALONE. It used to be rebuilt unconditionally, which silently
-        // dropped the per-slot metadata `ArrayData` carries: a `:delete`d
-        // slot lost its `initialized` bit, stopped reading as a hole, and a
-        // later trailing-element `:delete` could no longer truncate the array
-        // (roast/S32-array/delete.t, via a read-only
-        // `@a.map({ $_ // "Any()" })` in between).
-        if wrote_back {
-            self.publish_rw_map_writeback(&source, items);
-        }
-        Ok(result)
-    }
-
-    /// Write the mutated elements of a rw `.map` back into the source
-    /// container, by mutating its `ArrayData` IN PLACE.
-    ///
-    /// In place, not by rebuilding and re-binding the name: the pull runs
-    /// wherever the Seq is consumed, so the frame whose `env` held `@a` may
-    /// be long gone by then and `store_container_preserving_identity` would
-    /// have nothing to store into. Writing through the `Gc` (ADR-0013 §7 made
-    /// this sound at the primitive) reaches every alias by construction and
-    /// does not depend on which frame is running — the same move that made
-    /// `grep`'s element promotion frame-independent (ADR-0058 §9.2).
-    fn publish_rw_map_writeback(&mut self, source: &Value, items: Vec<Value>) {
-        // A shaped array keeps its shape/structure — only the leaf values
-        // change — so rebuild the rows from the mutated leaves instead of
-        // flattening it into an ordinary list, then publish the rows.
-        let new_items = if crate::runtime::utils::is_shaped_array(source) {
-            let rebuilt = crate::runtime::utils::replace_shaped_leaves(source, &items);
-            match rebuilt.view() {
-                ValueView::Array(rows, _) => rows.to_vec(),
-                _ => return,
-            }
-        } else {
-            items
-        };
-        let ValueView::Array(data, _) = source.view() else {
-            return;
-        };
-        // SAFETY: same contract as `dispatch_grep`'s in-place promotion —
-        // a `&mut` to the `Gc`'s contents while no other borrow of it is
-        // live (the element vector was cloned out before the map ran).
-        let slots = unsafe { crate::value::gc_contents_mut(&data) };
-        // The replacement vector is authoritative; an `array[int]` native
-        // payload describes the OLD vector and must not decode back over it
-        // (the `Value::array_data_like` rebuild this replaces dropped it too
-        // -- that helper had no other caller left and is gone).
-        slots.clear_native_storage();
-        *slots.items_mut() = new_items;
     }
 
     /// Drive a user/native `Iterator`'s `pull-one` until `IterationEnd`.
@@ -474,6 +289,34 @@ impl Interpreter {
         {
             let body = Arc::clone(&body);
             self.reify_seq_body(&body)?;
+        }
+        Ok(())
+    }
+
+    /// [`Self::reify_map_grep_seq`] for a reader that needs only the first
+    /// `needed` elements (boolification needs one): a not-yet-run
+    /// `.map`/`.grep` Seq runs its callback over only as much of its source
+    /// as that takes, keeps the elements in the body, and resumes from there
+    /// on a later read (#9158). A no-op for every other value.
+    // Cost: one callback call per source element up to the `needed`-th
+    // element produced.
+    pub(crate) fn reify_map_grep_prefix(
+        &mut self,
+        value: &Value,
+        needed: usize,
+    ) -> Result<(), RuntimeError> {
+        if !value.is_seq_value() {
+            return Ok(());
+        }
+        if let ValueView::Seq(body) = value.view()
+            && body.is_map_grep_source()
+        {
+            let body = Arc::clone(&body);
+            let have = body.len();
+            if have >= needed {
+                return Ok(());
+            }
+            body.extend_map_grep_prefix(|source| self.pull_map_grep_prefix(source, needed - have))?;
         }
         Ok(())
     }
@@ -1072,8 +915,8 @@ impl Interpreter {
     /// Returns `None` for forms that need the whole list (e.g. `.head(*-3)`).
     /// `.head(n)` / `.head` / `.first` (no matcher) on a Seq nobody has read
     /// yet whose source can be pulled one element at a time — a `Str.comb` /
-    /// `.lines` / `.words` cursor, a `Seq.new($iterator)`, or an
-    /// `IO::Handle.lines` / `.words` read
+    /// `.lines` / `.words` cursor, a `Seq.new($iterator)`, a not-yet-run
+    /// `.map`/`.grep`, or an `IO::Handle.lines` / `.words` read
     /// ([`SeqBody::take_prefix_source`]): pull only the `n` elements the
     /// call needs and hand back a Seq of just those, which the ordinary
     /// dispatch then answers from. The original Seq is consumed, as Rakudo's
@@ -1112,6 +955,13 @@ impl Interpreter {
             }
             Some(crate::value::PrefixSource::Iterator(iterator)) => {
                 self.pull_iterator_prefix_to_vec(&iterator, n)?
+            }
+            // A not-yet-run `.map`/`.grep`: the callback runs over only the
+            // source elements the prefix needs (#9158).
+            Some(crate::value::PrefixSource::MapGrep(mut source)) => {
+                let (mut items, _) = self.pull_map_grep_prefix(&mut source, n)?;
+                items.truncate(n);
+                items
             }
             None => return Ok(None),
         };

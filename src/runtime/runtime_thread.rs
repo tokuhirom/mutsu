@@ -881,6 +881,7 @@ impl Interpreter {
             encoding_registry: self.encoding_registry.clone(),
             skip_pseudo_method_native: None,
             dispatch_ambiguous: false,
+            dispatcher_wrap_bypass: None,
             role_pun_construction: Vec::new(),
             rakuseen_active: Vec::new(),
             rakuseen_cycle_hit: std::collections::HashSet::new(),
@@ -1073,6 +1074,7 @@ impl Interpreter {
             lazy_pull_entry_call_depth: None,
             lazy_pull_entry_routine_depth: None,
             rw_map_topic_capture: None,
+            map_grep_last_depth: None,
         };
         // Raku gives each start block fresh $/ and $! (they are lexically scoped).
         cloned.env.insert("/".to_string(), Value::NIL);

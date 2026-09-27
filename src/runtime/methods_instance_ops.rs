@@ -3157,18 +3157,14 @@ impl Interpreter {
                     && let Some(wrapper) = args.first().cloned()
                 {
                     let am = attributes.as_map();
-                    if let (
-                        Some(ValueView::Str(cls)),
-                        Some(ValueView::Str(meth)),
-                        Some(ValueView::Int(idx)),
-                    ) = (
+                    if let (Some(ValueView::Str(cls)), Some(ValueView::Str(meth)), Some(idx)) = (
                         am.get("__mutsu_lookup_class").map(Value::view),
                         am.get("__mutsu_lookup_method").map(Value::view),
-                        am.get("__mutsu_lookup_candidate_idx").map(Value::view),
+                        super::dispatcher_wrap::method_object_wrap_slot(&am),
                     ) {
                         self.wrap_handle_counter += 1;
                         let handle_id = self.wrap_handle_counter;
-                        let (cls, meth, idx) = (cls.to_string(), meth.to_string(), idx as usize);
+                        let (cls, meth) = (cls.to_string(), meth.to_string());
                         self.registry_mut()
                             .push_method_wrap(&cls, &meth, idx, handle_id, wrapper);
                         let wh = super::methods_sub::method_wrap_handle_attrs(
@@ -3196,17 +3192,13 @@ impl Interpreter {
                         "Method" | "Submethod" | "Regex"
                     )
                     && let am = attributes.as_map()
-                    && let (
-                        Some(ValueView::Str(cls)),
-                        Some(ValueView::Str(meth)),
-                        Some(ValueView::Int(idx)),
-                    ) = (
+                    && let (Some(ValueView::Str(cls)), Some(ValueView::Str(meth)), Some(idx)) = (
                         am.get("__mutsu_lookup_class").map(Value::view),
                         am.get("__mutsu_lookup_method").map(Value::view),
-                        am.get("__mutsu_lookup_candidate_idx").map(Value::view),
+                        super::dispatcher_wrap::method_object_wrap_slot(&am),
                     )
                 {
-                    let (cls, meth, idx) = (cls.to_string(), meth.to_string(), idx as usize);
+                    let (cls, meth) = (cls.to_string(), meth.to_string());
                     if args.is_empty() {
                         return match self.registry_mut().pop_method_wrap(&cls, &meth, idx) {
                             Some(_) => Ok(Value::TRUE),

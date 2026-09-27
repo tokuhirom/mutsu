@@ -2956,14 +2956,16 @@ impl Interpreter {
             }
 
             // -- Logic / coercion --
-            // Cost: O(1) for most values; a not-yet-run `.map`/`.grep` Seq is forced whole,
-            // O(e) callbacks, e = source elements (see eval_truthy). Rakudo: O(1) -- see #9158.
+            // Cost: O(1) for most values; a not-yet-run `.map`/`.grep` Seq pulls one
+            // element, one callback per source element up to its first result
+            // (see eval_truthy).
             OpCode::Not => {
                 self.exec_not_op();
                 *ip += 1;
             }
-            // Cost: O(1) for most values; a not-yet-run `.map`/`.grep` Seq is forced whole,
-            // O(e) callbacks, e = source elements (see eval_truthy). Rakudo: O(1) -- see #9158.
+            // Cost: O(1) for most values; a not-yet-run `.map`/`.grep` Seq pulls one
+            // element, one callback per source element up to its first result
+            // (see eval_truthy).
             OpCode::BoolCoerce => {
                 self.sync_source_line(code, *ip);
                 self.exec_bool_coerce_op();

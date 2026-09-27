@@ -324,7 +324,8 @@ impl Interpreter {
                 // they already take from `make_lazy_pipe`.
                 if matches!(grep_adverb, GrepAdverb::V) {
                     return Ok(Value::seq_deferred(crate::value::SeqSource::MapGrep {
-                        items: std::sync::Arc::new(Vec::new()),
+                        items: crate::value::MapGrepItems::Live(target.clone()),
+                        pos: 0,
                         func: args.first().cloned(),
                         fatal: self.fatal_mode,
                         mode: crate::value::MapGrepMode::GrepArray(target.clone()),
@@ -350,7 +351,8 @@ impl Interpreter {
                 // stay eager -- they need indices over the whole result.
                 if matches!(grep_adverb, GrepAdverb::V) {
                     return Ok(Value::seq_deferred(crate::value::SeqSource::MapGrep {
-                        items: std::sync::Arc::new(items),
+                        items: crate::value::MapGrepItems::Snapshot(std::sync::Arc::new(items)),
+                        pos: 0,
                         func: args.first().cloned(),
                         fatal: self.fatal_mode,
                         mode: crate::value::MapGrepMode::Grep,
@@ -529,8 +531,27 @@ impl Interpreter {
         func: Option<Value>,
         grep_adverb: &GrepAdverb,
     ) -> Result<Value, RuntimeError> {
+        let len = items.len();
+        self.grep_over_array_promoting_range(items, func, grep_adverb, 0..len)
+    }
+
+    /// [`Self::grep_over_array_promoting`] over the source slots `range`
+    /// only: a deferred `.grep` pulled a prefix at a time (#9158,
+    /// `pull_map_grep_prefix`) greps the source a chunk at a time. The
+    /// indices the `:k`/`:kv`/`:p` adverbs see are absolute.
+    // Cost: one callback call per slot of `range`, plus O(m) promotions,
+    // m = matched slots.
+    pub(crate) fn grep_over_array_promoting_range(
+        &mut self,
+        items: crate::gc::Gc<crate::value::ArrayData>,
+        func: Option<Value>,
+        grep_adverb: &GrepAdverb,
+        range: std::ops::Range<usize>,
+    ) -> Result<Value, RuntimeError> {
+        let start = range.start.min(items.len());
+        let end = range.end.min(items.len()).max(start);
         let (filtered, mutated_items, matched_indices) =
-            self.eval_grep_over_items_with_mutated(func, items.to_vec())?;
+            self.eval_grep_over_items_with_mutated(func, items[start..end].to_vec())?;
         // Which source positions matched, so those slots can be shared
         // with the result as first-class element containers. The grep
         // loop reports them; they used to be re-derived here by scanning
@@ -541,7 +562,11 @@ impl Interpreter {
         //
         // `None` is a chunked grep (`grep -> $a, $b {...}`): no
         // one-to-one element/slot mapping, so nothing is aliased.
-        let indices = matched_indices.unwrap_or_default();
+        let indices: Vec<usize> = matched_indices
+            .unwrap_or_default()
+            .into_iter()
+            .map(|i| i + start)
+            .collect();
         // Promote each matched source slot to a shared `ContainerRef`
         // cell and reference the SAME cells from the grep result. A
         // writeback loop (`for @a.grep(...) { $_++ }` / `@a.grep(...)>>++`)
@@ -565,16 +590,16 @@ impl Interpreter {
             // grep result the raw marker instead — Raku yields `Any`
             // there, not an alias into a slot that does not exist.
             if items.hole_at(i) {
-                shared_cells.push(promoted[i].clone());
+                shared_cells.push(promoted[i - start].clone());
                 continue;
             }
-            let cell = match promoted[i].view() {
-                ValueView::ContainerRef(_) => promoted[i].clone(),
+            let cell = match promoted[i - start].view() {
+                ValueView::ContainerRef(_) => promoted[i - start].clone(),
                 _ => Value::container_ref(crate::gc::Gc::new(crate::value::ContainerCell::new(
-                    promoted[i].clone(),
+                    promoted[i - start].clone(),
                 ))),
             };
-            promoted[i] = cell.clone();
+            promoted[i - start] = cell.clone();
             shared_cells.push(cell);
         }
         // Publish the promotion by mutating the source `ArrayData` IN
@@ -595,8 +620,8 @@ impl Interpreter {
             let data = unsafe { crate::value::gc_contents_mut(&items) };
             let slots = data.items_mut();
             for (i, v) in promoted.into_iter().enumerate() {
-                if i < slots.len() {
-                    slots[i] = v;
+                if start + i < slots.len() {
+                    slots[start + i] = v;
                 }
             }
         }

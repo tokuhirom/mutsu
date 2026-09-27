@@ -80,6 +80,12 @@ pub(crate) type TokenDefsMap = HashMap<Symbol, Vec<std::sync::Arc<FunctionDef>>>
 /// `pub(crate)` so registry-internal runtime code can access them directly;
 /// PR-B adds typed lookup methods for the VM to call.
 ///
+/// The `method_wrap_chains` candidate slot for a multi method's DISPATCHER
+/// (the proto `.^method_table<m>` / `.^lookup('m')` returns), as opposed to
+/// one of its candidates. A wrapper here runs before candidate selection and
+/// re-dispatches the whole multi (`runtime::dispatcher_wrap`).
+pub(crate) const DISPATCHER_WRAP_IDX: usize = usize::MAX;
+
 /// Note: no `Debug` derive — `ClassDef` (and its `MethodDef`/AST graph) is not
 /// `Debug`, and nothing needs to format the registry.
 #[derive(Clone, Default)]
@@ -175,6 +181,11 @@ pub(crate) struct Registry {
     /// of a program-wide `has_any_wrap_chains()` prefilter disabling it
     /// whenever ANY method anywhere is wrapped).
     pub(crate) method_wrap_chains: HashMap<(String, String, usize), Vec<(u64, Value)>>,
+    /// Method names that have ever had a wrapper pushed onto their multi
+    /// DISPATCHER slot ([`DISPATCHER_WRAP_IDX`]). A conservative prefilter
+    /// for `Interpreter::dispatcher_wrap_chain`: a name is never removed, so
+    /// a stale entry only costs one MRO walk, never a missed wrapper.
+    pub(crate) dispatcher_wrapped_methods: std::collections::HashSet<String>,
     /// `enum Name (...)` declarations: enum name -> [(variant name, value)].
     pub(crate) enum_types: HashMap<String, Vec<(String, EnumValue)>>,
     /// `subset Name of Base where { ... }` declarations.
@@ -803,6 +814,10 @@ impl Registry {
         handle_id: u64,
         wrapper: Value,
     ) {
+        if candidate_idx == DISPATCHER_WRAP_IDX {
+            self.dispatcher_wrapped_methods
+                .insert(method_name.to_string());
+        }
         self.method_wrap_chains
             .entry((
                 class_name.to_string(),

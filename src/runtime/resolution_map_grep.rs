@@ -820,7 +820,11 @@ impl Interpreter {
                             }
                         }
                         Err(e) if e.is_next() => {}
-                        Err(e) if e.is_last() => break,
+                        Err(e) if e.is_last() => {
+                            vm.map_grep_last_depth =
+                                Some(crate::runtime::loop_handler_depth::loop_handler_depth());
+                            break;
+                        }
                         Err(e) if e.is_succeed() => {
                             // A matched `when`/`default` inside the block escapes
                             // as a succeed signal instead of returning normally

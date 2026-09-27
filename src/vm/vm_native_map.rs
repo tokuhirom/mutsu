@@ -59,6 +59,7 @@ impl Interpreter {
         &mut self,
         target: &Value,
         args: &[Value],
+        range: std::ops::Range<usize>,
     ) -> Option<NativeRwMapOutcome> {
         // Exactly one positional Sub argument.
         if args.len() != 1 {
@@ -75,10 +76,14 @@ impl Interpreter {
         // and ranges/seqs have their own one-arg-rule / Seq-returning semantics.
         // (`ArrayKind::is_real_array()` is too broad — it also matches Shaped,
         // Lazy and ItemArray — so match the kind explicitly.)
-        let items = match target.view() {
+        // Only the source slots `range` are mapped: a deferred `.map` pulled
+        // a prefix at a time (#9158) runs a chunk of the source per pull.
+        let source = match target.view() {
             ValueView::Array(items, ArrayKind::Array) => items.clone(),
             _ => return None,
         };
+        let end = range.end.min(source.len());
+        let items: &[Value] = source.get(range.start.min(end)..end)?;
         // A `Pair`/`ValuePair` element passed positionally to the block is bound
         // as a *named* argument by the closure-call machinery (and skipped when
         // setting the implicit `$_`), so the block would see no topic. For the
