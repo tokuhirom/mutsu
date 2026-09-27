@@ -1488,6 +1488,18 @@ pub(crate) struct NativeCtorPlan {
     /// EVERY construction (16 interns per `bench-ctor` construction, each a
     /// thread-local + string-hash round trip). It is pure class shape.
     pub(crate) attr_seeds: Arc<Vec<AttrSeed>>,
+    /// Each attribute's effective type constraint, one per `class_attrs`
+    /// entry: [`attribute_type_constraint`] resolved once per class. Asking it
+    /// per construction scanned every attribute for a sigil collision and
+    /// cloned the constraint `String`, for every attribute, three times per
+    /// `.new` -- O(n^2) in the attribute count, for an answer that is pure
+    /// class shape.
+    pub(crate) attr_constraints: Arc<[Option<String>]>,
+    /// Whether the default constructor binds a named argument to each
+    /// attribute (`is_attribute_buildable`), one per `class_attrs` entry.
+    /// Pure class shape; re-derived per named argument it was a registry
+    /// probe plus an attribute scan per MRO level.
+    pub(crate) attr_buildable: Arc<[bool]>,
     /// Which user-defined whole-object build hook this class's MRO declares —
     /// `Some("BUILDALL")`, `Some("POPULATE")`, or `None` (the overwhelmingly
     /// common case). `run_user_buildall_hook` probed this per construction with
@@ -4560,6 +4572,15 @@ pub struct Interpreter {
     /// user-method tail; consumed by
     /// `try_compiled_method_mut_or_interpret_sym`.
     pub(crate) plain_method_lane_active: bool,
+    /// ADR-0121 D3: classes whose `.new(named...)` `CallMethodMut` dispatch was
+    /// observed to walk the whole probe chain into the native default
+    /// constructor, with the `NativeCtorPlan` that construction used. Written
+    /// only from that outcome, and cleared with the other method caches on a
+    /// registry generation change. See `vm_ctor_lane`.
+    pub(crate) ctor_lane: rustc_hash::FxHashMap<Symbol, Arc<NativeCtorPlan>>,
+    /// The class the *current* `CallMethodMut` dispatch may install into
+    /// [`Interpreter::ctor_lane`]; set (or cleared) by that opcode's gate.
+    pub(crate) ctor_lane_candidate: Option<Symbol>,
     /// ADR-0121 D3: `(layout id, method name) -> slot` for a `CallMethodMut`
     /// whose whole dispatch was the generated accessor's plain slot read.
     /// Written only from that outcome, and cleared with the other method caches

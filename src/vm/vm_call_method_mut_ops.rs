@@ -237,6 +237,10 @@ impl Interpreter {
         // every exit, mirroring the CallFunc/CallOnCodeVar set-then-clear pair.
         self.set_pending_call_arg_sources(None);
         self.pending_call_arg_source_slots.clear();
+        // The constructor-lane candidate is scoped to this dispatch too: one a
+        // probe claimed must not be installed by a later, unrelated arrival at
+        // the native constructor.
+        self.ctor_lane_candidate = None;
         result
     }
 
@@ -669,6 +673,19 @@ impl Interpreter {
         // the install candidate cleared) on every dispatch, so a nested call run
         // from inside a probe cannot leave its key behind for an outer one.
         // See `vm_call_method_plain_lane` for what the key has to hold constant.
+        // ADR-0121 D3: the constructor twin of the plain-method lane --
+        // `Class.new(named...)` on a class whose `.new` has been observed to
+        // walk the whole chain into the native default constructor goes
+        // straight there. See `vm_ctor_lane`.
+        self.ctor_lane_candidate =
+            Self::ctor_lane_key(&target, &args, modifier, quoted, want_ref, method_sym);
+        if let Some(class_sym) = self.ctor_lane_candidate
+            && let Some(result) = self.try_ctor_lane(class_sym, &args)
+        {
+            self.ctor_lane_candidate = None;
+            self.stack.push(result?);
+            return Ok(());
+        }
         match Self::plain_method_lane_key(&target, &args, modifier, quoted, want_ref, method_sym) {
             Some(lane_key) if self.plain_method_lane_hit(lane_key) => {
                 self.plain_method_lane_candidate = None;

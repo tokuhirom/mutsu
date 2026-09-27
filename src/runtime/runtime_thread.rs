@@ -1032,6 +1032,8 @@ impl Interpreter {
             plain_method_lane_candidate: None,
             plain_method_lane_active: false,
             accessor_lane: rustc_hash::FxHashMap::default(),
+            ctor_lane: rustc_hash::FxHashMap::default(),
+            ctor_lane_candidate: None,
             native_ctor_plan_cache: rustc_hash::FxHashMap::default(),
             user_method_probe_memo: Default::default(),
             create_memo: Default::default(),
