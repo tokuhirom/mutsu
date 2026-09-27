@@ -594,6 +594,11 @@ impl Interpreter {
                             Ok(Value::package(crate::symbol::wk::any()))
                         } else if name.starts_with('*')
                             && !runtime::utils::is_builtin_dynamic_var(name)
+                            && !code
+                                .dynamic_declared_sym
+                                .contains(&crate::symbol::Symbol::intern(
+                                    name.trim_start_matches(['$', '@', '%', '&']),
+                                ))
                         {
                             // A `$*x`/`@*x`/`%*x` that resolved through NONE of
                             // the stores above (env, a caller's `my $*x`,
@@ -605,6 +610,19 @@ impl Interpreter {
                             // (mirrors `CheckDynamicVarDeclared`'s eager throw
                             // on the ASSIGNMENT side, where there is no lazy
                             // value to hand back instead).
+                            //
+                            // `dynamic_declared_sym` (populated as `my $*x`
+                            // compiles anywhere in THIS chunk's body) excludes
+                            // a name this exact chunk declares later: `say
+                            // $*a; my $*a;` must still read as Nil here so
+                            // execution reaches the `my $*a` declaration's own
+                            // compiled X::Dynamic::Postdeclaration throw
+                            // (roast/S02-names-vars/contextual.t) instead of
+                            // exploding on the read first. Chunk-wide rather
+                            // than lexical-block-scoped -- a single-pass
+                            // compiler cannot know at an earlier read's
+                            // compile time whether a later same-block
+                            // declaration is coming.
                             let display = if name.starts_with(['@', '%', '&']) {
                                 name.to_string()
                             } else {
@@ -797,9 +815,19 @@ impl Interpreter {
                         // A builtin dynamic (`@*ARGS`, ...) is always
                         // "declared" by the setting, so it is exempted the
                         // same way the scalar fallback and the assignment-side
-                        // `CheckDynamicVarDeclared` check are.
+                        // `CheckDynamicVarDeclared` check are -- and so is a
+                        // name this exact chunk `my @*x`-declares later on
+                        // (`dynamic_declared_sym`), deferring to that
+                        // declaration's own X::Dynamic::Postdeclaration throw
+                        // instead of exploding on the earlier read (see the
+                        // scalar `GetGlobal` fallback's fuller comment).
                         if name.strip_prefix('@').is_some_and(|n| n.starts_with('*'))
                             && !runtime::utils::is_builtin_dynamic_var(name)
+                            && !code
+                                .dynamic_declared_sym
+                                .contains(&crate::symbol::Symbol::intern(
+                                    name.trim_start_matches(['$', '@', '%', '&']),
+                                ))
                         {
                             Ok(self.fail_error_to_failure_value(
                                 &runtime::utils::dynamic_not_found_error(name),
@@ -953,9 +981,16 @@ impl Interpreter {
                         // and `//` still falls through to its RHS. A builtin
                         // dynamic (`%*ENV`, ...) is always "declared" by the
                         // setting, exempted the same way the scalar/array
-                        // fallbacks are.
+                        // fallbacks are -- and so is a name this exact chunk
+                        // `my %*x`-declares later on (see the scalar
+                        // `GetGlobal` fallback's fuller comment).
                         if name.strip_prefix('%').is_some_and(|n| n.starts_with('*'))
                             && !runtime::utils::is_builtin_dynamic_var(name)
+                            && !code
+                                .dynamic_declared_sym
+                                .contains(&crate::symbol::Symbol::intern(
+                                    name.trim_start_matches(['$', '@', '%', '&']),
+                                ))
                         {
                             self.stack.push(self.fail_error_to_failure_value(
                                 &runtime::utils::dynamic_not_found_error(name),
