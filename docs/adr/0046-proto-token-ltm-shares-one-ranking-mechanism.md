@@ -4,6 +4,18 @@
   Every row of §2.1, §2.2 and §2.3 now answers as `raku` does, on both proto
   dispatch mechanisms, and the headline repro in §5 flips. The per-slice history
   below is kept for the implementation notes each one accumulated.
+  **Correction (2026-09-27, issue #9692):** Decision 2 item 3's "same treatment
+  applies to the `<$var>` regex-value reroute (probe S)" was implemented as
+  *one* unconditional flag covering both shapes `<$var>` can resolve to, but
+  §2.1 probe S itself only ever exercised a Regex-typed `$var` (`rx/.../`).
+  A `$var` holding a plain Str is different: its resolution (in
+  `regex_parse_core.rs`, the `<$var>` reroute arm) re-parses the string into a
+  real `RegexPattern` right there at the interpolation's own parse site — it
+  is exactly as knowable as if the source had been written literally, unlike a
+  Regex value's own opaque AST. `from_runtime_interpolation` is now set only
+  when the resolved value is actually Regex-typed (`is_regex_value`); the Str
+  case measures normally. Pinned by probes V and W in
+  `t/regex/regex-ltm-interpolation-provenance.t`.
   **Slice 1 (array/regex-object
   interpolation provenance, §4 item 1) landed 2026-08-20**: the three
   `push_regex_interpolated_alternation` call sites (`@name`, `@$var`,
