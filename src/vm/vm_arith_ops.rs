@@ -197,6 +197,42 @@ impl Interpreter {
         Ok(())
     }
 
+    /// Resolve `$*RAT-OVERFLOW` for a binary arithmetic op and relay the
+    /// answer into `make_big_rat_arith` (`src/value/mod.rs`) for exactly the
+    /// duration of the guarded call, via the `RatOverflowScope` RAII guard.
+    /// `make_big_rat_arith` has no `Interpreter` access (it is `src/builtins/
+    /// arith/`'s single shared implementation of the Rat-overflow decision,
+    /// called from a dozen sites per ADR-0117/ADR-0118), so this is a scoped
+    /// relay of a value already resolved against the caller's real dynamic
+    /// scope here, not a new dynamic-scoping mechanism of its own.
+    ///
+    /// Skips the dynamic-var lookup entirely unless an operand is already
+    /// Rat/BigRat -- an Int/Num/Str/FatRat op (FatRat never degrades, so
+    /// `$*RAT-OVERFLOW` cannot apply to it) pays nothing extra.
+    fn rat_overflow_scope_for(
+        &self,
+        left: &Value,
+        right: &Value,
+    ) -> crate::value::RatOverflowScope {
+        fn is_plain_rat_family(v: &Value) -> bool {
+            match v.view() {
+                ValueView::Rat(..) => true,
+                // `ValueView::BigRat` does not expose the FatRat flag (the
+                // view mirrors `Value::BigRat`'s num/den fields only), so a
+                // FatRat-flagged BigRat must be excluded via `is_bigfatrat`
+                // directly -- FatRat never degrades, so `$*RAT-OVERFLOW`
+                // cannot apply to it.
+                ValueView::BigRat(..) => !v.is_bigfatrat(),
+                _ => false,
+            }
+        }
+        let prefers_fatrat = (is_plain_rat_family(left) || is_plain_rat_family(right))
+            && self.get_dynamic_var("*RAT-OVERFLOW").is_ok_and(|v| {
+                matches!(v.view(), ValueView::Package(sym) if sym == crate::symbol::wk::fat_rat())
+            });
+        crate::value::RatOverflowScope::set(prefers_fatrat)
+    }
+
     pub(super) fn exec_add_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
@@ -232,6 +268,7 @@ impl Interpreter {
             self.stack.push(result);
             return Ok(());
         }
+        let _rat_overflow_scope = self.rat_overflow_scope_for(&left, &right);
         let result = self.eval_binary_with_junctions(left, right, |vm, l, r| {
             if let Some(result) = vm.try_user_infix("infix:<+>", &l, &r)? {
                 return Ok(result);
@@ -281,6 +318,7 @@ impl Interpreter {
             self.stack.push(result);
             return Ok(());
         }
+        let _rat_overflow_scope = self.rat_overflow_scope_for(&left, &right);
         let result = self.eval_binary_with_junctions(left, right, |vm, l, r| {
             if let Some(result) = vm.try_user_infix("infix:<->", &l, &r)? {
                 return Ok(result);
@@ -456,6 +494,7 @@ impl Interpreter {
             self.stack.push(result);
             return Ok(());
         }
+        let _rat_overflow_scope = self.rat_overflow_scope_for(&left, &right);
         let result = self.eval_binary_with_junctions(left, right, |vm, l, r| {
             if let Some(result) = vm.try_user_infix("infix:<*>", &l, &r)? {
                 return Ok(result);
@@ -476,6 +515,7 @@ impl Interpreter {
     pub(super) fn exec_div_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
+        let _rat_overflow_scope = self.rat_overflow_scope_for(&left, &right);
         let result = self.eval_binary_with_junctions(left, right, |vm, l, r| {
             if let Some(result) = vm.try_user_infix("infix:</>", &l, &r)? {
                 return Ok(result);
@@ -545,6 +585,7 @@ impl Interpreter {
                 return Ok(());
             }
         }
+        let _rat_overflow_scope = self.rat_overflow_scope_for(&left, &right);
         let result = self.eval_binary_with_junctions(left, right, |vm, l, r| {
             if let Some(result) = vm.try_user_infix("infix:<**>", &l, &r)? {
                 return Ok(result);

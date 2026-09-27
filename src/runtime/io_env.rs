@@ -284,6 +284,14 @@ impl Interpreter {
             "$*DEFAULT-READ-ELEMS" | "*DEFAULT-READ-ELEMS" => {
                 Value::int(crate::runtime::DEFAULT_READ_ELEMS)
             }
+            // `$*RAT-OVERFLOW` selects what a `Rat` whose denominator
+            // overflows uint64 precision becomes; the default is the `Num`
+            // type object (meaning: degrade to a lossy float, rakudo's
+            // documented default). Setting it to `FatRat` is honored by
+            // `Interpreter::rat_overflow_scope_for` (`src/vm/vm_arith_ops.rs`),
+            // which relays the resolved value into `make_big_rat_arith`'s
+            // overflow decision (`src/value/mod.rs`).
+            "$*RAT-OVERFLOW" | "*RAT-OVERFLOW" => Value::package(Symbol::intern("Num")),
             "*USER" => Self::cached_user_instance(),
             "*GROUP" => Self::cached_group_instance(),
             _ => return None,

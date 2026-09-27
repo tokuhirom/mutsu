@@ -651,6 +651,19 @@ impl Interpreter {
         if matches!(bare, "_" | "/" | "!") {
             return true;
         }
-        self.var_dynamic_flags.get(bare).copied().unwrap_or(false)
+        if self.var_dynamic_flags.get(bare).copied().unwrap_or(false) {
+            return true;
+        }
+        // A builtin dynamic materialized lazily (`$*TOLERANCE`, `$*RAT-OVERFLOW`,
+        // `$*COLLATION`, ...; see `lazy_magic_dynamic_var`) is never written into
+        // `var_dynamic_flags` -- it is "declared" by the setting itself, the same
+        // whitelist the read-side `GetGlobal` fallback and the compiler's
+        // `X::Dynamic::Postdeclaration` check already exempt. Without this,
+        // `get_dynamic_var` (which every one of these vars' own consumers reads
+        // through: `approx_eq_values` for `$*TOLERANCE`, the collation ops for
+        // `$*COLLATION`, `rat_overflow_scope_for` for `$*RAT-OVERFLOW`, ...) never
+        // finds a value a bare `$*TOLERANCE = ...` (no `my`) just stored, because
+        // that assignment never marks the name dynamic either.
+        crate::runtime::utils::is_builtin_dynamic_var(bare)
     }
 }

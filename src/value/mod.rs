@@ -1639,9 +1639,45 @@ pub fn make_big_rat(num: NumBigInt, den: NumBigInt) -> Value {
     }
 }
 
+thread_local! {
+    // Mirrors `$*RAT-OVERFLOW`'s effective value for the arithmetic op
+    // currently executing, so `make_big_rat_arith` (a pure value-level
+    // function with no `Interpreter` access, called from a dozen sites
+    // across `src/builtins/arith/`) can honor it without threading an
+    // interpreter reference through every one of those call sites. Set only
+    // around the VM's own binary-op opcode handlers
+    // (`Interpreter::rat_overflow_scope_for`, `src/vm/vm_arith_ops.rs`),
+    // which already resolve `$*RAT-OVERFLOW` per the caller's actual dynamic
+    // scope before entering the arithmetic primitive -- so this is a scoped
+    // relay of a value already correctly resolved, not an approximation of
+    // it. Defaults to `false` (the historical degrade-to-`Num` behavior) for
+    // every other caller (`nqp::` ops, `[+]`-style reduction, atomic
+    // increment, ...), which do not yet consult `$*RAT-OVERFLOW`.
+    static RAT_OVERFLOW_PREFERS_FATRAT: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// RAII guard that restores the previous [`RAT_OVERFLOW_PREFERS_FATRAT`] value
+/// on drop, so an early return from the guarded call still cleans up.
+pub(crate) struct RatOverflowScope(bool);
+
+impl RatOverflowScope {
+    pub(crate) fn set(prefers_fatrat: bool) -> Self {
+        let prev = RAT_OVERFLOW_PREFERS_FATRAT.with(|c| c.replace(prefers_fatrat));
+        RatOverflowScope(prev)
+    }
+}
+
+impl Drop for RatOverflowScope {
+    fn drop(&mut self) {
+        RAT_OVERFLOW_PREFERS_FATRAT.with(|c| c.set(self.0));
+    }
+}
+
 /// Create a Rat from BigInt numerator/denominator, used for arithmetic results.
 /// Per Raku spec, Rat denominators are limited to uint64 range after reduction.
-/// When the reduced denominator exceeds this, degrade to Num.
+/// When the reduced denominator exceeds this, degrade to Num -- unless the
+/// current scope's `$*RAT-OVERFLOW` prefers `FatRat` (see
+/// [`RAT_OVERFLOW_PREFERS_FATRAT`]), in which case upgrade instead.
 /// This is different from `make_big_rat` which preserves BigRat for literal values.
 pub fn make_big_rat_arith(num: NumBigInt, den: NumBigInt) -> Value {
     if den.is_zero() {
@@ -1665,9 +1701,15 @@ pub fn make_big_rat_arith(num: NumBigInt, den: NumBigInt) -> Value {
         Value::Rat(n_i64, d_i64)
     } else if d.to_u64().is_none() || d.bits() > 64 {
         // Per Raku spec, Rat denominators are limited to uint64 range.
-        // When arithmetic produces a denominator exceeding this, degrade to Num.
+        // When arithmetic produces a denominator exceeding this, degrade to
+        // Num -- or, when `$*RAT-OVERFLOW = FatRat` is in effect, upgrade to
+        // FatRat instead (`$*RAT-OVERFLOW`'s documented behavior).
         // The bits() check is a redundant safety net for d.to_u64().
-        Value::Num(bigrat_to_f64(&n, &d))
+        if RAT_OVERFLOW_PREFERS_FATRAT.with(|c| c.get()) {
+            Value::bigfatrat(n, d)
+        } else {
+            Value::Num(bigrat_to_f64(&n, &d))
+        }
     } else {
         Value::bigrat(n, d)
     }
