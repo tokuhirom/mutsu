@@ -37,7 +37,7 @@ impl Interpreter {
         let decayed_array = value
             .with_array_mut(|items, _kind| {
                 let data = crate::gc::Gc::make_mut(items);
-                for item in data.items_mut() {
+                for item in data.live_mut() {
                     if item.is_nil() {
                         *item = default.clone();
                     }

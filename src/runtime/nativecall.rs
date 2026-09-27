@@ -618,7 +618,7 @@ pub fn call_native_with_out_args(
         {
             let sz = carray_elem_size(*elem);
             arr.with_array_inplace(|data, _kind| {
-                for (i, cell) in data.items_mut().iter_mut().enumerate() {
+                for (i, cell) in data.live_mut().iter_mut().enumerate() {
                     let off = i * sz;
                     if off + sz <= buf.len() {
                         *cell = decode_carray_elem(*elem, &buf[off..off + sz]);

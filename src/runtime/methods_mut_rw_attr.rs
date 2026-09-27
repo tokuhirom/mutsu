@@ -445,7 +445,7 @@ impl Interpreter {
             if idx >= data.items().len() {
                 data.items_mut().resize(idx + 1, Value::NIL);
             }
-            data.items_mut()[idx] = value.clone();
+            data.live_mut()[idx] = value.clone();
             Value::array_with_kind(crate::gc::Gc::new(data), kind)
         } else {
             let key = index_value.to_string_value();

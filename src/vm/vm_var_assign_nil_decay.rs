@@ -182,7 +182,7 @@ impl Interpreter {
         // Clone the ArrayData so shape/default/type metadata survive; only
         // the items are rewritten.
         let mut data = (**items).clone();
-        for item in data.items_mut() {
+        for item in data.live_mut() {
             if item.is_nil() {
                 *item = default.clone();
             }

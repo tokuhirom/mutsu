@@ -114,7 +114,7 @@ impl Interpreter {
                 }
                 value.with_array_mut(|items, _kind| {
                     let data = crate::gc::Gc::make_mut(items);
-                    for (slot, new) in data.items_mut().iter_mut().zip(fetched) {
+                    for (slot, new) in data.live_mut().iter_mut().zip(fetched) {
                         *slot = new;
                     }
                 });

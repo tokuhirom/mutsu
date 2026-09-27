@@ -1112,11 +1112,9 @@ impl Interpreter {
                         // standard `Package("Any")` gap marker instead of a
                         // raw `Value::NIL` -- `Nil` is no longer a hole
                         // sentinel, only `ArrayData::initialized` is.
-                        items
-                            .items_mut()
-                            .resize(idx_u + 1, Self::native_fill_for_constraint(None));
+                        items.resize(idx_u + 1, Self::native_fill_for_constraint(None));
                     }
-                    items.items_mut()[idx_u] = val.clone();
+                    items.live_mut()[idx_u] = val.clone();
                     // Materialize the "all present" range before recording
                     // `idx_u` as present, so a skipped intermediate slot from
                     // the resize above is correctly left OUT and reads as a
@@ -1327,7 +1325,7 @@ impl Interpreter {
                     // straight to `*mut Vec<Value>`, assuming `items` sits at
                     // offset 0; this types it properly as `&mut ArrayData`.)
                     let data = unsafe { crate::value::gc_contents_mut(&items) };
-                    let slot = &mut data.items_mut()[i];
+                    let slot = &mut data.live_mut()[i];
                     if let ValueView::ContainerRef(cell) = slot.view() {
                         // A shared cell keeps its identity: every other alias of
                         // the same variable observes the write.
@@ -5826,16 +5824,14 @@ impl Interpreter {
                             ),
                         };
                         if i >= items.items().len() {
-                            items
-                                .items_mut()
-                                .resize(i + 1, Value::package(crate::symbol::wk::any()));
+                            items.resize(i + 1, Value::package(crate::symbol::wk::any()));
                         }
                         match &bind_cell {
                             Some((_, cell)) => {
-                                items.items_mut()[i] = Value::container_ref(cell.clone())
+                                items.live_mut()[i] = Value::container_ref(cell.clone())
                             }
                             None => {
-                                Value::assign_element_slot(&mut items.items_mut()[i], val.clone())
+                                Value::assign_element_slot(&mut items.live_mut()[i], val.clone())
                             }
                         }
                         *storage = Value::array_with_kind(crate::gc::Gc::new(items), kind);

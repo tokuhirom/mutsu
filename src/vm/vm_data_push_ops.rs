@@ -54,12 +54,9 @@ impl Interpreter {
     }
 
     /// Fast path for @arr.push(val) — directly appends to the array Arc.
-    // Cost: O(1) amortized (in-place `Vec::push` on the shared node, relying on
-    // spare capacity); O(k) for a pushed Slip of k elements. But the push goes
-    // through `ArrayData::items_mut`, which first compacts a front head offset left
-    // by `shift`/`unshift`: O(e), e = elements of the array, on every push that
-    // follows one (a `push`+`shift` queue loop is O(e) per step).
-    // Rakudo: O(1) amortized -- see #9156.
+    // Cost: O(1) amortized (in-place `ArrayData::push` on the shared node, which
+    // appends behind a pending front head offset without compacting it); O(k) for
+    // a pushed Slip of k elements.
     pub(super) fn exec_array_push_op(
         &mut self,
         code: &CompiledCode,
@@ -179,7 +176,7 @@ impl Interpreter {
                     let mut guard = cell.lock().unwrap_or_else(|e| e.into_inner());
                     (*guard).with_array_mut(|arc, _| {
                         let data = crate::gc::Gc::make_mut(arc);
-                        data.items_mut().extend(items);
+                        data.extend(items);
                     });
                     let result = guard.clone();
                     drop(guard);
@@ -373,10 +370,10 @@ impl Interpreter {
                     .with_array_inplace(|data, _| {
                         let val = val_slot.take().expect("push value present");
                         match val.view() {
-                            ValueView::Slip(slip_items) => data
-                                .items_mut()
-                                .extend(slip_items.iter().cloned().map(Self::itemize_value)),
-                            _ => data.items_mut().push(Self::itemize_value(val)),
+                            ValueView::Slip(slip_items) => {
+                                data.extend(slip_items.iter().cloned().map(Self::itemize_value))
+                            }
+                            _ => data.push(Self::itemize_value(val)),
                         }
                     })
                     .is_some();
@@ -406,10 +403,10 @@ impl Interpreter {
             v.with_array_inplace(|data, _| {
                 let val = val_slot.take().expect("push value present");
                 match val.view() {
-                    ValueView::Slip(slip_items) => data
-                        .items_mut()
-                        .extend(slip_items.iter().cloned().map(Self::itemize_value)),
-                    _ => data.items_mut().push(Self::itemize_value(val)),
+                    ValueView::Slip(slip_items) => {
+                        data.extend(slip_items.iter().cloned().map(Self::itemize_value))
+                    }
+                    _ => data.push(Self::itemize_value(val)),
                 }
             })
         });

@@ -121,7 +121,7 @@ impl Interpreter {
     /// there the element type describes the element, not the element's own
     /// elements.
     fn tag_shaped_rows_value_type(data: &mut crate::value::ArrayData, value_type: &str) {
-        for item in data.items_mut() {
+        for item in data.live_mut() {
             if !matches!(
                 item.view(),
                 ValueView::Array(_, crate::value::ArrayKind::Shaped)

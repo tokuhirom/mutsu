@@ -214,11 +214,15 @@ impl ArrayData {
     }
 
     /// Mutably borrow the element vector through the representation chokepoint.
+    ///
+    /// Handing out the raw `Vec` means the dead prefix a `shift`/`unshift`
+    /// left behind has to be compacted away first, so this is for rare
+    /// whole-vector rewrites. Hot mutators have head-aware counterparts that
+    /// never compact: [`ArrayData::live_mut`] for overwrites, `push`/`extend`/
+    /// `pop`/`insert`/`remove`/`resize`/`truncate`/`drain`,
+    /// [`ArrayData::prepend_values`] and [`ArrayData::splice_live`].
     // Cost: O(1) when no front head offset is pending; otherwise O(e), e = live
-    // elements, because `compact_head` drains the dead prefix a `shift`/`unshift`
-    // left behind. Every caller that interleaves with `shift`/`unshift` (the
-    // `ArrayPush` opcode, the `@a[$i] = $v` fast lane, `splice`) pays it on each
-    // call. Rakudo: O(1) -- see #9156.
+    // elements (`compact_head` drains the dead prefix).
     pub(crate) fn items_mut(&mut self) -> &mut Vec<Value> {
         // Sync first: if native-side code wrote the buffer since the last
         // read, `items` is stale. Marking dirty without syncing would make
@@ -360,7 +364,7 @@ impl ArrayData {
         if i >= len {
             self.resize(i + 1, Value::package(crate::symbol::wk::any()));
         }
-        self.items_mut()[i] = value;
+        self.live_mut()[i] = value;
     }
 }
 

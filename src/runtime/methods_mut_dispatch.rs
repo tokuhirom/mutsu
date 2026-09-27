@@ -959,10 +959,8 @@ impl Interpreter {
                     self.reattach_array_type_metadata(&key, &saved_meta);
                     return Ok(result);
                 }
-                // Cost: O(1) amortized for one element (`ArrayData::insert(0, ..)` uses the
-                // front head offset, #9121); O(k * e) for k > 1, e = elements of the array
-                // (each later insert compacts and shifts the tail). Rakudo: O(k) amortized
-                // -- see #9156.
+                // Cost: O(k) amortized, k = unshifted elements (`ArrayData::prepend_values`
+                // fills the front slack); the detached-rebuild fallback copies all e elements.
                 "unshift" => {
                     crate::vm::vm_stats::record_dispatch_entry_intercept(
                         "callmethodmutwithvalues",
@@ -985,9 +983,7 @@ impl Interpreter {
                             let kind = *kind;
                             // Container identity (§3): insert through a shared node.
                             let items = crate::value::gc_data_mut(arc_items);
-                            for (i, arg) in normalized_args.iter().enumerate() {
-                                items.insert(i, arg.clone());
-                            }
+                            items.prepend_values(normalized_args.clone());
                             Value::array_with_kind(crate::gc::Gc::clone(arc_items), kind)
                         }) {
                         r
@@ -1005,9 +1001,8 @@ impl Interpreter {
                     self.reattach_array_type_metadata(&key, &saved_meta);
                     return Ok(result);
                 }
-                // Cost: O(1) amortized for one element (front head offset, #9121); O(k * e)
-                // for k > 1, e = elements of the array (each later insert compacts and
-                // shifts the tail). Rakudo: O(k) amortized -- see #9156.
+                // Cost: O(k) amortized, k = prepended elements (`ArrayData::prepend_values`);
+                // the detached-rebuild fallback copies all e elements.
                 "prepend" => {
                     crate::vm::vm_stats::record_dispatch_entry_intercept(
                         "callmethodmutwithvalues",
@@ -1033,9 +1028,7 @@ impl Interpreter {
                             let kind = *kind;
                             // Container identity (§3): insert through a shared node.
                             let items = crate::value::gc_data_mut(arc_items);
-                            for (i, arg) in flat_values.iter().enumerate() {
-                                items.insert(i, arg.clone());
-                            }
+                            items.prepend_values(flat_values.clone());
                             Value::array_with_kind(crate::gc::Gc::clone(arc_items), kind)
                         }) {
                         r
@@ -1159,10 +1152,9 @@ impl Interpreter {
                     self.reattach_array_type_metadata(&key, &saved_meta);
                     return Ok(out);
                 }
-                // Cost: O(e + r * (e - s)), e = elements of the array, s = offset, r =
-                // replacement elements (`drain` compacts the head offset and moves the
-                // tail, then `do_splice` does one `Vec::insert` per replacement).
-                // Rakudo: O(r + e - s), O(r) at the front -- see #9156.
+                // Cost: O(n + r + (e - s - n)), e = elements of the array, s = offset,
+                // n = removed, r = replacement elements; O(n + r) amortized at the front
+                // (`ArrayData::splice_live`).
                 "splice" => {
                     crate::vm::vm_stats::record_dispatch_entry_intercept(
                         "callmethodmutwithvalues",
@@ -1185,8 +1177,9 @@ impl Interpreter {
                             _ => None,
                         }
                     }
-                    fn do_splice(items: &mut Vec<Value>, args: &[Value]) -> Vec<Value> {
-                        let len = items.len();
+                    /// Resolve the splice range `start..end` against `len` and
+                    /// flatten the replacement.
+                    fn splice_plan(len: usize, args: &[Value]) -> (usize, usize, Vec<Value>) {
                         let start = args
                             .first()
                             .and_then(|v| resolve_splice_raw(v, len))
@@ -1221,11 +1214,7 @@ impl Interpreter {
                         let new_items = crate::runtime::flatten_splice_replacement_args(
                             args.get(2..).unwrap_or(&[]),
                         );
-                        let removed: Vec<Value> = items.drain(start..end).collect();
-                        for (i, item) in new_items.into_iter().enumerate() {
-                            items.insert(start + i, item);
-                        }
-                        removed
+                        (start, end, new_items)
                     }
                     // Pre-resolve callable arguments (WhateverCode like *-3)
                     // before borrowing the array mutably. ADR-0039 slice 1: see
@@ -1279,7 +1268,7 @@ impl Interpreter {
                     // declared element type (`my Int @a` splice must reject a Str),
                     // mirroring the element check applied to typed-array assignment.
                     //
-                    // The check runs on the values `do_splice` will actually
+                    // The check runs on the values `splice_plan` resolves and `splice_live` will actually
                     // store — i.e. **after** `flatten_splice_replacement_args`,
                     // not on the raw `args[2..]`. That ordering matters twice:
                     // ADR-0049 decays a `Nil` replacement to plain `Any` there,
@@ -1362,7 +1351,7 @@ impl Interpreter {
                     // in the node's metadata instead (container identity §3.2 —
                     // the post-call writeback that used to re-validate the
                     // element is gone). Array replacement args are flattened
-                    // exactly like `do_splice` flattens them (so a self-splice
+                    // exactly like `splice_plan` flattens them (so a self-splice
                     // `@a.splice(10,0,@a)` checks the elements, not the array).
                     if args.len() > 2
                         && self.var_type_constraint(&key).is_none()
@@ -1453,7 +1442,9 @@ impl Interpreter {
                         && let Some(r) = slot.with_array_mut(|arc_items, _| {
                             // Container identity (§3): splice through a shared node.
                             let items = crate::value::gc_data_mut(arc_items);
-                            do_splice(items.items_mut(), &resolved_args)
+                            let (start, end, new_items) =
+                                splice_plan(items.items().len(), &resolved_args);
+                            items.splice_live(start, end, new_items)
                         }) {
                         r
                     } else {
@@ -1461,7 +1452,8 @@ impl Interpreter {
                             ValueView::Array(v, ..) => v.to_vec(),
                             _ => Vec::new(),
                         };
-                        let removed = do_splice(&mut items, &resolved_args);
+                        let (start, end, new_items) = splice_plan(items.len(), &resolved_args);
+                        let removed: Vec<Value> = items.splice(start..end, new_items).collect();
                         self.env.insert(key.clone(), Value::real_array(items));
                         removed
                     };
@@ -1822,7 +1814,7 @@ impl Interpreter {
                                     // `array_push_in_place` — no live borrow into the items,
                                     // and we do not re-enter the VM while the borrow is held.
                                     let data = unsafe { crate::value::gc_contents_mut(arc_items) };
-                                    data.items_mut().extend(vals);
+                                    data.extend(vals);
                                 } else {
                                     crate::gc::Gc::make_mut(arc_items).extend(vals);
                                 }
@@ -1893,9 +1885,9 @@ impl Interpreter {
                                 // Shared backing array: in-place interior mutation (see `push`).
                                 let items = if crate::gc::Gc::strong_count(arc_items) > 1 {
                                     // SAFETY: same contract as `array_push_in_place`.
-                                    unsafe { crate::value::gc_contents_mut(arc_items).items_mut() }
+                                    unsafe { crate::value::gc_contents_mut(arc_items) }
                                 } else {
-                                    crate::gc::Gc::make_mut(arc_items).items_mut()
+                                    crate::gc::Gc::make_mut(arc_items)
                                 };
                                 if items.is_empty() {
                                     make_empty_array_failure_what("pop", &empty_what)
@@ -1924,10 +1916,8 @@ impl Interpreter {
                     );
                     return Ok(out);
                 }
-                // Cost: O(k * e), e = elements of the array, k = unshifted elements: this
-                // arm inserts into `items_mut()`'s raw `Vec`, so even one element shifts
-                // the whole array (the #9121 head offset is bypassed).
-                // Rakudo: O(k) amortized -- see #9156.
+                // Cost: O(k) amortized, k = unshifted elements (`ArrayData::prepend_values`
+                // fills the front slack); the detached-rebuild fallback copies all e elements.
                 "unshift" => {
                     crate::vm::vm_stats::record_dispatch_entry_intercept(
                         "callmethodmutwithvalues",
@@ -1942,13 +1932,11 @@ impl Interpreter {
                             // observes the change. See the `push` branch above.
                             let items = if crate::gc::Gc::strong_count(arc_items) > 1 {
                                 // SAFETY: same contract as `array_push_in_place`.
-                                unsafe { crate::value::gc_contents_mut(arc_items).items_mut() }
+                                unsafe { crate::value::gc_contents_mut(arc_items) }
                             } else {
-                                crate::gc::Gc::make_mut(arc_items).items_mut()
+                                crate::gc::Gc::make_mut(arc_items)
                             };
-                            for (i, arg) in normalized_args.iter().enumerate() {
-                                items.insert(i, arg.clone());
-                            }
+                            items.prepend_values(normalized_args.clone());
                             Value::array_with_kind(crate::gc::Gc::clone(arc_items), kind)
                         })
                     {
@@ -1968,9 +1956,8 @@ impl Interpreter {
                     self.env.insert(key, result.clone());
                     return Ok(result);
                 }
-                // Cost: O(k * e), e = elements of the array, k = prepended elements (raw
-                // `Vec::insert` per element, bypassing the #9121 head offset).
-                // Rakudo: O(k) amortized -- see #9156.
+                // Cost: O(k) amortized, k = prepended elements (`ArrayData::prepend_values`);
+                // the detached-rebuild fallback copies all e elements.
                 "prepend" => {
                     crate::vm::vm_stats::record_dispatch_entry_intercept(
                         "callmethodmutwithvalues",
@@ -1983,13 +1970,11 @@ impl Interpreter {
                             // Shared backing array: in-place interior mutation (see `push`).
                             let items = if crate::gc::Gc::strong_count(arc_items) > 1 {
                                 // SAFETY: same contract as `array_push_in_place`.
-                                unsafe { crate::value::gc_contents_mut(arc_items).items_mut() }
+                                unsafe { crate::value::gc_contents_mut(arc_items) }
                             } else {
-                                crate::gc::Gc::make_mut(arc_items).items_mut()
+                                crate::gc::Gc::make_mut(arc_items)
                             };
-                            for (i, arg) in flat_values.iter().enumerate() {
-                                items.insert(i, arg.clone());
-                            }
+                            items.prepend_values(flat_values.clone());
                             Value::array_with_kind(crate::gc::Gc::clone(arc_items), kind)
                         })
                     {

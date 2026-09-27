@@ -659,7 +659,7 @@ impl Interpreter {
                     if !*is_copy {
                         continue;
                     }
-                    let Some(value) = data.items_mut().get(index).cloned() else {
+                    let Some(value) = data.live_mut().get(index).cloned() else {
                         continue;
                     };
                     if let ValueView::Array(
@@ -667,7 +667,7 @@ impl Interpreter {
                         crate::value::ArrayKind::List | crate::value::ArrayKind::ItemList,
                     ) = value.view()
                     {
-                        data.items_mut()[index] = Value::array_with_kind(
+                        data.live_mut()[index] = Value::array_with_kind(
                             crate::gc::Gc::new((**inner).clone()),
                             crate::value::ArrayKind::Array,
                         );

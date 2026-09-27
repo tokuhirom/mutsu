@@ -547,11 +547,9 @@ impl Interpreter {
                     // `Package("Any")` gap marker instead of a raw
                     // `Value::NIL` -- `Nil` is no longer a hole sentinel,
                     // only `ArrayData::initialized` is.
-                    items
-                        .items_mut()
-                        .resize(i + 1, Self::native_fill_for_constraint(None));
+                    items.resize(i + 1, Self::native_fill_for_constraint(None));
                 }
-                items.items_mut()[i] = new_val.clone();
+                items.live_mut()[i] = new_val.clone();
                 // Materialize the "all present" range before recording `i`
                 // as present, so a skipped intermediate slot from the resize
                 // above is correctly left OUT and reads as a gap via

@@ -4458,8 +4458,7 @@ impl Interpreter {
                 self.exec_call_method_mut_site(code, *ip)?;
                 *ip += 1;
             }
-            // Cost: O(1) amortized, O(e) after a shift/unshift left a head offset (see
-            // exec_array_push_op). Rakudo: O(1) amortized -- see #9156.
+            // Cost: O(1) amortized (see exec_array_push_op).
             OpCode::ArrayPush {
                 target_name_idx,
                 target_slot,

@@ -235,7 +235,7 @@ impl Interpreter {
                     if idx >= data.items().len() {
                         data.items_mut().resize(idx + 1, Value::NIL);
                     }
-                    data.items_mut()[idx] = value.clone();
+                    data.live_mut()[idx] = value.clone();
                     if *kind == ArrayKind::List {
                         *kind = ArrayKind::Array;
                     }

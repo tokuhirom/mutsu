@@ -691,7 +691,7 @@ impl Interpreter {
                         {
                             let mut data = (*arr).clone();
                             if i < data.items().len() {
-                                Value::assign_element_slot(&mut data.items_mut()[i], elem);
+                                Value::assign_element_slot(&mut data.live_mut()[i], elem);
                                 target_env.insert(
                                     source_name.clone(),
                                     Value::array_with_kind(crate::gc::Gc::new(data), kind),
