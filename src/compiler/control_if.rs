@@ -115,10 +115,10 @@ impl Compiler {
         }
         let jump_else = self.code.emit(OpCode::JumpIfFalse(0));
         self.compile_if_binding_container_decl(&deferred_container_decl);
+        let mut saved_args = None;
         if needs_at_underscore {
-            // Flatten the duplicated condition into `@_` (like a `*@` slurpy).
-            self.code.emit(OpCode::FlattenSlurpy);
-            self.emit_set_named_var("@_");
+            // Flatten the duplicated condition into the branch's own `@_`.
+            saved_args = Some(self.emit_if_args_bind());
         } else if bind_cond_placeholders {
             // ADR-0048 D3's shared bind: binds every placeholder the branch
             // declares that the single condition value can satisfy, and raises
@@ -133,6 +133,9 @@ impl Compiler {
         let then_state_reset = self.emit_branch_state_reset(then_branch, is_statement_modifier);
         self.compile_if_branch(then_branch, position, is_statement_modifier);
         self.patch_nested_block_state_reset(then_state_reset);
+        if let Some(saved) = saved_args {
+            self.emit_if_args_restore(saved);
+        }
 
         // A statement-position chain with no `else` simply falls through; a
         // value-position one still has to leave something behind.

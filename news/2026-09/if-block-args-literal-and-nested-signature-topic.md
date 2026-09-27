@@ -11,9 +11,16 @@ When it fired, the no-`else` statement form also emitted the `Pop` for the
 leftover duplicated condition where the taken branch falls through into it.
 So `sub f { if $c { my $h = '%_' }; 'r' }; say $_ => f()` printed `r => Nil`:
 the extra pop consumed the pair key the caller had already pushed. An
-`if $c { @_ = 7 }` in a sub broke the same way. The probe now counts only a
-sigiled `@_`/`%_` target, and the false-branch `Pop` is jumped over on the taken
-path. Binding real `@_` reads, which needs a branch-scoped `@_`, is #9979.
+`if $c { @_ = 7 }` in a sub broke the same way.
+
+The probe now counts real `@_`/`%_` reads and writes, and ignores string
+literals. On the taken path the false-branch `Pop` is jumped over. Real reads
+had never been detected before, and roast's `S04-statements/if.t` passed only
+because its test description happened to be the string `'@_'`. So the branch now
+gets its own `@_`: the enclosing routine's `@_` is saved, the flattened
+condition is rebound as `@_` for the branch, and the saved one is rebound
+afterwards. `sub f { if 1 { say @_ }; say @_ }; f(5, 6)` prints `[1]` then
+`[5 6]`, and `(if 42 { @_ })` is `[42]` (it was `[]`).
 
 **`{ a => sub ($_ = Whatever) { … } }` was a Block.** The lexical
 hash-composer-vs-block scan treated a `$_` inside a nested `sub (…)`, `-> …` or
