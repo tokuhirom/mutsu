@@ -145,7 +145,9 @@ pub(crate) fn record_regex_farthest_position(pos: usize) {
 }
 
 /// The declarative-prefix length a bounded `** m..n` quantifier reports for
-/// LTM ranking, given its real `max`.
+/// LTM ranking, given its real `max`. Used only by the LTM NFA builder
+/// (`regex_ltm_nfa_build.rs`), which exists solely to measure, so this needs
+/// no `LTM_DECLARATIVE_MODE` gate the way a real-matching engine would.
 ///
 /// Rakudo's `QRegex::NFA.quant` unrolls a bounded `** m..n` fully, but the
 /// declarative-prefix length it reports for LTM ranking never exceeds
@@ -155,20 +157,6 @@ pub(crate) fn record_regex_farthest_position(pos: usize) {
 #[inline]
 pub(crate) fn bounded_declarative_max(min: usize, max: usize) -> usize {
     max.min(min.saturating_add(1))
-}
-
-/// [`bounded_declarative_max`] gated on `LTM_DECLARATIVE_MODE`: the bounded
-/// `max` an LTM measurement should walk to, as opposed to the `max` a real
-/// match walks to. Outside `LTM_DECLARATIVE_MODE` a real match still walks
-/// the whole `m..n` range, so this must only narrow the *measured* max,
-/// never the matched one.
-#[inline]
-pub(crate) fn declarative_repeat_max(min: usize, max: Option<usize>) -> Option<usize> {
-    if LTM_DECLARATIVE_MODE.with(Cell::get) {
-        max.map(|m| bounded_declarative_max(min, m))
-    } else {
-        max
-    }
 }
 
 /// Marker for one live grammar-rule dynamic-variable frame.

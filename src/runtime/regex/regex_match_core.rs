@@ -11,8 +11,7 @@
 use super::super::*;
 use super::regex_helpers::{
     alternation_capture_slots, atom_contains_alternation, capture_group_list_flags,
-    count_capture_groups, declarative_repeat_max, is_named_atom_no_args, is_silent_named_atom,
-    is_simple_atom,
+    count_capture_groups, is_named_atom_no_args, is_silent_named_atom, is_simple_atom,
 };
 use super::regex_trail::CapStore;
 use super::regex_zero_width_iter::zero_width_iter_counts;
@@ -993,16 +992,7 @@ impl Interpreter {
                     }
                     _ => unreachable!(),
                 };
-                self.walk_quant_chain(
-                    ctx,
-                    idx,
-                    pos,
-                    min,
-                    declarative_repeat_max(min, max),
-                    false,
-                    store,
-                    matches,
-                )
+                self.walk_quant_chain(ctx, idx, pos, min, max, false, store, matches)
             }
         }
     }

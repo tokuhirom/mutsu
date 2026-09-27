@@ -7,7 +7,7 @@
 //! capture store and rewinds on backtrack.
 
 use super::super::*;
-use super::regex_helpers::{count_capture_groups, declarative_repeat_max};
+use super::regex_helpers::count_capture_groups;
 
 impl Interpreter {
     /// Resolve a separator quantifier's bounds once for the current match
@@ -22,7 +22,7 @@ impl Interpreter {
         match &token.quant {
             RegexQuant::OneOrMore => Some((1, None)),
             RegexQuant::ZeroOrMore => Some((0, None)),
-            RegexQuant::Repeat(lo, hi) => Some((*lo, declarative_repeat_max(*lo, *hi))),
+            RegexQuant::Repeat(lo, hi) => Some((*lo, *hi)),
             RegexQuant::RepeatCode(code) => self.eval_regex_repeat_code(code, current_caps),
             // `?` / exact-one don't form a separator list; treat as one.
             _ => Some((1, Some(1))),
