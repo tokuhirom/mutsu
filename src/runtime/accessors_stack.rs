@@ -43,7 +43,7 @@ impl Interpreter {
         self.pos_light_call_cache.clear();
         self.otf_call_cache.clear();
         crate::vm::vm_stats::record_fn_keys_base_invalidation(self.fn_keys_by_base.len());
-        self.fn_keys_by_base.clear();
+        self.clear_fn_keys_index();
         // ...and give the map a version it has never had, so that the caches
         // which self-refresh off the generation rather than being cleared here
         // -- the ADR-0066 callsite inline-cache epoch -- see the change too. Mirroring the unchanged version instead left a
@@ -85,10 +85,7 @@ impl Interpreter {
     ) {
         let mut evicted = 0usize;
         for key in keys {
-            let spelled = key.resolve();
-            let base = crate::runtime::dispatch_resolve::function_key_base_name(&spelled);
-            let base_sym = Symbol::intern(base);
-            if self.fn_keys_by_base.remove(&base_sym).is_some() {
+            if self.evict_fn_keys_base(key) {
                 evicted += 1;
             }
         }

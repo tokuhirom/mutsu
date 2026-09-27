@@ -154,7 +154,8 @@ impl Interpreter {
     /// instead of the whole functions map. An empty slice is also the negative
     /// gate [`Self::fn_base_name_registered`] answers with.
     ///
-    /// Filled lazily per base name and evicted **per base name** by
+    /// Filled on a miss (every evicted base name in one pass once the index is
+    /// complete — see `runtime::fn_keys_index`) and evicted **per base name** by
     /// [`Interpreter::invalidate_fn_resolution_for_keys`], or wholesale by
     /// [`Interpreter::invalidate_fn_resolution`] when the mutating site cannot
     /// say which keys it touched.
@@ -201,12 +202,10 @@ impl Interpreter {
             // `fn_base_name_registered`, not here — see the note there.
             return cached.clone();
         }
-        let keys = self.collect_fn_keys_for_base(base);
-        self.fn_keys_by_base.insert(base_sym, keys.clone());
-        keys
+        self.fill_fn_keys_base(base, base_sym)
     }
 
-    fn collect_fn_keys_for_base(&self, base: &str) -> std::sync::Arc<[Symbol]> {
+    pub(super) fn collect_fn_keys_for_base(&self, base: &str) -> std::sync::Arc<[Symbol]> {
         let registry = self.registry();
         crate::vm::vm_stats::record_fn_keys_base_scan(registry.functions.len());
         registry
