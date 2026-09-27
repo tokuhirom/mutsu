@@ -4241,7 +4241,13 @@ pub(crate) enum OpCode {
     /// Check that the value on top of stack matches the given type constraint.
     /// First u32 is a constant index for the type name string.
     /// Optional second u32 is a constant index for the variable name (for error messages).
-    TypeCheck(u32, Option<u32>),
+    /// The `bool` is whether the declaration wrote an explicit initializer
+    /// expression (even one that evaluates to Nil at runtime, e.g. `my Int:D
+    /// $i = f()` where `f` returns `Nil`) rather than omitting one entirely
+    /// (`my Int:D $i;`): a `:D` constraint sees a runtime-Nil value either
+    /// way, but only the latter is `X::Syntax::Variable::MissingInitializer`
+    /// — the former is a genuine (failing) assignment, `X::TypeCheck::Assignment`.
+    TypeCheck(u32, Option<u32>, bool),
 
     /// Like TypeCheck, but for `:=` binds to a typed scalar. On a type
     /// mismatch this raises X::TypeCheck::Binding (e.g. `my Str $x := 3`)

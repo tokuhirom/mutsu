@@ -6037,9 +6037,9 @@ impl Interpreter {
 
             // -- Type checking --
             // Cost: O(1) for a scalar; O(e) for a typed `@` assignment, e = elements checked (as in Rakudo).
-            OpCode::TypeCheck(tc_idx, var_name_idx) => {
+            OpCode::TypeCheck(tc_idx, var_name_idx, has_explicit_initializer) => {
                 self.sync_source_line(code, *ip);
-                self.exec_type_check_op(code, *tc_idx, *var_name_idx)?;
+                self.exec_type_check_op(code, *tc_idx, *var_name_idx, *has_explicit_initializer)?;
                 *ip += 1;
             }
             // Cost: O(1) for a scalar; O(e) for a typed `@` bind, e = elements checked (as in Rakudo).
