@@ -1691,6 +1691,7 @@ impl Compiler {
                         name: target_name.clone(),
                         expr: args[2].clone(),
                         op: AssignOp::Assign,
+                        target_is_sigilless: false,
                     }),
                     Expr::Index {
                         target,

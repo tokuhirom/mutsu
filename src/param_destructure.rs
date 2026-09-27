@@ -46,6 +46,7 @@ pub(crate) fn bind_stmt(name: String, expr: Expr) -> Stmt {
             name,
             expr,
             op: AssignOp::Assign,
+            target_is_sigilless: false,
         }
     }
 }

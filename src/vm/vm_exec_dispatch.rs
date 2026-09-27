@@ -1095,6 +1095,16 @@ impl Interpreter {
                 self.stack.push(val.into_deref());
                 *ip += 1;
             }
+            // Cost: O(1) amortized, one env lookup under the pre-interned temp name.
+            OpCode::GetCallTempRaw(name_idx) => {
+                let val = self
+                    .env()
+                    .get_sym(code.const_sym(*name_idx))
+                    .cloned()
+                    .unwrap_or(Value::NIL);
+                self.stack.push(val);
+                *ip += 1;
+            }
             // Cost: O(1) + O(a) per store, a = aliases recorded for this variable (the
             // reverse-alias propagation probes each candidate from
             // `sigilless_alias_index`; 0 in a program that never binds one); plus O(e)

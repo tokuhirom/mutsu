@@ -161,6 +161,7 @@ pub(super) fn single_target_list_lvalue_stmt(lhs: Expr, rhs: Expr) -> Option<Stm
             name,
             expr: extracted_rhs,
             op: AssignOp::Assign,
+            target_is_sigilless: false,
         },
         Expr::ArrayVar(name) => {
             // For array targets, pass the full RHS — __mutsu_star_lvalue_rhs
@@ -186,12 +187,14 @@ pub(super) fn single_target_list_lvalue_stmt(lhs: Expr, rhs: Expr) -> Option<Stm
                     args: vec![Expr::Literal(Value::str(format!("@{}", name))), array_rhs],
                 },
                 op: AssignOp::Assign,
+                target_is_sigilless: false,
             }
         }
         Expr::HashVar(name) => Stmt::Assign {
             name: format!("%{}", name),
             expr: extracted_rhs,
             op: AssignOp::Assign,
+            target_is_sigilless: false,
         },
         Expr::Index {
             target,
@@ -220,6 +223,7 @@ pub(super) fn grouped_assign_lvalue_stmt(target: &Expr, rhs: Expr) -> Option<Stm
             name: name.clone(),
             expr: rhs,
             op: AssignOp::Assign,
+            target_is_sigilless: false,
         },
     ]))
 }

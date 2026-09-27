@@ -1313,24 +1313,22 @@ impl Interpreter {
     /// `MethodDef`, so they need a dedicated terminal entry after the ordinary
     /// wrapper entries. The frame shape otherwise matches
     /// [`Self::push_wrapped_method_dispatch_frame`].
+    ///
+    /// `terminal` is that trailing `DeferralEntry::Accessor` entry.
     pub(crate) fn push_wrapped_accessor_dispatch_frame(
         &mut self,
         receiver_class: &str,
-        method_name: &str,
         args: &[Value],
         invocant: Value,
-        owner_class: Symbol,
         chain: &[(u64, Value)],
+        terminal: super::DeferralEntry,
     ) {
         let arg_sources = self.pending_call_arg_sources().cloned();
         let mut remaining: Vec<super::DeferralEntry> = Vec::with_capacity(chain.len());
         for i in (0..chain.len() - 1).rev() {
             remaining.push(super::DeferralEntry::Wrapper(chain[i].1.clone()));
         }
-        remaining.push(super::DeferralEntry::Accessor {
-            owner: owner_class,
-            name: method_name.to_string(),
-        });
+        remaining.push(terminal);
         let dispatch_token = self.next_dispatch_token();
         self.method_dispatch_stack.push(super::MethodDispatchFrame {
             receiver_class: receiver_class.to_string(),
@@ -1563,6 +1561,7 @@ impl Interpreter {
                 remaining.push(super::DeferralEntry::Accessor {
                     owner,
                     name: method_name.to_string(),
+                    want_container: false,
                 });
             }
             self.method_dispatch_stack.push(super::MethodDispatchFrame {

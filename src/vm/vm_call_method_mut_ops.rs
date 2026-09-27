@@ -882,6 +882,16 @@ impl Interpreter {
             self.stack.push(val);
             return Ok(());
         }
+        // A `.wrap`ped accessor declines the fast path above (its wrappers must
+        // run); when a container was asked for, run the chain with the
+        // container request carried to its terminal accessor.
+        if want_ref
+            && args.is_empty()
+            && let Some(result) = self.try_wrapped_accessor_container(&target, method)
+        {
+            self.stack.push(result?);
+            return Ok(());
+        }
         // `.so` / `.not` on a value whose type defines a user `Bool` method must
         // dispatch through that method (Mu.so / Mu.not are defined in terms of
         // .Bool) rather than the native truthiness fast path.

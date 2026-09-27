@@ -2155,6 +2155,15 @@ impl Interpreter {
                         let entry = if let ValueView::ContainerRef(cell) = v.view() {
                             // Element source: already promoted to a shared cell.
                             Some((None, cell.clone()))
+                        } else if matches!(v.view(), ValueView::HashEntryRef { .. }) {
+                            // A missing hash-key source is a deferred location,
+                            // not a value snapshot. Keep the token in a shared
+                            // cell so a write through the destination can
+                            // materialize the source key.
+                            Some((
+                                None,
+                                crate::gc::Gc::new(crate::value::ContainerCell::new(v)),
+                            ))
                         } else if let Some(Some(source_name)) = bind_sources.get(i)
                             && !source_name.contains('\0')
                         {
@@ -2507,6 +2516,14 @@ impl Interpreter {
                 let bind_cell: Option<BindSourceCell> = if bind_mode {
                     if let ValueView::ContainerRef(cell) = val.view() {
                         Some((None, cell.clone()))
+                    } else if matches!(val.view(), ValueView::HashEntryRef { .. }) {
+                        // Preserve a deferred missing-key source as a live
+                        // location. `assign_element_slot` writes through the
+                        // token when the destination alias is assigned.
+                        Some((
+                            None,
+                            crate::gc::Gc::new(crate::value::ContainerCell::new(val.clone())),
+                        ))
                     } else if let Some(Some(source_name)) = bind_sources.first()
                         && !source_name.contains('\0')
                     {
@@ -5567,6 +5584,11 @@ impl Interpreter {
         // later slice unless it already arrived promoted to a cell.
         let bind_cell: Option<BindSourceCell> = if let ValueView::ContainerRef(cell) = val.view() {
             Some((None, cell.clone()))
+        } else if matches!(val.view(), ValueView::HashEntryRef { .. }) {
+            Some((
+                None,
+                crate::gc::Gc::new(crate::value::ContainerCell::new(val.clone())),
+            ))
         } else if let Some(source_name) = &bind_source
             && !source_name.contains('\0')
         {

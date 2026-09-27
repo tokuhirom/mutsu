@@ -165,6 +165,14 @@ impl Interpreter {
         {
             return Ok(assigned);
         }
+        // A `.wrap`ped auto-accessor (`A.foo = 7`, `$a.foo = 7`) assigns into
+        // what its wrapper chain returns, for a type object and an instance
+        // alike — the attribute store below would bypass the wrappers.
+        if let Some(assigned) =
+            self.try_wrapped_accessor_lvalue(&target, method, &method_args, &value)?
+        {
+            return Ok(assigned);
+        }
         // A declared private method (`method !slot($k) is rw { %!h{$k} }`, then
         // `self!slot($k) = $v`) is an lvalue call like its public twin, for an
         // instance and a type-object invocant alike. Only a `!name` with no

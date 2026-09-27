@@ -152,3 +152,4 @@ The role of an ADR is to preserve the *context of the judgment* — something th
 | [0125](0125-ltm-declarative-prefix-nfa.md) | Measure an LTM declarative prefix with a compiled NFA | Accepted (implemented; completed by 0127) |
 | [0126](0126-dev-job-runner-for-long-jobs-and-gates.md) | Long jobs and the pre-publication gate run through one job runner, `scripts/dev` | Accepted (implemented) |
 | [0127](0127-every-ltm-measurement-runs-the-nfa.md) | Every LTM measurement runs the NFA; the walker's measurement mode is retired | Accepted (implemented) |
+| [0128](0128-package-scoped-enum-identity-is-qualified.md) | A package-scoped enum's identity is its qualified name; its display name is the declared one | Accepted (implemented) |

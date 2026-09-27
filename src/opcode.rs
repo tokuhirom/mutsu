@@ -1035,6 +1035,10 @@ pub(crate) enum OpCode {
     /// it by an `is rw` callee), decontainerized exactly as [`Self::GetGlobal`]
     /// hands back a variable's value. Stack: `[] -> [value]`.
     GetCallTemp(u32),
+    /// Read a call temporary without dereferencing its lvalue payload. This is
+    /// used when a compiler-generated temporary carries a `ContainerRef` or a
+    /// deferred `HashEntryRef` into another bind operation. Stack: `[] -> [raw]`.
+    GetCallTempRaw(u32),
     /// Verify that a dynamic variable (`$*x` / `@*x` / `%*x`) is in scope before a
     /// genuine assignment to it. Throws X::Dynamic::NotFound when it was never
     /// declared (`my $*x`) nor is a built-in dynamic var. Emitted only for plain
@@ -5818,8 +5822,8 @@ fn is_stub_marker_stmt(stmt: &Stmt) -> bool {
 /// `is_type_decl`/`is_regex_decl` classification.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum DeferredBodyOpKind {
-    /// A nested `class`/`role` declaration — registers under the role's
-    /// OWN package at composition time.
+    /// A nested `class`/`role`/`enum` declaration — registers under the
+    /// role's OWN package at composition time.
     TypeDecl,
     /// A `token`/`rule`/`regex` declaration — registers under the
     /// COMPOSING class's package, which is not known until composition;
@@ -5874,7 +5878,12 @@ pub(crate) struct DeferredBodyOp {
 
 pub(crate) fn classify_deferred_body_op_kind(stmt: &Stmt) -> DeferredBodyOpKind {
     match stmt {
-        Stmt::ClassDecl { .. } | Stmt::RoleDecl { .. } => DeferredBodyOpKind::TypeDecl,
+        // An enum is a nested type like a class: it registers under the
+        // role's package whoever composes the role, so every composition
+        // shares the one `R::E` type (#9654).
+        Stmt::ClassDecl { .. } | Stmt::RoleDecl { .. } | Stmt::EnumDecl { .. } => {
+            DeferredBodyOpKind::TypeDecl
+        }
         Stmt::TokenDecl { .. } | Stmt::RuleDecl { .. } => DeferredBodyOpKind::TokenRule,
         _ => DeferredBodyOpKind::Plain,
     }
@@ -6591,6 +6600,16 @@ pub(crate) struct CompiledCode {
     /// closures so an enclosing scope can tell which of *its* locals are mutated
     /// from inside a closure. Used to compute `captured_mutated_locals`.
     pub(crate) free_var_writes: Vec<Symbol>,
+    /// Sigilless parameter names that also name an enclosing scalar lexical.
+    /// Raku keeps the two source namespaces separate, but both spellings use
+    /// the same runtime key after sigil stripping. The nested compiler records
+    /// these names so `compute_free_vars` can retain the enclosing scalar even
+    /// though the sigilless parameter is present in `locals`.
+    pub(crate) forced_free_var_syms: Vec<Symbol>,
+    /// Subset of [`Self::forced_free_var_syms`] written by this body. These
+    /// names must participate in closure writeback and cell analysis just like
+    /// an ordinary free-variable assignment.
+    pub(crate) forced_free_var_writes: Vec<Symbol>,
     /// Free `@`/`%` container variables this code mutates IN PLACE (via a mutating
     /// method like `push`/`append`, or an element/index assignment) without ever
     /// rebinding the whole container by name. Such mutations are NOT `SetGlobal`
@@ -7597,6 +7616,8 @@ impl CompiledCode {
             upvalue_parent_slots: Vec::new(),
             outer_ref_names: Vec::new(),
             free_var_writes: Vec::new(),
+            forced_free_var_syms: Vec::new(),
+            forced_free_var_writes: Vec::new(),
             free_var_container_writes: Vec::new(),
             named_sub_captures: Vec::new(),
             lexical_routines: Vec::new(),
@@ -9807,6 +9828,18 @@ impl CompiledCode {
         // An atomic op's target is written through a `__mutsu_*_var("name", …)`
         // call, which the op scan above cannot see as a write. Fold those names
         // in explicitly (see `atomic_target_syms`).
+        // A sigilless parameter can share its canonical runtime key with an
+        // enclosing scalar (`my $args; -> |args { $args = args }`). The op scan
+        // above normally excludes names present in `own`, but the compiler has
+        // retained the source-level namespace distinction for this shape. Keep
+        // the enclosing scalar in the capture set and in the write set.
+        for sym in &self.forced_free_var_syms {
+            free.insert(*sym);
+        }
+        for sym in &self.forced_free_var_writes {
+            free.insert(*sym);
+            free_writes.insert(*sym);
+        }
         for sym in &self.atomic_target_syms {
             if sym.with_str(|s| own.contains(s)) {
                 self_mutated.insert(*sym);

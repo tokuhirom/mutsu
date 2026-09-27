@@ -272,6 +272,8 @@ pub(crate) fn promise_raku_repr(status: &str) -> String {
 /// The `.raku` text of an enum value: `Order::Less`, or the quoted form
 /// `Color::<r-g>` when the key is not a plain identifier.
 pub(crate) fn enum_raku_repr(enum_type: &str, key: &str) -> String {
+    // A package-scoped enum's identity is qualified, its `.raku` is not (#9654).
+    let enum_type = crate::value::user_facing_type_name(enum_type);
     let is_ident = key
         .chars()
         .next()

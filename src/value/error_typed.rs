@@ -515,6 +515,10 @@ impl RuntimeError {
         symbol: Option<&str>,
     ) -> Self {
         let got_type = crate::value::types::what_type_name(got_value);
+        // A package-scoped enum constraint names its qualified identity; the
+        // message uses the declared name, as rakudo does (#9654).
+        let expected_display = crate::value::enum_display_name(expected);
+        let shown_expected = expected_display.as_deref().unwrap_or(expected);
         // Rakudo's wording is `expected X but got Y (repr)` — the `(repr)` tail
         // is present for any value with a short representation. Kept identical
         // to `runtime::utils::type_check_assignment_error`, which builds the
@@ -528,12 +532,12 @@ impl RuntimeError {
         let msg = if let Some(sym) = symbol {
             format!(
                 "Type check failed in assignment to {}; expected {} but got {}",
-                sym, expected, got
+                sym, shown_expected, got
             )
         } else {
             format!(
                 "Type check failed in assignment; expected {} but got {}",
-                expected, got
+                shown_expected, got
             )
         };
         let mut attrs = ValueMap::default();
