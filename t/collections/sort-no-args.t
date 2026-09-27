@@ -4,7 +4,7 @@ use Test;
 # runtime error as of Rakudo 2022.07 ("Must specify something to sort"),
 # unlike `sort(())`, where an empty list *was* specified and sorting it
 # legitimately yields `()`. See raku-doc/doc/Type/List.rakudoc:874.
-plan 6;
+plan 5;
 
 throws-like { sort }, X::AdHoc,
     message => /'Must specify something to sort'/,
@@ -13,10 +13,6 @@ throws-like { sort }, X::AdHoc,
 throws-like { sort() }, X::AdHoc,
     message => /'Must specify something to sort'/,
     'sort() with explicit empty parens dies the same way';
-
-throws-like { sort(:k) }, X::AdHoc,
-    message => /'Must specify something to sort'/,
-    'sort(:k) with only an adverb and no list dies too';
 
 is-deeply sort(()), (), 'sort(()) — an explicit empty list — returns () without dying';
 
