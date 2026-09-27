@@ -21,4 +21,4 @@ six call sites across `regex_match_atom.rs`, `regex_match_capture.rs` and
 `regex_match_lazy.rs` duplicated the same resize-and-merge logic, and only one of them padded
 positional slots at all; none seeded named captures.
 
-Pinned by `t/regex/regex-alternation-untaken-branch-list-capture.t`.
+Pinned by `t/regex/match/regex-alternation-untaken-branch-list-capture.t`.
