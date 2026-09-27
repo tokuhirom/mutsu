@@ -67,6 +67,11 @@ impl Interpreter {
         let start = self.stack.len() - n;
         let raw: Vec<Value> = self.stack.drain(start..).collect();
         let mut elems = Vec::with_capacity(raw.len());
+        // Indices into `elems` of genuinely lazy lists a `|` slipped in
+        // (`(1, |[\*] 1..*)`): they are part of this list's own sequence, so
+        // the literal becomes a lazy concatenation instead of a List holding
+        // them as items.
+        let mut lazy_slots: Vec<usize> = Vec::new();
         for val in raw {
             // A `WrapVarRef`-tagged scalar variable element of a List (`($a, $b)`):
             // store the variable's shared `ContainerRef` cell so the List aliases
@@ -84,7 +89,7 @@ impl Interpreter {
             } = val.view()
             {
                 if let ValueView::Slip(items) = inner.view() {
-                    elems.extend(items.iter().cloned());
+                    Self::extend_with_slip_items(&mut elems, &mut lazy_slots, &items);
                     continue;
                 }
                 let source_name = source_name.resolve();
@@ -107,7 +112,7 @@ impl Interpreter {
             if let ValueView::ContainerRef(_) = val.view() {
                 let inner = val.deref_container();
                 if let ValueView::Slip(items) = inner.view() {
-                    elems.extend(items.iter().cloned());
+                    Self::extend_with_slip_items(&mut elems, &mut lazy_slots, &items);
                     continue;
                 }
             }
@@ -146,7 +151,9 @@ impl Interpreter {
                 val
             };
             match val.view() {
-                ValueView::Slip(items) => elems.extend(items.iter().cloned()),
+                ValueView::Slip(items) => {
+                    Self::extend_with_slip_items(&mut elems, &mut lazy_slots, &items)
+                }
                 ValueView::Array(_, kind) if kind.is_itemized() => elems.push(val),
                 // Scalar-wrapped values (.item / $()) are never flattened.
                 ValueView::Scalar(_) => elems.push(val),
@@ -229,6 +236,11 @@ impl Interpreter {
         // unhandled Failure produced by one of its elements -- explode here,
         // before the composite becomes a stored value.
         self.explode_if_fatal_failure_in_composite(&elems)?;
+        if !lazy_slots.is_empty() {
+            let lazy = Self::lazy_literal_with_slipped_tail(elems, &lazy_slots, is_real_array);
+            self.stack.push(lazy);
+            return Ok(());
+        }
         let result = if is_real_array {
             Value::real_array(elems)
         } else {
@@ -251,6 +263,69 @@ impl Interpreter {
         let result = self.fetch_proxy_container_elements(result)?;
         self.stack.push(result);
         Ok(())
+    }
+
+    /// Splice a Slip's items into a list literal under construction, noting
+    /// where a genuinely lazy list (one `|` kept whole rather than reifying)
+    /// lands so the literal can stay lazy.
+    // Cost: O(k), k = items in the Slip.
+    fn extend_with_slip_items(
+        elems: &mut Vec<Value>,
+        lazy_slots: &mut Vec<usize>,
+        items: &[Value],
+    ) {
+        for item in items {
+            if let ValueView::LazyList(ll) = item.view()
+                && ll.renders_lazy_placeholder()
+            {
+                lazy_slots.push(elems.len());
+            }
+            elems.push(item.clone());
+        }
+    }
+
+    /// A list literal with slipped lazy lists (`(1, |[\*] 1..*)`,
+    /// `[0, |(1...*)]`) as a lazy concatenation: each run of plain elements is
+    /// one finite part, each slipped lazy list its own part, read in order.
+    /// Rakudo keeps such a literal lazy (`.is-lazy` is True) and reifies only
+    /// what is read.
+    // Cost: O(e), e = elements of the literal.
+    fn lazy_literal_with_slipped_tail(
+        elems: Vec<Value>,
+        lazy_slots: &[usize],
+        is_real_array: bool,
+    ) -> Value {
+        let finite_part = |run: Vec<Value>| {
+            if is_real_array {
+                runtime::utils::itemize_real_array_elements(Value::real_array(run))
+            } else {
+                Value::array(run)
+            }
+        };
+        let mut parts = Vec::with_capacity(lazy_slots.len() * 2 + 1);
+        let mut run = Vec::new();
+        let mut slots = lazy_slots.iter().peekable();
+        for (i, elem) in elems.into_iter().enumerate() {
+            if slots.peek() == Some(&&i) {
+                slots.next();
+                if !run.is_empty() {
+                    parts.push(finite_part(std::mem::take(&mut run)));
+                }
+                parts.push(elem);
+            } else {
+                run.push(elem);
+            }
+        }
+        if !run.is_empty() {
+            parts.push(finite_part(run));
+        }
+        let lazy = Self::lazy_concat_pipe(parts);
+        match lazy.view() {
+            ValueView::LazyList(ll) if is_real_array => {
+                Value::lazy_list(crate::gc::Gc::new(ll.with_array_context()))
+            }
+            _ => lazy,
+        }
     }
 
     /// Like `exec_make_array_op` with `is_real_array=true` but never flattens

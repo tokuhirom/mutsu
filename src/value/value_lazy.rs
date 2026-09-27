@@ -216,6 +216,12 @@ impl LazyList {
                 crate::value::PipeAdaptor::Cross { operands, .. }
                 | crate::value::PipeAdaptor::Roundrobin { operands, .. },
             ) => operands.iter().all(operand_finite),
+            // A slipped `lazy`-marked part keeps the whole literal lazy even
+            // when it is finite (`(1, |(lazy 2, 3)).is-lazy` is True).
+            Some(crate::value::PipeAdaptor::Concat { parts, .. }) => parts.iter().all(|p| {
+                Self::value_source_is_finite(p)
+                    && !matches!(p.view(), ValueView::LazyList(ll) if ll.is_lazy_marked())
+            }),
             _ => {
                 let source = spec.source.clone();
                 drop(spec);

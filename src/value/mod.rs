@@ -2863,6 +2863,16 @@ pub(crate) enum PipeAdaptor {
     /// repetition of the spec's `func` (the LHS). `remaining` is `None` for
     /// an infinite count.
     Repeat { remaining: Option<u64> },
+    /// A list literal with a slipped lazy tail (`(1, |[\*] 1..*)`): the
+    /// `parts` are walked in order, each pulled element by element, so a
+    /// genuinely lazy part is never reified past what a reader asks for.
+    /// A run of plain elements is one `List` part. `part` is the part being
+    /// read and `base` the output index its first element landed at.
+    Concat {
+        parts: Vec<Value>,
+        part: usize,
+        base: usize,
+    },
     /// Placeholder left in the spec while a step runs (the real state is
     /// moved out for the step), so a re-entrant pull is detected.
     Busy,

@@ -206,6 +206,23 @@ fn split_compound_decl_for_modifier(stmt: Stmt) -> (Option<Stmt>, Stmt) {
         return (None, Stmt::SyntheticBlock(stmts));
     }
     let declaration = stmts.remove(0);
+    // `my $x = 1, $y for ...`: the trailing items' value list is headed by the
+    // declared scalar (see `consume_scalar_decl_trailing_comma`). Hoisted out
+    // of the loop body, that head would read as a user-written `$x` sunk per
+    // iteration, so leave only the trailing items in the body.
+    if let Stmt::VarDecl { name, .. } = &declaration {
+        stmts = stmts
+            .into_iter()
+            .flat_map(|s| match s {
+                Stmt::Expr(Expr::ArrayLiteral(items))
+                    if matches!(items.first(), Some(Expr::Var(head)) if head == name) =>
+                {
+                    items.into_iter().skip(1).map(Stmt::Expr).collect()
+                }
+                other => vec![other],
+            })
+            .collect();
+    }
     (Some(declaration), Stmt::SyntheticBlock(stmts))
 }
 

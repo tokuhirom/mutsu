@@ -232,7 +232,14 @@ fn consume_scalar_decl_trailing_comma<'a>(input: &'a str, first: Stmt) -> PResul
     {
         return Ok((input, first));
     }
-    // Consume trailing sink expressions
+    // Consume trailing sink expressions. They are sunk at statement level, but
+    // the statement's VALUE is the whole comma list: item assignment binds
+    // tighter than `,`, so `my $d = 6, 3` is `(my $d = 6), 3`, and a routine
+    // ending in it returns `(6 3)` (Math::Handy's `infix:</%>`). The trailing
+    // items are therefore emitted as ONE list headed by the declared scalar,
+    // after the declaration so evaluation order is unchanged.
+    let decl_name = crate::parser::stmt::simple_expr_stmt::lvalue::decl_target_var_name(&first)
+        .filter(|n| !n.starts_with(['$', '@', '%', '&']));
     let mut stmts = match first {
         Stmt::SyntheticBlock(v) => v,
         other => vec![other],
@@ -244,7 +251,7 @@ fn consume_scalar_decl_trailing_comma<'a>(input: &'a str, first: Stmt) -> PResul
     }
     let (r2, sink_expr) = expression(r_inner)?;
     check_sink_expr_two_terms_boundary(&sink_expr, r2)?;
-    stmts.push(Stmt::Expr(sink_expr));
+    let mut sinks = vec![sink_expr];
     r_inner = r2;
     loop {
         let (r2, _) = ws(r_inner)?;
@@ -260,8 +267,17 @@ fn consume_scalar_decl_trailing_comma<'a>(input: &'a str, first: Stmt) -> PResul
         }
         let (r2, sink_expr) = expression(r2)?;
         check_sink_expr_two_terms_boundary(&sink_expr, r2)?;
-        stmts.push(Stmt::Expr(sink_expr));
+        sinks.push(sink_expr);
         r_inner = r2;
+    }
+    match decl_name {
+        Some(name) => {
+            let mut items = Vec::with_capacity(sinks.len() + 1);
+            items.push(Expr::Var(name));
+            items.extend(sinks);
+            stmts.push(Stmt::Expr(Expr::ArrayLiteral(items)));
+        }
+        None => stmts.extend(sinks.into_iter().map(Stmt::Expr)),
     }
     Ok((r_inner, Stmt::SyntheticBlock(stmts)))
 }

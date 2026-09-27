@@ -53,12 +53,15 @@ impl Interpreter {
         // explicitly-`lazy` gather (`|(lazy gather …)`) stays lazy so its side
         // effects fire only on later reification (`@a.eager`) — pushing the
         // `LazyList` value itself preserves that deferred tail. Non-gather lazy
-        // lists (infinite `scan_spec`/`sequence_spec` reductions like
-        // `|[\+] 1..*`) fall through to the `match` arm's bounded force.
+        // lists get the same treatment: a genuinely lazy one (an infinite
+        // `[\*] 1..*` scan, `1...*`, `(1..*).map(...)`) rides the Slip as ONE
+        // item, which the list constructor (`exec_make_array_op`) turns into a
+        // lazy tail. Forcing a prefix here instead reified up to 200,000
+        // elements -- a factorial scan ran out of memory (Math::Handy).
         if let ValueView::LazyList(ll) = val.view()
-            && ll.is_from_gather()
+            && (ll.is_from_gather() || ll.renders_lazy_placeholder())
         {
-            if ll.is_genuinely_lazy() {
+            if ll.renders_lazy_placeholder() {
                 self.stack.push(Value::slip(vec![val.clone()]));
             } else {
                 let pulled = self.force_lazy_list_vm(&ll)?;
@@ -156,11 +159,7 @@ impl Interpreter {
                     .collect()
             }
             ValueView::LazyList(ll) => {
-                let items = if ll.scan_spec.is_some() {
-                    ll.force_scan_to(200_000)
-                } else {
-                    ll.cache.lock().unwrap().clone().unwrap_or_default()
-                };
+                let items = ll.cache.lock().unwrap().clone().unwrap_or_default();
                 items
                     .into_iter()
                     .map(Self::containerize_pair_item)

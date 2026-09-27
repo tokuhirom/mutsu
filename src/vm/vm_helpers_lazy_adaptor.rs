@@ -480,6 +480,16 @@ impl Interpreter {
                 }
                 Ok(one(out, idx + 1))
             }
+            PipeAdaptor::Concat { parts, part, base } => {
+                while let Some(src) = parts.get(*part) {
+                    if let Some(v) = self.pull_source_element(src, idx - *base)? {
+                        return Ok(one(vec![v], idx + 1));
+                    }
+                    *part += 1;
+                    *base = idx;
+                }
+                Ok(AdaptorStep::finished(idx))
+            }
             // `step_lazy_adaptor` refuses a Busy adaptor before getting here.
             PipeAdaptor::Busy => Ok(AdaptorStep::finished(idx)),
             PipeAdaptor::Roundrobin {

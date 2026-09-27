@@ -65,6 +65,22 @@ impl Interpreter {
         )
     }
 
+    /// A lazy list literal whose `parts` (runs of plain elements as `List`s,
+    /// slipped lazy lists as themselves) are read one after another.
+    // Cost: O(p), p = parts.
+    pub(crate) fn lazy_concat_pipe(parts: Vec<Value>) -> Value {
+        let first = parts.first().cloned().unwrap_or(Value::NIL);
+        Self::adaptor_pipe_value(
+            first,
+            Value::NIL,
+            PipeAdaptor::Concat {
+                parts,
+                part: 0,
+                base: 0,
+            },
+        )
+    }
+
     fn adaptor_pipe_value(source: Value, func: Value, adaptor: PipeAdaptor) -> Value {
         Value::lazy_list(crate::gc::Gc::new(LazyList::new_adaptor_pipe(
             source, func, adaptor,
