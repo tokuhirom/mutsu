@@ -673,6 +673,40 @@ mod tests {
     }
 
     #[test]
+    fn cached_lexical_class_gets_a_fresh_decl_id() {
+        // A `my class` decl_id is not serialized (it is only unique within the
+        // process that minted it). A cache hit must still give the node a
+        // non-zero id, as a re-parse would: a 0 opted the class out of its
+        // lexical storage name, so a module's `my class` was registered under
+        // a different key cold (parsed) than warm (cached) (#9733).
+        let decl_ids = |stmts: &[Stmt]| -> Vec<u64> {
+            stmts
+                .iter()
+                .filter_map(|s| match s {
+                    Stmt::ClassDecl { decl_id, .. } => Some(*decl_id),
+                    _ => None,
+                })
+                .collect()
+        };
+        let code = "my class Foo { }\nmy class Bar { }\n";
+        let (stmts, _) = crate::parser::parse_program(code).unwrap();
+        let parsed = decl_ids(&stmts);
+        assert_eq!(parsed.len(), 2);
+        assert!(parsed.iter().all(|id| *id != 0), "parsed ids: {parsed:?}");
+
+        let dir = tempdir("declid");
+        let source = dir.join("test-declid.rakumod");
+        fs::write(&source, code).unwrap();
+        save_cached_unit(&source, &stmts, &ParseEffects::default());
+        let loaded = decl_ids(&load_cached_unit(&source, None).unwrap().stmts);
+        assert_eq!(loaded.len(), 2);
+        assert!(loaded.iter().all(|id| *id != 0), "cached ids: {loaded:?}");
+        assert_ne!(loaded[0], loaded[1], "each site keeps its own identity");
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn cache_invalidated_on_version_mismatch() {
         // A cache whose stored version no longer matches the current
         // interpreter_version() (as happens when the binary is rebuilt with

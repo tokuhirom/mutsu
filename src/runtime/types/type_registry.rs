@@ -1463,6 +1463,13 @@ impl Interpreter {
         if !name.starts_with(|c: char| c.is_ascii_alphabetic()) {
             return None;
         }
+        // Nor can a composite spelling -- a coercion type (`Bool(Mu)`, probed
+        // on every `Test` assertion) or a parameterization (`Array[Int]`) --
+        // be an alias's key: an alias is declared under a plain name. Skipping
+        // them saves the env probe and its intern of the whole spelling (#9733).
+        if name.contains(['(', '[', '{']) {
+            return None;
+        }
         let mut current = name.to_string();
         for _ in 0..16 {
             let next =

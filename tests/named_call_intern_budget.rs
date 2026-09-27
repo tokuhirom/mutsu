@@ -32,7 +32,14 @@
 //! `source_file_sym_by_walk`'s, which re-derived `?FILE` and the whole
 //! declaring path on every routine entry. They now use `Symbol::lookup`, which
 //! is the same check and interns nothing, so both configurations measure the
-//! same 10.0 and one budget serves both.
+//! same count and one budget serves both.
+//!
+//! **Exact means exact.** Every run of the same commit must print the same
+//! count. When one does not, some interning depends on state outside the
+//! program: the two found so far (#9733) were an import loop whose intern count
+//! followed `HashMap` iteration order, and a precompilation-cache hit that
+//! registered a module's `my class` under a different key than a fresh parse
+//! did. Find the source rather than widening a budget over the noise.
 //!
 //! Keep it that way. A new `debug_assert!` that interns does not just cost a
 //! debug build — it silently inflates the number every test in this file
@@ -148,10 +155,16 @@ fn test_assertion_does_not_intern_the_assertion_routine_names() {
         interns_per_iteration(|n| format!("use Test;\nplan {n};\nfor ^{n} {{ ok 1, \"x\" }}\n"));
     eprintln!("Test assertion: {per_assertion:.3} interns per assertion");
     // Measured 10.0 in both configurations (release 21.0 -> 15.0 -> 10.0,
-    // debug 64.0 -> 58.0 -> 10.0). The budget leaves room for the two pieces
-    // of unit 2 still open -- `user_method_overloads` (item 2) and
-    // `multi_arg_type_keys` (item 3), 2.0 each -- and tightens as those land.
-    let limit = 12.0;
+    // debug 64.0 -> 58.0 -> 10.0), then crept to ~12 with run-to-run noise
+    // until [#9733](https://github.com/tokuhirom/mutsu/issues/9733) made it an
+    // exact 9.000. What the 9 are, per assertion: `Mu` twice (the `Mu $cond`
+    // constraint's meta value), `cond`/`desc` (the typed-lexical probe of each
+    // parameter), `time_before`/`time_after` (their lexical stores), `Int`/`Str`
+    // (`multi_arg_type_keys`, unit 2 item 3) and `Bool` (the `Bool(Mu)`
+    // coercion's lexical-class remap probe). The budget sits one intern above
+    // that: the count no longer varies, so any headroom is for a deliberate
+    // change, not for noise.
+    let limit = 10.0;
     assert!(
         per_assertion <= limit,
         "a Test assertion re-interns its routine names per assertion \

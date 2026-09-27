@@ -1845,8 +1845,16 @@ pub(crate) enum Stmt {
         is_grammar: bool,
         /// Stable per-declaration-site id (parse-time assigned, non-zero) used to
         /// distinguish same-named lexical (`my`) classes in different scopes.
-        /// 0 means "no stable site" (runtime-synthesized or deserialized node).
-        #[serde(skip)]
+        /// 0 means "no stable site" (a runtime-synthesized node).
+        ///
+        /// Not serialized -- an id is only unique within the process that
+        /// minted it -- but a node read back from the precompilation cache
+        /// mints a fresh one, exactly as re-parsing the source would. It used
+        /// to come back as 0, so a module's `my class` was registered under
+        /// its mangled storage name when the module was parsed and under the
+        /// bare name on every cache hit: the warm/cold divergence
+        /// `crate::precomp`'s module docs warn about (#9733).
+        #[serde(skip, default = "crate::ast::next_class_decl_id")]
         decl_id: u64,
         /// Parsed argument expressions for a bracketed `is`/`does`/`hides`
         /// parent (`is Parent[Args]`), keyed by the full concatenated parent
