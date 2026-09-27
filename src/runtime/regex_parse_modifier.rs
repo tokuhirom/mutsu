@@ -256,6 +256,14 @@ impl Interpreter {
                     continue;
                 }
             }
+            // A `"..."` atom the compiler lowered to a qq thunk: splice the
+            // thunk's result (installed with the regex's scope) as a literal.
+            if crate::regex_qq_atoms::is_dq_opener(ch)
+                && let Some(next) = self.splice_regex_qq_thunk_result(&chars, i, &mut out)
+            {
+                i = next;
+                continue;
+            }
             // Array interpolation in regex groups: (@name) / ( @name )
             // Expand to an alternation group from the current array value.
             if ch == '(' {

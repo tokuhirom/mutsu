@@ -81,7 +81,11 @@ impl Interpreter {
                 // numeric/named capture vars from a previous match first (this
                 // path bypasses `exec_subst_op`, which does the same).
                 self.reset_capture_env_vars();
-                Some(self.native_subst_regex(&text, pattern, &replacement_str, global))
+                // A regex closure's defining scope (captured lexicals and
+                // `"..."` qq thunks) is live around the match, as for `~~`.
+                Some(self.with_regex_closure_scope(Some(pattern.clone()), |me| {
+                    me.native_subst_regex(&text, pattern, &replacement_str, global)
+                }))
             }
             // Literal string pattern: pure string replacement, never touches `$/`.
             // Cost: O(n + r*m'), n = bytes of the invocant, r = replacements, m' =

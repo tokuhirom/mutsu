@@ -604,13 +604,8 @@ impl Compiler {
                 // When RHS is m/regex/, unwrap to the regex value since
                 // SmartMatchExpr already handles the matching against LHS
                 match right {
-                    Expr::MatchRegex(v) => {
-                        let idx = self.code.add_constant(v.clone());
-                        self.code.emit(OpCode::LoadConst(idx));
-                    }
-                    Expr::MatchRegexTree { value, .. } => {
-                        let idx = self.code.add_constant(value.clone());
-                        self.code.emit(OpCode::LoadConst(idx));
+                    Expr::MatchRegex(v) | Expr::MatchRegexTree { value: v, .. } => {
+                        self.compile_match_regex_rhs_value(v);
                     }
                     Expr::MatchRegexDynamicAdverbs {
                         value,

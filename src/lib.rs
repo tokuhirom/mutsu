@@ -28,6 +28,7 @@ pub(crate) mod precomp;
 pub(crate) mod profile;
 pub(crate) mod qualified;
 mod rakuast;
+pub(crate) mod regex_qq_atoms;
 pub(crate) mod regex_tree;
 #[cfg(feature = "native")]
 pub mod repl;

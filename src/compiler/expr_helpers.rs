@@ -931,10 +931,21 @@ impl Compiler {
             // The RHS is the regex constant, not the topic.
             rhs_is_bare_topic: false,
         });
-        // RHS: load the regex constant
-        let idx = self.code.add_constant(v.clone());
-        self.code.emit(OpCode::LoadConst(idx));
+        self.compile_match_regex_rhs_value(v);
         self.code.patch_smart_match_rhs_end(sm_idx);
+    }
+
+    /// Load an `m/.../` literal's regex value as a smartmatch RHS: a plain
+    /// constant, or a closure when it carries interpolating `"..."` atoms,
+    /// whose compiled qq thunks must ride on the value (see
+    /// [`Compiler::compile_regex_qq_thunks`]).
+    pub(super) fn compile_match_regex_rhs_value(&mut self, v: &Value) {
+        if Self::regex_qq_thunk_bodies(v).is_empty() {
+            let idx = self.code.add_constant(v.clone());
+            self.code.emit(OpCode::LoadConst(idx));
+        } else {
+            self.compile_expr(&Expr::Literal(v.clone()));
+        }
     }
 
     /// Like [`Compiler::compile_match_regex`], but for `m:p(EXPR)/.../` /

@@ -308,7 +308,10 @@ pub(crate) fn regex_pattern_is_static(pattern: &str) -> bool {
             }
         }
     }
-    true
+    // A `"..."` atom lowered to a qq thunk (`"x {1+2}"`, `"x &f()"`) splices
+    // a per-match result even when it names no `$`/`@`/`%` variable.
+    !pattern.contains(crate::regex_qq_atoms::is_dq_opener)
+        || crate::regex_qq_atoms::thunk_bodies(pattern).is_empty()
 }
 
 /// The closing delimiter for a Raku quote opener, or `None` when `ch` does not
@@ -1425,6 +1428,12 @@ fn is_double_quote_opener(ch: char) -> bool {
 /// (`'...'`), where `$` is not interpolated.
 pub(super) fn is_inside_single_quoted_regex_literal(chars: &[char], pos: usize) -> bool {
     open_regex_quote_at(chars, pos).is_some_and(|o| !is_double_quote_opener(o))
+}
+
+/// Whether char position `pos` sits inside any regex quote literal
+/// (`'...'`, `"..."` or a Unicode variant).
+pub(super) fn is_inside_regex_quote_literal(chars: &[char], pos: usize) -> bool {
+    open_regex_quote_at(chars, pos).is_some()
 }
 
 /// Whether char position `pos` sits inside a double-quoted regex literal

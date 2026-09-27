@@ -246,6 +246,12 @@ pub(crate) enum MetaNs {
     /// `__mutsu_type_capture_bound__<name>` — a `::T` type capture has been
     /// bound, as against `T` merely resolving to the literal name.
     TypeCaptureBound,
+    /// `__mutsu_regex_qq::<body>` — a double-quoted atom (`"x @a[0]"`) of a
+    /// regex literal, keyed by its source body. The regex value's captured
+    /// scope holds the atom's compiled qq thunk under this key; installing
+    /// the scope for a match replaces it with the thunk's string result,
+    /// which the interpolation pre-pass splices in as a literal (#9628).
+    RegexQq,
 }
 
 impl MetaNs {
@@ -303,6 +309,7 @@ impl MetaNs {
         MetaNs::Attr,
         MetaNs::AttrTrait,
         MetaNs::TypeCaptureBound,
+        MetaNs::RegexQq,
     ];
 
     /// The literal key prefix, including whatever separator the namespace puts
@@ -362,6 +369,7 @@ impl MetaNs {
             MetaNs::Attr => "__mutsu_attr__",
             MetaNs::AttrTrait => "__mutsu_attr_trait__",
             MetaNs::TypeCaptureBound => "__mutsu_type_capture_bound__",
+            MetaNs::RegexQq => "__mutsu_regex_qq::",
         }
     }
 
@@ -624,6 +632,7 @@ mod tests {
             (MetaNs::RoleHides, "__mutsu_role_hides__@a"),
             (MetaNs::Attr, "__mutsu_attr__@a"),
             (MetaNs::TypeCaptureBound, "__mutsu_type_capture_bound__@a"),
+            (MetaNs::RegexQq, "__mutsu_regex_qq::@a"),
         ];
         for (ns, expected) in spellings {
             assert_eq!(ns.key(n).as_str(), expected, "{ns:?} key spelling");

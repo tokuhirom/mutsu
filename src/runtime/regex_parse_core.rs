@@ -2556,7 +2556,10 @@ impl Interpreter {
                 }
                 '"' | '\u{201C}' | '\u{201E}' => {
                     // Double-quoted literal string in Raku regex: "foo" matches literally
-                    // TODO: support interpolation inside double-quoted regex strings
+                    // Interpolation was done before this parse: by the
+                    // pre-pass for a bare `$name`, or by splicing a compiled qq
+                    // thunk's result (`crate::regex_qq_atoms`). TODO: the
+                    // thunk does not reach `s///`, tokens or `<$re>` (#9673).
                     let close = match c {
                         '"' => '"',
                         '\u{201C}' | '\u{201E}' => '\u{201D}',

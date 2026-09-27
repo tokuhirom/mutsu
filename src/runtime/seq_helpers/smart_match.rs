@@ -17,6 +17,9 @@ pub(crate) struct RegexClosureBinding {
     /// [`crate::value::RegexClosure::topic`]), counted in
     /// `Interpreter::regex_topic_pinned` while it is installed.
     pins_topic: bool,
+    /// This binding is a `"..."` qq thunk's result, active (see
+    /// [`Interpreter::eval_regex_qq_thunk`]) while it is installed.
+    qq_result: bool,
 }
 
 impl Interpreter {
@@ -161,6 +164,7 @@ impl Interpreter {
                 shadowed: self.env.get("_").cloned(),
                 installed: topic.clone(),
                 pins_topic: true,
+                qq_result: false,
             });
             self.env.insert("_".to_string(), topic);
             self.regex_topic_pinned += 1;
@@ -175,17 +179,39 @@ impl Interpreter {
     /// atom, not off a `Value`) and has no `Value` to call
     /// `regex_closure_scope` on.
     pub(crate) fn install_env_scope(&mut self, scope: &ValueMap) -> Vec<RegexClosureBinding> {
-        let saved: Vec<RegexClosureBinding> = scope
-            .iter()
-            .map(|(k, v)| RegexClosureBinding {
+        let qq_prefix = MetaNs::RegexQq.prefix();
+        let mut saved: Vec<RegexClosureBinding> = Vec::with_capacity(scope.len());
+        let mut qq_thunks: Vec<(&String, &Value)> = Vec::new();
+        for (k, v) in scope.iter() {
+            if k.starts_with(qq_prefix) {
+                qq_thunks.push((k, v));
+                continue;
+            }
+            saved.push(RegexClosureBinding {
                 name: k.clone(),
                 shadowed: self.env.get(k.as_str()).cloned(),
                 installed: v.clone(),
                 pins_topic: false,
-            })
-            .collect();
-        for (k, v) in scope.iter() {
+                qq_result: false,
+            });
             self.env.insert(k.clone(), v.clone());
+        }
+        // A `"..."` atom's compiled qq thunk (`crate::regex_qq_atoms`) runs
+        // once per install; the interpolation pre-pass splices the resulting
+        // string in as a literal. A thunk that throws is left out, and the
+        // pre-pass falls back to its own reading of the atom.
+        for (k, thunk) in qq_thunks {
+            let Some(result) = self.eval_regex_qq_thunk(thunk) else {
+                continue;
+            };
+            saved.push(RegexClosureBinding {
+                name: k.clone(),
+                shadowed: self.env.get(k.as_str()).cloned(),
+                installed: result.clone(),
+                pins_topic: false,
+                qq_result: true,
+            });
+            self.env.insert(k.clone(), result);
         }
         saved
     }
@@ -203,6 +229,9 @@ impl Interpreter {
         for b in saved {
             if b.pins_topic {
                 self.regex_topic_pinned = self.regex_topic_pinned.saturating_sub(1);
+            }
+            if b.qq_result {
+                Self::end_regex_qq_thunk();
             }
             let rebound = self
                 .env
