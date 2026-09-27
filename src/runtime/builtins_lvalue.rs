@@ -68,7 +68,19 @@ impl Interpreter {
             let saved_env = self.env.clone();
             let result = self.call_sub_value(fetcher.clone(), vec![current.clone()], true);
             self.env = saved_env;
+            // A FETCH that ends in a call to an `is rw` routine answers that
+            // routine's container (`FETCH => method { $obj.rw-accessor }`,
+            // Tinky's `state` Proxy over `$SELF!state`). A value-context read
+            // wants what is IN it: left as the cell, the next method call
+            // dispatched on the cell and found none of the value's methods.
             let fetched = result?;
+            let contents = match fetched.view() {
+                ValueView::ContainerRef(cell) | ValueView::ContainerView(cell) => {
+                    Some(cell.lock().unwrap().clone())
+                }
+                _ => None,
+            };
+            let fetched = contents.unwrap_or(fetched);
             if !fetched.is_proxy_value() {
                 return Ok(fetched);
             }
@@ -423,7 +435,13 @@ impl Interpreter {
                 .env
                 .iter()
                 .filter(|(k, v)| {
-                    Self::is_writeback_safe_scalar(v)
+                    // Proxy callbacks commonly name their invocant `$self`.
+                    // That parameter shadows the enclosing method's `self`
+                    // while the callback runs; treating the temporary Proxy
+                    // argument as a caller writeback would replace the real
+                    // invocant with the assigned scalar.
+                    *k != "self"
+                        && Self::is_writeback_safe_scalar(v)
                         && pre_env.get(*k).map(|p| p != *v).unwrap_or(true)
                 })
                 .map(|(k, _)| k.resolve())

@@ -273,6 +273,7 @@ impl Interpreter {
             captured_env: None,
             source_file: proto.source_file,
             role_param_bindings: None,
+            nested_capture_index: None,
         };
         // ADR-0019 D3-8 never compiled proto method bodies at plan-lowering
         // time (`todo/tickets/adr0019-method-body-compile-dedup-remnants.md`

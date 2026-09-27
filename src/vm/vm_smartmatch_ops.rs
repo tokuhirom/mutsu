@@ -219,9 +219,14 @@ impl Interpreter {
             .cloned()
             .unwrap_or(Value::NIL)
             .deref_container();
+        // A bare `$_` RHS never had `left` installed as the topic (see above),
+        // so the topic still holding the ENCLOSING value is not a modification:
+        // treating it as one wrote that value into the LHS variable
+        // (`@t.grep({ $obj !~~ $_ })` replaced `$obj` with each element).
         let topic_modified = was_substitution
             || was_transliterate
-            || !crate::runtime::utils::values_identical(&topic_after, &left);
+            || (!rhs_is_bare_topic
+                && !crate::runtime::utils::values_identical(&topic_after, &left));
         if let Some(var_name) = lhs_var.filter(|_| topic_modified) {
             let modified_topic = topic_after.clone();
             // An aliasing topic keeps its binding: write the modified value into

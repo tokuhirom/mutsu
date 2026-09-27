@@ -234,10 +234,16 @@ impl Interpreter {
                 // never recorded for `materialize_routine_mixins` to restore
                 // on a later rebuild (see
                 // news/2026-08/test-assertion-trait-is-not-introspectable.md).
+                //
+                // On a real object this is a rebless, exactly as for `does`
+                // (Rakudo's `does` IS `.HOW.mixin`): every alias sees the
+                // role, so `self.^mixin(R)` in a method changes the object
+                // itself, not a copy the caller has to keep (Tinky's
+                // `apply-workflow`).
                 let mut result = args[0].clone();
                 for role in &args[1..] {
                     result = if self.is_role_application(role) {
-                        self.eval_does_values(result, role.clone())?
+                        self.eval_does_values_mutating(result, role.clone())?
                     } else {
                         Self::apply_but_mixin(result, role.clone())?
                     };
@@ -1088,6 +1094,19 @@ impl Interpreter {
                 self.add_role_to_class(&class_name, &role_name)?;
                 Ok(Value::NIL)
             }
+            // `$role.^set_body_block(&block)` on a `ParametricRoleHOW`-built
+            // role. Only a role has a body block; Rakudo's class metaclasses
+            // have no such method.
+            "set_body_block"
+                if args.len() >= 2
+                    && matches!(args[0].view(), ValueView::Package(name)
+                        if self.registry().roles.contains_key(&name.resolve())) =>
+            {
+                let ValueView::Package(name) = args[0].view() else {
+                    unreachable!("guarded above");
+                };
+                Ok(self.set_role_body_block(&name.resolve(), args[1].clone()))
+            }
             "add_method" if args.len() >= 3 => {
                 let class_name = match args[0].view() {
                     ValueView::Package(name) => name.resolve(),
@@ -1388,7 +1407,20 @@ impl Interpreter {
                     captured_env,
                     source_file: sub_data.source_file.clone(),
                     role_param_bindings: None,
+                    nested_capture_index: None,
                 };
+                // A role's methods live in its `RoleDef`, which is what
+                // composition (`does`, `but`, `.^mixin`) copies into the
+                // consumer. Writing them to a stub class of the role's name
+                // made `R.^add_method(...)` invisible to every composer --
+                // above all a role built with `Metamodel::ParametricRoleHOW`
+                // (Tinky's per-workflow transition role).
+                if !self.registry().classes.contains_key(&class_name)
+                    && self.registry().roles.contains_key(&class_name)
+                {
+                    let defs = multi_family.unwrap_or_else(|| vec![def]);
+                    return self.add_methods_to_role(&class_name, &method_name, defs);
+                }
                 // If the class doesn't exist yet (e.g. built-in types like Rat, Int, Str),
                 // create a stub ClassDef so methods can be added dynamically.
                 if !self.registry().classes.contains_key(&class_name) {
@@ -1482,6 +1514,7 @@ impl Interpreter {
                     captured_env,
                     source_file: sub_data.source_file.clone(),
                     role_param_bindings: None,
+                    nested_capture_index: None,
                 };
                 // `^add_multi_method` must still *error* for an unregistered
                 // class -- existence keys off `classes.contains_key`, not the

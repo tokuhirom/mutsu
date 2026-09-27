@@ -185,6 +185,7 @@ impl Interpreter {
                         captured_env: None,
                         source_file: proto.source_file,
                         role_param_bindings: None,
+                        nested_capture_index: None,
                     }]
                 } else {
                     continue;
@@ -628,6 +629,7 @@ impl Interpreter {
                 | "add_method"
                 | "add_multi_method"
                 | "add_fallback"
+                | "set_body_block"
                 | "compose"
                 | "methods"
                 | "attributes"

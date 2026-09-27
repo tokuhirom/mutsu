@@ -66,10 +66,6 @@ fn parse_leading_int(s: &str) -> i64 {
     signed.clamp(i64::MIN as i128, i64::MAX as i128) as i64
 }
 
-fn nqp_radix_digit(ch: char, radix: u32) -> Option<i64> {
-    ch.to_digit(radix).map(i64::from)
-}
-
 /// Parse the native-int form of `nqp::radix`.
 ///
 /// Rakudo returns an array containing the wrapped native result, the number of
@@ -86,83 +82,80 @@ fn nqp_radix(args: &[Value]) -> Result<Value, RuntimeError> {
     if !(2..=36).contains(&radix) {
         return Err(RuntimeError::new("nqp::radix: radix must be in 2..36"));
     }
-
-    let source = args.get(1).map(|v| v.to_string_value()).unwrap_or_default();
-    // One char per grapheme: `$pos` and the returned offset are grapheme
-    // positions, like every other nqp string op.
-    let chars = crate::builtins::str_prim::grapheme_base_chars(&source);
-    let mut pos = iarg(args, 2).max(0) as usize;
-    if pos >= chars.len() {
-        return Ok(Value::array(vec![
-            Value::int(0),
-            Value::int(0),
-            Value::int(-1),
-        ]));
-    }
-
+    let no_match = || Value::array(vec![Value::int(0), Value::int(0), Value::int(-1)]);
+    let Some(source) = args.get(1) else {
+        return Ok(no_match());
+    };
+    let pos = iarg(args, 2).max(0) as usize;
     let flags = iarg(args, 3);
-    let parse_sign = flags & 0x02 != 0;
-    let mut negative = flags & 0x01 != 0;
-    if parse_sign {
-        match chars[pos] {
-            '-' => {
-                negative = true;
-                pos += 1;
-            }
-            '+' => pos += 1,
-            _ => {}
-        }
-    }
 
-    let mut digits = Vec::new();
-    let mut cursor = pos;
-    while cursor < chars.len() {
-        if let Some(digit) = nqp_radix_digit(chars[cursor], radix) {
-            digits.push(digit);
-            cursor += 1;
-            continue;
+    // `$pos` and the returned offset are grapheme positions, like every other
+    // nqp string op. The scan walks forward from `$pos` over the cached
+    // grapheme index, so it costs the digits consumed, not the whole string.
+    let scanned = crate::builtins::grapheme_index::with_str_index(source, |text, idx| {
+        if pos >= idx.len() {
+            return None;
         }
-        // NQP permits a single underscore between two digits. It is consumed
-        // but does not contribute to either the result or its digit count.
-        if chars[cursor] == '_'
-            && !digits.is_empty()
-            && cursor + 1 < chars.len()
-            && nqp_radix_digit(chars[cursor + 1], radix).is_some()
+        let mut chars = crate::builtins::str_prim::chars_from(text, idx, pos).peekable();
+        let mut cursor = pos;
+        let mut negative = flags & 0x01 != 0;
+        if flags & 0x02 != 0
+            && let Some(&sign @ ('-' | '+')) = chars.peek()
         {
+            negative |= sign == '-';
+            chars.next();
             cursor += 1;
-            continue;
         }
-        break;
-    }
-
-    if digits.is_empty() {
-        return Ok(Value::array(vec![
-            Value::int(0),
-            Value::int(0),
-            Value::int(-1),
-        ]));
-    }
-
-    let mut result_digits = digits.len();
-    if flags & 0x04 != 0 {
-        while result_digits > 0 && digits[result_digits - 1] == 0 {
-            result_digits -= 1;
+        // `acc` accumulates every digit; `kept` is the (value, digit count)
+        // up to the last non-zero digit, the result under flag 0x04.
+        let mut acc = 0i64;
+        let mut count = 0usize;
+        let mut kept = (0i64, 0usize);
+        let mut underscore = false;
+        for ch in chars {
+            if let Some(digit) = crate::builtins::parse_base::char_digit_value(ch, radix) {
+                // Digit accumulation into a native int, wrapping as MoarVM's does.
+                let (base, digit_i) = (i64::from(radix), i64::from(digit));
+                // native-prim: allow
+                acc = acc.wrapping_mul(base).wrapping_add(digit_i);
+                count += 1;
+                if digit != 0 {
+                    kept = (acc, count);
+                }
+                cursor += 1 + usize::from(underscore);
+                underscore = false;
+                continue;
+            }
+            // NQP permits a single underscore between two digits. It is
+            // consumed but does not contribute to either the result or its
+            // digit count; one not followed by a digit is left unconsumed.
+            if ch == '_' && count > 0 && !underscore {
+                underscore = true;
+                continue;
+            }
+            break;
         }
-    }
-    let mut result = 0i64;
-    for &digit in &digits[..result_digits] {
-        // Digit accumulation into a native int, wrapping as MoarVM's does.
-        // native-prim: allow
-        result = result.wrapping_mul(radix as i64).wrapping_add(digit);
-    }
-    if negative {
-        // native-prim: allow
-        result = result.wrapping_neg();
-    }
+        if count == 0 {
+            return None;
+        }
+        let (mut result, digits) = if flags & 0x04 != 0 {
+            kept
+        } else {
+            (acc, count)
+        };
+        if negative {
+            // native-prim: allow
+            result = result.wrapping_neg();
+        }
+        Some((result, digits, cursor))
+    });
 
+    let Some((result, digits, cursor)) = scanned else {
+        return Ok(no_match());
+    };
     Ok(Value::array(vec![
         Value::int(result),
-        Value::int(result_digits as i64),
+        Value::int(digits as i64),
         Value::int(cursor as i64),
     ]))
 }
@@ -382,8 +375,8 @@ impl Interpreter {
             // nqp::radix($radix, $str, $pos, $flags) returns the wrapped
             // native-int result, the number of significant digits, and the
             // offset after consuming the input.
-            // Cost: O(n), n = chars of $str (copied and fully collected into a Vec<char>
-            // regardless of $pos). MoarVM: O(k), k = digits consumed from $pos -- see #9131.
+            // Cost: O(k), k = digits consumed from $pos (plus an O(STRIDE) seek to
+            // $pos on a non-ASCII string; the grapheme index is cached per string).
             "radix" => nqp_radix(args),
 
             // -- native num comparisons --

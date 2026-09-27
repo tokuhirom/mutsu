@@ -692,6 +692,7 @@ mod match_target;
 pub(crate) mod meta_ns;
 mod metamodel;
 mod metamodel_new_type;
+mod metamodel_role_how;
 mod methods;
 mod methods_adhoc_slurpy;
 mod methods_aggregate_ctor;
@@ -784,6 +785,7 @@ pub(crate) mod raw_invocant;
 mod rw_arg_container;
 pub(crate) mod scope_stack;
 mod uncaught_render;
+mod user_accepts;
 pub(crate) use native_io::{io_file_test, path_is_readable};
 mod dispatcher_wrap;
 mod enum_type_key;
@@ -888,6 +890,7 @@ mod runtime_module_exports;
 mod runtime_output;
 pub(crate) mod runtime_shared_vars;
 mod runtime_thread;
+mod runtime_thread_decl_mask;
 pub(crate) mod runtime_var_meta;
 mod seq_helpers;
 mod sequence;
@@ -3111,6 +3114,19 @@ pub struct Interpreter {
     ///
     /// `None` outside such a body, which is every ordinary `use`.
     pub(crate) import_target_package: Option<String>,
+    /// The class or role whose package body (or role body, re-run at a
+    /// composition) is running, innermost last. A block's
+    /// `OpCode::CaptureNestedMethodEnv` files its capture under the innermost
+    /// owner: a role body runs in the COMPOSING class's package, so the
+    /// current package alone would mix up a class's own nested-block methods
+    /// with a composed role's.
+    pub(crate) nested_capture_owners: Vec<Symbol>,
+    /// Lexical captures of `method`s declared in nested blocks of a package
+    /// body, keyed by (owner, per-body declaration index): written by
+    /// `OpCode::CaptureNestedMethodEnv` when the block runs, taken when the
+    /// hoisted method with that index is installed (a class) or composed (a
+    /// role). See `vm_nested_method_capture`.
+    pub(crate) nested_method_captures: HashMap<(Symbol, u32), crate::env::Env>,
     /// #7797: stack of compunits whose OWN mainline is currently executing
     /// via `load_module_inner`'s `run_block`, pushed/popped around exactly
     /// the same window as `unit_module_loading_stack` (but keyed by every

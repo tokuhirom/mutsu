@@ -616,7 +616,12 @@ impl Interpreter {
                     // does GP {...}; class K does P { }` (P, then GP). Their
                     // methods already transit into the class below; only the
                     // bodies were missing.
-                    self.run_composed_role_ancestor_bodies(base_role_name, cx.name)
+                    self.run_composed_role_ancestor_bodies(base_role_name, cx.name)?;
+                    // A MOP-built role's body is a block, not deferred ops.
+                    self.run_role_body_block(
+                        base_role_name,
+                        Value::package(Symbol::intern(cx.name)),
+                    )
                 })();
                 if run.is_err() {
                     self.registry_mut()

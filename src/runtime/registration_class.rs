@@ -159,6 +159,7 @@ pub(super) fn make_delegation_method(attr_var_name: &str, target_method: &str) -
         captured_env: None,
         source_file: None,
         role_param_bindings: None,
+        nested_capture_index: None,
     }
 }
 
@@ -412,6 +413,7 @@ pub(super) fn substitute_type_params_in_method(
         captured_env: method.captured_env.clone(),
         source_file: method.source_file.clone(),
         role_param_bindings: method.role_param_bindings.clone(),
+        nested_capture_index: method.nested_capture_index,
     }
 }
 

@@ -5196,8 +5196,9 @@ impl Interpreter {
                 };
                 self.exec_while_loop_op(code, &spec, ip, compiled_fns)?;
             }
-            // Cost: O(1) per iteration on a Range/lazy source; O(e) at entry otherwise, e =
-            // elements copied (see exec_for_loop_op_inner). Rakudo: O(1) at entry -- see #9158.
+            // Cost: O(1) per iteration on a Range, a lazy source or a plain Array read in
+            // place; O(e) at entry otherwise, e = elements copied (see
+            // exec_for_loop_op_inner).
             OpCode::ForLoop(spec) => {
                 self.sync_source_line(code, *ip);
                 self.exec_for_loop_op(code, spec, ip, compiled_fns)?;
@@ -6193,6 +6194,11 @@ impl Interpreter {
             OpCode::MakeBlockClosure(idx, cc_idx) => {
                 self.sync_source_line(code, *ip);
                 self.exec_make_block_closure_op(code, *idx, *cc_idx)?;
+                *ip += 1;
+            }
+            // Cost: O(e + f + n * r), e = the closure's env entries, f = the body's free variables, n = the enclosing blocks' routines, r = one `&name` resolution.
+            OpCode::CaptureNestedMethodEnv(spec) => {
+                self.exec_capture_nested_method_env_op(spec);
                 *ip += 1;
             }
             // Cost: O(size of the declaration) per execution (routine/class/role registration).

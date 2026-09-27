@@ -173,6 +173,14 @@ impl Interpreter {
         let installed_compiled_code =
             matched_compiled_fn.map(|cf| std::sync::Arc::new(cf.code.clone()));
         let installed_compiled_fns = matched_compiled_fn.and_then(|cf| cf.compiled_fns.clone());
+        // A method hoisted out of a nested block of the body closes over that
+        // block's lexicals; the block filed the capture when it ran (see
+        // `vm_nested_method_capture`). A block that never ran leaves none, and
+        // the method is installed regardless, as in rakudo.
+        let nested_capture = decl.nested_capture_index.and_then(|index| {
+            self.nested_method_captures
+                .remove(&(Symbol::intern(cx.name), index))
+        });
         let def = MethodDef {
             lexical_package: crate::symbol::Symbol::intern(&cx.saved_package),
             params: effective_params.clone(),
@@ -213,9 +221,10 @@ impl Interpreter {
             deprecated_message: decl.deprecated_message.clone(),
             is_submethod: decl.is_submethod,
             is_hidden_from_backtrace: decl.is_hidden_from_backtrace,
-            captured_env: None,
+            captured_env: nested_capture,
             source_file: self.current_source_file(),
             role_param_bindings: None,
+            nested_capture_index: decl.nested_capture_index,
         };
         // `my method` and `our method` are NOT part of the class
         // method table — they are only callable as functions.

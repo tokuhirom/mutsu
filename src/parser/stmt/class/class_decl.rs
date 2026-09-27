@@ -389,7 +389,8 @@ pub(crate) fn anon_class_decl(input: &str) -> PResult<'_, Stmt> {
         let (r2, _) = ws(r2)?;
         r = r2;
     }
-    let (rest, body) = package_body_block(r)?;
+    let (rest, mut body) = package_body_block(r)?;
+    crate::parser::stmt::nested_block_methods::hoist(&mut body);
     reject_no_self_in_subs(&body)?;
     reject_no_self_in_attr_where(&body)?;
     reject_no_twigil_attr_at_body_level(&body)?;
@@ -619,6 +620,7 @@ pub(crate) fn class_decl_body(input: &str, is_lexical: bool) -> PResult<'_, Stmt
         let _pkg = super::super::simple::push_package_path(&name);
         package_body_block(r)?
     };
+    crate::parser::stmt::nested_block_methods::hoist(&mut body);
     reject_no_self_in_subs(&body)?;
     reject_no_self_in_attr_where(&body)?;
     reject_no_twigil_attr_at_body_level(&body)?;

@@ -701,9 +701,28 @@ impl Interpreter {
                 "candidates".to_string(),
                 Value::array(vec![method_obj.clone()]),
             );
-            return Value::make_instance(class_name, am);
+            let method_obj = Value::make_instance(class_name, am);
+            return self.method_object_with_routine_mixins(method_obj, name, owner_class);
         }
-        method_obj
+        self.method_object_with_routine_mixins(method_obj, name, owner_class)
+    }
+
+    /// A role composed onto a method at declaration (`multi sub
+    /// trait_mod:<is>(Method $m, :$tag!) { $m does Tag }`) belongs to the
+    /// method itself, so every method object the metaclass hands out for it
+    /// (`.^methods`, `.^find_method`, `.^lookup`) carries it:
+    /// `C.^methods.grep(Tag)` finds the tagged methods (Tinky's
+    /// `is before-apply-workflow` callbacks).
+    fn method_object_with_routine_mixins(
+        &self,
+        method_obj: Value,
+        name: &str,
+        owner_class: Option<&str>,
+    ) -> Value {
+        match owner_class {
+            Some(owner) => self.materialize_routine_mixins_shared(method_obj, owner, name),
+            None => method_obj,
+        }
     }
 
     pub(super) fn classhow_methods_tree(
@@ -1003,6 +1022,7 @@ impl Interpreter {
                         | "add_method"
                         | "add_multi_method"
                         | "add_fallback"
+                        | "set_body_block"
                         | "compose"
                         | "methods"
                         | "attributes"

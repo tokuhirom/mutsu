@@ -441,6 +441,9 @@ pub(crate) fn stmt_list_with_mode(
                         });
                         stmts.extend(hoisted);
                     }
+                    // A method declared in a nested block of the body is the
+                    // class's too, as in the block form (`package_body_block`).
+                    super::nested_block_methods::hoist(&mut tail_stmts);
                     *body = tail_stmts;
                 }
                 Stmt::RoleDecl { body, .. } => {
@@ -481,6 +484,7 @@ pub(crate) fn stmt_list_with_mode(
                     // absorbed compilation-unit statements after them, rather
                     // than replacing the body wholesale and dropping the
                     // parent-role composition.
+                    super::nested_block_methods::hoist(&mut tail_stmts);
                     body.append(&mut tail_stmts);
                 }
                 _ => {}

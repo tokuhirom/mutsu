@@ -299,15 +299,25 @@ pub(crate) fn find_char(
     })
 }
 
-/// Each grapheme of `s` as the codepoint [`char_at`] reports for it, so a
-/// scanner can index the result by grapheme position (`nqp::radix`).
+/// The graphemes of `text` from grapheme `g` on, each as the codepoint
+/// [`char_at`] reports for it, so a scanner can walk forward from a position
+/// without collecting the whole string (`nqp::radix`).
 ///
-/// Cost: O(n), n = chars of `s`.
-pub(crate) fn grapheme_base_chars(s: &str) -> Vec<char> {
-    if crate::builtins::grapheme_index::is_flat_ascii(s) {
-        return s.bytes().map(char::from).collect();
-    }
-    Units::from(s, 0).map(|(_, u)| unit_char(u)).collect()
+/// Cost: O(1) amortized for a flat string, O(STRIDE) otherwise, to start;
+/// then O(1) per grapheme yielded.
+pub(crate) fn chars_from<'a>(
+    text: &'a str,
+    idx: &GraphemeIndex,
+    g: usize,
+) -> impl Iterator<Item = char> + 'a {
+    let b = idx.byte_at(text, g);
+    let flat = idx
+        .is_flat()
+        .then(|| text.as_bytes()[b..].iter().map(|&c| c as char));
+    let units = (!idx.is_flat()).then(|| Units::from(text, b).map(|(_, u)| unit_char(u)));
+    flat.into_iter()
+        .flatten()
+        .chain(units.into_iter().flatten())
 }
 
 /// `v`'s graphemes as separate strings (`nqp::split("", $s)`, `.comb`).

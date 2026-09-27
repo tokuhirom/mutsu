@@ -231,6 +231,12 @@ pub(crate) struct MethodDef {
     /// see their OWN `T`, not whichever composition ran last). `None` for
     /// methods not composed from a parameterized role.
     pub(crate) role_param_bindings: Option<std::sync::Arc<Vec<(String, Value)>>>,
+    /// For a method the parser hoisted out of a nested block of its package
+    /// body, the per-body index its block files the lexical capture under
+    /// (`CompiledMethodDecl::nested_capture_index`). A role's body runs again
+    /// at every composition, so its methods carry this into the composing
+    /// class to receive that composition's capture.
+    pub(crate) nested_capture_index: Option<u32>,
 }
 
 /// Invocant context for an active `proto method` `{*}` dispatch.

@@ -173,6 +173,16 @@ impl Interpreter {
         } else {
             self.call_method_with_values(target.clone(), &method, method_args.clone())?
         };
+        // An rw accessor may expose a Proxy (the generated Configuration
+        // accessors do). Indexing that accessor applies to the Proxy's FETCHed
+        // aggregate; keeping the Proxy opaque makes the later Hash/Array arms
+        // miss the store entirely. The eventual accessor writeback still uses
+        // the Proxy's STORE when the modified aggregate is installed.
+        let current = if current.is_proxy_value() {
+            self.auto_fetch_proxy(&current)?
+        } else {
+            current
+        };
         // Slice 2a: the accessor may return a shared `ContainerRef` cell (e.g. a
         // Pair value aliasing a `=`-array-shared scalar `my $a = @src`). Deref it
         // for the element modify; the shared-Arc propagation below
@@ -927,6 +937,15 @@ impl Interpreter {
         });
         let preserve_hash_entries =
             matches!(args.get(5).map(Value::view), Some(ValueView::Bool(true)));
+        // The compiler tags `$.attr = value` separately from an explicit
+        // `$obj.attr = value`: a non-rw scalar accessor must report the
+        // immutable value it returned, while the explicit method-lvalue form
+        // reports that the method is not rw. Keep the marker out of
+        // `target_var`, since that slot is a real caller writeback name.
+        let dot_twigil = matches!(args.get(6).map(Value::view), Some(ValueView::Bool(true)));
+        if dot_twigil {
+            self.check_dot_twigil_accessor_writable(&format!(".{method}"), false)?;
+        }
         self.assign_method_lvalue_with_values(
             target_var.as_deref(),
             target,

@@ -739,6 +739,8 @@ impl Interpreter {
             unit_module_exported_subs: self.unit_module_exported_subs.clone(),
             unit_module_loading_stack: Vec::new(),
             import_target_package: None,
+            nested_capture_owners: Vec::new(),
+            nested_method_captures: Default::default(),
             module_loading_unit_stack: Vec::new(),
             module_owned_exports: self.module_owned_exports.clone(),
             module_owned_types: self.module_owned_types.clone(),

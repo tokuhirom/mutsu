@@ -542,6 +542,7 @@ pub(crate) mod promise_wake;
 pub(crate) mod seq_body;
 mod serde_support;
 pub(crate) mod signature;
+mod signature_smartmatch;
 mod str_body;
 mod str_iter;
 mod sync_cell;

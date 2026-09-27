@@ -119,6 +119,7 @@ pub(crate) fn anon_class_expr(input: &str) -> PResult<'_, Expr> {
     }
 
     let (rest, mut body) = parse_block_body_no_self(rest)?;
+    crate::parser::stmt::nested_block_methods::hoist(&mut body);
     // Insert DoesDecl statements at the beginning of the body for `does` clauses
     for role_name in does_roles.iter().rev() {
         body.insert(
@@ -182,6 +183,7 @@ pub(crate) fn anon_grammar_expr(input: &str) -> PResult<'_, Expr> {
         return Err(PError::expected("'{' for anonymous grammar"));
     }
     let (rest, mut body) = parse_block_body_no_self(rest)?;
+    crate::parser::stmt::nested_block_methods::hoist(&mut body);
     // Same `also is Base` extraction the statement path does: this is the route a
     // named `grammar G { also is Base }.parse(...)` takes.
     let mut parents = vec!["Grammar".to_string()];

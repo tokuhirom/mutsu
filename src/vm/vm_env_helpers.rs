@@ -2257,6 +2257,14 @@ impl Interpreter {
         {
             let sources = std::mem::take(&mut self.pending_rw_writeback_sources);
             for source in sources {
+                // `self` is the implicit invocant binding of the current method
+                // frame, never a caller lexical. A nested accessor/Proxy callback
+                // may temporarily reuse that env key for its `$self` parameter;
+                // treating the deferred name as a caller slot would copy the
+                // callback argument back over the live invocant.
+                if source == "self" {
+                    continue;
+                }
                 // §1.4/§1.5: prefer the compiler-baked caller slot for this source
                 // (folded in at arg-binding time) so the write lands on the LIVE
                 // (inner shadow) slot, not the by-name `position` (outer) slot. Fall

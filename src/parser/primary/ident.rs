@@ -1,4 +1,4 @@
-mod anon_sub;
+pub(in crate::parser) mod anon_sub;
 mod circumfix;
 mod identifier_call;
 mod listop;

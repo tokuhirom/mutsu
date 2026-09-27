@@ -128,6 +128,7 @@ impl Interpreter {
         code: &CompiledCode,
         spec: &ForLoopSpec,
         items: &[Value],
+        live: Option<&Value>,
         body_start: usize,
         loop_end: usize,
         compiled_fns: &CompiledFns,
@@ -280,7 +281,11 @@ impl Interpreter {
             items,
         );
         let items: &[Value] = promoted_items.as_deref().unwrap_or(items);
-        let chunked_items: Vec<Value> = if spec.chunks_items() {
+        // A live Array source (`live`, see `ForItemIter::Live`) is read one
+        // element per iteration instead of being copied here.
+        let chunked_items: Vec<Value> = if live.is_some() {
+            Vec::new()
+        } else if spec.chunks_items() {
             items
                 .chunks(arity)
                 .map(|chunk| Value::array(chunk.to_vec()))
@@ -582,7 +587,10 @@ impl Interpreter {
         // throws, so the deep flag must NOT follow `source_items_are_bare`.
         let topic_readonly = topic_deep_readonly
             || (!spec.is_rw && binds_implicit_topic && spec.source_items_are_bare);
-        let total_items = chunked_items.len();
+        let total_items = match live {
+            Some(array) => live_array_len(array),
+            None => chunked_items.len(),
+        };
         // `is copy` loop param (is_rw set, do_writeback suppressed): the param
         // owns a DISTINCT container per iteration. Mutations write through the
         // shared backing node (container identity §3), so binding the element
@@ -602,6 +610,16 @@ impl Interpreter {
         // `plan_for_element_alias` owns the whole discriminator (which
         // parameters alias, which sources do, and the shaped/native/`Map`
         // carve-outs); see `vm_for_loop_alias.rs`.
+        // The plan checks that the loop iterates its source one-for-one; a
+        // live source IS that array, so it is shown the array's own items.
+        let live_items = live.and_then(|array| match array.view() {
+            ValueView::Array(items, _) => Some(items.clone()),
+            _ => None,
+        });
+        let alias_items: &[Value] = match &live_items {
+            Some(items) => items,
+            None => &chunked_items,
+        };
         let element_alias = self.plan_for_element_alias(
             code,
             spec,
@@ -612,7 +630,7 @@ impl Interpreter {
             writes_back_topic,
             topic_readonly,
             hash_keys_for_writeback.as_deref(),
-            &chunked_items,
+            alias_items,
         );
         // The base decisions; each iteration retires them for itself only when
         // the element really was promoted (see the bind site below).
@@ -624,7 +642,14 @@ impl Interpreter {
         // Set per iteration at the bind site below; the initial value is never
         // read.
         let mut writes_back_loop_var;
-        'for_loop: for (idx, item) in chunked_items.into_iter().enumerate().skip(resume_index) {
+        let loop_items = match live {
+            Some(array) => ForItemIter::Live {
+                array: array.clone(),
+                next: resume_index,
+            },
+            None => ForItemIter::Owned(chunked_items.into_iter().enumerate().skip(resume_index)),
+        };
+        'for_loop: for (idx, item) in loop_items {
             let mut item = if param_is_copy {
                 item.detach_shared_container()
             } else {
@@ -1272,7 +1297,13 @@ impl Interpreter {
                         // earlier element before the producer re-enters; the
                         // source-entry guard must compare the same cell, not
                         // the old by-value snapshot that preceded promotion.
-                        let mut resume_items = items.to_vec();
+                        let mut resume_items = match live {
+                            Some(array) => match array.view() {
+                                ValueView::Array(current, _) => current.to_vec(),
+                                _ => Vec::new(),
+                            },
+                            None => items.to_vec(),
+                        };
                         if let Some(slot) = resume_items.get_mut(idx) {
                             *slot = item;
                         }
@@ -1529,5 +1560,45 @@ impl Interpreter {
                 }
             }
         }
+    }
+}
+
+/// The items a `for` loop body iterates, as `(index, item)`.
+enum ForItemIter {
+    /// A list materialized before the loop, skipping to the resume index.
+    Owned(std::iter::Skip<std::iter::Enumerate<std::vec::IntoIter<Value>>>),
+    /// A plain Array read in place, one element per iteration, re-reading its
+    /// live length each time (#9158): `for @a { last }` copies nothing, and
+    /// an element pushed or stored by the body is seen when the loop gets
+    /// there, as Rakudo's Array iterator does.
+    Live { array: Value, next: usize },
+}
+
+impl Iterator for ForItemIter {
+    type Item = (usize, Value);
+
+    // Cost: O(1).
+    fn next(&mut self) -> Option<(usize, Value)> {
+        match self {
+            ForItemIter::Owned(items) => items.next(),
+            ForItemIter::Live { array, next } => {
+                let ValueView::Array(items, _) = array.view() else {
+                    return None;
+                };
+                let item = items.get(*next)?.clone();
+                let idx = *next;
+                *next += 1;
+                Some((idx, item))
+            }
+        }
+    }
+}
+
+/// The current length of a live Array loop source.
+// Cost: O(1).
+fn live_array_len(array: &Value) -> usize {
+    match array.view() {
+        ValueView::Array(items, _) => items.len(),
+        _ => 0,
     }
 }

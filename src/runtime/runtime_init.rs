@@ -2916,6 +2916,7 @@ impl Interpreter {
                     captured_env: None,
                     source_file: None,
                     role_param_bindings: None,
+                    nested_capture_index: None,
                 };
                 let mut methods = HashMap::new();
                 // Rakudo's CompUnit::Repository role requires exactly
@@ -2979,6 +2980,7 @@ impl Interpreter {
                     captured_env: None,
                     source_file: None,
                     role_param_bindings: None,
+                    nested_capture_index: None,
                 };
                 let mut methods = HashMap::new();
                 for name in ["meta", "content"] {
@@ -3294,6 +3296,8 @@ impl Interpreter {
             unit_module_exported_subs: Default::default(),
             unit_module_loading_stack: Vec::new(),
             import_target_package: None,
+            nested_capture_owners: Vec::new(),
+            nested_method_captures: Default::default(),
             module_loading_unit_stack: Vec::new(),
             module_owned_exports: Default::default(),
             module_owned_types: Default::default(),

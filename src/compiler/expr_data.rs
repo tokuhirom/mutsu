@@ -91,25 +91,36 @@ impl Compiler {
                 .emit(OpCode::TagContainerRef(name_idx, source_slot));
             return;
         }
-        // $.attr = expr — In Raku, this first resolves self.attr (method call),
-        // then assigns to the resulting lvalue container. If the accessor doesn't
-        // exist, the method call throws. Compile as: first call self.attr() to
-        // check it exists (pop result), then do the normal assignment.
-        if let Some(attr_name) = name.strip_prefix('.')
+        // $.attr = expr — In Raku, this assigns through self.attr's lvalue
+        // result. Lower it to the same bytecode-backed helper used by an
+        // explicit `$obj.attr = expr` so dynamically added rw accessors (for
+        // example a Metamodel-generated Proxy accessor) are not mistaken for
+        // a lexical `.attr` name and silently written nowhere.
+        if !dot_twigil_rmw
+            && let Some(attr_name) = name.strip_prefix('.')
             && !attr_name.is_empty()
         {
-            // Load self (or raise X::Syntax::NoSelf when unavailable) and call
-            // the accessor method to validate it exists.
-            self.emit_load_self_for_accessor(&format!("${}", name));
-            let method_idx = self.code.add_constant(Value::str(attr_name.to_string()));
-            self.code.emit(OpCode::CallMethod {
-                name_idx: method_idx,
-                arity: 0,
-                modifier_idx: None,
-                quoted: false,
-                arg_sources_idx: None,
+            // Use the ordinary call producer so accessor-ref markers, closure
+            // escape tracking, and argument-source metadata stay identical to
+            // the parser-lowered `$obj.attr = value` form.  Emitting the five
+            // stack operands by hand bypasses those call-site invariants and
+            // lets the synthetic lvalue call disturb the enclosing method's
+            // `self` slot when a dynamic accessor invokes a Proxy callback.
+            self.compile_expr(&Expr::Call {
+                name: crate::symbol::Symbol::intern("__mutsu_assign_method_lvalue"),
+                args: vec![
+                    // `self` is the immutable method invocant, not a caller
+                    // variable whose container should be passed to the helper.
+                    Expr::BareWord("self".to_string()),
+                    Expr::Literal(Value::str(attr_name.to_string())),
+                    Expr::ArrayLiteral(Vec::new()),
+                    expr.clone(),
+                    Expr::Literal(Value::NIL),
+                    Expr::Literal(Value::NIL),
+                    Expr::Literal(Value::TRUE),
+                ],
             });
-            self.code.emit(OpCode::Pop); // discard the accessor result
+            return;
         }
         // A genuine assignment to a never-declared dynamic var (`$*x = ...` in
         // expression context) throws X::Dynamic::NotFound. The `:=` bind form

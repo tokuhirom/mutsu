@@ -823,6 +823,18 @@ impl Interpreter {
             if f.is_block {
                 continue;
             }
+            // A ROLE method's closure belongs to the role, not to the class the
+            // role was composed into: composition rewrites the method's owner
+            // to the composer, but its `lexical_package` stays the role. With
+            // the composer stamped on, a closure the method hands out (Tinky's
+            // Proxy `STORE`) resolved the role's module-internal names against
+            // the composer's package chain and got plain strings.
+            if f.is_method
+                && let Some(role) = f.lexical_package
+                && self.registry().roles.contains_key(role.as_str())
+            {
+                return role;
+            }
             if f.is_method
                 && let Some(class) = self.method_class_stack.last()
             {

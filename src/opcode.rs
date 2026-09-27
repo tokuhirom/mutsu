@@ -627,6 +627,12 @@ pub(crate) struct CompiledMethodDecl {
     /// `apply_auto_positional_slurpy`'s own `original_param_defs_is_empty`
     /// guard.
     pub(crate) uses_bare_positional_args: bool,
+    /// For a method the parser hoisted out of a nested block of the package
+    /// body (`class C { do { method m { } } }`), the per-body index its
+    /// in-block `Stmt::NestedMethodCapture` marker files the block's lexical
+    /// capture under (`OpCode::CaptureNestedMethodEnv`). Read from the
+    /// `__nested_block_method` parser marker trait.
+    pub(crate) nested_capture_index: Option<u32>,
 }
 
 impl CompiledMethodDecl {
@@ -685,8 +691,30 @@ impl CompiledMethodDecl {
                 .any(|(t, _)| t == "__hidden_from_backtrace"),
             compiled_routine_key: None,
             uses_bare_positional_args,
+            nested_capture_index: custom_traits.iter().find_map(|(t, arg)| {
+                (t == crate::parser::NESTED_BLOCK_METHOD_TRAIT)
+                    .then(|| match arg {
+                        Some(Expr::Literal(v)) => match v.view() {
+                            crate::value::ValueView::Int(i) => u32::try_from(i).ok(),
+                            _ => None,
+                        },
+                        _ => None,
+                    })
+                    .flatten()
+            }),
         }
     }
+}
+
+/// Payload of `OpCode::CaptureNestedMethodEnv`. Boxed to keep
+/// `size_of::<OpCode>()` small.
+#[derive(Debug, Clone)]
+pub(crate) struct NestedMethodCaptureSpec {
+    /// The per-package-body index shared with the hoisted method's
+    /// `CompiledMethodDecl::nested_capture_index`.
+    pub(crate) index: u32,
+    /// The routines the enclosing blocks declare.
+    pub(crate) routines: Vec<Symbol>,
 }
 
 /// Payload of `OpCode::RuntimeHasDecl`. A `has $.x` that reaches the VM (rather
@@ -4089,6 +4117,18 @@ pub(crate) enum OpCode {
     /// `proto_decl_plans` or `token_decl_plans` (or a proto token). A class or
     /// role plan carrying the `__hoisted` trait swallows its registration errors.
     RegisterDecl(u32),
+    /// Record the lexical capture of a `method` declared in a nested block of
+    /// a package body (`Stmt::NestedMethodCapture`). Stack: `[closure] → []`.
+    ///
+    /// The operand carries the declaration's per-package-body index and the
+    /// routines the enclosing blocks declare (resolved into the capture as
+    /// `&name`, see `Stmt::NestedMethodCapture`). The closure
+    /// (an anonymous method with the declaration's signature and body) is
+    /// only a vehicle for the capture: its env, narrowed to the body's free
+    /// variables, is stored under `(current package, index)` for the hoisted
+    /// method with the same index to take when the package-body walk installs
+    /// it (`class_body_method_decl`).
+    CaptureNestedMethodEnv(Box<NestedMethodCaptureSpec>),
     /// Register an `enum` declaration. Stack: `[] → []`.
     ///
     /// The operand indexes `CompiledCode::stmt_pool` (a `Stmt::EnumDecl`), which
