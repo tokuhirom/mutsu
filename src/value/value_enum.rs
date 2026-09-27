@@ -64,4 +64,20 @@ impl EnumValue {
             EnumValue::Generic(v) => v.as_ref().clone(),
         }
     }
+
+    /// The marker role Rakudo's `EnumHOW` mixes into an enum whose values are
+    /// this kind: `NumericEnumeration` for a numeric one, `StringyEnumeration`
+    /// for a stringy one, none for anything else (`my Array enum ...`).
+    // Cost: O(1).
+    pub(crate) fn marker_role(&self) -> Option<&'static str> {
+        match self {
+            EnumValue::Int(_) => Some("NumericEnumeration"),
+            EnumValue::Str(_) => Some("StringyEnumeration"),
+            EnumValue::Generic(v) if v.is_numeric() => Some("NumericEnumeration"),
+            EnumValue::Generic(v) if matches!(v.view(), crate::value::ValueView::Str(_)) => {
+                Some("StringyEnumeration")
+            }
+            EnumValue::Generic(_) => None,
+        }
+    }
 }

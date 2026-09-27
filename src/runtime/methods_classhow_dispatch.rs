@@ -189,6 +189,10 @@ impl Interpreter {
         if let Some(result) = self.dispatch_definitehow_method(method, &args) {
             return result;
         }
+        // `Metamodel::EnumHOW`'s own metamethods.
+        if let Some(result) = self.dispatch_enumhow_method(method, &args) {
+            return result;
+        }
         match method {
             "mixin" if args.len() >= 2 => {
                 // `.^mixin(Role)` on a slang-activation handle (ADR-0026):
@@ -1887,77 +1891,6 @@ impl Interpreter {
                         let base = s.split_once('[').map(|(b, _)| b).unwrap_or(s.as_str());
                         Ok(Value::package(Symbol::intern(base)))
                     }
-                }
-            }
-            // `EnumHOW.enum_values`: a Map from each value's *name* to its
-            // underlying value (`Numbers.^enum_values` is `{10 => 0, 20 => 1}`).
-            "enum_values" if !args.is_empty() => {
-                let Some(variants) = self.enum_how_variants(&args[0]) else {
-                    return Err(Self::enum_how_method_missing("enum_values", &args[0]));
-                };
-                let mut map = ValueMap::default();
-                for (key, val) in &variants {
-                    map.insert(key.clone(), val.to_value());
-                }
-                Ok(Value::hash(map))
-            }
-            // `EnumHOW.elems`: how many values the enum declares. On any other
-            // metaobject `elems` is just the inherited `Any.elems`, which is 1
-            // (`class C {}; C.HOW.elems` is 1 in raku). Handling it here is what
-            // keeps a HOW invocant out of the generic `.elems` dispatch, which
-            // has no implementation for a HOW instance and used to bounce
-            // between `dispatch_elems_method` and `builtin_elems` until the
-            // stack overflowed.
-            "elems" if !args.is_empty() => Ok(Value::int(
-                self.enum_how_variants(&args[0])
-                    .map_or(1, |variants| variants.len() as i64),
-            )),
-            // `EnumHOW.enum_from_value`: the enum value whose underlying value
-            // equals the argument, or `Mu` when none does.
-            "enum_from_value" if args.len() >= 2 => {
-                let Some(variants) = self.enum_how_variants(&args[0]) else {
-                    return Err(Self::enum_how_method_missing("enum_from_value", &args[0]));
-                };
-                let type_name = self.mop_receiver_owner(&args[0]);
-                let wanted = &args[1];
-                let found = variants
-                    .iter()
-                    .enumerate()
-                    .find(|(_, (_, val))| val.to_value().eqv(wanted));
-                Ok(match found {
-                    Some((index, (key, val))) => Value::enum_parts(
-                        Symbol::intern(&type_name),
-                        Symbol::intern(key),
-                        val.clone(),
-                        index,
-                    ),
-                    None => Value::package(Symbol::intern("Mu")),
-                })
-            }
-            "enum_value_list" if !args.is_empty() => {
-                let type_name = match args[0].view() {
-                    ValueView::Package(name) => Some(name.resolve()),
-                    ValueView::Str(name) => Some(name.to_string()),
-                    _ => None,
-                };
-                if let Some(type_name) = type_name
-                    && let Some(variants) = self.registry().enum_types.get(&type_name)
-                {
-                    let values: Vec<Value> = variants
-                        .iter()
-                        .enumerate()
-                        .map(|(index, (key, val))| {
-                            Value::enum_parts(
-                                Symbol::intern(&type_name),
-                                Symbol::intern(key),
-                                val.clone(),
-                                index,
-                            )
-                        })
-                        .collect();
-                    Ok(Value::array(values))
-                } else {
-                    Ok(Value::array(Vec::new()))
                 }
             }
             "language-revision" if !args.is_empty() => {
