@@ -1313,6 +1313,7 @@ impl Interpreter {
     /// `MethodDef`, so they need a dedicated terminal entry after the ordinary
     /// wrapper entries. The frame shape otherwise matches
     /// [`Self::push_wrapped_method_dispatch_frame`].
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn push_wrapped_accessor_dispatch_frame(
         &mut self,
         receiver_class: &str,
