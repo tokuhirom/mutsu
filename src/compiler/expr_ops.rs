@@ -134,6 +134,11 @@ impl Compiler {
         let x_idx = x
             .as_ref()
             .map(|raw| self.code.add_constant(Value::str(raw.clone())));
+        let qq_thunks = if perl5 {
+            None
+        } else {
+            self.compile_pattern_qq_thunks(pattern)
+        };
         self.code.emit(OpCode::Subst {
             pattern_idx,
             replacement_idx,
@@ -145,6 +150,7 @@ impl Compiler {
             nth_idx,
             x_idx,
             perl5,
+            qq_thunks,
         });
     }
 
@@ -171,6 +177,11 @@ impl Compiler {
         let x_idx = x
             .as_ref()
             .map(|raw| self.code.add_constant(Value::str(raw.clone())));
+        let qq_thunks = if perl5 {
+            None
+        } else {
+            self.compile_pattern_qq_thunks(pattern)
+        };
         self.code.emit(OpCode::NonDestructiveSubst {
             pattern_idx,
             replacement_idx,
@@ -182,6 +193,7 @@ impl Compiler {
             nth_idx,
             x_idx,
             perl5,
+            qq_thunks,
         });
     }
 

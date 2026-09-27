@@ -5524,8 +5524,8 @@ impl Interpreter {
             }
 
             // -- Substitution --
-            // Cost: O(n + r) plus engine work, n = chars of the topic, r = matches (see
-            // run_subst).
+            // Cost: O(n + r + t) plus engine work and the thunks' runs, n = chars of the
+            // topic, r = matches, t = the pattern's `"..."` qq thunks (see run_subst).
             OpCode::Subst {
                 pattern_idx,
                 replacement_idx,
@@ -5537,6 +5537,7 @@ impl Interpreter {
                 nth_idx,
                 x_idx,
                 perl5,
+                qq_thunks,
             } => {
                 self.sync_source_line(code, *ip);
                 self.exec_subst_op(
@@ -5551,10 +5552,11 @@ impl Interpreter {
                     *nth_idx,
                     *x_idx,
                     *perl5,
+                    qq_thunks.as_deref().map(Vec::as_slice),
                 )?;
                 *ip += 1;
             }
-            // Cost: as Subst, O(n + r) plus engine work.
+            // Cost: as Subst, O(n + r + t) plus engine work and the thunks' runs.
             OpCode::NonDestructiveSubst {
                 pattern_idx,
                 replacement_idx,
@@ -5566,6 +5568,7 @@ impl Interpreter {
                 nth_idx,
                 x_idx,
                 perl5,
+                qq_thunks,
             } => {
                 self.sync_source_line(code, *ip);
                 self.exec_non_destructive_subst_op(
@@ -5580,6 +5583,7 @@ impl Interpreter {
                     *nth_idx,
                     *x_idx,
                     *perl5,
+                    qq_thunks.as_deref().map(Vec::as_slice),
                 )?;
                 *ip += 1;
             }

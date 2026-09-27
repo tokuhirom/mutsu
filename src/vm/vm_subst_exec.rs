@@ -226,6 +226,32 @@ impl Interpreter {
         })
     }
 
+    /// [`Self::run_subst`] with the pattern's `"..."` qq thunks (see
+    /// `OpCode::Subst::qq_thunks`) installed for the duration of the match,
+    /// the way a regex literal's scope is installed around `~~`: each thunk
+    /// runs once, and the interpolation pre-pass splices its result in as a
+    /// literal.
+    // Cost: O(t) plus the thunks' own runs and run_subst, t = thunks.
+    fn run_subst_with_qq_thunks(
+        &mut self,
+        op: &SubstOp,
+        qq_thunks: Option<&[(Symbol, u32)]>,
+    ) -> Result<SubstOutcome, RuntimeError> {
+        let Some(thunks) = qq_thunks else {
+            return self.run_subst(op);
+        };
+        let mut scope = ValueMap::default();
+        for (key, slot) in thunks {
+            if let Some(thunk) = self.locals.get(*slot as usize).filter(|v| !v.is_nil()) {
+                scope.insert(key.resolve().to_string(), thunk.clone());
+            }
+        }
+        let saved = self.install_env_scope(&scope);
+        let outcome = self.run_subst(op);
+        self.uninstall_regex_closure_scope(Some(saved));
+        outcome
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub(super) fn exec_subst_op(
         &mut self,
@@ -240,6 +266,7 @@ impl Interpreter {
         nth_idx: Option<u32>,
         x_idx: Option<u32>,
         perl5: bool,
+        qq_thunks: Option<&[(Symbol, u32)]>,
     ) -> Result<(), RuntimeError> {
         let op = self.subst_op(
             code,
@@ -254,7 +281,7 @@ impl Interpreter {
             x_idx,
             perl5,
         );
-        let outcome = self.run_subst(&op)?;
+        let outcome = self.run_subst_with_qq_thunks(&op, qq_thunks)?;
         if outcome.matched {
             self.write_subst_topic_checked(code, Value::str(outcome.text))?;
         }
@@ -287,6 +314,7 @@ impl Interpreter {
         nth_idx: Option<u32>,
         x_idx: Option<u32>,
         perl5: bool,
+        qq_thunks: Option<&[(Symbol, u32)]>,
     ) -> Result<(), RuntimeError> {
         let op = self.subst_op(
             code,
@@ -301,7 +329,7 @@ impl Interpreter {
             x_idx,
             perl5,
         );
-        let outcome = self.run_subst(&op)?;
+        let outcome = self.run_subst_with_qq_thunks(&op, qq_thunks)?;
         // S/// sets $/ to the match (without mutating $_) and yields the string.
         let slash = outcome.slash.clone();
         self.env_mut().insert("/".to_string(), slash.clone());

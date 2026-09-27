@@ -42,17 +42,25 @@ impl Compiler {
     /// embedded blocks resolve in the literal's defining scope exactly as the
     /// same `"..."` would outside a regex.
     pub(super) fn compile_regex_qq_thunks(&mut self, v: &Value) -> Vec<(Symbol, u32)> {
+        self.compile_qq_thunk_bodies(Self::regex_qq_thunk_bodies(v))
+    }
+
+    /// [`Compiler::compile_regex_qq_thunks`] for a pattern that is not a
+    /// regex value: the raw source text of an `s///` / `S///` pattern.
+    /// `None` when it has no interpolating `"..."` atom.
+    pub(super) fn compile_pattern_qq_thunks(
+        &mut self,
+        pattern: &str,
+    ) -> Option<std::sync::Arc<Vec<(Symbol, u32)>>> {
+        let captures = self.compile_qq_thunk_bodies(crate::regex_qq_atoms::thunk_bodies(pattern));
+        (!captures.is_empty()).then(|| std::sync::Arc::new(captures))
+    }
+
+    fn compile_qq_thunk_bodies(&mut self, bodies: Vec<String>) -> Vec<(Symbol, u32)> {
         let mut captures = Vec::new();
-        for body in Self::regex_qq_thunk_bodies(v) {
-            let expr = crate::parse_dispatch::parse_qq_interpolation(&body);
-            if matches!(expr, Expr::Literal(_)) {
+        for body in bodies {
+            let Some(thunk) = Self::regex_qq_thunk_expr(&body) else {
                 continue;
-            }
-            let thunk = Expr::AnonSub {
-                body: vec![Stmt::Expr(expr)],
-                is_rw: false,
-                is_raw: false,
-                is_block: true,
             };
             let name = format!("__mutsu_regex_qq_{}", self.code.locals.len());
             let slot = self.alloc_fresh_local(&name);
@@ -61,6 +69,71 @@ impl Compiler {
             captures.push((MetaNs::RegexQq.key(Symbol::intern(&body)), slot));
         }
         captures
+    }
+
+    /// The closure a `"..."` atom's `body` lowers to: the body read as a qq
+    /// string, as a block. `None` when the body interpolates nothing.
+    pub(super) fn regex_qq_thunk_expr(body: &str) -> Option<Expr> {
+        let expr = crate::parse_dispatch::parse_qq_interpolation(body);
+        if matches!(expr, Expr::Literal(_)) {
+            return None;
+        }
+        Some(Expr::AnonSub {
+            body: vec![Stmt::Expr(expr)],
+            is_rw: false,
+            is_raw: false,
+            is_block: true,
+        })
+    }
+
+    /// The thunks of a `token`/`rule` declaration's body (the raw
+    /// `Stmt::Expr(Expr::Literal(regex))` payload, ADR-0009), compiled into
+    /// this frame's locals like a regex literal's: the capture entries to
+    /// add to the declaration plan's `regex_captures`. Empty for a
+    /// declaration with parameters — they are bound at match time, where a
+    /// thunk built here cannot see them.
+    pub(super) fn compile_token_decl_qq_thunks(
+        &mut self,
+        params: &[String],
+        body: &[Stmt],
+    ) -> Vec<(Symbol, u32)> {
+        if !params.is_empty() {
+            return Vec::new();
+        }
+        let bodies = Self::token_decl_qq_thunk_bodies(body);
+        self.compile_qq_thunk_bodies(bodies)
+    }
+
+    /// [`Compiler::compile_token_decl_qq_thunks`] for a declaration with no
+    /// frame to compile into (a class or role body): one standalone chunk per
+    /// thunk, which registration runs in the declaring scope (see
+    /// [`crate::opcode::CompiledTokenDeclPlan::qq_thunk_chunks`]).
+    pub(super) fn token_decl_qq_thunk_chunks(
+        &self,
+        params: &[String],
+        body: &[Stmt],
+    ) -> Vec<(Symbol, crate::opcode::CompiledDeclExpr)> {
+        if !params.is_empty() {
+            return Vec::new();
+        }
+        Self::token_decl_qq_thunk_bodies(body)
+            .into_iter()
+            .filter_map(|body| {
+                let thunk = Self::regex_qq_thunk_expr(&body)?;
+                let key = MetaNs::RegexQq.key(Symbol::intern(&body));
+                Some((key, self.compile_decl_expr(&thunk)))
+            })
+            .collect()
+    }
+
+    /// The `"..."` atom bodies of a `token`/`rule` declaration's raw body.
+    pub(super) fn token_decl_qq_thunk_bodies(body: &[Stmt]) -> Vec<String> {
+        body.iter()
+            .find_map(|stmt| match stmt {
+                Stmt::Expr(Expr::Literal(v)) => Some(Self::regex_qq_thunk_bodies(v)),
+                _ => None,
+            })
+            .unwrap_or_default()
     }
 
     /// The `"..."` atom bodies of regex literal `v` that

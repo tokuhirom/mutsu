@@ -732,6 +732,14 @@ impl Interpreter {
                 }
                 return None;
             }
+            RegexAtom::QqInterp { key, fallback } => {
+                return match self.match_qq_interp_result(*key, chars, pos, ignore_case) {
+                    Some(end) => end.map(|end| (end, RegexCaptures::default())),
+                    None => self
+                        .regex_match_end_from_caps_in_pkg(fallback, chars, pos, pkg)
+                        .map(|(next, _)| (next, RegexCaptures::default())),
+                };
+            }
             RegexAtom::VarDecl { code } => {
                 let source = format!("{};", code);
                 if let Some(stmts) = self.parse_regex_code_cached(&source) {

@@ -364,6 +364,7 @@ fn atom_span_and_candidates(atom: &RegexAtom, depth: u32) -> Option<(Span, Vec<C
         RegexAtom::Backref(_)
         | RegexAtom::NamedBackref(_)
         | RegexAtom::VarInterp(_)
+        | RegexAtom::QqInterp { .. }
         | RegexAtom::Named(_)
         | RegexAtom::CodeAssertion { .. }
         | RegexAtom::ClosureInterpolation { .. }

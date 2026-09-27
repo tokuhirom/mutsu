@@ -381,7 +381,7 @@ fn dyn_call(
         return out;
     };
     let spec = name.spec();
-    if names.contains(&spec.lookup_sym) {
+    if names.contains(&spec.lookup_sym) || interp.subrule_has_qq_thunks(&spec.lookup_name, pkg) {
         out.fate = Some(pos);
         return out;
     }

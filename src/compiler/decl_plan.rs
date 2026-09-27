@@ -368,6 +368,11 @@ impl Compiler {
                 does_idx += 1;
                 continue;
             }
+            if let crate::opcode::ClassBodyOp::TokenRule { plan } = op {
+                plan.qq_thunk_chunks =
+                    self.token_decl_qq_thunk_chunks(&plan.params, &plan.raw_body);
+                continue;
+            }
             if let crate::opcode::ClassBodyOp::LeavePhaser { chunk, raw } = op {
                 let Stmt::Phaser {
                     body: phaser_body, ..
@@ -856,11 +861,18 @@ impl Compiler {
             let source_line = (kind == crate::opcode::DeferredBodyOpKind::TokenRule)
                 .then_some(decl_line)
                 .flatten();
+            let qq_thunk_chunks = match raw.as_ref() {
+                Stmt::TokenDecl { params, body, .. } | Stmt::RuleDecl { params, body, .. } => {
+                    self.token_decl_qq_thunk_chunks(params, body)
+                }
+                _ => Vec::new(),
+            };
             out.push(crate::opcode::DeferredBodyOp {
                 kind,
                 chunk,
                 declared_vars,
                 source_line,
+                qq_thunk_chunks,
                 raw: *raw,
             });
         }

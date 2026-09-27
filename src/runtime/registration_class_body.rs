@@ -260,11 +260,13 @@ impl Interpreter {
                         self.class_body_proto_method_decl(&mut cx, raw)?;
                     }
                     crate::opcode::ClassBodyOp::TokenRule { plan } => {
+                        let captured_body =
+                            self.token_body_with_qq_thunks(&plan.raw_body, &plan.qq_thunk_chunks)?;
                         self.register_token_decl(
                             &plan.name.resolve(),
                             &plan.params,
                             &plan.param_defs,
-                            &plan.raw_body,
+                            captured_body.as_deref().unwrap_or(&plan.raw_body),
                             plan.multi,
                             plan.source_line,
                         );

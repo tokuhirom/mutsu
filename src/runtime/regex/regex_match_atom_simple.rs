@@ -496,6 +496,12 @@ impl Interpreter {
             RegexAtom::Backref(_) | RegexAtom::NamedBackref(_) | RegexAtom::VarInterp(_) => {
                 return None;
             }
+            RegexAtom::QqInterp { key, fallback } => {
+                return match self.match_qq_interp_result(*key, chars, pos, ignore_case) {
+                    Some(end) => end,
+                    None => self.regex_match_end_from_in_pkg(fallback, chars, pos, pkg),
+                };
+            }
             RegexAtom::Lookaround {
                 pattern,
                 negated,
@@ -951,6 +957,7 @@ impl Interpreter {
             | RegexAtom::Backref(_)
             | RegexAtom::NamedBackref(_)
             | RegexAtom::VarInterp(_)
+            | RegexAtom::QqInterp { .. }
             | RegexAtom::VarDecl { .. }
             | RegexAtom::ClosureInterpolation { .. }
             | RegexAtom::LeftWordBoundary

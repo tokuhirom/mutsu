@@ -1637,10 +1637,12 @@ impl Interpreter {
                     // op's raw statement through `run_block_raw` would silently
                     // lose `Code.line`/`Code.file` (a fresh `Compiler::new()` has
                     // no line history), so register directly instead.
-                    None if op.kind == crate::opcode::DeferredBodyOpKind::TokenRule => {
-                        this.register_token_decl_from_stmt(&op.raw, op.source_line);
-                        Ok(())
-                    }
+                    None if op.kind == crate::opcode::DeferredBodyOpKind::TokenRule => this
+                        .register_token_decl_from_stmt(
+                            &op.raw,
+                            op.source_line,
+                            &op.qq_thunk_chunks,
+                        ),
                     None => this.run_block_raw(std::slice::from_ref(&op.raw)),
                 }
             };
