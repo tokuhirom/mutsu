@@ -1188,6 +1188,25 @@ pub(in crate::runtime) fn bind_sub_signature_from_value(
             let is_rename = is_named_rename_sub_signature(sub_pd);
             if is_rename {
                 bind_named_rename_sub_signature(interpreter, nested, &candidate, &sub_pd.traits)?;
+            } else if sub_pd.named_alias {
+                // The parens after a named key hold ONE parameter that
+                // receives the whole value: `:value(($c, $d))` given
+                // `value => (3, 4)` unpacks `(3, 4)` itself, not its first
+                // element.
+                for inner in nested {
+                    match &inner.sub_signature {
+                        Some(inner_sig) => {
+                            if !inner.name.is_empty() && inner.name != "__subsig__" {
+                                bind_sub_param_name(interpreter, &inner.name, candidate.clone());
+                            }
+                            bind_sub_signature_from_value(interpreter, inner_sig, &candidate)?;
+                        }
+                        None if !inner.name.is_empty() => {
+                            bind_sub_param_name(interpreter, &inner.name, candidate.clone());
+                        }
+                        None => {}
+                    }
+                }
             } else {
                 bind_sub_signature_from_value(interpreter, nested, &candidate)?;
             }

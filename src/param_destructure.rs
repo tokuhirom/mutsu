@@ -169,7 +169,16 @@ pub(crate) fn destructure_binds(
             // bind to the sub_signature variable instead of the param name.
             if let Some(inner_params) = &sub.sub_signature {
                 for inner in inner_params {
-                    if !inner.name.is_empty() {
+                    if inner.name.is_empty() {
+                        continue;
+                    }
+                    // `:value(($n))`: the inner parameter is itself a
+                    // sub-signature — bind the value to a temp, then unpack it.
+                    if let Some(nested) = &inner.sub_signature {
+                        let temp = nested_temp_name(target_name, &lookup_name, positional_index);
+                        bind_stmts.push(decl_stmt(temp.clone(), method_result.clone()));
+                        destructure_binds(&temp, nested, bind_stmts);
+                    } else {
                         bind_stmts.push(decl_stmt(inner.name.clone(), method_result.clone()));
                     }
                 }
@@ -268,8 +277,27 @@ pub(crate) fn destructure_binds(
             } else {
                 element_expr
             };
-            bind_stmts.push(bind_stmt(sub.name.clone(), value_expr));
+            if let Some(nested) = &sub.sub_signature {
+                // `-> ($a, ($b, $c))` / `-> ($a, [$b, $c])`: the element is
+                // unpacked again. Every nested pattern shares the parser's
+                // placeholder name, so bind each to its own temp — reusing the
+                // placeholder would let an inner unpack clobber the value a
+                // later sibling still reads from.
+                let temp = nested_temp_name(target_name, &sub.name, positional_index);
+                bind_stmts.push(decl_stmt(temp.clone(), value_expr));
+                destructure_binds(&temp, nested, bind_stmts);
+            } else {
+                bind_stmts.push(bind_stmt(sub.name.clone(), value_expr));
+            }
             positional_index += 1;
         }
     }
+}
+
+/// The temp a nested destructuring pattern is bound to before it is unpacked.
+/// Derived from the enclosing target and the pattern's position so sibling and
+/// nested patterns never share one.
+fn nested_temp_name(target_name: &str, sub_name: &str, position: usize) -> String {
+    let base = target_name.trim_start_matches(['$', '@', '%', '&', '\\']);
+    format!("__destructure_{base}_{sub_name}_{position}")
 }

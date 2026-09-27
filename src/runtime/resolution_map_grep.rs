@@ -367,7 +367,8 @@ impl Interpreter {
                 crate::value::Value::NIL,
             )));
         }
-        let compiler = crate::compiler::Compiler::new();
+        let mut compiler = crate::compiler::Compiler::new();
+        compiler.unit_tail_discards = true;
         let scoped_body: Vec<crate::ast::Stmt>;
         let compile_target: &[crate::ast::Stmt] =
             if crate::compiler::Compiler::stmts_declare_routines(&gather_body) {

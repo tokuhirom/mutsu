@@ -236,6 +236,17 @@ pub(crate) fn values_same_object(left: &Value, right: &Value) -> bool {
 
 pub(crate) fn values_identical(left: &Value, right: &Value) -> bool {
     match (left.view(), right.view()) {
+        // `.WHICH` is the identity of the value, not of the container holding
+        // it: an array element read through its aliasing cell (a `.sort`
+        // leaves `@b`'s slots as `ContainerRef`s) is still the same List.
+        // Without this the pair fell through to the structural `eqv` arm, so
+        // two distinct but equal Lists tested `∈` each other (Game::Entities'
+        // t/sorting.t).
+        (ValueView::Scalar(_) | ValueView::ContainerRef(_), _)
+        | (_, ValueView::Scalar(_) | ValueView::ContainerRef(_)) => values_identical(
+            &left.descalarize().deref_container(),
+            &right.descalarize().deref_container(),
+        ),
         (ValueView::Package(name), ValueView::Int(0))
         | (ValueView::Int(0), ValueView::Package(name))
             if name.resolve() == "int" =>

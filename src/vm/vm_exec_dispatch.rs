@@ -4919,21 +4919,13 @@ impl Interpreter {
                 let container = Self::const_str(code, *container_idx).to_string();
                 let positional = *positional;
                 let index = self.stack.pop().unwrap_or(Value::NIL);
+                // The compiler pushed the container itself below the index, read
+                // the way any other occurrence of that variable is read — a
+                // by-name lookup here missed a `gather` body's captured outer
+                // lexical and a nested sub's gate-authoritative local slot.
                 // Read the element value `container[index]` and push it as the
                 // topic, reusing the standard index op so all container shapes
                 // (Array/Hash/ContainerRef/typed) are handled uniformly.
-                //
-                // Under the (B) per-store env-write gate, a plain lexical in a
-                // nested sub is authoritative in its local slot and its env
-                // mirror is suppressed, so `get_env_with_main_alias` misses it
-                // (returns Nil → indexing Nil yields `Any`). This broke
-                // `with $cc<key>` on a grammar Match subcapture held in a nested
-                // sub's `my $cc` (the URI dist). Read the live local slot first.
-                let cval = self
-                    .gate_local_slot_value(code, &container)
-                    .or_else(|| self.get_env_with_main_alias(&container))
-                    .unwrap_or(Value::NIL);
-                self.stack.push(cval);
                 self.stack.push(index.clone());
                 self.exec_index_op_with_positional(positional)?;
                 self.element_source = Some((container, vec![(index, positional)]));
@@ -4952,10 +4944,9 @@ impl Interpreter {
                 }
                 indices.reverse();
 
-                let mut current = self
-                    .gate_local_slot_value(code, &container)
-                    .or_else(|| self.get_env_with_main_alias(&container))
-                    .unwrap_or(Value::NIL);
+                // The root container sits below the indices (see
+                // `TagElementSource`).
+                let mut current = self.stack.pop().unwrap_or(Value::NIL);
                 for (index, positional) in indices.iter().zip(positionals.iter().copied()) {
                     self.stack.push(current);
                     self.stack.push(index.clone());

@@ -2645,40 +2645,16 @@ impl Interpreter {
         }
     }
 
-    /// Under the (B) per-store env-write, return this frame's live local slot
-    /// value for `name` when the slot holds a real (non-Nil) value — the slot is
-    /// the authoritative half while the env mirror is suppressed. Returns None
-    /// when there is no `is_plain_local` slot for `name`, or when the slot is Nil (an
-    /// uninitialized/absent local, where the env read — and any autovivification it
-    /// drives — is the right source), so callers fall back to the env read. §1.5
-    /// helper — see docs/lexical-scope-slot-campaign.md.
-    pub(super) fn gate_local_slot_value(&self, code: &CompiledCode, name: &str) -> Option<Value> {
-        let slot = self.gate_local_slot(code, name)?;
-        let val = self.locals.get(slot)?;
-        if val.is_nil() {
-            None
-        } else {
-            Some(val.clone())
-        }
-    }
-
-    /// Slot index of a `(B)`-gate-authoritative local, or `None`.
+    /// Slot index of a `(B)`-gate-authoritative local, or `None`, preferring a
+    /// compile-time-baked slot over the by-name search (§1.5) — the by-name
+    /// form is ambiguous once a name occupies several `code.locals` entries (a
+    /// shadowing `my` in a bare block).
     ///
-    /// Returns the slot only when the name is an `is_plain_local` scalar — the only
-    /// variables whose env mirror the per-store env-write skips, making the slot
-    /// the authoritative half. Aggregates (`@a`/`%h`) always take the
-    /// unconditional `set_env_with_main_alias` writer (vm_var_assign_set_local.rs),
-    /// so their env stays fresh while their slot may hold a stale early snapshot —
-    /// reading/mutating slot-first there would lose a `%h is MixHash; %h<a>--`
-    /// update (roast S02-types/mixhash.t, sethash.t).
-    pub(super) fn gate_local_slot(&self, code: &CompiledCode, name: &str) -> Option<usize> {
-        self.gate_local_slot_at(code, None, name)
-    }
-
-    /// [`Self::gate_local_slot`] that prefers a compile-time-baked slot over the
-    /// by-name search (§1.5) — the by-name form is ambiguous once a name
-    /// occupies several `code.locals` entries (a shadowing `my` in a bare
-    /// block).
+    /// Only an `is_plain_local` scalar qualifies — the only variables whose env
+    /// mirror the per-store env-write skips, making the slot the authoritative
+    /// half. Aggregates (`@a`/`%h`) always take the unconditional
+    /// `set_env_with_main_alias` writer (vm_var_assign_set_local.rs), so their
+    /// env stays fresh while their slot may hold a stale early snapshot.
     pub(super) fn gate_local_slot_at(
         &self,
         code: &CompiledCode,
@@ -2692,7 +2668,9 @@ impl Interpreter {
         Some(slot)
     }
 
-    /// [`Self::gate_local_slot_value`] with a compile-time-baked slot.
+    /// This frame's live local slot value for `name` under the (B) per-store
+    /// env-write, when the slot holds a real (non-Nil) value; `None` sends the
+    /// caller to the env read.
     pub(super) fn gate_local_slot_value_at(
         &self,
         code: &CompiledCode,
