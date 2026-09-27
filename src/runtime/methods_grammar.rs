@@ -726,48 +726,50 @@ impl Interpreter {
                     &mut actions_obj,
                 );
             }
-            let candidates =
-                match self.eval_token_call_candidates_at(&start_rule, &rule_args, candidate_from) {
-                    Ok(Some(candidates)) => candidates,
-                    Ok(None) => {
-                        // Check for pending regex error (e.g., <sym> used outside proto regex)
-                        if let Some(err) = Self::take_pending_regex_error() {
-                            return Err(err);
-                        }
-                        // No candidate reaches the main match below; a `~`
-                        // goal the start rule names must still reach
-                        // `FAILGOAL`.
-                        let start_source = self
-                            .resolve_token_defs(&start_rule)
-                            .and_then(|defs| defs.into_iter().next())
-                            .and_then(|def| Self::token_pattern_from_def(&def));
-                        if let Some(outcome) =
-                            self.goal_failure_outcome(package_name, start_source.as_deref(), &text)
-                        {
-                            return outcome;
-                        }
-                        self.update_grammar_highwater_from_regex_farthest(text.chars().count());
-                        self.env.insert("/".to_string(), Value::NIL);
-                        if is_full_parse {
-                            return Ok(
-                                self.parse_failure_for_pattern(&text, start_source.as_deref())
-                            );
-                        }
-                        return Ok(self.make_failed_match_value(&text, start_pos.unwrap_or(0)));
+            let candidates = match self.eval_token_call_candidates_at(
+                &start_rule,
+                &rule_args,
+                candidate_from,
+                true,
+            ) {
+                Ok(Some(candidates)) => candidates,
+                Ok(None) => {
+                    // Check for pending regex error (e.g., <sym> used outside proto regex)
+                    if let Some(err) = Self::take_pending_regex_error() {
+                        return Err(err);
                     }
-                    Err(err)
-                        if err
-                            .message
-                            .contains("No matching candidates for proto token") =>
+                    // No candidate reaches the main match below; a `~`
+                    // goal the start rule names must still reach
+                    // `FAILGOAL`.
+                    let start_source = self
+                        .resolve_token_defs(&start_rule)
+                        .and_then(|defs| defs.into_iter().next())
+                        .and_then(|def| Self::token_pattern_from_def(&def));
+                    if let Some(outcome) =
+                        self.goal_failure_outcome(package_name, start_source.as_deref(), &text)
                     {
-                        self.env.insert("/".to_string(), Value::NIL);
-                        if is_full_parse {
-                            return Ok(self.parse_failure_for_pattern(&text, None));
-                        }
-                        return Ok(self.make_failed_match_value(&text, start_pos.unwrap_or(0)));
+                        return outcome;
                     }
-                    Err(err) => return Err(err),
-                };
+                    self.update_grammar_highwater_from_regex_farthest(text.chars().count());
+                    self.env.insert("/".to_string(), Value::NIL);
+                    if is_full_parse {
+                        return Ok(self.parse_failure_for_pattern(&text, start_source.as_deref()));
+                    }
+                    return Ok(self.make_failed_match_value(&text, start_pos.unwrap_or(0)));
+                }
+                Err(err)
+                    if err
+                        .message
+                        .contains("No matching candidates for proto token") =>
+                {
+                    self.env.insert("/".to_string(), Value::NIL);
+                    if is_full_parse {
+                        return Ok(self.parse_failure_for_pattern(&text, None));
+                    }
+                    return Ok(self.make_failed_match_value(&text, start_pos.unwrap_or(0)));
+                }
+                Err(err) => return Err(err),
+            };
             let failure_pattern = candidates.first().map(|(pattern, _)| pattern.clone());
 
             // Bind rule args to the env so code assertions { ... } can access them
