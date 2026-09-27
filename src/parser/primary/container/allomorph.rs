@@ -166,8 +166,10 @@ fn parse_angle_inf_nan(word: &str) -> Option<Value> {
 /// `complex_number` and stays a `ComplexStr` even when tight.
 pub(crate) fn angle_word_is_numeric_literal(content: &str) -> bool {
     // Padding whitespace, or any backslash escape, means the content went
-    // through quote-words and cannot be a literal term.
-    if content.is_empty() || content.contains('\\') || content.chars().any(char::is_whitespace) {
+    // through quote-words and cannot be a literal term. The one exception is
+    // the `\i` imaginary unit of `complex_number` (`<3+Inf\i>` is a Complex).
+    let escapes = content.strip_suffix("\\i").unwrap_or(content);
+    if content.is_empty() || escapes.contains('\\') || content.chars().any(char::is_whitespace) {
         return false;
     }
     // U+2212 MINUS SIGN is accepted in these literals (roast pins `<5−1i>` as a
@@ -365,42 +367,7 @@ fn parse_angle_complex(word: &str) -> Option<Value> {
 /// `complex_number` literal term; a pure imaginary like `42i` parses to the
 /// same `Complex` value but is quote-words, so it stays a `ComplexStr`.
 fn parse_angle_complex_parts(word: &str) -> Option<(Value, bool)> {
-    let word = word.trim();
-    // Must end with 'i'
-    if !word.ends_with('i') {
-        return None;
-    }
-    let without_i = &word[..word.len() - 1];
-
-    // Pure imaginary: just "Ni" (e.g. "5i", "-3i") — no real part.
-    if let Ok(imag) = without_i.parse::<f64>() {
-        return Some((Value::complex(0.0, imag), false));
-    }
-
-    // Find the last '+' or '-' that splits real from imaginary.
-    // Skip the first character to allow a leading sign on the real part.
-    // Also skip 'e'/'E' followed by sign (scientific notation like 2e-3).
-    let bytes = without_i.as_bytes();
-    let mut split_pos = None;
-    let mut i = 1;
-    while i < bytes.len() {
-        if (bytes[i] == b'+' || bytes[i] == b'-')
-            && i > 0
-            && bytes[i - 1] != b'e'
-            && bytes[i - 1] != b'E'
-        {
-            split_pos = Some(i);
-        }
-        i += 1;
-    }
-
-    let split_pos = split_pos?;
-    let real_str = &without_i[..split_pos];
-    let imag_str = &without_i[split_pos..];
-
-    let real: f64 = real_str.parse().ok()?;
-    let imag: f64 = imag_str.parse().ok()?;
-    Some((Value::complex(real, imag), true))
+    crate::runtime::str_numeric::parse_complex_str(word.trim())
 }
 
 /// Parse a Num (floating-point with exponent) from an angle bracket word.

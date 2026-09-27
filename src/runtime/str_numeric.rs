@@ -732,6 +732,14 @@ fn try_parse_plain_int(body: &str, sign: i32) -> Option<Value> {
 
 /// Parse complex number strings like `1+2i`, `-1-2i`, `3+Inf\i`, `42i`, `42\i`, etc.
 fn try_parse_complex(s: &str) -> Option<Value> {
+    parse_complex_str(s).map(|(value, _)| value)
+}
+
+// Cost: O(n), n = length of `s`.
+/// As [`try_parse_complex`], but also reports whether the string carried an
+/// explicit real part (`3+4i` vs. `4i`). Shared with the `<...>` quote-words
+/// allomorph parser so both accept exactly the same Complex spellings.
+pub(crate) fn parse_complex_str(s: &str) -> Option<(Value, bool)> {
     // Must end with 'i' (or `\i`)
     if !s.ends_with('i') {
         return None;
@@ -755,11 +763,15 @@ fn try_parse_complex(s: &str) -> Option<Value> {
 
         // Parse imaginary part (strip leading sign)
         let (imag_sign, imag_body) = strip_sign(imag_str);
+        // The split sign is the imaginary part's only sign: "0--1i" and
+        // "0+-Inf\i" are not numbers.
+        if imag_body.starts_with(['+', '-']) {
+            return None;
+        }
         let imag_val = if imag_body.is_empty() {
-            // Bare "+i"/"-i" as the imaginary part: the coefficient is 1, e.g.
-            // "3+i" => 3+1i, "10-i" => 10-1i. (Rakudo skips these — "cannot
-            // handle lone i yet"; mutsu handles them.)
-            1.0
+            // A bare "+i"/"-i" imaginary part ("3+i", "10-i") is rejected, as
+            // in Rakudo: the coefficient is mandatory (#9731).
+            return None;
         } else if imag_body == "Inf" || imag_body == "NaN" {
             // Inf/NaN as imaginary component requires `\i` suffix
             if !has_backslash_i {
@@ -774,14 +786,14 @@ fn try_parse_complex(s: &str) -> Option<Value> {
             parse_real_component_to_f64(imag_body)?
         };
         let imag_val = if imag_sign < 0 { -imag_val } else { imag_val };
-        Some(Value::complex(real_val, imag_val))
+        Some((Value::complex(real_val, imag_val), true))
     } else {
-        // Pure imaginary: "42i", "-3.5i", "4_2i", "Inf\i", "i", "-i", etc.
+        // Pure imaginary: "42i", "-3.5i", "4_2i", "Inf\i", etc.
         let (imag_sign, imag_body) = strip_sign(without_i);
         let imag_val = if imag_body.is_empty() {
-            // Lone "i"/"+i"/"-i": the coefficient is 1 (0+1i / 0-1i). (Rakudo
-            // skips these — "cannot handle lone i yet"; mutsu handles them.)
-            1.0
+            // A lone "i"/"+i"/"-i" is rejected, as in Rakudo: the coefficient
+            // is mandatory (#9731).
+            return None;
         } else if imag_body == "Inf" {
             if has_backslash_i {
                 f64::INFINITY
@@ -798,7 +810,7 @@ fn try_parse_complex(s: &str) -> Option<Value> {
             parse_real_component_to_f64(imag_body)?
         };
         let imag_val = if imag_sign < 0 { -imag_val } else { imag_val };
-        Some(Value::complex(0.0, imag_val))
+        Some((Value::complex(0.0, imag_val), false))
     }
 }
 
@@ -826,6 +838,10 @@ fn parse_real_component(s: &str) -> Option<f64> {
     }
     if s == "-Inf" {
         return Some(f64::NEG_INFINITY);
+    }
+    // Rakudo accepts an unsigned `NaN` real part (`"NaN+0i"`) but not `-NaN`.
+    if s == "NaN" {
+        return Some(f64::NAN);
     }
     parse_real_component_to_f64(s)
 }
@@ -1045,6 +1061,17 @@ mod tests {
         f("3+3i+4i");
         f("3+3+4i");
         f("3+Infi"); // missing backslash
+        f("Infi");
+        f("NaNi");
+        // A lone i has no coefficient (#9731).
+        f("i");
+        f("-i");
+        f("3+i");
+        f("\\i");
+        f("0--1i"); // doubled imaginary sign
+        f("0+-Inf\\i");
+        check("NaN+0i", "(Complex)", 0.0);
+        check("3+Inf\\i", "(Complex)", 0.0);
     }
 
     #[test]
