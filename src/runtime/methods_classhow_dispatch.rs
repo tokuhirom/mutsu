@@ -961,7 +961,11 @@ impl Interpreter {
                 Ok(Value::truth(self.type_matches_value(&type_name, invocant)))
             }
             "lookup" if args.len() >= 2 => {
-                let invocant = &args[0];
+                // See `find_method`: prefer the mixin value over its Package.
+                let invocant = args
+                    .iter()
+                    .find(|a| matches!(a.view(), ValueView::Mixin(..)))
+                    .unwrap_or(&args[0]);
                 // Method name is always the last argument; when ^lookup is called on
                 // a concrete value the Package is prepended and the original value
                 // sits in between.
@@ -971,7 +975,12 @@ impl Interpreter {
                     .unwrap_or_else(mop_absent_method))
             }
             "find_method" if args.len() >= 2 => {
-                let invocant = &args[0];
+                // `$mixin.^find_method(...)` prepends the Package; the mixin
+                // value itself (which carries the mixed-in roles) sits after it.
+                let invocant = args
+                    .iter()
+                    .find(|a| matches!(a.view(), ValueView::Mixin(..)))
+                    .unwrap_or(&args[0]);
                 // The method name is the last *positional* argument: calling
                 // `$obj.^find_method('v')` on a concrete value prepends the Package and
                 // leaves the instance in between (so `args[1]` is not the name), while
@@ -1526,6 +1535,10 @@ impl Interpreter {
                 if let Some(class_def) = self.registry_mut().classes.get_mut(&class_name) {
                     class_def.mro = mro;
                 }
+                // This is the native step a custom `compose` hook's
+                // `callsame` reaches: from here on the class's auto-generated
+                // accessors count as installed (`classes_composing_accessors`).
+                self.classes_composing_accessors.remove(&class_name);
                 self.native_ctor_plan_cache.clear();
                 // Rakudo returns the composed type object. MOP clients use
                 // that result directly (for example Test::Mock calls

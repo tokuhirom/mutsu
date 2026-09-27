@@ -804,6 +804,24 @@ impl Interpreter {
                         .as_ref()
                         .map(|r| (r.deferred_body.clone(), r.decl_file.clone()))
                         .unwrap_or_default();
+                    // Record what the bodies declare as the role's own
+                    // package lexicals, as `run_pun_role_bodies` does: left
+                    // only in the live env, a body `my %h` is lost as soon as
+                    // the frame that happened to perform the first `does`
+                    // returns (a class trait's `$class.HOW does R` during
+                    // class registration -- Staticish's `my %bypass`), and
+                    // every later call of a mixed-in method reads it empty.
+                    let env_before: HashSet<Symbol> = self.env.keys().copied().collect();
+                    let mut declared: HashSet<String> = HashSet::new();
+                    Self::collect_role_body_declared_names(&ops, &mut declared);
+                    for ancestor in self.role_ancestor_names(role_name) {
+                        if let Some(parent) = self.registry().roles.get(&ancestor).cloned() {
+                            Self::collect_role_body_declared_names(
+                                &parent.deferred_body,
+                                &mut declared,
+                            );
+                        }
+                    }
                     self.run_role_body_for_composition(
                         role_name,
                         role_name,
@@ -811,6 +829,7 @@ impl Interpreter {
                         decl_file.as_deref(),
                     )?;
                     self.run_composed_role_ancestor_bodies(role_name, role_name)?;
+                    self.persist_role_body_lexicals(role_name, &env_before, &declared);
                 }
             }
         }

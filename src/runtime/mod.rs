@@ -3837,8 +3837,11 @@ pub struct Interpreter {
     /// `type.^method_table` before calling `callsame` (AttrX::Lazy's
     /// `LazyAttributeContainerHOW.compose`) must see it still absent (#8836).
     /// `class_method_table`/`collect_class_methods` consult this set to hide
-    /// a class's own auto-accessors while it is composing; entries are
-    /// removed once the hook call returns, whether it succeeded or not.
+    /// a class's own auto-accessors while it is composing; the native
+    /// `compose` arm removes the entry (the accessors are installed from
+    /// then on, so a hook reading `.^method_table` after its `callsame`
+    /// sees them, as in Rakudo), and the caller removes it once the hook
+    /// call returns, whether it succeeded or not.
     pub(crate) classes_composing_accessors: HashSet<String>,
     /// Wrap chains: sub_id -> stack of (handle_id, wrapper_sub). Outermost is last.
     wrap_chains: std::sync::Arc<HashMap<u64, Vec<(u64, Value)>>>,

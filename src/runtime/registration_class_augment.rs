@@ -1457,7 +1457,7 @@ impl Interpreter {
     /// surrounding compunit. That left a punned role's `.kv` reporting
     /// `Undeclared name: KV`. Only a LEXICAL declaration counts: an `our class`
     /// is a package symbol, already reachable by its qualified name.
-    fn collect_role_body_declared_names(
+    pub(crate) fn collect_role_body_declared_names(
         ops: &[crate::opcode::DeferredBodyOp],
         out: &mut HashSet<String>,
     ) {

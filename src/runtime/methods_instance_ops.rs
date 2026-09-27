@@ -3318,6 +3318,24 @@ impl Interpreter {
                     && args.is_empty()
                     && self.has_public_accessor(&name.resolve(), method)
                 {
+                    // A `.wrap`ped accessor runs its wrapper first, as for an
+                    // instance (`dispatch_instance_and_fallback`): the wrapper
+                    // may supply an instance (`callwith($obj)`, Staticish's
+                    // singleton wrapper), and only the accessor itself needs one.
+                    let class_name = name.resolve();
+                    if let Some(owner) = self.attribute_accessor_owner(&class_name, method)
+                        && let Some(chain) =
+                            self.get_method_wrap_chain(owner.resolve().as_str(), method, 0)
+                    {
+                        return self.dispatch_wrapped_attribute_accessor(
+                            target.clone(),
+                            &class_name,
+                            method,
+                            args,
+                            owner,
+                            chain,
+                        );
+                    }
                     return Err(RuntimeError::new(format!(
                         "Cannot look up attributes in a {} type object. Did you forget a '.new'?",
                         name.resolve()

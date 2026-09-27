@@ -295,6 +295,22 @@ impl Interpreter {
         // had for `.map` anyway.
         self.reify_map_grep_seq_args(&args)?;
         let func = Self::unwrap_callable_mixin(func);
+        // A `Method`/`Submethod` object (`.^find_method`, `.^method_table`)
+        // used as a plain callable -- e.g. as a `.wrap` wrapper, which the
+        // wrap chain invokes through here -- runs the callable it carries,
+        // the same one `CALL-ME` invokes. A multi dispatcher carries none and
+        // is left to the paths below.
+        let method_callable = match func.view() {
+            ValueView::Instance {
+                class_name,
+                attributes,
+                ..
+            } if matches!(class_name.as_str(), "Method" | "Submethod") => {
+                attributes.as_map().get("__mutsu_method_callable").cloned()
+            }
+            _ => None,
+        };
+        let func = method_callable.unwrap_or(func);
         // Upgrade WeakSub to Sub transparently
         let func = match func.view() {
             ValueView::WeakSub(weak) => match weak.upgrade() {

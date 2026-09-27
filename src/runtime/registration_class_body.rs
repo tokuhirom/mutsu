@@ -413,19 +413,18 @@ impl Interpreter {
             // override's own `callsame` reaches the native step that installs
             // it (verified against `raku`: `$package.^method_table<foo>:exists`
             // is False right before `callsame` and True right after, within
-            // the SAME compose call). mutsu has no discrete "install"
-            // step to hook that transition on, so it approximates by hiding
-            // accessors for the whole hook call -- which only matches Rakudo
-            // when the hook inspects `.^method_table` BEFORE its own
-            // `callsame` (`$class.HOW`-level hooks, #8836's own case: the
-            // conflict/existence checks AttrX::Lazy-shaped modules run
-            // ahead of `callsame`). An attribute's own `compose` hook
-            // (Attribute::Lazy's `Builder.compose`) instead reads
-            // `.^method_table` AFTER its `callsame`, expecting the accessor
-            // already installed, so it is not gated at all: skipping the gate
-            // here is what keeps that read seeing the accessor's real Method
-            // object throughout, matching the only observable case in our
-            // corpus (this class's other attributes and methods are already
+            // the SAME compose call). mutsu mirrors that for `$class.HOW`-level
+            // hooks: the accessors are hidden from the start of the hook call
+            // until its `callsame` reaches the native ClassHOW `compose` arm,
+            // which lifts the gate (#8836's own case is the conflict/existence
+            // checks AttrX::Lazy-shaped modules run ahead of `callsame`). An
+            // attribute's own `compose` hook (Attribute::Lazy's
+            // `Builder.compose`) `callsame`s into Attribute's `compose`, never
+            // ClassHOW's, and reads `.^method_table` AFTER it, expecting the
+            // accessor already installed, so it is not gated at all: skipping
+            // the gate here is what keeps that read seeing the accessor's real
+            // Method object throughout, matching the only observable case in
+            // our corpus (this class's other attributes and methods are already
             // fully registered in `class_def` by the time ANY deferred
             // compose runs, per #8845, so nothing else is still "mid
             // composition" here to hide).
