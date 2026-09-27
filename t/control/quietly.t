@@ -2,7 +2,7 @@ use lib 'roast/packages/Test-Helpers/lib';
 use Test;
 use Test::Util;
 
-plan 6;
+plan 9;
 
 dies-ok { quietly { die "not quiet enough" } }, '"die" in "quietly" dies';
 
@@ -50,3 +50,27 @@ is_run 'quietly { CONTROL { when CX::Warn { say "W: ", .message; .resume } }; wa
         out => "W: q\nend\n",
     },
     'a CONTROL declared inside "quietly" still handles its own warnings';
+
+# GH-9656: an error escaping `quietly` must not leave warnings suppressed after
+# it is caught -- the suppression is scoped to the quietly block alone.
+is_run 'try { quietly { die 1 } }; warn "after"; say "still"',
+    {
+        status => 0,
+        err => /after/,
+        out => "still\n",
+    },
+    'a die escaping "quietly" does not leak its warning suppression';
+
+is_run 'sub f { quietly { die 1 } }; { f(); CATCH { default { } } }; warn "after"',
+    {
+        status => 0,
+        err => /after/,
+    },
+    'the same when the die is caught by a CATCH in an outer routine';
+
+is_run 'quietly { try { quietly { die 1 } }; warn "hidden" }; warn "shown"',
+    {
+        status => 0,
+        err => { $_ !~~ /hidden/ && $_ ~~ /shown/ },
+    },
+    'an enclosing "quietly" stays in force after an inner one is unwound';
