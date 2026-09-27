@@ -575,6 +575,16 @@ pub(crate) fn value_to_list_for_receiver(val: &Value) -> Vec<Value> {
             .map(|cp| Value::int(cp as i64))
             .collect();
     }
+    // A `Match` (a `Capture`) is not `Iterable`, but `Any.iterator` is
+    // `self.list.iterator` and `Capture.list` is the positional part, so its
+    // OWN elements are its positional captures: raku's
+    // `('ab' ~~ /(.)(.)/).map(*.Str)` is `("a", "b")`, not the whole match.
+    if bare.is_match_instance() {
+        return match bare.match_list() {
+            Some(list) => value_to_list(&list),
+            None => Vec::new(),
+        };
+    }
     let bare = match bare.view() {
         ValueView::Array(items, kind) if kind.is_itemized() => {
             Value::array_with_kind(items.clone(), kind.decontainerize())

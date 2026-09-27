@@ -23,7 +23,9 @@ plan 6;
     is @seen.join(','), 'a1,a2,a3', 'each iteration sees one match, in order';
 }
 
-# A non-quantified single named capture stays a single item.
+# A non-quantified single named capture is a bare (non-itemized) Match, and
+# iterating a Match walks its positional captures (`Capture.list`): `<a>` has
+# none, so the loop body never runs (raku 2026.07 agrees).
 {
     grammar G2 {
         token TOP { <a> }
@@ -32,7 +34,7 @@ plan 6;
     my $m = G2.parse("hello");
     my $n = 0;
     for $m<a> { $n++ }
-    is $n, 1, 'for over a non-quantified named capture iterates once';
+    is $n, 0, 'for over a non-quantified named capture iterates its positional list';
 }
 
 # Assigning the capture into a scalar still itemizes it (Raku: `=` always

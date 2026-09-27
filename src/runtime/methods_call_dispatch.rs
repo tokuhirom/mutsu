@@ -764,6 +764,15 @@ impl Interpreter {
                 .unwrap_or_else(|| Value::array(vec![]));
             return self.call_method_with_values(frames, method, args);
         }
+        // A `Match` answers `Any`'s list methods from its positional captures
+        // (see `is_capture_list_method`), unless the grammar defines the method.
+        if crate::value::match_view::is_capture_list_method(method)
+            && target.is_match_instance()
+            && !self.has_user_method(target.match_dispatch_class(), method)
+        {
+            let list = target.match_positional_list(method == "Array");
+            return self.call_method_with_values(list, method, args);
+        }
         // A user class that `does Iterable` and defines its own `iterator`
         // method is list-like for Any's ITERATION methods: `.first`/`.map`/...
         // operate on the iterator's elements (as `for $obj` already does via
