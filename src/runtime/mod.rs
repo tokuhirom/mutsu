@@ -2325,6 +2325,10 @@ pub struct Interpreter {
     /// per thread (see [`io_handles`] module docs and `clone_for_thread`).
     io_handles: Arc<RwLock<io_handles::IoHandleTable>>,
     pub(crate) program_path: Option<String>,
+    /// [`Self::program_path`] interned, set with it (`set_program_path`), so
+    /// the per-call unit lookup (`unit_of_source_sym`) compares two symbols
+    /// instead of resolving one back to text.
+    pub(crate) program_path_sym: Option<Symbol>,
     /// Name of the package currently in scope (e.g. `GLOBAL`, `Foo::Bar`),
     /// used to build fully-qualified names during function/method dispatch and
     /// declaration. Held behind transitional `Arc<RwLock>` scaffolding so the VM
@@ -3066,12 +3070,12 @@ pub struct Interpreter {
     /// The module name owning each loaded source file. Ordinary (non-`unit`)
     /// module files register top-level routines under `GLOBAL`, but their
     /// private file-scope names remain lexical to the module.
-    pub(crate) module_source_packages: std::sync::Arc<HashMap<Symbol, Symbol>>,
+    pub(crate) module_source_packages: std::sync::Arc<rustc_hash::FxHashMap<Symbol, Symbol>>,
     /// Compilation units declared by `unit module`/`unit class` files, keyed by
     /// their compilation-unit symbol. A unit module body runs under GLOBAL, so
     /// its routines need this metadata after the load has finished in order to
     /// resolve the module's own imported aliases lexically.
-    pub(crate) unit_module_packages: std::sync::Arc<HashMap<Symbol, Symbol>>,
+    pub(crate) unit_module_packages: std::sync::Arc<rustc_hash::FxHashMap<Symbol, Symbol>>,
     /// Exported subroutine symbols by package and export tag.
     exported_subs: std::sync::Arc<HashMap<String, HashMap<String, HashSet<String>>>>,
     /// Exported variable/constant symbols by package and export tag.
@@ -5069,8 +5073,9 @@ pub(crate) enum NewlineMode {
 /// unit's `?FILE` name (`EVAL_0`, ...). Process-global, like the counter that
 /// mints those names: the names are unique for the life of the process, and an
 /// EVAL unit's parent never changes once recorded.
-static EVAL_UNIT_PARENTS: std::sync::LazyLock<std::sync::RwLock<HashMap<Symbol, Symbol>>> =
-    std::sync::LazyLock::new(|| std::sync::RwLock::new(HashMap::new()));
+static EVAL_UNIT_PARENTS: std::sync::LazyLock<
+    std::sync::RwLock<rustc_hash::FxHashMap<Symbol, Symbol>>,
+> = std::sync::LazyLock::new(|| std::sync::RwLock::new(rustc_hash::FxHashMap::default()));
 
 /// The unit key for the main script. A routine body carries `source_file =
 /// None` when it was AOT-compiled and `Some(program_path)` when it was

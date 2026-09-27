@@ -305,14 +305,23 @@ impl Interpreter {
                 // ---- operand-direct string and list reads ----
                 TrOp::OrdAtLocal(n) => {
                     let pos = self.ipop();
-                    let src = self.trir.ol[obase + *n as usize].clone();
-                    let cp = self.trir_ord_at(&src, pos);
+                    // Read in place: the operand is not consumed, so cloning
+                    // it (a refcount pair) bought nothing.
+                    let t = &mut self.trir;
+                    let cp =
+                        Self::trir_ord_at_memo(&mut t.str_memo, &t.ol[obase + *n as usize], pos);
                     self.trir.ns.push(cp);
                 }
                 TrOp::OrdAtOuter(n) => {
                     let pos = self.ipop();
-                    let src = self.trir.outers[cbase + *n as usize].clone();
-                    let cp = self.trir_ord_at(&src, pos);
+                    // Read in place: the operand is not consumed, so cloning
+                    // it (a refcount pair) bought nothing.
+                    let t = &mut self.trir;
+                    let cp = Self::trir_ord_at_memo(
+                        &mut t.str_memo,
+                        &t.outers[cbase + *n as usize],
+                        pos,
+                    );
                     self.trir.ns.push(cp);
                 }
                 TrOp::AtPosILocal(n) => {
@@ -326,14 +335,13 @@ impl Interpreter {
                     self.trir.ns.push(v);
                 }
                 TrOp::CharsLocal(n) => {
-                    let src = self.trir.ol[obase + *n as usize].clone();
-                    let len = self.trir_chars_len(&src);
+                    let len = Self::trir_chars_len(&self.trir.ol[obase + *n as usize]);
                     self.trir.ns.push(len);
                 }
                 TrOp::OrdAt => {
                     let pos = self.ipop();
                     let s = self.opop();
-                    let cp = self.trir_ord_at(&s, pos);
+                    let cp = Self::trir_ord_at(&s, pos);
                     self.trir.ns.push(cp);
                 }
                 TrOp::AtPosI => {
@@ -388,7 +396,7 @@ impl Interpreter {
                 }
                 TrOp::CharsS => {
                     let v = self.opop();
-                    let n = self.trir_chars_len(&v);
+                    let n = Self::trir_chars_len(&v);
                     self.trir.ns.push(n);
                 }
                 TrOp::SubstrS => {

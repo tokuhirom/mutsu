@@ -111,11 +111,18 @@ fn allocs_per_recursive_call() -> f64 {
     };
     let lo = allocs_for(&program(LOW));
     let hi = allocs_for(&program(HIGH));
+    // A whole run's count moves by a few allocations from process to process
+    // (hash tables seeded per process grow at different points), and with a
+    // call path that allocates nothing that noise is all the two runs differ
+    // by: 30 runs of this test gave 1-6 allocations between them, and one run
+    // under a loaded machine gave -1. So the sanity check allows that much;
+    // anything below it means the measurement itself is broken.
+    const NOISE: u64 = 16;
     assert!(
-        hi >= lo,
+        hi + NOISE >= lo,
         "allocations cannot shrink with more recursion: {lo} -> {hi}"
     );
-    (hi - lo) as f64 / (HIGH - LOW) as f64
+    hi.saturating_sub(lo) as f64 / (HIGH - LOW) as f64
 }
 
 #[test]

@@ -43,7 +43,19 @@ pub(crate) struct TrStacks {
     /// `CallGen` sites linked to the TRIR routine they reach (ADR-0112 Step
     /// 1, `gen_link.rs`).
     pub(crate) gen_links: super::gen_link::GenLinks,
+    /// The last string an `OrdAt*` op read, with its grapheme index. A scanner
+    /// reads one text over and over, and this answers that without the
+    /// thread-local index cache's lookup (`grapheme_index::index_of_arc`).
+    /// Holding the `Arc` keeps its pointer from being reused, so a pointer
+    /// match is identity. Dropped when the outermost TRIR frame returns.
+    pub(crate) str_memo: StrMemo,
 }
+
+/// See [`TrStacks::str_memo`].
+pub(crate) type StrMemo = Option<(
+    std::sync::Arc<crate::value::StrBody>,
+    std::sync::Arc<crate::builtins::grapheme_index::GraphemeIndex>,
+)>;
 
 /// One frame's bases into [`TrStacks`].
 #[derive(Debug, Clone, Copy)]
@@ -83,6 +95,10 @@ impl TrStacks {
         self.outers.truncate(frame.outer_base as usize);
         self.ns.truncate(frame.ns_mark as usize);
         self.os.truncate(frame.os_mark as usize);
+        if frame.nbase == 0 && frame.obase == 0 {
+            // The outermost frame is gone: do not keep its text alive.
+            self.str_memo = None;
+        }
     }
 
     /// Every `Value` any live TRIR frame can reach. GC roots visit this.

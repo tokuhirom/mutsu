@@ -1,7 +1,7 @@
 //! String, list and narrowing helpers behind TRIR's typed ops.
 
 use crate::runtime::Interpreter;
-use crate::value::{RuntimeError, Value};
+use crate::value::{RuntimeError, Value, ValueView};
 
 impl Interpreter {
     #[inline]
@@ -58,12 +58,30 @@ impl Interpreter {
     /// elements at all.
     /// `nqp::ordat`'s answer: the same routine the untyped op runs
     /// (`builtins::str_prim`, ADR-0117).
-    pub(super) fn trir_ord_at(&mut self, src: &Value, pos: i64) -> i64 {
+    pub(super) fn trir_ord_at(src: &Value, pos: i64) -> i64 {
         crate::builtins::str_prim::nqp_ordat(src, pos)
     }
 
+    /// [`Self::trir_ord_at`], taking the grapheme index from `memo` when
+    /// `src` is the string it holds, and remembering `src`'s otherwise.
+    // Cost: O(1) on a memo hit, plus `char_at`.
+    pub(super) fn trir_ord_at_memo(memo: &mut super::frame::StrMemo, src: &Value, pos: i64) -> i64 {
+        let ValueView::Str(arc) = src.view() else {
+            return Self::trir_ord_at(src, pos);
+        };
+        if let Some((s, idx)) = memo.as_ref()
+            && std::sync::Arc::ptr_eq(s, &arc)
+        {
+            return crate::builtins::str_prim::ordat_in(s.as_str(), idx, pos);
+        }
+        let (s, idx) = crate::builtins::grapheme_index::str_and_index(src);
+        let cp = crate::builtins::str_prim::ordat_in(s.as_str(), &idx, pos);
+        *memo = Some((s, idx));
+        cp
+    }
+
     /// `nqp::chars`'s answer, in graphemes.
-    pub(super) fn trir_chars_len(&mut self, src: &Value) -> i64 {
+    pub(super) fn trir_chars_len(src: &Value) -> i64 {
         crate::builtins::str_prim::chars(src) as i64
     }
 

@@ -257,12 +257,17 @@ fn unit_char(unit: &str) -> char {
 
 /// `nqp::ordat($s, $pos)`: [`char_at`] as an int, -1 outside the string.
 pub(crate) fn nqp_ordat(v: &Value, pos: i64) -> i64 {
-    with_str_index(v, |text, idx| {
-        usize::try_from(pos)
-            .ok()
-            .and_then(|p| char_at(text, idx, p))
-            .map_or(-1, |c| c as i64)
-    })
+    with_str_index(v, |text, idx| ordat_in(text, idx, pos))
+}
+
+/// [`nqp_ordat`] over a string whose grapheme index the caller already holds.
+///
+/// Cost: as [`char_at`].
+pub(crate) fn ordat_in(text: &str, idx: &GraphemeIndex, pos: i64) -> i64 {
+    usize::try_from(pos)
+        .ok()
+        .and_then(|p| char_at(text, idx, p))
+        .map_or(-1, |c| c as i64)
 }
 
 /// The first grapheme in `from .. from + count` (clamped) whose [`char_at`]

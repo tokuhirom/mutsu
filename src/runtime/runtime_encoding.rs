@@ -687,6 +687,7 @@ impl Interpreter {
 
     pub fn set_program_path(&mut self, path: &str) {
         self.program_path = Some(path.to_string());
+        self.program_path_sym = Some(Symbol::intern(path));
         let io_path = self.make_io_path_instance(path);
         self.env.insert("*PROGRAM".to_string(), io_path);
         self.env

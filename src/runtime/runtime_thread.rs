@@ -604,6 +604,7 @@ impl Interpreter {
                 next_id: cloned_next_handle_id,
             })),
             program_path: self.program_path.clone(),
+            program_path_sym: self.program_path_sym,
             // Snapshot (fresh lock), not a shared handle: thread-local registry
             // semantics — child sees a copy, writes don't leak to the parent.
             current_package: Arc::new(RwLock::new(self.current_package())),

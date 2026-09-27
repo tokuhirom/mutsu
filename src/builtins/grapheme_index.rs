@@ -27,7 +27,6 @@
 
 use crate::value::{StrBody, Value, ValueView};
 use std::cell::RefCell;
-use std::rc::Rc;
 use std::sync::{Arc, Weak};
 use unicode_segmentation::{GraphemeIndices, UnicodeSegmentation};
 
@@ -240,16 +239,16 @@ impl GraphemeIndex {
     }
 }
 
-type Slot = (Weak<StrBody>, Rc<GraphemeIndex>);
+type Slot = (Weak<StrBody>, Arc<GraphemeIndex>);
 
 thread_local! {
     static CACHE: RefCell<Vec<Slot>> = const { RefCell::new(Vec::new()) };
 }
 
 /// The index of an `Arc<String>` payload, from the per-thread cache.
-pub(crate) fn index_of_arc(arc: &Arc<StrBody>) -> Rc<GraphemeIndex> {
+pub(crate) fn index_of_arc(arc: &Arc<StrBody>) -> Arc<GraphemeIndex> {
     if arc.len() < CACHE_MIN_BYTES {
-        return Rc::new(GraphemeIndex::build(arc));
+        return Arc::new(GraphemeIndex::build(arc));
     }
     let ptr = Arc::as_ptr(arc);
     let hit = CACHE.with(|c| {
@@ -257,16 +256,20 @@ pub(crate) fn index_of_arc(arc: &Arc<StrBody>) -> Rc<GraphemeIndex> {
         let pos = c
             .iter()
             .position(|(w, _)| w.as_ptr() == ptr && w.strong_count() > 0)?;
-        // Move to front: the most recently used string is probed first.
-        let slot = c.remove(pos);
-        let idx = slot.1.clone();
-        c.insert(0, slot);
-        Some(idx)
+        // Move to front: the most recently used string is probed first. A
+        // scanner reads one string over and over, so the hit is usually
+        // already there, and shifting the whole cache to put it back in
+        // place was most of a lookup's cost.
+        if pos != 0 {
+            let slot = c.remove(pos);
+            c.insert(0, slot);
+        }
+        Some(c[0].1.clone())
     });
     if let Some(idx) = hit {
         return idx;
     }
-    let idx = Rc::new(GraphemeIndex::build(arc));
+    let idx = Arc::new(GraphemeIndex::build(arc));
     CACHE.with(|c| {
         let mut c = c.borrow_mut();
         // Drop entries whose string is gone, then the least recently used.
@@ -294,14 +297,14 @@ pub(crate) fn with_str_index<R>(v: &Value, f: impl FnOnce(&str, &GraphemeIndex) 
 
 /// `v`'s string form and its grapheme index, owned — for callers that need
 /// both across a call back into the interpreter.
-pub(crate) fn str_and_index(v: &Value) -> (Arc<StrBody>, Rc<GraphemeIndex>) {
+pub(crate) fn str_and_index(v: &Value) -> (Arc<StrBody>, Arc<GraphemeIndex>) {
     if let ValueView::Str(arc) = v.view() {
         let arc: Arc<StrBody> = Arc::clone(&arc);
         let idx = index_of_arc(&arc);
         return (arc, idx);
     }
     let s = v.to_string_value();
-    let idx = Rc::new(GraphemeIndex::build(&s));
+    let idx = Arc::new(GraphemeIndex::build(&s));
     (Arc::new(s.into()), idx)
 }
 
@@ -425,7 +428,7 @@ mod tests {
         let arc = Arc::new(StrBody::from("あ".repeat(200)));
         let a = index_of_arc(&arc);
         let b = index_of_arc(&arc);
-        assert!(Rc::ptr_eq(&a, &b));
+        assert!(Arc::ptr_eq(&a, &b));
         assert_eq!(a.len(), 200);
     }
 }

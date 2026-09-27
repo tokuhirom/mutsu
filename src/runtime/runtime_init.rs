@@ -3160,6 +3160,7 @@ impl Interpreter {
                 next_id: 1,
             })),
             program_path: None,
+            program_path_sym: None,
             current_package: Arc::new(RwLock::new("GLOBAL".to_string())),
             current_package_sym: Arc::new(std::sync::atomic::AtomicU32::new(
                 crate::symbol::Symbol::intern("GLOBAL").id(),

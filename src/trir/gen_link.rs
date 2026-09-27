@@ -30,7 +30,6 @@
 //! a `$` parameter would share, a type the chunk cannot bind) takes the
 //! generic path instead, exactly as the first call did.
 
-use std::collections::HashMap;
 use std::sync::Arc;
 
 use super::exec::TrOutcome;
@@ -64,7 +63,7 @@ struct GenLink {
 /// worker thread starts with an empty one.
 #[derive(Default)]
 pub(crate) struct GenLinks {
-    links: HashMap<(u64, u32), GenLink>,
+    links: rustc_hash::FxHashMap<(u64, u32), GenLink>,
     /// Armed with the callee name while a `CallGen` dispatches generically.
     pub(crate) observe: Option<Symbol>,
     /// What the generic path's plain user-routine branch picked for the

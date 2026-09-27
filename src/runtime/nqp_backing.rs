@@ -1,7 +1,7 @@
 //! The array storage behind a list-ish `nqp::` value, shared by the list
 //! ops of `nqp_ops_list.rs`, `nqp_ops_builtin.rs` and TRIR.
 
-use super::nqp_ops_list::ITERATION_BUFFER_ITEMS;
+use super::nqp_ops_list::iteration_buffer_items_key;
 use crate::runtime::{Interpreter, RuntimeError};
 use crate::value::{NqpElemKind, Value, ValueView};
 
@@ -26,7 +26,7 @@ pub(crate) fn nqp_backing_array(v: &Value) -> Option<Value> {
             attributes,
             ..
         } if class_name == "IterationBuffer" => {
-            if let Some(items) = attributes.as_map().get(ITERATION_BUFFER_ITEMS)
+            if let Some(items) = attributes.as_map().get(iteration_buffer_items_key())
                 && matches!(items.view(), ValueView::Array(..))
             {
                 return Some(items.clone());
@@ -34,7 +34,7 @@ pub(crate) fn nqp_backing_array(v: &Value) -> Option<Value> {
             // One key into the shared cell, not a copy of the whole map
             // committed back (`InstanceAttrs::insert`, as `value_buf` writes).
             let fresh = Value::real_array(Vec::new());
-            attributes.insert(ITERATION_BUFFER_ITEMS, fresh.clone());
+            attributes.insert(iteration_buffer_items_key(), fresh.clone());
             Some(fresh)
         }
         _ => None,
