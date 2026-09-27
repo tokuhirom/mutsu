@@ -12,7 +12,10 @@
 //! does not yet hold the attributes a pending source will produce.
 
 use super::Value;
+use crate::symbol::Symbol;
+use std::collections::HashMap;
 use std::sync::Arc;
+use std::thread::ThreadId;
 
 /// Produces the attributes of an instance that were deferred at construction.
 pub(crate) trait LazyAttrSource: Send + Sync + std::fmt::Debug {
@@ -29,4 +32,10 @@ pub(crate) struct InstanceSide {
     pub(crate) which: Option<Arc<str>>,
     /// The not-yet-materialized attributes, if any.
     pub(crate) lazy: Option<Arc<dyn LazyAttrSource>>,
+    /// Attribute reads that observed an absent slot, keyed by the thread that
+    /// made the read.  `Attribute.get_value($obj) //
+    /// Attribute.set_value($obj, $value)` is the MOP spelling of lazy
+    /// initialization; retaining the read lets the setter publish one value
+    /// when several threads initialize the same attribute concurrently.
+    pub(crate) pending_attr_initializers: HashMap<(ThreadId, Symbol), usize>,
 }

@@ -183,6 +183,7 @@ impl Interpreter {
         let resolved = match target.view() {
             ValueView::HashEntryRef { .. } => target.hash_entry_read(),
             ValueView::Scalar(inner) => inner.clone(),
+            ValueView::ContainerRef(_) => target.deref_container(),
             _ => target.clone(),
         };
         let index = self.resolve_whatever_container_index(index, &resolved);

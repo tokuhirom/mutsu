@@ -991,11 +991,7 @@ impl Interpreter {
                             ..
                         } = obj.view()
                         {
-                            return Ok(obj_attrs
-                                .as_map()
-                                .get(&attr_name)
-                                .cloned()
-                                .unwrap_or(Value::NIL));
+                            return Ok(obj_attrs.get_attribute_value(Symbol::intern(&attr_name)));
                         }
                         return Ok(Value::NIL);
                     }
@@ -1021,9 +1017,9 @@ impl Interpreter {
                             ..
                         } = obj.view()
                         {
-                            let mut updated = obj_attrs.to_map();
-                            updated.insert(attr_name, new_val);
-                            obj_attrs.commit_attrs(updated);
+                            return Ok(
+                                obj_attrs.set_attribute_value(Symbol::intern(&attr_name), new_val)
+                            );
                         }
                         return Ok(Value::NIL);
                     }

@@ -247,6 +247,21 @@ pub(crate) fn values_identical(left: &Value, right: &Value) -> bool {
             &left.descalarize().deref_container(),
             &right.descalarize().deref_container(),
         ),
+        // The public `Metamodel::*HOW` names and the internal
+        // `Perl6::Metamodel::*HOW` names denote the same singleton type
+        // objects.  The latter is what `.HOW.WHAT` reports, while user code
+        // (including Method::Protected) compares it with the former.
+        (ValueView::Package(a), ValueView::Package(b)) => {
+            fn canonical_meta_name(name: &str) -> &str {
+                match name.strip_prefix("Perl6::") {
+                    Some(rest) if rest.starts_with("Metamodel::") && rest.ends_with("HOW") => rest,
+                    _ => name,
+                }
+            }
+            let a_name = a.resolve();
+            let b_name = b.resolve();
+            canonical_meta_name(&a_name) == canonical_meta_name(&b_name)
+        }
         (ValueView::Package(name), ValueView::Int(0))
         | (ValueView::Int(0), ValueView::Package(name))
             if name.resolve() == "int" =>

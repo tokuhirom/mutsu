@@ -1652,7 +1652,15 @@ impl Interpreter {
         self.pending_call_topic_source = Self::topic_alias_source(&args, arg_sources.as_ref());
         self.set_pending_call_arg_sources(arg_sources);
         self.pending_call_topic_bare = bare_args;
+        let rw_callable = self.in_lvalue_assignment
+            && matches!(
+                target.view(),
+                ValueView::Sub(data) if data.returns_container()
+            );
+        let saved_rw_context = self.rw_return_context;
+        self.rw_return_context |= rw_callable;
         let result = self.vm_call_on_value(target, args, Some(compiled_fns));
+        self.rw_return_context = saved_rw_context;
         self.pending_call_topic_bare = false;
         self.pending_call_topic_source = None;
         self.set_pending_call_arg_sources(None);
@@ -1749,7 +1757,15 @@ impl Interpreter {
             self.pending_call_topic_source = Self::topic_alias_source(&args, arg_sources.as_ref());
             self.set_pending_call_arg_sources(arg_sources);
             self.pending_call_topic_bare = bare_args;
+            let rw_callable = self.in_lvalue_assignment
+                && matches!(
+                    target.view(),
+                    ValueView::Sub(data) if data.returns_container()
+                );
+            let saved_rw_context = self.rw_return_context;
+            self.rw_return_context |= rw_callable;
             let result = self.vm_call_on_value(target, args, Some(compiled_fns));
+            self.rw_return_context = saved_rw_context;
             self.pending_call_topic_bare = false;
             self.pending_call_topic_source = None;
             self.set_pending_call_arg_sources(None);
@@ -1853,7 +1869,21 @@ impl Interpreter {
             // The multi winner this resolves on the way, so the multi branch
             // below does not resolve the identical call a second time (#7573).
             let mut multi_def_memo: Option<Arc<crate::ast::FunctionDef>> = None;
-            let compiled = if !self.has_proto_cached_sym(name, name_sym) {
+            // A lexical block called from the tail of an `is rw` routine must
+            // retain the container it returns.  Do not let the ordinary
+            // function cache turn that indirect call into a positional-light
+            // routine call before `call_lexical_callable_with_sources` can
+            // establish the rw-return context.
+            let lexical_rw_callable = self.in_lvalue_assignment
+                && self
+                    .lexical_amp_var_callable(Some(code), name)
+                    .is_some_and(|callable| {
+                        matches!(
+                            callable.view(),
+                            ValueView::Sub(data) if data.returns_container()
+                        )
+                    });
+            let compiled = if !self.has_proto_cached_sym(name, name_sym) && !lexical_rw_callable {
                 self.find_compiled_function_memo(
                     compiled_fns,
                     name,
@@ -2282,7 +2312,12 @@ impl Interpreter {
                     // same-named CORE routine, so resolve it before native
                     // dispatch just as a normal imported sub does.
                     self.set_pending_call_arg_sources(arg_sources.clone());
-                    let result = self.vm_call_on_value(callable, args, Some(compiled_fns));
+                    let result = self.call_lexical_callable_with_sources(
+                        callable,
+                        args,
+                        &arg_sources,
+                        Some(compiled_fns),
+                    );
                     self.set_pending_call_arg_sources(None);
                     result
                 } else if let Some(native_result) = self.try_native_function(name_sym, &args) {
@@ -2345,7 +2380,12 @@ impl Interpreter {
                     // call_compiled_closure roots the closure frame at the live
                     // caller env (scoped_child) and the captured-env merge is
                     // or_insert (parent-chain aware), so it never shadows them.
-                    self.vm_call_on_value(callable, args, Some(compiled_fns))
+                    self.call_lexical_callable_with_sources(
+                        callable,
+                        args,
+                        &arg_sources,
+                        Some(compiled_fns),
+                    )
                 } else if let Some(result) = self.try_native_io_function(name, &args) {
                     // File/FS builtin function (`slurp`/`open`/`unlink`/…). Every
                     // user-sub resolution path (compiled_fns / multi / user_function_

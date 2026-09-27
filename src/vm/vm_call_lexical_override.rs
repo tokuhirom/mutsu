@@ -25,7 +25,15 @@ impl Interpreter {
             .filter(|s| s.len() == args.len())
             .cloned();
         self.set_pending_call_arg_sources(sources);
+        let rw_callable = self.in_lvalue_assignment
+            && matches!(
+                callable.view(),
+                ValueView::Sub(data) if data.returns_container()
+            );
+        let saved_rw_context = self.rw_return_context;
+        self.rw_return_context |= rw_callable;
         let result = self.vm_call_on_value(callable, args, compiled_fns);
+        self.rw_return_context = saved_rw_context;
         self.set_pending_call_arg_sources(None);
         result
     }

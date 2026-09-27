@@ -747,6 +747,7 @@ impl Interpreter {
             module_owned_types: self.module_owned_types.clone(),
             suppress_exports: false,
             in_lvalue_assignment: false,
+            rw_return_context: false,
             in_does_rhs: false,
             trait_mod_writeback_key: None,
             trait_mod_writeback_value: None,
