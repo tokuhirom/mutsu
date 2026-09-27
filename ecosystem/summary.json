@@ -8,16 +8,16 @@
   "file_parity": 73.7,
   "generated": "2026-09-27",
   "graded_distributions": 1224,
-  "green_distributions": 822,
-  "mutsu_assertions": 145375,
-  "parity_files": 3151,
+  "green_distributions": 823,
+  "mutsu_assertions": 145376,
+  "parity_files": 3152,
   "schema": 1,
   "status": {
     "blocked_dep": 7,
     "blocked_load": 107,
-    "green": 822,
+    "green": 823,
     "no_baseline": 289,
-    "partial": 233,
+    "partial": 232,
     "red": 169,
     "skipped": 10
   }

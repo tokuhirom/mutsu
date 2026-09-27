@@ -7,8 +7,8 @@ definitions: [docs/ecosystem-parity.md](../docs/ecosystem-parity.md).
 
 | metric | value |
 |---|---|
-| **dist parity** (published headline) | **67.2%** (822/1224) |
-| file parity | 73.7% (3151/4276) |
+| **dist parity** (published headline) | **67.2%** (823/1224) |
+| file parity | 73.7% (3152/4276) |
 | assertion parity | 84.0% |
 | accepted divergences (out of the KPI, ADR-0130) | 1 file(s) |
 
@@ -16,9 +16,9 @@ definitions: [docs/ecosystem-parity.md](../docs/ecosystem-parity.md).
 |---|---|
 | `blocked_dep` | 7 |
 | `blocked_load` | 107 |
-| `green` | 822 |
+| `green` | 823 |
 | `no_baseline` | 289 |
-| `partial` | 233 |
+| `partial` | 232 |
 | `red` | 169 |
 | `skipped` | 10 |
 
@@ -70,7 +70,7 @@ definitions: [docs/ecosystem-parity.md](../docs/ecosystem-parity.md).
 | `Algorithm::LibSVM` | 0.0.20 | green | 1/1 |
 | `Algorithm::Soundex` | * | green | 1/1 |
 | `Algorithm::TernarySearchTree` | 0.04 | green | 4/4 |
-| `Algorithm::Treap` | 0.10.3 | partial | 5/6 |
+| `Algorithm::Treap` | 0.10.3 | green | 6/6 |
 | `Algorithm::XGBoost` | 0.0.6 | no_baseline | — |
 | `Algorithm::ZobristHashing` | 0.03 | green | 1/1 |
 | `AlgorithmsIT` | 0.0.4 | green | 6/6 |
