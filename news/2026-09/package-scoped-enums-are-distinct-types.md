@@ -17,4 +17,4 @@ enum in a role body registers under the role's package whoever composes it, and
 `is export` now exports the enum's type name along with its values.
 
 CSS::TagSet now gets past the enum lookup; its next failure is a separate one: assigning
-a `Map` to a `%!attribute` keeps the immutable `Map`.
+a `Map` to a `%!attribute` keeps the immutable `Map` ([#9708](https://github.com/tokuhirom/mutsu/issues/9708)).
