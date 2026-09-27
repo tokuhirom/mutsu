@@ -64,7 +64,7 @@ impl Interpreter {
             Some(ValueView::Array(a, kind)) => {
                 let mut data = a.as_ref().clone();
                 data.clear_native_storage();
-                for v in data.items_mut().iter_mut() {
+                for v in data.live_mut().iter_mut() {
                     let taken = std::mem::replace(v, Value::NIL);
                     *v = Self::boxed_elem_cell(taken);
                 }
@@ -207,7 +207,7 @@ impl Interpreter {
             ),
         };
         while data.items().len() <= idx {
-            data.items_mut().push(Self::boxed_elem_cell(Value::int(0)));
+            data.push(Self::boxed_elem_cell(Value::int(0)));
         }
         let seed = {
             let v = &data.items()[idx];
@@ -217,7 +217,7 @@ impl Interpreter {
             v.clone()
         };
         let cell = crate::gc::Gc::new(crate::value::ContainerCell::new(seed));
-        data.items_mut()[idx] = Value::container_ref(cell.clone());
+        data.live_mut()[idx] = Value::container_ref(cell.clone());
         let updated = Value::array_with_kind(crate::gc::Gc::new(data), kind);
         shared.insert(atomic_key.to_string(), updated);
         drop(shared);

@@ -63,7 +63,7 @@ impl Interpreter {
                         i + 1,
                         Self::native_fill_for_constraint(None),
                     )?;
-                    Value::assign_element_slot(&mut data.items_mut()[i], val);
+                    Value::assign_element_slot(&mut data.live_mut()[i], val);
                     // Materialize the "all present" range (`None` means every
                     // in-range index exists) before recording `i` as present,
                     // so a skipped intermediate slot from the resize above is

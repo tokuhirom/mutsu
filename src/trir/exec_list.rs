@@ -94,7 +94,7 @@ impl Interpreter {
     #[inline]
     pub(super) fn trir_push_int_local(&mut self, abs: usize, i: i64) -> Result<(), RuntimeError> {
         let slot = &self.trir.ol[abs];
-        if with_list_data_mut(slot, |data| data.items_mut().push(Value::int(i))).is_none() {
+        if with_list_data_mut(slot, |data| data.push(Value::int(i))).is_none() {
             crate::runtime::nqp_ops_text::push_elem("push_i", slot, Value::int(i))?;
         }
         Ok(())

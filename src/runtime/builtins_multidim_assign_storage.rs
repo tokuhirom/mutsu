@@ -49,11 +49,9 @@ impl Interpreter {
                     ),
                 };
                 if i >= items.items().len() {
-                    items
-                        .items_mut()
-                        .resize(i + 1, Value::package(crate::symbol::wk::any()));
+                    items.resize(i + 1, Value::package(crate::symbol::wk::any()));
                 }
-                Value::assign_element_slot(&mut items.items_mut()[i], value.clone());
+                Value::assign_element_slot(&mut items.live_mut()[i], value.clone());
                 *storage = Value::array_with_kind(crate::gc::Gc::new(items), kind);
             });
             return true;

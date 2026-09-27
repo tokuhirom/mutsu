@@ -106,7 +106,7 @@ impl Interpreter {
             // behind changes.
             let gap_marker = Self::native_fill_for_constraint(data.value_type.as_deref());
             let old_len = data.items().len();
-            let old = std::mem::replace(&mut data.items_mut()[index], gap_marker);
+            let old = std::mem::replace(&mut data.live_mut()[index], gap_marker);
             // Materialize the "all present" range (`None` means every
             // in-range index exists) before removing `index`, so a
             // previously bulk-constructed array (`initialized == None`)
@@ -117,7 +117,7 @@ impl Interpreter {
                 .remove(&index);
             while !data.items().is_empty() && data.hole_at(data.items().len() - 1) {
                 let last = data.items().len() - 1;
-                data.items_mut().pop();
+                data.pop();
                 if let Some(set) = data.initialized.as_mut() {
                     set.remove(&last);
                 }

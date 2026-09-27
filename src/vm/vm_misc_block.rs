@@ -485,7 +485,7 @@ impl Interpreter {
                 // SAFETY: aliased in-place element edit of the live array (see
                 // `gc_contents_mut`); `decont` never re-enters the interpreter.
                 unsafe { crate::value::gc_contents_mut(&arc_vec) }
-                    .items_mut()
+                    .live_mut()
                     .iter_mut()
                     .for_each(decont);
                 snapshot

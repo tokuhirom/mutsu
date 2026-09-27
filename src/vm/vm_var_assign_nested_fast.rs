@@ -385,7 +385,7 @@ impl Interpreter {
                 // lane has already declined every typed container anyway.
                 Self::autoviv_resize_tracking(data, j, Self::native_fill_for_constraint(None))
                     .ok()?;
-                Value::assign_element_slot(&mut data.items_mut()[j], stored.clone());
+                Value::assign_element_slot(&mut data.live_mut()[j], stored.clone());
             }
             NestedStep::Hash(map, key) => {
                 // SAFETY: as above.

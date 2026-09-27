@@ -433,7 +433,7 @@ impl Interpreter {
             // `write_back_container_source` update env, the local slot, and a
             // `ContainerRef` cell uniformly.
             let mut new_data = (*items).clone();
-            new_data.items_mut()[actual_idx] = current_topic;
+            new_data.live_mut()[actual_idx] = current_topic;
             let mut updated_value = Value::array_with_kind(crate::gc::Gc::new(new_data), kind);
             // Keep the scalar's itemization wrapper if it had one.
             if raw_source
@@ -508,7 +508,7 @@ impl Interpreter {
         // turning `array[int]` into a bare `Array` and breaking later `.WHAT`,
         // `.raku`, and shaped `:delete`-dies behaviour).
         let mut new_data = (*items).clone();
-        new_data.items_mut()[actual_idx] = current_topic;
+        new_data.live_mut()[actual_idx] = current_topic;
         let updated_value = Value::array_with_kind(crate::gc::Gc::new(new_data), kind);
         self.write_back_container_source(code, source, source_slot, &raw_source, updated_value);
     }

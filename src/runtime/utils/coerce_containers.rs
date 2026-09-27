@@ -67,7 +67,7 @@ pub(crate) fn itemize_real_array_elements(mut value: Value) -> Value {
     }
     value.with_array_mut(|items, _kind| {
         let data = crate::gc::Gc::make_mut(items);
-        for item in data.items_mut() {
+        for item in data.live_mut() {
             if item.needs_element_itemization() {
                 *item = item.clone().itemize_for_element_store();
             }
@@ -98,7 +98,7 @@ pub(crate) fn deitemize_real_array_elements(mut value: Value) -> Value {
     }
     value.with_array_mut(|items, _kind| {
         let data = crate::gc::Gc::make_mut(items);
-        for item in data.items_mut() {
+        for item in data.live_mut() {
             *item = item.clone().deitemize_element();
         }
     });

@@ -519,7 +519,7 @@ impl Interpreter {
                                     // SAFETY: aliased in-place mutation of a shared
                                     // container; see `gc_contents_mut`.
                                     unsafe {
-                                        crate::value::gc_contents_mut(&items).items_mut()[idx] =
+                                        crate::value::gc_contents_mut(&items).live_mut()[idx] =
                                             new_src;
                                     }
                                 }
