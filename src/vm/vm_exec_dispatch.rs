@@ -971,10 +971,19 @@ impl Interpreter {
                 *ip += 1;
             }
             // Cost: O(v), v = entries of the whole env (plus `our_vars` for GLOBAL): every
-            // `Pkg::`/`OUTER::`/`MY::`/`DYNAMIC::` read builds a fresh stash map (see
-            // exec_get_pseudo_stash_op). Rakudo: O(1) -- see #9171.
+            // whole-stash `Pkg::`/`OUTER::`/`MY::`/`DYNAMIC::` term builds a fresh stash map (see
+            // exec_get_pseudo_stash_op); a one-key read compiles to GetPseudoStashKeyed instead.
+            // Rakudo: O(1) -- see #9171.
             OpCode::GetPseudoStash(name_idx) => {
                 self.exec_get_pseudo_stash_op(code, *name_idx);
+                *ip += 1;
+            }
+            // Cost: O(k), k = interned qualified names ending in the key's bare name, for a
+            // sigiled key of an ordinary package; any other key or stash is built whole as
+            // GetPseudoStash, O(v), v = env entries (-- see #9171); plus the one-key Index.
+            // Rakudo: O(1).
+            OpCode::GetPseudoStashKeyed(name_idx) => {
+                self.exec_get_pseudo_stash_keyed_op(code, *name_idx)?;
                 *ip += 1;
             }
             // Cost: O(s + v), s = compiler-selected lexicals, v = env overlay entries
@@ -4987,8 +4996,9 @@ impl Interpreter {
             }
             // Cost: O(m), m = key bytes (name built by `format!`), plus an O(1) avg stash store;
             // a `&` key re-aliasing a multi scans the function registry, O(r), r = registered
-            // functions (-- see #9665); a named package's non-`&` key builds the stash first,
-            // O(v), v = env entries (-- see #9171). Rakudo: O(1).
+            // functions (-- see #9665); a named package's sigiled non-`&` key reads that one
+            // stash entry, O(k) as GetPseudoStashKeyed, while an unsigiled key builds the whole
+            // stash, O(v), v = env entries (-- see #9171). Rakudo: O(1).
             OpCode::IndexAssignPseudoStashKeyed { stash_name_idx } => {
                 self.exec_index_assign_pseudo_stash_keyed_op(code, *stash_name_idx)?;
                 *ip += 1;

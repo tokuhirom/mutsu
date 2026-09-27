@@ -2376,6 +2376,19 @@ impl Compiler {
     /// `OUTER::` prefixes. The ordinary runtime pseudo-stash path is backed by
     /// the flattened environment, which is intentionally broader than one
     /// lexical frame and therefore makes `MY::` leak enclosing variables.
+    /// Whether `name` spells a lexical pseudo-stash (`MY::`/`LEXICAL::`,
+    /// optionally behind `OUTER::` prefixes) — the stashes
+    /// [`Self::emit_lexical_stash`] may compile to a fixed scope description.
+    pub(crate) fn is_lexical_stash_name(name: &str) -> bool {
+        let Some(mut remaining) = name.strip_suffix("::") else {
+            return false;
+        };
+        while let Some(rest) = remaining.strip_prefix("OUTER::") {
+            remaining = rest;
+        }
+        matches!(remaining, "MY" | "LEXICAL")
+    }
+
     pub(crate) fn emit_lexical_stash(&mut self, name: &str) -> bool {
         let Some(stash_name) = name.strip_suffix("::") else {
             return false;

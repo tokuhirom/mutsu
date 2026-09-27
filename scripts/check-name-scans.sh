@@ -36,6 +36,9 @@
 #   src/parser/     deciding what a name is from its text is the job
 #   src/compiler/   likewise, and it runs once per program, not per execution
 #   src/symbol.rs   the interner itself
+#   src/qualified_tail_index.rs
+#                   the interner's per-symbol member index, run once per
+#                   interned name from `Symbol::intern_global`
 #   src/qualified.rs, src/runtime/meta_ns.rs
 #                   the memoizing constructors; their own `format!` is the
 #                   one that is allowed
@@ -55,7 +58,7 @@ GLOBAL_RE='== *"GLOBAL"|!= *"GLOBAL"'
 SCAN_RE='\.(contains|split|rsplit|rsplit_once|split_once|splitn|rsplitn|find|rfind|starts_with|ends_with|strip_prefix|strip_suffix|matches)\("::"\)|has_double_colon\('
 
 exempt() {
-    grep -vE '^src/(parser|compiler)/|^src/(symbol|qualified)\.rs:|^src/runtime/meta_ns\.rs:'
+    grep -vE '^src/(parser|compiler)/|^src/(symbol|qualified|qualified_tail_index)\.rs:|^src/runtime/meta_ns\.rs:'
 }
 # Whole-line comments only: prose that quotes a pattern is not a call site, but
 # appending a trailing `// ...` to a real one must never silence the gate.

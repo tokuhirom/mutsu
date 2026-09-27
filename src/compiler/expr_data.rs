@@ -703,6 +703,17 @@ impl Compiler {
                     self.code.emit(OpCode::Index { is_positional });
                 }
             }
+        } else if let Expr::PseudoStash(stash) = target
+            && !use_autovivify
+            && !is_positional
+            && !Self::is_lexical_stash_name(stash)
+        {
+            // `Pkg::<$x>` / `Pkg::{$k}`: fuse the stash with its subscript so an
+            // ordinary package answers the one key instead of building its whole
+            // stash (#9171). A slice or adverbed read never reaches here.
+            self.compile_subscript_index(index);
+            let name_idx = self.code.add_constant(Value::str(stash.clone()));
+            self.code.emit(OpCode::GetPseudoStashKeyed(name_idx));
         } else {
             if !(use_autovivify && self.emit_bind_chain_raw_target(target)) {
                 self.compile_expr(target);
