@@ -225,6 +225,11 @@ impl Interpreter {
             if !self.container_elements_are_containers(c, source_name)
                 || (producer_seq && !matches!(element.view(), ValueView::ContainerRef(_)))
             {
+                // A List has no element containers of its own, but an element
+                // can carry an aliased scalar's container from a variable.
+                if let ValueView::ContainerRef(cell) = element.view() {
+                    return Ok(Value::container_view(cell.clone()));
+                }
                 // ... unless the ELEMENT is itself itemized. `$(...)`/`$[...]`
                 // IS a Scalar container -- itemization is exactly what makes a
                 // list count as one element -- so `.VAR` must report it even

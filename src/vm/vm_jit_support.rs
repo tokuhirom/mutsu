@@ -141,6 +141,7 @@ pub(super) fn step_supported(op: &OpCode) -> bool {
             | OpCode::DerefContainer
             | OpCode::DecontListElems
             | OpCode::Index { .. }
+            | OpCode::IndexVarRef { .. }
             | OpCode::IndexInvocantRef { .. }
             | OpCode::IndexArgRef(..)
             | OpCode::IndexAutovivifyLazy { .. }

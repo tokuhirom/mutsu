@@ -2801,6 +2801,9 @@ pub(crate) enum OpCode {
     /// `is_positional` is true when the subscript was `[...]` (positional),
     /// false when `{...}` or `<...>` (associative).
     Index { is_positional: bool },
+    /// Preserve an existing scalar cell in a List when indexing for `.VAR`.
+    /// Other subscripts use the ordinary Index semantics.
+    IndexVarRef { is_positional: bool },
     /// [`OpCode::Index`] emitted as the *receiver* of a method call
     /// (`@a[0].mut`, `%h<a>.mut`) — ADR-0067's subscript-receiver producer.
     ///
