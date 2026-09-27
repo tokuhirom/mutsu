@@ -77,7 +77,10 @@ impl Compiler {
         // its own — the oracle classifies it `Transparent` — so its "body"
         // placeholders are the enclosing routine's own parameters: `sub f { say
         // "$^a" if 1; 0 }; f(7)` must print 7, not the condition.
-        let needs_at_underscore = binding_var.is_none() && Self::body_uses_legacy_args(then_branch);
+        // A statement modifier has no block, so its `@_` is the routine's own.
+        let needs_at_underscore = binding_var.is_none()
+            && !is_statement_modifier
+            && Self::body_uses_legacy_args(then_branch);
         let bind_cond_placeholders = binding_var.is_none() && !is_statement_modifier;
         let binds_cond_placeholder =
             bind_cond_placeholders && Self::inlined_body_binds_supplied_value(then_branch);
@@ -115,10 +118,10 @@ impl Compiler {
         }
         let jump_else = self.code.emit(OpCode::JumpIfFalse(0));
         self.compile_if_binding_container_decl(&deferred_container_decl);
+        let mut saved_args = None;
         if needs_at_underscore {
-            // Flatten the duplicated condition into `@_` (like a `*@` slurpy).
-            self.code.emit(OpCode::FlattenSlurpy);
-            self.emit_set_named_var("@_");
+            // Flatten the duplicated condition into the branch's own `@_`.
+            saved_args = Some(self.emit_if_args_bind());
         } else if bind_cond_placeholders {
             // ADR-0048 D3's shared bind: binds every placeholder the branch
             // declares that the single condition value can satisfy, and raises
@@ -133,6 +136,9 @@ impl Compiler {
         let then_state_reset = self.emit_branch_state_reset(then_branch, is_statement_modifier);
         self.compile_if_branch(then_branch, position, is_statement_modifier);
         self.patch_nested_block_state_reset(then_state_reset);
+        if let Some(saved) = saved_args {
+            self.emit_if_args_restore(saved);
+        }
 
         // A statement-position chain with no `else` simply falls through; a
         // value-position one still has to leave something behind.
@@ -140,11 +146,17 @@ impl Compiler {
             if has_element_source_capture {
                 self.code.emit(OpCode::ClearElementSource);
             }
-            self.code.patch_jump(jump_else);
             if needs_cond_value {
                 // Pop the leftover duplicated condition value on the false
-                // branch (JumpIfFalse consumed only one copy).
+                // branch only (JumpIfFalse consumed one copy; the taken branch
+                // consumed the other binding `@_` / the placeholder). Falling
+                // through into the Pop would eat the caller's stack slot.
+                let jump_end = self.code.emit(OpCode::Jump(0));
+                self.code.patch_jump(jump_else);
                 self.code.emit(OpCode::Pop);
+                self.code.patch_jump(jump_end);
+            } else {
+                self.code.patch_jump(jump_else);
             }
         } else {
             let jump_end = self.code.emit(OpCode::Jump(0));

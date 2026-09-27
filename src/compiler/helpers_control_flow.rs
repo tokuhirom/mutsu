@@ -3,9 +3,69 @@ use crate::ast::CallArg;
 
 impl Compiler {
     /// Check if the body uses @_ or %_ legacy argument variables.
+    ///
+    /// A read is an `ArrayVar("_")` / `HashVar("_")` node; a write or `temp`
+    /// carries the sigiled name in a `name: "@_"` field. A string literal that
+    /// merely spells `@_` or `%_` (`Str("%_")`, e.g. `<$_ @_ %_>`) is data,
+    /// not a use: counting it made an `if` block bind its condition as `@_`
+    /// (LLM::Graph's `when $name ∈ <$_ @_ %_>`), while a real read was missed.
     pub(super) fn body_uses_legacy_args(body: &[Stmt]) -> bool {
         let body_str = format!("{:?}", body);
-        body_str.contains("\"@_\"") || body_str.contains("\"%_\"")
+        body_str.contains("ArrayVar(\"_\")")
+            || body_str.contains("HashVar(\"_\")")
+            || Self::body_writes_legacy_args_str(&body_str)
+    }
+
+    /// The write-only half of [`Compiler::body_uses_legacy_args`]: a sigiled
+    /// `@_` / `%_` assignment, `temp` or declaration target.
+    pub(super) fn body_writes_legacy_args(body: &[Stmt]) -> bool {
+        Self::body_writes_legacy_args_str(&format!("{:?}", body))
+    }
+
+    fn body_writes_legacy_args_str(body_str: &str) -> bool {
+        body_str.contains("name: \"@_\"") || body_str.contains("name: \"%_\"")
+    }
+
+    /// Bind the duplicated `if` condition on the stack as the branch's own
+    /// `@_` (flattened, like a `*@_` slurpy). The branch is a block with its
+    /// own `@_`, so the enclosing routine's `@_` is saved first and must be
+    /// put back with [`Compiler::emit_if_args_restore`] when the branch ends:
+    /// `sub f { if 1 { say @_ }; say @_ }; f(5, 6)` prints `[1]` then `[5 6]`.
+    /// Stack: `[cond] → []`; returns the slot holding the saved `@_`.
+    pub(super) fn emit_if_args_bind(&mut self) -> u32 {
+        let saved = self.alloc_fresh_local(&format!("__mutsu_if_outer_args_{}", self.tmp_counter));
+        self.tmp_counter += 1;
+        // A scope with no `@_` of its own (`sub f() { if 1 { @_ = 7 } }`, the
+        // mainline) reads a non-Positional here; restore an empty Array then.
+        let args = || Box::new(Expr::ArrayVar("_".to_string()));
+        self.compile_expr(&Expr::Ternary {
+            cond: Box::new(Expr::Binary {
+                left: args(),
+                op: crate::token_kind::TokenKind::SmartMatch,
+                right: Box::new(Expr::BareWord("Positional".to_string())),
+            }),
+            then_expr: args(),
+            else_expr: Box::new(Expr::BracketArray(Vec::new(), false)),
+        });
+        self.code.emit(OpCode::SetLocal(saved));
+        self.code.emit(OpCode::FlattenSlurpy);
+        self.emit_rebind_args();
+        saved
+    }
+
+    /// `@_ := <top of stack>`: a rebind, so neither the branch's `@_` nor
+    /// the restore assigns into (and so mutates) the enclosing `@_` Array.
+    fn emit_rebind_args(&mut self) {
+        self.code.emit(OpCode::MarkBindContext);
+        self.code.emit(OpCode::MarkRebindContext);
+        self.emit_set_named_var("@_");
+    }
+
+    /// Restore the enclosing `@_` saved by [`Compiler::emit_if_args_bind`].
+    /// Stack-neutral, so it can follow a value-position branch's result.
+    pub(super) fn emit_if_args_restore(&mut self, saved: u32) {
+        self.code.emit(OpCode::GetLocal(saved));
+        self.emit_rebind_args();
     }
 
     /// Whether `--> spec` names a **definite return value** (a literal or a
@@ -331,7 +391,9 @@ impl Compiler {
             self.code.emit(OpCode::Die { user_throw: false });
             return;
         }
-        let needs_at_underscore = Self::body_uses_legacy_args(then_branch);
+        // A statement modifier has no block, so its `@_` is the routine's own.
+        let needs_at_underscore =
+            !is_statement_modifier && Self::body_uses_legacy_args(then_branch);
         // A bare `if EXPR { ... $^a ... }` whose block has a scalar placeholder
         // receives the condition value as that placeholder (like `-> $a`), so
         // `if 42 { $^a.say }` prints 42. The bind (and the arity failure when the
@@ -384,10 +446,10 @@ impl Compiler {
         }
         let jump_else = self.code.emit(OpCode::JumpIfFalse(0));
         self.compile_if_binding_container_decl(&deferred_container_decl);
+        let mut saved_args = None;
         if needs_at_underscore {
-            // Flatten the duplicated condition into @_.
-            self.code.emit(OpCode::FlattenSlurpy);
-            self.emit_set_named_var("@_");
+            // Flatten the duplicated condition into the branch's own `@_`.
+            saved_args = Some(self.emit_if_args_bind());
         } else if bind_cond_placeholders {
             // Bind the branch's placeholders to the (unflattened) condition value
             // -- ADR-0048 D3.
@@ -409,6 +471,9 @@ impl Compiler {
             }
         });
         self.patch_nested_block_state_reset(then_state_reset);
+        if let Some(saved) = saved_args {
+            self.emit_if_args_restore(saved);
+        }
         let jump_end = self.code.emit(OpCode::Jump(0));
         self.code.patch_jump(jump_else);
         if needs_cond_value {

@@ -623,7 +623,7 @@ impl Compiler {
             // explicit empty signature :() and should reject any arguments.
             empty_sig: params.is_empty()
                 && param_defs.is_empty()
-                && !Self::body_uses_legacy_args(body),
+                && !Self::body_writes_legacy_args(body),
             is_rw,
             is_raw,
             // ADR-0067's third rw-capability fact, computed here because a
