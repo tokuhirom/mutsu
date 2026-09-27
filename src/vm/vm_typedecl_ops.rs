@@ -214,7 +214,7 @@ impl Interpreter {
             // unconditionally to `Foo\u{0}<site-id>`. The site id is the
             // parse-time-assigned `decl_id`, stable across re-executions of the
             // same site (a loop body keeps one identity), but distinct between
-            // sites. `decl_id == 0` (deserialized/synthesized node) opts out
+            // sites. `decl_id == 0` (a synthesized node) opts out
             // and uses the bare qualified name.
             //
             // Two distinct declaration sites therefore NEVER share a registry

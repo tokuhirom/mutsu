@@ -102,7 +102,7 @@ impl Interpreter {
         if let ValueView::Instance { class_name, .. } = target.view()
             && class_name == "IO::Handle"
             && matches!(method, "print" | "put" | "say" | "printf" | "print-nl")
-            && !self.has_user_method("IO::Handle", method)
+            && !self.has_user_method_sym("IO::Handle", method_sym)
         {
             let result = self.try_native_io_handle_output(target, method, args)?;
             // Same bookkeeping as the general path's user-dispatch completion
