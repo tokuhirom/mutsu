@@ -706,6 +706,28 @@ impl Interpreter {
         None
     }
 
+    /// A package-qualified type name written relative to a package enclosing
+    /// the running code (`A::Item` for `Core::A::Item`, from inside `Core`),
+    /// resolved against [`Self::running_package_candidates`]' chains. `None`
+    /// from GLOBAL: a nested compound name is not a global type of its own.
+    // Cost: O(c * d), c = running package candidates (4), d = package nesting depth.
+    pub(crate) fn resolve_relative_compound_type(&self, name: &str) -> Option<&'static str> {
+        let name_sym = crate::symbol::Symbol::intern(name);
+        for candidate in self.running_package_candidates().into_iter().flatten() {
+            for pkg in crate::qualified::package_ancestors(crate::symbol::Symbol::intern(candidate))
+            {
+                if crate::qualified::is_global_package(pkg) {
+                    break;
+                }
+                let qualified = crate::qualified::qualified(pkg, name_sym).as_str();
+                if self.has_type_direct(qualified) {
+                    return Some(qualified);
+                }
+            }
+        }
+        None
+    }
+
     /// [`Self::module_scope_lexical`] anchored at an explicit owner package
     /// instead of the running frame: the file-scope name a module declared,
     /// looked up from `owner`'s `::` chain. Used where the reader knows which
