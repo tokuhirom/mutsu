@@ -887,6 +887,7 @@ mod runtime_module_exports;
 mod runtime_output;
 pub(crate) mod runtime_shared_vars;
 mod runtime_thread;
+mod runtime_thread_decl_mask;
 pub(crate) mod runtime_var_meta;
 mod seq_helpers;
 mod sequence;
