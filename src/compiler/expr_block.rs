@@ -175,6 +175,11 @@ impl Compiler {
                 custom_traits,
                 ..
             } => {
+                // `use variables :D/:U`'s implicit smiley (#9990).
+                let pragma_type_constraint = self
+                    .variables_pragma_constraint(type_constraint.as_deref(), custom_traits)
+                    .map(Some);
+                let type_constraint = pragma_type_constraint.as_ref().unwrap_or(type_constraint);
                 // Record this inline declaration (`(my $x = ...)`, `(state $a)`)
                 // for an enclosing scope-isolating do-block.
                 self.record_block_decl(name);
@@ -614,7 +619,8 @@ impl Compiler {
                             self.emit_set_var_type(name, name_idx2, tc_idx, false);
                             // TypeCheck wraps the value on the stack for native types
                             let tc_idx2 = self.code.add_constant(Value::str(tc.clone()));
-                            self.code.emit(OpCode::TypeCheck(tc_idx2, None, false));
+                            self.code
+                                .emit(OpCode::TypeCheck(tc_idx2, None, false, false));
                             // Now Dup the wrapped value and store
                             self.code.emit(OpCode::Dup);
                             if mark_explicit_local_init {
@@ -712,6 +718,7 @@ impl Compiler {
                                             tc_idx,
                                             Some(var_name_idx),
                                             true,
+                                            false,
                                         ));
                                     }
                                 }

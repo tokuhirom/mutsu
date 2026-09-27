@@ -6037,9 +6037,20 @@ impl Interpreter {
 
             // -- Type checking --
             // Cost: O(1) for a scalar; O(e) for a typed `@` assignment, e = elements checked (as in Rakudo).
-            OpCode::TypeCheck(tc_idx, var_name_idx, has_explicit_initializer) => {
+            OpCode::TypeCheck(
+                tc_idx,
+                var_name_idx,
+                has_explicit_initializer,
+                smiley_from_pragma,
+            ) => {
                 self.sync_source_line(code, *ip);
-                self.exec_type_check_op(code, *tc_idx, *var_name_idx, *has_explicit_initializer)?;
+                self.exec_type_check_op(
+                    code,
+                    *tc_idx,
+                    *var_name_idx,
+                    *has_explicit_initializer,
+                    *smiley_from_pragma,
+                )?;
                 *ip += 1;
             }
             // Cost: O(1) for a scalar; O(e) for a typed `@` bind, e = elements checked (as in Rakudo).
@@ -6053,9 +6064,7 @@ impl Interpreter {
                 let value = self.stack.pop().unwrap_or(Value::NIL);
                 let name = Self::const_str(code, *name_idx);
                 if let ValueView::Str(s) = value.view() {
-                    if name == "variables" {
-                        loan_env!(self, set_variables_pragma(&s));
-                    } else if name == "attributes" {
+                    if name == "attributes" {
                         loan_env!(self, set_attributes_pragma(&s));
                     }
                 }

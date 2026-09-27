@@ -1166,6 +1166,17 @@ pub(crate) struct Compiler {
     /// `CompiledFunction::captured_fatal_mode` at each sub/method body's own
     /// compile site.
     fatal_pragma_active: bool,
+    /// The implicit definedness smiley (`":D"` / `":U"`) a textually active
+    /// `use variables :D/:U` adds to every typed variable declared from this
+    /// point on in the same lexical scope (#9990). `None` for no pragma or
+    /// `use variables :_`. Lexical like `fatal_pragma_active`: set by the
+    /// `use variables` statement, snapshotted/restored at every block
+    /// boundary (`LexicalScopeSnapshot`) and inherited by nested closure,
+    /// routine and method bodies. It is applied at COMPILE time
+    /// (`Compiler::variables_pragma_constraint`), so the smiley becomes part of
+    /// the declaration's persisted constraint and every later reassignment
+    /// checks it — and nothing leaks into code compiled outside the scope.
+    variables_pragma: Option<&'static str>,
     /// ADR-0110 §3.3: routines this compile registered with a TRIR chunk,
     /// keyed by (name, positional arity), so a later call site in the same
     /// compile can resolve the callee without a name. Populated by the single
@@ -1803,6 +1814,7 @@ impl Compiler {
             code: CompiledCode::new(),
             local_map: HashMap::new(),
             fatal_pragma_active: false,
+            variables_pragma: None,
             trir_routines: HashMap::new(),
             // Frame 0 = compilation-unit / routine top level; never popped.
             local_scopes: vec![HashMap::new()],
@@ -2356,6 +2368,7 @@ impl Compiler {
         sub.enclosing_local_names
             .extend(self.enclosing_local_names.iter().cloned());
         sub.lexical_sub_free_vars = self.lexical_sub_free_vars.clone();
+        sub.variables_pragma = self.variables_pragma;
     }
 
     /// Record a named sub declared in this scope in

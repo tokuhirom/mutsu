@@ -10,11 +10,12 @@ impl Interpreter {
         var_name_idx: Option<u32>,
         bind_mode: bool,
         has_explicit_initializer: bool,
+        smiley_from_pragma: bool,
     ) -> Result<(), RuntimeError> {
-        let raw_constraint = Self::const_str(code, tc_idx);
         let var_name: Option<&str> = var_name_idx.map(|idx| Self::const_str(code, idx));
-        // Apply `use variables :D/:U` pragma to the constraint
-        let effective_constraint = loan_env!(self, apply_variables_pragma(raw_constraint));
+        // A `use variables :D/:U` smiley is already part of the constraint:
+        // the compiler applies the (lexical) pragma to the declaration.
+        let effective_constraint = std::borrow::Cow::Borrowed(Self::const_str(code, tc_idx));
         // A `constant` type alias stands for the type it names, so resolve it
         // to that target once, here, before anything below reads the
         // constraint. Everything downstream then sees `Int` rather than
@@ -274,10 +275,12 @@ impl Interpreter {
             // otherwise the Nil (type-object) default is allowed at declaration.
             if self.constraint_requires_initializer(constraint) {
                 // A `:D` the source did not write came from `use variables :D`
-                // (that is exactly what `apply_variables_pragma` rewrote), and
+                // (`Compiler::variables_pragma_constraint` added it), and
                 // rakudo reports it as `implicit`.
-                let implicit = (constraint != raw_constraint)
-                    .then(|| format!("{} by pragma", self.variables_pragma));
+                let implicit = smiley_from_pragma
+                    .then(|| crate::runtime::types::strip_type_smiley(constraint).1)
+                    .flatten()
+                    .map(|smiley| format!("{smiley} by pragma"));
                 return Err(RuntimeError::missing_initializer(
                     constraint,
                     "variable",

@@ -17,6 +17,9 @@ pub(crate) enum OuterStash {
 /// entry and restored on block exit.
 pub(super) struct LexicalScopeSnapshot {
     dynamic_scope_all: bool,
+    /// `use variables :D/:U` is lexical: one inside the entered block stops
+    /// applying when it exits (see `Compiler::variables_pragma`).
+    variables_pragma: Option<&'static str>,
     dynamic_scope_names: Option<std::collections::HashSet<String>>,
     user_listop_shadows: std::collections::HashSet<String>,
     /// ADR-0110 §3.3: the TRIR routines a call site may resolve statically.
@@ -68,6 +71,7 @@ impl Compiler {
         // may legitimately shadow an outer one without being a redeclaration.
         LexicalScopeSnapshot {
             dynamic_scope_all: self.dynamic_scope_all,
+            variables_pragma: self.variables_pragma,
             dynamic_scope_names: self.dynamic_scope_names.clone(),
             user_listop_shadows: self.user_listop_shadows.clone(),
             trir_routines: self.trir_routines.clone(),
@@ -117,6 +121,7 @@ impl Compiler {
         // Drop the exiting block's local-slot scope frame (§1.4 groundwork).
         self.pop_local_scope();
         self.dynamic_scope_all = saved.dynamic_scope_all;
+        self.variables_pragma = saved.variables_pragma;
         self.dynamic_scope_names = saved.dynamic_scope_names;
         self.user_listop_shadows = saved.user_listop_shadows;
         self.trir_routines = saved.trir_routines;
@@ -139,6 +144,47 @@ impl Compiler {
         if !saved.accessed_dynamic_vars_transparent {
             self.accessed_dynamic_vars = saved.accessed_dynamic_vars;
         }
+    }
+
+    /// Record a `use variables :D/:U/:_` statement for the rest of the
+    /// enclosing lexical scope (see `Compiler::variables_pragma`). The parser
+    /// has already rejected every other argument shape.
+    pub(super) fn apply_variables_pragma_stmt(&mut self, arg: Option<&Expr>) {
+        self.variables_pragma = match arg {
+            Some(Expr::Literal(lit)) => match lit.view() {
+                ValueView::Str(s) if s.as_str() == ":D" => Some(":D"),
+                ValueView::Str(s) if s.as_str() == ":U" => Some(":U"),
+                _ => None,
+            },
+            _ => None,
+        };
+    }
+
+    /// The constraint a typed variable declaration carries once an active
+    /// `use variables :D/:U` adds its implicit smiley (`Int` -> `Int:D`), or
+    /// `None` when the pragma leaves the declaration as written: no pragma, no
+    /// type, an explicit smiley already (`Int:_` / `Int:U` win over the
+    /// pragma, as in rakudo), a `constant`, or an object-hash key shape.
+    ///
+    /// Applied by every `Stmt::VarDecl` compile path before it emits anything,
+    /// so the declaration's `TypeCheck`, its persisted `SetVarType` constraint
+    /// and the slot's baked store constraint all agree — a later `$x = Nil`
+    /// is then checked against `Int:D` (#9990).
+    pub(super) fn variables_pragma_constraint(
+        &self,
+        type_constraint: Option<&str>,
+        custom_traits: &[(String, Option<Expr>)],
+    ) -> Option<String> {
+        let smiley = self.variables_pragma?;
+        let tc = type_constraint?;
+        if crate::runtime::types::strip_type_smiley(tc).1.is_some()
+            || tc.starts_with("::")
+            || tc.contains('{')
+            || custom_traits.iter().any(|(t, _)| t == "__constant")
+        {
+            return None;
+        }
+        Some(format!("{tc}{smiley}"))
     }
 
     pub(super) fn apply_dynamic_scope_pragma(&mut self, arg: Option<&Expr>) {

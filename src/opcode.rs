@@ -4247,7 +4247,11 @@ pub(crate) enum OpCode {
     /// (`my Int:D $i;`): a `:D` constraint sees a runtime-Nil value either
     /// way, but only the latter is `X::Syntax::Variable::MissingInitializer`
     /// — the former is a genuine (failing) assignment, `X::TypeCheck::Assignment`.
-    TypeCheck(u32, Option<u32>, bool),
+    /// The second `bool` marks a constraint whose smiley was added by an
+    /// active `use variables :D/:U` rather than written in the source, which
+    /// rakudo's `X::Syntax::Variable::MissingInitializer` reports as
+    /// `implicit` (`":D by pragma"`).
+    TypeCheck(u32, Option<u32>, bool, bool),
 
     /// Like TypeCheck, but for `:=` binds to a typed scalar. On a type
     /// mismatch this raises X::TypeCheck::Binding (e.g. `my Str $x := 3`)

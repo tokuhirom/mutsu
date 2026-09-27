@@ -3347,7 +3347,6 @@ impl Interpreter {
             var_dynamic_flags: HashMap::new(),
             caller_env_stack: Vec::new(),
             var_bindings: HashMap::new(),
-            variables_pragma: String::new(),
             attributes_pragma: String::new(),
             atomic_var_seen: false,
             sigilless_alias_seen: false,

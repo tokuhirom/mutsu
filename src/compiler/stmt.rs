@@ -1257,6 +1257,13 @@ impl Compiler {
                     self.code.emit(OpCode::Die { user_throw: false });
                     return;
                 }
+                // `use variables :D/:U` adds its implicit smiley to the
+                // declared type before anything below reads it (#9990).
+                let pragma_type_constraint = self
+                    .variables_pragma_constraint(type_constraint.as_deref(), custom_traits)
+                    .map(Some);
+                let smiley_from_pragma = pragma_type_constraint.is_some();
+                let type_constraint = pragma_type_constraint.as_ref().unwrap_or(type_constraint);
                 // ADR-0061: `my $self` declares the reserved lexical key, unless
                 // this routine's signature already declares a `$self` parameter
                 // (a redeclaration, which then shares that parameter's binding).
@@ -1809,6 +1816,7 @@ impl Compiler {
                             tc_idx,
                             Some(var_name_idx),
                             has_explicit_initializer,
+                            smiley_from_pragma,
                         ));
                     }
                 }
@@ -4251,15 +4259,12 @@ impl Compiler {
                 }
             }
             Stmt::Use { module, arg, .. } if module == "variables" => {
-                // `use variables :D/:U/:_` pragma — emit a SetVariablesPragma opcode
-                if let Some(arg_expr) = arg {
-                    self.compile_expr(arg_expr);
-                } else {
-                    let nil_idx = self.code.add_constant(Value::NIL);
-                    self.code.emit(OpCode::LoadConst(nil_idx));
-                }
-                let name_idx = self.code.add_constant(Value::str("variables".to_string()));
-                self.code.emit(OpCode::SetPragma(name_idx));
+                // `use variables :D/:U/:_` is lexical and purely compile-time:
+                // it rewrites the constraint of every typed declaration that
+                // follows in this scope (`Compiler::variables_pragma`). It
+                // emits nothing — a runtime flag would be dynamic, leaking
+                // into every routine called from here (#9990).
+                self.apply_variables_pragma_stmt(arg.as_ref());
             }
             Stmt::Use { module, arg, .. } if module == "attributes" => {
                 // `use attributes :D/:U/:_` pragma — emit a SetPragma opcode
