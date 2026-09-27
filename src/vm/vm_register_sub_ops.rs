@@ -414,6 +414,22 @@ impl Interpreter {
                     // no-op unless `current_package()` actually names such a
                     // stash.
                     self.export_implicit_stash_sub(&resolved_name, *multi);
+                } else if *multi
+                    && !self.suppress_exports
+                    && self.is_our_scoped_proto(&format!(
+                        "{}::{resolved_name}",
+                        self.current_package()
+                    ))
+                {
+                    // A bare `multi sub` candidate is never itself `our`-scoped
+                    // (raku rejects `our multi sub`), but its proto may be --
+                    // the only legal way to put a multi family into an export
+                    // stash by the "manual EXPORT stash" idiom. The proto
+                    // already recorded the family as exported
+                    // (`export_implicit_stash_proto`); each later candidate
+                    // must alias itself into the module's namespace too, since
+                    // the proto commonly precedes its candidates.
+                    self.export_implicit_stash_proto(&resolved_name);
                 }
                 if *multi && !self.suppress_exports {
                     self.refresh_exported_multi_family(&resolved_name);
@@ -1376,6 +1392,16 @@ impl Interpreter {
                 let pkg = self.current_package();
                 self.register_exported_sub(pkg, name_str.clone(), export_tags.clone());
             }
+        } else if *is_our && !self.suppress_exports {
+            // An `our proto sub` declared directly inside a module's own `my
+            // package EXPORT::<tag> { ... }` block is part of that tag's
+            // export list by construction, the proto-family counterpart of
+            // the `our sub`/`our multi sub` handling in `exec_register_sub_op`
+            // (`export_implicit_stash_sub`) -- raku rejects `our multi sub`
+            // outright, so an `our`-scoped proto is the only way to put a
+            // multi family into an export stash this way. A no-op unless
+            // `current_package()` actually names such a stash.
+            self.export_implicit_stash_proto(&name_str);
         }
         // Apply custom trait_mod:<is> for each non-builtin trait (only if defined)
         if !custom_traits.is_empty() {
