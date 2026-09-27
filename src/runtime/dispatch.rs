@@ -142,13 +142,18 @@ impl Interpreter {
             .collect()
     }
 
+    /// `allow_builtin_char_class` gates whether a name with no user token
+    /// definition may still resolve as a built-in regex character class
+    /// (`alpha`, `digit`, `xdigit`, ...) — see
+    /// [`Self::eval_token_call_candidates_at`].
     pub(super) fn eval_token_call_values(
         &mut self,
         name: &str,
         arg_values: &[Value],
+        allow_builtin_char_class: bool,
     ) -> Result<Option<String>, RuntimeError> {
         Ok(self
-            .eval_token_call_values_at(name, arg_values, 0)?
+            .eval_token_call_values_at(name, arg_values, 0, allow_builtin_char_class)?
             .map(|(pattern, _)| pattern))
     }
 
@@ -163,9 +168,10 @@ impl Interpreter {
         name: &str,
         arg_values: &[Value],
         start_pos: usize,
+        allow_builtin_char_class: bool,
     ) -> Result<Option<(String, Option<String>)>, RuntimeError> {
         Ok(self
-            .eval_token_call_candidates_at(name, arg_values, start_pos)?
+            .eval_token_call_candidates_at(name, arg_values, start_pos, allow_builtin_char_class)?
             .and_then(|candidates| candidates.into_iter().next()))
     }
 
@@ -173,11 +179,20 @@ impl Interpreter {
     /// LTM rank order. The ordinary dispatch callers need only the winner;
     /// `Grammar.parse(:rule<proto>)` must keep the rest available when that
     /// candidate fails its real match and the next one should be tried.
+    ///
+    /// `allow_builtin_char_class` must be `true` only for a genuine grammar
+    /// start-rule / token-atom caller (`Grammar.subparse(:rule<xdigit>)`, a
+    /// `<alpha>` regex atom): there, selecting a built-in character class with
+    /// no user token of the same name is legitimate. An ordinary function-call
+    /// fallback must pass `false` — a `multi sub alpha(Int $x)` whose dispatch
+    /// just failed must raise `X::Multi::NoMatch`, not silently return the
+    /// `<alpha>` built-in as a `Regex` (#9719).
     pub(super) fn eval_token_call_candidates_at(
         &mut self,
         name: &str,
         arg_values: &[Value],
         start_pos: usize,
+        allow_builtin_char_class: bool,
     ) -> Result<Option<Vec<TokenCallCandidate>>, RuntimeError> {
         let defs = match self.resolve_token_defs(name) {
             Some(defs) => defs,
@@ -186,7 +201,9 @@ impl Interpreter {
                 // to be selected as a start rule (`G.subparse('A', :rule<xdigit>)`).
                 // They have no user token definition, but the ordinary regex
                 // matcher already knows how to execute them.
-                if super::regex::regex_helpers::is_builtin_character_class(name) {
+                if allow_builtin_char_class
+                    && super::regex::regex_helpers::is_builtin_character_class(name)
+                {
                     return Ok(Some(vec![(format!("<{name}>"), None)]));
                 }
                 return Ok(None);

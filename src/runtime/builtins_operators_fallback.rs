@@ -266,7 +266,12 @@ impl Interpreter {
                 )));
             }
         }
-        if let Some(pattern) = self.eval_token_call_values(name, args)? {
+        // A plain function-call fallback must not treat a name it cannot
+        // resolve as a built-in regex character class (`alpha`, `digit`, ...)
+        // — that shortcut is only for a grammar start-rule / token-atom
+        // caller, which threads `allow_builtin_char_class: true` through the
+        // dedicated `eval_token_call_values`/`_at` call sites instead (#9719).
+        if let Some(pattern) = self.eval_token_call_values(name, args, false)? {
             return Ok(Value::regex(pattern));
         }
         // An enum declared inside a module is stored by its bare declarator

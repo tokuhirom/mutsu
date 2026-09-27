@@ -268,7 +268,7 @@ impl Interpreter {
         let saved_topic = self.env.get("_").cloned();
         self.set_current_package(pkg.to_string());
         self.env.insert("_".to_string(), Value::str(tail.clone()));
-        let pattern_res = self.eval_token_call_values(name, extra_args);
+        let pattern_res = self.eval_token_call_values(name, extra_args, true);
         self.set_current_package(saved_pkg);
         match saved_topic {
             Some(t) => {
