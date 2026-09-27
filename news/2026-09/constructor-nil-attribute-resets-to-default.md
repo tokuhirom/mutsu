@@ -20,3 +20,26 @@ newly-fixed `dispatch_bless` path instead of storing `Nil` verbatim.
 
 Found while working #9491 (ANTLR4::Grammar), whose generated code passes
 `Nil` through positional constructor arguments routinely. (#9676)
+
+## Unmasked: the coercion-fallback `new` never got its context
+
+Fixing the Nil-storage bug turned up a second, unrelated gap: whitelisted
+`roast/S12-coercion/coercion-methods.t`'s "method new has its context set"
+subtest started failing. `class C1 { has Mu $.coercion-type; multi method
+new(::?CLASS:U: Bar:D $bar) { self.new: :coercion-type($*COERCION-TYPE) } }`
+reads the dynamic variable `$*COERCION-TYPE`, which mutsu never declared or
+bound anywhere — it silently resolved to `Nil` (mutsu treats a wholly
+undeclared `$*name` as `Nil` rather than raising, a separate pre-existing
+looseness). Storing that raw `Nil` happened to satisfy `isa-ok`'s coercion-type
+check (`Nil.isa(Any)` is true, and an empty-source coercion type like
+`C1(Any)` matches any defined value for that check) — the test was passing
+for an accidental reason. Once the Nil-storage fix seeds the attribute's
+declared type object (`Mu`, which does not `isa(Any)`) instead, that accident
+stopped covering for the missing feature.
+
+`try_coerce_value_with_method`'s fallback-to-`new` call (used when no
+`COERCE` candidate matches, `src/runtime/types/coercion.rs`) now binds
+`$*COERCION-TYPE` to the coercion's target type for the duration of that one
+call, the same save/insert/restore shape `indir`'s `$*CWD` binding already
+uses for a builtin dynamic variable no user code lexically declares. Pinned
+in `t/types/coercion/coercion-fallback-new-context-type.t`.
