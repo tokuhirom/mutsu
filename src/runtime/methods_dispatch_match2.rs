@@ -637,7 +637,15 @@ impl Interpreter {
         {
             return Ok(pipe);
         }
-        let items = if matches!(target.view(), ValueView::Mixin(..))
+        // A non-shaped Array is read at pull time rather than copied here
+        // (`MapGrepItems::Live`), as Rakudo's `.map` iterates the Array
+        // itself: `@a.map(&f).head(3)` must not copy `@a`.
+        let live_array = matches!(target.view(), ValueView::Array(..))
+            && !crate::runtime::utils::is_shaped_array(&target)
+            && self.gather_items_len() == 0;
+        let items = if live_array {
+            Vec::new()
+        } else if matches!(target.view(), ValueView::Mixin(..))
             && self.mixin_composes_method(&target, "iterator")
         {
             // A role-punned Iterable keeps its storage in the wrapped object;
@@ -678,7 +686,12 @@ impl Interpreter {
         // This matters for constructor TWEAKs such as the Zef::Distribution
         // shape in bench-ctor, where an empty attribute is normalized with
         // `@!resources.map(*.flat)` on every construction.
-        if items.is_empty() {
+        let items = if live_array {
+            crate::value::MapGrepItems::Live(target.clone())
+        } else {
+            crate::value::MapGrepItems::Snapshot(std::sync::Arc::new(items))
+        };
+        if items.len() == 0 {
             return Ok(Value::seq(Vec::new()));
         }
         // A `return` callback keeps the older `LazyList` deferral for now
@@ -715,7 +728,8 @@ impl Interpreter {
             _ => crate::value::MapGrepMode::Map,
         };
         Ok(Value::seq_deferred(crate::value::SeqSource::MapGrep {
-            items: std::sync::Arc::new(items),
+            items,
+            pos: 0,
             func: args.first().cloned(),
             fatal: self.fatal_mode,
             mode,

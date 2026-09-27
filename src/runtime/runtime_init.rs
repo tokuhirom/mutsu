@@ -3556,6 +3556,7 @@ impl Interpreter {
             lazy_pull_entry_call_depth: None,
             lazy_pull_entry_routine_depth: None,
             rw_map_topic_capture: None,
+            map_grep_last_depth: None,
         };
         // A scratch interpreter (regex/grammar sub-interpreter) has its `env`
         // replaced wholesale by the caller's, so every `$*OUT`/`$*CWD`/
