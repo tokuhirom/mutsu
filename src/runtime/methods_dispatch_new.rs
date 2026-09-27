@@ -456,8 +456,7 @@ impl Interpreter {
             let attr_name = &attr.name;
             let default = &attr.default;
             let sigil = &attr.sigil;
-            let attr_type_constraint =
-                super::attribute_type_constraint(&plan.class_attrs, attr, &plan.type_constraints);
+            let attr_type_constraint = &plan.attr_constraints[i];
             // A `@`/`%` attribute with no declared default that a bless named
             // argument provides would get an empty container here only for the
             // override loop below to immediately replace it — skip the throwaway
@@ -683,18 +682,21 @@ impl Interpreter {
         // constructor (`self.bless(|%args)`).  Apply the same element checks
         // and container metadata as the native `.new` path before the
         // attribute map becomes the instance's backing storage.
-        for (attr, &attr_sym) in plan.class_attrs.iter().zip(plan.attr_syms.iter()) {
+        for ((attr, &attr_sym), elem_type) in plan
+            .class_attrs
+            .iter()
+            .zip(plan.attr_syms.iter())
+            .zip(plan.attr_constraints.iter())
+        {
             if !matches!(attr.sigil, '@' | '%') {
                 continue;
             }
-            let Some(elem_type) =
-                super::attribute_type_constraint(&plan.class_attrs, attr, &plan.type_constraints)
-            else {
+            let Some(elem_type) = elem_type else {
                 continue;
             };
             if let Some(value) = attributes.get(attr_sym).cloned() {
                 let tagged =
-                    self.finalize_typed_container_attr(&attr.name, attr.sigil, &elem_type, value)?;
+                    self.finalize_typed_container_attr(&attr.name, attr.sigil, elem_type, value)?;
                 attributes.insert(attr_sym, tagged);
             }
         }

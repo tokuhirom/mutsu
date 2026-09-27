@@ -64,6 +64,9 @@ impl Interpreter {
             // and the call site must reconcile the caller slot (Slice F twin of the
             // non-mut path; `reconcile_locals_from_env_at_site`).
             self.method_dispatch_pure = !self.mro_has_build_or_tweak(class_name);
+            if result.is_ok() {
+                self.note_ctor_lane_reached(class_name);
+            }
             return result;
         }
         // Native built-in construction (mut path twin of the above).

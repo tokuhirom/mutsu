@@ -467,6 +467,9 @@ pub(crate) mod wk {
     well_known! {
         /// The topic `$_`. Env keys are stored sigil-less, so this is `"_"`.
         topic => "_";
+        /// The method name `new`, which the constructor lane gates every
+        /// `CallMethodMut` on (see `vm_ctor_lane`).
+        new_method => "new";
         /// The match variable `$/`, stored sigil-less. Written by every
         /// successful `~~` and by every failed one (`clear_match_state`), so
         /// it is on the per-match path twice over (#8269).

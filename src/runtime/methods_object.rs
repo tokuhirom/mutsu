@@ -489,6 +489,14 @@ impl Interpreter {
                 })
                 .collect::<Vec<_>>(),
         );
+        let attr_constraints: std::sync::Arc<[Option<String>]> = class_attrs
+            .iter()
+            .map(|a| super::attribute_type_constraint(&class_attrs, a, &type_constraints))
+            .collect();
+        let attr_buildable: std::sync::Arc<[bool]> = class_attrs
+            .iter()
+            .map(|a| self.is_attribute_buildable(cn_resolved, &a.name))
+            .collect();
         let probe_skeleton = std::sync::Arc::new(
             attr_syms
                 .iter()
@@ -528,6 +536,8 @@ impl Interpreter {
             attr_is_types,
             attr_index,
             attr_seeds,
+            attr_constraints,
+            attr_buildable,
             build_steps,
             tweak_steps,
             probe_skeleton,

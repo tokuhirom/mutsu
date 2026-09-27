@@ -53,11 +53,18 @@ impl Interpreter {
 
         let mut attrs = AttrMap::with_layout(plan.layout.clone());
         for arg in args {
-            if let ValueView::Pair(key, val) = arg.view()
-                && !build_owned_attrs.contains(key.as_str())
-                && self.is_attribute_buildable(cn_resolved, key)
-            {
-                let key_sym = attr_idx_of(key).map(|i| plan.attr_syms[i]);
+            let ValueView::Pair(key, val) = arg.view() else {
+                continue;
+            };
+            let key_idx = attr_idx_of(key);
+            // A declared attribute's buildability is class shape, read from
+            // the plan; only an undeclared name asks the registry.
+            let buildable = match key_idx {
+                Some(i) => plan.attr_buildable[i],
+                None => self.is_attribute_buildable(cn_resolved, key),
+            };
+            if !build_owned_attrs.contains(key.as_str()) && buildable {
+                let key_sym = key_idx.map(|i| plan.attr_syms[i]);
                 // Raku's default BUILDALL ignores a named argument that names no
                 // attribute; storing it would make `eqv` compare a key the object
                 // is not supposed to have. See `NativeCtorPlan::attrs_fully_known`.
@@ -177,12 +184,14 @@ impl Interpreter {
         // that fast path made a 20k-iteration native-attr loop time out.
         let mut eval_error: Option<RuntimeError> = None;
         let mut typed_default_mismatch = false;
-        for (attr, &attr_sym) in class_attrs.iter().zip(plan.attr_syms.iter()) {
+        for ((attr, &attr_sym), attr_type_constraint) in class_attrs
+            .iter()
+            .zip(plan.attr_syms.iter())
+            .zip(plan.attr_constraints.iter())
+        {
             let attr_name = &attr.name;
             let default_expr = &attr.default;
             let sigil = &attr.sigil;
-            let attr_type_constraint =
-                super::attribute_type_constraint(class_attrs, attr, &plan.type_constraints);
             if attrs.contains_key(attr_sym) {
                 continue;
             }
@@ -282,19 +291,21 @@ impl Interpreter {
         // `coerce_value_for_constraint` is the exact path the interpreter uses, so
         // the result is identical; the gate already excluded user-class targets,
         // so only built-in coercion logic runs here.
-        for (attr, &attr_sym) in class_attrs.iter().zip(plan.attr_syms.iter()) {
+        for ((attr, &attr_sym), tc) in class_attrs
+            .iter()
+            .zip(plan.attr_syms.iter())
+            .zip(plan.attr_constraints.iter())
+        {
             if attr.sigil != '$' {
                 continue;
             }
-            let Some(tc) =
-                super::attribute_type_constraint(class_attrs, attr, &plan.type_constraints)
-            else {
+            let Some(tc) = tc else {
                 continue;
             };
-            if Self::is_native_coercion_ctor_constraint(&tc)
+            if Self::is_native_coercion_ctor_constraint(tc)
                 && let Some(val) = attrs.remove(attr_sym)
             {
-                let coerced = self.coerce_value_for_constraint(&tc, val);
+                let coerced = self.coerce_value_for_constraint(tc, val);
                 attrs.insert(attr_sym, coerced);
             }
         }
@@ -327,19 +338,21 @@ impl Interpreter {
                 attrs.insert(attr_sym, flattened);
             }
         }
-        for (attr, &attr_sym) in class_attrs.iter().zip(plan.attr_syms.iter()) {
+        for ((attr, &attr_sym), elem_type) in class_attrs
+            .iter()
+            .zip(plan.attr_syms.iter())
+            .zip(plan.attr_constraints.iter())
+        {
             let attr_name = &attr.name;
             let sigil = attr.sigil;
             if !matches!(sigil, '@' | '%') {
                 continue;
             }
-            let Some(elem_type) =
-                super::attribute_type_constraint(class_attrs, attr, &plan.type_constraints)
-            else {
+            let Some(elem_type) = elem_type else {
                 continue;
             };
             if let Some(val) = attrs.get(attr_sym).cloned() {
-                match self.finalize_typed_container_attr(attr_name, sigil, &elem_type, val) {
+                match self.finalize_typed_container_attr(attr_name, sigil, elem_type, val) {
                     // Hashes embed the element type in `HashData`, so store the
                     // tagged value back into the attrs that move into the instance.
                     Ok(tagged) => {
