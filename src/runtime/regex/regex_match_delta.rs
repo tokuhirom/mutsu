@@ -6,6 +6,7 @@
 //! producer share.
 
 use super::super::*;
+use super::regex_helpers::AlternationListFlags;
 use std::cell::Cell;
 
 /// How a group atom turns one inner match into this level's capture delta.
@@ -84,7 +85,7 @@ pub(super) fn capture_group_delta(
 /// never bound it (#9675: `'x' | <e>+` must leave `$<e>` as `[]`, not `Nil`,
 /// when the `'x'` branch is the one that actually matched).
 pub(super) fn alternation_branch_delta(
-    flags: &super::regex_helpers::AlternationListFlags,
+    flags: &AlternationListFlags,
     mut inner_caps: RegexCaptures,
 ) -> RegexCaptures {
     if !super::regex_helpers::IN_QUANTIFIED_ALTERNATION_MATCH.with(Cell::get) {
@@ -111,10 +112,7 @@ pub(super) fn alternation_branch_delta(
 /// each new slot as an empty LIST where `flags` says that slot sits under a
 /// list quantifier ANYWHERE in the alternation, Nil (the historical
 /// [`PosSlot::alternation_padding`]) otherwise.
-fn pad_alternation_positional(
-    caps: &mut RegexCaptures,
-    flags: &super::regex_helpers::AlternationListFlags,
-) {
+fn pad_alternation_positional(caps: &mut RegexCaptures, flags: &AlternationListFlags) {
     while caps.positional.len() < flags.positional.len() {
         let idx = caps.positional.len();
         let slot = if flags.positional[idx] {

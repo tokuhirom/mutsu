@@ -1611,7 +1611,7 @@ impl NameMult {
 /// [`NameMult`] contribution of one atom's named captures. `ambient_list`
 /// carries whether something OUTSIDE this atom already repeats it (an
 /// enclosing token's own list quantifier). Mirrors
-/// [`Interpreter::collect_named_captures_in_atom`]'s transparency rules (a
+/// `Interpreter::collect_named_captures_in_atom`'s transparency rules (a
 /// `CaptureGroup` is its own boundary and contributes nothing outward),
 /// generalized from "is this name reachable" to "how many times".
 fn atom_name_mult(
