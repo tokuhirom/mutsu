@@ -272,12 +272,6 @@ pub(crate) fn is_in_native_range(type_name: &str, value: &NumBigInt) -> bool {
     }
 }
 
-/// Coerce a value to the native type by wrapping.
-#[allow(dead_code)]
-pub(crate) fn coerce_to_native_int(type_name: &str, value: &NumBigInt) -> NumBigInt {
-    wrap_native_int(type_name, value)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -415,7 +409,7 @@ mod tests {
     fn test_coerce_int8() {
         // 255 as int8 should be -1
         assert_eq!(
-            coerce_to_native_int("int8", &NumBigInt::from(255)),
+            wrap_native_int("int8", &NumBigInt::from(255)),
             NumBigInt::from(-1)
         );
     }

@@ -299,11 +299,6 @@ impl Interpreter {
         Some(inner.to_string())
     }
 
-    #[allow(dead_code)]
-    pub(in crate::runtime) fn regex_is_match(&mut self, pattern: &str, text: &str) -> bool {
-        self.regex_match_with_captures(pattern, text).is_some()
-    }
-
     pub(in crate::runtime) fn regex_match_with_captures(
         &mut self,
         pattern: &str,

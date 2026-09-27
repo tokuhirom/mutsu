@@ -530,7 +530,6 @@ impl RuntimeError {
     }
 
     /// X::Str::Numeric - Cannot convert string to number
-    #[allow(dead_code)]
     pub(crate) fn str_numeric(source: &str, reason: &str) -> Self {
         let msg = format!("Cannot convert string '{}' to number: {}", source, reason);
         let mut attrs = ValueMap::default();
@@ -542,7 +541,6 @@ impl RuntimeError {
     }
 
     /// X::OutOfRange - Index out of range
-    #[allow(dead_code)]
     pub(crate) fn out_of_range(what: &str, got: Value, range: &str) -> Self {
         let msg = format!(
             "Index out of range. Is: {}, should be in {}",

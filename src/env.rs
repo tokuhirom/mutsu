@@ -1913,7 +1913,6 @@ impl Env {
     /// Note: this compares the overlay only; two scoped envs sharing an overlay
     /// but differing in parent would compare equal (callers that rely on ptr_eq
     /// to detect "no writes happened" only ever use it on flat envs).
-    #[allow(dead_code)]
     pub(crate) fn ptr_eq(&self, other: &Self) -> bool {
         Arc::ptr_eq(&self.inner, &other.inner)
     }
@@ -2543,7 +2542,6 @@ impl Env {
         self.inner.len()
     }
 
-    #[allow(dead_code)]
     pub fn is_empty(&self) -> bool {
         self.inner.is_empty()
     }

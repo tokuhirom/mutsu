@@ -246,7 +246,6 @@ impl Interpreter {
 
     /// Compile a FunctionDef on-the-fly to bytecode and execute via the Interpreter.
     /// This avoids the interpreter's tree-walking execution path.
-    #[allow(dead_code)]
     /// Compile a `FunctionDef` on-the-fly to a `CompiledFunction`, caching by the
     /// body fingerprint (+ package, which scopes compile-time pseudo-variables
     /// like `$?PACKAGE`). Caching is essential to preserve state-variable identity

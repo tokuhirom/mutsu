@@ -377,7 +377,6 @@ impl Registry {
     /// `compile_class_methods` filling in `compiled_code` post-compilation,
     /// `accessors_resolve.rs:116-122`). Does not change which names are
     /// live, so the reverse index is untouched.
-    #[allow(dead_code)] // ADR-0019 F4c-3 wires this into `compile_class_methods`.
     pub(crate) fn map_user_methods_in_place(
         &mut self,
         owner: Symbol,

@@ -236,18 +236,6 @@ impl Interpreter {
         }
     }
 
-    #[allow(dead_code)]
-    pub(super) fn unmark_deleted_indices(&mut self, var_name: &str, idx: &Value) {
-        let key = MetaNs::DeletedIndex.key_for_str(var_name);
-        let Some(entry) = self.env_mut().get_mut_sym(key) else {
-            return;
-        };
-        entry.with_hash_mut(|map| {
-            let m = crate::gc::Gc::make_mut(map);
-            Self::unmark_index_entries(m, idx);
-        });
-    }
-
     pub(super) fn is_deleted_index(&self, var_name: &str, idx: i64) -> bool {
         // Consulted per element by `:exists`; no marker can exist unless the program
         // has `:delete`d an index. Skips the `format!` + the `idx.to_string()`.

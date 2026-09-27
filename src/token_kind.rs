@@ -2,7 +2,6 @@ use crate::value::VersionPart;
 use num_bigint::BigInt as NumBigInt;
 use std::hash::{Hash, Hasher};
 
-#[allow(dead_code)]
 #[derive(Debug, Clone, PartialEq, Hash, serde::Serialize, serde::Deserialize)]
 pub(crate) enum DStrPart {
     Lit(String),
@@ -84,7 +83,6 @@ impl MetaAssignIdentity {
     }
 }
 
-#[allow(dead_code)]
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub(crate) enum TokenKind {
     Number(i64),

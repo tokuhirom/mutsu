@@ -31,15 +31,11 @@ impl Interpreter {
             .ok_or_else(|| RuntimeError::new("create_type requires a HOW argument"))?;
 
         let mut repr = "P6opaque".to_string();
-        let mut is_mixin = false;
 
+        // Named options such as `:mixin` are accepted but not modelled.
         for arg in args.iter().skip(1) {
-            match arg.view() {
-                ValueView::Str(s) => repr = s.to_string(),
-                ValueView::Pair(k, v) if k == "mixin" => {
-                    is_mixin = v.truthy();
-                }
-                _ => {}
+            if let ValueView::Str(s) = arg.view() {
+                repr = s.to_string();
             }
         }
 
@@ -51,7 +47,6 @@ impl Interpreter {
                 authoritative: false,
                 call_accepts: false,
                 composed: false,
-                is_mixin,
             },
         );
 

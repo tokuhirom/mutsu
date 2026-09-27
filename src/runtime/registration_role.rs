@@ -402,7 +402,6 @@ impl Interpreter {
             // cross-role X::Role::Composition::Conflict).
             is_stub_role: is_stub_body,
             is_hidden: false,
-            is_rw: role_is_rw,
             captured_env: None,
             wildcard_handles: Vec::new(),
             // Minted once per declaration site at compile time (see

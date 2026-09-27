@@ -356,7 +356,7 @@ impl PError {
     }
 
     /// Get the formatted message string (used by tests).
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub fn message(&self) -> String {
         format!("{}", self)
     }

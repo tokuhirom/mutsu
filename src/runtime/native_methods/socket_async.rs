@@ -178,14 +178,7 @@ impl Interpreter {
                 let actual_port = tcp_listener.local_addr().map(|a| a.port()).unwrap_or(port);
 
                 let listener_id = next_async_listener_id();
-                register_async_listener(
-                    listener_id,
-                    AsyncSocketListenerState {
-                        host: host.clone(),
-                        port: actual_port,
-                        closed: false,
-                    },
-                );
+                register_async_listener(listener_id, AsyncSocketListenerState { closed: false });
 
                 // Set up a closed flag for the accept thread
                 let closed_flag = Arc::new(AtomicBool::new(false));

@@ -1298,7 +1298,6 @@ pub(crate) fn record_env_flush(slots: u64) {
 /// `gc::gc_ptr::buffer_candidate` (§11 step 4), but only reachable once a
 /// `Value` variant is `Gc`-managed (§11 step 5) — dead until then.
 #[inline]
-#[allow(dead_code)]
 /// Record one `add_constant` call; `deduped` = it reused an existing pool slot.
 pub(crate) fn record_const_add(deduped: bool) {
     if enabled() {
@@ -1319,7 +1318,6 @@ pub(crate) fn record_gc_candidate_push() {
 /// instead of adding a new entry. Wired from `gc::gc_ptr::buffer_candidate`,
 /// reachable only once a `Value` variant is `Gc`-managed (§11 step 5).
 #[inline]
-#[allow(dead_code)]
 pub(crate) fn record_gc_candidate_dedup_hit() {
     if enabled() {
         GC_CANDIDATE_DEDUP_HITS.fetch_add(1, Ordering::Relaxed);
@@ -1331,7 +1329,6 @@ pub(crate) fn record_gc_candidate_dedup_hit() {
 /// Wired from `gc::collect::collect_cycles`, which has no production caller
 /// until safepoint wiring lands (§11 step 8), so this stays dead until then.
 #[inline]
-#[allow(dead_code)]
 pub(crate) fn record_gc_collection(
     roots_scanned: u64,
     reclaimed_nodes: u64,

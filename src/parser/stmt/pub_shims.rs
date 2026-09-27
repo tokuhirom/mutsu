@@ -23,11 +23,6 @@ pub(crate) fn let_stmt_pub(input: &str) -> PResult<'_, crate::ast::Stmt> {
     simple_expr_stmt::let_stmt(input)
 }
 
-/// Public accessor for var_name (used by primary.rs for anon sub params).
-#[allow(dead_code)]
-pub(crate) fn var_name_pub(input: &str) -> PResult<'_, String> {
-    var_name(input)
-}
 /// Public accessor for parse_param_list (used by primary.rs for arrow lambda sub-signatures).
 pub(crate) fn parse_param_list_pub(input: &str) -> PResult<'_, Vec<crate::ast::ParamDef>> {
     parse_param_list(input)

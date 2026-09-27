@@ -101,7 +101,6 @@ impl SharedPromise {
         }
     }
 
-    #[allow(dead_code)]
     pub(crate) fn new_kept(result: Value) -> Self {
         Self {
             inner: crate::gc::Gc::new((

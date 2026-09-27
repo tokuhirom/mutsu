@@ -64,30 +64,22 @@ impl Interpreter {
         &self.env
     }
 
-    #[allow(dead_code)] // env-loan (CP-1 1e): VM callers migrated to the seam; kept for carriers.
-    pub(crate) fn env_insert(&mut self, key: String, value: Value) {
-        self.env.insert(key, value);
-    }
-
     /// Clone the env for capture across a call/block/thread boundary. For a flat
     /// env this is the O(1) `Arc::clone`; for a *scoped* env (a converted call
     /// frame's transient overlay-over-parent) it flattens parent+overlay into a
     /// flat env so the captured copy exposes the full lexical view to consumers
     /// that iterate it overlay-only (nested call merges, `clone_for_thread`). See
     /// docs/vm-dual-store.md (Slice 6).
-    #[allow(dead_code)] // env-loan (CP-1 1e): VM callers migrated to the seam; kept for carriers.
     pub(crate) fn clone_env(&self) -> Env {
         self.env.flattened()
     }
 
     /// Replace the entire env.
-    #[allow(dead_code)]
     pub(crate) fn set_env(&mut self, env: Env) {
         self.env = env;
     }
 
     /// Take the env out, replacing it with an empty Env.
-    #[allow(dead_code)]
     pub(crate) fn take_env(&mut self) -> Env {
         std::mem::take(&mut self.env)
     }

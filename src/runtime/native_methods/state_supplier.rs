@@ -2471,7 +2471,6 @@ pub(in crate::runtime) fn register_zip_state(
 pub(in crate::runtime) enum ZipAction {
     Emit(Value),
     AllDone,
-    #[allow(dead_code)]
     None,
 }
 

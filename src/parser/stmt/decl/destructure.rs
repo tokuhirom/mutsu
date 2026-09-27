@@ -20,6 +20,8 @@ struct DestructureVar {
     /// Whether this is a slurpy parameter (*@rest)
     is_slurpy: bool,
     /// Whether this is an optional parameter ($x?)
+    // TODO: read this for the `:=` arity check (#9763); until then it is parsed
+    // but unused, so a short/long bind list is silently accepted.
     #[allow(dead_code)]
     is_optional: bool,
     /// Whether this is a named parameter (:@even)

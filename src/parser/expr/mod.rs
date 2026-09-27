@@ -361,7 +361,6 @@ pub(in crate::parser) fn wrap_finished_expr(expr: Expr) -> Expr {
 /// feed (==>/<==), and comma operators. This matches Raku's "list prefix" precedence
 /// where `grep $_ == 1, 1, 2, 3` parses as `grep(($_ == 1), 1, 2, 3)` and
 /// `@a ==> grep {...} ==> @b` keeps the feed operators outside of grep's arguments.
-#[allow(dead_code)]
 pub(in crate::parser) fn listop_arg_expr(input: &str) -> PResult<'_, Expr> {
     let (rest, expr) = precedence::ternary_mode(input, operators::ExprMode::ListopArg)?;
     let (r, _) = ws(rest)?;

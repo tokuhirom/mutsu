@@ -67,7 +67,6 @@ impl RuntimeError {
     }
 
     /// X::Undeclared - Undeclared name
-    #[allow(dead_code)]
     pub(crate) fn undeclared(what: &str, name: &str) -> Self {
         let msg = format!("Undeclared {} '{}'", what, name);
         let mut attrs = ValueMap::default();
@@ -174,7 +173,6 @@ impl RuntimeError {
     }
 
     /// X::Redeclaration - Redeclared symbol
-    #[allow(dead_code)]
     pub(crate) fn redeclaration(what: &str, name: &str) -> Self {
         let msg = format!("Redeclaration of {} '{}'", what, name);
         let mut attrs = ValueMap::default();
@@ -198,7 +196,6 @@ impl RuntimeError {
     }
 
     /// X::Method::NotFound - No such method
-    #[allow(dead_code)]
     pub(crate) fn method_not_found(method: &str, typename: &str) -> Self {
         use crate::runtime::did_you_mean::{known_methods_for_type, suggest_method};
 
@@ -233,7 +230,6 @@ impl RuntimeError {
     }
 
     /// X::Obsolete - Obsolete syntax
-    #[allow(dead_code)]
     pub(crate) fn obsolete(old: &str, replacement: &str) -> Self {
         let msg = format!(
             "Unsupported use of {}. In Raku please use: {}.",
@@ -440,22 +436,6 @@ impl RuntimeError {
         Self::typed("X::Cannot::Lazy", attrs)
     }
 
-    /// X::Syntax::Missing - Missing required syntax element
-    #[allow(dead_code)]
-    pub(crate) fn syntax_missing(what: &str) -> Self {
-        let msg = format!("Missing {}", what);
-        let mut attrs = ValueMap::default();
-        attrs.insert("what".to_string(), Value::str(what.to_string()));
-        attrs.insert("message".to_string(), Value::str(msg));
-        Self::typed("X::Syntax::Missing", attrs)
-    }
-
-    /// X::Syntax::Confused - Confused parse error
-    #[allow(dead_code)]
-    pub(crate) fn syntax_confused(message: impl Into<String>) -> Self {
-        Self::typed_msg("X::Syntax::Confused", message)
-    }
-
     /// X::Syntax::Confused with a reason attribute (for "Two terms in a row" etc.)
     pub(crate) fn syntax_confused_with_reason(reason: impl Into<String>) -> Self {
         let reason = reason.into();
@@ -463,16 +443,6 @@ impl RuntimeError {
         attrs.insert("message".to_string(), Value::str(reason.clone()));
         attrs.insert("reason".to_string(), Value::str(reason));
         Self::typed("X::Syntax::Confused", attrs)
-    }
-
-    /// X::Syntax::Malformed - Malformed syntax
-    #[allow(dead_code)]
-    pub(crate) fn syntax_malformed(what: &str, message: impl Into<String>) -> Self {
-        let message = message.into();
-        let mut attrs = ValueMap::default();
-        attrs.insert("what".to_string(), Value::str(what.to_string()));
-        attrs.insert("message".to_string(), Value::str(message));
-        Self::typed("X::Syntax::Malformed", attrs)
     }
 
     /// X::ControlFlow::Return - Return outside of routine.
@@ -614,7 +584,6 @@ impl RuntimeError {
     }
 
     /// X::Bind - Cannot bind to a thing
-    #[allow(dead_code)]
     pub(crate) fn bind(target: &str) -> Self {
         let msg = format!("Cannot bind to {}", target);
         let mut attrs = ValueMap::default();

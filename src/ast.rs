@@ -80,7 +80,6 @@ pub(crate) struct ParamDef {
     pub(crate) double_slurpy: bool,
     /// True for single-argument rule slurpy (`+@a`, `+%h`, etc.)
     pub(crate) onearg: bool,
-    #[allow(dead_code)]
     pub(crate) sigilless: bool,
     pub(crate) type_constraint: Option<String>,
     /// The name a `::T` type capture binds, with NO `::` prefix and no type
@@ -94,11 +93,8 @@ pub(crate) struct ParamDef {
     #[serde(default)]
     pub(crate) type_capture: Option<String>,
     pub(crate) literal_value: Option<Value>,
-    #[allow(dead_code)]
     pub(crate) sub_signature: Option<Vec<ParamDef>>,
-    #[allow(dead_code)]
     pub(crate) where_constraint: Option<Box<Expr>>,
-    #[allow(dead_code)]
     pub(crate) traits: Vec<String>,
     /// The captured argument for a *custom* (non-builtin) parameter trait that
     /// carries one, e.g. the `<!>` in `is option<!>` (Getopt::Long, #8560) or
@@ -1563,7 +1559,6 @@ pub(crate) enum Stmt {
         /// Tags named by `is export(:TAG)`; `["DEFAULT"]` for a bare `is export`.
         export_tags: Vec<String>,
     },
-    #[allow(dead_code)]
     ProtoToken {
         name: Symbol,
     },
@@ -1884,7 +1879,6 @@ pub(crate) enum Stmt {
         is_public: bool,
         default: Option<Expr>,
         handles: Vec<HandleSpec>,
-        #[allow(dead_code)]
         is_rw: bool,
         is_readonly: bool,
         type_constraint: Option<String>,
@@ -2124,7 +2118,6 @@ pub(crate) enum Stmt {
 pub(crate) enum AssignOp {
     Assign,
     Bind,
-    #[allow(dead_code)]
     MatchAssign,
 }
 

@@ -786,6 +786,13 @@ jobs:
         # pile up unseen.
         run: cargo clippy --target wasm32-unknown-unknown --no-default-features --features wasm --lib -- -D warnings
 
+      - name: Clippy (alloc-stats measurement build)
+        # The opt-in `alloc-stats` feature installs a counting
+        # `#[global_allocator]` in the library, so a test that defines its own
+        # stops linking, and code behind the feature gate is compiled nowhere
+        # else. Both had rotted unseen by 2026-09-27.
+        run: cargo clippy --features alloc-stats --all-targets -- -D warnings
+
       - name: Rustdoc (intra-doc links)
         # A fourth configuration nothing else compiles: rustdoc resolves every
         # `[`item`]` link and parses the prose as Markdown, so a stale link or

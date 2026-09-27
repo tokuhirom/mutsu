@@ -49,8 +49,6 @@ pub(super) struct MyDeclState {
     pub is_code: bool,
     pub type_constraint: Option<String>,
     pub shape_dims: Option<Vec<Expr>>,
-    #[allow(dead_code)]
-    pub hash_key_constraint: Option<String>,
     pub has_dynamic_trait: bool,
     pub has_export_trait: bool,
     pub export_tags: Vec<String>,
@@ -799,7 +797,6 @@ fn parse_variable_traits<'a>(
             is_code,
             type_constraint: type_constraint.clone(),
             shape_dims,
-            hash_key_constraint: None,
             has_dynamic_trait,
             has_export_trait,
             export_tags,

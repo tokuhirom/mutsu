@@ -1856,7 +1856,6 @@ impl Interpreter {
         self.samewith_context_stack.pop();
     }
 
-    #[allow(dead_code)]
     pub(crate) fn class_composed_roles(&self, class_name: &str) -> Option<Vec<String>> {
         self.registry()
             .class_composed_roles
@@ -1864,7 +1863,6 @@ impl Interpreter {
             .cloned()
     }
 
-    #[allow(dead_code)]
     pub(crate) fn get_role_def(&self, role_name: &str) -> Option<super::RoleDef> {
         if let Some(def) = self.registry().roles.get(role_name) {
             return Some(def.clone());

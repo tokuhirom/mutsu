@@ -154,8 +154,6 @@ pub(super) fn cancellation_map() -> &'static CancellationMap {
 
 #[derive(Debug, Clone)]
 pub(crate) struct AsyncSocketListenerState {
-    pub(crate) host: String,
-    pub(crate) port: u16,
     pub(crate) closed: bool,
 }
 
@@ -757,18 +755,6 @@ pub(in crate::runtime) fn close_async_listener(listener_id: u64) {
     }
 }
 
-#[allow(dead_code)]
-pub(in crate::runtime) fn async_port_in_use(host: &str, port: u16) -> bool {
-    if let Ok(map) = async_socket_listener_map().lock() {
-        return map.values().any(|listener| {
-            !listener.closed
-                && listener.port == port
-                && (listener.host == host || listener.host == "0.0.0.0" || host == "0.0.0.0")
-        });
-    }
-    false
-}
-
 pub(crate) fn next_supplier_id() -> u64 {
     static COUNTER: AtomicU64 = AtomicU64::new(1);
     COUNTER.fetch_add(1, Ordering::Relaxed)
@@ -1026,7 +1012,6 @@ pub(in crate::runtime) fn register_listener_stopped_flag(listener_id: u64, flag:
     }
 }
 
-#[allow(dead_code)]
 pub(in crate::runtime) fn set_listener_closed(listener_id: u64) {
     let mut closed_any = false;
     if let Ok(map) = listener_closed_map().lock()
