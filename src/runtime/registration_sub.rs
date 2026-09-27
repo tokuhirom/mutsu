@@ -2470,7 +2470,9 @@ impl Interpreter {
                 // reach it through the owner-package probe of
                 // `resolve_suppressed_type`, exactly like a nested class.
                 let owner = self.current_package();
-                if !name.contains("::") && (self.has_class(&owner) || self.is_role(&owner)) {
+                if !crate::qualified::is_qualified(Symbol::intern(name))
+                    && (self.has_class(&owner) || self.is_role(&owner))
+                {
                     self.register_class_scoped_short_name(name);
                 }
             }
