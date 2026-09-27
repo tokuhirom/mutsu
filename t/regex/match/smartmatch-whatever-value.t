@@ -8,7 +8,7 @@ use Test;
 # WhateverCode instead of True. (roast/S02-types/whatever.t
 # "Mu:U smartmatches as True with Whatever".)
 
-plan 9;
+plan 11;
 
 # Parenthesized `(*)` is a Whatever value -> smartmatch is True.
 is-deeply (Mu ~~ (*)), True, 'Mu ~~ (*) is True';
@@ -29,3 +29,10 @@ is (42 ~~ *)(42), True, 'the autoprimed WhateverCode smartmatches its arg';
 # A WhateverCode RHS is still invoked (not treated as a Whatever value).
 is-deeply (5 ~~ (* > 3)), True, 'X ~~ (WhateverCode) invokes it (true)';
 is-deeply (2 ~~ (* > 3)), False, 'X ~~ (WhateverCode) invokes it (false)';
+
+# WhateverCode matchers also receive Pair topics; this is used by grammar
+# actions that classify `$/.caps` entries with `when *.key eq ...`.
+is-deeply (('line_of_music' => 1) ~~ (*.key eq 'line_of_music')), True,
+    'WhateverCode matcher can call a method on a Pair topic';
+is-deeply (('other' => 1) ~~ (*.key eq 'line_of_music')), False,
+    'WhateverCode matcher rejects a Pair with another key';

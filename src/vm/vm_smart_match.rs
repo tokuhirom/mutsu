@@ -704,6 +704,57 @@ impl Interpreter {
                 }
             }
         }
+        // A WhateverCode is a callable matcher, even though it does not expose
+        // an explicit signature for the `when` fast path. Invoke it with the
+        // topic before falling through to the interpreter's generic matcher;
+        // this also preserves method calls on Pair topics such as `*.key`.
+        if Self::is_whatever_code_value(right) {
+            let callable_topic = match left.view() {
+                // Compiled calls run `ContainerizePair` before binding a
+                // positional Pair. Internal callable dispatch must preserve
+                // that distinction too, or the Pair is mistaken for a named
+                // argument and the WhateverCode sees `Any` as its topic.
+                ValueView::Pair(key, value) => {
+                    Value::value_pair(Value::str(key.clone()), value.clone())
+                }
+                _ => left.clone(),
+            };
+            let (_params, param_defs) = self.callable_signature(right);
+            let call_args = if param_defs.is_empty() {
+                vec![callable_topic]
+            } else {
+                let mut positional_required = 0usize;
+                let mut positional_total = 0usize;
+                for pd in &param_defs {
+                    if pd.named || pd.traits.iter().any(|t| t == "invocant") {
+                        continue;
+                    }
+                    if pd.slurpy || pd.double_slurpy || pd.onearg {
+                        positional_total = positional_total.max(1);
+                        continue;
+                    }
+                    positional_total += 1;
+                    if pd.required || (!pd.optional_marker && pd.default.is_none()) {
+                        positional_required += 1;
+                    }
+                }
+                if positional_required > 1 {
+                    return false;
+                }
+                if positional_total == 0 {
+                    Vec::new()
+                } else {
+                    vec![callable_topic.clone()]
+                }
+            };
+            match self.vm_call_on_value(right.clone(), call_args, None) {
+                Ok(v) => return v.truthy(),
+                Err(e) => {
+                    self.set_pending_dispatch_error(e);
+                    return false;
+                }
+            }
+        }
         // Try pure matching first
         if let Some(result) = pure_smart_match(left, right) {
             return result;
