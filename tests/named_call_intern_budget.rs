@@ -41,7 +41,24 @@
 /// Interns performed while running `src`, measured after a warm-up run so that
 /// one-time interning (parsing, compiling, first pass through each code path)
 /// is not counted.
+///
+/// Runs on its own thread with the `mutsu` binary's stack: libtest's 2 MiB
+/// default is far below anything the interpreter is run on, and a debug-build
+/// parse of `Test.rakumod` with a cold precomp cache sits right at it, so the
+/// budget would otherwise fail on stack depth rather than on interning. The
+/// intern counter is per-thread, so the whole measurement moves with it.
 fn interns_for(src: &str) -> u64 {
+    const STACK_SIZE: usize = 256 * 1024 * 1024;
+    let src = src.to_string();
+    std::thread::Builder::new()
+        .stack_size(STACK_SIZE)
+        .spawn(move || interns_for_on_this_thread(&src))
+        .expect("spawn measurement thread")
+        .join()
+        .expect("measurement thread")
+}
+
+fn interns_for_on_this_thread(src: &str) -> u64 {
     let mut warm = mutsu::Interpreter::new();
     warm.run(src).expect("program runs");
     drop(warm);
