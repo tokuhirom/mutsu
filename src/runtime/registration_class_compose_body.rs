@@ -395,11 +395,16 @@ impl Interpreter {
             // bare block's routine-registry restore (#8646) — see
             // `run_role_deferred_use_stmt`.
             let import_mark = self.deferred_body_import_mark();
+            // A method declared in a nested block of the role body files its
+            // capture under the role, not the composing class's package.
+            self.nested_capture_owners
+                .push(Symbol::intern(base_role_name));
             let r = if is_use_decl {
                 self.run_role_deferred_use_stmt(run_one)
             } else {
                 run_one(self)
             };
+            self.nested_capture_owners.pop();
             if is_type_decl || is_regex_decl || is_use_decl || is_lexical_sub_decl {
                 self.set_current_package(saved_body_pkg.clone());
             }
@@ -448,6 +453,7 @@ impl Interpreter {
             }
         }
         self.leave_source_file(saved_file);
+        self.apply_nested_method_captures(base_role_name, cx.name);
         // Persist the role body's lexicals as class-body statics of
         // the composing class. Leaving them only in the live env
         // works for the frame that ran the composition, but a later

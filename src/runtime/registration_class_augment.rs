@@ -284,6 +284,7 @@ impl Interpreter {
                         captured_env: None,
                         source_file: self.current_source_file(),
                         role_param_bindings: None,
+                        nested_capture_index: None,
                     };
                     // ADR-0019 D3-5: `my method`/`our method` are not part of
                     // the class method table — only callable as functions,
@@ -1650,11 +1651,14 @@ impl Interpreter {
             // bare block's routine-registry restore (#8646) — see
             // `run_role_deferred_use_stmt`.
             let import_mark = self.deferred_body_import_mark();
+            // See the twin in `run_composed_role_deferred_body`.
+            self.nested_capture_owners.push(Symbol::intern(type_owner));
             let r = if is_use_or_need {
                 self.run_role_deferred_use_stmt(run_one)
             } else {
                 run_one(self)
             };
+            self.nested_capture_owners.pop();
             if body_pkg.is_some() {
                 self.set_current_package(saved_pkg.clone());
             }
@@ -1676,6 +1680,7 @@ impl Interpreter {
         }
         restore_topic(self, saved_topic);
         self.leave_source_file(saved_file);
+        self.apply_nested_method_captures(type_owner, regex_owner);
         Ok(())
     }
 }

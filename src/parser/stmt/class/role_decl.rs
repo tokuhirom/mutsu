@@ -458,6 +458,7 @@ pub(crate) fn role_decl_with_keyword<'a>(input: &'a str, kw: &str) -> PResult<'a
     // diagnostic pointing at the signature that had not parsed (#7984). A role
     // body that does not parse is a parse error, exactly as a class body is.
     let (rest, mut body) = package_body_block(rest)?;
+    crate::parser::stmt::nested_block_methods::hoist(&mut body);
     // Handle `also is rw;` in the role body
     body.retain(|stmt| {
         if stmt_is_also_is_rw(stmt) {

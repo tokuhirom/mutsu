@@ -3110,6 +3110,19 @@ pub struct Interpreter {
     ///
     /// `None` outside such a body, which is every ordinary `use`.
     pub(crate) import_target_package: Option<String>,
+    /// The class or role whose package body (or role body, re-run at a
+    /// composition) is running, innermost last. A block's
+    /// `OpCode::CaptureNestedMethodEnv` files its capture under the innermost
+    /// owner: a role body runs in the COMPOSING class's package, so the
+    /// current package alone would mix up a class's own nested-block methods
+    /// with a composed role's.
+    pub(crate) nested_capture_owners: Vec<Symbol>,
+    /// Lexical captures of `method`s declared in nested blocks of a package
+    /// body, keyed by (owner, per-body declaration index): written by
+    /// `OpCode::CaptureNestedMethodEnv` when the block runs, taken when the
+    /// hoisted method with that index is installed (a class) or composed (a
+    /// role). See `vm_nested_method_capture`.
+    pub(crate) nested_method_captures: HashMap<(Symbol, u32), crate::env::Env>,
     /// #7797: stack of compunits whose OWN mainline is currently executing
     /// via `load_module_inner`'s `run_block`, pushed/popped around exactly
     /// the same window as `unit_module_loading_stack` (but keyed by every

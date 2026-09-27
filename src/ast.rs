@@ -1463,6 +1463,27 @@ pub(crate) enum Stmt {
     MarkBoundContainer(String),
     /// Flag that the next VarDecl in this SyntheticBlock uses `:=` binding.
     MarkBind,
+    /// The site of a `method` declared in a nested block of a package body
+    /// (`class C { do { sub helper { }; method m { helper() } } }`).
+    ///
+    /// A `method` declarator is has-scoped: it installs the method in the
+    /// package wherever it lexically sits, while its body closes over the
+    /// block's lexicals. The parser therefore hoists the declaration itself to
+    /// the package body (carrying the `__nested_block_method` trait with the
+    /// same `index`) and leaves this marker in the block. When the block runs,
+    /// `closure` -- an anonymous method with the declaration's signature and
+    /// body -- is built only for the lexical capture the ordinary closure
+    /// machinery computes; the class-body walk then gives that capture to the
+    /// hoisted method with the same `index`. `routines` names the `sub`s and
+    /// `proto`s the enclosing blocks declare: they live in the routine
+    /// registry, not in the closure env, and the registry forgets them when
+    /// the block exits, so they are resolved into the capture as `&name`
+    /// while it is live. See `parser::stmt::nested_block_methods`.
+    NestedMethodCapture {
+        index: u32,
+        closure: Box<Expr>,
+        routines: Vec<Symbol>,
+    },
     /// Flag that the next slice assignment is a HYPER one (`%h<a b c> »=» 7`).
     ///
     /// Mark a sigilless variable as readonly via `__mutsu_sigilless_readonly::NAME` env key.

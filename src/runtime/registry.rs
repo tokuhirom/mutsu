@@ -1974,6 +1974,7 @@ mod tests {
             captured_env: None,
             source_file: None,
             role_param_bindings: None,
+            nested_capture_index: None,
         };
         registry
             .classes

@@ -217,6 +217,7 @@ impl Interpreter {
         // the rest of the compilation unit, silently mis-qualifying every
         // class registered afterward (`Plain` inside `Outer.new()!Inner::secret()`'s
         // enclosing file reported `Outer::Plain` instead of `Plain`).
+        self.nested_capture_owners.push(Symbol::intern(name));
         let walk_result: Result<(), RuntimeError> = (|| {
             for op in body_plan {
                 match op {
@@ -381,6 +382,7 @@ impl Interpreter {
         })();
         // Unconditional cleanup (see the comment above `walk_result`): restore
         // the interpreter's runtime package no matter how the walk ended.
+        self.nested_capture_owners.pop();
         self.pop_enum_scope();
         self.set_current_package(cx.saved_package.clone());
         if let Err(e) = walk_result {
