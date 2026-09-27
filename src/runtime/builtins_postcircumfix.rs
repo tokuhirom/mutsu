@@ -31,18 +31,43 @@ impl Interpreter {
                 "Cannot resolve caller {op}(); no invocant given"
             )));
         };
-        match args.len() {
+        // Named arguments arrive materialized as `Value::Pair` in place among
+        // the positionals (see `exec_call_func_named_op_inner`); a `ValuePair`
+        // (an ordinary `key => value` expression) is left alone (ADR-0021).
+        // Splitting them off first, instead of letting them inflate
+        // `args.len()`, is what keeps `@a[0, :nonesuch)` from being
+        // misread as the 3-arg assignment form with the adverb as the RHS.
+        let mut positional: Vec<Value> = Vec::with_capacity(args.len());
+        let mut adverbs: Vec<(String, Value)> = Vec::new();
+        for a in args {
+            if let ValueView::Pair(key, val) = a.view() {
+                adverbs.push((key.clone(), val.clone()));
+            } else {
+                positional.push(a.clone());
+            }
+        }
+        if !adverbs.is_empty() {
+            return self.postcircumfix_subscript_adverb(
+                op,
+                target,
+                &positional,
+                &adverbs,
+                args,
+                is_positional,
+            );
+        }
+        match positional.len() {
             // `@a[]` / `%h{}` — the zen slice, which the compiler lowers to its
             // own `ZenSlice` node rather than an empty subscript, and which
             // simply answers the whole container.
             1 => Ok(target),
-            2 => self.core_subscript(target, args[1].clone(), is_positional),
+            2 => self.core_subscript(target, positional[1].clone(), is_positional),
             // The assignment form: raku dispatches `@a[1] = 99` to a separate
             // three-argument candidate, and `postcircumfix:<[ ]>(@a, 1, 99)`
             // written out by hand does the same store.
             3 => {
-                let index = args[1].clone();
-                let value = args[2].clone();
+                let index = positional[1].clone();
+                let value = positional[2].clone();
                 let method = if is_positional {
                     "ASSIGN-POS"
                 } else {
@@ -53,6 +78,62 @@ impl Interpreter {
             n => Err(RuntimeError::new(format!(
                 "Cannot resolve caller {op}(); got {n} arguments"
             ))),
+        }
+    }
+
+    /// The adverb-bearing call shapes of `postcircumfix:<[ ]>`/`<{ }>`
+    /// (`postcircumfix:<[ ]>(@a, 1, :exists)`), mirroring what `@a[1]:exists`
+    /// lowers to at the opcode level. Only a single index and a single
+    /// recognized adverb are handled -- anything else (an unrecognized
+    /// adverb name such as `:nonesuch`, or more than one adverb at once) has
+    /// no matching CORE candidate, so it raises the same `X::Multi::NoMatch`
+    /// a genuine multi-dispatch miss would.
+    #[allow(clippy::too_many_arguments)]
+    fn postcircumfix_subscript_adverb(
+        &mut self,
+        op: &str,
+        target: Value,
+        positional: &[Value],
+        adverbs: &[(String, Value)],
+        raw_args: &[Value],
+        is_positional: bool,
+    ) -> Result<Value, RuntimeError> {
+        let ([_, index], [(key, val)]) = (positional, adverbs) else {
+            return Err(self.multi_no_match_error(op, raw_args));
+        };
+        let index = index.clone();
+        match key.as_str() {
+            "exists" => {
+                let method = if is_positional {
+                    "EXISTS-POS"
+                } else {
+                    "EXISTS-KEY"
+                };
+                let exists = self
+                    .try_compiled_method_or_interpret(target, method, vec![index])?
+                    .truthy();
+                Ok(Value::truth(exists ^ !val.truthy()))
+            }
+            "delete" if val.truthy() => {
+                let method = if is_positional {
+                    "DELETE-POS"
+                } else {
+                    "DELETE-KEY"
+                };
+                self.try_compiled_method_or_interpret(target, method, vec![index])
+            }
+            "delete" => self.core_subscript(target, index, is_positional),
+            "k" => Ok(index),
+            "v" => self.core_subscript(target, index, is_positional),
+            "kv" => {
+                let value = self.core_subscript(target, index.clone(), is_positional)?;
+                Ok(Value::array(vec![index, value]))
+            }
+            "p" => {
+                let value = self.core_subscript(target, index.clone(), is_positional)?;
+                Ok(Value::value_pair(index, value))
+            }
+            _ => Err(self.multi_no_match_error(op, raw_args)),
         }
     }
 
