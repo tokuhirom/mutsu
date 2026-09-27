@@ -307,23 +307,14 @@ impl Interpreter {
         target: &Value,
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
-        if !self.has_any_wrap_chains() {
-            return None;
-        }
-        let cand_idx = self.find_method_candidate_index(owner_class, method, method_def)?;
-        let chain = self.get_method_wrap_chain(owner_class, method, cand_idx)?;
-        let invocant_for_dispatch = target.clone();
-        self.push_method_samewith_context(cn, method, args, Some(invocant_for_dispatch.clone()));
-        self.push_wrapped_method_dispatch_frame(
+        let outermost = self.enter_method_wrap_chain(
             cn,
             method,
-            args,
-            invocant_for_dispatch,
             crate::symbol::Symbol::intern(owner_class),
             method_def,
-            &chain,
-        );
-        let outermost = chain.last().unwrap().1.clone();
+            args,
+            target.clone(),
+        )?;
         let mut call_args = vec![target.clone()];
         call_args.extend(args.to_vec());
         let wrapper_id = if let ValueView::Sub(wd) = outermost.view() {

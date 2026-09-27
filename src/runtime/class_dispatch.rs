@@ -380,29 +380,20 @@ impl Interpreter {
         // "original" is never re-entered by name — a nested call to a
         // DIFFERENT wrapped method now enters its own chain like any fresh
         // dispatch.
+        //
+        // A wrapped multi DISPATCHER (`runtime::dispatcher_wrap`) takes
+        // precedence: its chain runs once, before candidate selection, and
+        // ends in a re-dispatch of the whole multi instead of this winner.
         if self.has_any_wrap_chains()
-            && let Some(cand_idx) =
-                self.find_method_candidate_index(owner_class.as_str(), method_name, &method_def)
-            && let Some(chain) =
-                self.get_method_wrap_chain(owner_class.as_str(), method_name, cand_idx)
-        {
-            let invocant_for_dispatch = make_invocant_for_dispatch(&invocant, attributes);
-            self.push_method_samewith_context(
+            && let Some(outermost) = self.enter_method_wrap_chain(
                 receiver_class_name,
                 method_name,
-                &args,
-                Some(invocant_for_dispatch.clone()),
-            );
-            self.push_wrapped_method_dispatch_frame(
-                receiver_class_name,
-                method_name,
-                &args,
-                invocant_for_dispatch,
                 owner_class,
                 &method_def,
-                &chain,
-            );
-            let outermost = chain.last().unwrap().1.clone();
+                &args,
+                make_invocant_for_dispatch(&invocant, attributes),
+            )
+        {
             let mut call_args = vec![inv_value.clone()];
             call_args.extend(args);
             let wrapper_id = if let ValueView::Sub(wd) = outermost.view() {

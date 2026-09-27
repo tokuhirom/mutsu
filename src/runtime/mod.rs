@@ -785,6 +785,7 @@ mod rw_arg_container;
 pub(crate) mod scope_stack;
 mod uncaught_render;
 pub(crate) use native_io::{io_file_test, path_is_readable};
+mod dispatcher_wrap;
 mod enum_type_key;
 mod native_io_special;
 pub(crate) mod native_methods;
@@ -3769,6 +3770,14 @@ pub struct Interpreter {
     /// specific (an ambiguous dispatch). Consumed by the caller to raise an
     /// `X::Multi::Ambiguous` error instead of silently picking one.
     pub(crate) dispatch_ambiguous: bool,
+    /// Set while a multi DISPATCHER wrap's terminal re-dispatch is running
+    /// (`dispatcher_wrap::redispatch_after_dispatcher_wrap`): the method
+    /// name plus the VM call-frame and routine-stack depths it was set at.
+    /// The dispatcher-wrap check skips the chain only for a call of that
+    /// name at exactly those depths, so the re-dispatch itself does not
+    /// re-enter the wrapper while a nested call of the same method from
+    /// inside the chosen candidate (deeper) is wrapped as usual.
+    pub(crate) dispatcher_wrap_bypass: Option<(String, usize, usize)>,
     /// Roles whose `.new` is currently constructing through their pun. `.new` on
     /// a role composes it into a class of the same name and re-enters
     /// `dispatch_new` to run *that class's* constructor; the role name is pushed
