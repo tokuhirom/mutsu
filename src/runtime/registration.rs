@@ -225,8 +225,13 @@ impl Interpreter {
                 || Self::invocant_definedness(required) == Self::invocant_definedness(candidate))
     }
 
+    /// Whether a stub takes no positional arguments, so an attribute's
+    /// accessor can satisfy it. An explicit invocant (`method r(::?ROLE:D:)`)
+    /// is not a positional argument (#9727).
     fn stub_is_nullary(def: &MethodDef) -> bool {
-        def.param_defs.iter().all(|pd| pd.named || pd.slurpy)
+        def.param_defs.iter().all(|pd| {
+            pd.named || pd.slurpy || pd.is_invocant || pd.traits.iter().any(|t| t == "invocant")
+        })
     }
 
     fn inherited_matching_method_count(
