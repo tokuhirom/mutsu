@@ -1343,7 +1343,7 @@ impl PackageKind {
     }
 }
 
-/// Why a name is in the interpreter's readonly set. Rakudo reports three
+/// Why a name is in the interpreter's readonly set. Rakudo reports several
 /// distinct exceptions for "you cannot assign to this", and which one it
 /// picks is a property of the *lvalue*, not of the assignment site:
 ///
@@ -1357,10 +1357,13 @@ impl PackageKind {
 /// * a name that denotes the immutable **value** itself rather than a variable
 ///   (a sigilless `constant PI` / `\c` term, an `is List` array) — the
 ///   assignment reaches `infix:<=>` on the value, giving the specific
-///   `X::Assignment::RO`, "Cannot modify an immutable TYPE (VALUE)".
+///   `X::Assignment::RO`, "Cannot modify an immutable TYPE (VALUE)";
+/// * a **sigiled variable** bound straight to a TYPE OBJECT (`$s := IB`) —
+///   `X::AdHoc`, "assign requires a concrete object (got a IB type object
+///   instead)" ([`ReadonlyKind::TypeObject`]).
 ///
-/// Recording the kind where the readonly-ness is *decided* keeps the three
-/// apart without any name-based guessing at the (single, shared) check site.
+/// Recording the kind where the readonly-ness is *decided* keeps these apart
+/// without any name-based guessing at the (single, shared) check site.
 ///
 /// [`ReadonlyKind::ImmutableDeep`] is a fourth, narrower kind layered on top
 /// of the `Immutable` case: not a fresh exception class, but an extra fact
@@ -1387,6 +1390,12 @@ pub(crate) enum ReadonlyKind {
     /// restore only the `Alias`/`Immutable`/`ImmutableValue` half and always
     /// clear the deep half regardless of what the enclosing scope needed).
     ImmutableDeep,
+    /// Sigiled variable bound directly to a TYPE OBJECT (`$s := IB`, `$s :=
+    /// Int`), no container at all — like [`Self::Immutable`], but rakudo's
+    /// wording for this shape names the type instead of the generic
+    /// "immutable value": `X::AdHoc`, "assign requires a concrete object
+    /// (got a IB type object instead)" (#9730).
+    TypeObject,
 }
 
 /// What role a [`Stmt::Given`] plays in a `with`-family desugar.

@@ -407,6 +407,19 @@ impl RuntimeError {
         Self::new("Cannot assign to an immutable value")
     }
 
+    /// X::AdHoc - assignment to a sigiled variable bound straight to a TYPE
+    /// OBJECT (`$s := IB; $s = 1`), rakudo's own wording for a `Scalar`
+    /// assignment whose container holds a `:U` value rather than a concrete
+    /// one. Distinct from [`Self::immutable_value`]: a literal bind (`$x :=
+    /// 5`) dies with the generic "Cannot assign to an immutable value", while
+    /// a type-object bind names the type.
+    pub(crate) fn assign_requires_concrete_object(type_name: &str) -> Self {
+        Self::new(format!(
+            "assign requires a concrete object (got a {} type object instead)",
+            type_name
+        ))
+    }
+
     /// X::Assignment::RO - Cannot modify an immutable value
     pub(crate) fn assignment_ro(value: Option<&str>) -> Self {
         let msg = if let Some(v) = value {
