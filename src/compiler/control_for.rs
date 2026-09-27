@@ -504,16 +504,20 @@ impl Compiler {
         // `pending_scope_frame`): a same-named parameter of a nested loop then
         // shadows with a fresh slot instead of landing in (and clobbering) the
         // enclosing loop's body frame, and the body's scope exit restores the
-        // outer bindings. A name that had no slot before
-        // the loop (an outer single-param loop variable is bound by name, a
-        // routine's free variable resolves through the env) must go back to
-        // that by-name resolution after the loop, so it is dropped from
-        // `local_map` again at the end, rather than left pointing at this
-        // loop's last-iteration value.
+        // outer bindings. A name an ENCLOSING loop binds by name (a
+        // single-param `for ... -> $i` has no slot) and that had no slot
+        // before this loop must go back to that by-name binding after the
+        // loop, so it is dropped from `local_map` again at the end rather than
+        // left pointing at this loop's last-iteration value. (A routine's
+        // outer lexical is already handled the same way by `declare_local`'s
+        // cross-frame sentinel.)
         let fresh_param_names: Vec<String> = params
             .iter()
             .map(|p| p.strip_prefix('\\').unwrap_or(p).to_string())
-            .filter(|p| !self.local_map.contains_key(p))
+            .filter(|p| {
+                !self.local_map.contains_key(p)
+                    && self.for_param_names[..for_param_mark].contains(p)
+            })
             .collect();
         self.push_local_scope();
         for s in &bind_prefix {
@@ -594,7 +598,9 @@ impl Compiler {
             self.compile_stmt(s);
         }
         for name in &fresh_param_names {
-            self.local_map.remove(name);
+            if let Some(slot) = self.local_map.remove(name) {
+                self.retired_loop_param_slots.insert(name.clone(), slot);
+            }
         }
         // Restore the single named loop param after the post (LAST) phasers ran.
         // The ForLoop opcode deferred this restore (pushing its saved binding)

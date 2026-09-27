@@ -1289,9 +1289,14 @@ impl Value {
 
     /// Stringify a value in Raku's Str context.
     /// Type objects (Package) become empty string; everything else uses to_string_value.
+    /// A container (`ContainerRef`, e.g. the item slot `(11, $T)` keeps for
+    /// `$T`) is looked through first, so a type object held in one is still
+    /// the empty string rather than its gist `(Any)`.
+    // Cost: O(len of the rendered string).
     pub(crate) fn to_str_context(&self) -> String {
         match self.view() {
             ValueView::Package(_) => String::new(),
+            ValueView::ContainerRef(_) => self.deref_container().to_str_context(),
             _ => self.to_string_value(),
         }
     }
