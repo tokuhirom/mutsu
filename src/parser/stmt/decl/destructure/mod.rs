@@ -11,7 +11,10 @@ use crate::token_kind::TokenKind;
 use crate::value::Value;
 
 use super::parse_comma_or_expr;
+
+mod bind_arity;
 use crate::parser::stmt::assign::parse_comma_or_expr_no_word_logical;
+use bind_arity::{optional_param_default, push_bind_arity_check, staged_exists};
 
 /// Metadata for each variable in a destructuring declaration.
 struct DestructureVar {
@@ -20,9 +23,6 @@ struct DestructureVar {
     /// Whether this is a slurpy parameter (*@rest)
     is_slurpy: bool,
     /// Whether this is an optional parameter ($x?)
-    // TODO: read this for the `:=` arity check (#9763); until then it is parsed
-    // but unused, so a short/long bind list is silently accepted.
-    #[allow(dead_code)]
     is_optional: bool,
     /// Whether this is a named parameter (:@even)
     is_named: bool,
@@ -180,6 +180,9 @@ pub(in crate::parser::stmt) fn parse_destructuring_decl(
     let (rest, _) = parse_char(input, '(')?;
     let (rest, _) = ws(rest)?;
     let mut vars: Vec<DestructureVar> = Vec::new();
+    // A nested group's leaves are flattened into `vars`, so once one is
+    // present `vars.len()` no longer counts the declared positionals.
+    let mut has_nested_group = false;
     let mut r = rest;
     loop {
         if r.starts_with(')') {
@@ -192,6 +195,7 @@ pub(in crate::parser::stmt) fn parse_destructuring_decl(
         // positionally. (The precise nested *value* binding is `#?rakudo skip`-ped
         // even on rakudo, so only flattening-without-error is required here.)
         if r.starts_with('(') {
+            has_nested_group = true;
             let r2 = collect_nested_group_vars(r, &mut vars)?;
             let (r2, _) = ws(r2)?;
             if r2.starts_with(',') {
@@ -445,6 +449,7 @@ pub(in crate::parser::stmt) fn parse_destructuring_decl(
             is_state,
             is_our,
             is_binding,
+            has_nested_group,
             type_constraint,
         );
     }
@@ -515,6 +520,7 @@ fn parse_destructuring_with_rhs(
     is_state: bool,
     is_our: bool,
     is_binding: bool,
+    has_nested_group: bool,
     type_constraint: Option<String>,
 ) -> PResult<'_, Stmt> {
     let rest = if let Some(stripped) = input.strip_prefix("::=") {
@@ -611,6 +617,14 @@ fn parse_destructuring_with_rhs(
     } else {
         vec![tmp_decl]
     };
+    // A declarator list bound with `:=` is a signature: a positional count
+    // outside its required..max range dies before anything is bound, exactly
+    // as a routine call does (`my ($p, $q) := (1,)` is "Too few positionals
+    // passed"). Assignment (`=`) stays lenient. A nested group is skipped:
+    // its leaves are flattened into `vars`, so their count is not the arity.
+    if is_binding && !has_nested_group {
+        push_bind_arity_check(&mut stmts, &vars, &array_bare);
+    }
     // List ASSIGNMENT (`=`) and signature BINDING (`:=`) differ here:
     //  - assignment: the FIRST `@`/`%` target is greedy — it slurps all
     //    remaining RHS values, and every target after it receives an empty
@@ -690,11 +704,29 @@ fn parse_destructuring_with_rhs(
             // (`my Str ($a) = ()` → `$a` is `Str`, not the un-assignable `Any`).
             // Untyped vars keep the raw `Any`. The `// default` fallback fires
             // only for an undefined (missing) read, so present values pass through.
-            if effective_tc.is_some() {
+            let read = if effective_tc.is_some() {
                 Expr::Binary {
                     left: Box::new(read),
                     op: TokenKind::SlashSlash,
                     right: Box::new(native_type_default(&effective_tc)),
+                }
+            } else {
+                read
+            };
+            // A bound optional element (`$y?`, `$y = 5`) the RHS did not
+            // reach takes its default, as an optional parameter does: the
+            // default expression, else the constraint's type object (`Mu`
+            // when untyped). The arity check above already refused a short
+            // RHS for every required element.
+            if is_binding && (dvar.is_optional || dvar.default.is_some()) {
+                let fallback = dvar
+                    .default
+                    .clone()
+                    .unwrap_or_else(|| optional_param_default(&effective_tc));
+                Expr::Ternary {
+                    cond: Box::new(staged_exists(&array_bare, i)),
+                    then_expr: Box::new(read),
+                    else_expr: Box::new(fallback),
                 }
             } else {
                 read
