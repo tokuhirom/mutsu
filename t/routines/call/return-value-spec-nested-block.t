@@ -4,11 +4,13 @@ use Test;
 # in the signature" check only covers a `return` in the routine's own scope.
 # Rakudo resets the signature info in every nested block, so a `return` inside
 # `if`/`for`/`while`/a bare block is accepted and returns its own argument.
-# Statement-modifier forms open no block and are still rejected.
+# Statement-modifier forms open no block and are still rejected, and the
+# `.return` method checks the enclosing routine's pinned value at run time
+# wherever it is called (rakudo's Mu.return -> check-signature).
 # Found via the Usage::Utils distribution (`sub say-coloured(... --> True)`
 # does `return True` from inside an `if`).
 
-plan 10;
+plan 11;
 
 {
     my sub f($x --> True) { if $x { return True }; 1 }
@@ -45,3 +47,5 @@ throws-like 'sub f(--> True) { return 1 for 1..2 }; f()', X::Comp,
     'for modifier is still in the routine scope', payload => /True/;
 throws-like 'sub f(--> True) { FOO: return 1 }; f()', X::Comp,
     'labelled return is still in the routine scope', payload => /True/;
+throws-like 'sub f(--> 42) { if 1 { 27.return } }; f', X::AdHoc,
+    '.return inside a block still checks the pinned value', payload => /42/;

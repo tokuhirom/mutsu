@@ -291,10 +291,16 @@ impl Interpreter {
                 // is the enclosing module — the child class name reaches
                 // `register_class_decl` without its module prefix.
                 .map(|(p, pre_args)| {
-                    (
-                        self.qualify_class_header_parent_name(&qualified_name, &p, does_parents),
-                        pre_args,
-                    )
+                    let p =
+                        self.qualify_class_header_parent_name(&qualified_name, &p, does_parents);
+                    // A `does` role keeps its spelling: `does_parents` is
+                    // matched against these names by equality.
+                    let p = if does_parents.contains(&p) {
+                        p
+                    } else {
+                        self.canonical_class_parent_name(&p)
+                    };
+                    (p, pre_args)
                 })
                 // Drop the auto-added `Grammar` default parent from a genuine
                 // top-level `grammar Grammar` (qualified name exactly `Grammar`,

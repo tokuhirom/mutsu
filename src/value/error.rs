@@ -142,6 +142,11 @@ pub struct RuntimeErrorCold {
     /// For non-local returns (CX::Return from a block), the callable ID of the
     /// lexically enclosing routine that the return targets.
     pub return_target_callable_id: Option<u64>,
+    /// The return signal came from the `.return` method rather than the
+    /// `return` routine. Only the method form checks the enclosing routine's
+    /// definite return value at run time (rakudo's `Mu.return` →
+    /// `check-signature`); a `return X` from a nested block just returns `X`.
+    pub from_method_return: bool,
     /// Container name for Scalar container binding (e.g. when/default returning $a)
     pub container_name: Option<String>,
     /// Formatted backtrace string from the call stack at the point of error,
@@ -288,6 +293,9 @@ impl RuntimeError {
     pub fn return_target_callable_id(&self) -> Option<u64> {
         self.cold.as_ref().and_then(|c| c.return_target_callable_id)
     }
+    pub fn from_method_return(&self) -> bool {
+        self.cold.as_ref().is_some_and(|c| c.from_method_return)
+    }
     pub fn container_name(&self) -> Option<&str> {
         self.cold.as_ref().and_then(|c| c.container_name.as_deref())
     }
@@ -358,6 +366,9 @@ impl RuntimeError {
     }
     pub(crate) fn set_return_target_callable_id(&mut self, v: Option<u64>) {
         self.cold_mut().return_target_callable_id = v;
+    }
+    pub(crate) fn set_from_method_return(&mut self) {
+        self.cold_mut().from_method_return = true;
     }
     pub(crate) fn set_container_name(&mut self, v: Option<String>) {
         self.cold_mut().container_name = v;
