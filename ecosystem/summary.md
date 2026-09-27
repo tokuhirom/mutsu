@@ -7,17 +7,17 @@ definitions: [docs/ecosystem-parity.md](../docs/ecosystem-parity.md).
 
 | metric | value |
 |---|---|
-| **dist parity** (published headline) | **66.3%** (809/1221) |
-| file parity | 73.3% (3131/4269) |
+| **dist parity** (published headline) | **66.3%** (810/1221) |
+| file parity | 73.4% (3132/4269) |
 | assertion parity | 84.0% |
 
 | status | distributions |
 |---|---|
 | `blocked_dep` | 7 |
 | `blocked_load` | 110 |
-| `green` | 809 |
+| `green` | 810 |
 | `no_baseline` | 289 |
-| `partial` | 240 |
+| `partial` | 239 |
 | `red` | 172 |
 | `skipped` | 10 |
 
@@ -459,7 +459,7 @@ definitions: [docs/ecosystem-parity.md](../docs/ecosystem-parity.md).
 | `Duckie` | 0.0.12 | green | 1/1 |
 | `EBNF::Grammar` | 0.1.6 | green | 5/5 |
 | `EC` | 0.6.6 | blocked_load | — |
-| `ECMA262Regex` | 1.2 | partial | 2/3 |
+| `ECMA262Regex` | 1.2 | green | 3/3 |
 | `Ecosystem` | 0.0.34 | no_baseline | — |
 | `Ecosystem::Archive` | 0.0.5 | no_baseline | — |
 | `Ecosystem::Archive::Update` | 0.0.31 | no_baseline | — |
