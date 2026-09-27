@@ -547,6 +547,12 @@ pub(crate) fn native_method_0arg(
         }
     }
 
+    // An instance of a user subclass of `Int` answers `Int`'s methods on its
+    // payload (`builtins::int_subclass`).
+    if let Some(result) = super::int_subclass::dispatch(target, method_sym, &[]) {
+        return Some(result);
+    }
+
     // For Mixin values, handle Bool/WHICH method specially, then delegate to inner.
     if let ValueView::Mixin(inner, mixins) = target.view() {
         if method == "Bool"

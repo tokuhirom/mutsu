@@ -843,6 +843,12 @@ impl Interpreter {
         // tell the two cases apart: `is_method_not_found_for("succ")` is
         // specifically "the invocant has no succ method at all", not some
         // other failure the method body raised.
+        // An `Int` subclass takes `Int`'s own `postfix:<++>` candidate, as in
+        // Rakudo: its payload steps, and a user `.succ` on the subclass is not
+        // consulted (`builtins::int_subclass`).
+        if let Some(payload) = crate::builtins::int_subclass::int_subclass_payload(val) {
+            return Ok(Self::increment_value(&payload));
+        }
         if let ValueView::Instance { .. } = val.view() {
             match self.try_compiled_method_or_interpret(val.clone(), "succ", Vec::new()) {
                 Ok(result) => return Ok(result),
@@ -958,6 +964,12 @@ impl Interpreter {
         // tried unconditionally and the returned error's shape decides
         // fall-through vs propagation) instead of a raw interpreter
         // tree-walk — one method-dispatch path, not two.
+        // An `Int` subclass takes `Int`'s own `postfix:<-->` candidate, as in
+        // Rakudo: its payload steps, and a user `.pred` on the subclass is not
+        // consulted (`builtins::int_subclass`).
+        if let Some(payload) = crate::builtins::int_subclass::int_subclass_payload(val) {
+            return Ok(Self::decrement_value(&payload));
+        }
         if let ValueView::Instance { .. } = val.view() {
             match self.try_compiled_method_or_interpret(val.clone(), "pred", Vec::new()) {
                 Ok(result) => return Ok(result),

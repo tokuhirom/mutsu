@@ -578,17 +578,22 @@ impl Interpreter {
         }
 
         if matches!(target.view(), ValueView::Instance { .. }) {
-            let coerced =
-                if let Ok(v) = self.call_method_with_values(target.clone(), "Numeric", vec![]) {
-                    v
-                } else if let Ok(v) = self.call_method_with_values(target, "Bridge", vec![]) {
-                    v
-                } else {
-                    return Some(Err(RuntimeError::new(format!(
-                        "Cannot coerce to numeric for {}",
-                        method
-                    ))));
-                };
+            // An `Int` subclass's `.Numeric` is the instance itself, so it
+            // takes its `Int` payload instead of re-entering this dispatch.
+            let coerced = if let Some(payload) =
+                crate::builtins::int_subclass::int_subclass_payload(&target)
+            {
+                payload
+            } else if let Ok(v) = self.call_method_with_values(target.clone(), "Numeric", vec![]) {
+                v
+            } else if let Ok(v) = self.call_method_with_values(target, "Bridge", vec![]) {
+                v
+            } else {
+                return Some(Err(RuntimeError::new(format!(
+                    "Cannot coerce to numeric for {}",
+                    method
+                ))));
+            };
             return Some(self.call_method_with_values(coerced, method, args));
         }
 

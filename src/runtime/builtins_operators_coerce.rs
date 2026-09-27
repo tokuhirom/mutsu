@@ -73,6 +73,13 @@ impl Interpreter {
             }
             return Ok(Value::int(0));
         }
+        // An `Int` subclass instance is an `Int`: Rakudo's `Int` infix candidates
+        // win its dispatch, so it operates as its `Int` payload rather than
+        // through the generic `Real` candidates' `.Bridge` (which is a Num, and
+        // made `IntSub.new(1) / IntSub.new(0)` a Num division by zero).
+        if let Some(payload) = crate::builtins::int_subclass::int_subclass_payload(&value) {
+            return Ok(payload);
+        }
         // Coerce when the type is known Real/Numeric OR the class defines a
         // user `Numeric` method (e.g. `class Blue { method Numeric { 3 } }`).
         let known_numeric =
