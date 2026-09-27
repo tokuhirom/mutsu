@@ -820,7 +820,15 @@ impl Compiler {
         }
         match self.local_map.get(name).copied() {
             Some(slot) => {
-                self.code.emit(OpCode::GetLocalDeferred(slot));
+                if self.compile_nested_index_bind_source {
+                    let name_idx = self.code.add_constant(Value::str(name.to_string()));
+                    self.code.emit(OpCode::GetScalarContainer {
+                        name_idx,
+                        local_idx: Some(slot),
+                    });
+                } else {
+                    self.code.emit(OpCode::GetLocalDeferred(slot));
+                }
                 true
             }
             None => false,

@@ -1035,6 +1035,10 @@ pub(crate) enum OpCode {
     /// it by an `is rw` callee), decontainerized exactly as [`Self::GetGlobal`]
     /// hands back a variable's value. Stack: `[] -> [value]`.
     GetCallTemp(u32),
+    /// Read a call temporary without dereferencing its lvalue payload. This is
+    /// used when a compiler-generated temporary carries a `ContainerRef` or a
+    /// deferred `HashEntryRef` into another bind operation. Stack: `[] -> [raw]`.
+    GetCallTempRaw(u32),
     /// Verify that a dynamic variable (`$*x` / `@*x` / `%*x`) is in scope before a
     /// genuine assignment to it. Throws X::Dynamic::NotFound when it was never
     /// declared (`my $*x`) nor is a built-in dynamic var. Emitted only for plain

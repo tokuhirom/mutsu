@@ -699,6 +699,78 @@ impl Compiler {
         }
     }
 
+    /// Preserve the lvalue when an indexed assignment is itself the source of
+    /// an indexed bind, as in `%h<a> := %h<b> = value`.  The parser represents
+    /// the source assignment as an `IndexAssign` nested inside the bind marker,
+    /// but compiling that assignment normally would leave only its value on
+    /// the stack.  Evaluate the source location once, store its location in a
+    /// raw call temporary, perform the assignment through that location, then
+    /// bind the outer element to the temporary.
+    fn compile_nested_index_bind_source(
+        &mut self,
+        target: &Expr,
+        index: &Expr,
+        value: &Expr,
+        outer_positional: bool,
+    ) -> bool {
+        let Expr::Call { name, args } = value else {
+            return false;
+        };
+        if *name != "__mutsu_bind_index_value" {
+            return false;
+        }
+        let Some(Expr::IndexAssign {
+            target: source_target,
+            index: source_index,
+            value: source_value,
+            is_positional: source_positional,
+        }) = args.first()
+        else {
+            return false;
+        };
+        // A bind marker here is the ordinary representation of a chained
+        // bind (`%a<x> := %a<y> := value`).  Its existing compiler path keeps
+        // the chain's value semantics intact; only a real assignment value
+        // needs the raw-location preservation below.
+        if matches!(source_value.as_ref(), Expr::Call { name, .. } if *name == "__mutsu_bind_index_value")
+        {
+            return false;
+        }
+
+        let source = Expr::Index {
+            target: source_target.clone(),
+            index: source_index.clone(),
+            is_positional: *source_positional,
+        };
+        let temp_name = format!(
+            "__mutsu_bind_index_assign_src_{}",
+            self.code.constants.len()
+        );
+        let temp_idx = self.code.add_constant(Value::str(temp_name.clone()));
+
+        let saved_av = self.scalar_bind_autovivify;
+        let saved_terminal = self.bind_terminal;
+        let saved_nested_source = self.compile_nested_index_bind_source;
+        self.scalar_bind_autovivify = true;
+        self.bind_terminal = true;
+        self.compile_nested_index_bind_source = true;
+        self.compile_expr(&source);
+        self.scalar_bind_autovivify = saved_av;
+        self.bind_terminal = saved_terminal;
+        self.compile_nested_index_bind_source = saved_nested_source;
+        self.code.emit(OpCode::SetCallTemp(temp_idx));
+
+        self.compile_bind_index_value(source_value);
+        self.code.emit(OpCode::SetGlobal(temp_idx));
+
+        let rebound_source = Expr::Call {
+            name: Symbol::intern("__mutsu_bind_index_value"),
+            args: vec![Expr::Var(temp_name)],
+        };
+        self.compile_expr_index_assign(target, index, &rebound_source, outer_positional);
+        true
+    }
+
     /// For an lvalue subscript chain of depth >= 2 whose innermost target is an
     /// accessor-style method call (`$o.a[0]<x>`, `$o.h<a><b><c>`), evaluate that
     /// method call once into a compiler temp and return the same chain with the
@@ -785,6 +857,9 @@ impl Compiler {
         // subscript what the parentheses hold, so the shape dispatch below looks
         // through the marker the parser records for every `(...)`.
         let target = target.peel_parens();
+        if self.compile_nested_index_bind_source(target, index, value, outer_positional) {
+            return;
+        }
         // Binding (`:=`) to a WhateverCode subscript (`@a[*-1] := 42`) is illegal:
         // the index is a computed slice, not a fixed container slot, so rakudo
         // throws X::Bind::Slice ("Cannot bind to Array slice"). A slice bind
