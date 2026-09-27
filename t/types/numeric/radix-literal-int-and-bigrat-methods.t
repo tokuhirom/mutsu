@@ -12,7 +12,7 @@ use Test;
 #    "No such method ... for invocant of type 'Rat'" and `.Int` silently
 #    clamped to i64::MAX.
 
-plan 16;
+plan 17;
 
 # --- 1. radix literal types ---------------------------------------------
 
@@ -38,3 +38,4 @@ is $big.sign, 1,  '.sign on a big rational';
 is (-$big).sign, -1, '.sign of a negative big rational';
 is $big.Int,  16045690981097406464, '.Int does not clamp to i64::MAX';
 is-approx $big.sqrt, 4005707300.976621, '.sqrt on a big rational';
+is-approx sqrt($big), 4005707300.976621, 'sqrt sub on a big rational';

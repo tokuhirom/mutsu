@@ -458,29 +458,15 @@ pub(super) fn dispatch(
             }
             _ => Some(Ok(target.clone())),
         }),
+        // Cost: O(n) for list-like inputs, n = elements; O(1) for fixed-width
+        // numeric inputs; O(d) for BigRat, d = numerator and denominator limbs.
         "sqrt" => {
             // List-like values numify to their element count before applying
             // the numeric square-root method (`(0, 1, 2, 3).sqrt == 2`).
             if let Some(items) = target.as_list_items() {
                 return Some(Some(Ok(Value::num((items.len() as f64).sqrt()))));
             }
-            Some(match target.view() {
-                ValueView::Int(i) => Some(Ok(Value::num((i as f64).sqrt()))),
-                ValueView::Num(f) => Some(Ok(Value::num(f.sqrt()))),
-                ValueView::Rat(n, d) if d != 0 => {
-                    Some(Ok(Value::num((n as f64 / d as f64).sqrt())))
-                }
-                ValueView::BigRat(n, d) if !num_traits::Zero::is_zero(d) => {
-                    Some(Ok(Value::num(crate::value::bigrat_to_f64(n, d).sqrt())))
-                }
-                ValueView::Complex(r, i) => {
-                    let mag = (r * r + i * i).sqrt();
-                    let re = ((mag + r) / 2.0).sqrt();
-                    let im = i.signum() * ((mag - r) / 2.0).sqrt();
-                    Some(Ok(Value::complex(re, im)))
-                }
-                _ => None,
-            })
+            Some(crate::builtins::arith::sqrt_numeric(target).map(Ok))
         }
         _ => None,
     }
