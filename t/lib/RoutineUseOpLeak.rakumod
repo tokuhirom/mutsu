@@ -1,4 +1,4 @@
-# Fixture for t/modules/routine-use-operator-does-not-leak.t.
+# Fixture for t/modules/module-routine-use-import-stays-lexical.t.
 unit module RoutineUseOpLeak;
 
 sub with-import is export { use RoutineUseOpLeakOps; 2 ** 3 }

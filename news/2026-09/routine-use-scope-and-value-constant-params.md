@@ -35,6 +35,6 @@ Bitcoin's `t/basics.t` now computes correct results. It is still far too slow
 to finish, because the script's imported `infix:<*>` candidates are visible
 inside `FiniteField`'s routines. That is #9944.
 
-Pinned by `t/modules/routine-use-operator-does-not-leak.t`,
+Pinned by `t/modules/module-routine-use-import-stays-lexical.t`,
 `t/routines/signature/value-constant-as-param-constraint.t` and
 `t/routines/dispatch/multi-where-runs-once-when-nothing-binds.t`.
