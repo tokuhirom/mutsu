@@ -7,18 +7,18 @@ definitions: [docs/ecosystem-parity.md](../docs/ecosystem-parity.md).
 
 | metric | value |
 |---|---|
-| **dist parity** (published headline) | **67.0%** (820/1223) |
-| file parity | 73.6% (3146/4272) |
-| assertion parity | 84.0% |
+| **dist parity** (published headline) | **67.2%** (822/1223) |
+| file parity | 73.8% (3151/4272) |
+| assertion parity | 84.1% |
 | accepted divergences (out of the KPI, ADR-0130) | 1 file(s) |
 
 | status | distributions |
 |---|---|
 | `blocked_dep` | 7 |
 | `blocked_load` | 108 |
-| `green` | 820 |
+| `green` | 822 |
 | `no_baseline` | 289 |
-| `partial` | 235 |
+| `partial` | 233 |
 | `red` | 168 |
 | `skipped` | 10 |
 
@@ -952,7 +952,7 @@ definitions: [docs/ecosystem-parity.md](../docs/ecosystem-parity.md).
 | `Math::Nearest` | 0.0.7 | partial | 4/5 |
 | `Math::NumberTheory` | 0.1.4 | green | 19/19 |
 | `Math::PascalTriangle` | 0.1.0 | green | 2/2 |
-| `Math::Polygons` | 0.0.6 | partial | 3/5 |
+| `Math::Polygons` | 0.0.6 | green | 5/5 |
 | `Math::Polynomial::Chebyshev` | 0.0.2 | green | 2/2 |
 | `Math::Quaternion` | 0.2.1 | green | 6/6 |
 | `Math::Random` | 0.1.3 | green | 1/1 |
@@ -1524,7 +1524,7 @@ definitions: [docs/ecosystem-parity.md](../docs/ecosystem-parity.md).
 | `Timezones::ZoneInfo` | 0.5.0 | partial | 4/7 |
 | `Tinky` | 0.1.5 | green | 8/8 |
 | `Tinky::Declare` | 0.0.2 | partial | 2/6 |
-| `Tinky::JSON` | 0.0.8 | partial | 2/5 |
+| `Tinky::JSON` | 0.0.8 | green | 5/5 |
 | `TinyFloats` | 0.0.5 | green | 5/5 |
 | `TinyID` | 1.0.6 | green | 1/1 |
 | `Today` | 0.0.8 | red | 0/1 |

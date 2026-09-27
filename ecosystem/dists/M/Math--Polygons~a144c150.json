@@ -28,7 +28,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.19,
+        "secs": 0.13,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -38,53 +38,51 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 1.97,
+        "secs": 1.43,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Cannot dispatch to method Writer::serialize on XML because it is not inherited or done by SVG",
         "nok": 0,
-        "ok": 0,
+        "ok": 1,
         "plan": 1,
-        "secs": 0.19,
+        "secs": 0.17,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/02-tree.rakutest",
       "raku": {
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 2.08,
+        "secs": 1.51,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Cannot dispatch to method Writer::serialize on XML because it is not inherited or done by SVG",
         "nok": 0,
-        "ok": 0,
+        "ok": 1,
         "plan": 1,
         "secs": 0.17,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/03-squarerect.rakutest",
       "raku": {
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 1.96,
+        "secs": 1.59,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -96,7 +94,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 0.2,
+        "secs": 0.17,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -106,7 +104,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 1.82,
+        "secs": 1.42,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -118,7 +116,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.25,
+        "secs": 0.21,
         "skip": 1,
         "todo": 0,
         "verdict": "pass"
@@ -128,7 +126,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.68,
+        "secs": 0.48,
         "skip": 1,
         "todo": 0,
         "verdict": "pass"
@@ -140,10 +138,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-26",
+    "date": "2026-09-27",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "199f95e",
+    "mutsu_commit": "a8f69fc",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -154,13 +152,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/M/AT/MATH_POLYGONS/1e4b96de5d425a69dd1540e4ae0e14a87f14fae0.tar.gz"
   },
-  "status": "partial",
+  "status": "green",
   "totals": {
     "baseline_assertions": 7,
     "baseline_files": 5,
-    "mutsu_assertions": 5,
-    "parity_files": 3,
-    "regressed_files": 2
+    "mutsu_assertions": 7,
+    "parity_files": 5,
+    "regressed_files": 0
   },
   "version": "0.0.6"
 }
