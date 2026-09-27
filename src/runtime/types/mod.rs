@@ -941,6 +941,33 @@ impl Interpreter {
     pub(in crate::runtime) fn type_capture_marker_key(name: &str) -> String {
         MetaNs::TypeCaptureBound.owned_key_for_str(name)
     }
+
+    /// The `bind_type_capture` marker a composed role's type-parameter binding
+    /// (`role R[::T]` composed as `does R[Foo]`, stored as `T => Foo`) must
+    /// carry alongside it, or `None` when `value` is not a type object or
+    /// `name` is not a bare type name.
+    ///
+    /// Role composition records its bindings directly instead of running the
+    /// binder, so without this the marker reached a role method's env only by
+    /// leaking out of the env the class was declared in. A bare `T $x` still
+    /// resolved (through the env value), but `T:U $x` / `T:D $x` resolve only
+    /// through the marker, and failed whenever the declaring module was loaded
+    /// transitively rather than `use`d by the caller (MUGS::UI::CLI's
+    /// `Constraint:U $class`).
+    pub(in crate::runtime) fn role_type_capture_marker(
+        name: &str,
+        value: &Value,
+    ) -> Option<(String, Value)> {
+        if !matches!(
+            value.view(),
+            ValueView::Package(_) | ValueView::ParametricRole { .. }
+        ) || name.starts_with(['$', '@', '%', '&'])
+        {
+            return None;
+        }
+        TYPE_CAPTURE_SEEN.store(true, std::sync::atomic::Ordering::Relaxed);
+        Some((Self::type_capture_marker_key(name), Value::TRUE))
+    }
 }
 
 /// Whether any `::T` type capture has ever been bound (`bind_type_capture`),

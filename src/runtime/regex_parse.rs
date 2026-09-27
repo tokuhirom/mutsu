@@ -1059,9 +1059,19 @@ pub(super) fn check_missing_class_operator(content: &str) -> Result<(), RuntimeE
             if had_part {
                 return Err(missing());
             }
+            // A `-` belongs to the property name only when a letter follows
+            // (an identifier hyphen); otherwise it is the difference operator,
+            // as in `<:Cs-[\n]>` or `<:L-:Lu>`.
+            let bytes = remaining.as_bytes();
             let end = remaining
-                .find(|c: char| !c.is_alphanumeric() && c != ':' && c != '-' && c != '_')
-                .unwrap_or(remaining.len());
+                .char_indices()
+                .find(|&(i, c)| {
+                    !(c.is_alphanumeric()
+                        || c == ':'
+                        || c == '_'
+                        || (c == '-' && bytes.get(i + 1).is_some_and(u8::is_ascii_alphabetic)))
+                })
+                .map_or(remaining.len(), |(i, _)| i);
             remaining = remaining[end..].trim_start();
             had_part = true;
         } else if first.is_alphanumeric() && had_part {
