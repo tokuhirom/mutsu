@@ -3,22 +3,22 @@
   "assertion_parity": 84.0,
   "baseline_assertions": 172901,
   "baseline_files": 4268,
-  "dist_parity": 66.6,
+  "dist_parity": 66.7,
   "distributions": 1637,
   "file_parity": 73.5,
   "generated": "2026-09-27",
   "graded_distributions": 1221,
-  "green_distributions": 813,
-  "mutsu_assertions": 145192,
-  "parity_files": 3135,
+  "green_distributions": 815,
+  "mutsu_assertions": 145211,
+  "parity_files": 3137,
   "schema": 1,
   "status": {
     "blocked_dep": 7,
     "blocked_load": 110,
-    "green": 813,
+    "green": 815,
     "no_baseline": 289,
     "partial": 237,
-    "red": 171,
+    "red": 169,
     "skipped": 10
   }
 }
