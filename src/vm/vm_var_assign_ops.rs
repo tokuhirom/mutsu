@@ -503,16 +503,24 @@ impl Interpreter {
         idx: Value,
         target: Option<&Value>,
     ) -> Value {
+        // A Buf/Blob (or other storage-backed native array) is Positional too:
+        // `$buf[*-1] +&= 0x7F` resolves `*-1` against its element count.
+        let positional_len = |v: &Value| match v.view() {
+            ValueView::Array(items, ..) => Some(items.len()),
+            ValueView::Instance { attributes, .. }
+                if crate::value::value_buf::has_buf_elems(&attributes) =>
+            {
+                Some(crate::value::value_buf::buf_len_or_zero(&attributes))
+            }
+            _ => None,
+        };
         let target_array_len = match target.map(Value::view) {
-            Some(ValueView::Array(items, ..)) => Some(items.len()),
             // A `:=`-bound array is held in a `ContainerRef` cell; descend it so
             // a from-end index (`@a[*-1]`) resolves the real length instead of 0
             // (which would yield a negative effective index and X::OutOfRange).
-            Some(ValueView::ContainerRef(cell)) => match cell.lock().unwrap().view() {
-                ValueView::Array(items, ..) => Some(items.len()),
-                _ => None,
-            },
-            _ => None,
+            Some(ValueView::ContainerRef(cell)) => positional_len(&cell.lock().unwrap()),
+            Some(_) => target.and_then(positional_len),
+            None => None,
         };
         let len = target_array_len.map(|len| len as i64).unwrap_or(0);
         // Bare Whatever (*) in array subscript means all indices: 0, 1, ..., len-1

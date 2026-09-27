@@ -593,6 +593,7 @@ pub(crate) use builtins_multidim_subscript::PositionalMissing;
 mod builtins_operators_coerce;
 mod builtins_operators_fallback;
 mod builtins_operators_infix;
+mod builtins_operators_prefix;
 mod builtins_operators_repeat;
 pub(crate) mod builtins_reduce;
 mod builtins_string;

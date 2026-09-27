@@ -102,6 +102,13 @@ pub(crate) fn inject_implicit_rule_ws(pattern: &str) -> String {
                 | (_, '?')
                 | (_, '%')
                 | ('%', _)
+                // An unescaped `=` only ever binds a capture alias
+                // (`$<k> = <.digit>+`, `$0 = \d`); the whitespace around it
+                // separates the alias from its atom and is not significant.
+                // Treating it as sigspace bound the alias to a `<.ws>` and the
+                // rule never matched (the EC dist's `t/secp256k1.t` grammar).
+                | ('=', _)
+                | (_, '=')
         )
     }
 
@@ -377,7 +384,7 @@ pub(crate) fn inject_implicit_rule_ws(pattern: &str) -> String {
             // character always shows its backslash first in `chars[j..]`,
             // which matches none of `should_insert`'s next-position arms.
             let prev = prev.map(|p| {
-                if matches!(p, '|' | '(' | '[' | '{' | '^' | '<' | '%')
+                if matches!(p, '|' | '(' | '[' | '{' | '^' | '<' | '%' | '=')
                     && last_char_is_escaped(&out)
                 {
                     'x'

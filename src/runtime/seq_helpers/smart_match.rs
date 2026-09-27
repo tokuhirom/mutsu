@@ -2003,6 +2003,13 @@ impl Interpreter {
             {
                 left.to_string_value() == right.to_string_value()
             }
+            // Blob/Buf (and Array) ~~ Numeric compares the element count.
+            (ValueView::Array(..) | ValueView::Instance { .. }, _)
+                if let Some(result) =
+                    crate::vm::vm_smart_match::positional_numeric_smart_match(left, right) =>
+            {
+                result
+            }
             // Instance ~~ Str for a class with a user `.Stringy` or `.Str`
             // (own or inherited): `Str.ACCEPTS(Any:D)` compares against the
             // object's stringification -- `.Stringy`, whose default is `.Str`
