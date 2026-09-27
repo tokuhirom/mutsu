@@ -35,6 +35,11 @@ impl Interpreter {
         {
             return Some(Err(err));
         }
+        // The `Cool`-subtype sibling (#9772): `Str.comb` / `Int.uc` on the type
+        // object refuse it instead of answering out of its gist.
+        if let Some(result) = self.cool_type_object_string_method(target, method_sym.as_str()) {
+            return Some(result);
+        }
         // ADR-0058: a native method reads its ARGUMENTS' elements through pure
         // Rust (the receiver is already handled by
         // `reify_or_consume_seq_target`), so a still-deferred `.map` argument —
@@ -736,6 +741,12 @@ impl Interpreter {
             }
         }
         if let Some(result) = self.try_native_floor_ceiling(name_sym, args) {
+            return Some(result);
+        }
+        // The sub forms of `Cool`'s string methods are the method on their
+        // subject argument in raku (`substr($s, 0, 2)` is `$s.substr(0, 2)`),
+        // so an undefined subject gets the method form's answer (#9772).
+        if let Some(result) = self.type_object_string_sub_gate(name_sym.as_str(), args) {
             return Some(result);
         }
         // ADR-0058: `crate::builtins::native_function` is pure Rust that reads
