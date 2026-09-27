@@ -365,11 +365,16 @@ the ratio.
 
 ## 7. Traps that have each cost a session real time
 
-- A shell chain like `make roast 2>&1 | tail -25 && echo OK` reports `tail`'s status. Both
-  suites set `-o pipefail` internally; read the **exit code**, then `tmp/make-*.log` with Grep
-  for *which* file failed — never re-run a suite to see its output.
-- `make roast` is red in a container for two documented `uid 0` files; check
-  `docs/agent-environments.md` by name **and** by exact subtest number before shipping.
+- A shell chain like `make roast 2>&1 | tail -25 && echo OK` reports `tail`'s status. Run the
+  suites through `scripts/dev gate` instead: its `report.json` verdict is the answer, and the
+  per-stage logs in `tmp/jobs/<id>/` say *which* file failed — never re-run a suite to see its
+  output.
+- `make roast` is red in a remote container for four environment-only files; `scripts/dev gate`
+  classifies them from `ci/known-env-failures.toml` by exact shape, so trust its `unexpected`
+  list rather than comparing by eye.
+- Waiting on a job by process name hangs or kills the caller: `pgrep -f "make lint"` matches the
+  very shell running it (one wait never ended), and `pkill -f "make test"` killed its own shell.
+  Wait with `scripts/dev wait`; stop with `scripts/dev stop`.
 - Rustdoc resolves intra-doc links from the enclosing *module*, so ``[`Interpreter::foo`]`` in a
   new module fails `make lint` with nothing local warning you. Run the full `make lint`, not just
   the pre-commit hook.

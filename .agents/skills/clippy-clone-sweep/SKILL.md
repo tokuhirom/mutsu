@@ -24,8 +24,8 @@ cargo clippy --all-targets --message-format=json \
 
 This alone is the useful command for routine sweeps. Warm-incremental it is a normal `clippy`
 run (well under a minute); a cold one pays a full `cargo build`-equivalent compile, so start it
-`run_in_background: true` and wait for the notification per the 30-minute-polling-floor rule in
-AGENTS.md — do not tail the log.
+as a job (`scripts/dev run clippy-sweep -- <command>`) and wait with `scripts/dev wait`, per
+AGENTS.md's long-jobs rule — do not tail the log.
 
 **Do not default to adding `-W clippy::nursery -W clippy::pedantic -W clippy::str_to_string
 -W clippy::string_to_string`.** A run with all of those on this codebase (2026-09-20 baseline)

@@ -327,6 +327,13 @@ jobs:
         # binary, milliseconds.
         run: make check-bench-det
 
+      - name: scripts/dev job runner self-test
+        # The job runner agents use for long jobs and the pre-publication gate
+        # (ADR-0126). Its verdict parser and known-env-failure matcher decide
+        # whether a gate is green, so a silent parse bug would wave a red suite
+        # through. Stdlib Python, no build, seconds.
+        run: make check-dev
+
       - uses: dtolnay/rust-toolchain@01ba1edad32c6f80dbcce879d3e0fa5a00b2a84e # 1.96.0
         with:
           components: clippy, rustfmt
