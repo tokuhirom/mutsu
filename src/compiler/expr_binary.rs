@@ -670,9 +670,14 @@ impl Compiler {
             // vs `=`), so it goes to `ContainerEqDeconted` rather than being
             // folded here. Checked before the both-named case below, which a
             // method call can never satisfy anyway.
-            let self_decont_name = if Self::expr_is_self_decontainerizing(left) {
+            //
+            // A literal or a type-object / term bareword (`$x =:= 1`,
+            // `$x =:= IterationEnd`) is a bare value in the same way: it is
+            // the same "container" as `$x` only when `$x` was `:=`-bound to it
+            // and so owns no Scalar (`my $x = 1; $x =:= 1` is False).
+            let self_decont_name = if self.expr_is_decontainerized_value(left) {
                 Self::resolve_container_var_name(right)
-            } else if Self::expr_is_self_decontainerizing(right) {
+            } else if self.expr_is_decontainerized_value(right) {
                 Self::resolve_container_var_name(left)
             } else {
                 None

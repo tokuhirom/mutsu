@@ -464,6 +464,18 @@ impl Compiler {
         )
     }
 
+    /// Whether `expr` yields a bare value that can never be a Scalar
+    /// container: a `.self` call, a literal, or a bareword naming a type
+    /// object or term (`IterationEnd`, `Any`) rather than an in-scope
+    /// sigilless variable or constant, which reads a lexical.
+    pub(super) fn expr_is_decontainerized_value(&self, expr: &Expr) -> bool {
+        match expr.peel_parens() {
+            Expr::Literal(_) => true,
+            Expr::BareWord(name) => !self.local_map.contains_key(name.as_str()),
+            e => Self::expr_is_self_decontainerizing(e),
+        }
+    }
+
     pub(super) fn expr_is_fresh_container(expr: &Expr) -> bool {
         match expr {
             // Indexing into an array/hash element produces a value that
