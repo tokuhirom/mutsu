@@ -42,7 +42,7 @@ plan 11;
     is-deeply @log, ['user:mine'], 'user multi note wins when it matches';
 }
 
-my $lib = $*PROGRAM.parent.parent.add('lib').absolute;
+my $lib = $*PROGRAM.parent.parent.parent.add('lib').absolute;
 
 sub run-mutsu(*@args) {
     my $proc = run $*EXECUTABLE, "-I$lib", |@args, :out, :err;
