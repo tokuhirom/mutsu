@@ -32,7 +32,9 @@ plan 18;
     my $i = (10 .. 13).iterator;
     my @got;
     loop {
-        my $x = $i.pull-one;
+        # Bound, not assigned: an assigned `$x` owns a Scalar, which is never
+        # `=:=` to IterationEnd (rakudo loops forever on the `=` spelling).
+        my $x := $i.pull-one;
         last if $x =:= IterationEnd;
         @got.push($x);
     }

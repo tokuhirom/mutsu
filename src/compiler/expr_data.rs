@@ -65,6 +65,12 @@ impl Compiler {
             // "Cannot modify an immutable Set". Mirrors the `Stmt::Assign` path.
             if name.starts_with('@') || name.starts_with('%') {
                 self.code.emit(OpCode::MarkBindContext);
+            } else if !name.starts_with('&') {
+                // A scalar rebind is a bind too, as in the `Stmt::Assign`
+                // path: without the marker `SetLocal` treats it as a plain
+                // assignment, so `($p := IterationEnd) ...; $p =:= IterationEnd`
+                // would still see `$p` owning a Scalar.
+                self.code.emit(OpCode::MarkScalarBindContext);
             }
             // Signal rebind context for cleanup of old bind pairs / aliases.
             self.code.emit(OpCode::MarkRebindContext);
