@@ -1111,6 +1111,7 @@ mod const_fold;
 pub(crate) mod control_block;
 mod control_block_scope;
 mod control_for;
+mod control_for_tail;
 mod control_if;
 mod decl_plan;
 mod decl_reset;
@@ -1581,6 +1582,12 @@ pub(crate) struct Compiler {
     /// declaration in this compiler shadows a captured binding even though the
     /// outer binding has no slot in this chunk.
     enclosing_local_names: std::collections::HashSet<String>,
+    /// Parameters of the `for` loops whose bodies are being compiled, innermost
+    /// last. A loop parameter without a local slot lives in `env` under its bare
+    /// name, so [`Compiler::qualify_variable_name`] must not package-qualify it
+    /// (`package P { for @a <-> $v { $v = 9 } }` wrote `$P::v`, losing the rw
+    /// write-back).
+    for_param_names: Vec<String>,
     /// Free variables (reads and writes) of each named sub declared inside a
     /// ROUTINE body that is lexically visible here, keyed by the sub's name.
     /// Such a sub resolves its free variables against the env live at call
@@ -1841,6 +1848,7 @@ impl Compiler {
             sigilless_locals: std::collections::HashSet::new(),
             enclosing_sigilless: std::collections::HashSet::new(),
             enclosing_local_names: std::collections::HashSet::new(),
+            for_param_names: Vec::new(),
             lexical_sub_free_vars: Default::default(),
             prebound_placeholder_params: std::collections::HashSet::new(),
             with_element_source_capture: None,
@@ -2002,7 +2010,10 @@ impl Compiler {
             // that should not be used to qualify runtime variable access.
             return name.to_string();
         }
-        if self.current_package == "GLOBAL" || name.contains("::") {
+        if self.current_package == "GLOBAL"
+            || name.contains("::")
+            || self.for_param_names.iter().any(|p| p == name)
+        {
             return name.to_string();
         }
         if name.is_empty() {

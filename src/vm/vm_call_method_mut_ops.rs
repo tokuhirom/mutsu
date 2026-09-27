@@ -107,13 +107,18 @@ impl Interpreter {
         arg_sources_idx: Option<u32>,
     ) -> Result<(), RuntimeError> {
         match self.take_dynamic_method_name(arity as usize, quoted, "CallMethodDynamic")? {
-            Err(callable) => self.exec_dynamic_callable_method(
-                code,
-                callable,
-                arity as usize,
-                modifier_idx,
-                arg_sources_idx,
-            ),
+            Err(callable) => {
+                // A code-object "name" is not an accessor read: drop any
+                // accessor-ref request so it cannot leak to a later dispatch.
+                self.accessor_ref_pending = false;
+                self.exec_dynamic_callable_method(
+                    code,
+                    callable,
+                    arity as usize,
+                    modifier_idx,
+                    arg_sources_idx,
+                )
+            }
             Ok(method) => self.exec_call_method_named_op(
                 code,
                 MethodName::dynamic(&method),
@@ -137,13 +142,18 @@ impl Interpreter {
         arg_sources_idx: Option<u32>,
     ) -> Result<(), RuntimeError> {
         match self.take_dynamic_method_name(arity as usize, quoted, "CallMethodDynamicMut")? {
-            Err(callable) => self.exec_dynamic_callable_method(
-                code,
-                callable,
-                arity as usize,
-                modifier_idx,
-                arg_sources_idx,
-            ),
+            Err(callable) => {
+                // A code-object "name" is not an accessor read: drop any
+                // accessor-ref request so it cannot leak to a later dispatch.
+                self.accessor_ref_pending = false;
+                self.exec_dynamic_callable_method(
+                    code,
+                    callable,
+                    arity as usize,
+                    modifier_idx,
+                    arg_sources_idx,
+                )
+            }
             Ok(method) => self.exec_call_method_mut_named_op(
                 code,
                 MethodName::dynamic(&method),

@@ -1738,7 +1738,12 @@ impl Compiler {
                     // args as NON-escaping (the #2746 guard), which would unbox
                     // the captured outer writes of e.g. `my $v := lazy { $x++ }`
                     // (statement prefixes like `lazy`/`do` parse as MethodCall).
-                    if scalar_bind_decont && matches!(rhs_expr, Expr::MethodCall { .. }) {
+                    if scalar_bind_decont
+                        && matches!(
+                            rhs_expr,
+                            Expr::MethodCall { .. } | Expr::DynamicMethodCall { .. }
+                        )
+                    {
                         self.mark_trailing_method_call_as_accessor_ref();
                     }
                 }
