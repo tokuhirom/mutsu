@@ -23,5 +23,5 @@ my @t;use Telemetry;
 --- mutsu stderr ---
 Could not find Telemetry in:
     (module repositories)
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-19259.raku line 1
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-24503.raku line 1
 

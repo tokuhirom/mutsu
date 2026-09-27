@@ -20,11 +20,11 @@ multi debug(ERROR;; Str:D --> 31)   { }
 --- mutsu stdout (exit 1) ---
 (none)
 --- mutsu stderr ---
-===SORRY!=== Error while compiling /home/user/mutsu/tmp/ddh/prog-4634.raku
+===SORRY!=== Error while compiling /home/user/mutsu/tmp/ddh/prog-9900.raku
 Confused. expected statement: expected expression statement or expression after infix operator or '.' or digits or generic radix literal or ...
-at /home/user/mutsu/tmp/ddh/prog-4634.raku:7
+at /home/user/mutsu/tmp/ddh/prog-9900.raku:7
 ------>multi debug(LOG;; Str:D --> 32)     { }
-       ^
+                  ^
 
 ==============================================================================
 [2] error-mismatch  raku-doc/doc/Language/functions.rakudoc:1316
@@ -38,8 +38,8 @@ say double  21; # OUTPUT: «42␤»
 say double Any; # Type check failed in binding $x; expected 'Cool' but got 'Any'
 --- raku stderr (exit 1) ---
 Type check failed in binding to parameter '$x'; expected Int(Cool) but got Any (Any)
-  in sub double at /home/user/mutsu/tmp/ddh/prog-4634.raku line 1
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-4634.raku line 7
+  in sub double at /home/user/mutsu/tmp/ddh/prog-9900.raku line 1
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-9900.raku line 7
 --- raku stdout ---
 42
 42
@@ -47,9 +47,8 @@ Type check failed in binding to parameter '$x'; expected Int(Cool) but got Any (
 42
 42
 --- mutsu stderr ---
-Calling double(Package) will never work with declared signature (Int(Cool) $x)
-  X::TypeCheck::Binding::Parameter: Type check failed in binding to parameter 'x'; expected Int(Cool), got Package
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-4634.raku line 7
+X::TypeCheck::Binding::Parameter: Type check failed in binding to parameter 'x'; expected Int(Cool), got Package
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-9900.raku line 7
 
 ==============================================================================
 [3] output-mismatch  raku-doc/doc/Language/functions.rakudoc:720

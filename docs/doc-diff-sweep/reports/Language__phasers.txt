@@ -7,12 +7,12 @@
 our $h will enter { .rememberit() } will undo { .forgetit() };
 --- raku stderr (exit 1) ---
 No such method 'forgetit' for invocant of type 'Any'
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-13428.raku line 1
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-18292.raku line 1
 --- raku stdout ---
 (none)
 --- mutsu stdout (exit 1) ---
 (none)
 --- mutsu stderr ---
 No such method 'rememberit' for invocant of type 'Any'
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-13428.raku line 1
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-18292.raku line 1
 

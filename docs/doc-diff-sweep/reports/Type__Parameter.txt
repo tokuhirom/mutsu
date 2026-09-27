@@ -1,0 +1,18 @@
+# doc-diff-harness report
+# stats: error-match=0  error-mismatch=0  match=20  matches-doc=0  mismatch=1  mutsu-accepts=0  mutsu-crash=0  no-oracle=23  silent-crash=0  silent-match=2  silent-noise=0  skipped-marker=0  skipped-nondet=0  skipped-oracle-nondet=0
+
+==============================================================================
+[1] output-mismatch  raku-doc/doc/Type/Parameter.rakudoc:176
+--- program ---
+sub f(\x) {
+    x = 5;
+}
+f(my $x);   # works
+f(42);      # dies
+CATCH { default { put .^name, ': ', .Str } };
+# OUTPUT: «X::Assignment::RO: Cannot modify an immutable Int␤»
+--- raku stdout ---
+X::Assignment::RO: Cannot modify an immutable Int (42)
+--- mutsu stdout (exit 0) ---
+X::Assignment::RO: Cannot modify an immutable Package ((Any))
+

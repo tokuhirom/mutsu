@@ -19,12 +19,12 @@ True ~~ $b;      # False
 --- raku stderr (exit 1) ---
 Enum 'Bool' is insufficiently type-like to be instantiated. Did you
 mean 'class'?
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-27309.raku line 2
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-32404.raku line 2
 --- raku stdout ---
 (none)
 --- mutsu stdout (exit 1) ---
 (none)
 --- mutsu stderr ---
 Enum 'Bool' is insufficiently type-like to be instantiated.  Did you mean 'class'?
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-27309.raku line 2
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-32404.raku line 2
 

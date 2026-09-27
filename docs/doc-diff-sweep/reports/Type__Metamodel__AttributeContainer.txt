@@ -9,12 +9,12 @@ my $p = Point.new(x => 1, y => 2);
 $p.x = 42;
 --- raku stderr (exit 1) ---
 No such method 'x' for invocant of type 'Point'
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-10211.raku line 3
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-15285.raku line 3
 --- raku stdout ---
 (none)
 --- mutsu stdout (exit 1) ---
 (none)
 --- mutsu stderr ---
 No matching candidates for method: x
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-10211.raku line 3
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-15285.raku line 3
 

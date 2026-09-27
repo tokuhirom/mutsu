@@ -1,26 +1,19 @@
 # doc-diff-harness report
-# stats: error-match=1  error-mismatch=0  match=24  matches-doc=0  mismatch=0  mutsu-accepts=0  mutsu-crash=1  no-oracle=17  silent-crash=0  silent-match=4  silent-noise=0  skipped-marker=1  skipped-nondet=0  skipped-oracle-nondet=0
+# stats: error-match=1  error-mismatch=0  match=24  matches-doc=1  mismatch=1  mutsu-accepts=0  mutsu-crash=0  no-oracle=17  silent-crash=0  silent-match=4  silent-noise=0  skipped-marker=1  skipped-nondet=0  skipped-oracle-nondet=0
 
 ==============================================================================
-[1] mutsu-error  raku-doc/doc/Type/Pair.rakudoc:61
+[1] output-mismatch  raku-doc/doc/Type/Pair.rakudoc:269
+note: mutsu matches the doc's own `# OUTPUT:` here; raku does not.
 --- program ---
-sub s(*%h){ say %h.raku };
-s :a1:b2;
-# OUTPUT: «{:a1, :b2}␤»
+:foo<Raku is great>.invert.raku.say;
+# OUTPUT: «(:Raku("foo"), :is("foo"), :great("foo")).Seq␤»
 
-my $manna = :a1:b2:c3;
-say $manna.^name;
-# OUTPUT: «Pair␤»
-
-$manna = (:a1:b2:c3);
-say $manna.^name;
-# OUTPUT: «List␤»
+:foo{ :42a, :72b }.invert.raku.say;
+# OUTPUT: «((:a(42)) => "foo", (:b(72)) => "foo").Seq␤»
 --- raku stdout ---
-{:a1, :b2}
-Pair
-List
---- mutsu stdout (exit 1) ---
-
---- mutsu stderr ---
-Runtime error: Unsupported regex adverb :a1
+(:Raku("foo"), :is("foo"), :great("foo")).Seq
+((:b(72)) => "foo", (:a(42)) => "foo").Seq
+--- mutsu stdout (exit 0) ---
+(:Raku("foo"), :is("foo"), :great("foo")).Seq
+((:a(42)) => "foo", (:b(72)) => "foo").Seq
 

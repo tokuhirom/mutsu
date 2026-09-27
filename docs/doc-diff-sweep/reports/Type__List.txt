@@ -1,5 +1,5 @@
 # doc-diff-harness report
-# stats: error-match=0  error-mismatch=2  match=95  matches-doc=0  mismatch=3  mutsu-accepts=1  mutsu-crash=0  no-oracle=47  silent-crash=0  silent-match=6  silent-noise=0  skipped-marker=2  skipped-nondet=5  skipped-oracle-nondet=0
+# stats: error-match=0  error-mismatch=2  match=96  matches-doc=0  mismatch=1  mutsu-accepts=1  mutsu-crash=0  no-oracle=47  silent-crash=0  silent-match=6  silent-noise=0  skipped-marker=2  skipped-nondet=5  skipped-oracle-nondet=1
 
 ==============================================================================
 [1] error-mismatch  raku-doc/doc/Type/List.rakudoc:29
@@ -13,7 +13,7 @@
 (1, 2, 3)[0] = 0;     # Error Cannot modify an immutable Int
 --- raku stderr (exit 1) ---
 Cannot call 'shift' on an immutable 'List'
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-4396.raku line 1
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-9573.raku line 1
 --- raku stdout ---
 (none)
 --- mutsu stdout (exit 1) ---
@@ -36,7 +36,7 @@ $list[1] = 'c'; # OK!
 $list[2] = 'd'; # Error: Cannot modify an immutable List
 --- raku stderr (exit 1) ---
 Cannot modify an immutable List ((a c b))
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-4396.raku line 10
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-9573.raku line 10
 --- raku stdout ---
 Scalar
 Scalar
@@ -47,7 +47,7 @@ Any
 Str
 --- mutsu stderr ---
 Cannot modify an immutable List ((a (Any) b))
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-4396.raku line 8
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-9573.raku line 8
 
 ==============================================================================
 [3] output-mismatch  raku-doc/doc/Type/List.rakudoc:417
@@ -77,36 +77,9 @@ put (1..200).List.gist;
 sort;   # ERROR: «Must specify something to sort␤»
 --- raku stderr (exit 1) ---
 Must specify something to sort
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-4396.raku line 1
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-9573.raku line 1
 --- raku stdout ---
 (none)
 --- mutsu stdout (exit 0) ---
 (none)
-
-==============================================================================
-[5] output-mismatch  raku-doc/doc/Type/List.rakudoc:351
---- program ---
-say ("a"|"b","c","d").join;     # OUTPUT: «any(acd,bcd)␤»
---- raku stdout ---
-any(acd, bcd)
---- mutsu stdout (exit 0) ---
-any(a, b)cd
-
-==============================================================================
-[6] output-mismatch  raku-doc/doc/Type/List.rakudoc:695
---- program ---
-my $list = (7, 5, a => 2, b => 17);
-my $capture = $list.Capture;
-say $capture.keys;                                # OUTPUT: «(0 1 a b)␤»
-my-sub(|$capture);                                # OUTPUT: «7, 5, 2, 17␤»
-
-sub my-sub($first, $second, :$a, :$b) {
-    say "$first, $second, $a, $b"
-}
---- raku stdout ---
-(0 1 a b)
-7, 5, 2, 17
---- mutsu stdout (exit 0) ---
-(0 1 b a)
-7, 5, 2, 17
 

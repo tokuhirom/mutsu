@@ -18,5 +18,5 @@ class Metamodel::PackageHOW
 (none)
 --- mutsu stderr ---
 X::InvalidType: Invalid typename 'Metamodel::Documenting'
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-11639.raku line 1
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-16856.raku line 1
 

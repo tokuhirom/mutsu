@@ -7,12 +7,12 @@
 Cancellation.cancel
 --- raku stderr (exit 1) ---
 Cannot look up attributes in a Cancellation type object. Did you forget a '.new'?
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-28407.raku line 1
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-898.raku line 1
 --- raku stdout ---
 (none)
 --- mutsu stdout (exit 1) ---
 (none)
 --- mutsu stderr ---
 No such method 'cancel' for invocant of type 'Cancellation'
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-28407.raku line 1
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-898.raku line 1
 

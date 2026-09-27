@@ -8,12 +8,12 @@ my $repo = CompUnit::RepositoryFileSystem.new(:prefix($*CWD));
 say $repo.extensions; # OUTPUT: «[rakumod pm6 pm]␤»
 --- raku stderr (exit 1) ---
 Could not find symbol '&RepositoryFileSystem' in 'CompUnit'
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-29083.raku line 1
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-1747.raku line 1
 --- raku stdout ---
 (none)
 --- mutsu stdout (exit 1) ---
 (none)
 --- mutsu stderr ---
 X::Method::NotFound: Unknown method value dispatch (fallback disabled): new on CompUnit::RepositoryFileSystem
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-29083.raku line 1
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-1747.raku line 1
 

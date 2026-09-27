@@ -13,5 +13,5 @@ say $a.^roles; # OUTPUT: «(Mu)␤»
 
 --- mutsu stderr ---
 No such method 'compose' for invocant of type 'Perl6::Metamodel::ConcreteRoleHOW'
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-10719.raku line 2
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-15876.raku line 2
 

@@ -1,8 +1,19 @@
 # doc-diff-harness report
-# stats: error-match=0  error-mismatch=0  match=5  matches-doc=0  mismatch=2  mutsu-accepts=1  mutsu-crash=0  no-oracle=16  silent-crash=0  silent-match=1  silent-noise=0  skipped-marker=1  skipped-nondet=5  skipped-oracle-nondet=1
+# stats: error-match=0  error-mismatch=1  match=5  matches-doc=1  mismatch=3  mutsu-accepts=0  mutsu-crash=0  no-oracle=16  silent-crash=0  silent-match=1  silent-noise=0  skipped-marker=1  skipped-nondet=5  skipped-oracle-nondet=0
 
 ==============================================================================
-[1] mutsu-accepts  raku-doc/doc/Type/Enumeration.rakudoc:191
+[1] output-mismatch  raku-doc/doc/Type/Enumeration.rakudoc:88
+note: mutsu matches the doc's own `# OUTPUT:` here; raku does not.
+--- program ---
+enum Norse-gods <Þor Oðin Freija>;
+say Norse-gods.keys; # OUTPUT: «(Þor Oðin Freija)␤»
+--- raku stdout ---
+(Þor Freija Oðin)
+--- mutsu stdout (exit 0) ---
+(Þor Oðin Freija)
+
+==============================================================================
+[2] error-mismatch  raku-doc/doc/Type/Enumeration.rakudoc:191
 --- program ---
 enum Numbers ( cool => '42', almost-pi => '3.14', sqrt-n-one => 'i' );
 say cool.Numeric;       # OUTPUT: «42␤»
@@ -10,17 +21,19 @@ say almost-pi.Numeric;  # OUTPUT: «3.14␤»
 say sqrt-n-one.Numeric; # OUTPUT: «0+1i␤»
 --- raku stderr (exit 1) ---
 Cannot convert string to number: base-10 number must begin with valid digits or '.' in '<HERE>i' (indicated by <HERE>)
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-31504.raku line 4
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-4031.raku line 4
 --- raku stdout ---
 42
 3.14
---- mutsu stdout (exit 0) ---
+--- mutsu stdout (exit 1) ---
 42
 3.14
-0+1i
+--- mutsu stderr ---
+Cannot convert string to number: base-10 number must begin with valid digits or '.' in '⏏i' (indicated by ⏏)
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-4031.raku line 4
 
 ==============================================================================
-[2] output-mismatch  raku-doc/doc/Type/Enumeration.rakudoc:205
+[3] output-mismatch  raku-doc/doc/Type/Enumeration.rakudoc:205
 --- program ---
 enum Numbers ( cool => '42', almost-pi => '3.14', sqrt-n-one => 'i' );
 say cool.Int;           # OUTPUT: «42␤»
@@ -34,10 +47,10 @@ Cannot convert string to number: base-10 number must begin with valid digits or 
 --- mutsu stdout (exit 0) ---
 42
 3
-0
+Cannot convert string to number: base-10 number must begin with valid digits or '.' in '⏏i' (indicated by ⏏)
 
 ==============================================================================
-[3] output-mismatch  raku-doc/doc/Type/Enumeration.rakudoc:220
+[4] output-mismatch  raku-doc/doc/Type/Enumeration.rakudoc:220
 --- program ---
 enum Numbers ( cool => '42', almost-pi => '3.14', sqrt-n-one => 'i' );
 say cool.Real;           # OUTPUT: «42␤»
@@ -51,5 +64,5 @@ Cannot convert string to number: base-10 number must begin with valid digits or 
 --- mutsu stdout (exit 0) ---
 42
 3.14
-0+1i
+Cannot convert string to number: base-10 number must begin with valid digits or '.' in '⏏i' (indicated by ⏏)
 

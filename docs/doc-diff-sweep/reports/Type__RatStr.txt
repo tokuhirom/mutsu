@@ -13,5 +13,5 @@ class RatStr is Allomorph is Rat {}
 (none)
 --- mutsu stderr ---
 'RatStr' cannot inherit from 'Allomorph' because it is unknown.
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-16378.raku line 1
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-21571.raku line 1
 

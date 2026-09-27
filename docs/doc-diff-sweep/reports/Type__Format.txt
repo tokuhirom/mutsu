@@ -13,5 +13,5 @@ say $d.directives;              # OUTPUT: «(d x s)␤»
 
 --- mutsu stderr ---
 No such method 'directives' for invocant of type 'Format'
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-32170.raku line 3
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-4834.raku line 3
 

@@ -1,5 +1,5 @@
 # doc-diff-harness report
-# stats: error-match=0  error-mismatch=1  match=7  matches-doc=0  mismatch=0  mutsu-accepts=0  mutsu-crash=0  no-oracle=1  silent-crash=0  silent-match=2  silent-noise=0  skipped-marker=0  skipped-nondet=0  skipped-oracle-nondet=1
+# stats: error-match=0  error-mismatch=1  match=6  matches-doc=0  mismatch=0  mutsu-accepts=0  mutsu-crash=0  no-oracle=1  silent-crash=0  silent-match=2  silent-noise=0  skipped-marker=0  skipped-nondet=0  skipped-oracle-nondet=2
 
 ==============================================================================
 [1] error-mismatch  raku-doc/doc/Type/Set.rakudoc:67
@@ -13,15 +13,15 @@ my $fruits = Set[Int].new( <peach apple orange apple apple> );
 --- raku stderr (exit 1) ---
 Potential difficulties:
     Redeclaration of symbol '$fruits'.
-    at /home/user/mutsu/tmp/ddh/prog-17842.raku:5
+    at /home/user/mutsu/tmp/ddh/prog-22975.raku:5
     ------> my $fruits<HERE> = Set[Int].new( <peach apple orange app
 Type check failed in binding; expected Int but got Str ("peach")
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-17842.raku line 5
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-22975.raku line 5
 --- raku stdout ---
 (none)
 --- mutsu stdout (exit 1) ---
 (none)
 --- mutsu stderr ---
 Type check failed in binding; expected Int but got Str ("peach")
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-17842.raku line 5
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-22975.raku line 5
 

@@ -11,12 +11,12 @@ say $native.deref; # ERROR OUTPUT: «Internal error: unhandled target type␤»
 Internal error: unhandled target type
   in sub nativecast at /root/.local/rakudo/rakudo-moar-2026.07-01-linux-x86_64-gcc/share/perl6/core/sources/CA475A025AD7A13E5FDBB0EC459EC417B241FE1B (NativeCall::Types) line 25
   in method deref at /root/.local/rakudo/rakudo-moar-2026.07-01-linux-x86_64-gcc/share/perl6/core/sources/CA475A025AD7A13E5FDBB0EC459EC417B241FE1B (NativeCall::Types) line 138
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-9813.raku line 3
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-14801.raku line 3
 --- raku stdout ---
 (none)
 --- mutsu stdout (exit 1) ---
 (none)
 --- mutsu stderr ---
 Cannot dereference an untyped Pointer (no `of` type to read)
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-9813.raku line 3
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-14801.raku line 3
 

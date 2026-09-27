@@ -12,14 +12,14 @@ CONTROL { .die };
 --- raku stderr (exit 1) ---
 Use of uninitialized value element of type Str in string context.
 Methods .^name, .raku, .gist, or .say can be used to stringify it to something meaningful.
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-14385.raku line 5
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-19396.raku line 5
 --- raku stdout ---
 (none)
 --- mutsu stdout (exit 1) ---
 (none)
 --- mutsu stderr ---
 No such method 'die' for invocant of type 'CX::Warn'
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-14385.raku line 5
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-19396.raku line 5
 
 ==============================================================================
 [2] mutsu-accepts  raku-doc/doc/Language/quoting.rakudoc:546
@@ -31,8 +31,8 @@ Potentially multiple lines.
 TERMINATOR
 --- raku stderr (exit 1) ---
 Unexpected named argument 'language' passed
-  in sub my-escaping-function at /home/user/mutsu/tmp/ddh/prog-14385.raku line 1
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-14385.raku line 2
+  in sub my-escaping-function at /home/user/mutsu/tmp/ddh/prog-19396.raku line 1
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-19396.raku line 2
 --- raku stdout ---
 (none)
 --- mutsu stdout (exit 0) ---

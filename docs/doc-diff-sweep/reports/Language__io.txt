@@ -8,18 +8,18 @@ my $fh = open "testfile", :r;
 my $contents = $fh.slurp;
 $fh.close;
 --- raku stderr (exit 1) ---
-Failed to open file /home/user/mutsu/tmp/ddh/run-7322/testfile: No such file or directory
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-7322.raku line 1
+Failed to open file /home/user/mutsu/tmp/ddh/run-12551/testfile: No such file or directory
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-12551.raku line 1
 
 Actually thrown at:
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-7322.raku line 2
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-12551.raku line 2
 --- raku stdout ---
 (none)
 --- mutsu stdout (exit 1) ---
 (none)
 --- mutsu stderr ---
-Failed to open '/home/user/mutsu/tmp/ddh/run-7322/testfile': No such file or directory (os error 2)
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-7322.raku line 2
+Failed to open '/home/user/mutsu/tmp/ddh/run-12551/testfile': No such file or directory (os error 2)
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-12551.raku line 2
 
 ==============================================================================
 [2] error-mismatch  raku-doc/doc/Language/io.rakudoc:29
@@ -28,15 +28,15 @@ my $contents = "testfile".IO.slurp;
 # or in procedural form:
 $contents = slurp "testfile"
 --- raku stderr (exit 1) ---
-Failed to open file /home/user/mutsu/tmp/ddh/run-7322/testfile: No such file or directory
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-7322.raku line 1
+Failed to open file /home/user/mutsu/tmp/ddh/run-12551/testfile: No such file or directory
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-12551.raku line 1
 --- raku stdout ---
 (none)
 --- mutsu stdout (exit 1) ---
 (none)
 --- mutsu stderr ---
 Failed to slurp 'testfile': No such file or directory (os error 2)
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-7322.raku line 1
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-12551.raku line 1
 
 ==============================================================================
 [3] error-mismatch  raku-doc/doc/Language/io.rakudoc:44
@@ -48,15 +48,15 @@ for 'huge-csv'.IO.lines -> $line {
 # or if you'll be processing later
 my @lines = 'huge-csv'.IO.lines;
 --- raku stderr (exit 1) ---
-Failed to open file /home/user/mutsu/tmp/ddh/run-7322/huge-csv: No such file or directory
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-7322.raku line 1
+Failed to open file /home/user/mutsu/tmp/ddh/run-12551/huge-csv: No such file or directory
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-12551.raku line 1
 --- raku stdout ---
 (none)
 --- mutsu stdout (exit 1) ---
 (none)
 --- mutsu stderr ---
 Failed to read 'huge-csv': No such file or directory (os error 2)
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-7322.raku line 1
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-12551.raku line 1
 
 ==============================================================================
 [4] error-mismatch  raku-doc/doc/Language/io.rakudoc:121
@@ -79,15 +79,15 @@ move $fileb, '/disk2/foo', :createonly; # fails if '/disk2/foo' exists
 unlink $filea;
 $fileb.IO.unlink;
 --- raku stderr (exit 1) ---
-Failed to copy '/home/user/mutsu/tmp/ddh/run-7322/foo' to '/home/user/mutsu/tmp/ddh/run-7322/foo.bak': Failed to copy file: no such file or directory
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-7322.raku line 6
+Failed to copy '/home/user/mutsu/tmp/ddh/run-12551/foo' to '/home/user/mutsu/tmp/ddh/run-12551/foo.bak': Failed to copy file: no such file or directory
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-12551.raku line 6
 --- raku stdout ---
 (none)
 --- mutsu stdout (exit 1) ---
 (none)
 --- mutsu stderr ---
-X::IO::Copy with no message
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-7322.raku line 6
+Failed to copy 'foo': No such file or directory (os error 2)
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-12551.raku line 6
 
 ==============================================================================
 [5] error-mismatch  raku-doc/doc/Language/io.rakudoc:183
@@ -95,15 +95,15 @@ X::IO::Copy with no message
 say "testfile".IO.d;  # OUTPUT: «False␤»
 say "lib".IO.d;       # OUTPUT: «True␤»
 --- raku stderr (exit 1) ---
-Failed to find '/home/user/mutsu/tmp/ddh/run-7322/testfile' while trying to do '.d'
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-7322.raku line 1
+Failed to find '/home/user/mutsu/tmp/ddh/run-12551/testfile' while trying to do '.d'
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-12551.raku line 1
 --- raku stdout ---
 (none)
 --- mutsu stdout (exit 1) ---
 (none)
 --- mutsu stderr ---
 Failed to find 'testfile' while trying to do '.d'
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-7322.raku line 1
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-12551.raku line 1
 
 ==============================================================================
 [6] error-mismatch  raku-doc/doc/Language/io.rakudoc:190
@@ -111,22 +111,22 @@ Failed to find 'testfile' while trying to do '.d'
 say "testfile".IO.f;  # OUTPUT: «True␤»
 say "lib".IO.f;       # OUTPUT: «False␤»
 --- raku stderr (exit 1) ---
-Failed to find '/home/user/mutsu/tmp/ddh/run-7322/testfile' while trying to do '.f'
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-7322.raku line 1
+Failed to find '/home/user/mutsu/tmp/ddh/run-12551/testfile' while trying to do '.f'
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-12551.raku line 1
 --- raku stdout ---
 (none)
 --- mutsu stdout (exit 1) ---
 (none)
 --- mutsu stderr ---
 Failed to find 'testfile' while trying to do '.f'
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-7322.raku line 1
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-12551.raku line 1
 
 ==============================================================================
 [7] output-mismatch  raku-doc/doc/Language/io.rakudoc:217
 --- program ---
 say dir "/etc/";  # OUTPUT: «"/etc/ld.so.conf".IO "/etc/shadow".IO ....␤»
 --- raku stdout ---
-("/etc/rc2.d".IO "/etc/selinux".IO "/etc/ld.so.conf.d".IO "/etc/xdg".IO "/etc/dpkg".IO "/etc/containerd".IO "/etc/deluser.conf".IO "/etc/e2scrub.conf".IO "/etc/shells".IO "/etc/networks".IO "/etc/netconfig".IO "/etc/python3.10".IO "/etc/xml".IO "/etc/sudoers".IO "/etc/vim".IO "/etc/redis".IO "/etc/ld.so.cache".IO "/etc/.java".IO "/etc/debian_version".IO "/etc/perl".IO "/etc/magic".IO "/etc/libaudit.conf".IO "/etc/services".IO "/etc/locale.alias".IO "/etc/rc0.d".IO "/etc/group-".IO "/etc/subuid-".IO "/etc/modules-load.d".IO "/etc/subuid".IO "/etc/environment".IO "/etc/shadow-".IO "/etc/bazel.bazelrc".IO "/etc/libreoffice".IO "/etc/magic.mime".IO "/etc/rc1.d".IO "/etc/rpc".IO "/etc/postgresql-common".IO "/etc/systemd".IO "/etc/profile".IO "/etc/ucf.conf".IO "/etc/group".IO "/etc/gnutls".IO "/etc/python3".IO "/etc/dconf".IO "/etc/vconsole.conf".IO "/etc/bash_completion.d".IO "/etc/vulkan".IO "/etc/nftables.conf".IO "/etc/legal".IO "/etc/cron.d".IO "/etc/bash.bashrc".IO "/etc/dbus-1".IO "/etc/sgml".IO "/etc/sudoers.d".IO "/etc/docker".IO "/etc/locale.conf".IO "/etc/kernel".IO "/etc/mke2fs.conf".IO "/etc/os-release".IO "/etc/init.d".IO "/etc/credstore.encrypted".IO "/etc/ca-certificates".IO "/etc/profile.d".IO "/etc/sensors3.conf".IO "/etc/ld.so.conf".IO "/etc/sudo.conf".IO "/etc/gtk-3.0".IO "/etc/debuginfod".IO "/etc/emacs".IO "/etc/binfmt.d".IO "/etc/rc3.d".IO "/etc/gai.conf".IO "/etc/java-21-openjdk".IO "/etc/.pwd.lock".IO "/etc/timezone".IO "/etc/python3.12".IO "/etc/polkit-1".IO "/etc/gshadow".IO "/etc/ca-certificates.conf".IO "/etc/apparmor.d".IO "/etc/php".IO "/etc/subgid".IO "/etc/X11".IO "/etc/hosts".IO "/etc/gprofng.rc".IO "/etc/rmt".IO "/etc/apt".IO "/etc/rc6.d".IO "/etc/terminfo".IO "/etc/host.conf".IO "/etc/gshadow-".IO "/etc/pam.conf".IO "/etc/resolv.conf".IO "/etc/pam.d".IO "/etc/hostname".IO "/etc/tmpfiles.d".IO "/etc/xattr.conf".IO "/etc/python3.13".IO "/etc/skel".IO "/etc/locale.gen".IO ...)
+("/etc/rc2.d".IO "/etc/selinux".IO "/etc/ld.so.conf.d".IO "/etc/xdg".IO "/etc/dpkg".IO "/etc/containerd".IO "/etc/deluser.conf".IO "/etc/e2scrub.conf".IO "/etc/shells".IO "/etc/networks".IO "/etc/netconfig".IO "/etc/python3.10".IO "/etc/xml".IO "/etc/sudoers".IO "/etc/vim".IO "/etc/redis".IO "/etc/ld.so.cache".IO "/etc/.java".IO "/etc/debian_version".IO "/etc/perl".IO "/etc/magic".IO "/etc/libaudit.conf".IO "/etc/services".IO "/etc/locale.alias".IO "/etc/rc0.d".IO "/etc/group-".IO "/etc/subuid-".IO "/etc/modules-load.d".IO "/etc/subuid".IO "/etc/environment".IO "/etc/shadow-".IO "/etc/bazel.bazelrc".IO "/etc/libreoffice".IO "/etc/magic.mime".IO "/etc/mysql".IO "/etc/rc1.d".IO "/etc/rpc".IO "/etc/postgresql-common".IO "/etc/systemd".IO "/etc/profile".IO "/etc/ucf.conf".IO "/etc/group".IO "/etc/gnutls".IO "/etc/python3".IO "/etc/dconf".IO "/etc/vconsole.conf".IO "/etc/bash_completion.d".IO "/etc/vulkan".IO "/etc/nftables.conf".IO "/etc/legal".IO "/etc/cron.d".IO "/etc/bash.bashrc".IO "/etc/dbus-1".IO "/etc/sgml".IO "/etc/sudoers.d".IO "/etc/docker".IO "/etc/locale.conf".IO "/etc/kernel".IO "/etc/mke2fs.conf".IO "/etc/os-release".IO "/etc/init.d".IO "/etc/credstore.encrypted".IO "/etc/ca-certificates".IO "/etc/profile.d".IO "/etc/sensors3.conf".IO "/etc/ld.so.conf".IO "/etc/sudo.conf".IO "/etc/gtk-3.0".IO "/etc/debuginfod".IO "/etc/emacs".IO "/etc/binfmt.d".IO "/etc/rc3.d".IO "/etc/gai.conf".IO "/etc/java-21-openjdk".IO "/etc/.pwd.lock".IO "/etc/timezone".IO "/etc/python3.12".IO "/etc/polkit-1".IO "/etc/gshadow".IO "/etc/ca-certificates.conf".IO "/etc/apparmor.d".IO "/etc/php".IO "/etc/subgid".IO "/etc/X11".IO "/etc/hosts".IO "/etc/gprofng.rc".IO "/etc/rmt".IO "/etc/apt".IO "/etc/rc6.d".IO "/etc/terminfo".IO "/etc/host.conf".IO "/etc/gshadow-".IO "/etc/pam.conf".IO "/etc/resolv.conf".IO "/etc/pam.d".IO "/etc/hostname".IO "/etc/tmpfiles.d".IO "/etc/xattr.conf".IO "/etc/python3.13".IO "/etc/skel".IO ...)
 --- mutsu stdout (exit 0) ---
-("/etc/rc2.d".IO "/etc/selinux".IO "/etc/ld.so.conf.d".IO "/etc/xdg".IO "/etc/dpkg".IO "/etc/containerd".IO "/etc/deluser.conf".IO "/etc/e2scrub.conf".IO "/etc/shells".IO "/etc/networks".IO "/etc/netconfig".IO "/etc/python3.10".IO "/etc/xml".IO "/etc/sudoers".IO "/etc/vim".IO "/etc/redis".IO "/etc/ld.so.cache".IO "/etc/.java".IO "/etc/debian_version".IO "/etc/perl".IO "/etc/magic".IO "/etc/libaudit.conf".IO "/etc/services".IO "/etc/locale.alias".IO "/etc/rc0.d".IO "/etc/group-".IO "/etc/subuid-".IO "/etc/modules-load.d".IO "/etc/subuid".IO "/etc/environment".IO "/etc/shadow-".IO "/etc/bazel.bazelrc".IO "/etc/libreoffice".IO "/etc/magic.mime".IO "/etc/rc1.d".IO "/etc/rpc".IO "/etc/postgresql-common".IO "/etc/systemd".IO "/etc/profile".IO "/etc/ucf.conf".IO "/etc/group".IO "/etc/gnutls".IO "/etc/python3".IO "/etc/dconf".IO "/etc/vconsole.conf".IO "/etc/bash_completion.d".IO "/etc/vulkan".IO "/etc/nftables.conf".IO "/etc/legal".IO "/etc/cron.d".IO "/etc/bash.bashrc".IO "/etc/dbus-1".IO "/etc/sgml".IO "/etc/sudoers.d".IO "/etc/docker".IO "/etc/locale.conf".IO "/etc/kernel".IO "/etc/mke2fs.conf".IO "/etc/os-release".IO "/etc/init.d".IO "/etc/credstore.encrypted".IO "/etc/ca-certificates".IO "/etc/profile.d".IO "/etc/sensors3.conf".IO "/etc/ld.so.conf".IO "/etc/sudo.conf".IO "/etc/gtk-3.0".IO "/etc/debuginfod".IO "/etc/emacs".IO "/etc/binfmt.d".IO "/etc/rc3.d".IO "/etc/gai.conf".IO "/etc/java-21-openjdk".IO "/etc/.pwd.lock".IO "/etc/timezone".IO "/etc/python3.12".IO "/etc/polkit-1".IO "/etc/gshadow".IO "/etc/ca-certificates.conf".IO "/etc/apparmor.d".IO "/etc/php".IO "/etc/subgid".IO "/etc/X11".IO "/etc/hosts".IO "/etc/gprofng.rc".IO "/etc/rmt".IO "/etc/apt".IO "/etc/rc6.d".IO "/etc/terminfo".IO "/etc/host.conf".IO "/etc/gshadow-".IO "/etc/pam.conf".IO "/etc/resolv.conf".IO "/etc/pam.d".IO "/etc/hostname".IO "/etc/tmpfiles.d".IO "/etc/xattr.conf".IO "/etc/python3.13".IO "/etc/skel".IO "/etc/locale.gen".IO "/etc/sysctl.conf".IO "/etc/adduser.conf".IO "/etc/wgetrc".IO "/etc/protocols".IO "/etc/nsswitch.conf".IO "/etc/default".IO "/etc/shadow".IO "/etc/machine-id".IO "/etc/mime.types".IO "/etc/login.defs".IO "/etc/fonts".IO "/etc/localtime".IO "/etc/inputrc".IO "/etc/update-motd.d".IO "/etc/cron.daily".IO "/etc/rc4.d".IO "/etc/lsb-release".IO "/etc/gss".IO "/etc/opt".IO "/etc/passwd-".IO "/etc/issue".IO "/etc/issue.net".IO "/etc/debconf.conf".IO "/etc/cloud".IO "/etc/ethertypes".IO "/etc/subgid-".IO "/etc/credstore".IO "/etc/logcheck".IO "/etc/rcS.d".IO "/etc/nanorc".IO "/etc/bindresvport.blacklist".IO "/etc/PackageKit".IO "/etc/python3.11".IO "/etc/ssl".IO "/etc/mtab".IO "/etc/sysctl.d".IO "/etc/fstab".IO "/etc/rc5.d".IO "/etc/sudo_logsrvd.conf".IO "/etc/gdb".IO "/etc/passwd".IO "/etc/logrotate.d".IO "/etc/postgresql".IO "/etc/alternatives".IO "/etc/security".IO "/etc/sensors.d".IO)
+("/etc/rc2.d".IO "/etc/selinux".IO "/etc/ld.so.conf.d".IO "/etc/xdg".IO "/etc/dpkg".IO "/etc/containerd".IO "/etc/deluser.conf".IO "/etc/e2scrub.conf".IO "/etc/shells".IO "/etc/networks".IO "/etc/netconfig".IO "/etc/python3.10".IO "/etc/xml".IO "/etc/sudoers".IO "/etc/vim".IO "/etc/redis".IO "/etc/ld.so.cache".IO "/etc/.java".IO "/etc/debian_version".IO "/etc/perl".IO "/etc/magic".IO "/etc/libaudit.conf".IO "/etc/services".IO "/etc/locale.alias".IO "/etc/rc0.d".IO "/etc/group-".IO "/etc/subuid-".IO "/etc/modules-load.d".IO "/etc/subuid".IO "/etc/environment".IO "/etc/shadow-".IO "/etc/bazel.bazelrc".IO "/etc/libreoffice".IO "/etc/magic.mime".IO "/etc/mysql".IO "/etc/rc1.d".IO "/etc/rpc".IO "/etc/postgresql-common".IO "/etc/systemd".IO "/etc/profile".IO "/etc/ucf.conf".IO "/etc/group".IO "/etc/gnutls".IO "/etc/python3".IO "/etc/dconf".IO "/etc/vconsole.conf".IO "/etc/bash_completion.d".IO "/etc/vulkan".IO "/etc/nftables.conf".IO "/etc/legal".IO "/etc/cron.d".IO "/etc/bash.bashrc".IO "/etc/dbus-1".IO "/etc/sgml".IO "/etc/sudoers.d".IO "/etc/docker".IO "/etc/locale.conf".IO "/etc/kernel".IO "/etc/mke2fs.conf".IO "/etc/os-release".IO "/etc/init.d".IO "/etc/credstore.encrypted".IO "/etc/ca-certificates".IO "/etc/profile.d".IO "/etc/sensors3.conf".IO "/etc/ld.so.conf".IO "/etc/sudo.conf".IO "/etc/gtk-3.0".IO "/etc/debuginfod".IO "/etc/emacs".IO "/etc/binfmt.d".IO "/etc/rc3.d".IO "/etc/gai.conf".IO "/etc/java-21-openjdk".IO "/etc/.pwd.lock".IO "/etc/timezone".IO "/etc/python3.12".IO "/etc/polkit-1".IO "/etc/gshadow".IO "/etc/ca-certificates.conf".IO "/etc/apparmor.d".IO "/etc/php".IO "/etc/subgid".IO "/etc/X11".IO "/etc/hosts".IO "/etc/gprofng.rc".IO "/etc/rmt".IO "/etc/apt".IO "/etc/rc6.d".IO "/etc/terminfo".IO "/etc/host.conf".IO "/etc/gshadow-".IO "/etc/pam.conf".IO "/etc/resolv.conf".IO "/etc/pam.d".IO "/etc/hostname".IO "/etc/tmpfiles.d".IO "/etc/xattr.conf".IO "/etc/python3.13".IO "/etc/skel".IO "/etc/locale.gen".IO)
 

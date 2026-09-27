@@ -18,14 +18,14 @@ $nothing.ventured("Nothing", "Gained");
 ventured not yet implemented. Sorry.
 Did you mean: gained?
 Workaround: Implement it yourself
-  in method ventured at /home/user/mutsu/tmp/ddh/prog-22542.raku line 3
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-22542.raku line 10
+  in method ventured at /home/user/mutsu/tmp/ddh/prog-27773.raku line 3
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-27773.raku line 10
 --- raku stdout ---
 (none)
 --- mutsu stdout (exit 1) ---
 (none)
 --- mutsu stderr ---
 ventured not yet implemented. Sorry.
-  in sub ventured at /home/user/mutsu/tmp/ddh/prog-22542.raku line 3
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-22542.raku line 10
+  in sub ventured at /home/user/mutsu/tmp/ddh/prog-27773.raku line 3
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-27773.raku line 10
 

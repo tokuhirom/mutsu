@@ -15,5 +15,5 @@ yes AST
 
 --- mutsu stderr ---
 Two terms in a row
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-24509.raku line 2
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-29691.raku line 2
 

@@ -1,5 +1,5 @@
 # doc-diff-harness report
-# stats: error-match=0  error-mismatch=0  match=6  matches-doc=1  mismatch=1  mutsu-accepts=1  mutsu-crash=0  no-oracle=23  silent-crash=0  silent-match=4  silent-noise=0  skipped-marker=0  skipped-nondet=4  skipped-oracle-nondet=0
+# stats: error-match=0  error-mismatch=0  match=6  matches-doc=0  mismatch=1  mutsu-accepts=1  mutsu-crash=0  no-oracle=23  silent-crash=0  silent-match=4  silent-noise=0  skipped-marker=0  skipped-nondet=4  skipped-oracle-nondet=0
 
 ==============================================================================
 [1] mutsu-accepts  raku-doc/doc/Type/Promise.rakudoc:81
@@ -13,15 +13,18 @@ start { die }; sleep ⅓; say "hello";
 --- raku stderr (exit 1) ---
 Unhandled exception in code scheduled on thread 4
 Died
-  in block  at /home/user/mutsu/tmp/ddh/prog-15036.raku line 2
+  in block  at /home/user/mutsu/tmp/ddh/prog-20195.raku line 2
 --- raku stdout ---
 (none)
 --- mutsu stdout (exit 0) ---
 hello
+--- mutsu stderr ---
+Unhandled exception in code scheduled on thread 3
+Died
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-20195.raku line 2
 
 ==============================================================================
 [2] output-mismatch  raku-doc/doc/Type/Promise.rakudoc:14
-note: mutsu matches the doc's own `# OUTPUT:` here; raku does not.
 --- program ---
 my $p = Promise.start({ sleep 2; 42});
 $p.then({ say .result });   # will print 42 once the block finished
@@ -35,4 +38,5 @@ Kept
 --- mutsu stdout (exit 0) ---
 Planned
 Kept
+42
 

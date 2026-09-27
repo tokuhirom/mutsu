@@ -13,5 +13,5 @@ my $template-text = %?RESOURCES<templates/default-template.mustache>.slurp;
 (none)
 --- mutsu stderr ---
 No such method 'slurp' for invocant of type 'Any'
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-3671.raku line 1
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-8976.raku line 1
 

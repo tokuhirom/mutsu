@@ -13,5 +13,5 @@ class IntStr is Allomorph is Int { }
 (none)
 --- mutsu stderr ---
 'IntStr' cannot inherit from 'Allomorph' because it is unknown.
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-3519.raku line 1
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-8737.raku line 1
 

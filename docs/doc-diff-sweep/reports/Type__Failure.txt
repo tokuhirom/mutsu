@@ -35,9 +35,9 @@ cat.jpg is not a directory
 foo is not a directory
 --- mutsu stdout (exit 0) ---
 cat.jpg is not a directory
-  in sub copy-directory-tree at /home/user/mutsu/tmp/ddh/prog-31615.raku line 10
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-31615.raku line 21
+  in sub copy-directory-tree at /home/user/mutsu/tmp/ddh/prog-4160.raku line 10
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-4160.raku line 21
 foo is not a directory
-  in sub copy-directory-tree at /home/user/mutsu/tmp/ddh/prog-31615.raku line 10
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-31615.raku line 25
+  in sub copy-directory-tree at /home/user/mutsu/tmp/ddh/prog-4160.raku line 10
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-4160.raku line 25
 

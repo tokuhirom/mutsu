@@ -24,7 +24,7 @@ $geek.code_to_solve('P =? NP');
 --- raku stderr (exit 1) ---
 No such method 'cook' for invocant of type 'GeekCook'. Did you mean
 'Bool'?
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-2376.raku line 16
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-7638.raku line 16
 --- raku stdout ---
 (none)
 --- mutsu stdout (exit 1) ---
@@ -32,7 +32,7 @@ No such method 'cook' for invocant of type 'GeekCook'. Did you mean
 --- mutsu stderr ---
 No such method 'cook' for invocant of type 'GeekCook'
 Did you mean 'Bool'?
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-2376.raku line 16
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-7638.raku line 16
 
 ==============================================================================
 [2] output-mismatch  raku-doc/doc/Language/classtut.rakudoc:805

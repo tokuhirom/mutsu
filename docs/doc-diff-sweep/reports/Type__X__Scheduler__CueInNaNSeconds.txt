@@ -9,12 +9,12 @@ my Cancellation $c = $*SCHEDULER.cue({
 }, at => NaN);
 --- raku stderr (exit 1) ---
 Cannot pass NaN as a number of seconds to Scheduler.cue
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-23554.raku line 1
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-28782.raku line 1
 --- raku stdout ---
 (none)
 --- mutsu stdout (exit 1) ---
 (none)
 --- mutsu stderr ---
 Cannot pass NaN as a number of seconds
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-23554.raku line 1
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-28782.raku line 1
 

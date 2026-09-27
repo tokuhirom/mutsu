@@ -1,0 +1,16 @@
+# doc-diff-harness report
+# stats: error-match=0  error-mismatch=0  match=6  matches-doc=0  mismatch=1  mutsu-accepts=0  mutsu-crash=0  no-oracle=4  silent-crash=0  silent-match=2  silent-noise=0  skipped-marker=0  skipped-nondet=0  skipped-oracle-nondet=1
+
+==============================================================================
+[1] output-mismatch  raku-doc/doc/Type/Mix.rakudoc:64
+--- program ---
+my $n = ("a", "a", "b" => 0, "c" => 3.14).Mix;
+say $n.keys.map(&WHAT);  # OUTPUT: «((Str) (Str))␤»
+say $n.pairs;            # OUTPUT: «(a => 2 c => 3.14)␤»
+--- raku stdout ---
+((Str) (Str))
+(a => 2 c => 3.14)
+--- mutsu stdout (exit 0) ---
+((Str) (Str))
+(c => 3.14 a => 2)
+

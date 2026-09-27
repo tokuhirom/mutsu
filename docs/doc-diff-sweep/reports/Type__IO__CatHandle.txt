@@ -1,5 +1,5 @@
 # doc-diff-harness report
-# stats: error-match=1  error-mismatch=0  match=17  matches-doc=0  mismatch=6  mutsu-accepts=0  mutsu-crash=0  no-oracle=30  silent-crash=0  silent-match=0  silent-noise=0  skipped-marker=1  skipped-nondet=2  skipped-oracle-nondet=0
+# stats: error-match=1  error-mismatch=0  match=19  matches-doc=0  mismatch=4  mutsu-accepts=0  mutsu-crash=0  no-oracle=30  silent-crash=0  silent-match=0  silent-noise=0  skipped-marker=1  skipped-nondet=2  skipped-oracle-nondet=0
 
 ==============================================================================
 [1] output-mismatch  raku-doc/doc/Type/IO/CatHandle.rakudoc:75
@@ -58,7 +58,7 @@ I ♥ R
 Buf[uint8]:0x<6B 75 6D 65 6F 77>
 --- mutsu stdout (exit 0) ---
 I ♥ R
-akumeow
+Buf[uint8]:0x<61 6B 75 6D 65 6F 77>
 
 ==============================================================================
 [4] output-mismatch  raku-doc/doc/Type/IO/CatHandle.rakudoc:548
@@ -85,33 +85,4 @@ foo
 oo
 bar
 Cannot seek to a negative position
-
-==============================================================================
-[5] output-mismatch  raku-doc/doc/Type/IO/CatHandle.rakudoc:595
---- program ---
-(my $f1 = 'foo'.IO).spurt: 'foo';
-(my $f2 = 'bar'.IO).spurt: 'bar';
-
-IO::CatHandle.new(      $f1, $f2).slurp.say; # OUTPUT: «foobar␤»
-IO::CatHandle.new(:bin, $f1, $f2).slurp.say; # OUTPUT: «Buf[uint8]:0x<66 6f 6f 62 61 72>␤»
-IO::CatHandle.new                .slurp.say; # OUTPUT: «Nil␤»
---- raku stdout ---
-foobar
-Buf[uint8]:0x<66 6F 6F 62 61 72>
-Nil
---- mutsu stdout (exit 0) ---
-foobar
-Buf[uint8]:0x<66 6F 6F 62 61 72>
-
-==============================================================================
-[6] output-mismatch  raku-doc/doc/Type/IO/CatHandle.rakudoc:688
---- program ---
-(my $f1 = 'foo'.IO).spurt: 'foo bar';
-(my $f2 = 'bar'.IO).spurt: 'meow';
-IO::CatHandle.new($f1, $f2).words.raku.say;
-# OUTPUT: «("foo", "bar", "meow").Seq␤»
---- raku stdout ---
-("foo", "bar", "meow").Seq
---- mutsu stdout (exit 0) ---
-("foo", "barmeow").Seq
 

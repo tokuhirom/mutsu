@@ -15,7 +15,7 @@ say Food.^lookup('ingredients').line;  # OUTPUT: «1␤»
 --- mutsu stderr ---
 No such method 'line' for invocant of type 'Method'
 Did you mean 'clone'?
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-28713.raku line 3
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-1183.raku line 3
 
 ==============================================================================
 [2] output-mismatch  raku-doc/doc/Type/Code.rakudoc:166
@@ -43,12 +43,12 @@ say &grep.cadidates>>.bytecode-size;  # OUTPUT: «424␤258␤»
 --- raku stderr (exit 1) ---
 No such method 'cadidates' for invocant of type 'Sub'. Did you mean
 'candidates'?
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-28713.raku line 2
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-1183.raku line 2
 --- raku stdout ---
 126
 --- mutsu stdout (exit 1) ---
 (none)
 --- mutsu stderr ---
 No such method 'bytecode-size' for invocant of type 'Sub'
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-28713.raku line 1
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-1183.raku line 1
 

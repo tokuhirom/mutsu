@@ -1,8 +1,8 @@
 # doc-diff-harness report
-# stats: error-match=1  error-mismatch=3  match=4  matches-doc=0  mismatch=0  mutsu-accepts=4  mutsu-crash=0  no-oracle=3  silent-crash=0  silent-match=5  silent-noise=0  skipped-marker=21  skipped-nondet=0  skipped-oracle-nondet=0
+# stats: error-match=1  error-mismatch=7  match=4  matches-doc=0  mismatch=0  mutsu-accepts=0  mutsu-crash=0  no-oracle=3  silent-crash=0  silent-match=5  silent-noise=0  skipped-marker=21  skipped-nondet=0  skipped-oracle-nondet=0
 
 ==============================================================================
-[1] mutsu-accepts  raku-doc/doc/Language/create-cli.rakudoc:122
+[1] error-mismatch  raku-doc/doc/Language/create-cli.rakudoc:122
 --- program ---
 # inside "frobnicate.raku"
 sub MAIN(
@@ -16,16 +16,17 @@ sub MAIN(
 }
 --- raku stderr (exit 2) ---
 Usage:
-  /home/user/mutsu/tmp/ddh/prog-3376.raku [--length[=Int]] [--verbose] [<file>]
+  /home/user/mutsu/tmp/ddh/prog-8676.raku [--length[=Int]] [--verbose] [<file>]
 --- raku stdout ---
 (none)
---- mutsu stdout (exit 0) ---
-24
-file.dat
-Verbosity off
+--- mutsu stdout (exit 2) ---
+(none)
+--- mutsu stderr ---
+Usage:
+  /home/user/mutsu/tmp/ddh/prog-8676.raku [<file>] [--length=<value>] [--verbose]
 
 ==============================================================================
-[2] mutsu-accepts  raku-doc/doc/Language/create-cli.rakudoc:172
+[2] error-mismatch  raku-doc/doc/Language/create-cli.rakudoc:172
 --- program ---
 # inside "frobnicate.raku"
 sub MAIN(
@@ -39,20 +40,21 @@ sub MAIN(
 }
 --- raku stderr (exit 2) ---
 Usage:
-  /home/user/mutsu/tmp/ddh/prog-3376.raku [--length[=Int]] [--verbose] [<file>]
+  /home/user/mutsu/tmp/ddh/prog-8676.raku [--length[=Int]] [--verbose] [<file>]
   
     [<file>]          an existing file to frobnicate [default: 'file.dat']
     --length[=Int]    length needed for frobnication [default: 24]
     --verbose         required verbosity
 --- raku stdout ---
 (none)
---- mutsu stdout (exit 0) ---
-24
-file.dat
-Verbosity off
+--- mutsu stdout (exit 2) ---
+(none)
+--- mutsu stderr ---
+Usage:
+  /home/user/mutsu/tmp/ddh/prog-8676.raku [<file>] [--length=<value>] [--verbose]
 
 ==============================================================================
-[3] mutsu-accepts  raku-doc/doc/Language/create-cli.rakudoc:273
+[3] error-mismatch  raku-doc/doc/Language/create-cli.rakudoc:273
 --- program ---
 sub MAIN(
   Str   $file where *.IO.f = 'file.dat',  #= an existing file to frobnicate
@@ -65,20 +67,21 @@ sub MAIN(
 }
 --- raku stderr (exit 2) ---
 Usage:
-  /home/user/mutsu/tmp/ddh/prog-3376.raku [-l|--length[=Int]] [-v|--verbose] [<file>]
+  /home/user/mutsu/tmp/ddh/prog-8676.raku [-l|--length[=Int]] [-v|--verbose] [<file>]
   
     [<file>]             an existing file to frobnicate [default: 'file.dat']
     -l|--length[=Int]    length needed for frobnication [default: 24]
     -v|--verbose         required verbosity
 --- raku stdout ---
 (none)
---- mutsu stdout (exit 0) ---
-24
-file.dat
-Verbosity off
+--- mutsu stdout (exit 2) ---
+(none)
+--- mutsu stderr ---
+Usage:
+  /home/user/mutsu/tmp/ddh/prog-8676.raku [<file>] [--l=<value>] [--v]
 
 ==============================================================================
-[4] mutsu-accepts  raku-doc/doc/Language/create-cli.rakudoc:481
+[4] error-mismatch  raku-doc/doc/Language/create-cli.rakudoc:481
 --- program ---
 unit sub MAIN(
   Str   $file where *.IO.f = 'file.dat',
@@ -92,13 +95,14 @@ say 'Verbosity ', ($verbose ?? 'on' !! 'off');
 # rest of script is part of MAIN
 --- raku stderr (exit 2) ---
 Usage:
-  /home/user/mutsu/tmp/ddh/prog-3376.raku [--length[=Int]] [--verbose] [<file>]
+  /home/user/mutsu/tmp/ddh/prog-8676.raku [--length[=Int]] [--verbose] [<file>]
 --- raku stdout ---
 (none)
---- mutsu stdout (exit 0) ---
-24
-file.dat
-Verbosity off
+--- mutsu stdout (exit 2) ---
+(none)
+--- mutsu stderr ---
+Usage:
+  /home/user/mutsu/tmp/ddh/prog-8676.raku [<file>] [--length=<value>] [--verbose]
 
 ==============================================================================
 [5] error-mismatch  raku-doc/doc/Language/create-cli.rakudoc:611
@@ -119,7 +123,7 @@ sub new-main($name, *@stuff ) {
 RUN-MAIN( &new-main, Nil );
 --- raku stderr (exit 2) ---
 Usage:
-  /home/user/mutsu/tmp/ddh/prog-3376.raku <name> [<stuff> ...]
+  /home/user/mutsu/tmp/ddh/prog-8676.raku <name> [<stuff> ...]
 --- raku stdout ---
 (none)
 --- mutsu stdout (exit 2) ---
@@ -142,8 +146,8 @@ multi MAIN(
 multi MAIN("--process-files", *@images) {}
 --- raku stderr (exit 2) ---
 Usage:
-  /home/user/mutsu/tmp/ddh/prog-3376.raku [--profile[=name]] [--debug-port=<port>] [-v] <file>
-  /home/user/mutsu/tmp/ddh/prog-3376.raku --process-files [<images> ...]
+  /home/user/mutsu/tmp/ddh/prog-8676.raku [--profile[=name]] [--debug-port=<port>] [-v] <file>
+  /home/user/mutsu/tmp/ddh/prog-8676.raku --process-files [<images> ...]
   
     --profile[=name]       Write profile information to a file
     --debug-port=<port>    Listen for debugger connections on the specified port
@@ -154,8 +158,8 @@ Usage:
 (none)
 --- mutsu stderr ---
 Usage:
-  /home/user/mutsu/tmp/ddh/prog-3376.raku <file> [--profile[=name]] [--debug-port[=port]] [--v]
-  /home/user/mutsu/tmp/ddh/prog-3376.raku --process-files [<images>...]
+  /home/user/mutsu/tmp/ddh/prog-8676.raku <file> [--profile[=name]] [--debug-port[=port]] [--v]
+  /home/user/mutsu/tmp/ddh/prog-8676.raku --process-files [<images>...]
 
 ==============================================================================
 [7] error-mismatch  raku-doc/doc/Language/create-cli.rakudoc:355
@@ -172,12 +176,12 @@ sub MAIN ($a, $b, :$c, :$d) {
 }
 --- raku stderr (exit 2) ---
 Usage:
-  /home/user/mutsu/tmp/ddh/prog-3376.raku <a> <b> [-c[=Any]] [-d[=Any]]
+  /home/user/mutsu/tmp/ddh/prog-8676.raku <a> <b> [-c[=Any]] [-d[=Any]]
 --- raku stdout ---
 (none)
 --- mutsu stdout (exit 2) ---
 (none)
 --- mutsu stderr ---
 Usage:
-  /home/user/mutsu/tmp/ddh/prog-3376.raku <a> <b> [--c=<value>] [--d=<value>]
+  /home/user/mutsu/tmp/ddh/prog-8676.raku <a> <b> [--c=<value>] [--d=<value>]
 

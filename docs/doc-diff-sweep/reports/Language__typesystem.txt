@@ -1,5 +1,5 @@
 # doc-diff-harness report
-# stats: error-match=2  error-mismatch=1  match=42  matches-doc=0  mismatch=2  mutsu-accepts=0  mutsu-crash=0  no-oracle=5  silent-crash=0  silent-match=7  silent-noise=0  skipped-marker=4  skipped-nondet=0  skipped-oracle-nondet=2
+# stats: error-match=2  error-mismatch=1  match=41  matches-doc=0  mismatch=2  mutsu-accepts=0  mutsu-crash=0  no-oracle=5  silent-crash=0  silent-match=7  silent-noise=0  skipped-marker=4  skipped-nondet=0  skipped-oracle-nondet=3
 
 ==============================================================================
 [1] output-mismatch  raku-doc/doc/Language/typesystem.rakudoc:657
@@ -55,8 +55,8 @@ CATCH { default { say .^name, ': ', .Str} }
 X::Role::Instantiation: Could not instantiate role 'R' because it died with X::AdHoc; exception details:
 
     Please provide a parameter to role R
-      in sub  at /home/user/mutsu/tmp/ddh/prog-21183.raku line 1
-      in block <unit> at /home/user/mutsu/tmp/ddh/prog-21183.raku line 2
+      in sub  at /home/user/mutsu/tmp/ddh/prog-25990.raku line 1
+      in block <unit> at /home/user/mutsu/tmp/ddh/prog-25990.raku line 2
 --- mutsu stdout (exit 0) ---
 X::Role::Instantiation: Could not instantiate role 'R' because it died with X::AdHoc; exception details:
 
@@ -74,13 +74,13 @@ a("foo", 1);  # fails
 Type check failed for return value; expected Foo but got List (("foo", 1)). You have to pass an explicitly
 typed array, not one that just might happen to contain elements of the
 correct type.
-  in sub a at /home/user/mutsu/tmp/ddh/prog-21183.raku line 2
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-21183.raku line 5
+  in sub a at /home/user/mutsu/tmp/ddh/prog-25990.raku line 2
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-25990.raku line 5
 --- raku stdout ---
 (none)
 --- mutsu stdout (exit 1) ---
 (none)
 --- mutsu stderr ---
 Type check failed for return value; expected Foo but got List (foo 1)
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-21183.raku line 5
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-25990.raku line 5
 

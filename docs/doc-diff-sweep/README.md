@@ -2,8 +2,8 @@
 
 This directory holds the **raw output of the most recent full-corpus doc-diff
 sweep**, checked in so a future session can read the per-file minimal repros
-without re-running the sweep (~2.5 h at `-j4` on a 4-core remote container with
-the error/silent oracle modes on; roughly half that with `--/error-parity`).
+without re-running the sweep (about 20 min at `-j4` on a 4-core remote container
+against a **release** `mutsu`; the same sweep against a debug build took ~2.5 h).
 
 - `summary.txt` — corpus totals + every signal file ranked by
   `mismatch + crash + err` (high-signal first). One line per file:
@@ -19,18 +19,18 @@ the error/silent oracle modes on; roughly half that with `--/error-parity`).
   named in `summary.txt` are kept** — the zero-signal reports carry no
   information and would triple the directory.
 
-Current contents: the **2026-09-09b** sweep (debug `mutsu` at `a44bd28`, `raku`
-v2026.07) — the first run with the error/silent oracle modes, which compare the
-half of the corpus (3916 of 7768 blocks) earlier sweeps discarded as "no oracle".
-That is also why it is slower: those modes run the oracle twice on blocks that
-used to cost one run, so budget roughly 2x (about 2.5 h at `-j4` on a 4-core
-container). `--/error-parity` restores the old speed and the old blind spot.
+Current contents: the **2026-09-27** sweep (release `mutsu` at `8458a31f`, `raku`
+v2026.07). The error/silent oracle modes (first run 2026-09-09b) run the oracle
+twice on blocks that used to cost one run, but the release binary more than pays
+for it: the whole corpus took about 20 min at `-j4` on a 4-core container, against
+~2.5 h for the 2026-09-09b debug-build sweep. Pass `-m target/release/mutsu`.
+`--/error-parity` restores the old speed and the old blind spot.
 
 ## Refreshing
 
 ```
-cargo build
-scripts/doc-diff-sweep.sh -j8 -o tmp/sweep-final     # writes to tmp/ (gitignored)
+cargo build --release
+scripts/doc-diff-sweep.sh -j8 -m target/release/mutsu -o tmp/sweep-final     # writes to tmp/ (gitignored)
 rm -rf docs/doc-diff-sweep/{summary.txt,progress.txt,reports}
 mkdir -p docs/doc-diff-sweep/reports
 cp tmp/sweep-final/{summary.txt,progress.txt} docs/doc-diff-sweep/

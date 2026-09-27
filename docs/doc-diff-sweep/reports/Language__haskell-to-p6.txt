@@ -1,5 +1,5 @@
 # doc-diff-harness report
-# stats: error-match=1  error-mismatch=4  match=2  matches-doc=0  mismatch=0  mutsu-accepts=2  mutsu-crash=1  no-oracle=76  silent-crash=0  silent-match=15  silent-noise=0  skipped-marker=15  skipped-nondet=2  skipped-oracle-nondet=0
+# stats: error-match=1  error-mismatch=4  match=3  matches-doc=0  mismatch=0  mutsu-accepts=2  mutsu-crash=0  no-oracle=76  silent-crash=0  silent-match=15  silent-noise=0  skipped-marker=15  skipped-nondet=2  skipped-oracle-nondet=0
 
 ==============================================================================
 [1] error-mismatch  raku-doc/doc/Language/haskell-to-p6.rakudoc:72
@@ -13,15 +13,15 @@ given parse-int($string) {
 }
 --- raku stderr (exit 1) ---
 Type check failed in binding to parameter '$s'; expected Str but got Block (-> ;; $_? is raw = O...)
-  in sub parse-int at /home/user/mutsu/tmp/ddh/prog-6976.raku line 1
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-6976.raku line 4
+  in sub parse-int at /home/user/mutsu/tmp/ddh/prog-12184.raku line 1
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-12184.raku line 4
 --- raku stdout ---
 (none)
 --- mutsu stdout (exit 1) ---
 (none)
 --- mutsu stderr ---
 Type check failed in binding $s: expected Str, got Block
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-6976.raku line 4
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-12184.raku line 4
 
 ==============================================================================
 [2] error-mismatch  raku-doc/doc/Language/haskell-to-p6.rakudoc:95
@@ -46,24 +46,24 @@ with parse-int($string) { $_ } else { 0 }
 # With the defined-or operator
 parse-int($string) // 0
 --- raku stderr (exit 1) ---
-WARNINGS for /home/user/mutsu/tmp/ddh/prog-6976.raku:
+WARNINGS for /home/user/mutsu/tmp/ddh/prog-12184.raku:
 Useless use of constant integer 0 in sink context (lines 12, 16)
 Useless use of $number in sink context (line 12)
 Useless use of $_ in sink context (line 16)
 Type check failed in binding to parameter '$s'; expected Str but got Block (-> ;; $_? is raw = O...)
-  in sub parse-int at /home/user/mutsu/tmp/ddh/prog-6976.raku line 1
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-6976.raku line 5
+  in sub parse-int at /home/user/mutsu/tmp/ddh/prog-12184.raku line 1
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-12184.raku line 5
 --- raku stdout ---
 (none)
 --- mutsu stdout (exit 1) ---
 (none)
 --- mutsu stderr ---
 Useless use of $number in sink context
-    at /home/user/mutsu/tmp/ddh/prog-6976.raku:12
+    at /home/user/mutsu/tmp/ddh/prog-12184.raku:12
 Useless use of constant integer 0 in sink context
-    at /home/user/mutsu/tmp/ddh/prog-6976.raku:12
+    at /home/user/mutsu/tmp/ddh/prog-12184.raku:12
 Useless use of $_ in sink context
-    at /home/user/mutsu/tmp/ddh/prog-6976.raku:16
+    at /home/user/mutsu/tmp/ddh/prog-12184.raku:16
 
 ==============================================================================
 [3] error-mismatch  raku-doc/doc/Language/haskell-to-p6.rakudoc:123
@@ -76,11 +76,11 @@ my $result = parse-int($string) orelse 0;
 sub hello() { say 'hi' }
 hello() andthen say 'bye';
 --- raku stderr (exit 1) ---
-WARNINGS for /home/user/mutsu/tmp/ddh/prog-6976.raku:
+WARNINGS for /home/user/mutsu/tmp/ddh/prog-12184.raku:
 Useless use of constant integer 0 in sink context (line 4)
 Type check failed in binding to parameter '$s'; expected Str but got Block (-> ;; $_? is raw = O...)
-  in sub parse-int at /home/user/mutsu/tmp/ddh/prog-6976.raku line 1
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-6976.raku line 4
+  in sub parse-int at /home/user/mutsu/tmp/ddh/prog-12184.raku line 1
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-12184.raku line 4
 --- raku stdout ---
 (none)
 --- mutsu stdout (exit 1) ---
@@ -88,7 +88,7 @@ Type check failed in binding to parameter '$s'; expected Str but got Block (-> ;
 --- mutsu stderr ---
 Calling parse-int(Block) will never work with declared signature (Str $s)
   Type check failed in binding to parameter '$s'; expected Str but got Block
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-6976.raku line 4
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-12184.raku line 4
 
 ==============================================================================
 [4] error-mismatch  raku-doc/doc/Language/haskell-to-p6.rakudoc:215
@@ -103,15 +103,15 @@ full-name("12345678901234567890111", "Smith") # This does not compile, as the fi
                                               # doesn't fit the Name type
 --- raku stderr (exit 1) ---
 Constraint type check failed in binding to parameter '$first'; expected Name but got Str ("1234567890123456789...)
-  in sub full-name at /home/user/mutsu/tmp/ddh/prog-6976.raku line 3
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-6976.raku line 7
+  in sub full-name at /home/user/mutsu/tmp/ddh/prog-12184.raku line 3
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-12184.raku line 7
 --- raku stdout ---
 (none)
 --- mutsu stdout (exit 1) ---
 (none)
 --- mutsu stderr ---
 Constraint type check failed in binding to parameter '$first'; expected Name but got Str (12345678901234567890111)
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-6976.raku line 7
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-12184.raku line 7
 
 ==============================================================================
 [5] mutsu-accepts  raku-doc/doc/Language/haskell-to-p6.rakudoc:455
@@ -122,7 +122,7 @@ reduce { $^a + $^b }, 0, |@numbers;
 --- raku stderr (exit 1) ---
 Cannot resolve caller Numeric(Block:D: ); none of these signatures matches:
     (Mu:U \v:: *%_)
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-6976.raku line 2
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-12184.raku line 2
 --- raku stdout ---
 (none)
 --- mutsu stdout (exit 0) ---
@@ -137,51 +137,13 @@ my @numbers = {...};
 --- raku stderr (exit 1) ---
 Potential difficulties:
     Useless use of [+] in sink context
-    at /home/user/mutsu/tmp/ddh/prog-6976.raku:2
+    at /home/user/mutsu/tmp/ddh/prog-12184.raku:2
     ------> <BOL><HERE>[+] @numbers     # This is the same
 Cannot resolve caller Numeric(Block:D: ); none of these signatures matches:
     (Mu:U \v:: *%_)
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-6976.raku line 2
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-12184.raku line 2
 --- raku stdout ---
 (none)
 --- mutsu stdout (exit 0) ---
 (none)
-
-==============================================================================
-[7] mutsu-error  raku-doc/doc/Language/haskell-to-p6.rakudoc:475
---- program ---
-sub two-elem-list ( \a, \b ) { ( a, b ) }
-
-# you can use a subroutine as an infix operator
-say 'a' [&two-elem-list] 'b'; # OUTPUT: «(a b)␤»
-
-# as the reduction prefix metaoperator takes an infix operator, it will work there too;
-[[&two-elem-list]] 1..5;           # OUTPUT: «((((1 2) 3) 4) 5)␤»
-say (1..5).reduce: &two-elem-list; # OUTPUT: «((((1 2) 3) 4) 5)␤»
-
-# right associative
-sub right-two-elem-list( \a, \b ) is assoc<right> { ( a, b ) }
-say (1..5).reduce: &right-two-elem-list; # OUTPUT: «(1 (2 (3 (4 5))))␤»
-
-# XXX there is possibly a bug here as this currently doesn't look at
-# XXX the associativity of &right-two-elem-list and just always does left assoc
-say [[&right-two-elem-list]] 1..5;
-
-# chaining
-say [<] 1..5;            # OUTPUT: «True␤»
-say (1..5).reduce: &[<]; # OUTPUT: «True␤»
---- raku stdout ---
-(a b)
-((((1 2) 3) 4) 5)
-(1 (2 (3 (4 5))))
-((((1 2) 3) 4) 5)
-True
-True
---- mutsu stdout (exit 1) ---
-(a b)
-((((1 2) 3) 4) 5)
-(1 (2 (3 (4 5))))
---- mutsu stderr ---
-Unknown function: infix:<&right-two-elem-list>
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-6976.raku line 16
 

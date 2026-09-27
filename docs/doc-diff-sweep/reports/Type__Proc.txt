@@ -8,7 +8,7 @@ shell 'exit 1'
 # OUTPUT: «(exit code 1) The spawned command 'exit 1' exited unsuccessfully (exit code: 1)␤»
 --- raku stderr (exit 1) ---
 The spawned command 'exit 1' exited unsuccessfully (exit code: 1, signal: 0)
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-14855.raku line 1
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-20080.raku line 1
 --- raku stdout ---
 (none)
 --- mutsu stdout (exit 0) ---
@@ -26,7 +26,7 @@ shell 'ls /qqq';
 --- raku stderr (exit 1) ---
 ls: cannot access '/qqq': No such file or directory
 The spawned command 'ls /qqq' exited unsuccessfully (exit code: 2, signal: 0)
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-14855.raku line 1
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-20080.raku line 1
 --- raku stdout ---
 (none)
 --- mutsu stdout (exit 0) ---

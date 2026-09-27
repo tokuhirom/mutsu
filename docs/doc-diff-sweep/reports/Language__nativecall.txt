@@ -16,7 +16,7 @@ my $n = get_n_ints($ints, $number_of_ints);
 (none)
 --- mutsu stderr ---
 No such method 'allocate' for invocant of type 'NativeCall::Types::CArray[int32]'
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-9783.raku line 3
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-14711.raku line 3
 
 ==============================================================================
 [2] error-mismatch  raku-doc/doc/Language/nativecall.rakudoc:995
@@ -34,14 +34,14 @@ Cannot locate native library 'libuser32.so': libuser32.so: cannot open shared ob
   in method setup at /root/.local/rakudo/rakudo-moar-2026.07-01-linux-x86_64-gcc/share/perl6/core/sources/45C87675376ADCDE3A2CC85C437D62A519332146 (NativeCall) line 387
   in method setup at /root/.local/rakudo/rakudo-moar-2026.07-01-linux-x86_64-gcc/share/perl6/core/sources/45C87675376ADCDE3A2CC85C437D62A519332146 (NativeCall) line 428
   in sub raku-nativecall at /root/.local/rakudo/rakudo-moar-2026.07-01-linux-x86_64-gcc/share/perl6/core/sources/BF94C32CF2F8DC6E54803E6B3D12065D43BF2A44 (NativeCall::Dispatcher) line 67
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-9783.raku line 8
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-14711.raku line 8
 --- raku stdout ---
 (none)
 --- mutsu stdout (exit 1) ---
 (none)
 --- mutsu stderr ---
 Cannot locate native library 'libuser32.so': libuser32.so.2: dlopen failed
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-9783.raku line 8
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-14711.raku line 8
 
 ==============================================================================
 [3] error-mismatch  raku-doc/doc/Language/nativecall.rakudoc:1011
@@ -58,14 +58,14 @@ Cannot locate native library 'libuser32.so': libuser32.so: cannot open shared ob
   in method setup at /root/.local/rakudo/rakudo-moar-2026.07-01-linux-x86_64-gcc/share/perl6/core/sources/45C87675376ADCDE3A2CC85C437D62A519332146 (NativeCall) line 387
   in method setup at /root/.local/rakudo/rakudo-moar-2026.07-01-linux-x86_64-gcc/share/perl6/core/sources/45C87675376ADCDE3A2CC85C437D62A519332146 (NativeCall) line 428
   in sub raku-nativecall at /root/.local/rakudo/rakudo-moar-2026.07-01-linux-x86_64-gcc/share/perl6/core/sources/BF94C32CF2F8DC6E54803E6B3D12065D43BF2A44 (NativeCall::Dispatcher) line 67
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-9783.raku line 7
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-14711.raku line 7
 --- raku stdout ---
 (none)
 --- mutsu stdout (exit 1) ---
 (none)
 --- mutsu stderr ---
 Cannot locate native library 'libuser32.so': libuser32.so.2: dlopen failed
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-9783.raku line 7
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-14711.raku line 7
 
 ==============================================================================
 [4] error-mismatch  raku-doc/doc/Language/nativecall.rakudoc:1024
@@ -106,7 +106,7 @@ Cannot locate native library 'libShell32.so': libShell32.so: cannot open shared 
   in method setup at /root/.local/rakudo/rakudo-moar-2026.07-01-linux-x86_64-gcc/share/perl6/core/sources/45C87675376ADCDE3A2CC85C437D62A519332146 (NativeCall) line 387
   in method setup at /root/.local/rakudo/rakudo-moar-2026.07-01-linux-x86_64-gcc/share/perl6/core/sources/45C87675376ADCDE3A2CC85C437D62A519332146 (NativeCall) line 428
   in sub raku-nativecall at /root/.local/rakudo/rakudo-moar-2026.07-01-linux-x86_64-gcc/share/perl6/core/sources/BF94C32CF2F8DC6E54803E6B3D12065D43BF2A44 (NativeCall::Dispatcher) line 67
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-9783.raku line 21
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-14711.raku line 21
 --- raku stdout ---
 (none)
 --- mutsu stdout (exit 1) ---
@@ -125,14 +125,14 @@ Cannot locate native library 'libsomething.so': libsomething.so: cannot open sha
   in method setup at /root/.local/rakudo/rakudo-moar-2026.07-01-linux-x86_64-gcc/share/perl6/core/sources/45C87675376ADCDE3A2CC85C437D62A519332146 (NativeCall) line 387
   in method setup at /root/.local/rakudo/rakudo-moar-2026.07-01-linux-x86_64-gcc/share/perl6/core/sources/45C87675376ADCDE3A2CC85C437D62A519332146 (NativeCall) line 428
   in sub raku-nativecall at /root/.local/rakudo/rakudo-moar-2026.07-01-linux-x86_64-gcc/share/perl6/core/sources/BF94C32CF2F8DC6E54803E6B3D12065D43BF2A44 (NativeCall::Dispatcher) line 67
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-9783.raku line 3
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-14711.raku line 3
 --- raku stdout ---
 (none)
 --- mutsu stdout (exit 1) ---
 (none)
 --- mutsu stderr ---
 Cannot locate native library 'libsomething.so': libsomething.so.2: dlopen failed
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-9783.raku line 3
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-14711.raku line 3
 
 ==============================================================================
 [6] error-mismatch  raku-doc/doc/Language/nativecall.rakudoc:124
@@ -164,14 +164,14 @@ Cannot locate native library 'libfoo.so': libfoo.so: cannot open shared object f
   in method setup at /root/.local/rakudo/rakudo-moar-2026.07-01-linux-x86_64-gcc/share/perl6/core/sources/45C87675376ADCDE3A2CC85C437D62A519332146 (NativeCall) line 387
   in method setup at /root/.local/rakudo/rakudo-moar-2026.07-01-linux-x86_64-gcc/share/perl6/core/sources/45C87675376ADCDE3A2CC85C437D62A519332146 (NativeCall) line 428
   in sub raku-nativecall at /root/.local/rakudo/rakudo-moar-2026.07-01-linux-x86_64-gcc/share/perl6/core/sources/BF94C32CF2F8DC6E54803E6B3D12065D43BF2A44 (NativeCall::Dispatcher) line 67
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-9783.raku line 19
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-14711.raku line 19
 --- raku stdout ---
 (none)
 --- mutsu stdout (exit 1) ---
 (none)
 --- mutsu stderr ---
 Cannot locate native library 'libfoo.so': libfoo.so.2: dlopen failed
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-9783.raku line 19
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-14711.raku line 19
 
 ==============================================================================
 [7] error-mismatch  raku-doc/doc/Language/nativecall.rakudoc:186
@@ -185,14 +185,14 @@ Cannot locate native library 'libfoo.so': libfoo.so: cannot open shared object f
   in method setup at /root/.local/rakudo/rakudo-moar-2026.07-01-linux-x86_64-gcc/share/perl6/core/sources/45C87675376ADCDE3A2CC85C437D62A519332146 (NativeCall) line 387
   in method setup at /root/.local/rakudo/rakudo-moar-2026.07-01-linux-x86_64-gcc/share/perl6/core/sources/45C87675376ADCDE3A2CC85C437D62A519332146 (NativeCall) line 428
   in sub raku-nativecall at /root/.local/rakudo/rakudo-moar-2026.07-01-linux-x86_64-gcc/share/perl6/core/sources/BF94C32CF2F8DC6E54803E6B3D12065D43BF2A44 (NativeCall::Dispatcher) line 67
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-9783.raku line 4
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-14711.raku line 4
 --- raku stdout ---
 (none)
 --- mutsu stdout (exit 1) ---
 (none)
 --- mutsu stderr ---
 Cannot locate native library 'libfoo.so': libfoo.so.2: dlopen failed
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-9783.raku line 4
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-14711.raku line 4
 
 ==============================================================================
 [8] error-mismatch  raku-doc/doc/Language/nativecall.rakudoc:195
@@ -207,12 +207,12 @@ Cannot locate native library 'libfoo.so': libfoo.so: cannot open shared object f
   in method setup at /root/.local/rakudo/rakudo-moar-2026.07-01-linux-x86_64-gcc/share/perl6/core/sources/45C87675376ADCDE3A2CC85C437D62A519332146 (NativeCall) line 387
   in method setup at /root/.local/rakudo/rakudo-moar-2026.07-01-linux-x86_64-gcc/share/perl6/core/sources/45C87675376ADCDE3A2CC85C437D62A519332146 (NativeCall) line 428
   in sub raku-nativecall at /root/.local/rakudo/rakudo-moar-2026.07-01-linux-x86_64-gcc/share/perl6/core/sources/BF94C32CF2F8DC6E54803E6B3D12065D43BF2A44 (NativeCall::Dispatcher) line 67
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-9783.raku line 5
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-14711.raku line 5
 --- raku stdout ---
 (none)
 --- mutsu stdout (exit 1) ---
 (none)
 --- mutsu stderr ---
 Cannot locate native library 'libfoo.so': libfoo.so.2: dlopen failed
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-9783.raku line 5
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-14711.raku line 5
 

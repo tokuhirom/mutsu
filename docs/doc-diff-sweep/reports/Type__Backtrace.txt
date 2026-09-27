@@ -23,7 +23,7 @@ try zipi;
 say $!.backtrace.nice( :oneline ) if $!;
 # OUTPUT: «  in sub zipi at /tmp/... line 1␤␤»
 --- raku stdout ---
-  in sub zipi at /home/user/mutsu/tmp/ddh/prog-26125.raku line 1
+  in sub zipi at /home/user/mutsu/tmp/ddh/prog-30945.raku line 1
 --- mutsu stdout (exit 0) ---
-  in block <unit> at /home/user/mutsu/tmp/ddh/prog-26125.raku line 2
+  in block <unit> at /home/user/mutsu/tmp/ddh/prog-30945.raku line 2
 

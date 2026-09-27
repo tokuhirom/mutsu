@@ -28,5 +28,5 @@ BEGIN {
 --- mutsu stderr ---
 An exception occurred while evaluating a CHECK
 Exception details:
-  No such method 'add_role' for invocant of type 'Perl6::Metamodel::EnumHOW'
+  Unknown role: NumericEnumeration
 
