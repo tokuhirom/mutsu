@@ -1780,6 +1780,22 @@ impl Interpreter {
         Ok(())
     }
 
+    /// The core routine's own candidate, for a call to a core routine name
+    /// that no proto-less user `multi` of that name accepted (see the
+    /// user-multi arm of [`Interpreter::dispatch_func_call_inner`]). Kept out
+    /// of line: that function recurses through every nested call, and in a
+    /// debug build each call site inlined into it widens every frame.
+    // Cost: O(1) beyond the builtin routine's own cost.
+    #[inline(never)]
+    fn call_core_routine_candidate(
+        &mut self,
+        name: &str,
+        args: Vec<Value>,
+    ) -> Result<Value, RuntimeError> {
+        let result = self.vm_call_function(name, args)?;
+        loan_env!(self, maybe_fetch_rw_proxy(result, true))
+    }
+
     /// Inner dispatch for function calls. Handles CALL-ME override, compiled functions,
     /// native functions, and interpreter fallback. Returns the result value.
     ///
@@ -2179,8 +2195,7 @@ impl Interpreter {
                         && !self.has_pending_dispatch_error()
                         && crate::runtime::Interpreter::is_builtin_function(name);
                     if core_candidate_wins {
-                        let result = self.vm_call_function(name, args)?;
-                        loan_env!(self, maybe_fetch_rw_proxy(result, true))
+                        self.call_core_routine_candidate(name, args)
                     } else if let Some(def) = resolved
                         // A genuine multi candidate: the name is multi-cached, so
                         // `compile_and_call_function_def` never name-caches this
