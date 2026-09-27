@@ -16,9 +16,12 @@
 use crate::symbol::Symbol;
 use std::sync::{Mutex, OnceLock};
 
+/// One site's memo: the generation it was resolved under, and the type object.
+type Word = Mutex<Option<(u64, Symbol)>>;
+
 /// One memo per string constant of a chunk.
 #[derive(Debug, Default)]
-pub(crate) struct BarewordSiteCaches(OnceLock<Box<[Mutex<Option<(u64, Symbol)>>]>>);
+pub(crate) struct BarewordSiteCaches(OnceLock<Box<[Word]>>);
 
 impl Clone for BarewordSiteCaches {
     /// A cloned chunk starts cold: the memo is an optimization, not state.
@@ -31,7 +34,7 @@ impl BarewordSiteCaches {
     /// The memo words; `sites` is the chunk's constant count when the table is
     /// first built. A constant appended later has no word and never hits.
     // Cost: O(1) once built; the first call allocates O(sites).
-    fn words(&self, sites: usize) -> &[Mutex<Option<(u64, Symbol)>>] {
+    fn words(&self, sites: usize) -> &[Word] {
         self.0
             .get_or_init(|| (0..sites).map(|_| Mutex::new(None)).collect())
     }
