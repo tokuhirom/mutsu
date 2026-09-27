@@ -643,6 +643,23 @@ impl Interpreter {
                             // variable / dynamic-scope shapes `GetGlobal`
                             // also carries that are not ordinary lexicals.
                             Err(self.strict_undeclared_error(name))
+                        } else if !name.is_empty()
+                            && !name.starts_with(['@', '%', '&', '*', '?', '!'])
+                            && name != "/"
+                            && !name.bytes().all(|b| b.is_ascii_digit())
+                        {
+                            // A genuinely undeclared scalar reaches here either
+                            // as a bare name under `no strict`, or as a
+                            // package-qualified name (`$Foo::bar`) that
+                            // `strict_read_exempt` always lets through
+                            // regardless of `strict_mode`. raku auto-vivifies
+                            // both as the untyped `Any` object, not `Nil`
+                            // (mirrors the unset-topic default a few lines
+                            // above, S02-types/nil.t 39). `$/`, `$!`, and the
+                            // digit capture vars keep their own documented
+                            // `Nil` default (S02-types/nil.t 109-113) and fall
+                            // through to the branch below instead.
+                            Ok(Value::package(crate::symbol::wk::any()))
                         } else {
                             Ok(Value::NIL)
                         }
