@@ -21,8 +21,21 @@ impl Interpreter {
         let Some((_, _)) = crate::value::attr_twigil_base(name) else {
             return Ok(val);
         };
+        // An UNTYPED attribute (`has %!h;` / `has @!a;`, or one explicitly
+        // typed `Any`/`Mu`) still must not inherit container-level metadata
+        // from its assigned value — a Map's `declared_type` (immutable),
+        // or a typed source's `value_type`/`key_type` — because assignment
+        // into a plain attribute copies into a fresh, untyped container,
+        // exactly like `my %h = <typed source>` does for a lexical (see
+        // `clear_hash_type_metadata`'s caller in `exec_set_local_op_inner`,
+        // which skips attribute names on the assumption that THIS function
+        // covers them). Without this, `%!h = Map.new(...)` left `%!h` a
+        // permanently immutable Map (#9708): the by-name/local-slot
+        // assignment paths never clear inherited metadata themselves for an
+        // attribute twigil, and the general fall-through below only clears
+        // it for a value type of "Mu"/"Any", not for "no constraint at all".
         let Some(tc) = self.self_attr_type_constraint(name) else {
-            return Ok(val);
+            return Ok(Self::clear_hash_type_metadata(val));
         };
         // An object-hash declaration stores its key constraint alongside the
         // value constraint (`has %!h{Key}` is recorded as `Any{Key}`).  The
@@ -35,7 +48,7 @@ impl Interpreter {
             (tc.as_str(), None)
         };
         if matches!(value_type, "Mu" | "Any") && key_type.is_none() {
-            return Ok(val);
+            return Ok(Self::clear_hash_type_metadata(val));
         }
         let elems: Option<Vec<Value>> = match val.view() {
             ValueView::Array(items, _) => Some(items.iter().cloned().collect()),
