@@ -153,6 +153,7 @@ impl Interpreter {
                     quoted: false,
                 },
                 op: AssignOp::Assign,
+                target_is_sigilless: false,
             });
         }
         let storer = Value::make_sub(

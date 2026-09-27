@@ -182,6 +182,7 @@ fn try_split_decl_modifier(stmt: &Stmt, effective_cond: &Expr) -> Option<Stmt> {
             name: name.clone(),
             expr: expr.clone(),
             op: crate::ast::AssignOp::Assign,
+            target_is_sigilless: false,
         }],
         else_branch: Vec::new(),
         binding_var: None,

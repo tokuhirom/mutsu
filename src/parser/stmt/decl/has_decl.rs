@@ -1300,6 +1300,7 @@ pub(in crate::parser::stmt) fn has_decl(input: &str) -> PResult<'_, Stmt> {
                 name: var_name,
                 expr: compound_assigned_value_expr(read, op, rhs),
                 op: AssignOp::Assign,
+                target_is_sigilless: false,
             }
         }
     });

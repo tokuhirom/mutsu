@@ -2804,6 +2804,67 @@ impl Compiler {
         }
     }
 
+    /// Whether a sigilless parameter occupies the canonical name that an
+    /// enclosing scalar lexical uses. Raku keeps `$name` and bare `name` in
+    /// separate namespaces even though both are stored under the same runtime
+    /// key; the compiler's slot map is intentionally name-keyed, so this is
+    /// the point where the source-level target kind must disambiguate them.
+    fn sigilless_param_shadows_outer_scalar(&self, name: &str) -> bool {
+        !name.starts_with(['@', '%', '&', '!'])
+            && self.sigilless_locals.contains(name)
+            && self.enclosing_local_names.contains(name)
+            && !self.enclosing_sigilless.contains(name)
+    }
+
+    /// Retain the enclosing scalar binding when a sigilless parameter reuses
+    /// its canonical name. The two source namespaces are distinct even though
+    /// both runtime env entries use the bare scalar key.
+    pub(super) fn note_forced_outer_scalar_capture(&mut self, name: &str, writes: bool) {
+        let sym = crate::symbol::Symbol::intern(name);
+        if !self.code.forced_free_var_syms.contains(&sym) {
+            self.code.forced_free_var_syms.push(sym);
+        }
+        if writes && !self.code.forced_free_var_writes.contains(&sym) {
+            self.code.forced_free_var_writes.push(sym);
+        }
+    }
+
+    /// Resolve an assignment target's local slot while preserving the source
+    /// distinction between a sigilless term and a sigiled scalar.
+    pub(super) fn assignment_target_slot(
+        &self,
+        name: &str,
+        target_is_sigilless: bool,
+    ) -> Option<u32> {
+        if !target_is_sigilless && self.sigilless_param_shadows_outer_scalar(name) {
+            None
+        } else {
+            self.local_map.get(name).copied()
+        }
+    }
+
+    /// Assignment twin of [`Self::emit_set_named_var`] for a source target
+    /// whose sigil kind was retained by the parser.
+    pub(super) fn emit_set_named_var_with_kind(&mut self, name: &str, target_is_sigilless: bool) {
+        let name = self.resolve_self_lexical(name);
+        let captures_outer_scalar =
+            !target_is_sigilless && self.sigilless_param_shadows_outer_scalar(name);
+        if captures_outer_scalar {
+            self.note_forced_outer_scalar_capture(name, true);
+        }
+        if let Some(slot) = self.assignment_target_slot(name, target_is_sigilless) {
+            self.code.emit(OpCode::SetLocal(slot));
+        } else if name.starts_with('!') && name.len() > 1 {
+            let slot = self.alloc_local(name);
+            self.code.emit(OpCode::SetLocal(slot));
+        } else {
+            let idx = self
+                .code
+                .add_constant(Value::str(self.qualify_variable_name(name)));
+            self.code.emit(OpCode::SetGlobal(idx));
+        }
+    }
+
     /// Emit the declaration-time type-constraint registration op for a
     /// `my TYPE $x`-family declaration. A `my`/`state` declaration lexically
     /// inside a routine, or directly inside a plain `{ ... }` block (see

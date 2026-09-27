@@ -1072,7 +1072,7 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
                 explicit_default,
             )?)))
         }
-        Stmt::Assign { name, expr, op } => match op {
+        Stmt::Assign { name, expr, op, .. } => match op {
             // `$x = EXPR` — the special `Assignment` infix (slice 2). A compound
             // assignment keeps its source-level metaop marker inside the ordinary
             // assignment expansion used by the compiler.

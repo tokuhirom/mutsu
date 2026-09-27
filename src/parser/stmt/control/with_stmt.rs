@@ -138,6 +138,7 @@ pub(crate) fn with_stmt(input: &str) -> PResult<'_, Stmt> {
                 name: format!("!{}", attr_name),
                 expr: tmp_var.clone(),
                 op: crate::ast::AssignOp::Assign,
+                target_is_sigilless: false,
             });
         } else if let Some(ref pdef) = param_def {
             if let Some(ref sub_params) = pdef.sub_signature {

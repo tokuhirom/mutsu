@@ -285,7 +285,7 @@ impl<'a> TrirCompiler<'a> {
                     let keep = !sink_all && Some(i) == final_idx;
                     last = self.compile_var_decl(stmt, keep)?;
                 }
-                Stmt::Assign { name, expr, op } => {
+                Stmt::Assign { name, expr, op, .. } => {
                     if !matches!(op, crate::ast::AssignOp::Assign) {
                         self.note_decline(|| format!("compound assignment {op:?}"));
                         return None;
