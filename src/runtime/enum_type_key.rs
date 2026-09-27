@@ -24,6 +24,12 @@ impl Interpreter {
                 return Some(key.to_string());
             }
         }
+        // Only a package-scoped enum lives under a qualified key, so the
+        // package-chain probe (which interns) runs only for a name one was
+        // declared under -- this is reached on every unresolved call.
+        if !crate::value::is_package_enum_declared_name(name) {
+            return None;
+        }
         self.resolve_type_in_current_package(name)
             .filter(|key| self.registry().enum_types.contains_key(key.as_str()))
     }

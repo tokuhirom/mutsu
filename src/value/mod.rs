@@ -629,7 +629,9 @@ pub(crate) use display::note_user_declared_type_name;
 pub(crate) use display::user_facing_type_name;
 pub(crate) use display::with_quanthash_render_guard;
 pub use display::{format_complex, tclc_str, wordcase_segments, wordcase_str};
-pub(crate) use enum_display::{enum_display_name, note_enum_display_name};
+pub(crate) use enum_display::{
+    enum_display_name, is_package_enum_declared_name, note_enum_display_name,
+};
 pub(crate) use error::LazyBacktraceText;
 pub(crate) use error::expected_type_object;
 pub use error::{CatchInlineVerdict, Control, RuntimeError, RuntimeErrorCode};

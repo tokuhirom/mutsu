@@ -22,6 +22,14 @@ use std::sync::{OnceLock, RwLock};
 /// package-scoped enum pays one relaxed load per rendered type name.
 static ANY_ENTRY: AtomicBool = AtomicBool::new(false);
 
+/// The declared names themselves, so a lookup by a source spelling can ask
+/// "is any package-scoped enum declared under this name?" without interning
+/// anything (see `Interpreter::resolve_enum_type_key`).
+fn declared_names() -> &'static RwLock<std::collections::HashSet<String>> {
+    static NAMES: OnceLock<RwLock<std::collections::HashSet<String>>> = OnceLock::new();
+    NAMES.get_or_init(|| RwLock::new(std::collections::HashSet::new()))
+}
+
 fn table() -> &'static RwLock<HashMap<String, String>> {
     static TABLE: OnceLock<RwLock<HashMap<String, String>>> = OnceLock::new();
     TABLE.get_or_init(|| RwLock::new(HashMap::new()))
@@ -35,8 +43,20 @@ pub(crate) fn note_enum_display_name(key: &str, declared: &str) {
     }
     if let Ok(mut map) = table().write() {
         map.insert(key.to_string(), declared.to_string());
+        if let Ok(mut names) = declared_names().write() {
+            names.insert(declared.to_string());
+        }
         ANY_ENTRY.store(true, Ordering::Release);
     }
+}
+
+/// Whether some package-scoped enum was declared under the short name `name`.
+// Cost: O(1) -- a relaxed flag load, then one hash probe once any entry exists.
+pub(crate) fn is_package_enum_declared_name(name: &str) -> bool {
+    ANY_ENTRY.load(Ordering::Acquire)
+        && declared_names()
+            .read()
+            .is_ok_and(|names| names.contains(name))
 }
 
 /// The declared name of the package-scoped enum registered under `key`, or
