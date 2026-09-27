@@ -270,8 +270,10 @@ impl Interpreter {
                     ord => ord,
                 }
             }
-            // Complex vs Real: treat Real as Complex with im=0
-            (ValueView::Complex(ar, ai), _) => {
+            // Complex vs Real: treat Real as Complex with im=0. Anything else
+            // (a Str, say) falls to the Stringy comparison below, like Rakudo's
+            // `infix:<cmp>(\a, \b)` candidate: `"0+NaNi" cmp 0i` is More.
+            (ValueView::Complex(ar, ai), _) if is_real_value(right) => {
                 if ar.is_nan() || ai.is_nan() {
                     return std::cmp::Ordering::Greater;
                 }
@@ -283,7 +285,7 @@ impl Interpreter {
                     ord => ord,
                 }
             }
-            (_, ValueView::Complex(br, bi)) => {
+            (_, ValueView::Complex(br, bi)) if is_real_value(left) => {
                 if br.is_nan() || bi.is_nan() {
                     return std::cmp::Ordering::Greater;
                 }
@@ -860,4 +862,18 @@ impl Interpreter {
         }
         Ok(Some(true))
     }
+}
+
+/// Whether `v` is a `Real` numeric value (the operand kinds a `Complex`
+/// compares against numerically).
+fn is_real_value(v: &Value) -> bool {
+    matches!(
+        v.view(),
+        ValueView::Int(_)
+            | ValueView::BigInt(_)
+            | ValueView::Num(_)
+            | ValueView::Rat(_, _)
+            | ValueView::FatRat(_, _)
+            | ValueView::BigRat(_, _)
+    )
 }
