@@ -221,6 +221,26 @@ impl Interpreter {
         args: &[Value],
         candidates: Vec<(String, Arc<FunctionDef>)>,
     ) -> Option<Arc<FunctionDef>> {
+        self.choose_best_matching_candidate_excluding(name, args, candidates, None)
+    }
+
+    /// [`Self::choose_best_matching_candidate`] for a resolver that retries
+    /// with successively wider candidate sets. `rejected` collects the
+    /// fingerprints of candidates that were tried against these `args` and did
+    /// not bind, and candidates already in it are skipped: the answer for the
+    /// same arguments cannot change, and trying again re-ran their `where`
+    /// clauses once per retry -- three times per call of a user operator that
+    /// no candidate accepts (`resolve_function_with_types`' exact-arity,
+    /// optional-arity and any-arity passes), where rakudo runs it once.
+    /// A candidate whose `where` threw is not recorded, so its exception is
+    /// still weighed by the later pass exactly as before.
+    pub(super) fn choose_best_matching_candidate_excluding(
+        &mut self,
+        name: &str,
+        args: &[Value],
+        candidates: Vec<(String, Arc<FunctionDef>)>,
+        mut rejected: Option<&mut std::collections::HashSet<u64>>,
+    ) -> Option<Arc<FunctionDef>> {
         // Rank every candidate BEFORE trying to bind any of them.
         //
         // [`Self::candidate_rank_key`] reads only the declared signature and
@@ -268,7 +288,10 @@ impl Interpreter {
         let mut candidates = candidates;
         {
             let mut seen_keys = std::collections::HashSet::new();
-            candidates.retain(|(_, def)| seen_keys.insert(def.body_fingerprint()));
+            candidates.retain(|(_, def)| {
+                let fp = def.body_fingerprint();
+                !rejected.as_ref().is_some_and(|r| r.contains(&fp)) && seen_keys.insert(fp)
+            });
         }
 
         let mut ranked: Vec<(CandidateRankKey, Arc<FunctionDef>)> =
@@ -334,6 +357,9 @@ impl Interpreter {
                 // A candidate whose `where` died did not match; whether the
                 // exception escapes is settled after the winner is known.
                 continue;
+            }
+            if !type_ok && let Some(rejected) = rejected.as_deref_mut() {
+                rejected.insert(def.body_fingerprint());
             }
             if type_ok {
                 // No fingerprint filter here: `ranked` is already unique by
@@ -1084,6 +1110,19 @@ impl Interpreter {
                 ValueView::Num(n) if n.is_nan() => 0,
                 _ => UNRELATED_DISTANCE,
             };
+        }
+        // A `constant` bound to a value, used where a type goes
+        // (`constant G = Point.new(...); multi f(Int $n, G)`), is a definite
+        // value constraint, exactly like a literal parameter: rakudo compiles
+        // it to the value's type plus a smartmatch against it, so it is as
+        // narrow as the argument that bound to it. Only a candidate that
+        // already matched is ranked, so equality here is that match.
+        if !crate::runtime::utils::is_known_type_constraint(base)
+            && let Some(bound_val) = self.env.get(base)
+            && !matches!(bound_val.view(), ValueView::Package(_))
+            && crate::runtime::values_identical(bound_val, value)
+        {
+            return 0;
         }
         // An enum value narrows in three steps: the value's own name
         // (`multi f(e1)`, a definite-value constraint), then its enum type

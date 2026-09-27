@@ -543,12 +543,24 @@ impl Interpreter {
                         // An enum key's bare spelling lives in the enum-key namespace
                         // (#7914), so ask that first: the plain `env` key is a
                         // same-named `$`-scalar's storage and never the enum value.
-                        if let Some(expected_val) = self
-                            .enum_bare_value(&resolved_constraint)
-                            .or_else(|| self.env.get(&resolved_constraint))
-                            .cloned()
+                        if let Some(expected_val) =
+                            self.enum_bare_value(&resolved_constraint).cloned()
                         {
                             if dispatch_arg != expected_val {
+                                return false;
+                            }
+                        } else if let Some(expected_val) =
+                            self.env.get(&resolved_constraint).cloned()
+                        {
+                            // A `constant` bound to a value (`multi f(G)`):
+                            // rakudo smartmatches the argument against it,
+                            // which for a definite object is `===` -- WHICH
+                            // identity, not structural equality, so a fresh
+                            // `Point.new(v => 1)` does not bind to `G` unless
+                            // `Point` gives itself value semantics.
+                            self.warm_which_identity_for_identity(&dispatch_arg);
+                            self.warm_which_identity_for_identity(&expected_val);
+                            if !crate::runtime::values_identical(&dispatch_arg, &expected_val) {
                                 return false;
                             }
                         } else if !self.type_matches_value(&resolved_constraint, &dispatch_arg) {

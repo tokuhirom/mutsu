@@ -692,11 +692,18 @@ impl Interpreter {
         // does consume an optional argument, however, it must compete with
         // longer signatures whose required parameters may describe the call
         // more precisely (the `is-approx` tolerance overloads).
+        // Fingerprints of candidates the passes below already tried and that
+        // did not bind; each wider pass re-gathers them, so skip them there.
+        let mut rejected = std::collections::HashSet::new();
         if !exact_candidate_consumes_optional
             && !exact_candidate_untyped
             && exact_candidate_has_unnamed
-            && let Some(def) =
-                self.choose_best_matching_candidate(name, arg_values, candidates.clone())
+            && let Some(def) = self.choose_best_matching_candidate_excluding(
+                name,
+                arg_values,
+                candidates.clone(),
+                Some(&mut rejected),
+            )
         {
             return Some(def);
         }
@@ -731,7 +738,12 @@ impl Interpreter {
         }
         candidates.extend(optional_candidates);
         self.sort_candidates_by_specificity(&mut candidates);
-        if let Some(def) = self.choose_best_matching_candidate(name, arg_values, candidates) {
+        if let Some(def) = self.choose_best_matching_candidate_excluding(
+            name,
+            arg_values,
+            candidates,
+            Some(&mut rejected),
+        ) {
             return Some(def);
         }
         // Try slurpy candidates with different arities (slurpy params accept
@@ -755,8 +767,12 @@ impl Interpreter {
             found_multi_candidates = true;
         }
         slurpy_candidates.sort_by(|a, b| a.0.cmp(&b.0));
-        if let Some(def) = self.choose_best_matching_candidate(name, arg_values, slurpy_candidates)
-        {
+        if let Some(def) = self.choose_best_matching_candidate_excluding(
+            name,
+            arg_values,
+            slurpy_candidates,
+            Some(&mut rejected),
+        ) {
             return Some(def);
         }
         // Try candidates from other arities (e.g., optional/default positional params).
@@ -778,9 +794,12 @@ impl Interpreter {
             found_multi_candidates = true;
         }
         self.sort_candidates_by_specificity(&mut any_arity_candidates);
-        if let Some(def) =
-            self.choose_best_matching_candidate(name, arg_values, any_arity_candidates)
-        {
+        if let Some(def) = self.choose_best_matching_candidate_excluding(
+            name,
+            arg_values,
+            any_arity_candidates,
+            Some(&mut rejected),
+        ) {
             return Some(def);
         }
         // Fall back to arity-only if no proto declared and no multi candidates were found.
