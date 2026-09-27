@@ -308,6 +308,15 @@ impl Interpreter {
             Self::hash_live_pairs(&gc, iterable.hash_is_itemized())
         } else if let Some(items) = self.try_iterable_instance_items(&iterable)? {
             items
+        } else if let Some(items) = self.try_user_iterator_items(&iterable)? {
+            // Rakudo compiles `for EXPR` to `EXPR.map(&body, :item(iscont(EXPR)))`,
+            // and `Any.map` iterates `SELF.iterator` unless `:item` is set. So a
+            // bare instance — a method-call result, not a `$` container — is
+            // iterated through its class's own `iterator` override even without
+            // `does Iterable` (Game::Entities' `View`). A `$var` source never
+            // reaches here as a bare instance: `normalize_for_iterable` wraps it
+            // into a one-element list, which keeps `for $obj` a single item.
+            items
         } else {
             runtime::value_to_list(&iterable)
         };
@@ -605,12 +614,15 @@ impl Interpreter {
     /// `does Iterable` class does). `.flat` does NOT extend the same way
     /// (measured: `$obj.flat` on such a plain class stays one item, unlike
     /// the `does Iterable` case) — the caller excludes it from the method set
-    /// it drives through this helper. `for`/`.list`/`@`-assignment do not
-    /// extend either (measured: `for $obj` / `$obj.list` on such a plain
-    /// class still yields the instance as one item) — those stay on
+    /// it drives through this helper. `.list`/`@`-assignment do not extend
+    /// either (measured: `$obj.list` on such a plain class still yields the
+    /// instance as one item) — those stay on
     /// [`Self::try_iterable_instance_items`]'s stricter Iterable-role gate,
     /// which is why this is a separate, narrower-scoped helper rather than a
-    /// relaxation of the shared one.
+    /// relaxation of the shared one. `for` is the one statement that uses it:
+    /// `for $obj` is one item only because `$obj` is a Scalar container
+    /// (rakudo's `.map(:item(iscont(..)))`), so a bare `for Obj.new` /
+    /// `for $registry.view` iterates the override (Game::Entities).
     pub(crate) fn try_user_iterator_items(
         &mut self,
         iterable: &Value,

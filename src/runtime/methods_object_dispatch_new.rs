@@ -236,7 +236,7 @@ impl Interpreter {
     /// fast path and built a plain instance — no role mixin markers, so every
     /// method call on it failed with "No such method". Only the first
     /// construction in a program worked.
-    fn withdraw_role_pun(&mut self, role_name: &str) {
+    pub(super) fn withdraw_role_pun(&mut self, role_name: &str) {
         self.registry_mut().classes.remove(role_name);
         self.registry_mut().hidden_classes.remove(role_name);
         self.registry_mut().class_composed_roles.remove(role_name);

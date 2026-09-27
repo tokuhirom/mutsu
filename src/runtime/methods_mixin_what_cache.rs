@@ -96,7 +96,18 @@ impl Interpreter {
         &mut self,
         role_name: &str,
     ) -> Result<Value, RuntimeError> {
+        // The pun is registered only so the type object can be described;
+        // withdraw it again unless the name was already a class, exactly as
+        // every construction path does. Left registered, a later `R.new`
+        // resolved `R` as a plain class and built an instance without the
+        // role markers, whose `.WHAT` was then not `R.^pun` (Game::Entities
+        // keys its component registry by `.^pun` for a role type object and
+        // by `.WHAT` for an instance).
+        let pre_existing_class = self.registry().classes.contains_key(role_name);
         self.ensure_role_punned_to_class(role_name)?;
+        if !pre_existing_class {
+            self.withdraw_role_pun(role_name);
+        }
         let mut mixins: crate::value::MixinOverrides = ValueMap::default().into();
         mixins.insert(MetaNs::Role.owned_key_for_str(role_name), Value::TRUE);
         // Mirrors `mark_punned_role_instance`'s own role-id lookup so a

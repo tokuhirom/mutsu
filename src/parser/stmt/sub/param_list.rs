@@ -177,10 +177,25 @@ pub(crate) fn check_duplicate_params(params: &[ParamDef]) -> Result<(), PError> 
                     return Err(PError::fatal_with_exception(msg, Box::new(ex)));
                 }
             }
-            for sp in sub_params {
+            // `:value(($a, $b))`: the inner pattern is the `__subsig__`
+            // placeholder, which declares nothing itself — its own
+            // sub-signature holds the variables. Flatten those in, or two
+            // nested named patterns clash on the shared placeholder name.
+            let mut flat: Vec<&ParamDef> = Vec::new();
+            let mut pending: Vec<&ParamDef> = sub_params.iter().collect();
+            while let Some(sp) = pending.pop() {
+                match (&sp.sub_signature, sp.name.as_str()) {
+                    (Some(nested), "__subsig__") => pending.extend(nested.iter()),
+                    _ => flat.push(sp),
+                }
+            }
+            for sp in flat {
                 let sp_name = &sp.name;
                 let sp_without_sigil = strip_param_sigil(sp_name);
-                if sp_name.is_empty() || sp_without_sigil.starts_with("__ANON_") {
+                if sp_name.is_empty()
+                    || sp_without_sigil.starts_with("__ANON_")
+                    || sp_name == "__subsig__"
+                {
                     continue;
                 }
                 let sp_display = if sp_name.starts_with('@')

@@ -3029,7 +3029,8 @@ pub(crate) enum OpCode {
     /// `@a.reverse` writeback); same slot-baking contract as `TagContainerRef`.
     TagContainerRefReversed(u32, Option<u32>),
     /// Topicalize a container *element* (`given %h<k>` / `given @a[i]`) as an
-    /// lvalue: pop the index from the stack, read element `container[index]`,
+    /// lvalue: pop the index and then the container value from the stack, read
+    /// element `container[index]`,
     /// push it as the topic value, and record the (container, index) source so
     /// the `given`/`with` body's final `$_` (after `$_ = ...` or `.push`) is
     /// written back to that element. `positional` is true for `@a[i]`, false for
@@ -3039,8 +3040,8 @@ pub(crate) enum OpCode {
         positional: bool,
     },
     /// Variant of `TagElementSource` for a chained lvalue such as
-    /// `with %h<a><b>`. The compiled indices are on the stack in source
-    /// order; the VM reads the final value and records the whole path so the
+    /// `with %h<a><b>`. The root container's value and then the compiled
+    /// indices are on the stack in source order; the VM reads the final value and records the whole path so the
     /// topicalizing `given` can write back to the leaf.
     TagElementSourcePath {
         container_idx: u32,

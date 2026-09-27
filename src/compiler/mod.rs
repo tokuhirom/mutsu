@@ -1341,6 +1341,12 @@ pub(crate) struct Compiler {
     /// Whether we are compiling inside a routine (sub/method). `return` outside
     /// a routine must throw X::ControlFlow::Return instead of normal return.
     pub(crate) is_routine: bool,
+    /// Whether a compilation unit's tail value is discarded instead of being
+    /// delivered through `$_` (`SetTopic`, the mainline/EVAL result
+    /// convention). Set for a `gather` body: its value is its `take`s, and it
+    /// runs in the env it captured from the enclosing scope, so a `SetTopic`
+    /// there overwrote the enclosing `$_` with the body's last value.
+    pub(crate) unit_tail_discards: bool,
     /// Whether the enclosing lexical scope contains a routine (sub/method).
     /// Used to decide whether `return` in a non-routine block should perform
     /// a non-local return (via CX::Return) or throw X::ControlFlow::Return.
@@ -1834,6 +1840,7 @@ impl Compiler {
             accessed_dynamic_vars: std::collections::HashSet::new(),
             callframe_block_depth: 0,
             is_routine: false,
+            unit_tail_discards: false,
             lexically_in_routine: false,
             eval_context_dead_routine: false,
             lexically_in_block: false,
@@ -4288,7 +4295,7 @@ impl Compiler {
             .any(|s| matches!(s, Stmt::Catch(_) | Stmt::Control(_)));
         if has_catch {
             self.compile_implicit_try(stmts);
-            self.code.emit(OpCode::SetTopic);
+            self.emit_unit_tail_result();
         } else if self.is_routine && Self::has_block_enter_leave_phasers(stmts) {
             self.compile_phaser_block_scope(stmts, PhaserBlockResult::ReturnViaTopic);
         } else {
@@ -4302,7 +4309,7 @@ impl Compiler {
                             // body recompiled through the interpreter carrier
                             // still returns its tail's container, ADR-0059.)
                             self.with_escape(true, |c| c.compile_routine_tail_expr(expr));
-                            self.code.emit(OpCode::SetTopic);
+                            self.emit_unit_tail_result();
                             continue;
                         }
                         Stmt::Call { name, args } => {
@@ -4310,7 +4317,7 @@ impl Compiler {
                             // the args are positional-only or carry named/slip
                             // args (compile_tail_stmt_call_value handles both).
                             self.compile_tail_stmt_call_value(*name, args);
-                            self.code.emit(OpCode::SetTopic);
+                            self.emit_unit_tail_result();
                             continue;
                         }
                         Stmt::Block(body) | Stmt::SyntheticBlock(body) => {
@@ -4356,7 +4363,7 @@ impl Compiler {
                                 // check.
                                 self.compile_synthetic_block_inline(body);
                             }
-                            self.code.emit(OpCode::SetTopic);
+                            self.emit_unit_tail_result();
                             continue;
                         }
                         Stmt::If {
@@ -4374,7 +4381,7 @@ impl Compiler {
                                 binding_var,
                                 *is_statement_modifier,
                             );
-                            self.code.emit(OpCode::SetTopic);
+                            self.emit_unit_tail_result();
                             continue;
                         }
                         Stmt::VarDecl { name, .. } => {
@@ -4385,7 +4392,7 @@ impl Compiler {
                             self.compile_stmt(stmt);
                             let slot = self.alloc_local(&var_name);
                             self.code.emit(OpCode::GetLocal(slot));
-                            self.code.emit(OpCode::SetTopic);
+                            self.emit_unit_tail_result();
                             continue;
                         }
                         _ => {}
@@ -4404,6 +4411,17 @@ impl Compiler {
         }
         self.code.compute_needs_env_sync();
         (self.code, self.compiled_functions)
+    }
+
+    /// Dispose of a compilation unit's tail value: into `$_` (the
+    /// mainline/EVAL result convention), or dropped when
+    /// [`Compiler::unit_tail_discards`] is set.
+    fn emit_unit_tail_result(&mut self) {
+        if self.unit_tail_discards {
+            self.code.emit(OpCode::Pop);
+        } else {
+            self.code.emit(OpCode::SetTopic);
+        }
     }
 
     /// Compile a lexical block scope containing ENTER/LEAVE/KEEP/UNDO/PRE/POST

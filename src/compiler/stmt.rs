@@ -3009,6 +3009,9 @@ impl Compiler {
                 };
                 let topic_readonly;
                 if let Some((container, index, is_positional)) = element_source {
+                    if let Expr::Index { target, .. } = topic {
+                        self.compile_expr(target);
+                    }
                     self.compile_expr(index);
                     let container_idx = self.code.add_constant(Value::str(container));
                     self.code.emit(OpCode::TagElementSource {

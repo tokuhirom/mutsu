@@ -572,10 +572,12 @@ impl Compiler {
                     .map(|(_, positional)| *positional)
                     .eq(positionals.iter().copied());
             if path_matches && path.len() > 1 {
-                // The root variable is resolved by the VM from the captured
-                // name. Compile only the indices here, preserving their normal
-                // left-to-right evaluation order; the path opcode performs the
-                // chained read and records all of them for writeback.
+                // The root variable is read like any other variable (so a
+                // `gather` body sees its captured outer lexical), then the
+                // indices in their normal left-to-right order; the path opcode
+                // performs the chained read and records the path, under the
+                // root's name, for writeback.
+                self.compile_expr(root);
                 for (path_index, _) in &path {
                     self.compile_subscript_index(path_index);
                 }
@@ -589,6 +591,7 @@ impl Compiler {
                 return;
             }
             if path_matches {
+                self.compile_expr(root);
                 self.compile_subscript_index(index);
                 let container_idx = self.code.add_constant(Value::str(container));
                 self.code.emit(OpCode::TagElementSource {
