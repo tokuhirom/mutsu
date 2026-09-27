@@ -35,7 +35,7 @@
         "nok": 0,
         "ok": 15,
         "plan": 15,
-        "secs": 0.48,
+        "secs": 0.3,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -45,7 +45,7 @@
         "nok": 0,
         "ok": 15,
         "plan": 15,
-        "secs": 3.34,
+        "secs": 3.19,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -58,7 +58,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 7,
-        "secs": 0.62,
+        "secs": 0.48,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -68,7 +68,7 @@
         "nok": 0,
         "ok": 7,
         "plan": 7,
-        "secs": 13.24,
+        "secs": 9.96,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -80,7 +80,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 0.6,
+        "secs": 0.55,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -90,7 +90,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 0.85,
+        "secs": 0.82,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -103,7 +103,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 7,
-        "secs": 0.61,
+        "secs": 0.5,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -113,7 +113,7 @@
         "nok": 0,
         "ok": 7,
         "plan": 7,
-        "secs": 1.28,
+        "secs": 1.24,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -125,7 +125,7 @@
         "nok": 0,
         "ok": 12,
         "plan": 12,
-        "secs": 0.9,
+        "secs": 0.63,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -135,53 +135,53 @@
         "nok": 0,
         "ok": 12,
         "plan": 12,
-        "secs": 1.82,
+        "secs": 1.49,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "partial",
       "mutsu": {
-        "first_failure": "Type check failed in binding; expected Associative but got Package",
-        "nok": 0,
-        "ok": 0,
+        "first_failure": "mcp-type overrides Int to number",
+        "nok": 2,
+        "ok": 7,
         "plan": 18,
-        "secs": 0.8,
+        "secs": 0.66,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "fail"
       },
       "path": "t/06-dsl-trait.rakutest",
       "raku": {
         "nok": 0,
         "ok": 18,
         "plan": 18,
-        "secs": 5.75,
+        "secs": 5.19,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "partial",
       "mutsu": {
-        "first_failure": "Type check failed in binding; expected Associative but got Package",
-        "nok": 0,
-        "ok": 0,
+        "first_failure": "Parameter with mcp-type trait",
+        "nok": 1,
+        "ok": 12,
         "plan": 13,
-        "secs": 0.61,
+        "secs": 0.6,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "fail"
       },
       "path": "t/07-dsl-type-map.rakutest",
       "raku": {
         "nok": 0,
         "ok": 13,
         "plan": 13,
-        "secs": 2.0,
+        "secs": 1.72,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -190,11 +190,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "Type check failed in binding; expected Associative but got List",
+        "first_failure": "Type check failed for return value; expected Hash but got List (content\ttext\tNo such method 'CALL-ME' for invocant of type 'Nil'",
         "nok": 0,
-        "ok": 4,
-        "plan": 30,
-        "secs": 0.88,
+        "ok": 10,
+        "plan": 37,
+        "secs": 0.79,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -202,9 +202,9 @@
       "path": "t/08-dsl-compose.rakutest",
       "raku": {
         "nok": 0,
-        "ok": 30,
-        "plan": 30,
-        "secs": 2.52,
+        "ok": 37,
+        "plan": 37,
+        "secs": 2.32,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -213,11 +213,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "Type check failed in binding; expected Associative but got List",
+        "first_failure": "Type check failed for return value; expected Hash but got List (content\ttext\tNo such method 'CALL-ME' for invocant of type 'Nil'",
         "nok": 0,
-        "ok": 1,
+        "ok": 4,
         "plan": 25,
-        "secs": 0.77,
+        "secs": 0.68,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -227,7 +227,7 @@
         "nok": 0,
         "ok": 25,
         "plan": 25,
-        "secs": 3.01,
+        "secs": 2.5,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -240,7 +240,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 9,
-        "secs": 0.69,
+        "secs": 0.54,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -250,7 +250,7 @@
         "nok": 0,
         "ok": 9,
         "plan": 9,
-        "secs": 3.78,
+        "secs": 2.78,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -263,7 +263,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 8,
-        "secs": 0.64,
+        "secs": 0.51,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -273,7 +273,7 @@
         "nok": 0,
         "ok": 8,
         "plan": 8,
-        "secs": 2.06,
+        "secs": 1.41,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -287,7 +287,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 8,
-        "secs": 1.91,
+        "secs": 1.36,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -301,30 +301,30 @@
         "nok": 0,
         "ok": 5,
         "plan": 10,
-        "secs": 4.17,
+        "secs": 3.44,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
       }
     },
     {
-      "cmp": "partial",
+      "cmp": "regression",
       "mutsu": {
-        "first_failure": "An mcp class is a toolkit",
-        "nok": 1,
+        "first_failure": "MCP::Server::DSL does not accept positional parameters (label -> Parameter.new).",
+        "nok": 0,
         "ok": 0,
         "plan": 6,
-        "secs": 0.95,
+        "secs": 0.61,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "die"
       },
       "path": "t/14-dsl-toolkit.rakutest",
       "raku": {
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 1.89,
+        "secs": 2.25,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -337,7 +337,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 9,
-        "secs": 0.64,
+        "secs": 0.51,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -347,7 +347,7 @@
         "nok": 0,
         "ok": 9,
         "plan": 9,
-        "secs": 1.92,
+        "secs": 1.76,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -360,7 +360,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 7,
-        "secs": 0.66,
+        "secs": 0.48,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -370,7 +370,7 @@
         "nok": 0,
         "ok": 7,
         "plan": 7,
-        "secs": 1.55,
+        "secs": 1.25,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -383,7 +383,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 7,
-        "secs": 0.57,
+        "secs": 0.49,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -393,7 +393,7 @@
         "nok": 0,
         "ok": 7,
         "plan": 7,
-        "secs": 1.52,
+        "secs": 1.14,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -405,7 +405,7 @@
         "nok": 0,
         "ok": 12,
         "plan": 12,
-        "secs": 0.39,
+        "secs": 0.34,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -415,7 +415,7 @@
         "nok": 0,
         "ok": 12,
         "plan": 12,
-        "secs": 3.73,
+        "secs": 3.19,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -429,7 +429,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 12.33,
+        "secs": 11.54,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -441,7 +441,7 @@
         "nok": 0,
         "ok": 7,
         "plan": 7,
-        "secs": 0.8,
+        "secs": 0.67,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -451,7 +451,7 @@
         "nok": 0,
         "ok": 7,
         "plan": 7,
-        "secs": 2.03,
+        "secs": 1.62,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -461,10 +461,10 @@
       "cmp": "partial",
       "mutsu": {
         "first_failure": "The retry finishes the call",
-        "nok": 3,
+        "nok": 1,
         "ok": 1,
         "plan": 12,
-        "secs": 0.96,
+        "secs": 0.6,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -474,7 +474,7 @@
         "nok": 0,
         "ok": 12,
         "plan": 12,
-        "secs": 3.42,
+        "secs": 2.75,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -487,7 +487,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 6,
-        "secs": 0.56,
+        "secs": 0.48,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -497,7 +497,7 @@
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 1.58,
+        "secs": 1.1,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -511,7 +511,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 8.45,
+        "secs": 6.9,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -524,7 +524,7 @@
         "nok": 0,
         "ok": 7,
         "plan": 8,
-        "secs": 0.67,
+        "secs": 0.44,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -534,7 +534,7 @@
         "nok": 0,
         "ok": 8,
         "plan": 8,
-        "secs": 1.05,
+        "secs": 1.4,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -548,7 +548,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 3,
-        "secs": 1.23,
+        "secs": 0.92,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -561,7 +561,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 8,
-        "secs": 0.64,
+        "secs": 0.53,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -571,7 +571,7 @@
         "nok": 0,
         "ok": 8,
         "plan": 8,
-        "secs": 2.02,
+        "secs": 1.53,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -583,7 +583,7 @@
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 0.71,
+        "secs": 0.45,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -593,7 +593,7 @@
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 1.37,
+        "secs": 1.23,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -605,7 +605,7 @@
         "nok": 0,
         "ok": 13,
         "plan": 13,
-        "secs": 3.4,
+        "secs": 3.23,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -615,7 +615,29 @@
         "nok": 0,
         "ok": 13,
         "plan": 13,
-        "secs": 4.24,
+        "secs": 3.91,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 7,
+        "plan": 7,
+        "secs": 0.5,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/29-input-schema.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 7,
+        "plan": 7,
+        "secs": 0.97,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -635,6 +657,8 @@
     "MCP::Server::Protocol": "ok",
     "MCP::Server::Resource": "ok",
     "MCP::Server::Tool": "ok",
+    "MCP::Server::Tool::StrictKit": "ok",
+    "MCP::Server::Tool::TestKit": "ok",
     "MCP::Server::Toolkit": "ok",
     "MCP::Server::Transport": "ok",
     "MCP::Server::Transport::Stdio": "ok",
@@ -642,10 +666,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-26",
+    "date": "2026-09-27",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "199f95e",
+    "mutsu_commit": "2f3b7d6",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -654,15 +678,15 @@
   "schema": 1,
   "source": {
     "index": "fez",
-    "url": "https://360.zef.pm/M/CP/MCP_SERVER/1159b3f825a2f0d8ff51c361cd89b14fbd1f16e3.tar.gz"
+    "url": "https://360.zef.pm/M/CP/MCP_SERVER/2ac4de281658a194a4f19e446cd86de1f77d7963.tar.gz"
   },
   "status": "partial",
   "totals": {
-    "baseline_assertions": 249,
-    "baseline_files": 23,
-    "mutsu_assertions": 88,
-    "parity_files": 7,
+    "baseline_assertions": 263,
+    "baseline_files": 24,
+    "mutsu_assertions": 123,
+    "parity_files": 8,
     "regressed_files": 16
   },
-  "version": "0.6.0"
+  "version": "0.7.0"
 }

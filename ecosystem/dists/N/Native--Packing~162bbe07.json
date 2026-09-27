@@ -25,122 +25,120 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 2.27,
+        "secs": 1.66,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "partial",
       "mutsu": {
-        "first_failure": "Unknown function: storage-atts",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 0.31,
+        "first_failure": "network pack/unpack round-trip",
+        "nok": 6,
+        "ok": 5,
+        "plan": 11,
+        "secs": 0.21,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "fail"
       },
       "path": "t/basic.t",
       "raku": {
         "nok": 0,
         "ok": 11,
         "plan": 11,
-        "secs": 1.02,
+        "secs": 0.63,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Unknown function: storage-atts",
         "nok": 0,
-        "ok": 0,
+        "ok": 2,
         "plan": 2,
-        "secs": 0.18,
+        "secs": 0.13,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/host-packing.t",
       "raku": {
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 0.73,
+        "secs": 0.55,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Unknown function: storage-atts",
         "nok": 0,
-        "ok": 0,
+        "ok": 1,
         "plan": 1,
-        "secs": 0.19,
+        "secs": 0.21,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/inheritance.t",
       "raku": {
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.74,
+        "secs": 0.55,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "partial",
       "mutsu": {
-        "first_failure": "Unknown function: storage-atts",
-        "nok": 0,
+        "first_failure": "network write",
+        "nok": 4,
         "ok": 0,
-        "plan": null,
-        "secs": 0.19,
+        "plan": 4,
+        "secs": 0.22,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "fail"
       },
       "path": "t/read.t",
       "raku": {
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 1.03,
+        "secs": 0.68,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "partial",
       "mutsu": {
-        "first_failure": "Unknown function: storage-atts",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 0.18,
+        "first_failure": "network struct packing",
+        "nok": 4,
+        "ok": 2,
+        "plan": 6,
+        "secs": 0.22,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "fail"
       },
       "path": "t/sub-records.t",
       "raku": {
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 1.18,
+        "secs": 0.88,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -152,10 +150,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-26",
+    "date": "2026-09-27",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "199f95e",
+    "mutsu_commit": "2f3b7d6",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -166,13 +164,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/N/AT/NATIVE_PACKING/1b08d20d9215bbe1ede412983a138840c54d1e9f.tar.gz"
   },
-  "status": "red",
+  "status": "partial",
   "totals": {
     "baseline_assertions": 26,
     "baseline_files": 6,
-    "mutsu_assertions": 0,
-    "parity_files": 0,
-    "regressed_files": 6
+    "mutsu_assertions": 10,
+    "parity_files": 2,
+    "regressed_files": 4
   },
   "version": "0.0.6"
 }

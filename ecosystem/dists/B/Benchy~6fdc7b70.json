@@ -19,62 +19,16 @@
     "unresolved": []
   },
   "dist": "Benchy",
-  "files": [
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "Unsupported nqp:: op: nqp::until",
-        "nok": 0,
-        "ok": 1,
-        "plan": 2,
-        "secs": 0.09,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/01-operation.t",
-      "raku": {
-        "nok": 0,
-        "ok": 2,
-        "plan": 2,
-        "secs": 8.22,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 1,
-        "plan": 1,
-        "secs": 6.32,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/meta.t",
-      "raku": {
-        "nok": 0,
-        "ok": 1,
-        "plan": 1,
-        "secs": 10.82,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    }
-  ],
+  "files": [],
   "load": {
-    "Benchy": "ok"
+    "Benchy": "Dynamic variable $*W not found"
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-26",
+    "date": "2026-09-27",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "199f95e",
+    "mutsu_commit": "2f3b7d6",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -85,13 +39,13 @@
     "index": "fez",
     "url": "https://raw.githubusercontent.com/raku/REA/main/archive/B/Benchy/Benchy%3Aver%3C1.001001%3E%3Aauth%3Cgithub%3Araku-community-modules%3E.tar.gz"
   },
-  "status": "partial",
+  "status": "blocked_load",
   "totals": {
-    "baseline_assertions": 3,
-    "baseline_files": 2,
-    "mutsu_assertions": 2,
-    "parity_files": 1,
-    "regressed_files": 1
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
+    "regressed_files": 0
   },
   "version": "1.001001"
 }

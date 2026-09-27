@@ -7,40 +7,16 @@
     "unresolved": []
   },
   "dist": "Locale::Codes::Country",
-  "files": [
-    {
-      "cmp": "partial",
-      "mutsu": {
-        "first_failure": "codeToCountry country=BANGLADESH",
-        "nok": 4,
-        "ok": 0,
-        "plan": 4,
-        "secs": 0.22,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "fail"
-      },
-      "path": "t/01-basic.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 4,
-        "plan": 4,
-        "secs": 1.8,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    }
-  ],
+  "files": [],
   "load": {
-    "Locale::Codes::Country": "ok"
+    "Locale::Codes::Country": "No such method 'lines' for invocant of type 'Any'"
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-09-26",
+    "date": "2026-09-27",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "199f95e",
+    "mutsu_commit": "2f3b7d6",
     "mutsu_version": "0.23.0",
     "raku_backend": "moar 2026.07",
     "raku_version": "2026.07",
@@ -51,13 +27,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/L/OC/LOCALE_CODES_COUNTRY/0cb99d5083df7af4ec36078bab547741b93162f0.tar.gz"
   },
-  "status": "red",
+  "status": "blocked_load",
   "totals": {
-    "baseline_assertions": 4,
-    "baseline_files": 1,
+    "baseline_assertions": 0,
+    "baseline_files": 0,
     "mutsu_assertions": 0,
     "parity_files": 0,
-    "regressed_files": 1
+    "regressed_files": 0
   },
   "version": "0.0.2"
 }
