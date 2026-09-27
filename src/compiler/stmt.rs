@@ -2397,6 +2397,21 @@ impl Compiler {
                         self.bind_terminal = false;
                     } else if let Some((_, decl_name)) = decl_source {
                         self.compile_call_arg(&Expr::Var(decl_name.to_string()));
+                    } else if let Expr::BareWord(word) = expr
+                        && !self.bareword_denotes_variable(word)
+                    {
+                        // `$s := IB`: a bareword that names a type, package or
+                        // term is a VALUE, not a variable, so there is no
+                        // source container to alias. `compile_call_arg` would
+                        // tag it with `WrapVarRef` (a shape tag meant for `is
+                        // rw` call arguments), and `SetLocal` would then run
+                        // the whole named-source alias path -- alias key,
+                        // readonly probe, frame walk, env mirror -- on every
+                        // execution for a name no variable has (#9651).
+                        // Compile it the way a literal source (`$s := 1`) is:
+                        // a plain value that the scalar-bind marks immutable.
+                        self.compile_expr(expr);
+                        self.code.emit(OpCode::ContainerizePair);
                     } else {
                         self.compile_call_arg(expr);
                     }

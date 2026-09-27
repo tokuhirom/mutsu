@@ -209,6 +209,21 @@ impl Compiler {
         self.code.emit(OpCode::WrapVarRef { name_idx, slot });
     }
 
+    /// Whether a bareword term `name` reads a *variable* here -- a sigilless
+    /// binding (`my \x`, a `\x` parameter, one from an enclosing scope), an
+    /// in-scope `constant`, or any other name with a local slot -- rather than
+    /// a type, package or term looked up through `GetBareWord`. Mirrors the
+    /// `Expr::BareWord` arm of `compile_expr`, erring towards "variable" for
+    /// every name that has a slot, so only a genuine package/term lookup
+    /// answers `false`.
+    pub(super) fn bareword_denotes_variable(&self, name: &str) -> bool {
+        self.local_map.contains_key(name)
+            || self.sigilless_locals.contains(name)
+            || self.enclosing_sigilless.contains(name)
+            || self.constant_vars_in_scope.contains(name)
+            || self.compile_time_constant(name).is_some()
+    }
+
     fn emit_assign_local_or_name(&mut self, name: &str) {
         if shadow_slots_active()
             && let Some(&slot) = self.local_map.get(name)
