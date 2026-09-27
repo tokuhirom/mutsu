@@ -16,4 +16,6 @@ snapshots the array only when a `take` actually suspends the loop.
 Multi-parameter, threaded, itemized, shaped, lazy and native-storage sources keep the
 materialized list.
 
+On a release build, `scripts/array-complexity-check.sh`'s `for @a { last }` case (1000 loops over
+200 000 elements) dropped from 1.16 s to 0.0017 s, and its N-doubling ratio from 1.96 to 1.01.
 This is part of #9158.
