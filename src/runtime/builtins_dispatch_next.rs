@@ -1121,6 +1121,40 @@ impl Interpreter {
                     }
                     return Ok(result);
                 }
+                Some(DeferralEntry::Redispatch { name }) => {
+                    // The end of a multi DISPATCHER wrap chain: candidate
+                    // selection has not happened yet, so re-dispatch the
+                    // multi on the frame's current invocant and args (a
+                    // wrapper's `callwith` may have replaced both).
+                    let (invocant, args) = {
+                        let frame = &mut self.method_dispatch_stack[frame_idx];
+                        frame.remaining.remove(0);
+                        if let Some(new_args) = override_args {
+                            if frame.in_wrapper {
+                                let mut it = new_args.into_iter();
+                                if let Some(invocant) = it.next() {
+                                    frame.invocant = invocant;
+                                }
+                                frame.args = it.collect();
+                            } else {
+                                frame.args = new_args;
+                            }
+                        }
+                        frame.in_wrapper = false;
+                        (frame.invocant.clone(), frame.args.clone())
+                    };
+                    if !is_override
+                        && let Some(sources) =
+                            self.method_dispatch_stack[frame_idx].arg_sources.clone()
+                    {
+                        self.set_pending_call_arg_sources(Some(sources));
+                    }
+                    let result = self.redispatch_after_dispatcher_wrap(invocant, &name, args)?;
+                    if tail_call {
+                        return Err(RuntimeError::return_signal(result));
+                    }
+                    return Ok(result);
+                }
                 Some(DeferralEntry::Candidate { .. }) => {}
             }
             let (

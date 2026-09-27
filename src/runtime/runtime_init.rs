@@ -3378,6 +3378,7 @@ impl Interpreter {
             encoding_registry: Self::shared_builtin_encodings(),
             skip_pseudo_method_native: None,
             dispatch_ambiguous: false,
+            dispatcher_wrap_bypass: None,
             role_pun_construction: Vec::new(),
             rakuseen_active: Vec::new(),
             rakuseen_cycle_hit: std::collections::HashSet::new(),
