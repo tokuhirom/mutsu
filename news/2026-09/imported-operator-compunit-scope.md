@@ -26,4 +26,4 @@ Three class-body and role-body gaps were fixed along the way:
   own file is now also consulted.
 - A role body's `use` imports into the role's compunit, not the composer's.
 
-Pinned by `t/modules/import-export/operator-import-is-compunit-scoped.t`.
+Pinned by `t/modules/compunit/operator-import-is-compunit-scoped.t`.
