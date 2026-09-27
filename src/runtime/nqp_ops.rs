@@ -99,12 +99,12 @@ fn nqp_radix(args: &[Value]) -> Result<Value, RuntimeError> {
         let mut chars = crate::builtins::str_prim::chars_from(text, idx, pos).peekable();
         let mut cursor = pos;
         let mut negative = flags & 0x01 != 0;
-        if flags & 0x02 != 0 {
-            if let Some(&sign @ ('-' | '+')) = chars.peek() {
-                negative |= sign == '-';
-                chars.next();
-                cursor += 1;
-            }
+        if flags & 0x02 != 0
+            && let Some(&sign @ ('-' | '+')) = chars.peek()
+        {
+            negative |= sign == '-';
+            chars.next();
+            cursor += 1;
         }
         // `acc` accumulates every digit; `kept` is the (value, digit count)
         // up to the last non-zero digit, the result under flag 0x04.
