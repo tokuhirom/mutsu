@@ -1090,6 +1090,25 @@ impl Interpreter {
                 {
                     return pattern.to_string();
                 }
+                // A plain (no-separator) BOUNDED `**min..max` (including an
+                // exact `**N`) strings out to an alternation of fully
+                // unrolled literal repeats below, one branch per count from
+                // `max` down to `min`. That loses the quantifier's own
+                // identity: LTM measurement of the resulting bare
+                // `RegexAtom::Alternation` credits it with its LONGEST
+                // branch's real length and, unlike a quantifier, does not
+                // end `litlen` at the atom. Rakudo's declarative prefix for
+                // a bounded repeat never exceeds `min(min+1, max)`, and
+                // never contributes to `litlen` at all (#9637) — both of
+                // which the native `RegexQuant::Repeat` parser already
+                // gets right (`build_counted`, `walk_quant_chain`,
+                // `ltm_litlen_walk`'s "quantifiers end litlen" rule), so
+                // defer to it for any BOUNDED count instead of string-
+                // unrolling. The unbounded `**min..*` shape below is
+                // unaffected by #9637 and keeps the string expansion.
+                if sep_mode.is_none() && parsed_max.is_some() {
+                    return pattern.to_string();
+                }
                 let use_spaced = sigspace && pattern.len() != compact.len();
                 let expanded = if use_spaced {
                     Self::build_ltm_expansion_spaced(atom, count_spec, sep_mode, sep)

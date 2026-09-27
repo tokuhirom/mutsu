@@ -1,4 +1,5 @@
 use super::super::*;
+use super::regex_helpers::declarative_repeat_max;
 
 /// Queue the candidate end positions of one quantified token onto the
 /// depth-first work stack.
@@ -177,6 +178,7 @@ impl Interpreter {
                         }
                         _ => unreachable!(),
                     };
+                    let max = declarative_repeat_max(min, max);
                     // Match atom between min and max times
                     let mut positions = Vec::new();
                     let mut current = pos;

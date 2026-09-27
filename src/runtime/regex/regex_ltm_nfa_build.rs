@@ -20,7 +20,7 @@
 //! ([`NfaNode::Sub`]).
 
 use super::super::*;
-use super::regex_helpers::named_lookup_is_ws;
+use super::regex_helpers::{bounded_declarative_max, named_lookup_is_ws};
 use super::regex_ltm_nfa::{LeafKind, LtmNfa, NfaNode, SubKind};
 use super::regex_ltm_rank::{LtmAtomMode, ltm_atom_mode};
 use super::regex_token_resolve::ParsedTokenCandidate;
@@ -166,7 +166,7 @@ impl<'a> NfaBuilder<'a> {
             RegexQuant::ZeroOrOne => (0, Some(1)),
             RegexQuant::ZeroOrMore => (0, None),
             RegexQuant::OneOrMore => (1, None),
-            RegexQuant::Repeat(min, max) => (min, max),
+            RegexQuant::Repeat(min, max) => (min, max.map(|max| bounded_declarative_max(min, max))),
             RegexQuant::RepeatCode(_) => unreachable!("handled above"),
         };
         // `** 2..1` throws when matched for real; it has no prefix.

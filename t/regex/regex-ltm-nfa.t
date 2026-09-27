@@ -5,7 +5,7 @@ use Test;
 # which one wins, so it pins the measured prefix of one NFA construct.
 # Expected values checked against `raku`.
 
-plan 16;
+plan 21;
 
 sub winner(Grammar $g, Str $s) {
     my $m = $g.subparse($s);
@@ -64,6 +64,25 @@ is winner(Q14, "a b c"), 'lit:a b ', 'sigspace whitespace is a fate';
 # A loop over an alternation reaches the longer branch.
 grammar Q15 { token TOP { <x> | 'ab' }; token x { [ 'a' | 'abc' ]* 'd' } }
 is winner(Q15, "aabcd"), 'x:aabcd', 'every path of a looped alternation is followed';
+
+# #9637: a bounded `** min..max` never measures past `min(min+1, max)`
+# repeats, and (like any quantifier) never contributes to `litlen` either —
+# so a same-or-shorter literal sibling wins the `litlen` tie-break. Checked
+# against `raku` (subject is 'a' x 5 throughout).
+grammar Q16 { token TOP { <x> | 'aaa' }; token x { 'a' ** 2..4 } }
+is winner(Q16, "aaaaa"), 'lit:aaa', 'a bounded range measures min(min+1,max), not max';
+
+grammar Q17 { token TOP { <x> | 'aaa' }; token x { 'a' ** 3 } }
+is winner(Q17, "aaaaa"), 'lit:aaa', 'an exact count never contributes to litlen either';
+
+grammar Q18 { token TOP { <x> | 'aaa' }; token x { 'a' ** 0..4 } }
+is winner(Q18, "aaaaa"), 'lit:aaa', 'a min of 0 caps the measured prefix at 1';
+
+grammar Q19 { token TOP { <x> | 'aa' }; token x { 'a' ** 1..4 } }
+is winner(Q19, "aaaaa"), 'lit:aa', 'min(min+1,max) still ties the litlen tie-break';
+
+grammar Q20 { token TOP { <x> | 'aa' }; token x { 'a' ** 2..4 } }
+is winner(Q20, "aaaaa"), 'x:aaaa', 'a genuinely longer measured prefix still wins outright';
 
 # The #9617 shape, as `regex` and as `token`.
 grammar R1 { token TOP { <A> }; regex A { '{' [ <A> | . ]*? '}' } }
