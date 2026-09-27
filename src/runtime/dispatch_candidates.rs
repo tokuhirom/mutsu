@@ -7,6 +7,77 @@ use crate::value::ValueView;
 /// model).  Any real ancestor scores below this.
 pub(super) const UNRELATED_DISTANCE: usize = 500;
 
+fn builtin_type_mro(type_name: &str) -> &'static [&'static str] {
+    match type_name {
+        "Bool" => &["Bool", "Int", "Numeric", "Real", "Cool", "Any", "Mu"],
+        "Int" => &["Int", "Numeric", "Real", "Cool", "Any", "Mu"],
+        "Num" => &["Num", "Numeric", "Real", "Cool", "Any", "Mu"],
+        // `Rational` is a role `Rat`/`FatRat` do (`(1/2) ~~ Rational` is
+        // True), and rakudo's core numeric operators dispatch on it rather
+        // than on `Rat` — so a user `multi infix:<+>(Rat $a, Rat $b)` is
+        // strictly narrower than the core `(Rational:D, Rational:D)`
+        // candidate. Without this row the role scored the 500 "unrelated"
+        // distance and every `Rational` candidate lost.
+        "Rat" | "FatRat" => &["Rat", "Rational", "Numeric", "Real", "Cool", "Any", "Mu"],
+        "Complex" => &["Complex", "Numeric", "Cool", "Any", "Mu"],
+        "Str" => &["Str", "Stringy", "Cool", "Any", "Mu"],
+        "Array" => &[
+            "Array",
+            "List",
+            "Positional",
+            "Iterable",
+            "Cool",
+            "Any",
+            "Mu",
+        ],
+        "List" => &["List", "Positional", "Iterable", "Cool", "Any", "Mu"],
+        "Hash" => &[
+            "Hash",
+            "Map",
+            "Associative",
+            "Iterable",
+            "Cool",
+            "Any",
+            "Mu",
+        ],
+        "Pair" => &["Pair", "Associative", "Cool", "Any", "Mu"],
+        "Range" => &["Range", "Positional", "Iterable", "Cool", "Any", "Mu"],
+        // `SetHash`/`BagHash`/`MixHash` are SIBLINGS of the immutable
+        // spellings under `Any`, not subclasses of them, but they do the
+        // same roles — so each mutable name gets its own row rather than
+        // being folded into (or bridged to) the immutable one.
+        "Set" => &["Set", "Setty", "QuantHash", "Associative", "Any", "Mu"],
+        "SetHash" => &["SetHash", "Setty", "QuantHash", "Associative", "Any", "Mu"],
+        "Bag" => &["Bag", "Baggy", "QuantHash", "Associative", "Any", "Mu"],
+        "BagHash" => &["BagHash", "Baggy", "QuantHash", "Associative", "Any", "Mu"],
+        "Mix" => &[
+            "Mix",
+            "Mixy",
+            "Baggy",
+            "QuantHash",
+            "Associative",
+            "Any",
+            "Mu",
+        ],
+        "MixHash" => &[
+            "MixHash",
+            "Mixy",
+            "Baggy",
+            "QuantHash",
+            "Associative",
+            "Any",
+            "Mu",
+        ],
+        "Sub" => &["Sub", "Routine", "Block", "Code", "Callable", "Any", "Mu"],
+        "Seq" => &["Seq", "Positional", "Iterable", "Cool", "Any", "Mu"],
+        "Regex" => &[
+            "Regex", "Method", "Routine", "Block", "Code", "Callable", "Any", "Mu",
+        ],
+        "Junction" => &["Junction", "Mu"],
+        _ => &[],
+    }
+}
+
 /// The narrowness key a multi candidate is ranked by (see
 /// [`Interpreter::candidate_rank_key`]), in two tiers plus tie-breaks:
 ///
@@ -1224,73 +1295,18 @@ impl Interpreter {
         // Built-in type hierarchy (approximation of Raku MRO depths)
         // Bool -> Int -> Cool -> Any -> Mu
         // but also Bool -> Int -> Numeric/Real -> ...
-        let builtin_mro: &[&str] = match value_type {
-            "Bool" => &["Bool", "Int", "Numeric", "Real", "Cool", "Any", "Mu"],
-            "Int" => &["Int", "Numeric", "Real", "Cool", "Any", "Mu"],
-            "Num" => &["Num", "Numeric", "Real", "Cool", "Any", "Mu"],
-            // `Rational` is a role `Rat`/`FatRat` do (`(1/2) ~~ Rational` is
-            // True), and rakudo's core numeric operators dispatch on it rather
-            // than on `Rat` — so a user `multi infix:<+>(Rat $a, Rat $b)` is
-            // strictly narrower than the core `(Rational:D, Rational:D)`
-            // candidate. Without this row the role scored the 500 "unrelated"
-            // distance and every `Rational` candidate lost.
-            "Rat" | "FatRat" => &["Rat", "Rational", "Numeric", "Real", "Cool", "Any", "Mu"],
-            "Complex" => &["Complex", "Numeric", "Cool", "Any", "Mu"],
-            "Str" => &["Str", "Stringy", "Cool", "Any", "Mu"],
-            "Array" => &[
-                "Array",
-                "List",
-                "Positional",
-                "Iterable",
-                "Cool",
-                "Any",
-                "Mu",
-            ],
-            "List" => &["List", "Positional", "Iterable", "Cool", "Any", "Mu"],
-            "Hash" => &[
-                "Hash",
-                "Map",
-                "Associative",
-                "Iterable",
-                "Cool",
-                "Any",
-                "Mu",
-            ],
-            "Pair" => &["Pair", "Associative", "Cool", "Any", "Mu"],
-            "Range" => &["Range", "Positional", "Iterable", "Cool", "Any", "Mu"],
-            // `SetHash`/`BagHash`/`MixHash` are SIBLINGS of the immutable
-            // spellings under `Any`, not subclasses of them, but they do the
-            // same roles — so each mutable name gets its own row rather than
-            // being folded into (or bridged to) the immutable one.
-            "Set" => &["Set", "Setty", "QuantHash", "Associative", "Any", "Mu"],
-            "SetHash" => &["SetHash", "Setty", "QuantHash", "Associative", "Any", "Mu"],
-            "Bag" => &["Bag", "Baggy", "QuantHash", "Associative", "Any", "Mu"],
-            "BagHash" => &["BagHash", "Baggy", "QuantHash", "Associative", "Any", "Mu"],
-            "Mix" => &[
-                "Mix",
-                "Mixy",
-                "Baggy",
-                "QuantHash",
-                "Associative",
-                "Any",
-                "Mu",
-            ],
-            "MixHash" => &[
-                "MixHash",
-                "Mixy",
-                "Baggy",
-                "QuantHash",
-                "Associative",
-                "Any",
-                "Mu",
-            ],
-            "Sub" => &["Sub", "Routine", "Block", "Code", "Callable", "Any", "Mu"],
-            "Seq" => &["Seq", "Positional", "Iterable", "Cool", "Any", "Mu"],
-            "Regex" => &[
-                "Regex", "Method", "Routine", "Block", "Code", "Callable", "Any", "Mu",
-            ],
-            "Junction" => &["Junction", "Mu"],
-            _ => &[],
+        // A type object is represented as a Package, whose generic value type
+        // is `Package`; method dispatch still needs the named type's built-in
+        // MRO. For example, Str is both Cool and Mu, and a `multi method` on
+        // an Attribute must prefer its Cool candidate over Mu when passed the
+        // Str type object (Audio::Hydrogen's XML::Class does this).
+        let builtin_mro: &[&str] = match value.view() {
+            // Type objects are represented as Package, whose generic value
+            // type is `Package`; use the named type's built-in MRO instead.
+            ValueView::Package(name) => name.with_str(|type_name| {
+                builtin_type_mro(type_name.split('[').next().unwrap_or("Package"))
+            }),
+            _ => builtin_type_mro(value_type),
         };
         for (i, &ancestor) in builtin_mro.iter().enumerate() {
             if ancestor == base {
