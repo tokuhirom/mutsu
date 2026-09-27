@@ -7,18 +7,18 @@ definitions: [docs/ecosystem-parity.md](../docs/ecosystem-parity.md).
 
 | metric | value |
 |---|---|
-| **dist parity** (published headline) | **66.9%** (818/1222) |
-| file parity | 73.6% (3143/4271) |
+| **dist parity** (published headline) | **67.0%** (820/1223) |
+| file parity | 73.6% (3146/4272) |
 | assertion parity | 84.0% |
 | accepted divergences (out of the KPI, ADR-0130) | 1 file(s) |
 
 | status | distributions |
 |---|---|
 | `blocked_dep` | 7 |
-| `blocked_load` | 109 |
-| `green` | 818 |
+| `blocked_load` | 108 |
+| `green` | 820 |
 | `no_baseline` | 289 |
-| `partial` | 236 |
+| `partial` | 235 |
 | `red` | 168 |
 | `skipped` | 10 |
 
@@ -168,7 +168,7 @@ definitions: [docs/ecosystem-parity.md](../docs/ecosystem-parity.md).
 | `Audio::Convert::Samplerate` | 0.0.11 | partial | 2/3 |
 | `Audio::Encode::LameMP3` | 0.0.15 | green | 2/2 |
 | `Audio::Fingerprint::Chromaprint` | 0.0.5 | partial | 2/3 |
-| `Audio::Hydrogen` | 0.0.7 | partial | 2/4 |
+| `Audio::Hydrogen` | 0.0.7 | green | 4/4 |
 | `Audio::Icecast` | 0.0.6 | partial | 2/5 |
 | `Audio::Libshout` | 0.0.15 | green | 3/3 |
 | `Audio::Liquidsoap` | 0.1.3 | green | 5/5 |
@@ -1571,7 +1571,7 @@ definitions: [docs/ecosystem-parity.md](../docs/ecosystem-parity.md).
 | `URI::Query::FromHash` | 0.0.2 | red | 0/1 |
 | `URI::Template` | 0.0.11 | partial | 4/8 |
 | `URL::Find` | v0.2 | green | 1/1 |
-| `Usage::Utils` | 0.1.1 | blocked_load | — |
+| `Usage::Utils` | 0.1.1 | green | 1/1 |
 | `User::grent` | 0.0.4 | green | 3/3 |
 | `User::Language` | 0.5.2 | green | 1/1 |
 | `User::pwent` | 0.0.4 | green | 3/3 |
