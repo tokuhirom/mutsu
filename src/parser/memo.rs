@@ -10,7 +10,19 @@ use std::collections::HashMap;
 
 #[derive(Debug, Clone)]
 pub(super) enum MemoEntry<T: Clone> {
-    Ok { consumed: usize, value: Box<T> },
+    Ok {
+        consumed: usize,
+        value: Box<T>,
+    },
+    /// Like `Ok`, but `rest` was not a subslice of the memoized `input` — it
+    /// pointed into a permanently leaked buffer instead (see
+    /// `primary::is_within_leaked_region`), so it is recovered by raw
+    /// pointer/length rather than by an offset into `input`.
+    OkLeaked {
+        rest_ptr: usize,
+        rest_len: usize,
+        value: Box<T>,
+    },
     Err(PError),
 }
 
@@ -110,6 +122,24 @@ impl<T: Clone + 'static> ParseMemo<T> {
             self.stats.with(|s| s.borrow_mut().hits += 1);
             return Some(match entry {
                 MemoEntry::Ok { consumed, value } => Ok((&input[consumed..], *value)),
+                MemoEntry::OkLeaked {
+                    rest_ptr,
+                    rest_len,
+                    value,
+                } => {
+                    // SAFETY: `store` only creates this variant when the rest
+                    // pointer/length were taken from a live `&str` inside a
+                    // region that `is_within_leaked_region` confirmed is
+                    // `Box::leak`ed and therefore never freed — reconstructing
+                    // it here is exactly as valid as the borrow it came from.
+                    let rest = unsafe {
+                        std::str::from_utf8_unchecked(std::slice::from_raw_parts(
+                            rest_ptr as *const u8,
+                            rest_len,
+                        ))
+                    };
+                    Ok((rest, *value))
+                }
                 MemoEntry::Err(err) => Err(err),
             });
         }
@@ -124,27 +154,44 @@ impl<T: Clone + 'static> ParseMemo<T> {
         }
         // Memoization assumes `rest` is a subslice of `input` so we can
         // recover it later as `&input[consumed..]`. Some parsers (notably
-        // heredoc forms) may synthesize a combined remainder string that is
-        // not a subslice. Skip caching those entries to avoid corrupt results.
-        if let Ok((rest, _)) = result {
-            let input_start = input.as_ptr() as usize;
-            let input_end = input_start.saturating_add(input.len());
-            let rest_start = rest.as_ptr() as usize;
-            let rest_end = rest_start.saturating_add(rest.len());
-            let rest_is_subslice =
-                rest_start >= input_start && rest_end <= input_end && rest.len() <= input.len();
-            if !rest_is_subslice {
-                return;
-            }
-        }
-        let key = Self::key(input);
+        // heredoc forms whose marker line carries trailing code) instead
+        // synthesize a combined remainder that lives in a permanently
+        // leaked buffer. That is just as safe to record — by raw
+        // pointer/length instead of an offset into `input` — as long as the
+        // buffer never gets freed, which `is_within_leaked_region` confirms.
+        // Refusing those entries outright (as opposed to recording them by
+        // pointer) meant every backtracking attempt over such a heredoc
+        // re-parsed and re-leaked it from scratch, multiplying cost at every
+        // level of block nesting (#9674). Anything else that is neither a
+        // subslice nor a registered leak is not safe to recover later, so it
+        // is still left uncached.
         let entry = match result {
-            Ok((rest, value)) => MemoEntry::Ok {
-                consumed: input.len().saturating_sub(rest.len()),
-                value: Box::new(value.clone()),
-            },
+            Ok((rest, value)) => {
+                let rest: &str = rest;
+                let input_start = input.as_ptr() as usize;
+                let input_end = input_start.saturating_add(input.len());
+                let rest_start = rest.as_ptr() as usize;
+                let rest_end = rest_start.saturating_add(rest.len());
+                let rest_is_subslice =
+                    rest_start >= input_start && rest_end <= input_end && rest.len() <= input.len();
+                if rest_is_subslice {
+                    MemoEntry::Ok {
+                        consumed: input.len().saturating_sub(rest.len()),
+                        value: Box::new(value.clone()),
+                    }
+                } else if super::primary::is_within_leaked_region(rest) {
+                    MemoEntry::OkLeaked {
+                        rest_ptr: rest_start,
+                        rest_len: rest.len(),
+                        value: Box::new(value.clone()),
+                    }
+                } else {
+                    return;
+                }
+            }
             Err(err) => MemoEntry::Err(err.clone()),
         };
+        let key = Self::key(input);
         self.memo.with(|m| {
             m.borrow_mut().insert(key, entry);
         });
