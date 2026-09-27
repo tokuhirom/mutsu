@@ -6063,10 +6063,10 @@ impl Interpreter {
             OpCode::SetPragma(name_idx) => {
                 let value = self.stack.pop().unwrap_or(Value::NIL);
                 let name = Self::const_str(code, *name_idx);
-                if let ValueView::Str(s) = value.view() {
-                    if name == "attributes" {
-                        loan_env!(self, set_attributes_pragma(&s));
-                    }
+                if name == "attributes"
+                    && let ValueView::Str(s) = value.view()
+                {
+                    loan_env!(self, set_attributes_pragma(&s));
                 }
                 *ip += 1;
             }
