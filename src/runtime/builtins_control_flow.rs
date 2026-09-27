@@ -37,6 +37,25 @@ impl Interpreter {
             return err;
         }
 
+        // `die $failure` re-throws the exception the Failure already carries
+        // (raku: `open(...) or die $fh`), not a fresh X::AdHoc wrapping the
+        // Failure itself -- which would stringify as the type repr
+        // `Failure()` instead of the wrapped exception's message.
+        let unwrapped;
+        let value = if let ValueView::Instance {
+            class_name,
+            attributes,
+            ..
+        } = value.view()
+            && class_name.resolve() == "Failure"
+            && let Some(exc) = attributes.as_map().get("exception").cloned()
+        {
+            unwrapped = exc;
+            &unwrapped
+        } else {
+            value
+        };
+
         let msg = if let ValueView::Instance { attributes, .. } = value.view() {
             attributes
                 .as_map()

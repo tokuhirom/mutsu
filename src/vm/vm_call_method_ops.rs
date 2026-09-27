@@ -939,11 +939,12 @@ impl Interpreter {
             err.set_from_method_return();
             return Err(err);
         }
-        // `.throw`/`.rethrow` on an exception instance: attach a backtrace built
-        // from the current call stack. The `die`/`fail` opcodes do this, but an
-        // explicit `ExceptionObject.throw` goes through method dispatch and would
-        // otherwise carry no frames (so `.backtrace().list` would be empty).
-        let target = if matches!(method, "throw" | "rethrow")
+        // `.throw`/`.rethrow`/`.die` on an exception instance: attach a backtrace
+        // built from the current call stack. The `die`/`fail` opcodes do this, but
+        // an explicit `ExceptionObject.throw` (or `.die`) goes through method
+        // dispatch and would otherwise carry no frames (so `.backtrace().list`
+        // would be empty).
+        let target = if matches!(method, "throw" | "rethrow" | "die")
             && args.is_empty()
             && target.instance_is_exception_by_name()
             && matches!(
