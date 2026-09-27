@@ -10,9 +10,10 @@ gaps stopped that:
   segment as a self-reference, so `A::Item:U` died at declaration with
   "Invalid typename 'A::Item:U' in parameter declaration." — the error every
   `Intl::CLDR::Types::*` module failed to load with;
-- the role declaration never bound the as-written compound name, so once the
-  signature was accepted a parameter typed `A::Item` still rejected an
-  instance of a composing class ("expected A::Item but got Any"). The class
-  path already registered that alias; the role path now does the same.
+- once the signature was accepted, binding still rejected an instance of a
+  composing class ("expected A::Item but got Any"): the binder compared the
+  relative spelling against a registry that only knows `Core::A::Item`. The
+  type-name resolver now qualifies an unregistered compound name against the
+  running package chain (never from GLOBAL, so the name does not leak).
 
 Pinned by `t/oo/role/role-method-param-names-own-relative-qualified-name.t`.

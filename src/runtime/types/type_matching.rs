@@ -260,6 +260,22 @@ impl Interpreter {
         if !package_qualified {
             return self.type_alias_target(constraint);
         }
+        // A compound name relative to the running package: `module Core {
+        // role A::Item { method m(A::Item:D $x) } }` registers
+        // `Core::A::Item`, and the signature names it `A::Item`
+        // (Intl::CLDR's `role CLDR::Item`). Qualify it against the running
+        // package chain, keeping any definiteness smiley.
+        if bracket_start.is_none() && !constraint.contains('(') {
+            let (base, smiley) = crate::runtime::types::strip_type_smiley(constraint);
+            if !self.has_type_direct(base)
+                && let Some(resolved) = self.resolve_relative_compound_type(base)
+            {
+                return Some(match smiley {
+                    Some(smiley) => format!("{resolved}{smiley}"),
+                    None => resolved.to_string(),
+                });
+            }
+        }
         None
     }
 

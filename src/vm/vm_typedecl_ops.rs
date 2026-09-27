@@ -1072,16 +1072,6 @@ impl Interpreter {
                     name_str.clone(),
                     Value::package(Symbol::intern(&qualified_name)),
                 );
-            } else if qualified_name != name_str {
-                // A compound name nested in a package (`module Core { role
-                // A::Item }` registers `Core::A::Item`) stays reachable as
-                // written, exactly as the class path above does it, and never
-                // over an existing entry. Intl::CLDR's `role CLDR::Item`
-                // signatures (`CLDR::Item:D $x`) bind through this alias.
-                let qualified = qualified_name.clone();
-                self.env_mut().entry_or_insert_with(name_str.clone(), || {
-                    Value::package(Symbol::intern(&qualified))
-                });
             }
             // When a role is declared with an already-qualified name
             // (e.g. the compiler pre-qualified `role R1` inside
