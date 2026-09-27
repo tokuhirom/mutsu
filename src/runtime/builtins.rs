@@ -567,7 +567,7 @@ impl Interpreter {
         name: &str,
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
-        let (mut args, callsite_line) = self.sanitize_call_args_owned(args);
+        let (args, callsite_line) = self.sanitize_call_args_owned(args);
         self.test_pending_callsite_line = callsite_line;
         // ADR-0058: a builtin reads its arguments as plain Rust values, so a
         // still-deferred `.map` Seq (`SeqSource::MapGrep`) has to be pulled
@@ -588,6 +588,22 @@ impl Interpreter {
         if let Some(op) = name.strip_prefix("nqp::") {
             return self.dispatch_nqp_op(op, &args);
         }
+        self.call_function_arms(name, args, true)
+    }
+
+    /// The builtin routine arms of [`Interpreter::call_function`]. A name
+    /// with no arm here goes to `call_function_fallback` when `fallback` is
+    /// set, and otherwise raises `X::Multi::NoMatch` -- the form
+    /// `call_function_fallback` itself uses to try a core routine's own
+    /// candidate after every user candidate of that name refused the call,
+    /// without recursing back into itself.
+    // Cost: O(1) dispatch beyond the selected builtin's own cost.
+    pub(crate) fn call_function_arms(
+        &mut self,
+        name: &str,
+        mut args: Vec<Value>,
+        fallback: bool,
+    ) -> Result<Value, RuntimeError> {
         match name {
             // Error / control flow
             "die" => self.builtin_die(&args),
@@ -1317,7 +1333,8 @@ impl Interpreter {
                     Ok(Value::NIL)
                 }
             }
-            _ => self.call_function_fallback(name, &args),
+            _ if fallback => self.call_function_fallback(name, &args),
+            _ => Err(self.multi_no_match_error(name, &args)),
         }
     }
 

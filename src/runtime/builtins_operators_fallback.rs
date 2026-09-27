@@ -1120,6 +1120,23 @@ impl Interpreter {
 
         // Check if multi candidates exist for this name (no matching arity/types)
         if self.has_multi_candidates(name) {
+            // A proto-less user `multi` named like a core routine adds
+            // candidates to CORE's proto rather than replacing it: with the
+            // `Die` distribution's `multi sub die(Cool:D $ where
+            // .ends-with("\n"))` in scope, `die "plain"` still reaches the
+            // builtin. The native table above already served the names it
+            // knows; the interpreter-level builtins (`die`, `fail`, `note`,
+            // `say`, ...) live in `call_function`'s arms, which raise this
+            // same NoMatch for a name they do not serve. (An ambiguity among
+            // the user candidates was already raised above.)
+            //
+            // TODO: operator-category names stay excluded because the
+            // subscript operators' call-form arm ignores adverbs (#9682);
+            // drop the `:<` test once it honours them.
+            if Self::is_builtin_function(name) && !name.contains(":<") {
+                self.reify_map_grep_seq_args(args)?;
+                return self.call_function_arms(name, args.to_vec(), false);
+            }
             return Err(self.multi_no_match_error(name, args));
         }
 

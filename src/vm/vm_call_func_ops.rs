@@ -1780,22 +1780,6 @@ impl Interpreter {
         Ok(())
     }
 
-    /// The core routine's own candidate, for a call to a core routine name
-    /// that no proto-less user `multi` of that name accepted (see the
-    /// user-multi arm of [`Interpreter::dispatch_func_call_inner`]). Kept out
-    /// of line: that function recurses through every nested call, and in a
-    /// debug build each call site inlined into it widens every frame.
-    // Cost: O(1) beyond the builtin routine's own cost.
-    #[inline(never)]
-    fn call_core_routine_candidate(
-        &mut self,
-        name: &str,
-        args: Vec<Value>,
-    ) -> Result<Value, RuntimeError> {
-        let result = self.vm_call_function(name, args)?;
-        loan_env!(self, maybe_fetch_rw_proxy(result, true))
-    }
-
     /// Inner dispatch for function calls. Handles CALL-ME override, compiled functions,
     /// native functions, and interpreter fallback. Returns the result value.
     ///
@@ -2163,40 +2147,19 @@ impl Interpreter {
                     // S32-io/slurp.t via is-eqv). Mirrors the non-builtin OTF path's
                     // is_interpreter_handled_function gate below.
                     let _ = self.take_pending_dispatch_error();
-                    let interpreter_handled = self.is_interpreter_handled_function(name);
-                    // Sound multi-function resolution cache: for a type+arity-
-                    // deterministic multi this returns the winner without the
-                    // per-call registry walk + candidate match/rank/dedup;
-                    // value-dependent / un-keyable / ambiguous calls resolve
-                    // fresh (byte-identical to `resolve_function_with_types`).
-                    let resolved = if interpreter_handled {
-                        None
-                    } else {
-                        match multi_def_memo.take() {
+                    if !self.is_interpreter_handled_function(name)
+                        // Sound multi-function resolution cache: for a type+arity-
+                        // deterministic multi this returns the winner without the
+                        // per-call registry walk + candidate match/rank/dedup;
+                        // value-dependent / un-keyable / ambiguous calls resolve
+                        // fresh (byte-identical to `resolve_function_with_types`).
+                        && let Some(def) = match multi_def_memo.take() {
                             // Already resolved by `find_compiled_function_memo`
                             // above, and only ever memoised when that answer is
                             // a pure function of the argument type keys.
                             memoised @ Some(_) => memoised,
                             None => loan_env!(self, resolve_function_multi_cached(name, &args)),
                         }
-                    };
-                    // A proto-less user `multi` named like a core routine adds
-                    // candidates to CORE's proto rather than replacing it: with
-                    // `multi sub die(Cool:D $ where .ends-with("\n"))` in scope
-                    // (the `Die` distribution), `die "plain"` still reaches the
-                    // builtin. `call_function_fallback` only consults the native
-                    // table, which lacks the interpreter-level builtins
-                    // (`die`/`fail`/`note`/`say`/...), so when no user candidate
-                    // matched -- and the miss was not an ambiguity, which must
-                    // still raise -- dispatch through `call_function`, whose
-                    // builtin arms serve every core name.
-                    let core_candidate_wins = !interpreter_handled
-                        && resolved.is_none()
-                        && !self.has_pending_dispatch_error()
-                        && crate::runtime::Interpreter::is_builtin_function(name);
-                    if core_candidate_wins {
-                        self.call_core_routine_candidate(name, args)
-                    } else if let Some(def) = resolved
                         // A genuine multi candidate: the name is multi-cached, so
                         // `compile_and_call_function_def` never name-caches this
                         // candidate — a default param is safe here (unlike the
