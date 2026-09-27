@@ -2003,6 +2003,26 @@ impl Interpreter {
             {
                 left.to_string_value() == right.to_string_value()
             }
+            // Instance ~~ Str for a class with a user `.Stringy` or `.Str`
+            // (own or inherited): `Str.ACCEPTS(Any:D)` compares against the
+            // object's stringification -- `.Stringy`, whose default is `.Str`
+            // -- so the object decides (Tinky's `$state ~~ $name`). Rakudo
+            // treats a stringification that dies as a non-match.
+            (ValueView::Instance { class_name, .. }, ValueView::Str(s))
+                if {
+                    let cn = class_name.resolve();
+                    self.has_user_method(&cn, "Stringy") || self.has_user_method(&cn, "Str")
+                } =>
+            {
+                let s = s.clone();
+                let method = if self.has_user_method(&class_name.resolve(), "Stringy") {
+                    "Stringy"
+                } else {
+                    "Str"
+                };
+                self.call_method_with_values(left.clone(), method, vec![])
+                    .is_ok_and(|v| *s == v.to_string_value())
+            }
             // Instance ~~ Type or other: identity check (false)
             (ValueView::Instance { .. }, _) | (_, ValueView::Instance { .. }) => false,
             // Range ~~ Range: LHS is subset of RHS.

@@ -4,32 +4,36 @@
 use super::*;
 
 impl Interpreter {
-    pub(super) fn exec_set_subset_op(&mut self) {
+    /// The four subset/superset opcodes. Rakudo declares these operators
+    /// over `Any`, so a Junction operand autothreads (all/none before
+    /// any/one, as for `∈`), rather than being coerced into a one-element Set:
+    /// `none(@a) ⊆ any(@b)` is a Junction of per-pair answers.
+    // Cost: O(e1 + e2) per threaded pair, e = elements of each operand.
+    fn exec_set_compare_op(
+        &mut self,
+        f: fn(&mut Interpreter, Value, Value) -> Result<Value, RuntimeError>,
+    ) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
-        self.stack
-            .push(Value::truth(Self::quant_hash_subset(&left, &right)));
+        let result = self.eval_binary_with_junctions(left, right, f)?;
+        self.stack.push(result);
+        Ok(())
     }
 
-    pub(super) fn exec_set_superset_op(&mut self) {
-        let right = self.stack.pop().unwrap();
-        let left = self.stack.pop().unwrap();
-        self.stack
-            .push(Value::truth(Self::quant_hash_subset(&right, &left)));
+    pub(super) fn exec_set_subset_op(&mut self) -> Result<(), RuntimeError> {
+        self.exec_set_compare_op(|_, l, r| Ok(Value::truth(Self::quant_hash_subset(&l, &r))))
     }
 
-    pub(super) fn exec_set_strict_subset_op(&mut self) {
-        let right = self.stack.pop().unwrap();
-        let left = self.stack.pop().unwrap();
-        self.stack
-            .push(Value::truth(Self::quant_hash_strict_subset(&left, &right)));
+    pub(super) fn exec_set_superset_op(&mut self) -> Result<(), RuntimeError> {
+        self.exec_set_compare_op(|_, l, r| Ok(Value::truth(Self::quant_hash_subset(&r, &l))))
     }
 
-    pub(super) fn exec_set_strict_superset_op(&mut self) {
-        let right = self.stack.pop().unwrap();
-        let left = self.stack.pop().unwrap();
-        self.stack
-            .push(Value::truth(Self::quant_hash_strict_subset(&right, &left)));
+    pub(super) fn exec_set_strict_subset_op(&mut self) -> Result<(), RuntimeError> {
+        self.exec_set_compare_op(|_, l, r| Ok(Value::truth(Self::quant_hash_strict_subset(&l, &r))))
+    }
+
+    pub(super) fn exec_set_strict_superset_op(&mut self) -> Result<(), RuntimeError> {
+        self.exec_set_compare_op(|_, l, r| Ok(Value::truth(Self::quant_hash_strict_subset(&r, &l))))
     }
 
     pub(super) fn exec_junction_any_op(&mut self) {

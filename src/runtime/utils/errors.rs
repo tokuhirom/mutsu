@@ -460,6 +460,14 @@ pub(crate) fn value_which_key(value: &Value) -> String {
                         )
                     )
                 }
+                // An ObjAt is keyed by the identity it carries -- the same
+                // string its `.WHICH` reports -- so every `$o.WHICH` of one
+                // object is one Set/Bag element.
+                cn @ ("ObjAt" | "ValueObjAt") => format!(
+                    "{}|{}",
+                    cn,
+                    attributes.as_map().objat_which().unwrap_or_default()
+                ),
                 _ => format!("{}|{}", value_type_name(value), id),
             },
         },
