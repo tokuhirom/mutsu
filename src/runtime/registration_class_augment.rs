@@ -1104,6 +1104,26 @@ impl Interpreter {
                 .collect::<Vec<_>>()
                 .join(",")
         );
+        // The pun class is cached under its name, so the name must tell apart
+        // every pair of argument lists that bind the role differently. The
+        // spelling above does so for type objects and plain values (`R[Int]`,
+        // `R[3]`, `R[More]`), but not for a value whose text is not its
+        // identity: every Block renders the same, so `R[{ 1 }].new` and a later
+        // `R[{ 2 }].new` shared one class and the second silently ran the first
+        // block (MergeOrderedSeqs' `:before{...}` comparators). Such an argument
+        // adds its `.WHICH` after a `\u{0}`, the storage-name mangling
+        // `user_facing_type_name` already strips, so `.^name` is unchanged.
+        let identity_suffix: Vec<String> = type_args
+            .iter()
+            .filter(|arg| !Self::pun_arg_spelling_is_identity(arg))
+            .map(crate::runtime::utils::value_which_key)
+            .collect();
+        let role_spelling = pun_name;
+        let pun_name = if identity_suffix.is_empty() {
+            role_spelling.clone()
+        } else {
+            format!("{role_spelling}\u{0}{}", identity_suffix.join(","))
+        };
         if self.registry().classes.contains_key(&pun_name) {
             return Ok(Some(pun_name));
         }
@@ -1142,7 +1162,7 @@ impl Interpreter {
         // introspection). The pre-evaluated arguments still drive candidate
         // binding, so named/value arguments do not have to survive a source
         // spelling round-trip.
-        let parents = [pun_name.clone()];
+        let parents = [role_spelling];
         let parent_args = [type_args
             .iter()
             .cloned()
@@ -1172,6 +1192,28 @@ impl Interpreter {
         self.register_class_decl(&pun_name, &parents, modifiers)?;
         self.store_language_revision_from_version(&pun_name, &language_version);
         Ok(Some(pun_name))
+    }
+
+    /// Whether a curried role argument's spelling in a pun class name already
+    /// identifies it: a type object, a nested curried role, a named argument,
+    /// or a value type whose text is its value. Anything else (a Block, an
+    /// object instance, a container) needs its `.WHICH` to stay distinct.
+    fn pun_arg_spelling_is_identity(arg: &Value) -> bool {
+        matches!(
+            arg.view(),
+            ValueView::Package(_)
+                | ValueView::ParametricRole { .. }
+                | ValueView::Pair(..)
+                | ValueView::ValuePair(..)
+                | ValueView::Int(_)
+                | ValueView::BigInt(_)
+                | ValueView::Num(_)
+                | ValueView::Str(_)
+                | ValueView::Bool(_)
+                | ValueView::Enum { .. }
+                | ValueView::Rat(..)
+                | ValueView::Nil
+        )
     }
 
     pub(crate) fn ensure_role_punned_to_class(
