@@ -1162,7 +1162,7 @@ pub(crate) struct Compiler {
     /// ITS OWN declaration site, not whatever a caller's dynamic `fatal_mode`
     /// happens to be at the call. Set when compiling a `use fatal;` statement,
     /// saved/restored around a block that owns an import scope (mirroring the
-    /// runtime `PushImportScope`/`PopImportScope` pair), and read into
+    /// runtime `ImportScope` region), and read into
     /// `CompiledFunction::captured_fatal_mode` at each sub/method body's own
     /// compile site.
     fatal_pragma_active: bool,

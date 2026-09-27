@@ -57,7 +57,7 @@ impl Interpreter {
     }
 
     // Cost: O(F + C), F/C = registered routines/classes (their key sets are
-    // collected), paid on every `ImportScope`/`PushImportScope` execution -- per call
+    // collected), paid on every `ImportScope` execution -- per call
     // of a routine whose body has a `use`. Rakudo: O(1) at run time -- see #9170.
     fn push_import_scope_scoping_classes(&mut self, scope_classes: bool) {
         let snapshot = {
@@ -80,6 +80,7 @@ impl Interpreter {
                 monkey_typing: self.monkey_typing,
                 scope_classes,
                 imported_env_aliases: self.imported_env_aliases.clone(),
+                leave_phasers: Vec::new(),
             }
         };
         self.import_scope_stack.push(snapshot);
@@ -177,7 +178,7 @@ impl Interpreter {
     /// compiles to `OpCode::BlockScope`, which unconditionally snapshots and
     /// restores the routine registry around its body
     /// (`Interpreter::restore_routine_registry`) — a mechanism completely
-    /// separate from the `use`-triggered `PushImportScope`/`PopImportScope`
+    /// separate from the `use`-triggered `ImportScope`
     /// bracket, and blind to the fact that the import it is rolling back was
     /// never lexically scoped to begin with. Without this, the imported
     /// operator/routine was reachable only for the remainder of whichever
@@ -254,6 +255,14 @@ impl Interpreter {
                 class_snapshot.contains(*key)
                     || self.persistent_classes.contains(*key)
                     || (key.contains("::") && !key.starts_with("GLOBAL::"))
+                    // A lexical `my class` is stored under its mangled,
+                    // per-declaration name (ADR-0047 P1: `P\u{0}<decl-id>`),
+                    // which no other scope can spell, so it is no import
+                    // alias to roll back. Dropping it broke a module's own
+                    // `my class` the moment the block that FIRST loaded the
+                    // module closed: a later `use` re-ran the module's
+                    // EXPORT, whose `P.new` then found no class.
+                    || key.contains('\u{0}')
             })
             .cloned()
             .collect();
@@ -291,6 +300,7 @@ impl Interpreter {
                 lexical_fatal_mode,
                 monkey_typing,
                 scope_classes,
+                leave_phasers: _,
             } = snapshot;
             // Remove functions added since the push, EXCEPT a module's own
             // fully-qualified source definitions (`Fancy::Utilities::lolgreet`,
@@ -413,9 +423,9 @@ impl Interpreter {
             // and the hoisted registration both run before the in-position
             // `use`, so the bare alias must already be live by then. A real
             // scope-exit removal still happens for a genuine user block
-            // (`{ use JSON::Fast; ... }` pairs its own ordinary
-            // `PushImportScope`/`PopImportScope` around the in-position
-            // `use`, which is not a preload scope).
+            // (`{ use JSON::Fast; ... }` brackets the in-position `use`
+            // with its own ordinary `ImportScope` region, which is not a
+            // preload scope).
             if scope_classes {
                 for key in imported_env_keys {
                     let ks = key.resolve();

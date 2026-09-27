@@ -199,6 +199,25 @@ impl Compiler {
         }
     }
 
+    /// Compile `body` inside an `OpCode::ImportScope` region when `stmts` (the
+    /// block it compiles) directly contains a `use`/`no`/`import`. An import
+    /// is lexical to its block, and a module's EXPORT may attach a LEAVE
+    /// phaser to that block (`runtime::attach_target`); the region is what
+    /// closes both on every exit. Blocks that the compiler inlines (a tail
+    /// block, a loop body) have no other scope opcode to hang this on.
+    pub(super) fn with_import_scope_region(
+        &mut self,
+        stmts: &[Stmt],
+        body: impl FnOnce(&mut Self),
+    ) {
+        let idx =
+            Self::has_use_stmt(stmts).then(|| self.code.emit(OpCode::ImportScope { body_end: 0 }));
+        body(self);
+        if let Some(idx) = idx {
+            self.code.patch_import_scope_end(idx);
+        }
+    }
+
     /// Check if a block directly contains a `use`/`no` statement (non-recursive).
     pub(super) fn has_use_stmt(stmts: &[Stmt]) -> bool {
         stmts

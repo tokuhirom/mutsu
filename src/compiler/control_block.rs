@@ -113,7 +113,7 @@ pub(super) struct BlockPlan {
     shape: BlockShape,
     /// The body has a `use`/`no`/`import` directly in it. An import is lexical
     /// to the block that asked for it, so the block is bracketed by
-    /// `PushImportScope`/`PopImportScope` — in BOTH positions:
+    /// an `ImportScope` region — in BOTH positions:
     /// `my (&plan) = do { use Test; (&plan) }` must take the routines it names
     /// as values and leave the rest of the module's exports out of the
     /// enclosing scope.
@@ -247,13 +247,10 @@ impl Compiler {
         // `fatal_mode` at compile time, on `Compiler::fatal_pragma_active`
         // (only a block that owns an import scope can have changed it).
         let saved_fatal_pragma_active = plan.import_scope.then_some(self.fatal_pragma_active);
-        if plan.import_scope {
-            self.code.emit(OpCode::PushImportScope);
-        }
-        self.emit_block_shape(stmts, label, position, &plan, is_bare);
-        if plan.import_scope {
-            self.code.emit(OpCode::PopImportScope);
-        }
+        // `plan.import_scope` is the same `has_use_stmt` test the region makes.
+        self.with_import_scope_region(stmts, |c| {
+            c.emit_block_shape(stmts, label, position, &plan, is_bare)
+        });
         if let Some(saved) = saved_fatal_pragma_active {
             self.fatal_pragma_active = saved;
         }
@@ -449,7 +446,8 @@ impl Compiler {
             // contributes here.
             self.block_decl_tracker.push(Vec::new());
         }
-        self.compile_block_inline(stmts);
+        // `compile_block_construct` already opened this block's import scope.
+        self.compile_block_inline_body(stmts);
         if position.isolate() {
             let mut decls = self.block_decl_tracker.pop().unwrap_or_default();
             // Hashes are intentionally NOT isolated: a `my %h` (e.g.

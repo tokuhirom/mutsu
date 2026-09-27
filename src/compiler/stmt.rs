@@ -4349,7 +4349,7 @@ impl Compiler {
                 // scope can record that it was declared under it (see
                 // `Compiler::fatal_pragma_active`'s doc comment). Restoring
                 // this on block exit is `compile_block_construct`'s job,
-                // matching the runtime `PushImportScope`/`PopImportScope` pair.
+                // matching the runtime `ImportScope` region.
                 if module == "fatal" {
                     self.fatal_pragma_active = true;
                 }

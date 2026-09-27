@@ -787,8 +787,10 @@ pub(crate) mod scope_stack;
 mod uncaught_render;
 mod user_accepts;
 pub(crate) use native_io::{io_file_test, path_is_readable};
+pub(crate) mod attach_target;
 mod dispatcher_wrap;
 mod enum_type_key;
+mod export_hook_routines;
 mod native_io_special;
 pub(crate) mod native_methods;
 mod native_proc_async;
@@ -3224,6 +3226,18 @@ pub struct Interpreter {
     /// Each entry saves (function_keys, class_names, newline_mode, strict_mode, fatal_mode)
     /// before a block with `use`.
     import_scope_stack: Vec<ImportScopeSnapshot>,
+    /// `import_scope_stack.len()` at the in-position `use` whose module load is
+    /// running, or `None` outside one (the BEGIN-time preload, a `require`).
+    /// It is what `$*R.find-attach-target` resolves a module's EXPORT-time
+    /// request against (`runtime::attach_target`).
+    use_attach_depth: Option<usize>,
+    /// One frame per module body currently being loaded, innermost last; the
+    /// main program is the implicit frame below them
+    /// (`mainline_leave_phasers`). See `runtime::attach_target`.
+    compunit_leave_frames: Vec<attach_target::CompunitLeaveFrame>,
+    /// LEAVE phasers a `use` attached to the main program's compunit, run when
+    /// the mainline finishes (`Interpreter::finish`).
+    mainline_leave_phasers: Vec<Value>,
     /// Routine aliases installed by an import, keyed by their target package
     /// and name. A local `sub` may shadow such an alias, but two declarations
     /// in the same scope must still be rejected. The set is restored together
@@ -5157,6 +5171,11 @@ pub(crate) struct ImportScopeSnapshot {
     /// declares is installed into GLOBAL by the load itself in raku, and it is
     /// precisely what the preload is hoisting the load in order to publish.
     pub(crate) scope_classes: bool,
+    /// LEAVE phasers a `use` in this block attached to it at "compile time"
+    /// (`$*R.find-attach-target('block').add-leave-phaser(...)`, see
+    /// `runtime::attach_target`), in attach order. Run LIFO when the scope
+    /// closes, on every exit path (`OpCode::ImportScope`).
+    pub(crate) leave_phasers: Vec<Value>,
 }
 
 impl Default for Interpreter {

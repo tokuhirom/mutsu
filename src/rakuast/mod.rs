@@ -769,7 +769,9 @@ fn semantic_type_object_ancestors(class_name: &str) -> &'static [&'static str] {
     }
 }
 
-fn is_registered_type_object(class_name: &str) -> bool {
+/// Whether `class_name` names a RakuAST type object mutsu models (a node
+/// class or one of its abstract ancestors).
+pub(crate) fn is_registered_type_object(class_name: &str) -> bool {
     if matches!(
         class_name,
         "RakuAST::Node"
@@ -2115,11 +2117,17 @@ pub fn construct(
     if let Some((class, schema)) = multi_field_schema(class_name, method) {
         let mut fields = Vec::with_capacity(schema.len());
         for &fname in schema {
-            let value = named_arg(args, fname).ok_or_else(|| {
-                RuntimeError::new(format!(
-                    "{class_name}.{method} requires a `{fname}` argument"
-                ))
-            })?;
+            let value = match named_arg(args, fname) {
+                Some(value) => value,
+                // A block's `body` defaults to an empty blockoid in raku:
+                // `RakuAST::Block.new` is a complete (empty) block.
+                None if fname == "body" && class == RakuAstClass::Block => empty_blockoid(),
+                None => {
+                    return Err(RuntimeError::new(format!(
+                        "{class_name}.{method} requires a `{fname}` argument"
+                    )));
+                }
+            };
             fields.push(RakuAstField {
                 name: Some(fname),
                 value: RakuAstFieldValue::Node(value),
@@ -2331,6 +2339,45 @@ fn single_positional_class(class_name: &str, method: &str) -> Option<RakuAstClas
         ("RakuAST::Regex::Block", "new") => RakuAstClass::RegexBlock,
         ("RakuAST::ColonPair::True", "new") => RakuAstClass::ColonPairTrue,
         ("RakuAST::ColonPair::False", "new") => RakuAstClass::ColonPairFalse,
+        // Each phaser kind wraps its blorst positionally, exactly as the read
+        // direction (`convert.rs`) builds it.
+        ("RakuAST::StatementPrefix::Phaser::Begin", "new") => {
+            RakuAstClass::StatementPrefixPhaserBegin
+        }
+        ("RakuAST::StatementPrefix::Phaser::Check", "new") => {
+            RakuAstClass::StatementPrefixPhaserCheck
+        }
+        ("RakuAST::StatementPrefix::Phaser::Init", "new") => {
+            RakuAstClass::StatementPrefixPhaserInit
+        }
+        ("RakuAST::StatementPrefix::Phaser::End", "new") => RakuAstClass::StatementPrefixPhaserEnd,
+        ("RakuAST::StatementPrefix::Phaser::Enter", "new") => {
+            RakuAstClass::StatementPrefixPhaserEnter
+        }
+        ("RakuAST::StatementPrefix::Phaser::Leave", "new") => {
+            RakuAstClass::StatementPrefixPhaserLeave
+        }
+        ("RakuAST::StatementPrefix::Phaser::Keep", "new") => {
+            RakuAstClass::StatementPrefixPhaserKeep
+        }
+        ("RakuAST::StatementPrefix::Phaser::Undo", "new") => {
+            RakuAstClass::StatementPrefixPhaserUndo
+        }
+        ("RakuAST::StatementPrefix::Phaser::First", "new") => {
+            RakuAstClass::StatementPrefixPhaserFirst
+        }
+        ("RakuAST::StatementPrefix::Phaser::Next", "new") => {
+            RakuAstClass::StatementPrefixPhaserNext
+        }
+        ("RakuAST::StatementPrefix::Phaser::Last", "new") => {
+            RakuAstClass::StatementPrefixPhaserLast
+        }
+        ("RakuAST::StatementPrefix::Phaser::Quit", "new") => {
+            RakuAstClass::StatementPrefixPhaserQuit
+        }
+        ("RakuAST::StatementPrefix::Phaser::Close", "new") => {
+            RakuAstClass::StatementPrefixPhaserClose
+        }
         _ => return None,
     })
 }

@@ -2252,6 +2252,16 @@ impl Interpreter {
                             .insert(format!("{}::{}", class_key, name), value.clone());
                     }
                 }
+                // The object under construction exists from here on: an
+                // initializer's `self` IS the object `new` returns, not a
+                // snapshot of it. A closure an initializer creates keeps that
+                // `self`, and has to see the attributes set after it ran — and
+                // the same identity (FINALIZER's `has &!finalizer =
+                // FINALIZER.register: { self.finalize() }`, whose block later
+                // calls `&!finalizer()` through `self`).
+                let inv = Value::make_instance(*class_name, attrs.clone());
+                let inv_cell = Self::self_instance_attrs(&inv)
+                    .expect("a freshly built instance has an attribute cell");
                 for attr in class_attrs_info.clone() {
                     let attr_type_constraint = super::attribute_type_constraint(
                         &class_attrs_info,
@@ -2312,14 +2322,15 @@ impl Interpreter {
                         if let Some(lit_val) = arg.literal() {
                             Self::coerce_attr_value_by_sigil(lit_val.clone(), sigil)
                         } else {
-                            // Before BUILD the evaluation context is a snapshot
-                            // instance carrying the attributes settled so far.
-                            let temp_self = Value::make_instance(*class_name, attrs.clone());
+                            // Before BUILD the evaluation context is the
+                            // instance itself, carrying the attributes settled
+                            // so far.
+                            inv_cell.commit_attrs(attrs.clone());
                             let val = self.eval_attr_default_expr(
                                 class_key,
                                 *class_name,
                                 &arg,
-                                &temp_self,
+                                &inv,
                                 &attrs,
                                 super::attr_build_defaults::AttrDeclScope {
                                     env: captured_env.as_ref(),
@@ -2414,9 +2425,7 @@ impl Interpreter {
                 // fail-in-BUILD -> Failure contract all live in the shared
                 // `run_build_phase` / `run_tweak_phase` (formerly duplicated
                 // inline here).
-                let inv = Value::make_instance(*class_name, attrs);
-                let inv_cell = Self::self_instance_attrs(&inv)
-                    .expect("a freshly built instance has an attribute cell");
+                inv_cell.commit_attrs(attrs);
                 let mro = self.class_mro(class_key);
                 self.push_build_write_frame(&inv);
                 let build_result = self.run_build_phase(*class_name, &inv, &args);
@@ -2548,9 +2557,11 @@ impl Interpreter {
                             // Fast path: simple literal defaults
                             Self::coerce_attr_value_by_sigil(lit_val.clone(), sigil)
                         } else if let Some(arg) = default {
-                            let temp_self = Value::make_instance(*class_name, attrs.clone());
+                            // `self` is the constructed object itself, holding
+                            // the attributes settled so far.
+                            inv_cell.commit_attrs(attrs.clone());
                             let old_self = self.env.get("self").cloned();
-                            self.env.insert("self".to_string(), temp_self);
+                            self.env.insert("self".to_string(), inv.clone());
                             let result = self.eval_decl_trait_arg_with_captured_context(
                                 &arg,
                                 captured_env.as_ref(),

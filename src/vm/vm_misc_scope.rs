@@ -440,8 +440,18 @@ impl Interpreter {
         let end = body_end as usize;
         self.push_import_scope();
         let result = self.run_range(code, *ip + 1, end, compiled_fns);
+        // LEAVE phasers a `use` in the body attached to this scope
+        // (`runtime::attach_target`) run before the imports roll back, on
+        // every exit path. A body that died keeps its own error.
+        let phasers = self.take_import_scope_leave_phasers();
+        let leave = if phasers.is_empty() {
+            Ok(())
+        } else {
+            self.run_attached_leave_phasers(phasers)
+        };
         self.pop_import_scope();
         result?;
+        leave?;
         *ip = end;
         Ok(())
     }
