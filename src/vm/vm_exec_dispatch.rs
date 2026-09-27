@@ -1095,6 +1095,16 @@ impl Interpreter {
                 self.stack.push(val.into_deref());
                 *ip += 1;
             }
+            // Cost: O(1) amortized, one env lookup under the pre-interned temp name.
+            OpCode::GetCallTempRaw(name_idx) => {
+                let val = self
+                    .env()
+                    .get_sym(code.const_sym(*name_idx))
+                    .cloned()
+                    .unwrap_or(Value::NIL);
+                self.stack.push(val);
+                *ip += 1;
+            }
             // Cost: O(1) + O(a) per store, a = aliases recorded for this variable (the
             // reverse-alias propagation probes each candidate from
             // `sigilless_alias_index`; 0 in a program that never binds one); plus O(e)
@@ -4995,10 +5005,12 @@ impl Interpreter {
                 *ip += 1;
             }
             // Cost: O(m), m = key bytes (name built by `format!`), plus an O(1) avg stash store;
-            // a `&` key re-aliasing a multi scans the function registry, O(r), r = registered
-            // functions (-- see #9665); a named package's sigiled non-`&` key reads that one
-            // stash entry, O(k) as GetPseudoStashKeyed, while an unsigiled key builds the whole
-            // stash, O(v), v = env entries (-- see #9171). Rakudo: O(1).
+            // a `&` key re-aliasing a multi reads its family from the base-name key index,
+            // O(k·p + c·log c) amortized, k = keys sharing the name's base name, p = enclosing
+            // packages, c = candidates (see `index_assign_named_package_stash`); a named
+            // package's sigiled non-`&` key reads that one stash entry, O(k) as
+            // GetPseudoStashKeyed, while an unsigiled key builds the whole stash, O(v),
+            // v = env entries (-- see #9171). Rakudo: O(1).
             OpCode::IndexAssignPseudoStashKeyed { stash_name_idx } => {
                 self.exec_index_assign_pseudo_stash_keyed_op(code, *stash_name_idx)?;
                 *ip += 1;

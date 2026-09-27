@@ -1082,32 +1082,19 @@ pub(crate) fn native_method_1arg(
                 ))))
             }
         },
-        // Cost: O(e + C(e, k) * k), e = elements of the invocant, k = combination size
-        // (every combination is materialized eagerly, so `.combinations(k).head` or
-        // `.elems` pays for the full output). Rakudo: O(k) per combination pulled --
-        // see #9158.
+        // Cost: O(e) per call, e = elements of the invocant (snapshotted), then O(k)
+        // per combination of size k pulled (`ListGen::Combinations`).
         "combinations" => {
+            use crate::builtins::methods_0arg::collection::combinations_seq;
             let items = target
                 .as_list_items()
                 .map(|items| items.to_vec())
                 .unwrap_or_else(|| runtime::value_to_list_for_receiver(target));
             match arg.view() {
-                ValueView::Range(a, b) => Some(Ok(Value::seq(
-                    crate::builtins::methods_0arg::collection::combinations_range(&items, a, b),
-                ))),
-                ValueView::RangeExcl(a, b) => Some(Ok(Value::seq(
-                    crate::builtins::methods_0arg::collection::combinations_range(&items, a, b - 1),
-                ))),
-                ValueView::RangeExclStart(a, b) => Some(Ok(Value::seq(
-                    crate::builtins::methods_0arg::collection::combinations_range(&items, a + 1, b),
-                ))),
-                ValueView::RangeExclBoth(a, b) => Some(Ok(Value::seq(
-                    crate::builtins::methods_0arg::collection::combinations_range(
-                        &items,
-                        a + 1,
-                        b - 1,
-                    ),
-                ))),
+                ValueView::Range(a, b) => Some(Ok(combinations_seq(items, a, b))),
+                ValueView::RangeExcl(a, b) => Some(Ok(combinations_seq(items, a, b - 1))),
+                ValueView::RangeExclStart(a, b) => Some(Ok(combinations_seq(items, a + 1, b))),
+                ValueView::RangeExclBoth(a, b) => Some(Ok(combinations_seq(items, a + 1, b - 1))),
                 ValueView::GenericRange {
                     start,
                     end,
@@ -1122,29 +1109,21 @@ pub(crate) fn native_method_1arg(
                     if excl_end {
                         hi -= 1;
                     }
-                    Some(Ok(Value::seq(
-                        crate::builtins::methods_0arg::collection::combinations_range(
-                            &items, lo, hi,
-                        ),
-                    )))
+                    Some(Ok(combinations_seq(items, lo, hi)))
                 }
                 _ => {
                     let k = runtime::to_int(arg);
                     if k < 0 {
                         Some(Ok(Value::seq(Vec::new())))
                     } else {
-                        Some(Ok(Value::seq(
-                            crate::builtins::methods_0arg::collection::combinations_k(
-                                &items, k as usize,
-                            ),
-                        )))
+                        Some(Ok(combinations_seq(items, k, k)))
                     }
                 }
             }
         }
-        // Cost: O(e), e = elements of the invocant (decomposed, then chunked eagerly;
-        // a lazy invocant throws X::Cannot::Lazy before reaching here). Rakudo: O(1)
-        // per call, O(n) per batch pulled -- see #9158.
+        // Cost: O(1) per call on an Array (lazy, `ListGen::Batch`), O(n) per batch
+        // pulled; O(e) on any other invocant, e = elements (decomposed, then chunked
+        // eagerly; a lazy invocant throws X::Cannot::Lazy before reaching here).
         "batch" => {
             // `.batch(N)` and the named `.batch(:elems(N))` are equivalent.
             let n = match arg.view() {
@@ -1172,6 +1151,16 @@ pub(crate) fn native_method_1arg(
                 return Some(Err(err));
             }
             let n = n as usize;
+            // An Array batches lazily through a live cursor, as Rakudo's
+            // `Rakudo::Iterator.Batch` over the Array's iterator does.
+            if let ValueView::Array(_, kind) = target.view()
+                && kind != crate::value::ArrayKind::Shaped
+            {
+                return Some(Ok(Value::seq_list_gen(
+                    crate::value::ListGen::batch(target.clone(), n),
+                    false,
+                )));
+            }
             // A Blob/Buf batches its byte *values* (it is iterated as a list of
             // its bytes), not as a single opaque element.
             let items = match crate::builtins::methods_narg::buf::buf_get_bytes(target) {

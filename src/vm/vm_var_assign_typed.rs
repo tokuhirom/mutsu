@@ -132,9 +132,10 @@ impl Interpreter {
         // `my \r = [Any]` / `my $x = [Any]` keep the array, matching Rakudo
         // (DBIish reads a NULL row as `[Any]` and binds it with `\r = ...`).
         let single_nilish = match val.view() {
-            // A `Str.comb` / `.lines` / `.words` cursor yields only `Str`s, so
-            // it is never nilish; asking its length would cut the whole string.
-            ValueView::Seq(items) if items.has_unread_str_source() => false,
+            // A `Str.comb` / `.lines` / `.words` cursor (or a lazy `.keys` /
+            // `.combinations` / ... iterator) yields only defined elements, so
+            // it is never nilish; asking its length would pull all of it.
+            ValueView::Seq(items) if items.has_unread_defined_source() => false,
             ValueView::Seq(items) => items.len() == 1 && items.first().is_some_and(is_nilish),
             ValueView::Slip(items) => items.len() == 1 && items.first().is_some_and(is_nilish),
             _ => false,

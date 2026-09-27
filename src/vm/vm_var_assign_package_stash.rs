@@ -21,7 +21,9 @@ impl Interpreter {
     /// as one of that module's exports. Every other key keeps the generic
     /// index-assign it always had (`Foo::<$x> = 42` writes through the stash
     /// entry's container).
-    // Cost: O(m + r), m = key bytes, r = registry entries scanned when re-aliasing a multi. Rakudo: O(1) -- see #9665.
+    // Cost: O(m + k·p + c·log c), m = key bytes, k = registry keys sharing the name's base name,
+    // p = enclosing packages, c = the multi's candidates (sorted); amortized over the base-name
+    // key index's shared refill pass (`runtime::fn_keys_index`).
     pub(super) fn index_assign_named_package_stash(
         &mut self,
         code: &CompiledCode,

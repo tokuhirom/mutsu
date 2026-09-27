@@ -399,6 +399,7 @@ fn topicalize(expr: &Expr) -> Stmt {
         name: "_".to_string(),
         op: AssignOp::Assign,
         expr: expr.clone(),
+        target_is_sigilless: false,
     }
 }
 

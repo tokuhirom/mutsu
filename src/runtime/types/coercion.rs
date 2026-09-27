@@ -252,10 +252,12 @@ impl Interpreter {
         {
             return Ok(coerced);
         }
-        let variants = self.registry().enum_types.get(base_target).cloned();
-        if let Some(variants) = variants
-            && let Some(enum_value) =
-                self.coerce_to_enum_variant(base_target, &variants, value.clone())
+        let enum_key = self.resolve_enum_type_key(base_target);
+        let variants = enum_key
+            .as_deref()
+            .and_then(|key| self.registry().enum_types.get(key).cloned());
+        if let (Some(key), Some(variants)) = (enum_key.as_deref(), variants)
+            && let Some(enum_value) = self.coerce_to_enum_variant(key, &variants, value.clone())
         {
             return Ok(enum_value);
         }

@@ -20,9 +20,10 @@ impl Interpreter {
             SeqSource::Reified => Ok(Vec::new()),
             SeqSource::Taken => Err(crate::value::seq_consumed_error()),
             SeqSource::Iterator(iterator) => self.pull_iterator_to_vec(iterator.clone()),
-            // Cost: O(n), n = bytes of the string. `SeqBody` cuts this source
-            // itself (it needs no interpreter); kept so the match stays total.
-            SeqSource::StrIter(spec) => {
+            // Cost: a full pull of the cursor (O(n) for a `Str` cursor, n = bytes
+            // of the string). `SeqBody` cuts this source itself (it needs no
+            // interpreter); kept so the match stays total.
+            SeqSource::Pure(spec) => {
                 let mut items = Vec::new();
                 spec.clone().push_up_to(&mut items, usize::MAX);
                 Ok(items)
@@ -1096,7 +1097,7 @@ impl Interpreter {
             return Ok(None);
         };
         let items = match body.take_prefix_source() {
-            Some(crate::value::PrefixSource::Str(mut spec)) => {
+            Some(crate::value::PrefixSource::Pure(mut spec)) => {
                 let mut items = Vec::new();
                 spec.push_up_to(&mut items, n);
                 items

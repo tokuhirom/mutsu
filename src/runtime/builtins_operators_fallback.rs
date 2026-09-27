@@ -273,8 +273,8 @@ impl Interpreter {
         // name, while calls in that module may use the package-qualified name
         // (`Lumberjack::Level($value)`). Resolve that spelling before looking
         // up its variants so qualified enum coercions retain their enum type.
-        let enum_name = if self.registry().enum_types.contains_key(name) {
-            Some(Symbol::intern(name))
+        let enum_name = if let Some(key) = self.resolve_enum_type_key(name) {
+            Some(Symbol::intern(&key))
         } else {
             let qualified_name = Symbol::intern(name);
             let short = crate::qualified::unqualified_part(qualified_name);
@@ -1129,11 +1129,7 @@ impl Interpreter {
             // `say`, ...) live in `call_function`'s arms, which raise this
             // same NoMatch for a name they do not serve. (An ambiguity among
             // the user candidates was already raised above.)
-            //
-            // TODO: operator-category names stay excluded because the
-            // subscript operators' call-form arm ignores adverbs (#9682);
-            // drop the `:<` test once it honours them.
-            if Self::is_builtin_function(name) && !name.contains(":<") {
+            if Self::is_builtin_function(name) {
                 self.reify_map_grep_seq_args(args)?;
                 return self.call_function_arms(name, args.to_vec(), false);
             }

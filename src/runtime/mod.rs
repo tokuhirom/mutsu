@@ -650,6 +650,7 @@ mod end_phasers;
 mod eval_check;
 mod eval_routine_magicals;
 mod exception_message;
+pub(crate) mod fn_keys_index;
 pub(crate) mod function_table;
 mod gc_roots;
 mod gen_cache;
@@ -784,6 +785,7 @@ mod rw_arg_container;
 pub(crate) mod scope_stack;
 mod uncaught_render;
 pub(crate) use native_io::{io_file_test, path_is_readable};
+mod enum_type_key;
 mod native_io_special;
 pub(crate) mod native_methods;
 mod native_proc_async;
@@ -4380,7 +4382,8 @@ pub struct Interpreter {
     /// the same base name, so a candidate gather that used to iterate the whole
     /// functions map — several times per call, formatting a prefix `String` per
     /// package and resolving every key back to a `&str` — iterates a handful of
-    /// keys instead. Filled lazily per base name.
+    /// keys instead. Filled on a miss — for every evicted base name at once
+    /// when it can be (see `runtime::fn_keys_index`).
     ///
     /// Evicted per base name by `invalidate_fn_resolution_for_keys` (and
     /// wholesale by `invalidate_fn_resolution`), not polled against
@@ -4388,6 +4391,9 @@ pub struct Interpreter {
     /// against a fresh scan in debug builds, so a registry mutation that misses
     /// its invalidation fails CI rather than silently mis-dispatching.
     pub(crate) fn_keys_by_base: rustc_hash::FxHashMap<Symbol, std::sync::Arc<[Symbol]>>,
+    /// Which base names `fn_keys_by_base` can answer without a scan: see
+    /// `runtime::fn_keys_index`.
+    pub(crate) fn_keys_index: fn_keys_index::FnKeysIndexState,
     /// Memo for [`Interpreter::bare_name_packages_syms`], keyed by the only two
     /// inputs that list is derived from: the current package and the innermost
     /// routine frame's lexical package.

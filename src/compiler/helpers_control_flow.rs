@@ -177,6 +177,7 @@ impl Compiler {
                         name,
                         expr,
                         op: op @ (crate::ast::AssignOp::Assign | crate::ast::AssignOp::Bind),
+                        ..
                     } => {
                         self.compile_expr(&Expr::AssignExpr {
                             name: name.clone(),

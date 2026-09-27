@@ -35,10 +35,11 @@ impl Interpreter {
                 custom_traits: custom_traits.clone(),
                 where_constraint: where_constraint.clone(),
             },
-            Stmt::Assign { name, expr, op } => Stmt::Assign {
+            Stmt::Assign { name, expr, op, .. } => Stmt::Assign {
                 name: name.clone(),
                 expr: Self::rewrite_proto_dispatch_expr(expr),
                 op: *op,
+                target_is_sigilless: false,
             },
             Stmt::TempMethodAssign {
                 var_name,

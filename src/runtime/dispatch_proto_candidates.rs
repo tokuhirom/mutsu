@@ -127,9 +127,18 @@ impl Interpreter {
             drop(registry);
             for (key, def) in candidates {
                 let fp = def.body_fingerprint();
-                if !seen_fps.contains(&fp) {
-                    seen_fps.push(fp);
-                    all.push((key, def));
+                // One candidate is usually registered under several keys, and
+                // the key is the specificity sort's last tie-break. Sort by the
+                // smallest rather than the first seen (keeping the first-seen
+                // def, which follows package priority), so the order does not
+                // depend on the order the keys were gathered in.
+                match seen_fps.iter().position(|seen| *seen == fp) {
+                    Some(at) if key < all[at].0 => all[at].0 = key,
+                    Some(_) => {}
+                    None => {
+                        seen_fps.push(fp);
+                        all.push((key, def));
+                    }
                 }
             }
         }

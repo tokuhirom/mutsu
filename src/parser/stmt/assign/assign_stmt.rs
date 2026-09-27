@@ -48,6 +48,7 @@ pub(in crate::parser) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
                     name: storage_name,
                     expr,
                     op: AssignOp::Assign,
+                    target_is_sigilless: true,
                 };
                 return parse_statement_modifier(rest, stmt);
             }
@@ -166,6 +167,7 @@ pub(in crate::parser) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
                 name,
                 expr,
                 op: AssignOp::Assign,
+                target_is_sigilless: false,
             };
             return parse_statement_modifier(rest, stmt);
         }
@@ -181,6 +183,7 @@ pub(in crate::parser) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
                 name,
                 expr,
                 op: AssignOp::Assign,
+                target_is_sigilless: false,
             },
         };
         return parse_statement_modifier(rest, stmt);
@@ -201,6 +204,7 @@ pub(in crate::parser) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
                 name,
                 expr,
                 op: AssignOp::Assign,
+                target_is_sigilless: false,
             };
             return parse_statement_modifier(rest, stmt);
         }
@@ -220,6 +224,7 @@ pub(in crate::parser) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
                 name,
                 expr: zip_call,
                 op: AssignOp::Assign,
+                target_is_sigilless: false,
             };
             return parse_statement_modifier(rest, stmt);
         }
@@ -283,6 +288,7 @@ pub(in crate::parser) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
             name,
             expr,
             op: AssignOp::Assign,
+            target_is_sigilless: false,
         };
         return parse_statement_modifier(rest, stmt);
     }
@@ -309,6 +315,7 @@ pub(in crate::parser) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
             name,
             expr,
             op: AssignOp::Assign,
+            target_is_sigilless: false,
         };
         return parse_statement_modifier(rest, stmt);
     }
@@ -355,6 +362,7 @@ pub(in crate::parser) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
                 name: name.clone(),
                 expr: preserve_compound_assign(var_expr, op, rhs)?,
                 op: AssignOp::Assign,
+                target_is_sigilless: false,
             }
         };
         let (rest, stmt) = crate::parser::stmt::word_logical_split::wrap_trailing_word_logical(
@@ -384,6 +392,7 @@ pub(in crate::parser) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
                 modifier: None,
             },
             op: AssignOp::Assign,
+            target_is_sigilless: false,
         };
         let (rest, stmt) = crate::parser::stmt::word_logical_split::wrap_trailing_word_logical(
             rest,
@@ -444,6 +453,7 @@ pub(in crate::parser) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
                     name,
                     expr: method_expr,
                     op: AssignOp::Assign,
+                    target_is_sigilless: false,
                 }
             };
             return parse_statement_modifier(r_final, stmt);
@@ -527,6 +537,7 @@ pub(in crate::parser) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
                 name,
                 expr,
                 op: AssignOp::Assign,
+                target_is_sigilless: false,
             }
         };
         return parse_statement_modifier(r, stmt);
@@ -649,6 +660,7 @@ pub(in crate::parser) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
                 name: name.clone(),
                 expr: rhs,
                 op: AssignOp::Assign,
+                target_is_sigilless: false,
             };
             let (after_rhs, stmt) =
                 crate::parser::stmt::word_logical_split::wrap_trailing_word_logical(
@@ -679,6 +691,7 @@ pub(in crate::parser) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
             name: name.clone(),
             expr,
             op: AssignOp::Assign,
+            target_is_sigilless: false,
         };
         let (rest, stmt) = crate::parser::stmt::word_logical_split::wrap_trailing_word_logical(
             rest,
@@ -707,6 +720,7 @@ pub(in crate::parser) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
             name,
             expr,
             op: AssignOp::Bind,
+            target_is_sigilless: false,
         };
         return parse_statement_modifier(rest, stmt);
     }

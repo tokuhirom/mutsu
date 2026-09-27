@@ -201,6 +201,17 @@ impl Value {
         Value::Seq(SeqBody::deferred(source))
     }
 
+    /// A lazy Seq over a pure list iterator ([`crate::value::ListGen`]).
+    /// `element_containers` marks one that hands out a mutable Array's own
+    /// element containers (see [`Value::seq_element_containers`]).
+    #[inline]
+    pub(crate) fn seq_list_gen(list: crate::value::ListGen, element_containers: bool) -> Self {
+        Value::Seq(SeqBody::deferred_with_element_containers(
+            SeqSource::Pure(crate::value::PureCursor::List(list)),
+            element_containers,
+        ))
+    }
+
     /// Construct a `HyperSeq` value from an element vector. Already reified.
     #[inline]
     pub fn hyper_seq(items: Vec<Value>) -> Self {

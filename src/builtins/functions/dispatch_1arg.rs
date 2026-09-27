@@ -120,15 +120,16 @@ pub(crate) fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Val
                         return Some(Ok(Value::seq(Vec::new())));
                     }
                     let items: Vec<Value> = (0..n).map(Value::int).collect();
-                    return Some(Ok(Value::seq(
-                        crate::builtins::methods_0arg::collection::combinations_all(&items),
-                    )));
+                    return Some(Ok(
+                        crate::builtins::methods_0arg::collection::combinations_seq(items, 0, n),
+                    ));
                 }
                 _ => runtime::value_to_list(arg),
             };
-            Some(Ok(Value::seq(
-                crate::builtins::methods_0arg::collection::combinations_all(&items),
-            )))
+            let n = items.len() as i64;
+            Some(Ok(
+                crate::builtins::methods_0arg::collection::combinations_seq(items, 0, n),
+            ))
         }
         "permutations" => {
             // permutations($n) where $n is Int => (0, 1, ..., $n-1).permutations
@@ -165,9 +166,9 @@ pub(crate) fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Val
                         return Some(Ok(Value::lazy_list(crate::gc::Gc::new(ll))));
                     }
                     let items: Vec<Value> = (0..n).map(Value::int).collect();
-                    return Some(Ok(Value::seq(
-                        crate::builtins::methods_0arg::collection::all_permutations(&items),
-                    )));
+                    return Some(Ok(
+                        crate::builtins::methods_0arg::collection::permutations_seq(items),
+                    ));
                 }
                 _ => runtime::value_to_list(arg),
             };
@@ -196,9 +197,9 @@ pub(crate) fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Val
                 };
                 return Some(Ok(Value::lazy_list(crate::gc::Gc::new(ll))));
             }
-            Some(Ok(Value::seq(
-                crate::builtins::methods_0arg::collection::all_permutations(&items),
-            )))
+            Some(Ok(
+                crate::builtins::methods_0arg::collection::permutations_seq(items),
+            ))
         }
         "srand" => {
             let seed = match arg.view() {
