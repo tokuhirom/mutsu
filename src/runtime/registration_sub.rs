@@ -2278,6 +2278,22 @@ impl Interpreter {
         self.registry_mut().proto_tokens.insert(key);
     }
 
+    /// The registry key -- the type identity -- of an enum declared as `name`
+    /// in the current package: the package-qualified name, like a nested
+    /// class's. Two packages declaring the same short enum name therefore get
+    /// two distinct types (#9654); the declared `name` stays the display name
+    /// (`crate::value::note_enum_display_name`).
+    // Cost: O(len(package) + len(name)) for the qualified-name build.
+    pub(crate) fn enum_registry_key(&self, name: &str) -> String {
+        if self.current_package_is_global() {
+            name.to_string()
+        } else {
+            crate::qualified::qualified(self.current_package_sym(), Symbol::intern(name))
+                .as_str()
+                .to_string()
+        }
+    }
+
     pub(crate) fn register_enum_decl(
         &mut self,
         name: &str,
@@ -2415,7 +2431,15 @@ impl Interpreter {
         }
 
         let is_anonymous = name.is_empty();
-        let enum_type_name = if is_anonymous { "__ANON_ENUM__" } else { name };
+        let enum_type_key = if is_anonymous {
+            "__ANON_ENUM__".to_string()
+        } else {
+            self.enum_registry_key(name)
+        };
+        let enum_type_name = enum_type_key.as_str();
+        if enum_type_name != name && !is_anonymous {
+            crate::value::note_enum_display_name(enum_type_name, name);
+        }
         self.registry_mut()
             .enum_types
             .insert(enum_type_name.to_string(), enum_variants.clone());
@@ -2435,14 +2459,20 @@ impl Interpreter {
         // protocol all see the role.
         self.compose_roles_onto_enum(enum_type_name, roles)?;
         if !is_anonymous {
-            self.env
-                .insert(name.to_string(), Value::package(Symbol::intern(name)));
+            let type_object = Value::package(Symbol::intern(enum_type_name));
+            self.env.insert(name.to_string(), type_object.clone());
             // Also register with fully-qualified package name
-            if self.current_package() != "GLOBAL" {
-                self.env.insert(
-                    format!("{}::{}", self.current_package(), name),
-                    Value::package(Symbol::intern(name)),
-                );
+            if enum_type_name != name {
+                self.env.insert(enum_type_name.to_string(), type_object);
+                // An enum declared in a class or role body is a nested type:
+                // the body's exit drops the short-name binding
+                // (`restore_nested_type_short_names`), so the owner's methods
+                // reach it through the owner-package probe of
+                // `resolve_suppressed_type`, exactly like a nested class.
+                let owner = self.current_package();
+                if !name.contains("::") && (self.has_class(&owner) || self.is_role(&owner)) {
+                    self.register_class_scoped_short_name(name);
+                }
             }
         }
         for (index, (key, val)) in enum_variants.iter().enumerate() {
@@ -2487,6 +2517,12 @@ impl Interpreter {
             let pkg = self.current_package();
             for (key, _) in &enum_variants {
                 self.register_exported_var(pkg.clone(), key.clone(), export_tags.to_vec());
+            }
+            // The type name travels too: a package-scoped enum is registered
+            // under its qualified identity, so an importer only sees the
+            // short name through the export (#9654), like a class or role.
+            if enum_type_name != name {
+                self.register_exported_var(pkg, name.to_string(), export_tags.to_vec());
             }
         }
 

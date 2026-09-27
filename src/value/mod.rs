@@ -513,6 +513,7 @@ pub(crate) mod container_lock;
 mod display;
 /// Deferred vivification path steps ([`EntryStep`] / [`EntryTerminal`]).
 mod entry_path;
+mod enum_display;
 mod error;
 mod error_construct;
 mod error_typed;
@@ -628,6 +629,7 @@ pub(crate) use display::note_user_declared_type_name;
 pub(crate) use display::user_facing_type_name;
 pub(crate) use display::with_quanthash_render_guard;
 pub use display::{format_complex, tclc_str, wordcase_segments, wordcase_str};
+pub(crate) use enum_display::{enum_display_name, note_enum_display_name};
 pub(crate) use error::LazyBacktraceText;
 pub(crate) use error::expected_type_object;
 pub use error::{CatchInlineVerdict, Control, RuntimeError, RuntimeErrorCode};

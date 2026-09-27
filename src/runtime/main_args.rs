@@ -656,7 +656,9 @@ impl Interpreter {
     /// params show `[=SubsetName]`, everything else shows `=<value>`.
     fn usage_value_placeholder(&self, pd: &ParamDef) -> String {
         if let Some(tc) = &pd.type_constraint {
-            if let Some(variants) = self.registry().enum_types.get(tc.as_str()) {
+            if let Some(key) = self.resolve_enum_type_key(tc.as_str())
+                && let Some(variants) = self.registry().enum_types.get(key.as_str())
+            {
                 let mut names: Vec<&str> = variants.iter().map(|(k, _)| k.as_str()).collect();
                 names.sort_unstable();
                 return format!("=<{}> ({})", tc, names.join(" "));
@@ -730,10 +732,13 @@ impl Interpreter {
                 // If the parameter is typed with an enum, coerce the CLI string to
                 // the matching enum variant so type-checked binding succeeds. An
                 // unmatched string is left unchanged so dispatch can reject it.
-                let variants = self.registry().enum_types.get(tc).cloned();
-                if let Some(variants) = variants
+                let enum_key = self.resolve_enum_type_key(tc);
+                let variants = enum_key
+                    .as_deref()
+                    .and_then(|key| self.registry().enum_types.get(key).cloned());
+                if let (Some(key), Some(variants)) = (enum_key.as_deref(), variants)
                     && let Some(enum_val) =
-                        self.coerce_to_enum_variant(tc, &variants, Value::str(s))
+                        self.coerce_to_enum_variant(key, &variants, Value::str(s))
                 {
                     return enum_val;
                 }

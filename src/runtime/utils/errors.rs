@@ -46,7 +46,14 @@ pub(crate) fn value_short_repr(val: &Value) -> String {
 /// rakudo says `but got Int (Int)`.
 pub(crate) fn got_type_name(val: &Value) -> String {
     match val.view() {
-        ValueView::Package(sym) => sym.resolve(),
+        ValueView::Package(sym) => {
+            let name = sym.resolve();
+            crate::value::enum_display_name(&name).unwrap_or(name)
+        }
+        ValueView::Enum { enum_type, .. } => {
+            let name = enum_type.resolve();
+            crate::value::enum_display_name(&name).unwrap_or(name)
+        }
         _ => value_type_name(val).to_string(),
     }
 }
@@ -170,6 +177,10 @@ pub(crate) fn format_var_name_for_error(name: &str) -> String {
 /// `Type check failed in assignment to $x; expected Int but got Str ("hello")`
 pub(crate) fn type_check_assignment_error(var_name: &str, expected: &str, val: &Value) -> String {
     let display_name = format_var_name_for_error(var_name);
+    // A package-scoped enum's constraint names its qualified identity, but
+    // the message names it the way rakudo does: by its declared name (#9654).
+    let expected_display = crate::value::enum_display_name(expected);
+    let expected = expected_display.as_deref().unwrap_or(expected);
     let got_type = got_type_name(val);
     let repr = value_short_repr(val);
     if repr.is_empty() {

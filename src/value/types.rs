@@ -154,7 +154,9 @@ pub(crate) fn what_type_name(val: &Value) -> String {
         ValueView::Package(name) => {
             crate::value::user_facing_type_name(&name.resolve()).into_owned()
         }
-        ValueView::Enum { enum_type, .. } => enum_type.resolve(),
+        ValueView::Enum { enum_type, .. } => {
+            crate::value::user_facing_type_name(&enum_type.resolve()).into_owned()
+        }
         ValueView::Sub(_) | ValueView::WeakSub(_) => "Sub".to_string(),
         ValueView::Routine { .. } => "Sub".to_string(),
         ValueView::Regex(_) | ValueView::RegexWithAdverbs(_) => "Regex".to_string(),

@@ -76,6 +76,11 @@ pub(crate) fn user_facing_type_name(name: &str) -> std::borrow::Cow<'_, str> {
         if let Some(qualified) = qualify_nativecall_type_name(name) {
             return std::borrow::Cow::Owned(qualified);
         }
+        // A package-scoped enum is registered under its qualified identity
+        // but displays under its declared name (#9654, `enum_display.rs`).
+        if let Some(declared) = super::enum_display_name(name) {
+            return std::borrow::Cow::Owned(declared);
+        }
         return std::borrow::Cow::Borrowed(name);
     }
     let demangled = name
